@@ -10,105 +10,112 @@ test('diffModeToReviewScope maps a summary mode to the matching review scope', (
   assert.equal(diffModeToReviewScope('uncommitted'), 'uncommitted');
 });
 
-test('nextReviewFocusScope walks current changes through branch history', () => {
+test('nextReviewFocusScope walks current changes through branch history and stops off-chain', () => {
   assert.equal(nextReviewFocusScope('last_turn'), 'uncommitted');
   assert.equal(nextReviewFocusScope('uncommitted'), 'worktree');
   assert.equal(nextReviewFocusScope('worktree'), 'branch');
   assert.equal(nextReviewFocusScope('branch'), 'commit');
   assert.equal(nextReviewFocusScope('commit'), null);
-});
-
-test('nextReviewFocusScope stops for scopes outside the focus chain', () => {
   // A focus request always starts at 'last_turn'; any other current scope
   // means the user navigated away mid-flight, so the chain must not resume.
   assert.equal(nextReviewFocusScope('staged'), null);
   assert.equal(nextReviewFocusScope('unstaged'), null);
 });
 
-test('matchReviewFocusPath matches repo-relative paths exactly', () => {
-  const files = [{ path: 'src/app.ts' }, { path: 'README.md' }];
-  assert.equal(matchReviewFocusPath(files, 'src/app.ts'), 'src/app.ts');
-  assert.equal(matchReviewFocusPath(files, 'README.md'), 'README.md');
-});
-
-test('matchReviewFocusPath matches absolute transcript paths under the repo', () => {
-  const files = [{ path: 'src/app.ts' }];
-  assert.equal(matchReviewFocusPath(files, '/Users/dev/repo/src/app.ts'), 'src/app.ts');
-  // Windows-style separators from a transcript are normalized.
-  assert.equal(matchReviewFocusPath(files, 'C:\\repo\\src\\app.ts'), 'src/app.ts');
-});
-
-test('matchReviewFocusPath rejects absolute paths outside the session repo', () => {
-  const files = [{ path: 'src/app.ts' }];
-  assert.equal(matchReviewFocusPath(files, '/elsewhere/repo/src/app.ts', '/Users/dev/repo'), null);
-  assert.equal(
-    matchReviewFocusPath(files, '/Users/dev/repo/src/app.ts', '/Users/dev/repo/packages/web'),
-    'src/app.ts',
-  );
-});
-
-test('matchReviewFocusPath accepts a repo checked out at a filesystem root', () => {
-  const files = [{ path: 'src/app.ts' }];
-  assert.equal(matchReviewFocusPath(files, '/src/app.ts', '/'), 'src/app.ts');
-  assert.equal(matchReviewFocusPath(files, 'C:/src/app.ts', 'C:/'), 'src/app.ts');
-  assert.equal(matchReviewFocusPath(files, 'C:/src/app.ts', 'C:/packages/web'), 'src/app.ts');
-});
-
-test('matchReviewFocusPath matches cwd-relative paths in a repo subdirectory', () => {
-  // The session cwd is apps/web, so the transcript reports src/app.ts while
-  // git reports the repo-root-relative path.
-  const files = [{ path: 'apps/web/src/app.ts' }];
-  assert.equal(matchReviewFocusPath(files, 'src/app.ts'), 'apps/web/src/app.ts');
-  assert.equal(matchReviewFocusPath(files, './src/app.ts'), 'apps/web/src/app.ts');
-});
-
-test('matchReviewFocusPath prefers an exact match over an earlier suffix match', () => {
-  const files = [{ path: 'packages/a/src/app.ts' }, { path: 'src/app.ts' }];
-  assert.equal(matchReviewFocusPath(files, 'src/app.ts'), 'src/app.ts');
-});
-
-test('matchReviewFocusPath resolves relative paths against the session cwd first', () => {
-  const files = [{ path: 'packages/api/src/app.ts' }, { path: 'packages/web/src/app.ts' }];
-  // Session cwd is packages/web: edit tools resolve 'src/app.ts' there, not
-  // in the alphabetically first packages/api.
-  assert.equal(
-    matchReviewFocusPath(files, 'src/app.ts', '/repo/packages/web'),
-    'packages/web/src/app.ts',
-  );
-});
-
-test('matchReviewFocusPath prefers the cwd-resolved file over a root-level exact match', () => {
-  const files = [{ path: 'packages/web/src/app.ts' }, { path: 'src/app.ts' }];
-  assert.equal(
-    matchReviewFocusPath(files, 'src/app.ts', '/repo/packages/web'),
-    'packages/web/src/app.ts',
-  );
-});
-
-test('matchReviewFocusPath picks the longest suffix for absolute paths', () => {
-  // Both git paths suffix-match; the longer one pins the repo root at /repo.
-  const files = [{ path: 'web/src/app.ts' }, { path: 'packages/web/src/app.ts' }];
-  assert.equal(
-    matchReviewFocusPath(files, '/repo/packages/web/src/app.ts'),
-    'packages/web/src/app.ts',
-  );
-});
-
-test('matchReviewFocusPath canonicalizes dot segments in cwd-relative paths', () => {
-  // An edit reported as ../shared/foo.ts from cwd packages/web really edits
-  // packages/shared/foo.ts; without canonicalizing '..', the suffix match
-  // never lands and the click ends in the no-diff toast.
-  const files = [{ path: 'packages/shared/foo.ts' }];
-  assert.equal(
-    matchReviewFocusPath(files, '../shared/foo.ts', '/repo/packages/web'),
-    'packages/shared/foo.ts',
-  );
-});
-
-test('matchReviewFocusPath returns null when nothing matches', () => {
-  const files = [{ path: 'src/app.ts' }];
-  assert.equal(matchReviewFocusPath(files, 'src/other.ts'), null);
-  assert.equal(matchReviewFocusPath(files, '/elsewhere/repo/src/app.tsx'), null);
-  assert.equal(matchReviewFocusPath([], 'src/app.ts'), null);
-  assert.equal(matchReviewFocusPath(files, ''), null);
+test('matchReviewFocusPath maps a transcript path to the changed git path', () => {
+  const app = ['src/app.ts'];
+  // [why, git paths, transcript path, session cwd, expected match]
+  const cases: Array<[string, string[], string, string | undefined, string | null]> = [
+    [
+      'exact repo-relative path',
+      ['src/app.ts', 'README.md'],
+      'src/app.ts',
+      undefined,
+      'src/app.ts',
+    ],
+    ['exact repo-relative path', ['src/app.ts', 'README.md'], 'README.md', undefined, 'README.md'],
+    ['absolute path under the repo', app, '/Users/dev/repo/src/app.ts', undefined, 'src/app.ts'],
+    ['Windows separators are normalized', app, 'C:\\repo\\src\\app.ts', undefined, 'src/app.ts'],
+    [
+      'absolute path outside the session repo',
+      app,
+      '/elsewhere/repo/src/app.ts',
+      '/Users/dev/repo',
+      null,
+    ],
+    [
+      'absolute path above a cwd subdirectory',
+      app,
+      '/Users/dev/repo/src/app.ts',
+      '/Users/dev/repo/packages/web',
+      'src/app.ts',
+    ],
+    ['repo at a POSIX filesystem root', app, '/src/app.ts', '/', 'src/app.ts'],
+    ['repo at a drive root', app, 'C:/src/app.ts', 'C:/', 'src/app.ts'],
+    ['repo at a drive root, cwd below it', app, 'C:/src/app.ts', 'C:/packages/web', 'src/app.ts'],
+    // The session cwd is apps/web, so the transcript reports src/app.ts while
+    // git reports the repo-root-relative path.
+    [
+      'cwd-relative path in a subdirectory',
+      ['apps/web/src/app.ts'],
+      'src/app.ts',
+      undefined,
+      'apps/web/src/app.ts',
+    ],
+    [
+      'dot-prefixed cwd-relative path',
+      ['apps/web/src/app.ts'],
+      './src/app.ts',
+      undefined,
+      'apps/web/src/app.ts',
+    ],
+    [
+      'exact match beats an earlier suffix match',
+      ['packages/a/src/app.ts', 'src/app.ts'],
+      'src/app.ts',
+      undefined,
+      'src/app.ts',
+    ],
+    // Edit tools resolve 'src/app.ts' in the session cwd, not in the
+    // alphabetically first package or at the repo root.
+    [
+      'cwd resolution beats the first package',
+      ['packages/api/src/app.ts', 'packages/web/src/app.ts'],
+      'src/app.ts',
+      '/repo/packages/web',
+      'packages/web/src/app.ts',
+    ],
+    [
+      'cwd resolution beats a root-level exact match',
+      ['packages/web/src/app.ts', 'src/app.ts'],
+      'src/app.ts',
+      '/repo/packages/web',
+      'packages/web/src/app.ts',
+    ],
+    // Both git paths suffix-match; the longer one pins the repo root at /repo.
+    [
+      'longest suffix wins for absolute paths',
+      ['web/src/app.ts', 'packages/web/src/app.ts'],
+      '/repo/packages/web/src/app.ts',
+      undefined,
+      'packages/web/src/app.ts',
+    ],
+    // Without canonicalizing '..', the suffix match never lands and the click
+    // ends in the no-diff toast.
+    [
+      'dot segments are canonicalized',
+      ['packages/shared/foo.ts'],
+      '../shared/foo.ts',
+      '/repo/packages/web',
+      'packages/shared/foo.ts',
+    ],
+    ['unrelated relative path', app, 'src/other.ts', undefined, null],
+    ['near-miss absolute path', app, '/elsewhere/repo/src/app.tsx', undefined, null],
+    ['no changed files', [], 'src/app.ts', undefined, null],
+    ['empty transcript path', app, '', undefined, null],
+  ];
+  for (const [why, paths, path, cwd, expected] of cases) {
+    const files = paths.map((filePath) => ({ path: filePath }));
+    assert.equal(matchReviewFocusPath(files, path, cwd), expected, why);
+  }
 });

@@ -18,6 +18,13 @@ const unsignedPreflightSource = require('node:fs').readFileSync(
 );
 const canonicalSentryDsn = 'https://public@o4511166732304384.ingest.de.sentry.io/4511850999185488';
 
+const ciNotarization = {
+  CSC_LINK: 'base64-certificate',
+  APPLE_API_KEY: '/tmp/AuthKey.p8',
+  APPLE_API_KEY_ID: 'KEYID',
+  APPLE_API_ISSUER: 'ISSUER',
+};
+
 const configPath = require.resolve('../electron-builder.config.cjs');
 const appleEnvironmentKeys = [
   'APPLE_SIGNING_IDENTITY',
@@ -103,31 +110,49 @@ test('existing mac installs keep the stable application and updater identity', (
   assert.equal(config.mac.extendInfo.SUPublicEDKey, 'czgsBI/YO7amJbwhZidZSO0j7LU5A4NsU0No9fDemWU=');
 });
 
-test('signed mac builds enable notarization when every credential is present', () => {
-  const config = loadConfig({
+test('Developer ID or CI certificate credentials enable notarization', () => {
+  const developerId = loadConfig({
     APPLE_SIGNING_IDENTITY: 'Developer ID Application: Example (TEAMID)',
     APPLE_ID: 'developer@example.com',
     APPLE_APP_SPECIFIC_PASSWORD: 'password',
     APPLE_TEAM_ID: 'TEAMID',
   });
+  assert.equal(developerId.mac.notarize, true);
 
-  assert.equal(config.mac.notarize, true);
+  const ci = loadConfig(ciNotarization);
+  assert.equal(ci.mac.identity, undefined);
+  assert.equal(ci.mac.notarize, true);
 });
 
-test('release builds require notarization credentials', () => {
-  assert.throws(
-    () => loadConfig({ DROIDEX_RELEASE_BUILD: '1' }),
-    /require Developer ID signing and Apple notarization credentials/,
-  );
+test('release builds refuse missing or non-canonical signing and crash reporting', () => {
+  const release = { DROIDEX_RELEASE_BUILD: '1', ...ciNotarization };
+  const refused = [
+    [
+      { DROIDEX_RELEASE_BUILD: '1' },
+      /require Developer ID signing and Apple notarization credentials/,
+    ],
+    [release, /require SENTRY_DSN/],
+    [
+      { ...release, APPLE_API_KEY: 'base64-api-key', SENTRY_DSN: canonicalSentryDsn },
+      /APPLE_API_KEY must be an absolute .p8 path/,
+    ],
+    // A DSN for another host, project, key, or port is not the canonical Sentry project.
+    ...[
+      'https://public@example.invalid/4511850999185488',
+      'https://public@o4511166732304384.ingest.de.sentry.io/999',
+      'https://o4511166732304384.ingest.de.sentry.io/4511850999185488',
+      'https://public@o4511166732304384.ingest.de.sentry.io:444/4511850999185488',
+    ].map((dsn) => [{ ...release, SENTRY_DSN: dsn }, /canonical Sentry project/]),
+  ];
+  for (const [environment, message] of refused) {
+    assert.throws(() => loadConfig(environment), message);
+  }
 });
 
 test('release builds emit canonical update artifacts', () => {
   const config = loadConfig({
     DROIDEX_RELEASE_BUILD: '1',
-    CSC_LINK: 'base64-certificate',
-    APPLE_API_KEY: '/tmp/AuthKey.p8',
-    APPLE_API_KEY_ID: 'KEYID',
-    APPLE_API_ISSUER: 'ISSUER',
+    ...ciNotarization,
     SENTRY_DSN: canonicalSentryDsn,
   });
 
@@ -145,41 +170,6 @@ test('release builds emit canonical update artifacts', () => {
   });
 });
 
-test('release builds require crash reporting configuration', () => {
-  assert.throws(
-    () =>
-      loadConfig({
-        DROIDEX_RELEASE_BUILD: '1',
-        CSC_LINK: 'base64-certificate',
-        APPLE_API_KEY: '/tmp/AuthKey.p8',
-        APPLE_API_KEY_ID: 'KEYID',
-        APPLE_API_ISSUER: 'ISSUER',
-      }),
-    /require SENTRY_DSN/,
-  );
-});
-
-test('release builds reject a Sentry DSN for another host or project', () => {
-  const releaseEnvironment = {
-    DROIDEX_RELEASE_BUILD: '1',
-    CSC_LINK: 'base64-certificate',
-    APPLE_API_KEY: '/tmp/AuthKey.p8',
-    APPLE_API_KEY_ID: 'KEYID',
-    APPLE_API_ISSUER: 'ISSUER',
-  };
-  for (const dsn of [
-    'https://public@example.invalid/4511850999185488',
-    'https://public@o4511166732304384.ingest.de.sentry.io/999',
-    'https://o4511166732304384.ingest.de.sentry.io/4511850999185488',
-    'https://public@o4511166732304384.ingest.de.sentry.io:444/4511850999185488',
-  ]) {
-    assert.throws(
-      () => loadConfig({ ...releaseEnvironment, SENTRY_DSN: dsn }),
-      /canonical Sentry project/,
-    );
-  }
-});
-
 test('unsigned release builds load crash reporting configuration from a protected file', () => {
   const directory = mkdtempSync(join(tmpdir(), 'droidex-builder-config-'));
   const dsnPath = join(directory, 'sentry-dsn');
@@ -195,33 +185,6 @@ test('unsigned release builds load crash reporting configuration from a protecte
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-});
-
-test('CI certificate and API key credentials enable notarization', () => {
-  const config = loadConfig({
-    CSC_LINK: 'base64-certificate',
-    APPLE_API_KEY: '/tmp/AuthKey.p8',
-    APPLE_API_KEY_ID: 'KEYID',
-    APPLE_API_ISSUER: 'ISSUER',
-  });
-
-  assert.equal(config.mac.identity, undefined);
-  assert.equal(config.mac.notarize, true);
-});
-
-test('notarization rejects API key data instead of an absolute key path', () => {
-  assert.throws(
-    () =>
-      loadConfig({
-        DROIDEX_RELEASE_BUILD: '1',
-        CSC_LINK: 'base64-certificate',
-        APPLE_API_KEY: 'base64-api-key',
-        APPLE_API_KEY_ID: 'KEYID',
-        APPLE_API_ISSUER: 'ISSUER',
-        SENTRY_DSN: canonicalSentryDsn,
-      }),
-    /APPLE_API_KEY must be an absolute .p8 path/,
-  );
 });
 
 test('macOS protected project folders have truthful permission descriptions', () => {

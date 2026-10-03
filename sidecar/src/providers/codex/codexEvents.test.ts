@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { AppServerClient } from './appServer.js';
 import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
+import type { PermissionOutcome } from '../../protocol.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import { CodexSession } from './codexSession.js';
 
@@ -20,6 +21,52 @@ const FAILED = {
   failureReason: null,
 };
 const STARTING = { ...FAILED, status: 'starting', error: null };
+
+/**
+ * An app-server client that records notification and request handlers and
+ * answers requests with `request`, or with an empty catalog page.
+ */
+function fakeClient(request: (method: string, params: Record<string, unknown>) => unknown) {
+  const notifications = new Map<string, (params: unknown) => void>();
+  const requests = new Map<string, (params: unknown) => Promise<unknown>>();
+  const client = {
+    onNotification: (method: string, handler: (params: unknown) => void) =>
+      notifications.set(method, handler),
+    onRequest: (method: string, handler: (params: unknown) => Promise<unknown>) =>
+      requests.set(method, handler),
+    onUnsupportedRequest: () => undefined,
+    onClose: () => undefined,
+    notify: () => undefined,
+    close: async () => undefined,
+    request: async (method: string, params: Record<string, unknown>) => {
+      if (method === 'skills/list') return { data: [] };
+      if (method === 'plugin/installed') return { marketplaces: [] };
+      return (await request(method, params)) ?? { data: [], nextCursor: null };
+    },
+  } as unknown as AppServerClient;
+  return { client, notifications, requests };
+}
+
+function codexSession(
+  client: AppServerClient,
+  appSessionId: string,
+  cwd = '/tmp',
+  requestApproval: () => Promise<PermissionOutcome> = () => Promise.reject(new Error('unused')),
+): CodexSession {
+  return new CodexSession({
+    appSessionId,
+    client,
+    cwd,
+    autonomy: 'low',
+    model: {},
+    interactions: {
+      requestApproval,
+      requestQuestion: async () => ({ cancelled: true, answers: [] }),
+      isActive: () => true,
+      cancelPending: () => undefined,
+    },
+  });
+}
 
 test('a failed MCP server is read once per server, and its startup is not', () => {
   const mapper = new CodexEventMapper('app-1');
@@ -46,37 +93,12 @@ test('a failed MCP server is read once per server, and its startup is not', () =
 // The servers start before the session's first turn, so the row has to survive
 // the wait and reach the transcript that turn opens.
 test('a server that failed before the first turn is still reported in it', async () => {
-  const notifications = new Map<string, (params: unknown) => void>();
-  const client = {
-    onNotification: (method: string, handler: (params: unknown) => void) => {
-      notifications.set(method, handler);
-    },
-    onRequest: () => undefined,
-    onUnsupportedRequest: () => undefined,
-    onClose: () => undefined,
-    notify: () => undefined,
-    request: (method: string) => {
-      if (method === 'thread/start') return Promise.resolve({ thread: { id: 'thread-1' } });
-      if (method === 'turn/start') return Promise.resolve({ turn: { id: 'turn-1' } });
-      if (method === 'skills/list') return Promise.resolve({ data: [] });
-      if (method === 'plugin/installed') return Promise.resolve({ marketplaces: [] });
-      return Promise.resolve({ data: [], nextCursor: null });
-    },
-  } as unknown as AppServerClient;
-
-  const session = new CodexSession({
-    appSessionId: 'app-1',
-    client,
-    cwd: '/tmp',
-    autonomy: 'low',
-    model: {},
-    interactions: {
-      requestApproval: () => Promise.reject(new Error('unused')),
-      requestQuestion: () => Promise.reject(new Error('unused')),
-      isActive: () => true,
-      cancelPending: () => undefined,
-    },
+  const { client, notifications } = fakeClient((method) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'turn-1' } };
+    return undefined;
   });
+  const session = codexSession(client, 'app-1');
   await session.open();
   notifications.get('mcpServer/startupStatus/updated')?.(FAILED);
 
@@ -180,45 +202,22 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
 
 test('thread start, resume and every turn carry the requested service tier including explicit off', async () => {
   const requests: { method: string; params: Record<string, unknown> }[] = [];
-  const notifications = new Map<string, (params: unknown) => void>();
-  const client = {
-    onNotification: (method: string, handler: (params: unknown) => void) =>
-      notifications.set(method, handler),
-    onRequest: () => undefined,
-    onUnsupportedRequest: () => undefined,
-    onClose: () => undefined,
-    request: (method: string, params: Record<string, unknown>) => {
-      if (method === 'skills/list') return Promise.resolve({ data: [] });
-      if (method === 'plugin/installed') return Promise.resolve({ marketplaces: [] });
-      if (method === 'app/list') return Promise.resolve({ data: [], nextCursor: null });
-      // The model and effort travel separately; only the tier is under test here.
-      if (method === 'thread/settings/update') return Promise.resolve({});
-      requests.push({ method, params });
-      if (method === 'thread/start' || method === 'thread/resume')
-        return Promise.resolve({ thread: { id: 'thread-fast' }, model: 'model' });
-      if (method === 'turn/start') {
-        notifications.get('turn/completed')?.({
-          threadId: 'thread-fast',
-          turn: { id: 'turn-fast', status: 'completed' },
-        });
-        return Promise.resolve({ turn: { id: 'turn-fast' } });
-      }
-      return Promise.reject(new Error(`Unexpected request: ${method}`));
-    },
-  } as unknown as AppServerClient;
-  const session = new CodexSession({
-    appSessionId: 'app-fast',
-    client,
-    cwd: '/tmp',
-    autonomy: 'low',
-    model: {},
-    interactions: {
-      requestApproval: () => Promise.reject(new Error('unused')),
-      requestQuestion: () => Promise.reject(new Error('unused')),
-      isActive: () => true,
-      cancelPending: () => undefined,
-    },
+  const { client, notifications } = fakeClient((method, params) => {
+    // The model and effort travel separately; only the tier is under test here.
+    if (method === 'app/list' || method === 'thread/settings/update') return undefined;
+    requests.push({ method, params });
+    if (method === 'thread/start' || method === 'thread/resume')
+      return { thread: { id: 'thread-fast' }, model: 'model' };
+    if (method === 'turn/start') {
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-fast',
+        turn: { id: 'turn-fast', status: 'completed' },
+      });
+      return { turn: { id: 'turn-fast' } };
+    }
+    throw new Error(`Unexpected request: ${method}`);
   });
+  const session = codexSession(client, 'app-fast');
   await session.open();
   await session.setModel({ fastMode: true });
   await session.open('thread-fast');
@@ -248,51 +247,24 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
   mkdirSync(join(cwd, '.git'));
   symlinkSync(directory, join(cwd, 'escape'));
   symlinkSync(join(directory, 'missing'), join(cwd, 'dangling'));
-  const notifications = new Map<string, (params: unknown) => void>();
-  const requests = new Map<string, (params: unknown) => Promise<unknown>>();
   const starts: Record<string, unknown>[] = [];
   let asked = 0;
   let turnNumber = 0;
   let markStarted: () => void = () => undefined;
-  const client = {
-    onNotification: (method: string, handler: (params: unknown) => void) =>
-      notifications.set(method, handler),
-    onRequest: (method: string, handler: (params: unknown) => Promise<unknown>) =>
-      requests.set(method, handler),
-    onUnsupportedRequest: () => undefined,
-    onClose: () => undefined,
-    notify: () => undefined,
-    close: async () => undefined,
-    request: async (method: string, params: Record<string, unknown>) => {
-      if (method === 'thread/resume') {
-        starts.push(params);
-        return { thread: { id: 'thread-1' }, model: 'model' };
-      }
-      if (method === 'turn/start') {
-        starts.push(params);
-        turnNumber += 1;
-        markStarted();
-        return { turn: { id: `turn-${turnNumber}` } };
-      }
-      if (method === 'plugin/installed') return { marketplaces: [] };
-      return { data: [], nextCursor: null };
-    },
-  } as unknown as AppServerClient;
-  const session = new CodexSession({
-    appSessionId: 'app-1',
-    client,
-    cwd,
-    autonomy: 'low',
-    model: {},
-    interactions: {
-      requestApproval: async () => {
-        asked += 1;
-        return 'cancel';
-      },
-      requestQuestion: async () => ({ cancelled: true, answers: [] }),
-      isActive: () => true,
-      cancelPending: () => undefined,
-    },
+  const { client, notifications, requests } = fakeClient((method, params) => {
+    if (method === 'thread/resume') {
+      starts.push(params);
+      return { thread: { id: 'thread-1' }, model: 'model' };
+    }
+    if (method !== 'turn/start') return undefined;
+    starts.push(params);
+    turnNumber += 1;
+    markStarted();
+    return { turn: { id: `turn-${String(turnNumber)}` } };
+  });
+  const session = codexSession(client, 'app-1', cwd, async () => {
+    asked += 1;
+    return 'cancel';
   });
   try {
     await session.open('thread-1');

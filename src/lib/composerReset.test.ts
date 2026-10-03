@@ -6,47 +6,37 @@ import {
   resetComposerAfterSubmit,
 } from './composerReset';
 
-test('a fresh-chat composer seed replaces stale mounted input', () => {
+test('a fresh-chat seed replaces stale input, an ordinary seed appends, and seeds get distinct ids', () => {
   assert.equal(
     composerTextAfterSeed('old draft', '/review Pull request #129', true),
     '/review Pull request #129',
   );
-});
-
-test('an ordinary composer seed still appends to an active draft', () => {
   assert.equal(
     composerTextAfterSeed('keep this  ', 'add this note', false),
     'keep this\n\nadd this note',
   );
   assert.equal(composerTextAfterSeed('   ', 'start here', false), 'start here');
-});
 
-test('resetComposerAfterSubmit clears images and the draft when untouched', () => {
-  const calls: string[] = [];
-  resetComposerAfterSubmit({
-    draftUntouched: true,
-    clearImages: () => calls.push('images'),
-    resetDraft: () => calls.push('draft'),
-  });
-  assert.deepEqual(calls, ['images', 'draft']);
-});
-
-test('resetComposerAfterSubmit keeps draft edits made while images encoded', () => {
-  // Regression: the submit path snapshots the composer before awaiting
-  // in-flight image encodes; typing or staging during that wait must survive
-  // the submit, or the user's in-progress next prompt is silently wiped.
-  // Images still clear — they already made it into the sent prompt.
-  const calls: string[] = [];
-  resetComposerAfterSubmit({
-    draftUntouched: false,
-    clearImages: () => calls.push('images'),
-    resetDraft: () => calls.push('draft'),
-  });
-  assert.deepEqual(calls, ['images']);
-});
-
-test('composer seeds get distinct ids even when created in the same millisecond', () => {
   const first = createComposerSeed('one');
   const second = createComposerSeed('two');
   assert.notEqual(first.id, second.id);
+});
+
+test('resetComposerAfterSubmit clears images but keeps draft edits made while images encoded', () => {
+  // Regression: the submit path snapshots the composer before awaiting
+  // in-flight image encodes; typing or staging during that wait must survive
+  // the submit, or the user's in-progress next prompt is silently wiped.
+  // Images still clear: they already made it into the sent prompt.
+  for (const [draftUntouched, cleared] of [
+    [true, ['images', 'draft']],
+    [false, ['images']],
+  ] as const) {
+    const calls: string[] = [];
+    resetComposerAfterSubmit({
+      draftUntouched,
+      clearImages: () => calls.push('images'),
+      resetDraft: () => calls.push('draft'),
+    });
+    assert.deepEqual(calls, cleared);
+  }
 });

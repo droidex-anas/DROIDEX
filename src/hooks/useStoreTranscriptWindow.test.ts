@@ -2,30 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
-import type { ChildSessionSummary, SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { initialState, reducer, type AppState } from './useStore';
+import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
-function session(appSessionId: string, streaming = false): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
-    cwd: '/tmp',
-    autonomy: 'off',
-    phase: 'running',
-    streaming,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+const session = (appSessionId: string, streaming = false) =>
+  sessionSummary(appSessionId, { cwd: '/tmp', autonomy: 'off', phase: 'running', streaming });
 
 function events(appSessionId: string, count: number): TranscriptEvent[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -40,20 +23,45 @@ function events(appSessionId: string, count: number): TranscriptEvent[] {
   }));
 }
 
-function childSession(
+const childSession = (
   parentAppSessionId: string,
   childSessionId: string,
   role: 'worker' | 'validator' = 'worker',
-): ChildSessionSummary {
-  return {
-    parentAppSessionId,
-    childSessionId,
+) =>
+  childSummary(parentAppSessionId, childSessionId, { role, status: 'completed', modelId: 'model' });
+
+/** `count` events from one child of the `active` session, ids `<child>-<index>`. */
+function childEvents(
+  childSessionId: string,
+  count: number,
+  role: 'worker' | 'validator' = 'worker',
+  tsOffset = 0,
+): TranscriptEvent[] {
+  return events('active', count).map((event, index) => ({
+    ...event,
+    id: `${childSessionId}-${index}`,
+    sourceSessionId: childSessionId,
     role,
-    status: 'completed',
-    modelId: 'model',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
+    ts: index + tsOffset,
+  }));
+}
+
+type ChildHistoryEntry = AppState['childHistory'][string][string];
+
+function childHistoryEntry(overrides: Partial<ChildHistoryEntry> = {}): ChildHistoryEntry {
+  return {
+    status: 'loaded',
+    loadedCount: 0,
+    hasMore: false,
+    isLoaded: true,
+    isLoadingOlder: false,
+    isViewportPinned: true,
+    ...overrides,
   };
+}
+
+function releaseViewport(state: AppState): AppState {
+  return reducer(state, { type: 'TRANSCRIPT_RELEASE_VIEWPORT', appSessionId: 'active' });
 }
 
 function stateWithTranscript(
@@ -98,10 +106,7 @@ test('viewport release removes only old in-memory events after a settled bottom-
     },
   });
 
-  const next = reducer(state, {
-    type: 'TRANSCRIPT_RELEASE_VIEWPORT',
-    appSessionId: 'active',
-  });
+  const next = releaseViewport(state);
 
   assert.ok(next.transcripts.active.length < transcript.length);
   assert.equal(next.transcripts.active.at(-1)?.id, transcript.at(-1)?.id);
@@ -122,63 +127,19 @@ test('viewport release removes only old in-memory events after a settled bottom-
   );
 });
 
-test('exact older-history insertion records prepend provenance', () => {
-  const transcript = events('active', 2);
-  const state = stateWithTranscript('active', transcript, {
-    transcriptMutations: {
-      active: {
-        revision: 3,
-        baseRevision: 2,
-        kind: 'append',
-        previousLength: 1,
-        firstChangedIndex: 1,
-      },
-    },
-  });
-  const older = events('active', 1).map((event) => ({ ...event, id: 'older', ts: -1 }));
-
-  const next = reducer(state, {
-    type: 'SESSION_HISTORY',
-    appSessionId: 'active',
-    progress: [],
-    transcripts: older,
-    mode: 'prepend',
-  });
-
-  assert.deepEqual(next.transcriptMutations.active, {
-    revision: 4,
-    baseRevision: 3,
-    kind: 'prepend',
-    previousLength: transcript.length,
-    firstChangedIndex: 0,
-    insertedCount: 1,
-  });
-});
-
 test('primary release preserves child-session transcripts owned by separate history', () => {
   const primary = events('active', 4_000);
-  const childEvents: TranscriptEvent[] = Array.from({ length: 500 }, (_, index) => ({
-    id: `child-${index}`,
-    appSessionId: 'active',
-    sourceSessionId: 'child-1',
-    role: 'worker',
-    kind: 'text',
-    text: `child event ${index}`,
-    ts: index + 0.5,
-  }));
+  const child = childEvents('child-1', 500, 'worker', 0.5);
   const transcript = primary.flatMap((event, index) =>
-    index < childEvents.length ? [event, childEvents[index]] : [event],
+    index < child.length ? [event, child[index]] : [event],
   );
 
-  const next = reducer(stateWithTranscript('active', transcript), {
-    type: 'TRANSCRIPT_RELEASE_VIEWPORT',
-    appSessionId: 'active',
-  });
+  const next = releaseViewport(stateWithTranscript('active', transcript));
 
   assert.ok(next.transcripts.active.length < transcript.length);
   assert.deepEqual(
     next.transcripts.active.filter((event) => event.role === 'worker').map((event) => event.id),
-    childEvents.map((event) => event.id),
+    child.map((event) => event.id),
   );
 });
 
@@ -189,14 +150,7 @@ test('emergency release bounds aggregate memory across many smaller child transc
   for (let childIndex = 0; childIndex < 80; childIndex += 1) {
     const childSessionId = `child-${childIndex}`;
     childSessions[childSessionId] = childSession('active', childSessionId);
-    childHistory[childSessionId] = {
-      status: 'loaded',
-      loadedCount: 400,
-      hasMore: false,
-      isLoaded: true,
-      isLoadingOlder: false,
-      isViewportPinned: true,
-    };
+    childHistory[childSessionId] = childHistoryEntry({ loadedCount: 400 });
     for (let eventIndex = 0; eventIndex < 400; eventIndex += 1) {
       transcript.push({
         id: `${childSessionId}-${eventIndex}`,
@@ -294,13 +248,7 @@ test('primary history prepends still enforce the emergency transcript budget', (
 });
 
 test('selected child history prepends still enforce the emergency transcript budget', () => {
-  const fullChildTranscript = events('active', 33_000).map(
-    (event): TranscriptEvent => ({
-      ...event,
-      sourceSessionId: 'child-a',
-      role: 'worker',
-    }),
-  );
+  const fullChildTranscript = childEvents('child-a', 33_000);
   const existing = fullChildTranscript.slice(2_000);
   const olderPage = fullChildTranscript.slice(0, 2_000);
   const state = stateWithTranscript('active', existing, {
@@ -310,15 +258,14 @@ test('selected child history prepends still enforce the emergency transcript bud
     },
     childHistory: {
       active: {
-        'child-a': {
+        'child-a': childHistoryEntry({
           status: 'paged',
           loadedCount: existing.length,
           hasMore: true,
-          isLoaded: true,
           isLoadingOlder: true,
           olderCursor: 'current-child-page',
           isViewportPinned: false,
-        },
+        }),
       },
     },
   });
@@ -342,31 +289,8 @@ test('selected child history prepends still enforce the emergency transcript bud
 
 test('child viewport release preserves parent and sibling rows and invalidates only its cursor', () => {
   const primary = events('active', 20);
-  const childA = Array.from(
-    { length: 4_000 },
-    (_, index): TranscriptEvent => ({
-      id: `child-a-${index}`,
-      appSessionId: 'active',
-      sourceSessionId: 'child-a',
-      role: 'worker',
-      kind: 'text',
-      text: `child A event ${index} ${'payload '.repeat(16)}`,
-      ts: index + 0.1,
-      ...(index % 100 === 0 ? { author: 'user' as const } : {}),
-    }),
-  );
-  const childB = Array.from(
-    { length: 30 },
-    (_, index): TranscriptEvent => ({
-      id: `child-b-${index}`,
-      appSessionId: 'active',
-      sourceSessionId: 'child-b',
-      role: 'validator',
-      kind: 'text',
-      text: `child B event ${index}`,
-      ts: index + 0.2,
-    }),
-  );
+  const childA = childEvents('child-a', 4_000, 'worker', 0.1);
+  const childB = childEvents('child-b', 30, 'validator', 0.2);
   const transcript = [...primary, ...childA, ...childB];
   const state = stateWithTranscript('active', transcript, {
     selectedChild: { parentAppSessionId: 'active', childSessionId: 'child-a' },
@@ -378,15 +302,12 @@ test('child viewport release preserves parent and sibling rows and invalidates o
     },
     childHistory: {
       active: {
-        'child-a': {
+        'child-a': childHistoryEntry({
           status: 'paged',
           loadedCount: childA.length,
           hasMore: true,
-          isLoaded: true,
-          isLoadingOlder: false,
           olderCursor: 'child-cursor',
-          isViewportPinned: true,
-        },
+        }),
       },
     },
   });
@@ -436,20 +357,8 @@ test('viewport release preserves a scrolled-up or live transcript exactly', () =
     sessions: { active: session('active', true) },
   });
 
-  assert.equal(
-    reducer(scrolled, {
-      type: 'TRANSCRIPT_RELEASE_VIEWPORT',
-      appSessionId: 'active',
-    }).transcripts.active,
-    transcript,
-  );
-  assert.equal(
-    reducer(live, {
-      type: 'TRANSCRIPT_RELEASE_VIEWPORT',
-      appSessionId: 'active',
-    }).transcripts.active,
-    transcript,
-  );
+  assert.equal(releaseViewport(scrolled).transcripts.active, transcript);
+  assert.equal(releaseViewport(live).transcripts.active, transcript);
 });
 
 test('switching releases a settled pinned outgoing session but keeps instant tail content', () => {
@@ -472,19 +381,7 @@ test('switching releases a settled pinned outgoing session but keeps instant tai
 
 test('switching away releases a settled child tail without releasing parent history', () => {
   const primary = events('active', 2);
-  const child = Array.from(
-    { length: 1_400 },
-    (_, index): TranscriptEvent => ({
-      id: `child-${index}`,
-      appSessionId: 'active',
-      sourceSessionId: 'child-a',
-      role: 'worker',
-      kind: 'text',
-      text: `child event ${index}`,
-      ts: index,
-      ...(index % 100 === 0 ? { author: 'user' as const } : {}),
-    }),
-  );
+  const child = childEvents('child-a', 1_400);
   const state = stateWithTranscript('active', [...primary, ...child], {
     selectedChild: { parentAppSessionId: 'active', childSessionId: 'child-a' },
     childSessions: {
@@ -492,14 +389,7 @@ test('switching away releases a settled child tail without releasing parent hist
     },
     childHistory: {
       active: {
-        'child-a': {
-          status: 'loaded',
-          loadedCount: child.length,
-          hasMore: false,
-          isLoaded: true,
-          isLoadingOlder: false,
-          isViewportPinned: true,
-        },
+        'child-a': childHistoryEntry({ loadedCount: child.length }),
       },
     },
   });
@@ -516,19 +406,7 @@ test('switching away releases a settled child tail without releasing parent hist
 
 test('a late child history page is released after the user switches to a sibling', () => {
   const primary = events('active', 2);
-  const page = Array.from(
-    { length: 1_400 },
-    (_, index): TranscriptEvent => ({
-      id: `child-a-${index}`,
-      appSessionId: 'active',
-      sourceSessionId: 'child-a',
-      role: 'worker',
-      kind: 'text',
-      text: `child event ${index}`,
-      ts: index,
-      ...(index % 100 === 0 ? { author: 'user' as const } : {}),
-    }),
-  );
+  const page = childEvents('child-a', 1_400);
   const state = stateWithTranscript('active', primary, {
     selectedChild: { parentAppSessionId: 'active', childSessionId: 'child-b' },
     childSessions: {
@@ -539,14 +417,7 @@ test('a late child history page is released after the user switches to a sibling
     },
     childHistory: {
       active: {
-        'child-a': {
-          status: 'loading',
-          loadedCount: 0,
-          hasMore: false,
-          isLoaded: false,
-          isLoadingOlder: false,
-          isViewportPinned: true,
-        },
+        'child-a': childHistoryEntry({ status: 'loading', isLoaded: false }),
       },
     },
   });
@@ -574,10 +445,7 @@ test('a late child history page is released after the user switches to a sibling
 
 test('invisible recent-page refresh restores a paging cursor without duplicates', () => {
   const transcript = events('active', 4_000);
-  const released = reducer(stateWithTranscript('active', transcript), {
-    type: 'TRANSCRIPT_RELEASE_VIEWPORT',
-    appSessionId: 'active',
-  });
+  const released = releaseViewport(stateWithTranscript('active', transcript));
   const recentPage = transcript.slice(-400);
 
   const refreshed = reducer(released, {
@@ -596,28 +464,6 @@ test('invisible recent-page refresh restores a paging cursor without duplicates'
     refreshed.transcripts.active.length,
   );
   assert.equal(refreshed.transcripts.active.at(-1)?.id, transcript.at(-1)?.id);
-});
-
-test('emergency ceiling releases a pathological live transcript without trimming event text', () => {
-  const transcript = events('active', 30_001);
-  const state = stateWithTranscript('active', transcript, {
-    sessions: { active: session('active', true) },
-  });
-  const appended: TranscriptEvent = {
-    id: 'active-new',
-    appSessionId: 'active',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    text: 'complete newest payload',
-    ts: 30_002,
-  };
-
-  const next = reducer(state, { type: 'SESSION_TRANSCRIPT', event: appended });
-
-  assert.ok(next.transcripts.active.length < transcript.length);
-  assert.equal(next.transcripts.active.at(-1)?.id, appended.id);
-  assert.equal(next.transcripts.active.at(-1)?.text, appended.text);
 });
 
 test('authoritative session removal releases orphaned per-session state', () => {

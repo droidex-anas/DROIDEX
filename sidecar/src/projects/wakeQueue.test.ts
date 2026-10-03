@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import type { Project, ThreadMessage } from './types.js';
@@ -36,28 +36,47 @@ function project(id = 'project'): Project {
   };
 }
 
-test('acceptance removes only its claim and holds the turn slot until completion', async () => {
+/** A started wake queue over `deliver`, closed and flushed when the test ends. */
+function wakeQueue(
+  t: TestContext,
+  deliver: (target: string, prompt: string) => Promise<AutomationDeliveryReceipt>,
+  options: { save?: () => Promise<void>; fail?: (error: unknown) => void } = {},
+): ProjectWakeQueue {
+  const queue = new ProjectWakeQueue(
+    { deliver },
+    options.save ?? (() => Promise.resolve()),
+    (_project, error) => {
+      if (!options.fail) throw error;
+      options.fail(error);
+    },
+  );
+  queue.start([]);
+  t.after(async () => {
+    queue.close();
+    await queue.flush();
+  });
+  return queue;
+}
+
+test('acceptance removes only its claim and holds the turn slot until completion', async (t) => {
   const state = project();
   const admitted = deferred<AutomationDeliveryReceipt>();
   const finished = deferred<void>();
   const calls: string[] = [];
   let saved: Project | undefined;
-  const queue = new ProjectWakeQueue(
+  const queue = wakeQueue(
+    t,
+    async (_target, prompt) => {
+      calls.push(prompt);
+      if (calls.length === 1) return admitted.promise;
+      return { status: 'accepted', settled: Promise.resolve() };
+    },
     {
-      deliver: async (_target, prompt) => {
-        calls.push(prompt);
-        if (calls.length === 1) return admitted.promise;
-        return { status: 'accepted', settled: Promise.resolve() };
+      save: async () => {
+        saved = structuredClone(state);
       },
     },
-    async () => {
-      saved = structuredClone(state);
-    },
-    (_project, error) => {
-      throw error;
-    },
   );
-  queue.start([]);
   queue.kick(state);
   await tick();
   assert.equal(saved?.delivery?.state, 'sending');
@@ -78,28 +97,17 @@ test('acceptance removes only its claim and holds the turn slot until completion
   assert.equal(calls.length, 2);
   assert.match(calls[1], /arrived-during-admission/);
   assert.doesNotMatch(calls[1], /"first"/);
-  queue.close();
-  await queue.flush();
 });
 
-test('availability arriving during an awaited busy receipt is not lost', async () => {
+test('availability arriving during an awaited busy receipt is not lost', async (t) => {
   const state = project();
   const receipt = deferred<AutomationDeliveryReceipt>();
   let calls = 0;
-  const queue = new ProjectWakeQueue(
-    {
-      deliver: async () => {
-        calls += 1;
-        if (calls === 1) return receipt.promise;
-        return { status: 'accepted', settled: Promise.resolve() };
-      },
-    },
-    async () => {},
-    (_project, error) => {
-      throw error;
-    },
-  );
-  queue.start([]);
+  const queue = wakeQueue(t, async () => {
+    calls += 1;
+    if (calls === 1) return receipt.promise;
+    return { status: 'accepted', settled: Promise.resolve() };
+  });
   queue.kick(state);
   await tick();
   queue.available(state, 'main');
@@ -107,27 +115,20 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   await tick();
   await tick();
   assert.equal(calls, 2);
-  queue.close();
-  await queue.flush();
 });
 
-test('an unacknowledged delivery keeps its claim and is not retried', async () => {
+test('an unacknowledged delivery keeps its claim and is not retried', async (t) => {
   const state = project();
   let calls = 0;
   const failures: unknown[] = [];
-  const queue = new ProjectWakeQueue(
-    {
-      deliver: async () => {
-        calls += 1;
-        return { status: 'unavailable', error: 'Delivery outcome unknown' };
-      },
+  const queue = wakeQueue(
+    t,
+    async () => {
+      calls += 1;
+      return { status: 'unavailable', error: 'Delivery outcome unknown' };
     },
-    async () => {},
-    (_project, error) => {
-      failures.push(error);
-    },
+    { fail: (error) => failures.push(error) },
   );
-  queue.start([]);
   queue.kick(state);
   await tick();
   queue.available(state, 'main');
@@ -136,30 +137,19 @@ test('an unacknowledged delivery keeps its claim and is not retried', async () =
   assert.equal(calls, 1);
   assert.equal(failures.length, 1);
   assert.equal(state.delivery?.messages[0]?.id, 'first');
-  queue.close();
-  await queue.flush();
 });
 
-test('completed callbacks free the global limit of two accepted project turns', async () => {
+test('completed callbacks free the global limit of two accepted project turns', async (t) => {
   const states = [project('one'), project('two'), project('three')];
   states.forEach((item, index) => {
-    item.pending[0].to = `main-${index}`;
+    item.pending[0].to = `main-${String(index)}`;
   });
   const finished = deferred<void>();
   let calls = 0;
-  const queue = new ProjectWakeQueue(
-    {
-      deliver: async () => {
-        calls += 1;
-        return { status: 'accepted', settled: finished.promise };
-      },
-    },
-    async () => {},
-    (_project, error) => {
-      throw error;
-    },
-  );
-  queue.start([]);
+  const queue = wakeQueue(t, async () => {
+    calls += 1;
+    return { status: 'accepted', settled: finished.promise };
+  });
   states.forEach((item) => queue.kick(item));
   await tick();
   await tick();
@@ -168,28 +158,17 @@ test('completed callbacks free the global limit of two accepted project turns', 
   await tick();
   await tick();
   assert.equal(calls, 3);
-  queue.close();
-  await queue.flush();
 });
 
-test('explicit resume rechecks both target and capacity busy markers', async () => {
+test('explicit resume rechecks both target and capacity busy markers', async (t) => {
   for (const retryOn of ['target', 'capacity'] as const) {
     const state = project();
     let calls = 0;
-    const queue = new ProjectWakeQueue(
-      {
-        deliver: async () => {
-          calls += 1;
-          if (calls === 1) return { status: 'busy', retryOn };
-          return { status: 'accepted', settled: Promise.resolve() };
-        },
-      },
-      () => Promise.resolve(),
-      (_project, error) => {
-        throw error;
-      },
-    );
-    queue.start([]);
+    const queue = wakeQueue(t, async () => {
+      calls += 1;
+      if (calls === 1) return { status: 'busy', retryOn };
+      return { status: 'accepted', settled: Promise.resolve() };
+    });
     queue.kick(state);
     await tick();
     await tick();
@@ -203,29 +182,18 @@ test('explicit resume rechecks both target and capacity busy markers', async () 
     await tick();
     assert.equal(calls, 2, retryOn + ' must be rechecked on explicit resume');
     assert.equal(state.pending.length, 0);
-    queue.close();
-    await queue.flush();
   }
 });
 
-test('a cancelled admission cannot restore a busy marker after resume', async () => {
+test('a cancelled admission cannot restore a busy marker after resume', async (t) => {
   const state = project();
   const admitted = deferred<AutomationDeliveryReceipt>();
   let calls = 0;
-  const queue = new ProjectWakeQueue(
-    {
-      deliver: async () => {
-        calls += 1;
-        if (calls === 1) return admitted.promise;
-        return { status: 'accepted', settled: Promise.resolve() };
-      },
-    },
-    () => Promise.resolve(),
-    (_project, error) => {
-      throw error;
-    },
-  );
-  queue.start([]);
+  const queue = wakeQueue(t, async () => {
+    calls += 1;
+    if (calls === 1) return admitted.promise;
+    return { status: 'accepted', settled: Promise.resolve() };
+  });
   queue.kick(state);
   await tick();
   state.paused = true;
@@ -239,6 +207,4 @@ test('a cancelled admission cannot restore a busy marker after resume', async ()
   await tick();
   assert.equal(calls, 2);
   assert.equal(state.pending.length, 0);
-  queue.close();
-  await queue.flush();
 });

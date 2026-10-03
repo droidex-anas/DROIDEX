@@ -90,14 +90,3 @@ export const toast = {
   error: (message: string) => pushToast(message, 'error'),
   info: (message: string) => pushToast(message, 'info'),
 };
-
-// Test-only: reset module state between cases.
-export function __resetToasts(): void {
-  for (const timer of timers.values()) clearTimeout(timer);
-  timers.clear();
-  remaining.clear();
-  startedAt.clear();
-  toasts = [];
-  nextId = 1;
-  listeners.clear();
-}

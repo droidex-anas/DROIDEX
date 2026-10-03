@@ -26,20 +26,8 @@ function delta(
   } as const;
 }
 
-test('EVENT_APPENDED coalesces tool_call deltas sharing one toolUseId into one event', () => {
-  let state = initialState as AppState;
-  state = reducer(state, delta('d1', 'edit-1', { path: 'a.ts', new_string: 'x' }, 1));
-  state = reducer(state, delta('d2', 'edit-1', { path: 'a.ts', new_string: 'xy' }, 2));
-  state = reducer(state, delta('d3', 'edit-1', { path: 'a.ts', new_string: 'xyz' }, 3));
-
-  const events = state.transcripts.m1;
-  assert.equal(events.length, 1);
-  // Stable id is kept from the first delta; latest args + endTs are adopted.
-  assert.equal(events[0].id, 'd1');
-  assert.deepEqual(events[0].toolArgs, { path: 'a.ts', new_string: 'xyz' });
-  assert.equal(events[0].endTs, 3);
-});
-
+// Batch delta merging is owned by src/lib/transcriptIngestion.test.ts; this
+// suite guards merging across separate dispatches and the per-source merge index.
 test('EVENT_APPENDED merges partial delta args instead of dropping earlier fields', () => {
   let state = initialState as AppState;
   // A Task spawn streams its fields across separate deltas; a later payload-less
@@ -56,17 +44,6 @@ test('EVENT_APPENDED merges partial delta args instead of dropping earlier field
     description: 'do the thing',
   });
   assert.equal(events[0].endTs, 3);
-});
-
-test('EVENT_APPENDED keeps tool_calls with distinct toolUseIds separate', () => {
-  let state = initialState as AppState;
-  state = reducer(state, delta('d1', 'edit-1', { path: 'a.ts' }, 1));
-  state = reducer(state, delta('d2', 'edit-2', { path: 'b.ts' }, 2));
-
-  const events = state.transcripts.m1;
-  assert.equal(events.length, 2);
-  assert.equal(events[0].toolUseId, 'edit-1');
-  assert.equal(events[1].toolUseId, 'edit-2');
 });
 
 test('EVENT_APPENDED does not let a cross-session id collision steal the merge target', () => {

@@ -85,28 +85,46 @@ test('a details block without a summary still folds under a label', () => {
   assert.deepEqual(blocks, [{ kind: 'disclosure', summary: 'Details', body: 'hidden' }]);
 });
 
-test('markup shown inside a fence is a code sample, not markup', () => {
-  const body = [
-    'How the marker looks:',
-    '',
-    '~~~html',
-    '<!-- cubic:review-summary:start -->',
-    '<details>',
-    '<summary>Not a real disclosure</summary>',
-    '</details>',
-    '~~~',
-  ].join('\n');
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
-});
-
-test('a longer fence closes only on a run at least as long', () => {
-  const body = ['````md', '```ts', 'const a = 1;', '```', '````'].join('\n');
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
-});
-
-test('blank lines inside a fence survive normalization', () => {
-  const body = ['```ts', 'const a = 1;', '', '', 'const b = 2;', '```'].join('\n');
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
+test('code samples and ordinary markdown pass through untouched', () => {
+  const bodies = {
+    'markup shown inside a fence': [
+      'How the marker looks:',
+      '',
+      '~~~html',
+      '<!-- cubic:review-summary:start -->',
+      '<details>',
+      '<summary>Not a real disclosure</summary>',
+      '</details>',
+      '~~~',
+    ].join('\n'),
+    'a longer fence closing only on a run at least as long': [
+      '````md',
+      '```ts',
+      'const a = 1;',
+      '```',
+      '````',
+    ].join('\n'),
+    'blank lines inside a fence': ['```ts', 'const a = 1;', '', '', 'const b = 2;', '```'].join(
+      '\n',
+    ),
+    'ordinary markdown': 'Please preserve **this decision**.\n\n- First\n- Second',
+    'markup inside inline code spans':
+      'Write `<details>` (or `` `<summary>` ``) to fold a section.',
+    'indented code blocks': [
+      'Example:',
+      '',
+      '    <details>',
+      '    <summary>sample</summary>',
+      '    </details>',
+      '',
+      'Done.',
+    ].join('\n'),
+    'a longer backtick run inside a shorter inline code span':
+      '``code ``` <details><summary>still code</summary>payload</details> `` after',
+  };
+  for (const [name, body] of Object.entries(bodies)) {
+    assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }], name);
+  }
 });
 
 test('a nested disclosure stays inside its parent', () => {
@@ -128,11 +146,6 @@ test('a nested disclosure stays inside its parent', () => {
 test('an unbalanced disclosure tag never reaches the prose', () => {
   const blocks = prCommentBlocks('Notes\n\n<details>\n\nunclosed');
   assert.deepEqual(blocks, [{ kind: 'markdown', text: 'Notes\n\nunclosed' }]);
-});
-
-test('ordinary markdown passes through untouched', () => {
-  const body = 'Please preserve **this decision**.\n\n- First\n- Second';
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
 });
 
 test('a CRLF closing fence closes, so only markup after it is markup', () => {
@@ -160,35 +173,12 @@ test('a CRLF closing fence closes, so only markup after it is markup', () => {
   assert.match(after, /\[the docs\]\(https:\/\/example\.test\/a\)/);
 });
 
-test('markup inside inline code spans is content, not markup', () => {
-  const body = 'Write `<details>` (or `` `<summary>` ``) to fold a section.';
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
-});
-
-test('indented code blocks are content, not markup', () => {
-  const body = [
-    'Example:',
-    '',
-    '    <details>',
-    '    <summary>sample</summary>',
-    '    </details>',
-    '',
-    'Done.',
-  ].join('\n');
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
-});
-
 test('a details tag with nothing in it does not become a disclosure', () => {
   assert.deepEqual(prCommentBlocks('<details></details>'), []);
   assert.deepEqual(prCommentBlocks('<details> \n </details>'), []);
   assert.deepEqual(prCommentBlocks('<details><summary>  </summary></details>tail'), [
     { kind: 'markdown', text: 'tail' },
   ]);
-});
-
-test('a longer backtick run cannot close a shorter inline code span', () => {
-  const body = '``code ``` <details><summary>still code</summary>payload</details> `` after';
-  assert.deepEqual(prCommentBlocks(body), [{ kind: 'markdown', text: body }]);
 });
 
 test('summary markup inside disclosure code stays in the disclosure body', () => {

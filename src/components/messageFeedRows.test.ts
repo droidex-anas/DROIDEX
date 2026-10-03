@@ -30,14 +30,8 @@ function rowProps(overrides: Partial<Parameters<typeof areFeedRowPropsEqual>[0]>
   };
 }
 
-test('a row re-renders when its live final-response flag changes', () => {
+test('a row re-renders only when its own final-response flag changes', () => {
   const previous = rowProps({ isFinalResponse: true });
-  const next = { ...previous, isFinalResponse: false };
-  assert.equal(areFeedRowPropsEqual(previous, next), false);
-});
-
-test('a settled row skips re-render when only sibling live state is unchanged', () => {
-  const previous = rowProps();
-  const unchanged = { ...previous };
-  assert.equal(areFeedRowPropsEqual(previous, unchanged), true);
+  assert.equal(areFeedRowPropsEqual(previous, { ...previous }), true);
+  assert.equal(areFeedRowPropsEqual(previous, { ...previous, isFinalResponse: false }), false);
 });

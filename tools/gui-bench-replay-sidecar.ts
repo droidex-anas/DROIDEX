@@ -5,7 +5,11 @@ import { startBridgeServer } from '../sidecar/src/bridgeServer.ts';
 import { DroidMcpConfiguration } from '../sidecar/src/DroidMcpConfiguration.ts';
 import { loadFactoryMcpServers } from '../sidecar/src/FactoryMcpConfig.ts';
 import { HistoryPersistence } from '../sidecar/src/HistoryPersistence.ts';
-import { buildReplayPlan, resolveScenario, type ReplayTurnPlan } from '../sidecar/src/perf/scenario.ts';
+import {
+  buildReplayPlan,
+  groupTurnsBySession,
+  resolveScenario,
+} from '../sidecar/src/perf/scenario.ts';
 import { ReplayFactoryRuntime, ReplayFactorySession } from '../sidecar/src/perf/replayRuntime.ts';
 import type { FactoryRuntime, RuntimeHandlers } from '../sidecar/src/DroidRuntime.ts';
 import { SessionManager, type SessionManagerDependencies } from '../sidecar/src/SessionManager.ts';
@@ -20,18 +24,7 @@ const SCENARIO = process.env.GUI_BENCH_REPLAY_SCENARIO ?? 'streaming';
 
 const spec = resolveScenario(SCENARIO);
 const plan = buildReplayPlan(spec);
-const turnsBySession = new Map<number, ReplayTurnPlan[]>();
-for (const turn of plan.turns) {
-  const existing = turnsBySession.get(turn.sessionIndex) ?? [];
-  existing.push(turn);
-  turnsBySession.set(turn.sessionIndex, existing);
-}
-for (const [index, turns] of turnsBySession) {
-  turnsBySession.set(
-    index,
-    turns.toSorted((a, b) => a.turn - b.turn),
-  );
-}
+const turnsBySession = groupTurnsBySession(plan);
 
 const hooks = {
   onYield: () => undefined,

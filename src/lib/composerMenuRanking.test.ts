@@ -28,42 +28,29 @@ test('a name prefix outranks a name substring, which outranks a description hit'
     { name: 'zzz', description: 'talks about commit' },
     { name: 'pre-commit-hooks', description: 'unrelated' },
     { name: 'commit-security-scan', description: 'unrelated' },
+    { name: 'deploy', description: 'ship it' },
+    { name: 'com' },
   ];
   assert.deepEqual(names(rankMenuCandidates('commit', skills, identity).items), [
     'commit-security-scan',
     'pre-commit-hooks',
     'zzz',
   ]);
-});
-
-test('candidates that match nothing are dropped', () => {
-  const skills: Skill[] = [{ name: 'review' }, { name: 'deploy', description: 'ship it' }];
-  assert.deepEqual(names(rankMenuCandidates('review', skills, identity).items), ['review']);
-});
-
-test('an empty query keeps every candidate in catalog order', () => {
-  const skills: Skill[] = [{ name: 'visualize' }, { name: 'bug' }, { name: 'model' }];
-  const ranked = rankMenuCandidates('', skills, identity);
-  assert.deepEqual(names(ranked.items), ['visualize', 'bug', 'model']);
-  assert.equal(ranked.bestRank, 3);
-});
-
-test('bestRank lets the caller decide which group leads', () => {
-  const commands: Skill[] = [{ name: 'settings', description: 'review your preferences' }];
-  const skills: Skill[] = [{ name: 'review' }];
-  assert.ok(
-    rankMenuCandidates('review', skills, identity).bestRank <
-      rankMenuCandidates('review', commands, identity).bestRank,
-  );
-});
-
-test('a word boundary in the middle of a name beats an arbitrary substring', () => {
   assert.ok(
     menuMatchRank('review', { name: 'security-review' }) <
       menuMatchRank('review', { name: 'prereviewer' }),
   );
 });
 
-test('a query longer than the name does not match it', () => {
-  assert.equal(menuMatchRank('reviewer', { name: 'review' }), Infinity);
+test('an empty query keeps catalog order and bestRank lets the caller pick the leading group', () => {
+  const catalog: Skill[] = [{ name: 'visualize' }, { name: 'bug' }, { name: 'model' }];
+  const unfiltered = rankMenuCandidates('', catalog, identity);
+  assert.deepEqual(names(unfiltered.items), ['visualize', 'bug', 'model']);
+  assert.equal(unfiltered.bestRank, 3);
+
+  const commands: Skill[] = [{ name: 'settings', description: 'review your preferences' }];
+  assert.ok(
+    rankMenuCandidates('review', [{ name: 'review' }], identity).bestRank <
+      rankMenuCandidates('review', commands, identity).bestRank,
+  );
 });

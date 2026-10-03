@@ -7,32 +7,19 @@ import {
   uniqueWorktreeRepositories,
   worktreeChatStatus,
 } from './worktreeSettings';
+import { sessionSummary } from '../test/sessionSummary';
 
-function session(
+const session = (
   appSessionId: string,
   cwd: string,
   overrides: Partial<Pick<SessionSummary, 'phase' | 'streaming' | 'updatedAt'>> = {},
-): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
+) =>
+  sessionSummary(appSessionId, {
     cwd,
-    autonomy: 'low',
     phase: overrides.phase ?? 'completed',
     streaming: overrides.streaming,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
     updatedAt: overrides.updatedAt ?? 1,
-  };
-}
+  });
 
 function worktree(path: string, isMain = false): GitWorktree {
   return {

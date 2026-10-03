@@ -35,13 +35,14 @@
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "sidecar:typecheck:strict": "npm --prefix sidecar run typecheck:strict",
-    "lint": "eslint . --pass-on-unpruned-suppressions",
+    "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "quality:file-size": "node tools/check-file-size.mjs",
     "quality:bundle-budgets": "node tools/check-bundle-budgets.mjs",
     "quality:perf-gates": "npm --prefix sidecar run perf:replay -- --gates --enforce-gates",
     "quality:tech-debt": "node tools/check-tech-debt.mjs",
-    "quality:deadcode": "knip --include files,exports,types --max-issues 35 --no-config-hints && knip --directory sidecar --include files,exports,types --max-issues 25 --no-config-hints",
+    "quality:test-edits": "node tools/check-test-edits.mjs",
+    "quality:deadcode": "knip --include files,exports,types --max-issues 0 --no-config-hints && knip --directory sidecar --include files,exports,types --max-issues 0 --no-config-hints",
     "quality:deps": "knip --dependencies --no-config-hints && knip --directory sidecar --dependencies --no-config-hints",
     "quality:duplicates": "jscpd --config .jscpd.json",
     "quality:boundaries": "depcruise --config .dependency-cruiser.cjs src sidecar/src electron",
@@ -135,7 +136,7 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,cjs,mjs}": [
-      "eslint --fix --pass-on-unpruned-suppressions"
+      "eslint --fix"
     ],
     "*.{ts,tsx,js,cjs,mjs,json,css,md,html,yml,yaml}": [
       "prettier --write"

@@ -2,12 +2,10 @@ import { motion } from 'framer-motion';
 import { AlertTriangle } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { wrapTabFocus } from '../lib/focusTrap';
 import { createPortal } from 'react-dom';
 import { worktreeName } from '../lib/git';
 import type { GitWorktree } from '../types/vcs';
-
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface WorktreeRemovalDialogProps {
   worktree: GitWorktree;
@@ -106,24 +104,7 @@ export function WorktreeRemovalDialogContent({
   }, [isRemoving, onCancel]);
 
   const trapTab = (event: ReactKeyboardEvent) => {
-    if (event.key !== 'Tab') return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      (active === last || active === dialog || !dialog.contains(active))
-    ) {
-      event.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(event, dialogRef.current);
   };
 
   return (

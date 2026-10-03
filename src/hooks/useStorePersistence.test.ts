@@ -9,6 +9,7 @@ import {
   compactionSettingsSnapshot,
   loadCompactionTokenLimitPerModel,
 } from '../lib/compactionSettings';
+import { withLocalStorageMap } from '../test/localStorage';
 
 test('a commit saves only the persisted fields it changed', () => {
   const storage = new Map<string, string>();
@@ -115,32 +116,25 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
   );
 });
 
-test('loadPersistedUiState accepts only the pull-requests main view and a string cwd', () => {
-  withLocalStorage(JSON.stringify({ mainView: 'nope', prWorkspaceCwd: 12 }), () => {
-    const loaded = loadPersistedUiState();
-    assert.equal(loaded.mainView, undefined);
-    assert.equal(loaded.prWorkspaceCwd, undefined);
-  });
-});
-
-test('loadPersistedUiState accepts only a positive integer pull request number', () => {
-  withLocalStorage(JSON.stringify({ prWorkspaceCwd: '/repo', prWorkspaceNumber: 0 }), () => {
-    assert.equal(loadPersistedUiState().prWorkspaceNumber, undefined);
-  });
-  withLocalStorage(JSON.stringify({ prWorkspaceCwd: '/repo', prWorkspaceNumber: 1.5 }), () => {
-    assert.equal(loadPersistedUiState().prWorkspaceNumber, undefined);
-  });
-  withLocalStorage(JSON.stringify({ prWorkspaceCwd: '/repo', prWorkspaceNumber: '3' }), () => {
-    assert.equal(loadPersistedUiState().prWorkspaceNumber, undefined);
-  });
-  // Without the repository it was selected in, a restored number would point at
-  // whichever pull request happens to share it in the fallback repository.
-  withLocalStorage(JSON.stringify({ prWorkspaceNumber: 3 }), () => {
-    assert.equal(loadPersistedUiState().prWorkspaceNumber, undefined);
-  });
-});
-
-test('loadPersistedUiState keeps unique pull request backlog ids', () => {
+test('loadPersistedUiState drops invalid pull request workspace fields', () => {
+  // [stored state, field, restored value]
+  const cases: Array<
+    [Record<string, unknown>, 'mainView' | 'prWorkspaceCwd' | 'prWorkspaceNumber', unknown]
+  > = [
+    [{ mainView: 'nope' }, 'mainView', undefined],
+    [{ prWorkspaceCwd: 12 }, 'prWorkspaceCwd', undefined],
+    [{ prWorkspaceCwd: '/repo', prWorkspaceNumber: 0 }, 'prWorkspaceNumber', undefined],
+    [{ prWorkspaceCwd: '/repo', prWorkspaceNumber: 1.5 }, 'prWorkspaceNumber', undefined],
+    [{ prWorkspaceCwd: '/repo', prWorkspaceNumber: '3' }, 'prWorkspaceNumber', undefined],
+    // Without the repository it was selected in, a restored number would point at
+    // whichever pull request happens to share it in the fallback repository.
+    [{ prWorkspaceNumber: 3 }, 'prWorkspaceNumber', undefined],
+  ];
+  for (const [stored, field, restored] of cases) {
+    withLocalStorage(JSON.stringify(stored), () => {
+      assert.equal(loadPersistedUiState()[field], restored, JSON.stringify(stored));
+    });
+  }
   withLocalStorage(
     JSON.stringify({ prWorkspaceCwd: '/repo', prBacklogIds: [' acme/app#1 ', 'acme/app#1', 4] }),
     () => {
@@ -149,49 +143,25 @@ test('loadPersistedUiState keeps unique pull request backlog ids', () => {
   );
 });
 
-test('factory defaults do not restore a cleared per-model compaction override', () => {
-  withLocalStorageMap(
-    {
-      'droid-compaction-token-limit-per-model': '{}',
-      'droid-compaction-token-limit-per-model-configured': '1',
-    },
-    () => {
-      assert.deepEqual(
-        applyFactoryCompactionDefaults(
-          { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} },
-          { compactionTokenLimitPerModel: { 'model-a': 100_000 } },
-        ),
-        { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} },
-      );
-    },
-  );
-});
-
-test('factory defaults do not restore a cleared global compaction token limit', () => {
-  withLocalStorageMap({ 'droid-compaction-token-limit-configured': '1' }, () => {
-    assert.deepEqual(
-      applyFactoryCompactionDefaults(
-        { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} },
-        { compactionTokenLimit: 100_000 },
-      ),
-      { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} },
-    );
-  });
-});
-
-test('factory defaults seed compaction token limits before local settings exist', () => {
-  const storage = new Map<string, string>();
-  withLocalStorageMap(storage, () => {
-    assert.deepEqual(
-      applyFactoryCompactionDefaults(
-        { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} },
-        { compactionTokenLimit: 200_000, compactionTokenLimitPerModel: { 'model-a': 100_000 } },
-      ),
-      { compactionTokenLimit: 200_000, compactionTokenLimitPerModel: { 'model-a': 100_000 } },
-    );
-    assert.equal(storage.get('droid-compaction-token-limit'), '200000');
-    assert.equal(storage.get('droid-compaction-token-limit-per-model'), '{"model-a":100000}');
-  });
+test('factory defaults do not restore a cleared global or per-model compaction limit', () => {
+  const cleared = { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} };
+  const cases: Array<
+    [Record<string, string>, Parameters<typeof applyFactoryCompactionDefaults>[1]]
+  > = [
+    [
+      {
+        'droid-compaction-token-limit-per-model': '{}',
+        'droid-compaction-token-limit-per-model-configured': '1',
+      },
+      { compactionTokenLimitPerModel: { 'model-a': 100_000 } },
+    ],
+    [{ 'droid-compaction-token-limit-configured': '1' }, { compactionTokenLimit: 100_000 }],
+  ];
+  for (const [storage, defaults] of cases) {
+    withLocalStorageMap(storage, () => {
+      assert.deepEqual(applyFactoryCompactionDefaults(cleared, defaults), cleared);
+    });
+  }
 });
 
 test('compaction settings snapshots distinguish cold startup from explicit clears', () => {
@@ -245,7 +215,7 @@ test('pre-marker per-model limits survive the first defaults event after upgrade
   });
 });
 
-test('a seeded CLI default never turns into an explicit UI override', () => {
+test('factory defaults seed empty settings but never turn into an explicit UI override', () => {
   // The Factory-defaults seed writes the value keys for display, but without
   // the user-configured markers the snapshot must stay empty: the sidecar
   // keeps following the session's own limit and the CLI file instead of a
@@ -256,7 +226,12 @@ test('a seeded CLI default never turns into an explicit UI override', () => {
       { compactionTokenLimit: undefined, compactionTokenLimitPerModel: {} },
       { compactionTokenLimit: 200_000, compactionTokenLimitPerModel: { 'model-a': 100_000 } },
     );
+    assert.deepEqual(seeded, {
+      compactionTokenLimit: 200_000,
+      compactionTokenLimitPerModel: { 'model-a': 100_000 },
+    });
     assert.equal(storage.get('droid-compaction-token-limit'), '200000');
+    assert.equal(storage.get('droid-compaction-token-limit-per-model'), '{"model-a":100000}');
     assert.deepEqual(compactionSettingsSnapshot(seeded), {});
     // A later CLI-file change keeps flowing through instead of the first seed.
     assert.deepEqual(applyFactoryCompactionDefaults(seeded, { compactionTokenLimit: 300_000 }), {
@@ -273,38 +248,4 @@ test('a seeded CLI default never turns into an explicit UI override', () => {
 
 function withLocalStorage(value: string, fn: () => void): void {
   withLocalStorageMap({ 'droid-ui-state-v2': value }, fn);
-}
-
-function withLocalStorageMap(
-  seed: Record<string, string> | Map<string, string>,
-  fn: () => void,
-): void {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const values = seed instanceof Map ? seed : new Map(Object.entries(seed));
-  const mock: Storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, next) => {
-      values.set(key, next);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: mock,
-  });
-  try {
-    fn();
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
 }

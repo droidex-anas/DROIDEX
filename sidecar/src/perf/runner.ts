@@ -14,7 +14,7 @@ import { BrowserSessionManager } from '../browser/BrowserSessionManager.js';
 import { startBridgeServer } from '../bridgeServer.js';
 import { hotPathMetrics, type HotPathMetricsSnapshot } from '../telemetry/hotPathMetrics.js';
 import { ReservoirHistogram } from '../telemetry/histogram.js';
-import { buildReplayPlan, type PerfScenarioSpec, type ReplayTurnPlan } from './scenario.js';
+import { buildReplayPlan, groupTurnsBySession, type PerfScenarioSpec } from './scenario.js';
 import { ReplayFactoryRuntime, type ReplayYieldReport } from './replayRuntime.js';
 import { evaluateBudgets } from './budgets.js';
 import { evaluateReplayGates } from './gates.js';
@@ -63,21 +63,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
   const turnFirstYields = new Map<string, number>();
   const appended: AppendedSample[] = [];
   const settledTurns = new Set<string>();
-  const turnsBySession = new Map<number, ReplayTurnPlan[]>();
-  for (const turn of plan.turns) {
-    const existing = turnsBySession.get(turn.sessionIndex) ?? [];
-    existing.push(turn);
-    turnsBySession.set(turn.sessionIndex, existing);
-  }
-  // The global plan orders turns across sessions for schedule fidelity, but
-  // the replay runtime selects a session's plan by prompt count, so each
-  // session's list must be in strict turn order before consumption.
-  for (const [index, turns] of turnsBySession) {
-    turnsBySession.set(
-      index,
-      turns.toSorted((a, b) => a.turn - b.turn),
-    );
-  }
+  const turnsBySession = groupTurnsBySession(plan);
 
   let manager: SessionManager | null = null;
   const server = startBridgeServer({

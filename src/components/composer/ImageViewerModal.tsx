@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Check, Crop, X } from 'lucide-react';
@@ -8,10 +9,6 @@ import type { AttachedImage } from '../../hooks/useImageAttachments';
 import { displayedToNaturalRect, isFullImageRect, type CropRect } from '../../lib/images';
 import { toast } from '../../lib/toast';
 import { CropOverlay } from './CropOverlay';
-
-// Same focusable-element query the environment Popover uses for its Tab trap.
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * In-app viewer for an attached image: click a chip to inspect it full-size,
@@ -68,22 +65,7 @@ function ImageViewerModalContent({
   // the container itself (clicked non-focusable backdrop content focuses the
   // nearest tabindex ancestor) wraps to the edges instead of escaping.
   const trapTab = (e: ReactKeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    const onDialog = active === dialog;
-    if (e.shiftKey && (active === first || onDialog || !dialog.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (active === last || onDialog || !dialog.contains(active))) {
-      e.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(e, dialogRef.current);
   };
 
   useEffect(() => {

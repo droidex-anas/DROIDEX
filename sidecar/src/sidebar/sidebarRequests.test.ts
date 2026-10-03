@@ -22,7 +22,7 @@ const row: SidebarRow = {
   permission: { title: 'Run command', detail: 'pnpm test' },
 };
 
-test('the first answer wins and later answers for the same request are ignored', async () => {
+test('the first readable answer wins; an answer this build cannot read rejects the request', async () => {
   const { sidebar, requests } = harness();
   const rows = sidebar.rows(['chat-a']);
   const [request] = requests;
@@ -33,6 +33,14 @@ test('the first answer wins and later answers for the same request are ignored',
   sidebar.answer({ requestId: request.requestId, kind: 'rows', rows: [] });
 
   assert.deepEqual(await rows, [row]);
+
+  const invalid = sidebar.rows();
+  const wrongKind = sidebar.rows();
+  const [, second, third] = requests;
+  sidebar.answer({ requestId: second.requestId, kind: 'rows', rows: [{ ...row, status: 'busy' }] });
+  sidebar.answer({ requestId: third.requestId, kind: 'mark', outcomes: [] });
+  await assert.rejects(invalid, /cannot read/);
+  await assert.rejects(wrongKind, /cannot read/);
 });
 
 test('a silent window fails the request at the timeout, and its late answer is ignored', async (t) => {
@@ -54,19 +62,6 @@ test('a silent window fails the request at the timeout, and its late answer is i
       outcomes: [{ appSessionId: 'chat-a', done: true }],
     });
   });
-});
-
-test('an answer this build cannot read rejects the request instead of being trusted', async () => {
-  const { sidebar, requests } = harness();
-  const invalid = sidebar.rows();
-  const wrongKind = sidebar.rows();
-  const [first, second] = requests;
-
-  sidebar.answer({ requestId: first.requestId, kind: 'rows', rows: [{ ...row, status: 'busy' }] });
-  sidebar.answer({ requestId: second.requestId, kind: 'mark', outcomes: [] });
-
-  await assert.rejects(invalid, /cannot read/);
-  await assert.rejects(wrongKind, /cannot read/);
 });
 
 test('waiting requests are bounded, and close rejects them and every later one', async (t) => {

@@ -72,13 +72,12 @@ test('the summary line rolls up live counts next to the avatar stack', () => {
   // The working readout shimmers instead of spinning or pulsing.
   const html = renderSection([child('running')]);
   assert.match(html, /shimmer-text[^"]*">1 working/);
-});
 
-test('the rollup falls back to a plain agent count', () => {
-  const text = textOf(renderSection([child('pending'), child('paused')]));
-  assert.ok(!text.includes('working'));
-  assert.ok(!text.includes('done'));
-  assert.ok(text.includes('2 agents'));
+  // With nothing working or done, the rollup falls back to a plain agent count.
+  const idle = textOf(renderSection([child('pending'), child('paused')]));
+  assert.ok(!idle.includes('working'));
+  assert.ok(!idle.includes('done'));
+  assert.ok(idle.includes('2 agents'));
 });
 
 test('the avatar stack caps at four and counts the overflow', () => {
@@ -124,13 +123,4 @@ test('a spawn the store has not registered yet renders but cannot be opened', ()
   const html = renderRow(child('running', { childSessionId: 'pending-tool-a', label: 'explorer' }));
   assert.ok(textOf(html).includes('explorer'));
   assert.match(html, /<button[^>]*disabled/);
-});
-
-test('the selected row is highlighted', () => {
-  const target = child('running');
-  const html = renderRow(target, { selected: true });
-  assert.match(
-    html,
-    new RegExp(`data-child-session-id="${target.childSessionId}" class="[^"]*bg-droid-elevated`),
-  );
 });

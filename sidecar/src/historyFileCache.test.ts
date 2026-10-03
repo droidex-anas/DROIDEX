@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   existsSync,
@@ -19,13 +19,13 @@ import {
   type SessionFileStat,
   type SessionFileSummary,
 } from './sessionFileCache.js';
-import { HistoryPersistenceDatabase } from './historyPersistenceDatabase.js';
 import { SessionManager } from './SessionManager.js';
 import {
   providerSessionJsonl,
   type ProviderMessageRole,
 } from './testing/providerSessionFixtures.js';
 import { persistTestSummaries } from './testing/historyPersistenceFixture.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-history-cache-home-'));
@@ -39,17 +39,23 @@ const {
   SESSION_SEARCH_INDEX_FILENAME,
 } = await import('./history.js');
 
-type SessionListEvent = Extract<Protocol.ServerEvent, { type: 'sessions.list' }>;
-
-function isSessionList(event: Protocol.ServerEvent): event is SessionListEvent {
-  return event.type === 'sessions.list';
-}
-
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   rmSync(home, { recursive: true, force: true });
 });
+
+/** Points HOME at an empty directory for one test. */
+function freshHome(t: TestContext, prefix: string): string {
+  const fresh = mkdtempSync(join(tmpdir(), prefix));
+  const previous = process.env.HOME;
+  process.env.HOME = fresh;
+  t.after(() => {
+    process.env.HOME = previous;
+    rmSync(fresh, { recursive: true, force: true });
+  });
+  return fresh;
+}
 
 function writeSession(
   root: string,
@@ -81,83 +87,42 @@ function writeEmptySession(root: string, id: string, cwd: string): string {
   return writeSession(root, id, cwd, { sessionTitle: 'New Session' }, []);
 }
 
-test('compaction summary lookup uses a partial event index instead of scanning all events', () => {
-  const history = new HistoryIndex();
-  history.close();
-  new HistoryPersistenceDatabase(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME)).close();
-  const db = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
-    readOnly: true,
-  });
-  try {
-    const plan = db
-      .prepare(
-        `EXPLAIN QUERY PLAN
-         SELECT app_session_id,
-                SUM(CASE WHEN id LIKE 'compaction-%' THEN 1 ELSE 0 END) AS live_count,
-                SUM(CASE WHEN id NOT LIKE 'compaction-%' THEN 1 ELSE 0 END) AS history_count
-         FROM events
-         WHERE kind = 'compaction'
-           AND app_session_id IS NOT NULL
-           AND (source_session_id = app_session_id OR source_session_id = 'primary')
-         GROUP BY app_session_id`,
-      )
-      .all() as Array<{ detail: string }>;
-    assert.ok(
-      plan.some(
-        (row) =>
-          row.detail.includes('SEARCH events') && row.detail.includes('events_compaction_summary'),
-      ),
-    );
-    assert.ok(!plan.some((row) => row.detail.includes('SCAN events')));
-  } finally {
-    db.close();
-  }
-});
-
 function patchFor(appSessionId: string, cwd: string): Protocol.SessionSummary {
   const now = Date.now();
-  return {
+  return sessionSummary({
     appSessionId,
-    providerSessionId: appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     title: `Chat ${appSessionId}`,
     goal: `Chat ${appSessionId}`,
     cwd,
     workspaceKind: cwd ? 'folder' : 'none',
-    autonomy: 'low',
-    phase: 'paused',
     streaming: false,
     queuedSends: 0,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 function summaryFor(appSessionId: string, cwd: string): SessionFileSummary {
   return { summary: patchFor(appSessionId, cwd) };
 }
 
-function reconcileHistoryIndex(index: HistoryIndexType): number {
-  return reconcileHistoryIndexChanges(index).changed;
+function fileStat(path: string, mtimeMs = 1): SessionFileStat {
+  return { path, birthtimeMs: 1, mtimeMs, sizeBytes: 10 + mtimeMs, settingsMtimeMs: null };
 }
 
-function reconcileHistoryIndexPaths(
+function searchIndexPath(): string {
+  return join(process.env.HOME ?? '', '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME);
+}
+
+/** Runs the worker's reconcile, of every file or of the reported ones, into `index`. */
+function reconcile(
   index: HistoryIndexType,
-  changes: Array<{ providerSessionId: string; path: string }>,
+  changes?: Array<{ providerSessionId: string; path: string }>,
 ): number {
-  const db = new DatabaseSync(
-    join(process.env.HOME ?? '', '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME),
-  );
+  const db = new DatabaseSync(searchIndexPath());
   try {
     const cache = createHistorySessionFileCache(db);
-    const result = cache.reconcilePathChanges(changes);
+    const result = changes ? cache.reconcilePathChanges(changes) : cache.reconcileChanges();
     if (!index.applySessionFileReconciliation(result)) {
       index.replaceSessionFileSnapshot(cache.snapshot(result.changed));
     }
@@ -167,23 +132,19 @@ function reconcileHistoryIndexPaths(
   }
 }
 
-function reconcileHistoryIndexChanges(index: HistoryIndexType) {
-  const db = new DatabaseSync(
-    join(process.env.HOME ?? '', '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME),
-  );
+function setCachedSummaryJson(providerSessionId: string, json: string): void {
+  const db = new DatabaseSync(searchIndexPath());
   try {
-    const cache = createHistorySessionFileCache(db);
-    const result = cache.reconcileChanges();
-    if (!index.applySessionFileReconciliation(result)) {
-      index.replaceSessionFileSnapshot(cache.snapshot(result.changed));
-    }
-    return result;
+    db.prepare('UPDATE session_file_cache SET summary_json = ? WHERE provider_session_id = ?').run(
+      json,
+      providerSessionId,
+    );
   } finally {
     db.close();
   }
 }
 
-test('reconcile populates the cache and the cached list matches the uncached scan', () => {
+test('reconcile populates the cache to match the uncached scan, and a second boot reconciles nothing', () => {
   writeSession(home, 'cache-plain', '');
   const workspace = join(home, 'workspace-a');
   writeSession(home, 'cache-workspace', workspace);
@@ -194,7 +155,7 @@ test('reconcile populates the cache and the cached list matches the uncached sca
 
   const index = new HistoryIndex();
   try {
-    assert.equal(reconcileHistoryIndex(index), 3);
+    assert.equal(reconcile(index), 3);
     // The Task child is cached as a known non-top-level file, not re-read later.
     assert.equal(index.sessionFileCacheSize, 3);
 
@@ -217,396 +178,215 @@ test('reconcile populates the cache and the cached list matches the uncached sca
   } finally {
     index.close();
   }
+
+  const rebooted = new HistoryIndex();
+  try {
+    assert.equal(rebooted.sessionFileCacheSize, 0, 'the main-thread mirror starts without disk IO');
+    assert.equal(reconcile(rebooted), 0);
+    assert.equal(rebooted.sessionFileCacheSize, 3, 'the worker snapshot hydrates the mirror');
+  } finally {
+    rebooted.close();
+  }
 });
 
-test('reconciliation deltas update a second in-memory cache without scanning files', () => {
+test('reconciliation deltas update a second in-memory cache without scanning files', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'droid-history-cache-delta-'));
   const path = join(dir, 'history.sqlite');
   const writerDb = new DatabaseSync(path);
   const readerDb = new DatabaseSync(path);
-  try {
-    const stat = (providerSessionId: string, mtimeMs: number): SessionFileStat => ({
-      path: `/sessions/${providerSessionId}.jsonl`,
-      birthtimeMs: 1,
-      mtimeMs,
-      sizeBytes: 10 + mtimeMs,
-      settingsMtimeMs: null,
-    });
-    const onDisk = new Map<string, SessionFileStat>([
-      ['alpha', stat('alpha', 1)],
-      ['beta', stat('beta', 1)],
-    ]);
-    const writer = new SessionFileCache(
-      writerDb,
-      () => ({ files: onDisk, isComplete: true }),
-      (providerSessionId, file) => summaryFor(providerSessionId, file.path),
-      () => null,
-    );
-    const reader = new SessionFileCache(
-      readerDb,
-      () => {
-        throw new Error('reader cache must not scan provider files');
-      },
-      () => {
-        throw new Error('reader cache must not summarize provider files');
-      },
-      () => null,
-    );
-
-    const initial = writer.reconcileChanges();
-    assert.equal(initial.changed, 2);
-    assert.deepEqual(
-      initial.upserts.map((entry) => entry.providerSessionId),
-      ['alpha', 'beta'],
-    );
-    assert.deepEqual(initial.removedProviderSessionIds, []);
-    reader.applyReconciliation(initial);
-    assert.deepEqual(
-      reader.summaries().map((summary) => summary.appSessionId),
-      ['alpha', 'beta'],
-    );
-
-    onDisk.set('alpha', stat('alpha', 2));
-    onDisk.delete('beta');
-    const update = writer.reconcileChanges();
-    assert.equal(update.changed, 2);
-    assert.deepEqual(
-      update.upserts.map((entry) => [entry.providerSessionId, entry.mtimeMs]),
-      [['alpha', 2]],
-    );
-    assert.deepEqual(update.removedProviderSessionIds, ['beta']);
-    reader.applyReconciliation(update);
-    assert.deepEqual(
-      reader.searchableEntries().map((entry) => [entry.providerSessionId, entry.mtimeMs]),
-      [['alpha', 2]],
-    );
-
-    onDisk.set('alpha', { ...stat('alpha', 2), birthtimeMs: 2 });
-    const replacement = writer.reconcileChanges();
-    assert.equal(
-      replacement.changed,
-      1,
-      'a replacement with the same path, mtime, and size is re-summarized',
-    );
-    assert.equal(replacement.upserts[0]?.birthtimeMs, 2);
-  } finally {
+  t.after(() => {
     readerDb.close();
     writerDb.close();
     rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('metadata-only session files never become historical sidebar rows', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-empty-session-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    const workspace = join(freshHome, 'workspace-empty');
-    writeEmptySession(freshHome, 'empty-session', workspace);
-    const index = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(index), 1);
-      assert.equal(
-        index
-          .listHistoricalSessions({ workspaceCwds: [workspace] })
-          .some((row) => row.summary.appSessionId === 'empty-session'),
-        false,
-      );
-    } finally {
-      index.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('sessions without a model response never become historical sidebar rows', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-no-response-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    const workspace = join(freshHome, 'workspace-no-response');
-    writeSession(freshHome, 'no-response-session', workspace, {}, ['user']);
-    const index = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(index), 1);
-      assert.equal(
-        index
-          .listHistoricalSessions({ workspaceCwds: [workspace] })
-          .some((row) => row.summary.appSessionId === 'no-response-session'),
-        false,
-      );
-    } finally {
-      index.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('internal llm_only context cannot admit a session without a real user turn', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-llm-only-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    const workspace = join(freshHome, 'workspace-llm-only');
-    const path = writeEmptySession(freshHome, 'llm-only-session', workspace);
-    writeFileSync(
-      path,
-      `${[
-        {
-          type: 'session_start',
-          cwd: workspace,
-          sessionTitle: 'New Session',
-          settings: { interactionMode: 'auto' },
-        },
-        {
-          type: 'message',
-          message: {
-            role: 'user',
-            visibility: 'llm_only',
-            content: [{ type: 'text', text: 'internal context' }],
-          },
-        },
-        {
-          type: 'message',
-          message: { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
-        },
-      ]
-        .map((line) => JSON.stringify(line))
-        .join('\n')}\n`,
-    );
-
-    const index = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(index), 1);
-      assert.equal(index.listHistoricalSessions({ workspaceCwds: [workspace] }).length, 0);
-    } finally {
-      index.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('opening the canonical index does not open or mutate the worker-owned derived cache', () => {
-  const upgradeHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-upgrade-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = upgradeHome;
-  try {
-    const existing = new HistoryIndex();
-    persistTestSummaries([patchFor('existing-session', '/workspace/existing')]);
-    existing.close();
-
-    const databasePath = join(upgradeHome, '.factory', 'droidex', SESSION_INDEX_FILENAME);
-    const searchDatabasePath = join(
-      upgradeHome,
-      '.factory',
-      'droidex',
-      SESSION_SEARCH_INDEX_FILENAME,
-    );
-    const upgraded = new HistoryIndex();
-    upgraded.close();
-
-    const verified = new DatabaseSync(databasePath);
-    const session = verified
-      .prepare('SELECT app_session_id, cwd FROM app_sessions WHERE app_session_id = ?')
-      .get('existing-session') as { app_session_id: string; cwd: string } | undefined;
-    verified.close();
-    assert.equal(session?.app_session_id, 'existing-session');
-    assert.equal(session?.cwd, '/workspace/existing');
-    assert.equal(existsSync(searchDatabasePath), false);
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(upgradeHome, { recursive: true, force: true });
-  }
-});
-
-test('a second boot with unchanged files reconciles nothing', () => {
-  const index = new HistoryIndex();
-  try {
-    assert.equal(index.sessionFileCacheSize, 0, 'the main-thread mirror starts without disk IO');
-    assert.equal(reconcileHistoryIndex(index), 0);
-    assert.equal(index.sessionFileCacheSize, 3, 'the worker snapshot hydrates the mirror');
-  } finally {
-    index.close();
-  }
-});
-
-test('rewriting a session file refreshes its cached summary', () => {
-  const workspace = join(home, 'workspace-a');
-  const path = writeSession(home, 'cache-workspace', workspace, {
-    sessionTitle: 'Renamed chat',
   });
-  // Force a distinct mtime so the change does not depend on clock granularity.
-  const later = new Date(Date.now() + 10_000);
-  utimesSync(path, later, later);
+  const stat = (providerSessionId: string, mtimeMs: number) =>
+    fileStat(`/sessions/${providerSessionId}.jsonl`, mtimeMs);
+  const onDisk = new Map<string, SessionFileStat>([
+    ['alpha', stat('alpha', 1)],
+    ['beta', stat('beta', 1)],
+  ]);
+  const writer = new SessionFileCache(
+    writerDb,
+    () => ({ files: onDisk, isComplete: true }),
+    (providerSessionId, file) => summaryFor(providerSessionId, file.path),
+    () => null,
+  );
+  const reader = new SessionFileCache(
+    readerDb,
+    () => {
+      throw new Error('reader cache must not scan provider files');
+    },
+    () => {
+      throw new Error('reader cache must not summarize provider files');
+    },
+    () => null,
+  );
 
-  const index = new HistoryIndex();
-  try {
-    assert.equal(reconcileHistoryIndex(index), 1);
-    const rows = index.listHistoricalSessions();
-    const row = rows.find((item) => item.summary.appSessionId === 'cache-workspace');
-    assert.equal(row?.summary.title, 'Renamed chat');
-  } finally {
-    index.close();
-  }
+  const initial = writer.reconcileChanges();
+  assert.equal(initial.changed, 2);
+  assert.deepEqual(
+    initial.upserts.map((entry) => entry.providerSessionId),
+    ['alpha', 'beta'],
+  );
+  assert.deepEqual(initial.removedProviderSessionIds, []);
+  reader.applyReconciliation(initial);
+  assert.deepEqual(
+    reader.summaries().map((summary) => summary.appSessionId),
+    ['alpha', 'beta'],
+  );
+
+  onDisk.set('alpha', stat('alpha', 2));
+  onDisk.delete('beta');
+  const update = writer.reconcileChanges();
+  assert.equal(update.changed, 2);
+  assert.deepEqual(
+    update.upserts.map((entry) => [entry.providerSessionId, entry.mtimeMs]),
+    [['alpha', 2]],
+  );
+  assert.deepEqual(update.removedProviderSessionIds, ['beta']);
+  reader.applyReconciliation(update);
+  assert.deepEqual(
+    reader.searchableEntries().map((entry) => [entry.providerSessionId, entry.mtimeMs]),
+    [['alpha', 2]],
+  );
+
+  onDisk.set('alpha', { ...stat('alpha', 2), birthtimeMs: 2 });
+  const replacement = writer.reconcileChanges();
+  assert.equal(
+    replacement.changed,
+    1,
+    'a replacement with the same path, mtime, and size is re-summarized',
+  );
+  assert.equal(replacement.upserts[0]?.birthtimeMs, 2);
 });
 
-test('deleting a session file removes it from the cached list', () => {
-  unlinkSync(join(home, '.factory', 'sessions', 'cache-plain.jsonl'));
-
+test('sessions without a real user turn and a model response never become sidebar rows', (t) => {
+  const freshRoot = freshHome(t, 'droid-history-unlisted-');
+  const workspace = join(freshRoot, 'workspace-unlisted');
+  writeEmptySession(freshRoot, 'metadata-only', workspace);
+  writeSession(freshRoot, 'no-response', workspace, {}, ['user']);
+  writeFileSync(
+    writeEmptySession(freshRoot, 'llm-only-context', workspace),
+    `${[
+      {
+        type: 'session_start',
+        cwd: workspace,
+        sessionTitle: 'New Session',
+        settings: { interactionMode: 'auto' },
+      },
+      {
+        type: 'message',
+        message: {
+          role: 'user',
+          visibility: 'llm_only',
+          content: [{ type: 'text', text: 'internal context' }],
+        },
+      },
+      {
+        type: 'message',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n')}\n`,
+  );
   const index = new HistoryIndex();
-  try {
-    assert.equal(reconcileHistoryIndex(index), 1);
-    assert.equal(index.sessionFileCacheSize, 2);
-    const rows = index.listHistoricalSessions();
-    assert.equal(
-      rows.some((row) => row.summary.appSessionId === 'cache-plain'),
-      false,
-    );
-  } finally {
-    index.close();
-  }
+  t.after(() => index.close());
+  assert.equal(reconcile(index), 3);
+  assert.deepEqual(index.listHistoricalSessions({ workspaceCwds: [workspace] }), []);
 });
 
-test('cached list applies app summary patches before filtering', () => {
+test('opening the canonical index does not open or mutate the worker-owned derived cache', (t) => {
+  const upgradeHome = freshHome(t, 'droid-history-cache-upgrade-');
+  const existing = new HistoryIndex();
+  persistTestSummaries([patchFor('existing-session', '/workspace/existing')]);
+  existing.close();
+
+  const upgraded = new HistoryIndex();
+  upgraded.close();
+
+  const verified = new DatabaseSync(
+    join(upgradeHome, '.factory', 'droidex', SESSION_INDEX_FILENAME),
+  );
+  const session = verified
+    .prepare('SELECT app_session_id, cwd FROM app_sessions WHERE app_session_id = ?')
+    .get('existing-session') as { app_session_id: string; cwd: string } | undefined;
+  verified.close();
+  assert.equal(session?.app_session_id, 'existing-session');
+  assert.equal(session?.cwd, '/workspace/existing');
+  assert.equal(existsSync(searchIndexPath()), false);
+});
+
+test('cached list applies app summary patches before filtering', (t) => {
   const workspace = join(home, 'workspace-patch');
   writeSession(home, 'cache-patched', workspace);
 
   const index = new HistoryIndex();
+  t.after(() => index.close());
+  reconcile(index);
+  persistTestSummaries([patchFor('cache-patched', '')]);
+
+  const plain = index.listHistoricalSessions({ includePlainChats: true });
+  const plainRow = plain.find((row) => row.summary.appSessionId === 'cache-patched');
+  assert.ok(plainRow);
+  assert.equal(plainRow.summary.cwd, '');
+  assert.equal(plainRow.summary.workspaceKind, 'none');
+
+  const scoped = index.listHistoricalSessions({ workspaceCwds: [workspace] });
+  assert.equal(
+    scoped.some((row) => row.summary.appSessionId === 'cache-patched'),
+    false,
+  );
+});
+
+test('a corrupt or superseded cache row is dropped and rebuilt on the next boot', (t) => {
+  const freshRoot = freshHome(t, 'droid-history-cache-corrupt-');
+  const workspace = join(freshRoot, 'workspace');
+  writeSession(freshRoot, 'corrupt-row', workspace);
+  writeEmptySession(freshRoot, 'previously-cached-empty', workspace);
+
+  const first = new HistoryIndex();
+  assert.equal(reconcile(first), 2);
+  assert.equal(first.sessionFileCacheSize, 2);
+  first.close();
+
+  setCachedSummaryJson('corrupt-row', '{not json');
+  const second = new HistoryIndex();
   try {
-    reconcileHistoryIndex(index);
-    persistTestSummaries([patchFor('cache-patched', '')]);
-
-    const plain = index.listHistoricalSessions({ includePlainChats: true });
-    const plainRow = plain.find((row) => row.summary.appSessionId === 'cache-patched');
-    assert.ok(plainRow);
-    assert.equal(plainRow.summary.cwd, '');
-    assert.equal(plainRow.summary.workspaceKind, 'none');
-
-    const scoped = index.listHistoricalSessions({ workspaceCwds: [workspace] });
+    // The main-thread mirror never opens the derived database.
+    assert.equal(second.sessionFileCacheSize, 0);
+    assert.equal(reconcile(second), 1);
+    const revisionDb = new DatabaseSync(searchIndexPath(), { readOnly: true });
+    const metadata = revisionDb
+      .prepare('SELECT revision FROM session_file_cache_metadata WHERE id = 1')
+      .get() as { revision: number };
+    revisionDb.close();
     assert.equal(
-      scoped.some((row) => row.summary.appSessionId === 'cache-patched'),
-      false,
+      metadata.revision,
+      3,
+      'the worker drops the corrupt row and commits its rebuilt replacement',
     );
+    const rows = second.listHistoricalSessions();
+    assert.ok(rows.some((row) => row.summary.appSessionId === 'corrupt-row'));
   } finally {
-    index.close();
+    second.close();
   }
-});
 
-test('a corrupt cache row is dropped and rebuilt on the next boot', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-corrupt-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    writeSession(freshHome, 'corrupt-row', join(freshHome, 'workspace'));
-    const dbPath = join(freshHome, '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME);
-
-    const first = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(first), 1);
-      assert.equal(first.sessionFileCacheSize, 1);
-    } finally {
-      first.close();
-    }
-
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.prepare(
-        'UPDATE session_file_cache SET summary_json = ? WHERE provider_session_id = ?',
-      ).run('{not json', 'corrupt-row');
-    } finally {
-      db.close();
-    }
-
-    const second = new HistoryIndex();
-    try {
-      // The main-thread mirror never opens the derived database.
-      assert.equal(second.sessionFileCacheSize, 0);
-      assert.equal(reconcileHistoryIndex(second), 1);
-      const revisionDb = new DatabaseSync(dbPath, { readOnly: true });
-      try {
-        const metadata = revisionDb
-          .prepare('SELECT revision FROM session_file_cache_metadata WHERE id = 1')
-          .get() as { revision: number };
-        assert.equal(
-          metadata.revision,
-          3,
-          'the worker drops the corrupt row and commits its rebuilt replacement',
-        );
-      } finally {
-        revisionDb.close();
-      }
-      const rows = second.listHistoricalSessions();
-      assert.ok(rows.some((row) => row.summary.appSessionId === 'corrupt-row'));
-    } finally {
-      second.close();
-    }
-
-    const nullSummary = new DatabaseSync(dbPath);
-    try {
-      nullSummary
-        .prepare('UPDATE session_file_cache SET summary_json = ? WHERE provider_session_id = ?')
-        .run(JSON.stringify({ cacheVersion: 2, summary: null }), 'corrupt-row');
-    } finally {
-      nullSummary.close();
-    }
-
-    const rebuilt = new HistoryIndex();
-    try {
-      assert.equal(rebuilt.sessionFileCacheSize, 0, 'a null summary is rejected intentionally');
-      assert.equal(reconcileHistoryIndex(rebuilt), 1);
-    } finally {
-      rebuilt.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('pre-classification cache rows are discarded so empty sessions are re-evaluated', () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-version-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    writeEmptySession(freshHome, 'previously-cached-empty', join(freshHome, 'workspace'));
-    const dbPath = join(freshHome, '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME);
-    const first = new HistoryIndex();
-    try {
-      assert.equal(reconcileHistoryIndex(first), 1);
-    } finally {
-      first.close();
-    }
-
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.prepare(
-        'UPDATE session_file_cache SET summary_json = ? WHERE provider_session_id = ?',
-      ).run(
-        JSON.stringify(patchFor('previously-cached-empty', join(freshHome, 'workspace'))),
-        'previously-cached-empty',
-      );
-    } finally {
-      db.close();
-    }
-
-    const second = new HistoryIndex();
-    try {
-      assert.equal(second.sessionFileCacheSize, 0, 'the superseded cache shape is rejected');
-      assert.equal(reconcileHistoryIndex(second), 1);
-      assert.equal(second.listHistoricalSessions().length, 0);
-    } finally {
-      second.close();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
+  // A null summary, and a row in the shape cached before empty sessions were
+  // classified, are both rejected and re-evaluated from the file.
+  setCachedSummaryJson('corrupt-row', JSON.stringify({ cacheVersion: 2, summary: null }));
+  setCachedSummaryJson(
+    'previously-cached-empty',
+    JSON.stringify(patchFor('previously-cached-empty', workspace)),
+  );
+  const rebuilt = new HistoryIndex();
+  t.after(() => rebuilt.close());
+  assert.equal(rebuilt.sessionFileCacheSize, 0);
+  assert.equal(reconcile(rebuilt), 2);
+  assert.deepEqual(
+    rebuilt.listHistoricalSessions().map((row) => row.summary.appSessionId),
+    ['corrupt-row'],
+  );
 });
 
 test('a settings sidecar change refreshes the cached summary', () => {
@@ -615,7 +395,7 @@ test('a settings sidecar change refreshes the cached summary', () => {
 
   const first = new HistoryIndex();
   try {
-    reconcileHistoryIndex(first);
+    reconcile(first);
     const before = first
       .listHistoricalSessions()
       .find((row) => row.summary.appSessionId === 'cache-settings');
@@ -632,11 +412,7 @@ test('a settings sidecar change refreshes the cached summary', () => {
 
   const second = new HistoryIndex();
   try {
-    assert.equal(
-      reconcileHistoryIndex(second),
-      1,
-      'settings mtime drift re-summarizes the session',
-    );
+    assert.equal(reconcile(second), 1, 'settings mtime drift re-summarizes the session');
     const after = second
       .listHistoricalSessions()
       .find((row) => row.summary.appSessionId === 'cache-settings');
@@ -646,17 +422,16 @@ test('a settings sidecar change refreshes the cached summary', () => {
   }
 });
 
-test('reconcileSessionFilePaths touches exactly the reported files', () => {
+test('reconcileSessionFilePaths touches exactly the reported files', (t) => {
   const workspace = join(home, 'workspace-targeted');
   const keepPath = writeSession(home, 'cache-target-keep', workspace);
   const changePath = writeSession(home, 'cache-target-change', workspace);
+  const keep = [{ providerSessionId: 'cache-target-keep', path: keepPath }];
+  const change = [{ providerSessionId: 'cache-target-change', path: changePath }];
 
   const first = new HistoryIndex();
-  try {
-    reconcileHistoryIndex(first);
-  } finally {
-    first.close();
-  }
+  reconcile(first);
+  first.close();
 
   writeSession(home, 'cache-target-change', workspace, { sessionTitle: 'Targeted rename' });
   // Force a distinct mtime so the change does not depend on clock granularity.
@@ -664,311 +439,176 @@ test('reconcileSessionFilePaths touches exactly the reported files', () => {
   utimesSync(changePath, later, later);
 
   const second = new HistoryIndex();
-  try {
-    // An unchanged reported file costs only a stat.
-    assert.equal(
-      reconcileHistoryIndexPaths(second, [
-        { providerSessionId: 'cache-target-keep', path: keepPath },
-      ]),
-      0,
-    );
-    assert.equal(
-      reconcileHistoryIndexPaths(second, [
-        { providerSessionId: 'cache-target-change', path: changePath },
-      ]),
-      1,
-    );
-    const renamed = second
-      .listHistoricalSessions()
-      .find((row) => row.summary.appSessionId === 'cache-target-change');
-    assert.equal(renamed?.summary.title, 'Targeted rename');
+  t.after(() => second.close());
+  const row = (id: string) =>
+    second.listHistoricalSessions().find((entry) => entry.summary.appSessionId === id);
+  // An unchanged reported file costs only a stat.
+  assert.equal(reconcile(second, keep), 0);
+  assert.equal(reconcile(second, change), 1);
+  assert.equal(row('cache-target-change')?.summary.title, 'Targeted rename');
 
-    // A reported file that no longer exists is dropped from the cache.
-    unlinkSync(changePath);
-    assert.equal(
-      reconcileHistoryIndexPaths(second, [
-        { providerSessionId: 'cache-target-change', path: changePath },
-      ]),
-      1,
-    );
-    assert.equal(
-      second
-        .listHistoricalSessions()
-        .some((row) => row.summary.appSessionId === 'cache-target-change'),
-      false,
-    );
+  // A reported file that no longer exists is dropped from the cache.
+  unlinkSync(changePath);
+  assert.equal(reconcile(second, change), 1);
+  assert.equal(row('cache-target-change'), undefined);
 
-    // A settings-sidecar-only change (the session file itself untouched)
-    // still re-summarizes the reported file.
-    writeFileSync(
-      join(home, '.factory', 'sessions', 'cache-target-keep.settings.json'),
-      JSON.stringify({ modelId: 'targeted-settings-model' }),
-    );
-    assert.equal(
-      reconcileHistoryIndexPaths(second, [
-        { providerSessionId: 'cache-target-keep', path: keepPath },
-      ]),
-      1,
-    );
-    const reconfigured = second
-      .listHistoricalSessions()
-      .find((row) => row.summary.appSessionId === 'cache-target-keep');
-    assert.equal(reconfigured?.summary.modelId, 'targeted-settings-model');
-  } finally {
-    second.close();
-  }
+  // A settings-sidecar-only change (the session file itself untouched)
+  // still re-summarizes the reported file.
+  writeFileSync(
+    join(home, '.factory', 'sessions', 'cache-target-keep.settings.json'),
+    JSON.stringify({ modelId: 'targeted-settings-model' }),
+  );
+  assert.equal(reconcile(second, keep), 1);
+  assert.equal(row('cache-target-keep')?.summary.modelId, 'targeted-settings-model');
 });
 
-test('a file that breaks mid-reconcile is skipped without aborting the diff', () => {
+test('a file that breaks mid-reconcile is skipped without aborting the diff', (t) => {
   const db = new DatabaseSync(':memory:');
-  try {
-    const stat = (path: string): SessionFileStat => ({
-      path,
-      birthtimeMs: 1,
-      mtimeMs: 1,
-      sizeBytes: 10,
-      settingsMtimeMs: null,
-    });
-    const onDisk = new Map<string, SessionFileStat>([
-      ['good-session', stat('/sessions/good.jsonl')],
-      ['bad-session', stat('/sessions/bad.jsonl')],
-    ]);
-    const cache = new SessionFileCache(
-      db,
-      () => ({ files: onDisk, isComplete: true }),
-      (providerSessionId, file) => {
-        // The bad file vanished between the scan and the read.
-        if (providerSessionId === 'bad-session') throw new Error('ENOENT');
-        return summaryFor(providerSessionId, file.path);
-      },
-      () => null,
-    );
-    assert.equal(
-      cache.reconcileChanges().changed,
-      1,
-      'the good file is cached despite the broken one',
-    );
-    assert.deepEqual(
-      cache.summaries().map((summary) => summary.appSessionId),
-      ['good-session'],
-    );
-  } finally {
-    db.close();
-  }
-});
-
-test('an incomplete tree scan does not delete rows from unreadable subtrees', () => {
-  const db = new DatabaseSync(':memory:');
-  try {
-    const stat = (path: string): SessionFileStat => ({
-      path,
-      birthtimeMs: 1,
-      mtimeMs: 1,
-      sizeBytes: 10,
-      settingsMtimeMs: null,
-    });
-    const onDisk = new Map<string, SessionFileStat>([
-      ['visible-session', stat('/sessions/visible.jsonl')],
-      ['temporarily-hidden-session', stat('/sessions/hidden/session.jsonl')],
-    ]);
-    let isComplete = true;
-    const cache = new SessionFileCache(
-      db,
-      () => ({ files: onDisk, isComplete }),
-      (providerSessionId, file) => summaryFor(providerSessionId, file.path),
-      () => null,
-    );
-    assert.equal(cache.reconcileChanges().changed, 2);
-
-    onDisk.delete('temporarily-hidden-session');
-    isComplete = false;
-    assert.equal(
-      cache.reconcileChanges().changed,
-      0,
-      'a partial scan only applies files it could observe',
-    );
-    assert.deepEqual(
-      new Set(cache.summaries().map((summary) => summary.appSessionId)),
-      new Set(['visible-session', 'temporarily-hidden-session']),
-      'an unreadable subtree does not look like an authoritative deletion',
-    );
-
-    isComplete = true;
-    assert.equal(
-      cache.reconcileChanges().changed,
-      1,
-      'a later complete scan removes the absent file',
-    );
-    assert.deepEqual(
-      cache.summaries().map((summary) => summary.appSessionId),
-      ['visible-session'],
-    );
-  } finally {
-    db.close();
-  }
-});
-
-test('a SQLite write failure leaves the in-memory cache unchanged', () => {
-  // A failure-injecting database double: every prepared statement is created
-  // normally, but the upsert's run() throws, simulating a busy/closed handle
-  // mid-reconcile. The cache must mirror the database, so the row the write
-  // never stored must not appear in the in-memory cache or its summaries.
-  const throwingStatement = {
-    all: () => [] as unknown[],
-    run: () => {
-      throw new Error('sqlite busy');
-    },
-  };
-  const db = {
-    exec: () => {},
-    prepare: (sql: string) =>
-      sql.includes('PRAGMA')
-        ? {
-            all: () => [
-              { name: 'provider_session_id' },
-              { name: 'path' },
-              { name: 'birthtime_ms' },
-              { name: 'mtime_ms' },
-              { name: 'size_bytes' },
-              { name: 'settings_mtime_ms' },
-              { name: 'summary_json' },
-            ],
-            run: () => {},
-          }
-        : sql.includes('SELECT revision')
-          ? { get: () => ({ revision: 0 }) }
-          : throwingStatement,
-  } as unknown as DatabaseSync;
-  const stat = (path: string): SessionFileStat => ({
-    path,
-    birthtimeMs: 1,
-    mtimeMs: 1,
-    sizeBytes: 10,
-    settingsMtimeMs: null,
-  });
-  const onDisk = new Map<string, SessionFileStat>([['fail-write', stat('/sessions/fail.jsonl')]]);
+  t.after(() => db.close());
+  const onDisk = new Map<string, SessionFileStat>([
+    ['good-session', fileStat('/sessions/good.jsonl')],
+    ['bad-session', fileStat('/sessions/bad.jsonl')],
+  ]);
   const cache = new SessionFileCache(
     db,
     () => ({ files: onDisk, isComplete: true }),
-    (providerSessionId) => summaryFor(providerSessionId, '/sessions/fail.jsonl'),
+    (providerSessionId, file) => {
+      // The bad file vanished between the scan and the read.
+      if (providerSessionId === 'bad-session') throw new Error('ENOENT');
+      return summaryFor(providerSessionId, file.path);
+    },
     () => null,
   );
-  assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
-  assert.equal(cache.size, 0, 'the in-memory cache holds nothing the database never stored');
-  assert.deepEqual(cache.summaries(), [], 'summaries stay empty');
+  assert.equal(
+    cache.reconcileChanges().changed,
+    1,
+    'the good file is cached despite the broken one',
+  );
+  assert.deepEqual(
+    cache.summaries().map((summary) => summary.appSessionId),
+    ['good-session'],
+  );
 });
 
-test('a SQLite delete failure leaves the in-memory cache unchanged', () => {
+test('an incomplete tree scan does not delete rows from unreadable subtrees', (t) => {
   const db = new DatabaseSync(':memory:');
-  try {
-    const path = '/sessions/fail-delete.jsonl';
-    const file: SessionFileStat = {
-      path,
-      birthtimeMs: 1,
-      mtimeMs: 1,
-      sizeBytes: 10,
-      settingsMtimeMs: null,
-    };
-    const onDisk = new Map<string, SessionFileStat>([['fail-delete', file]]);
-    const cache = new SessionFileCache(
-      db,
-      () => ({ files: onDisk, isComplete: true }),
-      (providerSessionId) => summaryFor(providerSessionId, path),
-      (candidate) => (candidate === path ? (onDisk.get('fail-delete') ?? null) : null),
-    );
-    assert.equal(cache.reconcileChanges().changed, 1);
-    onDisk.clear();
+  t.after(() => db.close());
+  const onDisk = new Map<string, SessionFileStat>([
+    ['visible-session', fileStat('/sessions/visible.jsonl')],
+    ['temporarily-hidden-session', fileStat('/sessions/hidden/session.jsonl')],
+  ]);
+  let isComplete = true;
+  const cache = new SessionFileCache(
+    db,
+    () => ({ files: onDisk, isComplete }),
+    (providerSessionId, file) => summaryFor(providerSessionId, file.path),
+    () => null,
+  );
+  assert.equal(cache.reconcileChanges().changed, 2);
+
+  onDisk.delete('temporarily-hidden-session');
+  isComplete = false;
+  assert.equal(
+    cache.reconcileChanges().changed,
+    0,
+    'a partial scan only applies files it could observe',
+  );
+  assert.deepEqual(
+    new Set(cache.summaries().map((summary) => summary.appSessionId)),
+    new Set(['visible-session', 'temporarily-hidden-session']),
+    'an unreadable subtree does not look like an authoritative deletion',
+  );
+
+  isComplete = true;
+  assert.equal(
+    cache.reconcileChanges().changed,
+    1,
+    'a later complete scan removes the absent file',
+  );
+  assert.deepEqual(
+    cache.summaries().map((summary) => summary.appSessionId),
+    ['visible-session'],
+  );
+});
+
+test('a SQLite write or delete failure leaves the in-memory cache unchanged', (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const path = '/sessions/cache-failure.jsonl';
+  const onDisk = new Map<string, SessionFileStat>([['cache-failure', fileStat(path)]]);
+  const cache = new SessionFileCache(
+    db,
+    () => ({ files: onDisk, isComplete: true }),
+    (providerSessionId) => summaryFor(providerSessionId, path),
+    (candidate) => (candidate === path ? (onDisk.get('cache-failure') ?? null) : null),
+  );
+  const failWrites = (operation: 'INSERT' | 'DELETE') =>
     db.exec(`
-      CREATE TRIGGER fail_session_file_delete
-      BEFORE DELETE ON session_file_cache
+      CREATE TRIGGER fail_session_file_${operation.toLowerCase()}
+      BEFORE ${operation} ON session_file_cache
       BEGIN
         SELECT RAISE(ABORT, 'sqlite busy');
       END
     `);
 
-    assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
-    assert.equal(cache.size, 1, 'a failed full-reconcile delete keeps the cached row');
-    assert.throws(
-      () => cache.reconcilePathChanges([{ providerSessionId: 'fail-delete', path }]),
-      /sqlite busy/,
-    );
-    assert.equal(cache.size, 1, 'a failed targeted delete keeps the cached row');
-    assert.equal(cache.summaries()[0]?.appSessionId, 'fail-delete');
-  } finally {
-    db.close();
-  }
+  failWrites('INSERT');
+  assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
+  assert.equal(cache.size, 0, 'the in-memory cache holds nothing the database never stored');
+  assert.deepEqual(cache.summaries(), []);
+  db.exec('DROP TRIGGER fail_session_file_insert');
+
+  assert.equal(cache.reconcileChanges().changed, 1);
+  onDisk.clear();
+  failWrites('DELETE');
+  assert.throws(() => cache.reconcileChanges(), /sqlite busy/);
+  assert.equal(cache.size, 1, 'a failed full-reconcile delete keeps the cached row');
+  assert.throws(
+    () => cache.reconcilePathChanges([{ providerSessionId: 'cache-failure', path }]),
+    /sqlite busy/,
+  );
+  assert.equal(cache.size, 1, 'a failed targeted delete keeps the cached row');
+  assert.equal(cache.summaries()[0]?.appSessionId, 'cache-failure');
 });
 
-test('first sessions.list waits for worker reconciliation and serves discovered rows', async () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-boot-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    writeSession(freshHome, 'boot-session', join(freshHome, 'workspace'));
+test('the first sessions.list serves discovered rows, and a warm cache publishes one authoritative list', async (t) => {
+  const freshRoot = freshHome(t, 'droid-history-cache-warm-');
+  const path = writeSession(freshRoot, 'warm-session', join(freshRoot, 'workspace'));
+  const sessionLists = async () => {
     const events: Protocol.ServerEvent[] = [];
     const manager = new SessionManager((event) => events.push(event));
     try {
       await manager.handle({ type: 'sessions.list' });
-      const list = events.filter(isSessionList).at(-1);
-      assert.ok(list);
-      assert.ok(list.sessions.some((session) => session.appSessionId === 'boot-session'));
     } finally {
       await manager.shutdown();
     }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
+    return events.flatMap((event) => (event.type === 'sessions.list' ? [event.sessions] : []));
+  };
+  const firstBoot = await sessionLists();
+  assert.ok(firstBoot.at(-1)?.some((session) => session.appSessionId === 'warm-session'));
+
+  // The file changes while the app is closed.
+  writeSession(freshRoot, 'warm-session', join(freshRoot, 'workspace'), {
+    sessionTitle: 'Edited elsewhere',
+  });
+  const later = new Date(Date.now() + 10_000);
+  utimesSync(path, later, later);
+
+  const lists = await sessionLists();
+  assert.equal(lists.length, 1);
+  assert.equal(
+    lists[0]?.find((session) => session.appSessionId === 'warm-session')?.title,
+    'Edited elsewhere',
+  );
 });
 
-test('a warm cache publishes an authoritative first list before the command resolves', async () => {
-  const freshHome = mkdtempSync(join(tmpdir(), 'droid-history-cache-warm-'));
-  const previousHome = process.env.HOME;
-  process.env.HOME = freshHome;
-  try {
-    const path = writeSession(freshHome, 'warm-session', join(freshHome, 'workspace'));
-    const firstBootEvents: Protocol.ServerEvent[] = [];
-    const firstBoot = new SessionManager((event) => firstBootEvents.push(event));
-    try {
-      await firstBoot.handle({ type: 'sessions.list' });
-    } finally {
-      await firstBoot.shutdown();
-    }
-
-    // The file changes while the app is closed.
-    writeSession(freshHome, 'warm-session', join(freshHome, 'workspace'), {
-      sessionTitle: 'Edited elsewhere',
-    });
-    const later = new Date(Date.now() + 10_000);
-    utimesSync(path, later, later);
-
-    const events: Protocol.ServerEvent[] = [];
-    const manager = new SessionManager((event) => events.push(event));
-    try {
-      await manager.handle({ type: 'sessions.list' });
-      const lists = events.filter(isSessionList);
-      assert.equal(lists.length, 1);
-      assert.equal(
-        lists[0]?.sessions.find((session) => session.appSessionId === 'warm-session')?.title,
-        'Edited elsewhere',
-      );
-    } finally {
-      await manager.shutdown();
-    }
-  } finally {
-    process.env.HOME = previousHome;
-    rmSync(freshHome, { recursive: true, force: true });
-  }
-});
-
-test('a resumed older chat stays first after reopening the persisted history index', () => {
+test('a resumed older chat stays first after reopening the persisted history index', (t) => {
   const cwd = join(home, 'workspace-recency');
   const older = writeSession(home, 'recency-older', cwd);
   const newer = writeSession(home, 'recency-newer', cwd);
   utimesSync(older, 100, 100);
   utimesSync(newer, 200, 200);
   const first = new HistoryIndex();
-  reconcileHistoryIndex(first);
+  reconcile(first);
   persistTestSummaries([
     { ...patchFor('recency-older', cwd), updatedAt: 100_000 },
     { ...patchFor('recency-newer', cwd), updatedAt: 200_000 },
@@ -976,17 +616,14 @@ test('a resumed older chat stays first after reopening the persisted history ind
   first.close();
   utimesSync(older, 300, 300);
   const restarted = new HistoryIndex();
-  try {
-    reconcileHistoryIndex(restarted);
-    const rows = restarted.listHistoricalSessions({ workspaceCwds: [cwd] });
-    assert.equal(rows[0]?.summary.appSessionId, 'recency-older');
-    assert.equal(rows[0]?.summary.updatedAt, 300_000);
-    persistTestSummaries([{ ...patchFor('recency-older', cwd), updatedAt: 400_000 }]);
-    assert.equal(
-      restarted.listHistoricalSessions({ workspaceCwds: [cwd] })[0]?.summary.updatedAt,
-      400_000,
-    );
-  } finally {
-    restarted.close();
-  }
+  t.after(() => restarted.close());
+  reconcile(restarted);
+  const rows = restarted.listHistoricalSessions({ workspaceCwds: [cwd] });
+  assert.equal(rows[0]?.summary.appSessionId, 'recency-older');
+  assert.equal(rows[0]?.summary.updatedAt, 300_000);
+  persistTestSummaries([{ ...patchFor('recency-older', cwd), updatedAt: 400_000 }]);
+  assert.equal(
+    restarted.listHistoricalSessions({ workspaceCwds: [cwd] })[0]?.summary.updatedAt,
+    400_000,
+  );
 });

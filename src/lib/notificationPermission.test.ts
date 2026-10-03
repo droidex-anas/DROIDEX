@@ -15,68 +15,31 @@ function replaceNotification(value: unknown): () => void {
   };
 }
 
-for (const permission of ['granted', 'denied'] as const) {
-  test(`returns existing ${permission} permission without prompting`, async () => {
+test('an existing decision is returned without prompting; otherwise the prompt decides', async () => {
+  const failingPrompt = async () => {
+    throw new Error('permission request failed');
+  };
+  // [why, API present, current permission, prompt answer, expected result, prompts?]
+  const cases: Array<[string, boolean, string, () => Promise<string>, string, boolean]> = [
+    ['already granted', true, 'granted', async () => 'default', 'granted', false],
+    ['already denied', true, 'denied', async () => 'default', 'denied', false],
+    ['prompt denies', true, 'default', async () => 'denied', 'denied', true],
+    ['prompt dismissed', true, 'default', async () => 'default', 'default', true],
+    ['prompt rejects', true, 'default', failingPrompt, 'unsupported', true],
+    ['no Notification API', false, 'default', async () => 'default', 'unsupported', false],
+  ];
+  for (const [why, supported, permission, answer, expected, prompts] of cases) {
     let prompted = false;
-    const restore = replaceNotification({
-      permission,
-      requestPermission: async () => {
-        prompted = true;
-        return 'default';
-      },
-    });
+    const requestPermission = () => {
+      prompted = true;
+      return answer();
+    };
+    const restore = replaceNotification(supported ? { permission, requestPermission } : undefined);
     try {
-      assert.equal(await requestNotificationPermission(), permission);
-      assert.equal(prompted, false);
+      assert.equal(await requestNotificationPermission(), expected, why);
+      assert.equal(prompted, prompts, why);
     } finally {
       restore();
     }
-  });
-}
-
-test('returns denied from the browser permission prompt', async () => {
-  const restore = replaceNotification({
-    permission: 'default',
-    requestPermission: async () => 'denied',
-  });
-  try {
-    assert.equal(await requestNotificationPermission(), 'denied');
-  } finally {
-    restore();
-  }
-});
-
-test('preserves a dismissed browser permission prompt', async () => {
-  const restore = replaceNotification({
-    permission: 'default',
-    requestPermission: async () => 'default',
-  });
-  try {
-    assert.equal(await requestNotificationPermission(), 'default');
-  } finally {
-    restore();
-  }
-});
-
-test('reports unsupported when the API is absent', async () => {
-  const restore = replaceNotification(undefined);
-  try {
-    assert.equal(await requestNotificationPermission(), 'unsupported');
-  } finally {
-    restore();
-  }
-});
-
-test('reports unsupported when requesting notification permission rejects', async () => {
-  const restore = replaceNotification({
-    permission: 'default',
-    requestPermission: async () => {
-      throw new Error('permission request failed');
-    },
-  });
-  try {
-    assert.equal(await requestNotificationPermission(), 'unsupported');
-  } finally {
-    restore();
   }
 });

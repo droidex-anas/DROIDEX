@@ -1,28 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rowMenuTarget } from './useSidebarRowActions';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
 test('row menus reject missing and hidden targets during render', () => {
   assert.equal(rowMenuTarget({}, { appSessionId: 'gone' }, {}), null);
-  const session: SessionSummary = {
-    appSessionId: 'chat',
+  const session = sessionSummary('chat', {
     title: 'Chat',
-    goal: '',
     cwd: '/worktree',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     autonomy: 'off',
     phase: 'completed',
-    createdAt: 1,
-    updatedAt: 1,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-  };
+  });
   const sessions = { chat: session };
   assert.equal(rowMenuTarget(sessions, { appSessionId: 'chat' }, {}), session);
   assert.equal(

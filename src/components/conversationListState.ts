@@ -18,7 +18,7 @@ export interface ConversationRowLookup {
   byViewportId: Map<string, number>;
 }
 
-export function estimatedListSize(count: number): number {
+function estimatedListSize(count: number): number {
   if (count <= 0) return 0;
   return count * CONVERSATION_LIST_ESTIMATE_PX + Math.max(0, count - 1) * CONVERSATION_LIST_GAP_PX;
 }
