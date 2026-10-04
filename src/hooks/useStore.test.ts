@@ -178,7 +178,12 @@ test('session creation records the exact request-to-session settlement', () => {
   const state: AppState = {
     ...initialState,
     pendingCompose: {
-      'client-1': { text: 'hello', skills: [], files: [] },
+      'client-1': {
+        text: 'hello',
+        skills: [],
+        files: [],
+        tabId: initialState.tabStrip.activeTabId,
+      },
     },
   };
 
@@ -208,7 +213,12 @@ test('session seeds preserve live file provenance without claiming background co
     {
       ...initialState,
       pendingCompose: {
-        'client-1': { text: 'typed prompt', skills: [], files: [] },
+        'client-1': {
+          text: 'typed prompt',
+          skills: [],
+          files: [],
+          tabId: initialState.tabStrip.activeTabId,
+        },
       },
     },
     {

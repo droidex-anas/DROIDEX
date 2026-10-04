@@ -138,6 +138,12 @@ function activateTab(strip: TabStrip, tabId: string, live: TabPage): TabStrip {
   return { ...strip, tabs: withActivePageStored(strip, live), activeTabId: tabId };
 }
 
+/** Points a background tab at `page`, for when it is entered next. */
+export function withTabShowing(strip: TabStrip, tabId: string, page: TabPage): TabStrip {
+  if (tabId === strip.activeTabId || !strip.tabs.some((tab) => tab.id === tabId)) return strip;
+  return { ...strip, tabs: strip.tabs.map((tab) => (tab.id === tabId ? { ...tab, page } : tab)) };
+}
+
 /** Switches to the tab already showing `page`, if another tab is. */
 export function focusTabShowing(strip: TabStrip, page: TabPage, live: TabPage): TabStrip {
   const owner = strip.tabs.find(
@@ -311,11 +317,22 @@ export function loadTabStrip(): TabStrip {
   }
 }
 
-export function saveTabStrip(strip: TabStrip): void {
+/** The draft the active tab was saved on, which a launch restores as the live one. */
+export function activeTabDraft(strip: TabStrip): NewChatDraft | null {
+  const page = strip.tabs.find((tab) => tab.id === strip.activeTabId)?.page;
+  return page?.kind === 'new-chat' ? page.draft : null;
+}
+
+// The active tab saves the live page, so a launch finds it as it was left.
+export function saveTabStrip(state: LivePageSource & Pick<AppState, 'tabStrip'>): void {
+  const strip = state.tabStrip;
   try {
     getLocalStorage()?.setItem(
       TAB_STRIP_STORAGE_KEY,
-      JSON.stringify({ tabs: strip.tabs, activeTabId: strip.activeTabId }),
+      JSON.stringify({
+        tabs: withActivePageStored(strip, livePage(state)),
+        activeTabId: strip.activeTabId,
+      }),
     );
   } catch {
     // Tabs are a convenience; a full disk only costs them on the next launch.

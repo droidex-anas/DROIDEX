@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type Action, type AppState } from '../../hooks/useStore';
-import { livePage, loadTabStrip, saveTabStrip, tabPage } from './tabStrip';
+import {
+  activeTabDraft,
+  livePage,
+  loadTabStrip,
+  saveTabStrip,
+  tabPage,
+} from './tabStrip';
 import type { SessionSummary } from '../../types/bridge';
 
 function session(appSessionId: string, cwd = '/workspace'): SessionSummary {
@@ -115,6 +121,41 @@ test('closing the last tab leaves a new chat in the same workspace', () => {
   ]);
 });
 
+test('a chat sent from a tab the user has left opens in that tab', () => {
+  const sending = reduce(
+    withChats('a'),
+    { type: 'OPEN_NEW_CHAT_TAB' },
+    { type: 'SET_PENDING_COMPOSE', clientRef: 'c1', text: 'hi', skills: [], files: [] },
+  );
+  const sendingTabId = sending.tabStrip.activeTabId;
+  const away = reduce(sending, { type: 'ACTIVATE_TAB', tabId: tabIdShowing(sending, 'a') });
+  const created = reduce(away, {
+    type: 'SESSION_CREATED',
+    clientRef: 'c1',
+    session: session('n'),
+  });
+  assert.deepEqual(strip(created), ['[a]', 'n']);
+  assert.equal(created.activeAppSessionId, 'a');
+
+  const back = reduce(created, { type: 'ACTIVATE_TAB', tabId: sendingTabId });
+  assert.equal(back.activeAppSessionId, 'n');
+});
+
+test('archiving the chat a tab shows closes that tab for good', () => {
+  const state = reduce(withChats('a', 'b'), {
+    type: 'OPEN_TAB',
+    page: { kind: 'chat', appSessionId: 'b' },
+  });
+  const archived = reduce(state, { type: 'ARCHIVE_CHAT', appSessionId: 'b' });
+  assert.deepEqual(strip(archived), ['[a]']);
+  assert.equal(archived.activeAppSessionId, 'a');
+  assert.deepEqual(archived.tabStrip.closedTabs, []);
+
+  const last = reduce(archived, { type: 'ARCHIVE_CHAT', appSessionId: 'a' });
+  assert.deepEqual(strip(last), ['[new-chat]']);
+  assert.equal(last.draftChat?.cwd, '/workspace');
+});
+
 test('a deleted chat leaves the tabs and the reopen list', () => {
   const state = reduce(
     withChats('a', 'b', 'c'),
@@ -131,7 +172,7 @@ test('a deleted chat leaves the tabs and the reopen list', () => {
   assert.deepEqual(deleted.tabStrip.closedTabs, []);
 });
 
-test('stored tabs load without invalid or duplicate entries', () => {
+test('stored tabs load with the live page and without invalid or duplicate entries', () => {
   const data = new Map<string, string>();
   const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', {
@@ -144,24 +185,32 @@ test('stored tabs load without invalid or duplicate entries', () => {
     },
   });
   try {
+    const draft = { cwd: '/w', executionMode: 'local' } as const;
     saveTabStrip({
-      tabs: [
-        { id: 't1', page: { kind: 'chat', appSessionId: 'a' } },
-        { id: 't2', page: { kind: 'chat', appSessionId: 'a' } },
-        { id: 't3', page: { kind: 'unknown' } as never },
-        { id: 't4', page: { kind: 'new-chat', draft: { cwd: '/w', executionMode: 'local' } } },
-      ],
-      activeTabId: 't4',
-      closedTabs: [{ page: { kind: 'projects' }, index: 0 }],
+      mainView: 'session',
+      activeAppSessionId: null,
+      draftChat: draft,
+      tabStrip: {
+        tabs: [
+          { id: 't1', page: { kind: 'chat', appSessionId: 'a' } },
+          { id: 't2', page: { kind: 'chat', appSessionId: 'a' } },
+          { id: 't3', page: { kind: 'unknown' } as never },
+          { id: 't4', page: { kind: 'projects' } },
+        ],
+        activeTabId: 't4',
+        closedTabs: [{ page: { kind: 'projects' }, index: 0 }],
+      },
     });
-    assert.deepEqual(loadTabStrip(), {
+    const loaded = loadTabStrip();
+    assert.deepEqual(loaded, {
       tabs: [
         { id: 't1', page: { kind: 'chat', appSessionId: 'a' } },
-        { id: 't4', page: { kind: 'new-chat', draft: { cwd: '/w', executionMode: 'local' } } },
+        { id: 't4', page: { kind: 'new-chat', draft } },
       ],
       activeTabId: 't4',
       closedTabs: [],
     });
+    assert.deepEqual(activeTabDraft(loaded), draft);
   } finally {
     if (original) Object.defineProperty(globalThis, 'localStorage', original);
     else delete (globalThis as { localStorage?: unknown }).localStorage;

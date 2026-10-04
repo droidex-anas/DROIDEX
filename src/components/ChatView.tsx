@@ -47,7 +47,12 @@ import {
 } from '../hooks/useConversationTimeline';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import { equalVisibleChatState, selectChatViewState, type ChatViewState } from './chatViewState';
+import {
+  equalVisibleChatState,
+  selectChatViewState,
+  startingComposeInTab,
+  type ChatViewState,
+} from './chatViewState';
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
@@ -463,7 +468,7 @@ export default function ChatView({
   // sidecar spawns the session, ~1-2s), there is no active session yet. Show the
   // user's message immediately with a starting cue instead of a blank screen;
   // the real feed (which seeds the same message) takes over once it exists.
-  const startingCompose = !activeSession ? Object.values(state.pendingCompose).at(-1) : undefined;
+  const startingCompose = !activeSession ? startingComposeInTab(state) : undefined;
 
   const isSpec = activeSession?.interactionMode === 'spec';
   const capturedPlan = activeSession ? state.specPlans[activeSession.appSessionId] : undefined;

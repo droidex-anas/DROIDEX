@@ -2,6 +2,7 @@ import { saveDraftProvider } from '../features/providers/providerDraft';
 import { saveTabStrip } from '../features/tabs/tabStrip';
 import { saveDefaultAutonomy } from '../lib/autonomy';
 import { saveChatMetadata } from '../lib/chatMetadata';
+import { isEmbedded } from '../lib/embed';
 import { saveSessionNotes } from '../lib/sessionNotes';
 import { saveToolActivity } from '../lib/toolActivity';
 import { persistTheme } from './persistedThemePreferences';
@@ -66,13 +67,27 @@ const FIELD_SAVERS = [
   saver('harnessModels', saveHarnessModels),
   saver('agentConfig', saveAgentConfig),
   saver('compactionModel', saveCompactionModel),
-  saver('tabStrip', saveTabStrip),
+  saveTabsOnChange,
 ];
 
 function saver<Field extends keyof AppState>(field: Field, save: (value: AppState[Field]) => void) {
   return (previous: AppState, next: AppState) => {
     if (next[field] !== previous[field]) save(next[field]);
   };
+}
+
+// The active tab saves the live page, so navigating saves the strip too. An
+// embedded copy of the app shows no tabs and must not overwrite the window's.
+function saveTabsOnChange(previous: AppState, next: AppState) {
+  if (isEmbedded()) return;
+  if (
+    next.tabStrip !== previous.tabStrip ||
+    next.mainView !== previous.mainView ||
+    next.activeAppSessionId !== previous.activeAppSessionId ||
+    next.draftChat !== previous.draftChat
+  ) {
+    saveTabStrip(next);
+  }
 }
 
 // The one place the store writes to storage: reducers stay pure, and after

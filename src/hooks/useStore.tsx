@@ -15,12 +15,14 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  activeTabDraft,
   focusTabShowing,
   livePage,
   loadTabStrip,
   pageNavigation,
   reduceTabStrip,
   withoutChats,
+  withTabShowing,
   type TabAction,
   type TabStrip,
 } from '../features/tabs/tabStrip';
@@ -443,7 +445,10 @@ export interface AppState {
   skillsProviderSessionId?: string | null;
 
   // Attachments for the first message of a not-yet-created session, keyed by clientRef.
-  pendingCompose: Partial<Record<string, { text: string; skills: string[]; files: string[] }>>;
+  // `tabId` is the tab the compose was sent from; its chat opens there.
+  pendingCompose: Partial<
+    Record<string, { text: string; skills: string[]; files: string[]; tabId: string }>
+  >;
   // Bounded settlement identity for the latest successful foreground create.
   // PromptInput uses it to distinguish that activation from a failure followed
   // by the user selecting an unrelated existing session.
@@ -755,6 +760,9 @@ const initialCustomThemes = loadCustomThemes();
 
 const persistedUiState = loadPersistedUiState();
 const sessionSnapshot = loadSessionSnapshot();
+const restoredTabStrip = loadTabStrip();
+const restoresNewChat =
+  (persistedUiState.mainView ?? 'session') === 'session' && !persistedUiState.activeAppSessionId;
 
 export interface AutomationEditorRequest {
   automationId: string;
@@ -815,7 +823,7 @@ export const initialState: AppState = {
   utilityPanels: persistedUiState.utilityPanels ?? {},
   sidebarCollapsed: persistedUiState.sidebarCollapsed ?? false,
   mainView: persistedUiState.mainView ?? 'session',
-  tabStrip: loadTabStrip(),
+  tabStrip: restoredTabStrip,
   automationEditorRequest: null,
   prWorkspaceCwd: persistedUiState.prWorkspaceCwd ?? null,
   prWorkspaceNumber: persistedUiState.prWorkspaceNumber ?? null,
@@ -826,7 +834,7 @@ export const initialState: AppState = {
   theme: loadTheme(initialCustomThemes),
   customThemes: initialCustomThemes,
   missionControlMode: persistedUiState.missionControlMode ?? false,
-  draftChat: null,
+  draftChat: restoresNewChat ? activeTabDraft(restoredTabStrip) : null,
   defaultAutonomy: loadDefaultPermissionMode(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
@@ -975,6 +983,18 @@ function withoutKey<T>(
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
 }
 
+// An archived or deleted chat leaves every tab, and cannot be reopened. The
+// tab showing it closes, as a browser tab does when its page goes away.
+function withoutChatTabs(state: AppState, appSessionId: string): AppState {
+  const live = livePage(state);
+  const shown = live.kind === 'chat' && live.appSessionId === appSessionId;
+  const closed = shown
+    ? reducer(state, { type: 'CLOSE_TAB', tabId: state.tabStrip.activeTabId })
+    : state;
+  const tabStrip = withoutChats(closed.tabStrip, (id) => id === appSessionId);
+  return tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
+}
+
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'BATCH':
@@ -1011,8 +1031,17 @@ export function reducer(state: AppState, action: Action): AppState {
       // `session.created` is also emitted when an existing session resumes.
       // Only a create matching this renderer's pending compose may take focus;
       // background resumes must never replace the chat the user selected. A
-      // side chat opens beside its source, never in its place.
-      const shouldActivate = pending !== undefined && action.session.lineage?.kind !== 'side';
+      // side chat opens beside its source, never in its place. A create sent
+      // from a tab the user has since left opens in that tab instead.
+      const ownsCreate = pending !== undefined && action.session.lineage?.kind !== 'side';
+      const shouldActivate = ownsCreate && pending.tabId === state.tabStrip.activeTabId;
+      const tabStrip =
+        ownsCreate && !shouldActivate
+          ? withTabShowing(state.tabStrip, pending.tabId, {
+              kind: 'chat',
+              appSessionId: action.session.appSessionId,
+            })
+          : state.tabStrip;
       const targetIsActive = state.activeAppSessionId === action.session.appSessionId;
       const childReset =
         shouldActivate || targetIsActive ? invalidateSelectedChildOpening(state) : state;
@@ -1054,6 +1083,7 @@ export function reducer(state: AppState, action: Action): AppState {
           [action.session.appSessionId]: action.session,
         },
         sessionOrder: order,
+        tabStrip,
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
         draftChat: shouldActivate ? null : state.draftChat,
         draftAutonomy: shouldActivate ? null : state.draftAutonomy,
@@ -1247,7 +1277,12 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         pendingCompose: {
           ...state.pendingCompose,
-          [action.clientRef]: { text: action.text, skills: action.skills, files: action.files },
+          [action.clientRef]: {
+            text: action.text,
+            skills: action.skills,
+            files: action.files,
+            tabId: state.tabStrip.activeTabId,
+          },
         },
       };
 
@@ -1401,16 +1436,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'ARCHIVE_CHAT': {
       const chatMetadata = archiveChat(state.chatMetadata, action.appSessionId, Date.now());
       const utilityPanels = removeSessionPanel(state.utilityPanels, action.appSessionId);
-      const tabStrip = withoutChats(state.tabStrip, (id) => id === action.appSessionId);
-      if (!chatMetadata && utilityPanels === state.utilityPanels && tabStrip === state.tabStrip) {
-        return state;
-      }
-      return {
-        ...state,
-        chatMetadata: chatMetadata ?? state.chatMetadata,
-        utilityPanels,
-        tabStrip,
-      };
+      const archived =
+        chatMetadata || utilityPanels !== state.utilityPanels
+          ? { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels }
+          : state;
+      return withoutChatTabs(archived, action.appSessionId);
     }
 
     case 'RESTORE_CHAT': {
@@ -1423,16 +1453,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // chats and their PTYs remain live; only explicit deletion/archival cleans up panels.
       const chatMetadata = deleteChat(state.chatMetadata, action.appSessionId, Date.now());
       const utilityPanels = removeSessionPanel(state.utilityPanels, action.appSessionId);
-      const tabStrip = withoutChats(state.tabStrip, (id) => id === action.appSessionId);
-      if (!chatMetadata && utilityPanels === state.utilityPanels && tabStrip === state.tabStrip) {
-        return state;
-      }
-      return {
-        ...state,
-        chatMetadata: chatMetadata ?? state.chatMetadata,
-        utilityPanels,
-        tabStrip,
-      };
+      const deleted =
+        chatMetadata || utilityPanels !== state.utilityPanels
+          ? { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels }
+          : state;
+      return withoutChatTabs(deleted, action.appSessionId);
     }
 
     case 'SESSION_FEATURES': {

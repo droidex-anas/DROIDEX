@@ -23,6 +23,7 @@ export function selectChatViewState(current: AppState) {
     historyLoadingOlder: current.historyLoadingOlder,
     models: current.models,
     pendingCompose: current.pendingCompose,
+    activeTabId: current.tabStrip.activeTabId,
     selectedChild: current.selectedChild,
     sessionRestore: current.sessionRestore,
     sessionSpecs: current.sessionSpecs,
@@ -59,8 +60,11 @@ function equalChildSelection(
   );
 }
 
-function latestPendingCompose(state: ChatViewState) {
-  return Object.values(state.pendingCompose).at(-1);
+/** The latest compose this tab sent that is still waiting for its session. */
+export function startingComposeInTab(state: ChatViewState) {
+  return Object.values(state.pendingCompose)
+    .filter((compose) => compose?.tabId === state.activeTabId)
+    .at(-1);
 }
 
 export function equalVisibleChatState(previous: ChatViewState, next: ChatViewState): boolean {
@@ -74,7 +78,7 @@ export function equalVisibleChatState(previous: ChatViewState, next: ChatViewSta
 
   const appSessionId = next.activeSession?.appSessionId;
   if (!appSessionId) {
-    return Object.is(latestPendingCompose(previous), latestPendingCompose(next));
+    return Object.is(startingComposeInTab(previous), startingComposeInTab(next));
   }
   if (
     !Object.is(previous.chatMetadata[appSessionId], next.chatMetadata[appSessionId]) ||
