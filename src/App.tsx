@@ -73,7 +73,11 @@ import {
   type UtilityTab,
   type UtilityTool,
 } from './lib/utilityPanel';
-import { isTerminalInputTarget, isTerminalTabShortcut } from './lib/keyboardShortcuts';
+import {
+  isTerminalInputTarget,
+  isTerminalTabShortcut,
+  utilityToolShortcut,
+} from './lib/keyboardShortcuts';
 import {
   SHORTCUT_DEFINITIONS,
   formatChord,
@@ -711,12 +715,10 @@ export default function App() {
         openUtilityTool('terminal');
         return;
       }
-      const meta = e.metaKey || e.ctrlKey;
-      if (!meta || !e.shiftKey) return;
-      const key = e.key.toLowerCase();
-      if (key === 'b' || key === 'f' || key === 'r') {
+      const tool = utilityToolShortcut(e);
+      if (tool) {
         e.preventDefault();
-        openUtilityTool(key === 'b' ? 'browser' : key === 'f' ? 'files' : 'review');
+        openUtilityTool(tool);
       }
     };
     window.addEventListener('keydown', handler);

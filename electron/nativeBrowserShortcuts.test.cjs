@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 
-const NEW_TAB = { meta: true, control: false, alt: false, shift: false, code: 'KeyT', key: 'T' };
-const NAMED_KEY = { meta: true, control: false, alt: false, shift: false, code: null, key: 'F3' };
+const NEW_TAB = { meta: true, control: false, alt: false, shift: false, key: 'T', typed: false };
+const NAMED_KEY = { meta: true, control: false, alt: false, shift: false, key: 'F3', typed: false };
 
 function setup() {
   const sent = [];
@@ -27,6 +27,7 @@ function setup() {
         alt: false,
         shift: false,
         isAutoRepeat: false,
+        isComposing: false,
         ...input,
       },
     );
@@ -57,14 +58,21 @@ test('an app chord pressed in a browser page goes to the app instead of the page
   });
 });
 
-test('other key presses, key releases and malformed chords stay with the page', () => {
+test('other key presses, key releases, composing input and malformed chords stay with the page', () => {
   const { shortcuts, press, sent } = setup();
-  shortcuts.setChords([NEW_TAB, { ...NEW_TAB, code: 'KeyW', meta: 'yes' }, null]);
+  shortcuts.setChords([
+    NEW_TAB,
+    { ...NEW_TAB, key: 'W', meta: 'yes' },
+    { ...NEW_TAB, key: 'N', typed: undefined },
+    null,
+  ]);
 
   assert.equal(press({ meta: true, shift: true, code: 'KeyT', key: 'T' }), false);
   assert.equal(press({ code: 'KeyT', key: 't' }), false);
   assert.equal(press({ meta: true, code: 'KeyW', key: 'w' }), false);
+  assert.equal(press({ meta: true, code: 'KeyN', key: 'n' }), false);
   assert.equal(press({ type: 'keyUp', meta: true, code: 'KeyT', key: 't' }), false);
+  assert.equal(press({ meta: true, code: 'KeyT', key: 't', isComposing: true }), false);
   assert.equal(sent.length, 0);
 
   shortcuts.setChords('not a list');

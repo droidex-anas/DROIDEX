@@ -6,6 +6,24 @@ const MAX_CHORDS = 64;
 const MAX_KEY_LENGTH = 32;
 const MODIFIERS = ['meta', 'control', 'alt', 'shift'];
 
+// keyFromEvent in src/lib/shortcuts.ts names a press the same way, and
+// src/lib/shortcuts.test.ts holds the two to the same answers.
+const PUNCTUATION_BY_CODE = new Map([
+  ['Backslash', '\\'],
+  ['Backquote', '`'],
+  ['BracketLeft', '['],
+  ['BracketRight', ']'],
+  ['Comma', ','],
+  ['Equal', '='],
+  ['Minus', '-'],
+  ['Period', '.'],
+  ['Quote', "'"],
+  ['Semicolon', ';'],
+  ['Slash', '/'],
+  ['Space', 'Space'],
+  ['NumpadAdd', 'Plus'],
+]);
+
 function createNativeBrowserShortcuts({ getMainWindow }) {
   let chords = [];
 
@@ -14,7 +32,9 @@ function createNativeBrowserShortcuts({ getMainWindow }) {
   }
 
   function handleInput(event, input) {
-    if (input.type !== 'keyDown' || !chords.some((chord) => matches(chord, input))) return;
+    // An input method is still building a character; the press belongs to it.
+    if (input.type !== 'keyDown' || input.isComposing) return;
+    if (!chords.some((chord) => matches(chord, input))) return;
     const mainWindow = getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) return;
     event.preventDefault();
@@ -38,17 +58,29 @@ function createNativeBrowserShortcuts({ getMainWindow }) {
 function isChord(value) {
   if (!value || typeof value !== 'object') return false;
   if (!MODIFIERS.every((name) => typeof value[name] === 'boolean')) return false;
-  return isKeyName(value.key) && (value.code === null || isKeyName(value.code));
+  if (typeof value.typed !== 'boolean') return false;
+  return (
+    typeof value.key === 'string' && value.key.length > 0 && value.key.length <= MAX_KEY_LENGTH
+  );
 }
 
-function isKeyName(value) {
-  return typeof value === 'string' && value.length > 0 && value.length <= MAX_KEY_LENGTH;
+function normalizeKey(key) {
+  if (key === ' ') return 'Space';
+  if (key === '+') return 'Plus';
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+function keyFromInput(input) {
+  const code = input.code;
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  return PUNCTUATION_BY_CODE.get(code) ?? normalizeKey(input.key);
 }
 
 function matches(chord, input) {
   if (!MODIFIERS.every((name) => input[name] === chord[name])) return false;
-  if (chord.code !== null) return input.code === chord.code;
-  return input.key.toUpperCase() === chord.key.toUpperCase();
+  const key = chord.typed ? normalizeKey(input.key) : keyFromInput(input);
+  return key === chord.key;
 }
 
 module.exports = { createNativeBrowserShortcuts };

@@ -8,6 +8,19 @@ export function isTerminalTabShortcut(event: Pick<KeyboardEvent, 'ctrlKey' | 'ke
   return event.ctrlKey && event.key === '`';
 }
 
+const UTILITY_TOOL_SHORTCUTS = new Map<string, 'browser' | 'files' | 'review'>([
+  ['B', 'browser'],
+  ['F', 'files'],
+  ['R', 'review'],
+]);
+export const UTILITY_TOOL_SHORTCUT_KEYS = [...UTILITY_TOOL_SHORTCUTS.keys()];
+
+/** The tool Cmd/Ctrl+Shift with the letter typed opens, or null. */
+export function utilityToolShortcut(event: ShortcutEvent): 'browser' | 'files' | 'review' | null {
+  if (!isMod(event) || !event.shiftKey) return null;
+  return UTILITY_TOOL_SHORTCUTS.get(event.key.toUpperCase()) ?? null;
+}
+
 export function isTerminalInputTarget(target: EventTarget | null): boolean {
   if (!target || typeof target !== 'object') return false;
   const closest = (target as { closest?: (selector: string) => unknown }).closest;
