@@ -42,7 +42,7 @@ export interface SessionRetirementFacts {
   queuedSends: number;
   interrupting: boolean;
   closing: boolean;
-  focused: boolean;
+  onScreen: boolean;
   hasUnsettledChildren: boolean;
   hasOpenBrowser: boolean;
   hasPendingSettings: boolean;
@@ -56,7 +56,7 @@ export interface SessionRetirementFacts {
 // embedded browser with it.
 function isRetirableSession(facts: SessionRetirementFacts): boolean {
   return (
-    !facts.focused &&
+    !facts.onScreen &&
     !UNANSWERED_PHASES.has(facts.phase) &&
     !facts.streaming &&
     !facts.compacting &&
@@ -108,7 +108,7 @@ export function adoptedSessionFacts(identity: {
     queuedSends: 0,
     interrupting: false,
     closing: false,
-    focused: false,
+    onScreen: false,
     hasOpenBrowser: false,
     hasPendingSettings: false,
     // A restart took every process the previous run had spawned with it.
@@ -144,7 +144,8 @@ export function nextSessionRetirementAt(
 
 export interface SessionRuntimeRetirementDependencies {
   liveSessions: () => readonly LiveSession[];
-  focusedAppSessionId: () => string | null;
+  // Null until the renderer first reports what is on screen.
+  onScreenAppSessionIds: () => ReadonlySet<string> | null;
   hasUnsettledChildren: (appSessionId: string) => boolean;
   hasOpenBrowser: (appSessionId: string) => boolean;
   hasPendingSettings: (appSessionId: string) => boolean;
@@ -163,24 +164,23 @@ export class SessionRuntimeRetirement {
   private readonly timer = new RuntimeRetirementTimer(() => {
     void this.sweep();
   });
-  // When each session stopped being the one the user was looking at. A session
-  // read for twenty minutes without a reply must not count as idle for those
-  // twenty minutes.
-  private readonly unfocusedAt = new Map<string, number>();
-  private focusReported = false;
+  // When each session left the screen. A session read for twenty minutes
+  // without a reply must not count as idle for those twenty minutes.
+  private readonly leftScreenAt = new Map<string, number>();
   private stopped = false;
   private sweeping: Promise<void> | null = null;
 
   constructor(private readonly dependencies: SessionRuntimeRetirementDependencies) {}
 
-  // `previouslyFocused` is the focus this owner is replacing; the dependency
-  // already reports the new one.
-  noteFocus(previouslyFocused: string | null): void {
-    this.focusReported = true;
-    const focused = this.dependencies.focusedAppSessionId();
-    if (previouslyFocused !== null && previouslyFocused !== focused)
-      this.unfocusedAt.set(previouslyFocused, this.dependencies.now());
-    if (focused !== null) this.unfocusedAt.delete(focused);
+  // `previouslyOnScreen` is the report this owner is replacing; the dependency
+  // already returns the new one.
+  noteOnScreen(previouslyOnScreen: ReadonlySet<string> | null): void {
+    const onScreen = this.dependencies.onScreenAppSessionIds() ?? new Set<string>();
+    const now = this.dependencies.now();
+    for (const appSessionId of previouslyOnScreen ?? []) {
+      if (!onScreen.has(appSessionId)) this.leftScreenAt.set(appSessionId, now);
+    }
+    for (const appSessionId of onScreen) this.leftScreenAt.delete(appSessionId);
     this.arm();
   }
 
@@ -198,7 +198,7 @@ export class SessionRuntimeRetirement {
   stop(): void {
     this.stopped = true;
     this.timer.cancel();
-    this.unfocusedAt.clear();
+    this.leftScreenAt.clear();
   }
 
   armedFor(): number | undefined {
@@ -243,31 +243,33 @@ export class SessionRuntimeRetirement {
   private facts(): SessionRetirementFacts[] {
     const live = this.dependencies.liveSessions();
     this.forgetClosedSessions(live);
-    if (!this.focusReported) return [];
-    return live.map((session) => this.describe(session));
+    const onScreen = this.dependencies.onScreenAppSessionIds();
+    if (!onScreen) return [];
+    return live.map((session) => this.describe(session, onScreen));
   }
 
   private factsFor(appSessionId: string): SessionRetirementFacts | undefined {
-    if (!this.focusReported) return undefined;
+    const onScreen = this.dependencies.onScreenAppSessionIds();
+    if (!onScreen) return undefined;
     const live = this.dependencies
       .liveSessions()
       .find((session) => session.summary.appSessionId === appSessionId);
-    return live ? this.describe(live) : undefined;
+    return live ? this.describe(live, onScreen) : undefined;
   }
 
-  private describe(live: LiveSession): SessionRetirementFacts {
+  private describe(live: LiveSession, onScreen: ReadonlySet<string>): SessionRetirementFacts {
     const d = this.dependencies;
     const appSessionId = live.summary.appSessionId;
     return {
       appSessionId,
-      idleSince: Math.max(live.summary.updatedAt, this.unfocusedAt.get(appSessionId) ?? 0),
+      idleSince: Math.max(live.summary.updatedAt, this.leftScreenAt.get(appSessionId) ?? 0),
       phase: live.summary.phase,
       streaming: live.streaming || live.summary.streaming === true,
       compacting: live.compacting === true || live.autoCompacting,
       queuedSends: live.pendingSends.length,
       interrupting: live.interrupting === true || live.interruptingToSend === true,
       closing: live.closeMode !== undefined,
-      focused: appSessionId === d.focusedAppSessionId(),
+      onScreen: onScreen.has(appSessionId),
       hasUnsettledChildren: d.hasUnsettledChildren(appSessionId),
       hasOpenBrowser: d.hasOpenBrowser(appSessionId),
       hasPendingSettings: d.hasPendingSettings(appSessionId),
@@ -277,10 +279,10 @@ export class SessionRuntimeRetirement {
   }
 
   private forgetClosedSessions(live: readonly LiveSession[]): void {
-    if (this.unfocusedAt.size === 0) return;
+    if (this.leftScreenAt.size === 0) return;
     const open = new Set(live.map((session) => session.summary.appSessionId));
-    for (const appSessionId of this.unfocusedAt.keys()) {
-      if (!open.has(appSessionId)) this.unfocusedAt.delete(appSessionId);
+    for (const appSessionId of this.leftScreenAt.keys()) {
+      if (!open.has(appSessionId)) this.leftScreenAt.delete(appSessionId);
     }
   }
 }

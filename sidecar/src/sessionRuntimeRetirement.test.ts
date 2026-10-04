@@ -28,7 +28,7 @@ function facts(
     queuedSends: 0,
     interrupting: false,
     closing: false,
-    focused: false,
+    onScreen: false,
     hasUnsettledChildren: false,
     hasOpenBrowser: false,
     hasPendingSettings: false,
@@ -63,7 +63,7 @@ test('a settled background session is retirable once it passes the idle budget, 
 test('a session on screen, with work, unsaved intent, or a resource in use is never retirable', () => {
   const forever = 1_000 + IDLE_MS * 100;
   const blocked: [string, Partial<SessionRetirementFacts>][] = [
-    ['on-screen', { focused: true }],
+    ['on-screen', { onScreen: true }],
     ['mid-turn', { streaming: true }],
     ['mid-mission-turn', { phase: 'orchestrator_turn', streaming: true }],
     ['still-initializing', { phase: 'initializing' }],
@@ -94,8 +94,9 @@ interface OwnerHarness {
   statuses: { appSessionId: string; text: string }[];
   errors: { appSessionId: string; message: string }[];
   live: Map<string, LiveSession>;
-  focus: { current: string | null };
   clock: { now: number };
+  // Reports these chats as the ones on screen, replacing the previous report.
+  show(...appSessionIds: string[]): void;
   add(appSessionId: string, updatedAt: number, patch?: Partial<LiveSession>): LiveSession;
 }
 
@@ -120,11 +121,11 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
   const statuses: { appSessionId: string; text: string }[] = [];
   const errors: { appSessionId: string; message: string }[] = [];
   const live = new Map<string, LiveSession>();
-  const focus = { current: null as string | null };
+  let onScreen: ReadonlySet<string> | null = null;
   const clock = { now: 10_000 };
   const owner = new SessionRuntimeRetirement({
     liveSessions: () => [...live.values()],
-    focusedAppSessionId: () => focus.current,
+    onScreenAppSessionIds: () => onScreen,
     hasUnsettledChildren: () => false,
     hasOpenBrowser: () => false,
     hasPendingSettings: () => false,
@@ -147,8 +148,12 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
     statuses,
     errors,
     live,
-    focus,
     clock,
+    show(...appSessionIds) {
+      const previous = onScreen;
+      onScreen = new Set(appSessionIds);
+      owner.noteOnScreen(previous);
+    },
     add(appSessionId, updatedAt, patch = {}) {
       const session = Object.assign(liveSession(appSessionId, updatedAt), patch);
       live.set(appSessionId, session);
@@ -165,8 +170,7 @@ test('nothing is retirable until the renderer has reported what is on screen', a
   await h.owner.sweep();
   assert.deepEqual(h.retired, []);
 
-  h.focus.current = 'other';
-  h.owner.noteFocus(null);
+  h.show('other');
   await h.owner.sweep();
   assert.deepEqual(h.retired, ['background']);
   assert.deepEqual(
@@ -178,14 +182,12 @@ test('nothing is retirable until the renderer has reported what is on screen', a
 test('a session stays warm for a full budget after the user switches away, until it closes', async () => {
   const h = ownerHarness();
   h.add('read-for-a-while', 0);
-  h.focus.current = 'read-for-a-while';
-  h.owner.noteFocus(null);
+  h.show('read-for-a-while');
   h.clock.now = IDLE_MS * 10;
 
   // Switching away starts the clock: an old updatedAt must not make a session
   // the user just left immediately retirable.
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus('read-for-a-while');
+  h.show('elsewhere');
   await h.owner.sweep();
   assert.deepEqual(h.retired, []);
 
@@ -196,15 +198,31 @@ test('a session stays warm for a full budget after the user switches away, until
   // A closed session forgets when the user last looked at it, so one resumed
   // with nothing newer than its last turn is not kept warm by that moment.
   h.add('reopened', 0);
-  h.focus.current = 'reopened';
-  h.owner.noteFocus(null);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus('reopened');
+  h.show('reopened');
+  h.show('elsewhere');
   h.live.delete('reopened');
   h.owner.arm();
   h.add('reopened', 0);
   await h.owner.sweep();
   assert.deepEqual(h.retired, ['read-for-a-while', 'reopened']);
+});
+
+test('every chat on screen stays warm, and each starts its clock as it leaves', async () => {
+  const h = ownerHarness();
+  h.add('left', 0);
+  h.add('right', 0);
+  h.clock.now = IDLE_MS * 10;
+  h.show('left', 'right');
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, []);
+
+  h.show('left');
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, [], 'leaving the screen starts the clock, it does not expire it');
+
+  h.clock.now += IDLE_MS;
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, ['right']);
 });
 
 test('a prompt that arrives during an earlier release saves the session behind it', async () => {
@@ -222,8 +240,7 @@ test('a prompt that arrives during an earlier release saves the session behind i
   });
   h.add('first', 0);
   const second = h.add('second', 0);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus(null);
+  h.show('elsewhere');
   h.clock.now = IDLE_MS * 10;
 
   const sweeping = h.owner.sweep();
@@ -250,8 +267,7 @@ test('overlapping retirement sweeps wait for the same pending close', async () =
     },
   });
   h.add('pending-close', 0);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus(null);
+  h.show('elsewhere');
   h.clock.now = IDLE_MS * 10;
   try {
     const first = h.owner.sweep();
@@ -280,8 +296,7 @@ test('a failed release is reported and does not stop the rest of the sweep', asy
   });
   h.add('broken', 0);
   h.add('fine', 0);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus(null);
+  h.show('elsewhere');
   h.clock.now = IDLE_MS * 10;
 
   await h.owner.sweep();
@@ -309,8 +324,7 @@ test('the timer is armed only while a session is actually retirable', () => {
   try {
     const h = ownerHarness();
     const streaming = h.add('streaming', 0, { streaming: true });
-    h.focus.current = null;
-    h.owner.noteFocus(null);
+    h.show();
 
     h.owner.arm();
     assert.equal(h.owner.armedFor(), undefined, 'a streaming session must not arm a wakeup');

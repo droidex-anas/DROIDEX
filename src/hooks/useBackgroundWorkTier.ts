@@ -2,16 +2,24 @@ import { useEffect, useRef } from 'react';
 
 import { useDocumentVisible } from './useDocumentVisible';
 import { useStoreDispatch, useStoreSelector } from './useStore';
+import { chatsOnScreen, sameEntries } from '../features/tabs/tabStrip';
 import { setBackgroundWork } from '../lib/commands';
 import { resolveBackgroundWorkTier, type BackgroundWorkTier } from '../lib/backgroundWork';
 import { desktopPowerTier, onDesktopMemoryPressure, onDesktopPowerTier } from '../lib/desktop';
 
+interface SentBackgroundWork {
+  tier: BackgroundWorkTier;
+  focused: string | null;
+  visible: string[];
+}
+
 export function useBackgroundWorkTier(): void {
   const documentVisible = useDocumentVisible();
   const focusedAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
+  const visibleAppSessionIds = useStoreSelector(chatsOnScreen, sameEntries);
   const connected = useStoreSelector((state) => state.connection === 'connected');
   const dispatch = useStoreDispatch();
-  const lastSent = useRef<{ tier: BackgroundWorkTier; focused: string | null } | null>(null);
+  const lastSent = useRef<SentBackgroundWork | null>(null);
 
   useEffect(() => {
     if (!connected) {
@@ -23,10 +31,16 @@ export function useBackgroundWorkTier(): void {
     let onBattery = false;
 
     const publish = (tier: BackgroundWorkTier) => {
-      const focused = focusedAppSessionId;
-      if (lastSent.current?.tier === tier && lastSent.current.focused === focused) return;
-      lastSent.current = { tier, focused };
-      setBackgroundWork(tier, focused);
+      const sent = lastSent.current;
+      if (
+        sent?.tier === tier &&
+        sent.focused === focusedAppSessionId &&
+        sameEntries(sent.visible, visibleAppSessionIds)
+      ) {
+        return;
+      }
+      lastSent.current = { tier, focused: focusedAppSessionId, visible: visibleAppSessionIds };
+      setBackgroundWork(tier, focusedAppSessionId, visibleAppSessionIds);
     };
 
     const sync = () => {
@@ -56,5 +70,5 @@ export function useBackgroundWorkTier(): void {
       stopPower();
       stopPressure();
     };
-  }, [connected, dispatch, documentVisible, focusedAppSessionId]);
+  }, [connected, dispatch, documentVisible, focusedAppSessionId, visibleAppSessionIds]);
 }

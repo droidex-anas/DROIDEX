@@ -9,40 +9,33 @@ import {
   contextPollIntervalMs,
 } from './contextPollScheduler.js';
 
-type PollInput = Parameters<typeof contextPollIntervalMs>[0];
-
-test('cadence follows focus and role, and hidden or low-power tiers pause polling', () => {
-  // app-1 is the focused chat throughout.
-  const cases: [string, Omit<PollInput, 'focusedAppSessionId'>, number][] = [
+test('cadence follows whether the chat is on screen and its role, and hidden or low-power tiers pause polling', () => {
+  const cases: [string, Parameters<typeof contextPollIntervalMs>[0], number][] = [
     [
-      'focused primary',
-      { tier: 'interactive', isChild: false, appSessionId: 'app-1' },
+      'on-screen primary',
+      { tier: 'interactive', isChild: false, isOnScreen: true },
       CONTEXT_POLL_ACTIVE_MS,
     ],
     [
-      'child of the focused chat',
-      { tier: 'interactive', isChild: true, appSessionId: 'app-1' },
+      'child of an on-screen chat',
+      { tier: 'interactive', isChild: true, isOnScreen: true },
       CONTEXT_POLL_BACKGROUND_MS,
     ],
     [
-      'unfocused primary',
-      { tier: 'interactive', isChild: false, appSessionId: 'app-2' },
+      'off-screen primary',
+      { tier: 'interactive', isChild: false, isOnScreen: false },
       CONTEXT_POLL_INACTIVE_MS,
     ],
     [
-      'child of an unfocused chat',
-      { tier: 'interactive', isChild: true, appSessionId: 'app-2' },
+      'child of an off-screen chat',
+      { tier: 'interactive', isChild: true, isOnScreen: false },
       CONTEXT_POLL_INACTIVE_MS,
     ],
-    ['hidden', { tier: 'hidden', isChild: false, appSessionId: 'app-1' }, 0],
-    ['low-power', { tier: 'low-power', isChild: true, appSessionId: 'app-1' }, 0],
+    ['hidden', { tier: 'hidden', isChild: false, isOnScreen: true }, 0],
+    ['low-power', { tier: 'low-power', isChild: true, isOnScreen: true }, 0],
   ];
   for (const [label, input, expected] of cases) {
-    assert.equal(
-      contextPollIntervalMs({ ...input, focusedAppSessionId: 'app-1' }),
-      expected,
-      label,
-    );
+    assert.equal(contextPollIntervalMs(input), expected, label);
   }
 });
 

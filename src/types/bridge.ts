@@ -902,7 +902,9 @@ export type ClientCommand =
   | {
       type: 'app.backgroundWork';
       tier: 'interactive' | 'hidden' | 'low-power';
-      focusedAppSessionId?: string | null;
+      // The chat the user is working in, and every chat on screen including it.
+      focusedAppSessionId: string | null;
+      visibleAppSessionIds: string[];
     }
   | {
       type: 'child.open';

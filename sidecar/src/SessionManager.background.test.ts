@@ -379,8 +379,19 @@ test('provider replacement finalizes the retired file without treating its alias
 // Idle retirement: the manager supplies each retirement fact from live state;
 // sessionRuntimeRetirement owns the policy.
 
-const focusElsewhere = (h: SessionManagerTestContext): Promise<void> =>
-  h.handle({ type: 'app.backgroundWork', tier: 'interactive', focusedAppSessionId: 'other' });
+const focusOn = (
+  h: SessionManagerTestContext,
+  appSessionId: string,
+  besideIt: string[] = [],
+): Promise<void> =>
+  h.handle({
+    type: 'app.backgroundWork',
+    tier: 'interactive',
+    focusedAppSessionId: appSessionId,
+    visibleAppSessionIds: [appSessionId, ...besideIt],
+  });
+
+const focusElsewhere = (h: SessionManagerTestContext): Promise<void> => focusOn(h, 'other');
 
 async function openIdleSession(h: SessionManagerTestContext, clientRef: string): Promise<string> {
   await h.create(chatCommand(clientRef, { goal: `first turn for ${clientRef}` }));
@@ -434,6 +445,22 @@ test('a turn, an open browser, or an unapplied model choice keeps a session from
 
     await h.retireIdleSessionRuntimes();
     assert.deepEqual(providerCloses(h), [session]);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a chat on screen beside the focused one keeps its runtime', async () => {
+  const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
+  try {
+    const focused = await openIdleSession(h, 'focused');
+    const beside = await openIdleSession(h, 'beside');
+    const background = await openIdleSession(h, 'background');
+    await focusOn(h, focused, [beside]);
+
+    await h.retireIdleSessionRuntimes();
+
+    assert.deepEqual(providerCloses(h), [background]);
   } finally {
     await h.dispose();
   }
@@ -612,11 +639,7 @@ test('selecting a retired chat starts its runtime again before any prompt', asyn
     await h.retireIdleSessionRuntimes();
     assert.deepEqual(providerCloses(h), [session]);
 
-    await h.handle({
-      type: 'app.backgroundWork',
-      tier: 'interactive',
-      focusedAppSessionId: session,
-    });
+    await focusOn(h, session);
     await h.warmSelectedSessionRuntime();
 
     assert.deepEqual(
