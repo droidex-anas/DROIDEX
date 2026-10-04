@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useEffect, useRef, type ReactNode } from 'react';
 import { Reorder } from 'framer-motion';
 import { Clock, Columns, Plus, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
@@ -24,6 +24,22 @@ interface TabItem {
   // A split tab names every tile in its tooltip and shows its tile count.
   title: string;
   tileCount: number;
+}
+
+// The width .scroll-fade-x fades at an edge the strip continues past.
+const EDGE_FADE_PX = 28;
+
+// Only the strip scrolls: scrollIntoView would also move the window's own scrollers.
+function revealActiveTab(strip: HTMLElement, behavior: ScrollBehavior) {
+  const tab = strip.querySelector<HTMLElement>('[aria-current="page"]');
+  if (!tab) return;
+  const stripRect = strip.getBoundingClientRect();
+  const tabRect = tab.getBoundingClientRect();
+  if (tabRect.left < stripRect.left + EDGE_FADE_PX) {
+    strip.scrollBy({ left: tabRect.left - stripRect.left - EDGE_FADE_PX, behavior });
+  } else if (tabRect.right > stripRect.right - EDGE_FADE_PX) {
+    strip.scrollBy({ left: tabRect.right - stripRect.right + EDGE_FADE_PX, behavior });
+  }
 }
 
 const VIEW_LABELS = {
@@ -131,6 +147,39 @@ const TabList = memo(function TabList() {
   const activeTabId = useStoreSelector((state) => state.tabStrip.activeTabId);
   const newTabChord = useStoreSelector((state) => state.shortcutBindings.newTab);
   const closeTabChord = useStoreSelector((state) => state.shortcutBindings.closeTab);
+  const stripRef = useRef<HTMLDivElement>(null);
+  // A press activates its tab and may start a drag, so the strip must not
+  // scroll under the pointer until it is released.
+  const pressingRef = useRef(false);
+
+  useEffect(() => {
+    if (stripRef.current && !pressingRef.current) revealActiveTab(stripRef.current, 'smooth');
+  }, [activeTabId]);
+
+  const holdRevealUntilRelease = () => {
+    pressingRef.current = true;
+    const release = new AbortController();
+    const reveal = () => {
+      release.abort();
+      pressingRef.current = false;
+      if (stripRef.current) revealActiveTab(stripRef.current, 'smooth');
+    };
+    window.addEventListener('pointerup', reveal, { signal: release.signal });
+    window.addEventListener('pointercancel', reveal, { signal: release.signal });
+  };
+
+  // Narrowing the window or opening the sidebar shrinks the strip under the active tab.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const observer = new ResizeObserver(() => {
+      revealActiveTab(strip, 'instant');
+    });
+    observer.observe(strip);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const activate = (tabId: string) => {
     dispatch({ type: 'ACTIVATE_TAB', tabId });
@@ -142,6 +191,8 @@ const TabList = memo(function TabList() {
   return (
     <>
       <Reorder.Group
+        ref={stripRef}
+        onPointerDownCapture={holdRevealUntilRelease}
         as="div"
         axis="x"
         layoutScroll
@@ -149,7 +200,7 @@ const TabList = memo(function TabList() {
         onReorder={(tabIds: string[]) => {
           dispatch({ type: 'REORDER_TABS', tabIds });
         }}
-        className="no-drag no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
+        className="no-drag no-scrollbar scroll-fade-x flex min-w-0 items-center gap-1 overflow-x-auto"
       >
         {items.map((item) => {
           const active = item.id === activeTabId;
@@ -161,7 +212,7 @@ const TabList = memo(function TabList() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className={`group relative flex h-7 w-[200px] min-w-[96px] items-center rounded-lg transition-colors ${
+              className={`group relative flex h-7 w-[200px] min-w-[120px] items-center rounded-lg transition-colors ${
                 active
                   ? 'bg-droid-elevated/60 text-droid-text'
                   : 'text-droid-text-muted hover:bg-droid-elevated/40 hover:text-droid-text'
@@ -185,7 +236,11 @@ const TabList = memo(function TabList() {
                   onAuxClick={(event) => {
                     if (event.button === 1) close(item.id);
                   }}
-                  className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 pr-7 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+                  // A background tab's label takes the close button's room
+                  // until the button shows.
+                  className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
+                    active ? 'pr-7' : 'pr-2.5 group-focus-within:pr-7 group-hover:pr-7'
+                  }`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                     <TabGlyph item={item} />
