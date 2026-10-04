@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import { Reorder } from 'framer-motion';
 import { Clock, Columns, Plus, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
@@ -113,6 +113,20 @@ function TabGlyph({ item }: { item: TabItem }) {
 // it shows, so it starts past the window controls when the sidebar is collapsed
 // and ends with the session's own controls.
 export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: ReactNode }) {
+  return (
+    <div
+      data-electron-drag-region
+      data-testid="header-tabs"
+      className="flex h-9 shrink-0 items-center gap-1 pr-3"
+      style={{ paddingLeft: leadPx }}
+    >
+      <TabList />
+      <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">{controls}</div>
+    </div>
+  );
+}
+
+const TabList = memo(function TabList() {
   const dispatch = useStoreDispatch();
   const items = useStoreSelector(selectTabItems, equalTabItems);
   const activeTabId = useStoreSelector((state) => state.tabStrip.activeTabId);
@@ -127,12 +141,7 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
   };
 
   return (
-    <div
-      data-electron-drag-region
-      data-testid="header-tabs"
-      className="flex h-9 shrink-0 items-center gap-1 pr-3"
-      style={{ paddingLeft: leadPx }}
-    >
+    <>
       <Reorder.Group
         as="div"
         axis="x"
@@ -234,7 +243,6 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
           <Plus className="h-3.5 w-3.5" />
         </button>
       </HoverTooltip>
-      <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">{controls}</div>
-    </div>
+    </>
   );
-}
+});
