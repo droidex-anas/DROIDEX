@@ -121,8 +121,9 @@ The concrete limits, from `AGENTS.md`:
   Existing `SessionManager` topic suites cover distinct facade integration
   contracts; they are an exception, not a pattern for new splits.
 - Test files have an 800-line cap, excluding blank lines and comments. About
-  60 lines per test is a readability guideline. Justify necessary exceptions;
-  never trim valuable coverage just to reach a count.
+  60 lines per test is a readability guideline. Only existing lint-suppressed
+  files may exceed the cap; justify any growth of those exceptions in the pull
+  request. Never trim valuable coverage just to reach a count.
 - An uncovered nontrivial bug gets one focused regression test at its owner.
 - No sleeps or wall-clock thresholds in unit tests; timing belongs
   to `npm run quality:perf-gates`.

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -356,6 +357,7 @@ export function notifyDaemonCompaction(
   h: SessionManagerTestContext,
   providerSessionId: string,
   kind: 'started' | 'completed',
+  summaryId: string = randomUUID(),
 ): void {
   h.provider.emitNotification(providerSessionId, {
     jsonrpc: '2.0',
@@ -366,7 +368,7 @@ export function notifyDaemonCompaction(
           ? { type: 'droid_working_state_changed', newState: 'compacting_conversation' }
           : {
               type: 'session_compacted',
-              summaryId: 'summary-1',
+              summaryId,
               removedCount: 1,
               visibleBoundaryMessageId: null,
             },

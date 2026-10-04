@@ -275,8 +275,9 @@ count, coverage targets, or a wish to look thorough.
 - Test files have an 800-line cap, excluding blank lines and comments. About
   60 lines per test, including setup, is a readability guideline. Remove
   duplication or move genuinely shared setup into existing `testing/` helpers
-  before growing a suite. Justify necessary exceptions in the pull request;
-  never compress a test or cut valuable coverage just to meet a count.
+  before growing a suite. Only existing lint-suppressed files may exceed the
+  cap; justify any growth of those exceptions in the pull request. Never
+  compress a test or cut valuable coverage just to meet a count.
 - No wall-clock thresholds or sleeps in unit tests. Timing and
   throughput belong to the perf replay harness (`npm run quality:perf-gates`).
   No tests that only fail when the process lacks file permissions; inject the

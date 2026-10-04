@@ -4,26 +4,37 @@ import { wrapTabFocus } from './focusTrap';
 
 interface FakeElement {
   name: string;
+  tabIndex: number;
   focus(): void;
 }
 
-function fakeDialog(controlCount: number) {
+function fakeDialog(controlCount: number, skippedEdges = false) {
   const doc: { activeElement: FakeElement | null } = { activeElement: null };
-  const element = (name: string): FakeElement => {
-    const el: FakeElement = { name, focus: () => (doc.activeElement = el) };
+  const element = (name: string, tabIndex = 0): FakeElement => {
+    const el: FakeElement = { name, tabIndex, focus: () => (doc.activeElement = el) };
     return el;
   };
   const controls = Array.from({ length: controlCount }, (_, i) => element(`control ${i + 1}`));
+  const skippedBefore = element('skipped before', -2);
+  const skippedAfter = element('skipped after', -1);
+  const candidates = skippedEdges ? [skippedBefore, ...controls, skippedAfter] : controls;
   const dialog = Object.assign(element('dialog'), {
     ownerDocument: doc,
-    querySelectorAll: (): FakeElement[] => controls,
-    contains: (node: unknown): boolean => node === dialog || controls.includes(node as FakeElement),
+    querySelectorAll: (): FakeElement[] => candidates,
   });
   const outside = element('page behind the scrim');
   return {
     doc,
     dialog,
-    at: { dialog, outside, first: controls[0], middle: controls[1], last: controls.at(-1) },
+    at: {
+      dialog,
+      outside,
+      first: controls[0],
+      middle: controls[1],
+      last: controls.at(-1),
+      skippedBefore,
+      skippedAfter,
+    },
   };
 }
 
@@ -42,9 +53,14 @@ test('Tab cycles inside the dialog and wraps from its edges, the dialog itself, 
     { from: 'dialog', shiftKey: true, to: 'control 3' },
     { from: 'outside', shiftKey: false, to: 'control 1' },
     { from: 'middle', shiftKey: false, to: 'control 2' },
+    { from: 'last', shiftKey: false, to: 'control 1', skippedEdges: true },
+    { from: 'first', shiftKey: true, to: 'control 3', skippedEdges: true },
+    { from: 'skippedBefore', shiftKey: true, to: 'control 3', skippedEdges: true },
+    { from: 'skippedAfter', shiftKey: false, to: 'control 1', skippedEdges: true },
   ] as const;
-  for (const { from, shiftKey, to } of rows) {
-    const { doc, dialog, at } = fakeDialog(3);
+  for (const row of rows) {
+    const { from, shiftKey, to } = row;
+    const { doc, dialog, at } = fakeDialog(3, 'skippedEdges' in row && row.skippedEdges);
     doc.activeElement = at[from] ?? null;
     const prevented = pressTab(dialog, shiftKey);
     assert.equal(doc.activeElement?.name, to, `${from} + ${shiftKey ? 'Shift+' : ''}Tab`);

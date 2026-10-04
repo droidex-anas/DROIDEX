@@ -42,5 +42,17 @@ export function withFailingLocalStorage(fn: () => void): void {
   const fail = () => {
     throw new Error('storage denied');
   };
-  withGlobalStorage({ getItem: fail, setItem: fail } as unknown as Storage, fn);
+  withGlobalStorage(
+    {
+      getItem: fail,
+      setItem: fail,
+      removeItem: fail,
+      clear: fail,
+      key: fail,
+      get length() {
+        return fail();
+      },
+    },
+    fn,
+  );
 }

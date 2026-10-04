@@ -9,7 +9,9 @@ export function wrapTabFocus(
   dialog: HTMLElement | null,
 ): void {
   if (event.key !== 'Tab' || !dialog) return;
-  const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+  const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) => element.tabIndex >= 0,
+  );
   // Every control disabled (work pending): Tab stays on the dialog.
   if (focusables.length === 0) {
     event.preventDefault();
@@ -19,11 +21,11 @@ export function wrapTabFocus(
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
   const active = dialog.ownerDocument.activeElement;
-  const outside = active === dialog || !dialog.contains(active);
-  if (event.shiftKey && (active === first || outside)) {
+  const outsideTabOrder = !focusables.some((element) => element === active);
+  if (event.shiftKey && (active === first || outsideTabOrder)) {
     event.preventDefault();
     last.focus();
-  } else if (!event.shiftKey && (active === last || outside)) {
+  } else if (!event.shiftKey && (active === last || outsideTabOrder)) {
     event.preventDefault();
     first.focus();
   }

@@ -113,16 +113,27 @@ function hashFile(path, algorithm, encoding) {
   return createHash(algorithm).update(readFileSync(path)).digest(encoding);
 }
 
+function enclosureAttribute(enclosure, name) {
+  return enclosure.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
+}
+
 function verifySparkleAppcast(architecture) {
   const appcastName = `appcast-${architecture}.xml`;
   const appcastPath = join(releaseDirectory, appcastName);
   const appcast = readFileSync(appcastPath);
   const text = appcast.toString('utf8');
-  const enclosure = text.match(
-    /<enclosure url="([^"]+)" length="(\d+)"[^>]*sparkle:edSignature="([^"]+)"/,
+  const enclosures = text.match(/<enclosure\b[^>]*>/g) ?? [];
+  const enclosure = enclosures.find(
+    (tag) => enclosureAttribute(tag, 'sparkle:deltaFrom') === undefined,
   );
   assert(enclosure, `${appcastName} is missing its signed enclosure`);
-  const [, url, declaredLength, archiveSignature] = enclosure;
+  const url = enclosureAttribute(enclosure, 'url');
+  const declaredLength = enclosureAttribute(enclosure, 'length');
+  const archiveSignature = enclosureAttribute(enclosure, 'sparkle:edSignature');
+  assert(
+    archiveSignature && /^\d+$/.test(declaredLength ?? ''),
+    `${appcastName} is missing its signed enclosure`,
+  );
   const archiveName = `droidex-${architecture}.zip`;
   const archivePath = join(releaseDirectory, archiveName);
   assert(
@@ -164,16 +175,22 @@ function verifySparkleAppcast(architecture) {
   );
 
   const deltaPrefix = `https://github.com/droidex-anas/droidex-releases/releases/download/v${packageJson.version}/`;
-  const deltas = [
-    ...text.matchAll(
-      /<enclosure url="([^"]+)" sparkle:deltaFrom="[^"]+" length="(\d+)"[^>]*sparkle:edSignature="([^"]+)"/g,
-    ),
-  ];
+  const deltas = enclosures.filter(
+    (tag) => enclosureAttribute(tag, 'sparkle:deltaFrom') !== undefined,
+  );
   assert(
     deltas.length === (text.match(/sparkle:deltaFrom=/g)?.length ?? 0),
     `${appcastName} has an unsigned or unrecognised delta enclosure`,
   );
-  for (const [, deltaUrl, deltaLength, deltaSignature] of deltas) {
+  for (const delta of deltas) {
+    const deltaFrom = enclosureAttribute(delta, 'sparkle:deltaFrom');
+    const deltaUrl = enclosureAttribute(delta, 'url');
+    const deltaLength = enclosureAttribute(delta, 'length');
+    const deltaSignature = enclosureAttribute(delta, 'sparkle:edSignature');
+    assert(
+      deltaFrom && deltaUrl && deltaSignature && /^\d+$/.test(deltaLength ?? ''),
+      `${appcastName} has an unsigned or unrecognised delta enclosure`,
+    );
     const deltaName = deltaUrl.slice(deltaPrefix.length);
     assert(
       deltaUrl.startsWith(deltaPrefix) &&
@@ -256,18 +273,28 @@ async function smokePackagedRuntime(architecture) {
   );
   const temporaryHome = mkdtempSync(join(tmpdir(), `droidex-${name}-runtime-`));
   const databasePath = join(temporaryHome, '.factory', 'droidex', 'session-index.sqlite');
+  const bridgeToken = 'release-verifier-bridge-token';
   const child = spawn(executablePath, [sidecarPath], {
     env: {
       ...process.env,
       HOME: temporaryHome,
       DROIDEX_USER_DATA_DIR: join(temporaryHome, 'Library', 'Application Support', 'DROIDEX'),
+      DROIDEX_HISTORY_DIR: join(temporaryHome, '.factory', 'droidex'),
+      DROID_PATH: '/usr/bin/false',
+      CLAUDE_PATH: '/usr/bin/false',
+      CODEX_PATH: '/usr/bin/false',
+      CLAUDE_CONFIG_DIR: join(temporaryHome, '.claude'),
+      CODEX_HOME: join(temporaryHome, '.codex'),
+      FACTORY_API_KEY: '',
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_PORT: '0',
-      BRIDGE_TOKEN: 'release-verifier-bridge-token',
+      BRIDGE_TOKEN: bridgeToken,
       BROWSER_ASSET_TOKEN: 'release-verifier-asset-token',
+      BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  let bridge;
 
   try {
     await new Promise((resolveReady, rejectReady) => {
@@ -279,21 +306,57 @@ async function smokePackagedRuntime(architecture) {
         didTimeout = true;
         child.kill('SIGKILL');
       }, packagedRuntimeStartupTimeoutMs);
+      const rejectStartup = (error) => {
+        clearTimeout(timeout);
+        rejectReady(error);
+      };
 
       child.stdout.on('data', (chunk) => {
         output += chunk.toString('utf8');
-        if (!isReady && /(?:^|\n)SIDECAR_READY \d+(?:\n|$)/.test(output)) {
+        const port = output.match(/(?:^|\n)SIDECAR_READY (\d+)(?:\n|$)/)?.[1];
+        if (bridge || !port) return;
+        bridge = new globalThis.WebSocket(
+          `ws://127.0.0.1:${port}/?token=${bridgeToken}&bridgeProtocol=8`,
+        );
+        bridge.addEventListener('open', () => {
+          bridge.send(JSON.stringify({ type: 'sessions.list' }));
+        });
+        bridge.addEventListener('message', ({ data }) => {
+          let message;
+          try {
+            message = JSON.parse(data);
+          } catch {
+            rejectStartup(new Error(`${name} packaged bridge sent invalid JSON`));
+            return;
+          }
+          if (message?.type === 'error') {
+            rejectStartup(new Error(`${name} packaged bridge error: ${message.message}`));
+            return;
+          }
+          if (
+            isReady ||
+            message?.type !== 'events.batch' ||
+            !Array.isArray(message.events) ||
+            !message.events.some((entry) => entry?.event?.type === 'sessions.list')
+          )
+            return;
+          // The list is emitted only after session history boot reconciliation.
           isReady = true;
+          bridge.close();
           child.stdin.end();
-        }
+        });
+        bridge.addEventListener('error', () => {
+          rejectStartup(new Error(`${name} packaged bridge connection failed`));
+        });
+        bridge.addEventListener('close', () => {
+          if (!isReady)
+            rejectStartup(new Error(`${name} packaged bridge closed before sessions.list`));
+        });
       });
       child.stderr.on('data', (chunk) => {
         errorOutput += chunk.toString('utf8');
       });
-      child.once('error', (error) => {
-        clearTimeout(timeout);
-        rejectReady(error);
-      });
+      child.once('error', rejectStartup);
       child.once('exit', (code, signal) => {
         clearTimeout(timeout);
         if (didTimeout) {
@@ -326,7 +389,7 @@ async function smokePackagedRuntime(architecture) {
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
     ).trim();
     const sqliteState = JSON.parse(sqliteResult);
-    assert(sqliteState.version === 3, `${name} SQLite schema version is not canonical`);
+    assert(sqliteState.version === 5, `${name} SQLite schema version is not canonical`);
     assert(sqliteState.tables.includes('app_sessions'), `${name} SQLite app_sessions table is missing`);
     assert(sqliteState.tables.includes('child_sessions'), `${name} SQLite child_sessions table is missing`);
 
@@ -340,6 +403,7 @@ async function smokePackagedRuntime(architecture) {
     ).trim();
     assert(nativeDependencyResult === '0', `${name} packaged node-pty failed to spawn`);
   } finally {
+    bridge?.close();
     if (!child.killed && child.exitCode === null) child.kill('SIGKILL');
     rmSync(temporaryHome, { recursive: true, force: true });
   }

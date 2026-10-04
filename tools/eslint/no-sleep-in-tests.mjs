@@ -19,6 +19,23 @@ function isDelayedTimer(node) {
   );
 }
 
+function stableBindingReferences(declaration, initializer, sourceCode) {
+  const identifier = declaration?.id;
+  if (identifier?.type !== 'Identifier') return [];
+  const binding = sourceCode
+    .getDeclaredVariables(declaration)
+    .find((candidate) => candidate.identifiers.includes(identifier));
+  // The declaration's own initializer is its only allowed write.
+  if (
+    binding?.references.some(
+      (reference) =>
+        reference.isWrite() && (!reference.init || reference.writeExpr !== initializer),
+    )
+  )
+    return [];
+  return binding?.references ?? [];
+}
+
 export default {
   meta: {
     type: 'problem',
@@ -38,8 +55,19 @@ export default {
           .variables.find((candidate) => candidate.identifiers.includes(resolve));
         if (!variable) return;
 
-        const timers = new Set();
+        const references = [...variable.references];
+        // Follow one directly declared resolver alias, with no reassignment.
         for (const { identifier } of variable.references) {
+          const declaration = identifier.parent;
+          if (declaration.type === 'VariableDeclarator' && declaration.init === identifier) {
+            references.push(
+              ...stableBindingReferences(declaration, identifier, context.sourceCode),
+            );
+          }
+        }
+
+        const timers = new Set();
+        for (const { identifier } of references) {
           const call = identifier.parent;
           if (isDelayedTimer(call) && call.arguments[0] === identifier) {
             timers.add(call);
@@ -57,23 +85,13 @@ export default {
             let declaration;
             if (callback.type === 'FunctionDeclaration') declaration = callback;
             else if (parent.type === 'VariableDeclarator') declaration = parent;
-            const handler = declaration?.id;
-            if (handler?.type === 'Identifier') {
-              const binding = context.sourceCode
-                .getDeclaredVariables(declaration)
-                .find((candidate) => candidate.identifiers.includes(handler));
-              // The handler's own initializer is its only allowed write.
-              if (
-                binding?.references.some(
-                  (reference) =>
-                    reference.isWrite() && (!reference.init || reference.writeExpr !== callback),
-                )
-              )
-                break;
-              for (const { identifier } of binding?.references ?? []) {
-                const timer = identifier.parent;
-                if (isDelayedTimer(timer) && timer.arguments[0] === identifier) timers.add(timer);
-              }
+            for (const { identifier } of stableBindingReferences(
+              declaration,
+              callback,
+              context.sourceCode,
+            )) {
+              const timer = identifier.parent;
+              if (isDelayedTimer(timer) && timer.arguments[0] === identifier) timers.add(timer);
             }
             break;
           }

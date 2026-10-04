@@ -5,7 +5,7 @@ description: Use whenever writing, changing, reviewing, or sweeping tests in DRO
 
 # Test Audit
 
-Adapted from OpenClaw's `test-audit` skill (MIT,
+Adapted from OpenClaw's `test-audit` skill ([MIT notice](LICENSE),
 https://github.com/openclaw/openclaw/tree/main/.agents/skills/test-audit) for
 DROIDEX's `node:test` suites. Read the "Verification and tests" section of
 `AGENTS.md` first; this skill is the procedure behind it.
