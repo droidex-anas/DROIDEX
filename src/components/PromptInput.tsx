@@ -1235,6 +1235,9 @@ export default function PromptInput({
       return false;
     };
     if (updateInterruptedSubmit()) return;
+    // A chat this send creates opens in the tab it was sent from, even if the
+    // user switches tabs while attachments settle or the folder is prepared.
+    const sendingTabId = store.getState().tabStrip.activeTabId;
     const text = input.trim();
     // Snapshot the composer revision before the settle wait: text, files, and
     // skills are render-closure snapshots, so anything typed or staged while
@@ -1360,6 +1363,7 @@ export default function PromptInput({
         text: displayText,
         skills: skillNames,
         files: allFiles,
+        tabId: sendingTabId,
       });
     };
 
@@ -1897,6 +1901,7 @@ export default function PromptInput({
     voiceAwaiting.current = { clientRef, registered: false };
     if (projectDraft) projectStartRef.current = clientRef;
     const draftAtStart = store.getState().draftChat;
+    const startingTabId = store.getState().tabStrip.activeTabId;
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
       const placeholder = `${projectDraft ? 'Voice project' : 'Voice chat'} ${new Date().toLocaleTimeString(
@@ -1912,7 +1917,14 @@ export default function PromptInput({
       // A chat only takes focus when the renderer is waiting for it, and the
       // conversation can only open on the chat that is on screen. There is no
       // prompt to wait for here, so the wait is registered empty.
-      dispatch({ type: 'SET_PENDING_COMPOSE', clientRef, text: '', skills: [], files: [] });
+      dispatch({
+        type: 'SET_PENDING_COMPOSE',
+        clientRef,
+        text: '',
+        skills: [],
+        files: [],
+        tabId: startingTabId,
+      });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
         // The lead is briefed by its first prompt, which a spoken goal never

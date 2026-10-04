@@ -122,18 +122,22 @@ test('closing the last tab leaves a new chat in the same workspace', () => {
 });
 
 test('a chat sent from a tab the user has left opens in that tab', () => {
-  const sending = reduce(
-    withChats('a'),
-    { type: 'OPEN_NEW_CHAT_TAB' },
-    { type: 'SET_PENDING_COMPOSE', clientRef: 'c1', text: 'hi', skills: [], files: [] },
-  );
+  const sending = reduce(withChats('a'), { type: 'OPEN_NEW_CHAT_TAB' });
   const sendingTabId = sending.tabStrip.activeTabId;
-  const away = reduce(sending, { type: 'ACTIVATE_TAB', tabId: tabIdShowing(sending, 'a') });
-  const created = reduce(away, {
-    type: 'SESSION_CREATED',
-    clientRef: 'c1',
-    session: session('n'),
-  });
+  // The user leaves while the folder is prepared, before the compose registers.
+  const created = reduce(
+    sending,
+    { type: 'ACTIVATE_TAB', tabId: tabIdShowing(sending, 'a') },
+    {
+      type: 'SET_PENDING_COMPOSE',
+      clientRef: 'c1',
+      text: 'hi',
+      skills: [],
+      files: [],
+      tabId: sendingTabId,
+    },
+    { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') },
+  );
   assert.deepEqual(strip(created), ['[a]', 'n']);
   assert.equal(created.activeAppSessionId, 'a');
 

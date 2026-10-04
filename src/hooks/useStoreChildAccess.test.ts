@@ -228,6 +228,7 @@ test('switching parents, starting a draft, or creating a parent invalidates an o
             text: 'start parent',
             skills: [],
             files: [],
+            tabId: state.tabStrip.activeTabId,
           }),
           { type: 'SESSION_CREATED', clientRef: 'new-parent', session: session('parent-b') },
         ),

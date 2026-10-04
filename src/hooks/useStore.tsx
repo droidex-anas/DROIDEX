@@ -495,6 +495,7 @@ export type Action =
       text: string;
       skills: string[];
       files: string[];
+      tabId: string;
     }
   | { type: 'SESSION_UPDATED'; session: SessionSummary }
   | { type: 'SESSION_CLOSED'; appSessionId: string }
@@ -1281,7 +1282,7 @@ export function reducer(state: AppState, action: Action): AppState {
             text: action.text,
             skills: action.skills,
             files: action.files,
-            tabId: state.tabStrip.activeTabId,
+            tabId: action.tabId,
           },
         },
       };

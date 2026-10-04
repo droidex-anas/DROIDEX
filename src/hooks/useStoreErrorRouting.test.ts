@@ -90,6 +90,7 @@ test('a create failure clears only its matching pending first message', () => {
     text: 'first',
     skills: [],
     files: [],
+    tabId: initialState.tabStrip.activeTabId,
   });
   const withBoth = reducer(withFirst, {
     type: 'SET_PENDING_COMPOSE',
@@ -97,6 +98,7 @@ test('a create failure clears only its matching pending first message', () => {
     text: 'second',
     skills: [],
     files: [],
+    tabId: initialState.tabStrip.activeTabId,
   });
   const failure = {
     type: 'error' as const,

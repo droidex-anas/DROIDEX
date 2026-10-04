@@ -185,6 +185,7 @@ test('starting a new chat or creating another session drops a pending review foc
     text: 'start another session',
     skills: [],
     files: [],
+    tabId: initialState.tabStrip.activeTabId,
   });
   created = reducer(created, {
     type: 'SESSION_CREATED',
