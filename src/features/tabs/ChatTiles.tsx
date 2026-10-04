@@ -212,8 +212,7 @@ export function ChatTiles({
         });
         return;
       case 'show':
-        if (target) dispatch({ type: 'FOCUS_TILE', tileId: target });
-        dispatch({ type: 'SET_ACTIVE_SESSION', id: result.appSessionId });
+        dispatch({ type: 'DROP_CHAT', tileId: target, appSessionId: result.appSessionId });
         dispatch({ type: 'SELECT_CHILD', selection: null });
     }
   };

@@ -126,6 +126,7 @@ import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
 import { useAskSideChat } from './sidechats/useAskSideChat';
 import { effectiveProvider } from '../features/providers/providerDraft';
+import { composeOrigin } from '../features/tabs/tabNavigation';
 import {
   PROVIDER_MARKS,
   providerDefaultModel,
@@ -1237,9 +1238,9 @@ export default function PromptInput({
       return false;
     };
     if (updateInterruptedSubmit()) return;
-    // A chat this send creates opens in the tab it was sent from, even if the
+    // A chat this send creates opens in the place it was sent from, even if the
     // user switches tabs while attachments settle or the folder is prepared.
-    const sendingTabId = store.getState().tabStrip.activeTabId;
+    const sendingFrom = composeOrigin(store.getState().tabStrip);
     const text = input.trim();
     // Snapshot the composer revision before the settle wait: text, files, and
     // skills are render-closure snapshots, so anything typed or staged while
@@ -1365,7 +1366,7 @@ export default function PromptInput({
         text: displayText,
         skills: skillNames,
         files: allFiles,
-        tabId: sendingTabId,
+        origin: sendingFrom,
       });
     };
 
@@ -1903,7 +1904,7 @@ export default function PromptInput({
     voiceAwaiting.current = { clientRef, registered: false };
     if (projectDraft) projectStartRef.current = clientRef;
     const draftAtStart = store.getState().draftChat;
-    const startingTabId = store.getState().tabStrip.activeTabId;
+    const startingFrom = composeOrigin(store.getState().tabStrip);
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
       const placeholder = `${projectDraft ? 'Voice project' : 'Voice chat'} ${new Date().toLocaleTimeString(
@@ -1925,7 +1926,7 @@ export default function PromptInput({
         text: '',
         skills: [],
         files: [],
-        tabId: startingTabId,
+        origin: startingFrom,
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {

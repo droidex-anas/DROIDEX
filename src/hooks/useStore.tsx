@@ -20,14 +20,17 @@ import {
   showChat,
   showNewChat,
   showView,
+  type ComposeOrigin,
 } from '../features/tabs/tabNavigation';
 import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
 import {
   chatsBesideFocus,
   isChatInView,
+  isMission,
   livePage,
   reduceTabStrip,
   withoutChats,
+  withoutOtherTabsShowing,
   type TabAction,
   type TabStrip,
 } from '../features/tabs/tabStrip';
@@ -451,9 +454,9 @@ export interface AppState {
   skillsProviderSessionId?: string | null;
 
   // Attachments for the first message of a not-yet-created session, keyed by clientRef.
-  // `tabId` is the tab the compose was sent from; its chat opens there.
+  // `origin` is the place the compose was sent from; its chat opens there.
   pendingCompose: Partial<
-    Record<string, { text: string; skills: string[]; files: string[]; tabId: string }>
+    Record<string, { text: string; skills: string[]; files: string[]; origin: ComposeOrigin }>
   >;
   // Bounded settlement identity for the latest successful foreground create.
   // PromptInput uses it to distinguish that activation from a failure followed
@@ -501,7 +504,7 @@ export type Action =
       text: string;
       skills: string[];
       files: string[];
-      tabId: string;
+      origin: ComposeOrigin;
     }
   | { type: 'SESSION_UPDATED'; session: SessionSummary }
   | { type: 'SESSION_CLOSED'; appSessionId: string }
@@ -688,6 +691,9 @@ export type Action =
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
   | TabAction
+  // A chat dropped on a tile's center shows in that tile; a null tile is the
+  // whole page of a tab that is not split.
+  | { type: 'DROP_CHAT'; tileId: string | null; appSessionId: string }
   | VoiceAction
   | {
       type: 'START_CHAT';
@@ -1064,7 +1070,7 @@ export function reducer(state: AppState, action: Action): AppState {
       const ownsCreate = pending !== undefined && action.session.lineage?.kind !== 'side';
       const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
       const placed = ownsCreate
-        ? placeCreatedChat({ ...state, sessions }, pending.tabId, action.session.appSessionId)
+        ? placeCreatedChat({ ...state, sessions }, pending.origin, action.session.appSessionId)
         : null;
       const shouldActivate = placed?.focus === true;
       const tabStrip = placed?.tabStrip ?? state.tabStrip;
@@ -1304,7 +1310,7 @@ export function reducer(state: AppState, action: Action): AppState {
             text: action.text,
             skills: action.skills,
             files: action.files,
-            tabId: action.tabId,
+            origin: action.origin,
           },
         },
       };
@@ -1809,7 +1815,7 @@ export function reducer(state: AppState, action: Action): AppState {
           Object.entries(chatMetadata).filter(([id]) => !drop.has(id)),
         );
       }
-      return {
+      const listed: AppState = {
         ...retainedState,
         sessions: map,
         sessionOrder: order,
@@ -1820,6 +1826,13 @@ export function reducer(state: AppState, action: Action): AppState {
         activeAppSessionId,
         tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
       };
+      // A focused tile whose chat is gone closes like any other, so the tile
+      // beside it comes forward instead of a second new chat.
+      const goneTile =
+        state.activeAppSessionId !== null && activeAppSessionId === null
+          ? closeLiveChat(state, state.activeAppSessionId)
+          : null;
+      return goneTile?.type === 'CLOSE_TILE' ? reducer(listed, goneTile) : listed;
     }
 
     case 'SESSION_HISTORY_LOADING_OLDER':
@@ -2249,6 +2262,19 @@ export function reducer(state: AppState, action: Action): AppState {
       const entered: AppState = { ...state, tabStrip };
       const navigated = navigation ? reducer(entered, navigation) : entered;
       return withTilesSeen({ ...navigated, tabStrip }, Date.now());
+    }
+
+    // The chat leaves any other tab first, so showing it lands here instead
+    // of switching to that tab. A mission keeps a tab of its own.
+    case 'DROP_CHAT': {
+      const tabStrip = isMission(state, action.appSessionId)
+        ? state.tabStrip
+        : withoutOtherTabsShowing(state.tabStrip, action.appSessionId);
+      const moved: AppState = { ...state, tabStrip };
+      const target = action.tileId
+        ? reducer(moved, { type: 'FOCUS_TILE', tileId: action.tileId })
+        : moved;
+      return reducer(target, { type: 'SET_ACTIVE_SESSION', id: action.appSessionId });
     }
 
     case 'CLOSE_AUTOMATIONS':

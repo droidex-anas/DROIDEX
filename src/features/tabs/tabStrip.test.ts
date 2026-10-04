@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type Action, type AppState } from '../../hooks/useStore';
+import { composeOrigin } from './tabNavigation';
 import { activeTabDraft, loadTabStrip, saveTabStrip } from './tabStorage';
 import { livePage, tabPage, type TabPage } from './tabStrip';
 import { gridTiles } from './tileGrid';
@@ -152,7 +153,7 @@ test('a chat sent from a tab the user has left opens in that tab', () => {
       text: 'hi',
       skills: [],
       files: [],
-      tabId: sendingTabId,
+      origin: { tabId: sendingTabId, tileId: null },
     },
     { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') },
   );
@@ -232,6 +233,27 @@ test('choosing a chat focuses the tile showing it, or replaces the focused tile'
   assert.equal(clicked.activeAppSessionId, 'b');
 });
 
+test('a chat dropped on a place shows there and leaves the tab that showed it', () => {
+  const opened = reduce(withChats('a', 'b', 'c'), {
+    type: 'OPEN_TAB',
+    page: { kind: 'chat', appSessionId: 'c' },
+  });
+  const back = reduce(opened, { type: 'ACTIVATE_TAB', tabId: tabIdShowing(opened, 'a') });
+  assert.deepEqual(strip(back), ['[a]', 'c']);
+
+  const onPage = reduce(back, { type: 'DROP_CHAT', tileId: null, appSessionId: 'c' });
+  assert.deepEqual(strip(onPage), ['[c]']);
+
+  const split = reduce(back, splitWith('b'));
+  const onTile = reduce(split, {
+    type: 'DROP_CHAT',
+    tileId: tileIdShowing(split, 'a'),
+    appSessionId: 'c',
+  });
+  assert.deepEqual(strip(onTile), ['[c*|b]']);
+  assert.equal(onTile.activeAppSessionId, 'c');
+});
+
 test('a split tab holds one new chat, and a chat sent from it opens in its tile', () => {
   const split = reduce(withChats('a'), splitWith(null));
   assert.deepEqual(strip(split), ['[a|new-chat*]']);
@@ -251,7 +273,7 @@ test('a split tab holds one new chat, and a chat sent from it opens in its tile'
     text: 'hi',
     skills: [],
     files: [],
-    tabId: again.tabStrip.activeTabId,
+    origin: composeOrigin(again.tabStrip),
   });
   const created = reduce(again, compose('c1'), {
     type: 'SESSION_CREATED',
@@ -272,6 +294,37 @@ test('a split tab holds one new chat, and a chat sent from it opens in its tile'
   assert.equal(left.activeAppSessionId, 'a');
 });
 
+test('a chat sent from a tile opens nowhere once the tile is gone or shows another chat', () => {
+  const split = reduce(withChats('a', 'b'), splitWith(null));
+  const sent = reduce(split, {
+    type: 'SET_PENDING_COMPOSE',
+    clientRef: 'c1',
+    text: 'hi',
+    skills: [],
+    files: [],
+    origin: composeOrigin(split.tabStrip),
+  });
+  const created: Action = { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') };
+
+  const closed = reduce(
+    sent,
+    { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'new-chat') },
+    created,
+  );
+  assert.deepEqual(strip(closed), ['[a]']);
+  assert.equal(closed.activeAppSessionId, 'a');
+  assert.ok(Object.hasOwn(closed.sessions, 'n'));
+
+  const replaced = reduce(sent, { type: 'SET_ACTIVE_SESSION', id: 'b' }, created);
+  assert.deepEqual(strip(replaced), ['[a|b*]']);
+  assert.equal(replaced.activeAppSessionId, 'b');
+
+  // The tab closed down to the tile is still the place the chat was sent from.
+  const narrowed = reduce(sent, { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'a') }, created);
+  assert.deepEqual(strip(narrowed), ['[n]']);
+  assert.equal(narrowed.activeAppSessionId, 'n');
+});
+
 test('closing a tile focuses its neighbor, and the last tile is the tab page again', () => {
   const split = reduce(withChats('a', 'b', 'c'), splitWith('b'), {
     type: 'SPLIT_TILE',
@@ -288,6 +341,34 @@ test('closing a tile focuses its neighbor, and the last tile is the tab page aga
   const single = reduce(closed, { type: 'CLOSE_TILE', tileId: tileIdShowing(closed, 'b') });
   assert.deepEqual(strip(single), ['[a]']);
   assert.equal(single.activeAppSessionId, 'a');
+});
+
+test('a focused tile closes when the session list no longer has its chat', () => {
+  const listWithout = (gone: string): Action => ({
+    type: 'SESSION_LIST',
+    sessions: ['a', 'b', 'c'].filter((id) => id !== gone).map((id) => session(id)),
+    earlierSessionsByCwd: {},
+  });
+  const besideDraft = reduce(withChats('a', 'b', 'c'), splitWith(null));
+  const focusedA = reduce(besideDraft, {
+    type: 'FOCUS_TILE',
+    tileId: tileIdShowing(besideDraft, 'a'),
+  });
+  assert.deepEqual(strip(focusedA), ['[a*|new-chat]']);
+  const draftLeft = reduce(focusedA, listWithout('a'));
+  assert.deepEqual(strip(draftLeft), ['[new-chat]']);
+  assert.equal(draftLeft.activeAppSessionId, null);
+
+  const besideChat = reduce(withChats('a', 'b', 'c'), splitWith('b'), {
+    type: 'SPLIT_TILE',
+    targetTileId: null,
+    edge: 'bottom',
+    appSessionId: 'c',
+  });
+  assert.deepEqual(strip(besideChat), ['[a|b|c*]']);
+  const chatsLeft = reduce(besideChat, listWithout('c'));
+  assert.deepEqual(strip(chatsLeft), ['[a|b*]']);
+  assert.equal(chatsLeft.activeAppSessionId, 'b');
 });
 
 test('a split tab keeps its tiles when a view opens, and loses an archived chat', () => {

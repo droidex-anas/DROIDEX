@@ -47,12 +47,7 @@ import {
 } from '../hooks/useConversationTimeline';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import {
-  equalVisibleChatState,
-  selectChatViewState,
-  startingComposeInTab,
-  type ChatViewState,
-} from './chatViewState';
+import { equalVisibleChatState, selectChatViewState, type ChatViewState } from './chatViewState';
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
@@ -270,9 +265,10 @@ export default function ChatView({
 }) {
   const dispatch = useStoreDispatch();
   const openAgent = useOpenAgent();
+  const tileId = tile?.id ?? null;
   const selectState = useCallback(
-    (current: AppState) => selectChatViewState(current, appSessionId),
-    [appSessionId],
+    (current: AppState) => selectChatViewState(current, appSessionId, tileId),
+    [appSessionId, tileId],
   );
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
@@ -491,7 +487,7 @@ export default function ChatView({
   // sidecar spawns the session, ~1-2s), there is no active session yet. Show the
   // user's message immediately with a starting cue instead of a blank screen;
   // the real feed (which seeds the same message) takes over once it exists.
-  const startingCompose = !activeSession ? startingComposeInTab(state) : undefined;
+  const { startingCompose } = state;
 
   const isSpec = activeSession?.interactionMode === 'spec';
   const capturedPlan = activeSession ? state.specPlans[activeSession.appSessionId] : undefined;
@@ -883,6 +879,7 @@ export default function ChatView({
             conversationListRef.current?.scrollToRow(rowId);
           }}
           enabled={Boolean(activeSession && transcript.length > 0)}
+          takesShortcuts={tile?.focused ?? true}
         >
           {activeSession && !isTimelinePriming && timelineAnchors.length >= 2 && (
             <ConversationTimeline

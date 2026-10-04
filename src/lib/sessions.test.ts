@@ -52,19 +52,20 @@ test('sessionIsUnread flags only newer settled activity on background sessions',
   assert.equal(sessionIsUnread(row({ streaming: false }), null, 1_000), true);
 });
 
-test('activeSessionCwds includes the draft, active chat, and live sessions only', () => {
+test('activeSessionCwds includes the draft, chats on screen, and live sessions only', () => {
   const sessions = [
     session({ appSessionId: 'active', cwd: '/repo/a', phase: 'completed' }),
     session({ appSessionId: 'live', cwd: '/repo/b', phase: 'orchestrator_turn' }),
     session({ appSessionId: 'idle', cwd: '/repo/c', phase: 'completed' }),
     session({ appSessionId: 'nocwd', cwd: '', phase: 'orchestrator_turn' }),
+    session({ appSessionId: 'tile', cwd: '/repo/d', phase: 'completed' }),
   ];
   const cwds = activeSessionCwds({
     sessions,
-    activeAppSessionId: 'active',
+    onScreenAppSessionIds: ['active', 'tile'],
     draftCwd: '/repo/draft',
   });
-  assert.deepEqual(cwds.sort(), ['/repo/a', '/repo/b', '/repo/draft']);
+  assert.deepEqual(cwds.sort(), ['/repo/a', '/repo/b', '/repo/d', '/repo/draft']);
   // an idle historical chat does not pin its worktree
   assert.equal(cwds.includes('/repo/c'), false);
 });
@@ -76,7 +77,7 @@ test('activeSessionCwds pins live child workers and embedded terminals, not hist
   ];
   const cwds = activeSessionCwds({
     sessions,
-    activeAppSessionId: null,
+    onScreenAppSessionIds: [],
     childSessions: {
       idle: [{ status: 'completed' }, { status: 'running' }],
       done: [{ status: 'completed' }, { status: 'paused' }],
@@ -95,14 +96,14 @@ test('activeSessionCwds pins live child workers and embedded terminals, not hist
   // A historical running status without a live child runtime pins nothing.
   const historical = activeSessionCwds({
     sessions: [session({ appSessionId: 'closed', cwd: '/repo/closed', phase: 'completed' })],
-    activeAppSessionId: null,
+    onScreenAppSessionIds: [],
     childSessions: { closed: { child: { status: 'running' } } },
   });
   assert.deepEqual(historical, []);
 
   const terminal = activeSessionCwds({
     sessions: [],
-    activeAppSessionId: null,
+    onScreenAppSessionIds: [],
     pinnedCwds: ['/repo/terminal'],
   });
   assert.deepEqual(terminal, ['/repo/terminal']);

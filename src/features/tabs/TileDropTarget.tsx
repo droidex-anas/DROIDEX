@@ -40,8 +40,9 @@ export function TileDropTarget({
   return (
     <div
       className="absolute inset-0 z-30"
-      // No pointer events arrive while a drag runs, so one here means the drag
-      // ended without reaching its source, as when the dragged row unmounted.
+      // No pointermove or pointerdown arrives while a drag runs, so one here
+      // means the drag ended without reaching its source, as when the dragged
+      // row unmounted.
       onPointerMove={endPlaceDrag}
       onPointerDown={endPlaceDrag}
       onDragOver={(event) => {

@@ -54,8 +54,8 @@ function appendMutation() {
 function visibleStateEqual(change: (previous: AppState) => AppState): boolean {
   const previous = activeState();
   return equalVisibleChatState(
-    selectChatViewState(previous, 'active'),
-    selectChatViewState(change(previous), 'active'),
+    selectChatViewState(previous, 'active', null),
+    selectChatViewState(change(previous), 'active', null),
   );
 }
 
@@ -85,9 +85,12 @@ test('chat selector follows the session its view shows, not the active one', () 
     transcripts: { ...previous.transcripts, background: [...previous.transcripts.background] },
   };
 
-  const shown = selectChatViewState(next, 'background');
+  const shown = selectChatViewState(next, 'background', null);
   assert.equal(shown.activeSession?.appSessionId, 'background');
-  assert.equal(equalVisibleChatState(selectChatViewState(previous, 'background'), shown), false);
+  assert.equal(
+    equalVisibleChatState(selectChatViewState(previous, 'background', null), shown),
+    false,
+  );
 });
 
 test('chat selector observes the visible transcript, its provenance, and visible session fields', () => {
@@ -115,4 +118,17 @@ test('chat selector observes the visible transcript, its provenance, and visible
   for (const [name, change] of Object.entries(changes)) {
     assert.equal(visibleStateEqual(change), false, name);
   }
+});
+
+test('a new chat shows the message sent from its own place while it starts', () => {
+  const tabId = initialState.tabStrip.activeTabId;
+  const state: AppState = {
+    ...initialState,
+    pendingCompose: {
+      fromTile: { text: 'hi', skills: [], files: [], origin: { tabId, tileId: 'left' } },
+    },
+  };
+  assert.equal(selectChatViewState(state, null, 'left').startingCompose?.text, 'hi');
+  assert.equal(selectChatViewState(state, null, null).startingCompose?.text, 'hi');
+  assert.equal(selectChatViewState(state, null, 'right').startingCompose, undefined);
 });

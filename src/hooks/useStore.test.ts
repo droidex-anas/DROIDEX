@@ -182,7 +182,7 @@ test('session creation records the exact request-to-session settlement', () => {
         text: 'hello',
         skills: [],
         files: [],
-        tabId: initialState.tabStrip.activeTabId,
+        origin: { tabId: initialState.tabStrip.activeTabId, tileId: null },
       },
     },
   };
@@ -217,7 +217,7 @@ test('session seeds preserve live file provenance without claiming background co
           text: 'typed prompt',
           skills: [],
           files: [],
-          tabId: initialState.tabStrip.activeTabId,
+          origin: { tabId: initialState.tabStrip.activeTabId, tileId: null },
         },
       },
     },

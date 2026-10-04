@@ -340,9 +340,11 @@ function splittableGrid(state: TabStripSource, live: TabPage): TileGrid | null {
   return null;
 }
 
-// A chat split into the active tab leaves the other open tabs; closed tabs keep
-// it, and reopening one skips it while it is open here.
-function withoutOtherTabsShowing(strip: TabStrip, appSessionId: string): TabStrip {
+/**
+ * A chat brought into the active tab leaves the other open tabs; closed tabs
+ * keep it, and reopening one skips it while it is open here.
+ */
+export function withoutOtherTabsShowing(strip: TabStrip, appSessionId: string): TabStrip {
   const isMoved = (id: string) => id === appSessionId;
   const tabs = strip.tabs.flatMap((tab) => {
     if (tab.id === strip.activeTabId) return [tab];

@@ -2,7 +2,25 @@ import type { AppState } from '../hooks/useStore';
 
 const EMPTY_TRANSCRIPT: never[] = [];
 
-export function selectChatViewState(current: AppState, appSessionId: string | null) {
+// The latest compose sent from this new chat that is still waiting for its
+// session; `tileId` is null in a tab that is not split. A tab split or closed
+// down to one tile since the send still waits for it.
+function startingCompose(current: AppState, tileId: string | null) {
+  const tabId = current.tabStrip.activeTabId;
+  return Object.values(current.pendingCompose)
+    .filter((compose) => {
+      if (compose?.origin.tabId !== tabId) return false;
+      const sentFrom = compose.origin.tileId;
+      return sentFrom === null || tileId === null || sentFrom === tileId;
+    })
+    .at(-1);
+}
+
+export function selectChatViewState(
+  current: AppState,
+  appSessionId: string | null,
+  tileId: string | null,
+) {
   const activeSession = appSessionId ? (current.sessions[appSessionId] ?? null) : null;
   return {
     activeSession,
@@ -20,8 +38,7 @@ export function selectChatViewState(current: AppState, appSessionId: string | nu
     historyCursor: current.historyCursor,
     historyLoadingOlder: current.historyLoadingOlder,
     models: current.models,
-    pendingCompose: current.pendingCompose,
-    activeTabId: current.tabStrip.activeTabId,
+    startingCompose: activeSession ? undefined : startingCompose(current, tileId),
     selectedChild: current.selectedChild,
     sessionRestore: current.sessionRestore,
     sessionSpecs: current.sessionSpecs,
@@ -58,13 +75,6 @@ function equalChildSelection(
   );
 }
 
-/** The latest compose this tab sent that is still waiting for its session. */
-export function startingComposeInTab(state: ChatViewState) {
-  return Object.values(state.pendingCompose)
-    .filter((compose) => compose?.tabId === state.activeTabId)
-    .at(-1);
-}
-
 export function equalVisibleChatState(previous: ChatViewState, next: ChatViewState): boolean {
   if (!equalActiveChatSession(previous.activeSession, next.activeSession)) return false;
   if (!Object.is(previous.allTranscript, next.allTranscript)) return false;
@@ -76,7 +86,7 @@ export function equalVisibleChatState(previous: ChatViewState, next: ChatViewSta
 
   const appSessionId = next.activeSession?.appSessionId;
   if (!appSessionId) {
-    return Object.is(startingComposeInTab(previous), startingComposeInTab(next));
+    return Object.is(previous.startingCompose, next.startingCompose);
   }
   if (
     !Object.is(previous.chatMetadata[appSessionId], next.chatMetadata[appSessionId]) ||

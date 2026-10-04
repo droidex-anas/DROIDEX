@@ -29,7 +29,7 @@ test('the draft override resets at every draft lifecycle point', () => {
     text: 'start chat',
     skills: [],
     files: [],
-    tabId: drafted.tabStrip.activeTabId,
+    origin: { tabId: drafted.tabStrip.activeTabId, tileId: null },
   });
   const created = reducer(pending, {
     type: 'SESSION_CREATED',
