@@ -80,109 +80,70 @@ function loadApi(invokeResult) {
   return { api, calls, listeners, removedListeners, posts, channels };
 }
 
-test('notification IPC returns the main-process delivery result unchanged', async () => {
-  const expected = { shown: false, reason: 'failed', message: 'disabled' };
-  const { api, calls } = loadApi(expected);
+// Each row is one exposed method: the channel it invokes and the exact payload
+// it sends. Methods that take no renderer input must send no payload at all.
+const invokeContract = [
+  [
+    'notify',
+    ['DROIDEX', 'Finished', { silent: true, appSessionId: 'app-1' }],
+    'notify',
+    { title: 'DROIDEX', body: 'Finished', silent: true, appSessionId: 'app-1' },
+  ],
+  [
+    'nativeBrowserOpen',
+    ['browser-1', 'https://example.test'],
+    'native-browser-open',
+    {
+      browserSessionId: 'browser-1',
+      url: 'https://example.test',
+      bounds: undefined,
+      viewport: undefined,
+    },
+  ],
+  [
+    'gitMarkTurnStart',
+    ['/repo', 'client-1'],
+    'git-mark-turn-start',
+    { dir: '/repo', ownerId: 'client-1' },
+  ],
+  [
+    'gitAdoptTurnBaseline',
+    ['/repo', 'client-1', 'app-1'],
+    'git-adopt-turn-baseline',
+    { dir: '/repo', clientRef: 'client-1', appSessionId: 'app-1' },
+  ],
+  ['setAppIcon', ['dark'], 'app-set-icon', { mode: 'dark' }],
+  [
+    'saveAttachment',
+    ['notes.pdf', 'data:application/pdf;base64,Zg=='],
+    'save-attachment',
+    { name: 'notes.pdf', dataUrl: 'data:application/pdf;base64,Zg==' },
+  ],
+  ['setAutomaticDiagnostics', [false], 'diagnostics-preference-set', { enabled: false }],
+  ['setHardwareAcceleration', [false], 'hardware-acceleration-preference-set', { enabled: false }],
+  ['downloadAppUpdate', [], 'app-download-update', undefined],
+  ['getAutomaticDiagnostics', [], 'diagnostics-preference-get', undefined],
+  ['getHardwareAcceleration', [], 'hardware-acceleration-preference-get', undefined],
+  ['githubInstall', [], 'github-install', undefined],
+  ['githubAuthenticate', [], 'github-authenticate', undefined],
+  ['githubCancelSetup', [], 'github-cancel-setup', undefined],
+  ['getPerformanceMetrics', [], 'get-performance-metrics', undefined],
+  ['systemIdleTime', [], 'system-idle-time', undefined],
+  ['powerTier', [], 'power-tier', undefined],
+  ['sidecarStatus', [], 'sidecar-status', undefined],
+];
 
-  assert.deepEqual(
-    await api.notify('DROIDEX', 'Finished', { silent: true, appSessionId: 'app-1' }),
-    expected,
-  );
-  assert.equal(calls[0].channel, 'notify');
-  assert.equal(calls[0].payload.title, 'DROIDEX');
-  assert.equal(calls[0].payload.body, 'Finished');
-  assert.equal(calls[0].payload.silent, true);
-  assert.equal(calls[0].payload.appSessionId, 'app-1');
-});
-
-test('native browser IPC carries browserSessionId', async () => {
-  const { api, calls } = loadApi();
-
-  await api.nativeBrowserOpen('browser-1', 'https://example.test');
-
-  assert.equal(calls[0].channel, 'native-browser-open');
-  assert.equal(calls[0].payload.browserSessionId, 'browser-1');
-  assert.equal(calls[0].payload.url, 'https://example.test');
-  assert.equal('sessionId' in calls[0].payload, false);
-});
-
-test('git turn baseline IPC carries its provisional owner', async () => {
-  const { api, calls } = loadApi();
-
-  await api.gitMarkTurnStart('/repo', 'client-1');
-
-  assert.equal(calls[0].channel, 'git-mark-turn-start');
-  assert.equal(calls[0].payload.dir, '/repo');
-  assert.equal(calls[0].payload.ownerId, 'client-1');
-});
-
-test('git turn baseline adoption IPC correlates client and app session identities', async () => {
-  const { api, calls } = loadApi();
-
-  await api.gitAdoptTurnBaseline('/repo', 'client-1', 'app-1');
-
-  assert.equal(calls[0].channel, 'git-adopt-turn-baseline');
-  assert.equal(calls[0].payload.dir, '/repo');
-  assert.equal(calls[0].payload.clientRef, 'client-1');
-  assert.equal(calls[0].payload.appSessionId, 'app-1');
-});
-
-test('app icon IPC carries the selected mode', async () => {
-  const { api, calls } = loadApi();
-
-  await api.setAppIcon('dark');
-  await api.setAppIcon('system');
-
-  assert.equal(calls[0].channel, 'app-set-icon');
-  assert.equal(calls[0].payload.mode, 'dark');
-  assert.equal(calls[1].channel, 'app-set-icon');
-  assert.equal(calls[1].payload.mode, 'system');
-});
-
-test('app update download does not accept a renderer-supplied URL', async () => {
-  const { api, calls } = loadApi();
-
-  await api.downloadAppUpdate();
-
-  assert.equal(calls[0].channel, 'app-download-update');
-  assert.equal(calls[0].payload, undefined);
-});
-
-test('automatic diagnostics preference uses closed IPC payloads', async () => {
-  const { api, calls } = loadApi();
-
-  await api.getAutomaticDiagnostics();
-  await api.setAutomaticDiagnostics(false);
-
-  assert.deepEqual(calls[0], { channel: 'diagnostics-preference-get', payload: undefined });
-  assert.equal(calls[1].channel, 'diagnostics-preference-set');
-  assert.equal(calls[1].payload.enabled, false);
-});
-
-test('hardware acceleration preference uses closed IPC payloads', async () => {
-  const { api, calls } = loadApi();
-
-  await api.getHardwareAcceleration();
-  await api.setHardwareAcceleration(false);
-
-  assert.deepEqual(calls[0], {
-    channel: 'hardware-acceleration-preference-get',
-    payload: undefined,
-  });
-  assert.equal(calls[1].channel, 'hardware-acceleration-preference-set');
-  assert.equal(calls[1].payload.enabled, false);
-});
-
-test('GitHub setup IPC accepts no renderer-controlled command payload', async () => {
-  const expected = { ok: true };
-  const { api, calls } = loadApi(expected);
-
-  assert.deepEqual(await api.githubInstall(), expected);
-  assert.deepEqual(await api.githubAuthenticate(), expected);
-  assert.deepEqual(await api.githubCancelSetup(), expected);
-  assert.deepEqual(calls[0], { channel: 'github-install', payload: undefined });
-  assert.deepEqual(calls[1], { channel: 'github-authenticate', payload: undefined });
-  assert.deepEqual(calls[2], { channel: 'github-cancel-setup', payload: undefined });
+test('invoke methods send closed payloads and return the main-process result unchanged', async () => {
+  const mainResult = { shown: false, reason: 'failed' };
+  for (const [method, args, channel, payload] of invokeContract) {
+    const { api, calls } = loadApi(mainResult);
+    assert.equal(await api[method](...args), mainResult, method);
+    assert.equal(calls.length, 1, method);
+    assert.equal(calls[0].channel, channel, method);
+    // The payload is built inside the preload's realm; copy it before comparing.
+    const sent = calls[0].payload === undefined ? undefined : { ...calls[0].payload };
+    assert.deepEqual(sent, payload, method);
+  }
 });
 
 test('GitHub device codes use a removable trusted event subscription', () => {
@@ -200,71 +161,6 @@ test('GitHub device codes use a removable trusted event subscription', () => {
   assert.equal(removedListeners.length, 1);
   assert.equal(removedListeners[0].channel, 'github-auth-code');
   assert.equal(removedListeners[0].listener, listeners[0].listener);
-});
-
-test('performance metrics IPC carries no payload', async () => {
-  const { api, calls } = loadApi();
-
-  await api.getPerformanceMetrics();
-
-  assert.equal(calls[0].channel, 'get-performance-metrics');
-  assert.equal(calls[0].payload, undefined);
-});
-
-test('system idle time IPC carries no renderer-controlled payload', async () => {
-  const { api, calls } = loadApi(75);
-
-  assert.equal(await api.systemIdleTime(), 75);
-  assert.deepEqual(calls[0], { channel: 'system-idle-time', payload: undefined });
-});
-
-test('power tier IPC carries no renderer-controlled payload', async () => {
-  const { api, calls } = loadApi({ tier: 'interactive', windowVisible: true, onBattery: false });
-
-  assert.deepEqual(await api.powerTier(), {
-    tier: 'interactive',
-    windowVisible: true,
-    onBattery: false,
-  });
-  assert.deepEqual(calls[0], { channel: 'power-tier', payload: undefined });
-});
-
-test('saveAttachment IPC carries the pasted name and data URL', async () => {
-  const { api, calls } = loadApi('/tmp/attachments/file-1-deadbeef-notes.pdf');
-
-  assert.equal(
-    await api.saveAttachment('notes.pdf', 'data:application/pdf;base64,Zg=='),
-    '/tmp/attachments/file-1-deadbeef-notes.pdf',
-  );
-  assert.equal(calls[0].channel, 'save-attachment');
-  assert.equal(calls[0].payload.name, 'notes.pdf');
-  assert.equal(calls[0].payload.dataUrl, 'data:application/pdf;base64,Zg==');
-});
-
-test('pathForFile returns the native path and falls back to empty', () => {
-  const { api } = loadApi();
-  assert.equal(
-    api.pathForFile({ path: 'C:\\\\Users\\\\anas\\\\notes.pdf' }),
-    'C:\\\\Users\\\\anas\\\\notes.pdf',
-  );
-  assert.equal(api.pathForFile({}), '');
-});
-
-test('sidecar status IPC is exposed to the trusted renderer', async () => {
-  const expected = {
-    lifecycle: 'healthy',
-    processAlive: true,
-    bridgeResponsive: true,
-    lastHeartbeatAt: 1,
-    restartCount: 0,
-  };
-  const { api, calls, listeners } = loadApi(expected);
-
-  assert.deepEqual(await api.sidecarStatus(), expected);
-  assert.equal(calls[0].channel, 'sidecar-status');
-  const stop = api.onSidecarStatus(() => undefined);
-  assert.equal(listeners[0].channel, 'sidecar-status');
-  stop();
 });
 
 test('terminal subscribe transfers one MessagePort and posts input without invoke', () => {

@@ -21,36 +21,26 @@ function restore(name: string, value: string | undefined): void {
 test.afterEach(restoreEnv);
 test.after(restoreEnv);
 
-test('droidexHistoryDir treats blank DROIDEX_HISTORY_DIR as unset', () => {
+test('a blank directory override counts as unset, and a set one is kept verbatim', () => {
+  const history = join(homedir(), '.factory', 'droidex');
+  const userData = join(homedir(), 'Library', 'Application Support', 'DROIDEX');
   delete process.env.DROIDEX_HISTORY_DIR;
-  assert.equal(droidexHistoryDir(), join(homedir(), '.factory', 'droidex'));
-
-  process.env.DROIDEX_HISTORY_DIR = '';
-  assert.equal(droidexHistoryDir(), join(homedir(), '.factory', 'droidex'));
-
-  process.env.DROIDEX_HISTORY_DIR = '   ';
-  assert.equal(droidexHistoryDir(), join(homedir(), '.factory', 'droidex'));
-
-  process.env.DROIDEX_HISTORY_DIR = '/tmp/isolated-state';
-  assert.equal(droidexHistoryDir(), '/tmp/isolated-state');
-});
-
-test('droidexUserDataDir treats blank DROIDEX_USER_DATA_DIR as unset', () => {
   delete process.env.DROIDEX_USER_DATA_DIR;
-  assert.equal(droidexUserDataDir(), join(homedir(), 'Library', 'Application Support', 'DROIDEX'));
+  assert.equal(droidexHistoryDir(), history);
+  assert.equal(droidexUserDataDir(), userData);
 
-  process.env.DROIDEX_USER_DATA_DIR = '';
-  assert.equal(droidexUserDataDir(), join(homedir(), 'Library', 'Application Support', 'DROIDEX'));
+  for (const blank of ['', '   ']) {
+    process.env.DROIDEX_HISTORY_DIR = blank;
+    process.env.DROIDEX_USER_DATA_DIR = blank;
+    assert.equal(droidexHistoryDir(), history);
+    assert.equal(droidexUserDataDir(), userData);
+  }
 
-  process.env.DROIDEX_USER_DATA_DIR = '/tmp/isolated-profile';
-  assert.equal(droidexUserDataDir(), '/tmp/isolated-profile');
-});
-
-test('configured directory names preserve surrounding whitespace', () => {
-  process.env.DROIDEX_USER_DATA_DIR = '/tmp/profile ';
+  // Surrounding whitespace is part of a configured name.
   process.env.DROIDEX_HISTORY_DIR = ' history ';
-  assert.equal(droidexUserDataDir(), '/tmp/profile ');
+  process.env.DROIDEX_USER_DATA_DIR = '/tmp/profile ';
   assert.equal(droidexHistoryDir(), ' history ');
+  assert.equal(droidexUserDataDir(), '/tmp/profile ');
 });
 
 // isolatedTestEnv.ts, preloaded by the test script, is what makes this true

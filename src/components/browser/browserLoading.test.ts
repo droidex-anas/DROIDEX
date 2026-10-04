@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { shouldResetBrowserLoading } from './browserLoading';
 
-test('initial browser session allocation preserves an in-flight load', () => {
+test('browser loading resets on an app or established session change, not on first allocation', () => {
   assert.equal(
     shouldResetBrowserLoading(
       { browserKey: 'session-a', browserSessionId: undefined },
@@ -10,9 +10,6 @@ test('initial browser session allocation preserves an in-flight load', () => {
     ),
     false,
   );
-});
-
-test('app and established browser session changes reset browser loading', () => {
   assert.equal(
     shouldResetBrowserLoading(
       { browserKey: 'session-a', browserSessionId: 'browser-a' },

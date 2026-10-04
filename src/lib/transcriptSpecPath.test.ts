@@ -1,19 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { TranscriptEvent } from '../types/bridge';
 import { createTranscriptSpecPathProjector } from './transcriptSpecPath';
+import { textEvent } from '../test/textEvent';
 
-function event(id: string, text: string): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'session-a',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    text,
-    ts: 1,
-  };
-}
+const event = (id: string, text: string) => textEvent(id, { appSessionId: 'session-a', text });
 
 test('streaming after a discovered spec path never rescans settled events', () => {
   let textReads = 0;

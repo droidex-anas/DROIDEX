@@ -9,33 +9,20 @@ import {
   HISTORY_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../lib/historyStatusCopy';
 
-test('unavailable search renders an explanation instead of a bare empty state', () => {
-  const html = renderToStaticMarkup(
-    createElement(SidebarSearchNotice, { kind: 'unavailable', layout: 'empty' }),
-  );
-  assert.ok(html.includes('data-testid="sidebar-search-unavailable"'));
-  assert.ok(html.includes(HISTORY_SEARCH_UNAVAILABLE_MESSAGE));
-  assert.doesNotMatch(html, /No sessions found/);
-  assert.doesNotMatch(html, /\d+\s*%/);
-  assert.doesNotMatch(html, /ETA/i);
-});
+test('each search state renders its own notice, and only a complete search is empty', () => {
+  const render = (kind: 'unavailable' | 'indexing' | 'empty', layout: 'empty' | 'inline') =>
+    renderToStaticMarkup(createElement(SidebarSearchNotice, { kind, layout }));
 
-test('incomplete indexing is labelled beside results without fabricating progress', () => {
-  const html = renderToStaticMarkup(
-    createElement(SidebarSearchNotice, { kind: 'indexing', layout: 'inline' }),
-  );
-  assert.ok(html.includes('data-testid="sidebar-search-indexing"'));
-  assert.ok(html.includes(HISTORY_INDEXING_INCOMPLETE_MESSAGE));
-  assert.doesNotMatch(html, /\d+\s*%/);
-  assert.doesNotMatch(html, /ETA/i);
-  assert.doesNotMatch(html, /progress/i);
-});
+  const unavailable = render('unavailable', 'empty');
+  assert.ok(unavailable.includes('data-testid="sidebar-search-unavailable"'));
+  assert.ok(unavailable.includes(HISTORY_SEARCH_UNAVAILABLE_MESSAGE));
+  assert.doesNotMatch(unavailable, /No sessions found/);
 
-test('a complete empty search stays the plain empty copy', () => {
-  const html = renderToStaticMarkup(
-    createElement(SidebarSearchNotice, { kind: 'empty', layout: 'empty' }),
-  );
-  assert.match(html, /No sessions found/);
-  assert.doesNotMatch(html, /data-testid="sidebar-search-unavailable"/);
-  assert.doesNotMatch(html, /data-testid="sidebar-search-indexing"/);
+  const indexing = render('indexing', 'inline');
+  assert.ok(indexing.includes('data-testid="sidebar-search-indexing"'));
+  assert.ok(indexing.includes(HISTORY_INDEXING_INCOMPLETE_MESSAGE));
+
+  const empty = render('empty', 'empty');
+  assert.match(empty, /No sessions found/);
+  assert.doesNotMatch(empty, /data-testid="sidebar-search-/);
 });

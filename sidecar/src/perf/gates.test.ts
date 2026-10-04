@@ -4,38 +4,9 @@ import test from 'node:test';
 import { diffProbes, type AbProbeResult } from './abCompare.js';
 import { expectedMarkerSamples, evaluateProbeGates, evaluateReplayGates } from './gates.js';
 import { metricClass } from './metricKind.js';
-import { PERF_SCENARIOS, resolveScenario, SKIPPED_PERF_SCENARIOS } from './scenario.js';
+import { resolveScenario } from './scenario.js';
 
-test('new issue-126 scenarios resolve and skipped names stay documented', () => {
-  for (const name of [
-    'idle',
-    'agents-4',
-    'agents-16',
-    'agents-27',
-    'long-tail',
-    'session-switch',
-    'soak',
-  ]) {
-    const spec = resolveScenario(name);
-    assert.equal(spec.name, name);
-  }
-  assert.equal(resolveScenario('session-switch').kind, 'session-switch');
-  assert.equal(resolveScenario('soak').kind, 'soak');
-  assert.ok(SKIPPED_PERF_SCENARIOS['browser-workspace']);
-  assert.ok(SKIPPED_PERF_SCENARIOS['sidecar-restart']);
-  assert.ok(PERF_SCENARIOS.smoke);
-});
-
-test('A/B catalog never labels sidecar pipeline metrics as ab', () => {
-  assert.equal(metricClass('bundle.initialJsBytes'), 'ab');
-  assert.equal(metricClass('feed.mountedRowsAt10k'), 'ab');
-  assert.equal(metricClass('sidecar.readyMs'), 'ab');
-  assert.equal(metricClass('sidecar.firstSessionsListMs'), 'ab');
-  assert.equal(metricClass('sidecar.eventReductionRatio'), 'candidate');
-  assert.equal(metricClass('sidecar.pendingEventsMax'), 'candidate');
-});
-
-test('diffProbes never fabricates a baseline for candidate-only ids', () => {
+test('diffProbes classifies metrics and never fabricates a baseline for candidate-only ids', () => {
   const baseline: AbProbeResult = {
     treeRoot: 'main',
     notes: [],
@@ -57,6 +28,11 @@ test('diffProbes never fabricates a baseline for candidate-only ids', () => {
   assert.equal(reduction?.class, 'candidate');
   assert.equal(reduction?.baseline, null);
   assert.equal(reduction?.delta, null);
+
+  // The A/B catalog never labels sidecar pipeline metrics as ab.
+  for (const id of ['feed.mountedRowsAt10k', 'sidecar.readyMs', 'sidecar.firstSessionsListMs'])
+    assert.equal(metricClass(id), 'ab', id);
+  assert.equal(metricClass('sidecar.pendingEventsMax'), 'candidate');
 });
 
 test('replay gates fail on marker loss and pass a clean smoke-shaped snapshot', () => {

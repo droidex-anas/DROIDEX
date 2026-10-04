@@ -96,76 +96,51 @@ test('projects historical Mission progress through the exact persisted spawn lin
   assert.equal(JSON.stringify(progress).includes('spawn-a'), false);
 });
 
-test('does not cross-resolve identical child IDs or provider names under another parent', () => {
+test('progress names no child without exact spawn proof under its own parent', () => {
+  const started = (provider: string, spawnId: string, timestamp = '1') => ({
+    type: 'worker_started' as const,
+    timestamp,
+    workerProviderSessionId: provider,
+    spawnId,
+  });
+  // The same child id and provider recorded under another parent's spawn.
   const foreign: PersistedChildSession = {
     ...workerA,
     parentAppSessionId: 'parent-b',
     spawnLink: { kind: 'spawn', id: 'spawn-b' },
   };
-  const progress = projectMissionProgress(
-    [
-      {
-        type: 'worker_started',
-        timestamp: '1',
-        workerProviderSessionId: 'provider-old-a',
-        spawnId: 'spawn-a',
-      },
-    ],
-    [foreign],
-  );
-
-  assert.deepEqual(progress, [{ type: 'worker_started', timestamp: '1' }]);
-});
-
-test('does not infer child membership from provider identity without WorkerStarted spawn proof', () => {
-  const progress = projectMissionProgress(
-    [
-      {
-        type: 'worker_selected_feature',
-        timestamp: '1',
-        workerProviderSessionId: 'provider-current-a',
-        featureId: 'feature-a',
-      },
-    ],
-    [workerA],
-  );
-
-  assert.deepEqual(progress, [
-    {
-      type: 'worker_selected_feature',
-      timestamp: '1',
-      featureId: 'feature-a',
-    },
+  assert.deepEqual(projectMissionProgress([started('provider-old-a', 'spawn-a')], [foreign]), [
+    { type: 'worker_started', timestamp: '1' },
   ]);
-});
 
-test('rejects a historical provider being rebound to a different persisted spawn', () => {
+  // A provider identity alone, without the WorkerStarted that ties it to a spawn.
+  assert.deepEqual(
+    projectMissionProgress(
+      [
+        {
+          type: 'worker_selected_feature',
+          timestamp: '1',
+          workerProviderSessionId: 'provider-current-a',
+          featureId: 'feature-a',
+        },
+      ],
+      [workerA],
+    ),
+    [{ type: 'worker_selected_feature', timestamp: '1', featureId: 'feature-a' }],
+  );
+
+  // One provider rebound to a second persisted spawn.
   const workerB: PersistedChildSession = {
     ...workerA,
     childSessionId: 'child-b',
     providerSessionId: 'provider-current-b',
     spawnLink: { kind: 'spawn', id: 'spawn-b' },
   };
-  const progress = projectMissionProgress(
-    [
-      {
-        type: 'worker_started',
-        timestamp: '1',
-        workerProviderSessionId: 'provider-shared',
-        spawnId: 'spawn-a',
-      },
-      {
-        type: 'worker_started',
-        timestamp: '2',
-        workerProviderSessionId: 'provider-shared',
-        spawnId: 'spawn-b',
-      },
-    ],
-    [workerA, workerB],
-  );
-
   assert.deepEqual(
-    progress.map((entry) => entry.workerChildSessionId),
+    projectMissionProgress(
+      [started('provider-shared', 'spawn-a'), started('provider-shared', 'spawn-b', '2')],
+      [workerA, workerB],
+    ).map((entry) => entry.workerChildSessionId),
     ['child-a', undefined],
   );
 });

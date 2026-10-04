@@ -20,18 +20,14 @@ function renderAppearance(theme: AppState['theme']): string {
 
 // Hand-tuned colors that match no preset must surface as an explicit
 // "Custom (unsaved)" entry so the theme dropdown always reflects the screen.
-test('theme dropdown lists an unsaved custom entry for hand-tuned colors', () => {
-  const html = renderAppearance({
+test('theme dropdown lists an unsaved custom entry only for hand-tuned colors', () => {
+  const custom = renderAppearance({
     ...initialState.theme,
     presetId: CUSTOM_THEME_ID,
     bg: '#123456',
   });
-  assert.ok(html.includes('Custom (unsaved)'), 'unsaved custom entry is missing');
-});
-
-test('theme dropdown has no unsaved entry when a preset is active', () => {
-  const html = renderAppearance(initialState.theme);
-  assert.ok(!html.includes('Custom (unsaved)'), 'unsaved entry should be hidden for presets');
+  assert.ok(custom.includes('Custom (unsaved)'));
+  assert.ok(!renderAppearance(initialState.theme).includes('Custom (unsaved)'));
 });
 
 test('settings renders when the persisted active session is absent from the snapshot', () => {

@@ -9,9 +9,12 @@ import {
 } from '@factory/droid-sdk';
 
 import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent } from './protocol.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { SessionInteractions, type InteractionLiveSession } from './SessionInteractions.js';
+import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
+import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 interface HarnessOptions {
   rejectProviderUpdate?: boolean;
@@ -26,7 +29,12 @@ function createHarness(options: HarnessOptions = {}) {
 
   const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
     const liveSession: InteractionLiveSession = {
-      summary: summary(appSessionId, providerSessionId),
+      summary: sessionSummary({
+        appSessionId,
+        providerSessionId,
+        cwd: '/workspace',
+        workspaceKind: 'folder',
+      }),
     };
     liveSessions.set(appSessionId, liveSession);
     return liveSession;
@@ -69,29 +77,6 @@ function createHarness(options: HarnessOptions = {}) {
     liveSessions,
     permissionHandler: (ref: { id: string }) => handlers(ref).permissionHandler,
     trace,
-  };
-}
-
-function summary(appSessionId: string, providerSessionId: string): SessionSummary {
-  return {
-    appSessionId,
-    providerSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: appSessionId,
-    cwd: '/workspace',
-    workspaceKind: 'folder',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
   };
 }
 
@@ -172,22 +157,6 @@ function latestQuestionRequest(events: ServerEvent[]) {
   assert.ok(event);
   return event.question;
 }
-
-test('permission requests keep stable identity, exact correlation, and one event', async () => {
-  const harness = createHarness();
-  harness.addLiveSession('app-1', 'provider-1');
-  const handler = harness.permissionHandler({ id: 'app-1' });
-
-  const pending = Promise.resolve(handler(permissionInput('tool-1')));
-  const requests = approvalRequests(harness.emitted);
-
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0]?.request.appSessionId, 'app-1');
-  assert.match(requests[0]?.request.requestId ?? '', /^req-/);
-  const requestId = latestApprovalRequest(harness.emitted).requestId;
-  await harness.interactions.respondToApproval('app-1', requestId, 'proceed_once');
-  assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
-});
 
 test('ProceedAlways bypasses only an equivalent later permission signature', async () => {
   const harness = createHarness();
@@ -547,4 +516,170 @@ test('Droid edits-only approves a pure edit batch and asks for commands or mixed
     ToolConfirmationOutcome.Cancel,
   );
   assert.equal(asked, 2);
+});
+
+// SessionManager wiring: the module tests above own settlement rules; these
+// prove the facade routes provider callbacks to the right app session and
+// applies a Spec exit to the real provider.
+
+test('a resumed historical session asks once under its stable app identity', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    h.fixture.seedHistorySummaries([
+      sessionSummary({
+        appSessionId: 'app-p1',
+        providerSessionId: 'provider-p1',
+        workspaceKind: 'none',
+      }),
+    ]);
+    writeProviderConversation(h.home, 'provider-p1', 'app-p1');
+    await h.handle({ type: 'session.resume', appSessionId: 'app-p1' });
+    assert.equal(h.runtime.loadCalls[0]?.sessionId, 'provider-p1');
+
+    const handler = h.provider.session('provider-p1').handlers.permissionHandler;
+    assert.ok(handler);
+    const pending = Promise.resolve(handler(permissionInput('p1')));
+    const request = latestApprovalRequest(h.events);
+    assert.equal(request.appSessionId, 'app-p1');
+    assert.equal(approvalRequests(h.events).length, 1);
+
+    await h.handle({
+      type: 'approval.respond',
+      appSessionId: request.appSessionId,
+      requestId: request.requestId,
+      outcome: 'proceed_once',
+    });
+    assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('an approved Spec plan leaves Spec on the provider before the callback settles', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await h.create({
+      sessionPurpose: 'chat',
+      clientRef: 'spec-exit',
+      title: 'Spec exit',
+      goal: 'go',
+      interactionMode: 'spec',
+      autonomy: 'low',
+    });
+    const provider = h.provider.session('provider-1');
+    const handler = provider.handlers.permissionHandler;
+    assert.ok(handler);
+    let providerLeftSpecFirst = false;
+    const pending = Promise.resolve(handler(specApprovalInput('p4'))).then((outcome) => {
+      providerLeftSpecFirst = provider.settings.some(
+        (settings) => settings['interactionMode'] === 'auto',
+      );
+      return outcome;
+    });
+    const request = latestApprovalRequest(h.events);
+    assert.equal(request.kind, 'spec');
+
+    await h.handle({
+      type: 'approval.respond',
+      appSessionId: request.appSessionId,
+      requestId: request.requestId,
+      outcome: 'proceed_once',
+    });
+
+    assert.equal(await pending, ToolConfirmationOutcome.ProceedOnce);
+    assert.equal(providerLeftSpecFirst, true);
+    const transition = h.events.filter((event) => event.type === 'session.updated').at(-1);
+    assert.equal(transition?.session.interactionMode, 'auto');
+    assert.equal(transition?.session.sessionPurpose, 'chat');
+    assert.equal(transition?.session.missionId, undefined);
+    assert.equal(transition?.session.phase, 'running');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('close preserves current interaction lifetime and forgets unresolved state at unregister', async () => {
+  const h = createSessionManagerTestContext();
+  let releaseClose = (): void => undefined;
+
+  try {
+    await h.create({
+      sessionPurpose: 'chat',
+      clientRef: 'interaction-close',
+      title: 'Interaction close',
+      goal: 'go',
+      interactionMode: 'auto',
+      autonomy: 'low',
+    });
+    const provider = h.provider.session('provider-1');
+    await provider.waitForPrompts(1);
+    await h.waitForIdle();
+    const closeGate = provider.deferNextClose();
+    releaseClose = () => closeGate.resolve();
+    const closing = h.handle({ type: 'session.close', appSessionId: 'provider-1' });
+    await h.waitForIdle();
+    assert.equal(
+      h.calls.some(
+        (call) =>
+          call.target === 'cleanup' &&
+          call.method === 'session.close' &&
+          call.args[0] === 'provider-1',
+      ),
+      true,
+    );
+
+    // A permission asked while close is in flight still settles normally.
+    const permissionHandler = provider.handlers.permissionHandler;
+    assert.ok(permissionHandler);
+    let permissionSettlements = 0;
+    const permission = Promise.resolve(permissionHandler(permissionInput('during-close'))).then(
+      (outcome) => {
+        permissionSettlements += 1;
+        return outcome;
+      },
+    );
+    const approval = latestApprovalRequest(h.events);
+    assert.equal(permissionSettlements, 0);
+    await h.handle({
+      type: 'approval.respond',
+      appSessionId: approval.appSessionId,
+      requestId: approval.requestId,
+      outcome: 'proceed_once',
+    });
+    assert.equal(await permission, ToolConfirmationOutcome.ProceedOnce);
+    assert.equal(permissionSettlements, 1);
+
+    // A question still open at unregister is forgotten: a reply after resume
+    // neither settles it nor publishes anything.
+    const askUserHandler = provider.handlers.askUserHandler;
+    assert.ok(askUserHandler);
+    let questionSettlements = 0;
+    void Promise.resolve(askUserHandler({ toolCallId: 'unresolved-at-close', questions: [] })).then(
+      () => {
+        questionSettlements += 1;
+      },
+    );
+    const question = latestQuestionRequest(h.events);
+
+    closeGate.resolve();
+    await closing;
+    await h.waitForIdle();
+    assert.equal(questionSettlements, 0);
+    await h.handle({ type: 'session.resume', appSessionId: question.appSessionId });
+    await h.waitForIdle();
+    const eventCountAfterResume = h.events.length;
+
+    await h.handle({
+      type: 'question.respond',
+      appSessionId: question.appSessionId,
+      requestId: question.requestId,
+      cancelled: true,
+      answers: [],
+    });
+    assert.equal(questionSettlements, 0);
+    assert.equal(h.events.length, eventCountAfterResume);
+  } finally {
+    releaseClose();
+    await h.dispose();
+  }
 });

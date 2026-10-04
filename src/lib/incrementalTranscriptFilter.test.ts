@@ -3,18 +3,14 @@ import test from 'node:test';
 import type { TranscriptEvent } from '../types/bridge';
 import { createIncrementalTranscriptFilter } from './incrementalTranscriptFilter';
 import type { TranscriptMutation } from './transcriptMutation';
+import { textEvent } from '../test/textEvent';
 
-function event(id: string, sourceSessionId: string): TranscriptEvent {
-  return {
-    id,
+const event = (id: string, sourceSessionId: string) =>
+  textEvent(id, {
     appSessionId: 'session-a',
     sourceSessionId,
     role: sourceSessionId === 'primary' ? 'primary' : 'worker',
-    kind: 'text',
-    text: id,
-    ts: 1,
-  };
-}
+  });
 
 function appendMutation(previousLength: number): TranscriptMutation {
   return {

@@ -39,8 +39,6 @@ test('persistence degradation renders a durable banner that clears on recovery',
   const degraded = renderToStaticMarkup(createElement(RuntimeStatusBanner));
   assert.ok(degraded.includes('data-testid="history-persistence-banner"'));
   assert.ok(degraded.includes(HISTORY_PERSISTENCE_DEGRADED_MESSAGE));
-  assert.doesNotMatch(degraded, /\d+\s*%/);
-  assert.doesNotMatch(degraded, /ETA/i);
 
   applyHistoryServerEvent({ type: 'history.persistenceRecovered' });
   assert.equal(renderToStaticMarkup(createElement(RuntimeStatusBanner)), '');

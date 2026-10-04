@@ -81,25 +81,17 @@ export function replaceChunkedSequenceAt<T>(values: readonly T[], index: number,
     liveChunk[index - state.settledLength] = value;
     return createSequence({ ...state, liveChunk });
   }
-  let low = 0;
-  let high = state.settledEnds.length - 1;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    const middleEnd = state.settledEnds.at(middle);
-    if (middleEnd === undefined) throw new TypeError('Invalid chunked-sequence index state.');
-    if (index < middleEnd) high = middle;
-    else low = middle + 1;
-  }
-  const chunkStart = low === 0 ? 0 : state.settledEnds.at(low - 1);
-  const chunk = state.settledChunks.at(low)?.slice();
+  const chunkIndex = settledChunkIndex(state, index);
+  const chunkStart = chunkIndex === 0 ? 0 : state.settledEnds.at(chunkIndex - 1);
+  const chunk = state.settledChunks.at(chunkIndex)?.slice();
   if (chunkStart === undefined || !chunk) {
     throw new TypeError('Invalid chunked-sequence index state.');
   }
   chunk[index - chunkStart] = value;
   const settledChunks = [
-    ...state.settledChunks.slice(0, low),
+    ...state.settledChunks.slice(0, chunkIndex),
     chunk,
-    ...state.settledChunks.slice(low + 1),
+    ...state.settledChunks.slice(chunkIndex + 1),
   ];
   return createSequence({ ...state, settledChunks });
 }
@@ -308,6 +300,16 @@ function eventAt<T>(state: ChunkedSequenceState<T>, index: number): T | undefine
   if (index < 0 || index >= state.settledLength + state.liveChunk.length) return undefined;
   if (index >= state.settledLength) return state.liveChunk[index - state.settledLength];
 
+  const chunkIndex = settledChunkIndex(state, index);
+  const chunkStart = chunkIndex === 0 ? 0 : state.settledEnds.at(chunkIndex - 1);
+  const chunk = state.settledChunks.at(chunkIndex);
+  if (chunkStart === undefined || !chunk) {
+    throw new TypeError('Invalid chunked-sequence index state.');
+  }
+  return chunk[index - chunkStart];
+}
+
+function settledChunkIndex<T>(state: ChunkedSequenceState<T>, index: number): number {
   let low = 0;
   let high = state.settledEnds.length - 1;
   while (low < high) {
@@ -317,12 +319,7 @@ function eventAt<T>(state: ChunkedSequenceState<T>, index: number): T | undefine
     if (index < middleEnd) high = middle;
     else low = middle + 1;
   }
-  const chunkStart = low === 0 ? 0 : state.settledEnds.at(low - 1);
-  const chunk = state.settledChunks.at(low);
-  if (chunkStart === undefined || !chunk) {
-    throw new TypeError('Invalid chunked-sequence index state.');
-  }
-  return chunk[index - chunkStart];
+  return low;
 }
 
 function getSequenceState<T>(values: readonly T[]): ChunkedSequenceState<T> | undefined {

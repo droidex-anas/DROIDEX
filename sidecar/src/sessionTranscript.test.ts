@@ -104,13 +104,22 @@ function collectAll(path: string, limit: number): TranscriptEvent[] {
   return pages.flat();
 }
 
-test('backward windows reassemble the exact transcript with no gaps or duplicates', () => {
+test('backward windows reassemble the exact transcript in seq order, with no gaps or duplicates', () => {
   const path = writeSession([assistant('a1'), rich('r'), assistant('a2'), assistant('a3')]);
   const all = collectAll(path, 4);
   assert.deepEqual(
     all.map((e) => `${e.kind}:${e.text ?? e.toolName ?? ''}`),
     ['text:a1', 'thinking:r-think', 'text:r-text', 'tool_call:Read', 'text:a2', 'text:a3'],
   );
+  // seq is strictly increasing within and across pages.
+  const paged = collectAll(
+    writeSession([assistant('a1'), rich('r'), assistant('a2'), assistant('a3'), assistant('a4')]),
+    2,
+  );
+  assert.ok(paged.every((e) => typeof e.seq === 'number'));
+  for (let i = 1; i < paged.length; i++) {
+    assert.ok(paged[i].seq! > paged[i - 1].seq!, `seq must increase at index ${i}`);
+  }
 });
 
 test("a page boundary may split one line's events across pages", () => {
@@ -135,21 +144,6 @@ test("a page boundary may split one line's events across pages", () => {
   assert.equal(page3.older, undefined);
 });
 
-test('seq is strictly increasing within and across pages', () => {
-  const path = writeSession([
-    assistant('a1'),
-    rich('r'),
-    assistant('a2'),
-    assistant('a3'),
-    assistant('a4'),
-  ]);
-  const all = collectAll(path, 2);
-  assert.ok(all.every((e) => typeof e.seq === 'number'));
-  for (let i = 1; i < all.length; i++) {
-    assert.ok(all[i].seq! > all[i - 1].seq!, `seq must increase at index ${i}`);
-  }
-});
-
 test('corrupt lines are skipped without losing their neighbors', () => {
   const path = writeSession([assistant('a1'), '{not json', assistant('a2')]);
   const all = collectAll(path, 10);
@@ -159,52 +153,17 @@ test('corrupt lines are skipped without losing their neighbors', () => {
   );
 });
 
-test('LLM-only user messages stay hidden in eager and paged transcript replay', () => {
+test('eager and paged replay hide internal user messages and restore skill activations', () => {
+  // Internal skill bodies arrive as ordinary user text, after leading whitespace.
+  const notification =
+    ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
     userMessage('user-only prompt', 'user_only'),
     userMessage('shared prompt', 'both'),
-    assistant('assistant reply'),
-  ]);
-
-  for (const events of [
-    collectAll(path, 2),
-    parseFullSessionTranscript('app', 'provider', path, 'primary'),
-  ]) {
-    assert.deepEqual(
-      events.map((event) => event.text),
-      ['ordinary user prompt', 'user-only prompt', 'shared prompt', 'assistant reply'],
-    );
-  }
-});
-
-test('system notifications stay hidden in eager and paged transcript replay', () => {
-  const path = writeSession([
-    userMessage('/review PR #100'),
-    userMessage(
-      '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>',
-    ),
-    assistant('Review started'),
-  ]);
-
-  for (const events of [
-    collectAll(path, 1),
-    parseFullSessionTranscript('app', 'provider', path, 'primary'),
-  ]) {
-    assert.deepEqual(
-      events.map((event) => event.text),
-      ['/review PR #100', 'Review started'],
-    );
-  }
-});
-
-test('skill activation restores as a styled user prompt followed by harness acknowledgement', () => {
-  const path = writeSession([
     userMessage('Skill "review" activated: PR #100', 'user_only'),
-    userMessage(
-      '<system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>',
-    ),
+    userMessage(notification),
     assistant('Review started'),
   ]);
 
@@ -213,15 +172,21 @@ test('skill activation restores as a styled user prompt followed by harness ackn
     parseFullSessionTranscript('app', 'provider', path, 'primary'),
   ]) {
     assert.deepEqual(
-      events.map((event) => ({ text: event.text, author: event.author, skills: event.skills })),
+      events.map(({ text, author, skills, sourceSessionId }) => [
+        text,
+        author,
+        skills,
+        sourceSessionId,
+      ]),
       [
-        { text: 'PR #100', author: 'user', skills: ['review'] },
-        {
-          text: 'Skill "review" activated: PR #100',
-          author: undefined,
-          skills: undefined,
-        },
-        { text: 'Review started', author: undefined, skills: undefined },
+        ['ordinary user prompt', 'user', undefined, 'user'],
+        ['user-only prompt', 'user', undefined, 'user'],
+        ['shared prompt', 'user', undefined, 'user'],
+        // A user-only skill activation restores the prompt and the harness
+        // acknowledgement as separate rows.
+        ['PR #100', 'user', ['review'], 'user'],
+        ['Skill "review" activated: PR #100', undefined, undefined, 'primary'],
+        ['Review started', undefined, undefined, 'primary'],
       ],
     );
   }
@@ -243,26 +208,21 @@ test('a leading compaction_state surfaces exactly one divider at the very top', 
   assert.equal(page2.older, undefined);
 });
 
-test('a leading compaction_state without a timestamp still dedupes to one divider', () => {
-  // Regression: ts=0 compaction events must feed the head-dedupe set — the
-  // old eager parser matched `e.ts === comp.ts`, where 0 === 0 holds, but a
-  // truthiness guard on the reader's set-add would emit the divider twice.
+test('a leading compaction_state yields one divider without a timestamp or behind non-object lines', () => {
+  // A ts=0 divider must still feed the head-dedupe set, and a valid `null` or
+  // number literal between session_start and the divider is noise to skip,
+  // not a value to dereference.
   const noTimestamp = JSON.stringify({ type: 'compaction_state', id: 'comp-0', removedCount: 7 });
-  const path = writeSession([noTimestamp, assistant('after')]);
-  const dividers = collectAll(path, 100).filter((e) => e.kind === 'compaction');
-  assert.equal(dividers.length, 1);
-  assert.equal(dividers[0].removedCount, 7);
-});
-
-test('a non-object JSONL literal in the head does not crash the reader', () => {
-  // A syntactically valid `null` (or number/boolean/array) literal between
-  // session_start and compaction_state is noise and must be skipped, not
-  // crash the parse by dereferencing null.
-  const path = writeSession(['null', '42', compactionState(9), assistant('after')]);
-  assert.doesNotThrow(() => reader(path));
-  const dividers = collectAll(path, 100).filter((e) => e.kind === 'compaction');
-  assert.equal(dividers.length, 1);
-  assert.equal(dividers[0].removedCount, 9);
+  for (const [lines, removedCount] of [
+    [[noTimestamp, assistant('after')], 7],
+    [['null', '42', compactionState(9), assistant('after')], 9],
+  ] as const) {
+    const dividers = collectAll(writeSession([...lines]), 100).filter(
+      (e) => e.kind === 'compaction',
+    );
+    assert.equal(dividers.length, 1);
+    assert.equal(dividers[0].removedCount, removedCount);
+  }
 });
 
 test('an oversized file pages back to its very first message without trimming', () => {

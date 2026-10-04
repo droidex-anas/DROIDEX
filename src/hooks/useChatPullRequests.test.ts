@@ -2,27 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer } from './useStore';
 import { createTargetKeySelector } from './useChatPullRequests';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
 test('discovery target keys ignore token changes and change for cwd, visibility, and active chat', () => {
-  const session: SessionSummary = {
-    appSessionId: 'chat',
+  const session = sessionSummary('chat', {
     title: 'Chat',
-    goal: '',
     cwd: '/worktree',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     autonomy: 'off',
     phase: 'completed',
-    createdAt: 1,
-    updatedAt: 1,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-  };
+  });
   const state = { ...initialState, sessions: { chat: session }, chatMetadata: {} };
   const select = createTargetKeySelector();
   const key = select(state);

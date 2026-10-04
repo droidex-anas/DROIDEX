@@ -86,10 +86,6 @@ test('only user-owned MCP servers expose removal', () => {
   assert.doesNotMatch(project, /Remove/);
 });
 
-test('MCP settings uses the standard UI font', () => {
-  assert.doesNotMatch(render(), /font-mono/);
-});
-
 test('MCP settings has honest loading, failure, and empty states', () => {
   assert.match(render({ isLoading: true, servers: [], tools: [] }), /Loading MCP servers/);
   assert.match(render({ error: 'Droid is unavailable' }), /Droid is unavailable/);

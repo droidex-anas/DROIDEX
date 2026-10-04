@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { wrapTabFocus } from '../lib/focusTrap';
 import { X } from 'lucide-react';
 import {
   useEffect,
@@ -11,9 +12,6 @@ import { createPortal } from 'react-dom';
 
 import { parseMcpVariables } from '../lib/mcpConfig';
 import type { McpServerInput } from '../types/bridge';
-
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function AddMcpServerDialog({
   disabled,
@@ -78,20 +76,7 @@ export function AddMcpServerDialog({
   };
 
   const trapTab = (event: ReactKeyboardEvent) => {
-    if (event.key !== 'Tab') return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(event, dialogRef.current);
   };
 
   return createPortal(

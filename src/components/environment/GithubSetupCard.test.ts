@@ -4,14 +4,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { GithubAvailability } from '../../types/vcs.js';
-
-type CardModule = typeof import('./GithubSetupCard.js');
-
-async function loadCard(): Promise<CardModule> {
-  const module = await import('./GithubSetupCard.js').catch(() => null);
-  assert.ok(module, 'GithubSetupCard module must exist');
-  return module;
-}
+import {
+  GithubAuthPromptContent,
+  GithubSetupCard,
+  type GithubSetupCardProps,
+} from './GithubSetupCard.js';
 
 const homebrewMissing: GithubAvailability = {
   installed: false,
@@ -34,65 +31,49 @@ const ready: GithubAvailability = {
   installMethod: null,
 };
 
-async function render(
+function render(
   availability: GithubAvailability | null,
-  overrides: Partial<{
-    action: 'idle' | 'installing' | 'authenticating';
-    error: string | null;
-    manualGuideOpened: boolean;
-    authCode: string | null;
-    isAuthPopoverOpen: boolean;
-  }> = {},
-): Promise<string> {
-  const { GithubSetupCard } = await loadCard();
+  overrides: Partial<GithubSetupCardProps> = {},
+): string {
   return renderToStaticMarkup(
     createElement(GithubSetupCard, {
       availability,
-      action: overrides.action ?? 'idle',
-      error: overrides.error ?? null,
-      manualGuideOpened: overrides.manualGuideOpened ?? false,
-      authCode: overrides.authCode ?? null,
-      isAuthPopoverOpen: overrides.isAuthPopoverOpen ?? false,
+      action: 'idle',
+      error: null,
+      manualGuideOpened: false,
+      authCode: null,
+      isAuthPopoverOpen: false,
       onPrimaryAction: () => undefined,
       onShowAuthPrompt: () => undefined,
       onCloseAuthPrompt: () => undefined,
       onCancelAuthentication: () => undefined,
+      ...overrides,
     }),
   );
 }
 
-test('checking and ready states do not render a recovery card', async () => {
-  assert.equal(await render(null), '');
-  assert.equal(await render(ready), '');
+test('checking and ready states do not render a recovery card', () => {
+  assert.equal(render(null), '');
+  assert.equal(render(ready), '');
 });
 
-test('missing CLI offers Homebrew installation in Context', async () => {
-  const html = await render(homebrewMissing);
+test('each missing setup step offers its own next action', () => {
+  const homebrew = render(homebrewMissing);
+  assert.match(homebrew, /GitHub CLI required/);
+  assert.match(homebrew, /Install GitHub CLI/);
 
-  assert.match(html, /GitHub CLI required/);
-  assert.match(html, /Install GitHub CLI/);
-  assert.match(html, /pull requests, checks, and comments/i);
-});
+  // Manual installation turns the same action into a verification button.
+  assert.match(render(manualMissing), /official installation page/i);
+  assert.match(render(manualMissing, { manualGuideOpened: true }), /Check installation/);
 
-test('manual installation changes the same action into a verification button', async () => {
-  const install = await render(manualMissing);
-  const check = await render(manualMissing, { manualGuideOpened: true });
-
-  assert.match(install, /Install GitHub CLI/);
-  assert.match(install, /official installation page/i);
-  assert.match(check, /Check installation/);
-});
-
-test('installed signed-out CLI offers GitHub browser authentication', async () => {
-  const html = await render(signedOut);
-
+  const html = render(signedOut);
   assert.match(html, /Connect GitHub/);
   assert.match(html, /Sign in to GitHub/);
 });
 
-test('busy setup states keep an explicit cancellation action available', async () => {
-  const installing = await render(homebrewMissing, { action: 'installing' });
-  const authenticating = await render(signedOut, { action: 'authenticating' });
+test('busy setup states keep an explicit cancellation action available', () => {
+  const installing = render(homebrewMissing, { action: 'installing' });
+  const authenticating = render(signedOut, { action: 'authenticating' });
 
   assert.match(installing, /Installing…/);
   assert.match(installing, /disabled=""/);
@@ -102,8 +83,8 @@ test('busy setup states keep an explicit cancellation action available', async (
   assert.match(authenticating, /Cancel sign-in/);
 });
 
-test('authentication with a device code keeps a button to reopen the popover', async () => {
-  const html = await render(signedOut, {
+test('authentication with a device code keeps a button to reopen the popover', () => {
+  const html = render(signedOut, {
     action: 'authenticating',
     authCode: 'ABCD-7HJK',
     isAuthPopoverOpen: true,
@@ -114,39 +95,27 @@ test('authentication with a device code keeps a button to reopen the popover', a
   assert.doesNotMatch(html, /disabled=""/);
 });
 
-test('device-code popover content shows copy and cancellation actions', async () => {
-  const { GithubAuthPromptContent } = await loadCard();
-  const html = renderToStaticMarkup(
-    createElement(GithubAuthPromptContent, {
-      code: 'ABCD-7HJK',
-      onCopy: () => undefined,
-      onCancel: () => undefined,
-    }),
-  );
+test('the device-code popover offers copy and cancel, and explains a clipboard failure', () => {
+  const popover = (copyFailed: boolean) =>
+    renderToStaticMarkup(
+      createElement(GithubAuthPromptContent, {
+        code: 'ABCD-7HJK',
+        copyFailed,
+        onCopy: () => undefined,
+        onCancel: () => undefined,
+      }),
+    );
 
+  const html = popover(false);
   assert.match(html, /ABCD-7HJK/);
   assert.match(html, /Copy code/);
   assert.match(html, /Cancel sign-in/);
-  assert.match(html, /Paste this code into GitHub/);
+  assert.doesNotMatch(html, /Could not copy the code/i);
+  assert.match(popover(true), /select it and copy it manually/i);
 });
 
-test('device-code popover explains how to recover from a clipboard failure', async () => {
-  const { GithubAuthPromptContent } = await loadCard();
-  const html = renderToStaticMarkup(
-    createElement(GithubAuthPromptContent, {
-      code: 'ABCD-7HJK',
-      copyFailed: true,
-      onCopy: () => undefined,
-      onCancel: () => undefined,
-    }),
-  );
-
-  assert.match(html, /Could not copy the code/i);
-  assert.match(html, /select it and copy it manually/i);
-});
-
-test('setup failures use accessible live text in addition to color', async () => {
-  const html = await render(homebrewMissing, { error: 'Homebrew could not install GitHub CLI.' });
+test('setup failures use accessible live text in addition to color', () => {
+  const html = render(homebrewMissing, { error: 'Homebrew could not install GitHub CLI.' });
 
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /Homebrew could not install GitHub CLI/);

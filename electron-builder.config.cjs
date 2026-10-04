@@ -93,7 +93,7 @@ module.exports = {
     output: 'release',
     buildResources: 'assets/brand',
   },
-  files: ['package.json', 'dist/**', 'electron/**', '!**/*.test.cjs', '!**/*.test.ts', '!**/*.map'],
+  files: ['package.json', 'dist/**', 'electron/**', '!**/*.test.*', '!**/*.map'],
   asarUnpack: ['node_modules/node-pty/**', 'node_modules/@droidex/sparkle-updater/**'],
   extraFiles: [
     {

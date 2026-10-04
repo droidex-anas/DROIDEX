@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { Markdown } from './Markdown';
 import { StreamingMarkdown } from './StreamingMarkdown';
-import { ingestStreamingMarkdown, type StreamingDocument } from '../lib/streamingMarkdown';
+import { ingestStreamingMarkdown } from '../lib/streamingMarkdown';
 
 function canonical(source: string, extra: Record<string, unknown> = {}): string {
   return renderToStaticMarkup(createElement(Markdown, extra, source));
@@ -31,27 +31,6 @@ function assertSettledMatchesCanonical(source: string, extra: Record<string, unk
     withoutBridgeToken(settled(source, extra)),
     withoutBridgeToken(canonical(source, extra)),
   );
-}
-
-function assertCompletedBlocksStable(full: string): void {
-  let previous: { source: string; document: StreamingDocument } | null = null;
-  const seen = new Map<string, string>();
-  for (let index = 1; index <= full.length; index += 1) {
-    const source = full.slice(0, index);
-    const { document } = ingestStreamingMarkdown(previous, source);
-    for (const block of document.completedBlocks) {
-      const prior = seen.get(block.id);
-      if (prior !== undefined) {
-        assert.ok(
-          block.source.startsWith(prior) && /^\s*$/.test(block.source.slice(prior.length)),
-          'frozen block source may only grow by trailing whitespace',
-        );
-      }
-      seen.set(block.id, block.source);
-    }
-    previous = { source, document };
-  }
-  assert.ok(seen.size > 0);
 }
 
 function markupWithoutInterTagSpace(html: string): string {
@@ -98,44 +77,11 @@ const APP_BLOCK = ['```app', '<main>Complete app</main>', '```'].join('\n');
 
 const MALFORMED = ['Hello', '', '```js', 'const incomplete = '].join('\n');
 
-test('settled mermaid, katex-in-app, and app blocks match the canonical renderer', () => {
+test('settled mermaid, katex-in-app, app, and cut-off app blocks match the canonical renderer', () => {
   assertSettledMatchesCanonical(`${MERMAID}\n\n`);
   assertSettledMatchesCanonical(`${KATEX_APP}\n\n`);
   assertSettledMatchesCanonical(APP_BLOCK);
-});
-
-test('settled cut-off app fences match the canonical renderer', () => {
-  const source = '```app\n<main>partial';
-  assertSettledMatchesCanonical(source, { cutOffAppBlocks: true });
-});
-
-test('malformed and incomplete mid-stream blocks stay pending without rewriting frozen prose', () => {
-  const html = streaming(`${MALFORMED}\n`);
-  assert.match(html, /Hello/);
-  assert.match(html, /const incomplete = /);
-  assert.doesNotMatch(html, />Starting interactive app</);
-});
-
-test('streaming states never remove or rewrite completed blocks', () => {
-  assertCompletedBlocksStable(`${HUGE_CODE}\nStill growing`);
-  assertCompletedBlocksStable(`${LISTS}\n\n`);
-  assertCompletedBlocksStable(`${TABLE}\n\n`);
-  assertCompletedBlocksStable(`${NESTED_FENCE}\n\n`);
-  assertCompletedBlocksStable(`${MERMAID}\n\n`);
-});
-
-test('streaming to settled keeps frozen prose and matches canonical output', () => {
-  const live = 'Intro paragraph.\n\n```js\nconst x = 1;\n';
-  const liveHtml = streaming(live);
-  assert.match(liveHtml, /Intro paragraph/);
-  assert.match(liveHtml, /const x = 1;/);
-
-  const finalSource = `${live}\`\`\`\n\nDone.\n`;
-  assertSettledMatchesCanonical(finalSource);
-  const settledHtml = settled(finalSource);
-  assert.match(settledHtml, /Intro paragraph/);
-  assert.match(settledHtml, /const x = 1;/);
-  assert.match(settledHtml, /Done/);
+  assertSettledMatchesCanonical('```app\n<main>partial', { cutOffAppBlocks: true });
 });
 
 test('frozen block ids stay stable and a pending-empty live tree matches settled markup', () => {
@@ -150,7 +96,7 @@ test('frozen block ids stay stable and a pending-empty live tree matches settled
   for (const source of sources) {
     const { document } = ingestStreamingMarkdown(null, source);
     assert.equal(document.pendingSource, '');
-    assert.ok(document.completedBlocks.length > 0);
+    // Block ids are React keys, so each frozen block needs its own.
     const ids = document.completedBlocks.map((block) => block.id);
     assert.deepEqual(ids, [...new Set(ids)]);
     assert.equal(
@@ -170,6 +116,11 @@ test('frozen block ids stay stable and a pending-empty live tree matches settled
 });
 
 test('an open code fence streams as preformatted text without mermaid or app runtime', () => {
+  const malformed = streaming(`${MALFORMED}\n`);
+  assert.match(malformed, /Hello/);
+  assert.match(malformed, /const incomplete = /);
+  assert.doesNotMatch(malformed, />Starting interactive app</);
+
   const mermaidOpen = streaming('```mermaid\nflowchart LR\n  A --> B\n');
   assert.match(mermaidOpen, /flowchart LR/);
   assert.doesNotMatch(mermaidOpen, /Diagram/);

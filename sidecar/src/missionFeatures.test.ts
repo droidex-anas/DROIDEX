@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { bridgeFeature } from './missionFeatures.js';
 
-test('bridgeFeature passes a well-formed feature through unchanged', () => {
+test('bridgeFeature passes a well-formed feature through, omitting absent optional fields', () => {
   const feature = {
     id: 'f1',
     description: 'Ship the thing',
@@ -16,16 +16,14 @@ test('bridgeFeature passes a well-formed feature through unchanged', () => {
     milestone: 'M1',
   };
   assert.deepEqual(bridgeFeature(feature), feature);
-});
 
-test('bridgeFeature omits fulfills and milestone when the source has none', () => {
-  const feature = bridgeFeature({
+  const bare = bridgeFeature({
     id: 'f2',
     description: 'Validate the thing',
     status: 'completed',
     skillName: 'verify',
   });
-  assert.deepEqual(feature, {
+  assert.deepEqual(bare, {
     id: 'f2',
     description: 'Validate the thing',
     status: 'completed',
@@ -34,20 +32,15 @@ test('bridgeFeature omits fulfills and milestone when the source has none', () =
     expectedBehavior: [],
     verificationSteps: [],
   });
-  assert.equal('fulfills' in feature, false);
-  assert.equal('milestone' in feature, false);
+  assert.equal('fulfills' in bare, false);
+  assert.equal('milestone' in bare, false);
 });
 
-test('bridgeFeature repairs an unrecognized status instead of leaking it', () => {
+test('bridgeFeature repairs malformed input into a valid feature instead of leaking it', () => {
   assert.equal(bridgeFeature({ id: 'f3', status: 'blocked' }).status, 'pending');
-});
-
-test('bridgeFeature drops non-string entries from list fields', () => {
   assert.deepEqual(bridgeFeature({ id: 'f4', preconditions: ['a', 7, null] }).preconditions, ['a']);
   assert.deepEqual(bridgeFeature({ id: 'f4', fulfills: 'req-1' }).fulfills, undefined);
-});
-
-test('bridgeFeature yields a valid feature for unreadable JSON', () => {
+  assert.equal(bridgeFeature({ id: 'f5' }).description, 'f5');
   assert.deepEqual(bridgeFeature(null), {
     id: 'feature',
     description: 'Feature',
@@ -57,8 +50,4 @@ test('bridgeFeature yields a valid feature for unreadable JSON', () => {
     expectedBehavior: [],
     verificationSteps: [],
   });
-});
-
-test('bridgeFeature falls back to the id when a description is missing', () => {
-  assert.equal(bridgeFeature({ id: 'f5' }).description, 'f5');
 });

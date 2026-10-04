@@ -10,12 +10,9 @@ test('MCP variables preserve values containing equals signs', () => {
   });
 });
 
-test('MCP variables reject malformed lines', () => {
+test('MCP variables reject malformed lines and duplicate keys instead of guessing', () => {
   assert.throws(() => parseMcpVariables('Authorization'), /Expected KEY=VALUE/);
   assert.throws(() => parseMcpVariables(' =value'), /Expected KEY=VALUE/);
-});
-
-test('MCP variables reject duplicate keys instead of silently replacing values', () => {
   assert.throws(
     () => parseMcpVariables('Authorization=first\nAuthorization=second'),
     /Duplicate key “Authorization”/,

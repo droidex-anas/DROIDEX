@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, FolderOpen, FileDiff, Check } from 'lucide-react';
 import { listEditors, notify, openProject } from '../lib/desktop';
 import { toast } from '../lib/toast';
 import { EditorIcon } from './EditorIcon';
+import { usePopover } from './environment/usePopover';
 import {
   EDITOR_OPTIONS,
   editorLabel,
@@ -47,7 +48,10 @@ export default function EditorOpenMenu({
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<EditorId>(() => getDefaultEditor());
   const [installed, setInstalled] = useState<EditorId[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+  }, []);
+  const ref = usePopover(open, close);
   const hasCwd = Boolean(cwd);
 
   // Only offer editors that are actually present on this machine. If detection
@@ -71,22 +75,6 @@ export default function EditorOpenMenu({
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   const run = (target: EditorTarget) => {
     setOpen(false);

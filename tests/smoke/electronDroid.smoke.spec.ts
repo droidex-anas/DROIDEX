@@ -124,12 +124,11 @@ function writeIsolatedSidecarEntry(home: string, sidecar: string): string {
 function waitForSidecarReadyProof(proofPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     let watcher: ReturnType<typeof watch> | undefined;
     const settle = (proof?: string, error?: Error) => {
       if (settled) return;
       settled = true;
-      if (timeout) clearTimeout(timeout);
+      clearTimeout(timeout);
       watcher?.close();
       if (error) reject(error);
       else resolve(proof!);
@@ -142,16 +141,16 @@ function waitForSidecarReadyProof(proofPath: string): Promise<string> {
         // The wrapper writes then atomically renames; wait for its next filesystem event.
       }
     };
+    const timeout = setTimeout(
+      () => settle(undefined, new Error('E1 sidecar readiness proof did not appear.')),
+      10_000,
+    );
     try {
       watcher = watch(path.dirname(proofPath), readProof);
     } catch {
       settle(undefined, new Error('E1 could not watch for the sidecar readiness proof.'));
       return;
     }
-    timeout = setTimeout(
-      () => settle(undefined, new Error('E1 sidecar readiness proof did not appear.')),
-      10_000,
-    );
     readProof();
   });
 }
@@ -212,7 +211,9 @@ async function verifyOwnedBridge(page: Page, bridge: BridgeInfo): Promise<void> 
         window.clearTimeout(timeout);
         try {
           socket.close();
-        } catch {}
+        } catch {
+          // Closing an already failed socket must preserve the probe's result.
+        }
         if (error) reject(error);
         else resolve();
       };
@@ -241,7 +242,9 @@ async function verifyOwnedBridge(page: Page, bridge: BridgeInfo): Promise<void> 
         window.clearTimeout(timeout);
         try {
           socket.close();
-        } catch {}
+        } catch {
+          // Closing an already failed socket must preserve the probe's result.
+        }
         if (error) reject(error);
         else resolve();
       };
@@ -317,7 +320,9 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
         closeSent = true;
         try {
           ws.send(JSON.stringify({ type: 'session.close', appSessionId }));
-        } catch {}
+        } catch {
+          // Best-effort session cleanup must not replace the original failure.
+        }
       };
       const settle = (error?: Error) => {
         if (settled) return;
@@ -326,7 +331,9 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
         if (error) sendSessionClose();
         try {
           ws.close();
-        } catch {}
+        } catch {
+          // Closing an already failed socket must preserve the round-trip result.
+        }
         if (error) reject(error);
         else resolve({ appSessionId, assistantText });
       };

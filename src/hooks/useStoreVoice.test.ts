@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { reducer, initialState } from './useStore';
 import type { AppState } from './useStore';
 import type { VoiceRole } from '../features/voice/voiceSessions';
+import { textEvent } from '../test/textEvent';
 
 function said(appSessionId: string, role: VoiceRole, text: string, final: boolean) {
   return { type: 'VOICE_TRANSCRIPT', appSessionId, role, text, final } as const;
@@ -24,47 +25,24 @@ test('voice transcript updates the live surface without making a chat row', () =
   );
 });
 
-test('sidecar transcript rows keep both speakers and their spoken mark', () => {
+test('sidecar transcript rows keep both speakers and their spoken mark, growing in place', () => {
+  const userSaid = textEvent('voice-user', {
+    appSessionId: 'm1',
+    sourceSessionId: 'user',
+    text: 'what',
+    author: 'user',
+    spoken: true,
+  });
   let state = initialState as AppState;
-  state = reducer(state, {
-    type: 'SESSION_TRANSCRIPT',
-    event: {
-      id: 'voice-user',
-      appSessionId: 'm1',
-      sourceSessionId: 'user',
-      role: 'primary',
-      ts: 1,
-      kind: 'text',
-      text: 'what changed?',
-      author: 'user',
-      spoken: true,
-    },
-  });
-  state = reducer(state, {
-    type: 'SESSION_TRANSCRIPT',
-    event: {
-      id: 'voice-assistant',
-      appSessionId: 'm1',
-      sourceSessionId: 'primary',
-      role: 'primary',
-      ts: 2,
-      kind: 'text',
-      text: 'the composer',
-      spoken: true,
-    },
-  });
-  state = reducer(state, {
-    type: 'SESSION_TRANSCRIPT',
-    event: {
-      id: 'typed-1',
-      appSessionId: 'm1',
-      sourceSessionId: 'primary',
-      role: 'primary',
-      ts: 3,
-      kind: 'text',
-      text: 'and the sidebar',
-    },
-  });
+  for (const event of [
+    userSaid,
+    // A corrected spoken row replaces its earlier text instead of adding a row.
+    { ...userSaid, text: 'what changed?' },
+    textEvent('voice-assistant', { appSessionId: 'm1', ts: 2, text: 'the composer', spoken: true }),
+    textEvent('typed-1', { appSessionId: 'm1', ts: 3, text: 'and the sidebar' }),
+  ]) {
+    state = reducer(state, { type: 'SESSION_TRANSCRIPT', event });
+  }
 
   assert.deepEqual(
     state.transcripts.m1.map((row) => [row.text, row.author, row.spoken]),
@@ -73,29 +51,6 @@ test('sidecar transcript rows keep both speakers and their spoken mark', () => {
       ['the composer', undefined, true],
       ['and the sidebar', undefined, undefined],
     ],
-  );
-});
-
-test('a corrected sidecar spoken row grows in place', () => {
-  const event = {
-    id: 'voice-user',
-    appSessionId: 'm1',
-    sourceSessionId: 'user',
-    role: 'primary' as const,
-    ts: 1,
-    kind: 'text' as const,
-    text: 'please',
-    author: 'user' as const,
-    spoken: true,
-  };
-  let state = reducer(initialState as AppState, { type: 'SESSION_TRANSCRIPT', event });
-  state = reducer(state, {
-    type: 'SESSION_TRANSCRIPT',
-    event: { ...event, text: 'please check' },
-  });
-  assert.deepEqual(
-    state.transcripts.m1.map((row) => row.text),
-    ['please check'],
   );
 });
 

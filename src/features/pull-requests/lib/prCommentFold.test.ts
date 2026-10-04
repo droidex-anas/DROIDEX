@@ -25,23 +25,23 @@ test('a comment counts as long past ten lines or seven hundred characters', () =
 });
 
 test('the preview is the first prose line without its markdown markers', () => {
-  assert.equal(commentPreview('## Heading\n\nbody'), 'Heading');
-  assert.equal(commentPreview('\n\n- **bold** point'), 'bold point');
-  assert.equal(commentPreview('> quoted reply'), 'quoted reply');
-  assert.equal(commentPreview('1. first step'), 'first step');
-});
-
-test('the preview keeps identifiers that contain underscores', () => {
-  assert.equal(
-    commentPreview('- rename **snake_case** to camelCase'),
-    'rename snake_case to camelCase',
-  );
-});
-
-test('the preview skips fenced code and truncates with an ellipsis', () => {
-  assert.equal(commentPreview('```ts\nconst a = 1;\n```\nafter the fence'), 'const a = 1;');
+  const cases: [string, string][] = [
+    ['## Heading\n\nbody', 'Heading'],
+    ['\n\n- **bold** point', 'bold point'],
+    ['> quoted reply', 'quoted reply'],
+    ['1. first step', 'first step'],
+    ['- rename **snake_case** to camelCase', 'rename snake_case to camelCase'],
+    // Fence delimiters and thematic breaks are skipped, fenced content is not.
+    ['```ts\nconst a = 1;\n```\nafter the fence', 'const a = 1;'],
+    ['~~~ts\nconst a = 1;\n~~~\nafter the fence', 'const a = 1;'],
+    ['~~~\ncode\n~~~', 'code'],
+    ['---\nActual summary', 'Actual summary'],
+    [' * * * \nActual summary', 'Actual summary'],
+    ['___\nActual summary', 'Actual summary'],
+    ['', ''],
+  ];
+  for (const [body, preview] of cases) assert.equal(commentPreview(body), preview, body);
   assert.equal(commentPreview('word '.repeat(60), 20), 'word word word word…');
-  assert.equal(commentPreview(''), '');
 });
 
 test('resolved threads and long bodies start folded', () => {
@@ -63,15 +63,4 @@ test('thread status names who resolved the conversation', () => {
   );
   assert.equal(threadStatus(comment({ outdated: true }))?.label, 'Outdated');
   assert.equal(threadStatus(comment()), null);
-});
-
-test('the preview skips tilde fence delimiters too', () => {
-  assert.equal(commentPreview('~~~ts\nconst a = 1;\n~~~\nafter the fence'), 'const a = 1;');
-  assert.equal(commentPreview('~~~\ncode\n~~~'), 'code');
-});
-
-test('the preview skips Markdown thematic breaks', () => {
-  assert.equal(commentPreview('---\nActual summary'), 'Actual summary');
-  assert.equal(commentPreview(' * * * \nActual summary'), 'Actual summary');
-  assert.equal(commentPreview('___\nActual summary'), 'Actual summary');
 });

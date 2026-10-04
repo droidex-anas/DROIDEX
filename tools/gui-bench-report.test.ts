@@ -43,7 +43,7 @@ test('report names the blank-hole method and software-raster caveat', () => {
     children: { openMs: 20, mountedRows: 3, childRowCount: 5, scroll: null },
     streaming: {
       wired: false,
-      reason: 'origin/main has no sidecar/src/perf/replayRuntime.ts',
+      reason: 'Replay runtime unavailable in baseline',
       durationMs: 0,
       droppedFrames: 0,
       longestFrameMs: 0,
@@ -74,6 +74,9 @@ test('report names the blank-hole method and software-raster caveat', () => {
   assert.match(text, /hole taller than 96 px/);
   assert.match(text, /Blank during scroll/);
   assert.match(text, /unwired/);
+  assert.match(text, /\*\*candidate tooling HEAD at report\*\* `cand` \(\/tmp\/cand\)/);
+  assert.match(text, /\| flick \| dropped rAF frames \| 1 \[1–1\] \| 3 \[3–3\] \| \+2\.0 \|/);
+  assert.doesNotMatch(text, /cursor\/perf-|\(worse\)|did \*\*not\*\* produce unfilled/);
   assert.equal(fmt({ median: 1.5, min: 1, max: 2 }), '1.5 [1.0–2.0]');
   assert.equal(delta(2, 5), '+3.0');
 });

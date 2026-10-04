@@ -22,7 +22,7 @@ export function dequeueQueuedChild(parent: ParentChildSessions, child: ChildSess
   child.queuedRequestId = undefined;
 }
 
-export function cancelInFlightOpen(parent: ParentChildSessions, child: ChildSessionState): boolean {
+function cancelInFlightOpen(parent: ParentChildSessions, child: ChildSessionState): boolean {
   if (child.runtime) return false;
   const attempt = parent.openAttempts.get(child.identity.childSessionId);
   if (!attempt) return false;

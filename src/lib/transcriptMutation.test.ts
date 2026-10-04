@@ -11,35 +11,15 @@ import {
 
 const reference = (id: string) => ({ id });
 
-test('the first transcript mutation starts revision tracking at one', () => {
-  const first = nextTranscriptMutation(undefined, {
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  });
-
-  assert.deepEqual(first, {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  });
-  assert.deepEqual(
-    nextTranscriptMutation(first, {
-      kind: 'append',
-      previousLength: 1,
-      firstChangedIndex: 1,
-    }),
-    {
-      revision: 2,
-      baseRevision: 1,
-      kind: 'append',
-      previousLength: 1,
-      firstChangedIndex: 1,
-    },
-  );
-});
+/** The append or reset at `revision`, one step after its base revision. */
+function mutation(
+  kind: 'append' | 'reset',
+  revision: number,
+  previousLength: number,
+  firstChangedIndex: number,
+): TranscriptMutation {
+  return { revision, baseRevision: revision - 1, kind, previousLength, firstChangedIndex };
+}
 
 test('pure prepend detection records one exact insertion without scanning semantics', () => {
   const retained = [reference('b'), reference('c')];
@@ -87,43 +67,16 @@ test('aggregation preserves one linked prepend and resets mixed mutation chains'
   };
 
   assert.deepEqual(aggregateTranscriptMutations(10, [prepend]), prepend);
-  const mixed = aggregateTranscriptMutations(10, [
-    prepend,
-    {
-      revision: 12,
-      baseRevision: 11,
-      kind: 'append',
-      previousLength: 140,
-      firstChangedIndex: 140,
-    },
-  ]);
+  const mixed = aggregateTranscriptMutations(10, [prepend, mutation('append', 12, 140, 140)]);
   assert.ok(mixed);
   assert.equal(mixed.kind, 'reset');
 });
 
 test('aggregation combines a contiguous append chain from the batch boundary', () => {
   const records: TranscriptMutation[] = [
-    {
-      revision: 11,
-      baseRevision: 10,
-      kind: 'append',
-      previousLength: 5,
-      firstChangedIndex: 5,
-    },
-    {
-      revision: 12,
-      baseRevision: 11,
-      kind: 'append',
-      previousLength: 6,
-      firstChangedIndex: 4,
-    },
-    {
-      revision: 13,
-      baseRevision: 12,
-      kind: 'append',
-      previousLength: 6,
-      firstChangedIndex: 6,
-    },
+    mutation('append', 11, 5, 5),
+    mutation('append', 12, 6, 4),
+    mutation('append', 13, 6, 6),
   ];
 
   assert.deepEqual(aggregateTranscriptMutations(10, records), {
@@ -138,38 +91,11 @@ test('aggregation combines a contiguous append chain from the batch boundary', (
 
 test('aggregation conservatively resets for an explicit reset or revision gap', () => {
   const explicitReset: TranscriptMutation[] = [
-    {
-      revision: 5,
-      baseRevision: 4,
-      kind: 'append',
-      previousLength: 8,
-      firstChangedIndex: 8,
-    },
-    {
-      revision: 6,
-      baseRevision: 5,
-      kind: 'reset',
-      previousLength: 9,
-      firstChangedIndex: 3,
-    },
+    mutation('append', 5, 8, 8),
+    mutation('reset', 6, 9, 3),
   ];
-  const lateAppend: TranscriptMutation = {
-    revision: 8,
-    baseRevision: 7,
-    kind: 'append',
-    previousLength: 3,
-    firstChangedIndex: 3,
-  };
-  const revisionGap: TranscriptMutation[] = [
-    lateAppend,
-    {
-      revision: 10,
-      baseRevision: 9,
-      kind: 'append',
-      previousLength: 4,
-      firstChangedIndex: 4,
-    },
-  ];
+  const lateAppend = mutation('append', 8, 3, 3);
+  const revisionGap: TranscriptMutation[] = [lateAppend, mutation('append', 10, 4, 4)];
 
   assert.deepEqual(aggregateTranscriptMutations(4, explicitReset), {
     revision: 6,
@@ -188,24 +114,6 @@ test('aggregation conservatively resets for an explicit reset or revision gap', 
   const gapped = aggregateTranscriptMutations(6, [lateAppend]);
   assert.ok(gapped);
   assert.equal(gapped.kind, 'reset');
-});
-
-test('aggregation preserves a restarted revision lineage after the batch record was pruned', () => {
-  const restarted: TranscriptMutation = {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  };
-
-  assert.deepEqual(aggregateTranscriptMutations(9, [restarted]), {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'reset',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  });
 });
 
 test('mutation helpers reject invalid transcript indices', () => {
@@ -243,34 +151,10 @@ test('mutation helpers reject invalid transcript indices', () => {
 });
 
 test('mutation observation records only new and changed sessions', () => {
-  const sessionA: TranscriptMutation = {
-    revision: 3,
-    baseRevision: 2,
-    kind: 'append',
-    previousLength: 2,
-    firstChangedIndex: 2,
-  };
-  const sessionB: TranscriptMutation = {
-    revision: 8,
-    baseRevision: 7,
-    kind: 'append',
-    previousLength: 5,
-    firstChangedIndex: 5,
-  };
-  const changedSessionA: TranscriptMutation = {
-    revision: 4,
-    baseRevision: 3,
-    kind: 'append',
-    previousLength: 3,
-    firstChangedIndex: 3,
-  };
-  const newSession: TranscriptMutation = {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  };
+  const sessionA = mutation('append', 3, 2, 2);
+  const sessionB = mutation('append', 8, 5, 5);
+  const changedSessionA = mutation('append', 4, 3, 3);
+  const newSession = mutation('append', 1, 0, 0);
   const before = { 'session-a': sessionA, 'session-b': sessionB };
   const after = {
     'session-a': changedSessionA,
@@ -292,48 +176,12 @@ test('mutation observation records only new and changed sessions', () => {
 });
 
 test('batch aggregation combines multiple sessions and preserves no-op map identity', () => {
-  const sessionAStart: TranscriptMutation = {
-    revision: 10,
-    baseRevision: 9,
-    kind: 'append',
-    previousLength: 4,
-    firstChangedIndex: 4,
-  };
-  const sessionAFirst: TranscriptMutation = {
-    revision: 11,
-    baseRevision: 10,
-    kind: 'append',
-    previousLength: 5,
-    firstChangedIndex: 5,
-  };
-  const sessionAFinal: TranscriptMutation = {
-    revision: 12,
-    baseRevision: 11,
-    kind: 'append',
-    previousLength: 6,
-    firstChangedIndex: 4,
-  };
-  const sessionBStart: TranscriptMutation = {
-    revision: 20,
-    baseRevision: 19,
-    kind: 'append',
-    previousLength: 2,
-    firstChangedIndex: 2,
-  };
-  const sessionBFinal: TranscriptMutation = {
-    revision: 21,
-    baseRevision: 20,
-    kind: 'reset',
-    previousLength: 2,
-    firstChangedIndex: 0,
-  };
-  const unchanged: TranscriptMutation = {
-    revision: 2,
-    baseRevision: 1,
-    kind: 'append',
-    previousLength: 1,
-    firstChangedIndex: 1,
-  };
+  const sessionAStart = mutation('append', 10, 4, 4);
+  const sessionAFirst = mutation('append', 11, 5, 5);
+  const sessionAFinal = mutation('append', 12, 6, 4);
+  const sessionBStart = mutation('append', 20, 2, 2);
+  const sessionBFinal = mutation('reset', 21, 2, 0);
+  const unchanged = mutation('append', 2, 1, 1);
   const batchStart = {
     'session-a': sessionAStart,
     'session-b': sessionBStart,
@@ -360,25 +208,12 @@ test('batch aggregation combines multiple sessions and preserves no-op map ident
     previousLength: 5,
     firstChangedIndex: 4,
   });
-  assert.deepEqual(result['session-b'], {
-    revision: 21,
-    baseRevision: 20,
-    kind: 'reset',
-    previousLength: 2,
-    firstChangedIndex: 0,
-  });
+  assert.deepEqual(result['session-b'], mutation('reset', 21, 2, 0));
   assert.equal(aggregateTranscriptMutationBatch(batchStart, final, new Map()), final);
 });
 
 test('deletion-only batches keep the final mutation map unchanged', () => {
-  const mutation: TranscriptMutation = {
-    revision: 4,
-    baseRevision: 3,
-    kind: 'append',
-    previousLength: 3,
-    firstChangedIndex: 3,
-  };
-  const batchStart = { 'session-a': mutation };
+  const batchStart = { 'session-a': mutation('append', 4, 3, 3) };
   const final: Record<string, TranscriptMutation> = {};
   const records = new Map<string, TranscriptMutation[]>();
 
@@ -389,20 +224,8 @@ test('deletion-only batches keep the final mutation map unchanged', () => {
 });
 
 test('batch aggregation keeps recreated sessions on their restarted revision lineage', () => {
-  const previous: TranscriptMutation = {
-    revision: 9,
-    baseRevision: 8,
-    kind: 'append',
-    previousLength: 7,
-    firstChangedIndex: 7,
-  };
-  const restarted: TranscriptMutation = {
-    revision: 1,
-    baseRevision: 0,
-    kind: 'append',
-    previousLength: 0,
-    firstChangedIndex: 0,
-  };
+  const previous = mutation('append', 9, 7, 7);
+  const restarted = mutation('append', 1, 0, 0);
   const batchStart = { 'session-a': previous };
   const recreated = { 'session-a': restarted };
   const records = new Map<string, TranscriptMutation[]>();
@@ -410,13 +233,10 @@ test('batch aggregation keeps recreated sessions on their restarted revision lin
   observeTranscriptMutationChanges(records, batchStart, {});
   observeTranscriptMutationChanges(records, {}, recreated);
 
+  const restartedReset = mutation('reset', 1, 0, 0);
   assert.deepEqual(aggregateTranscriptMutationBatch(batchStart, recreated, records), {
-    'session-a': {
-      revision: 1,
-      baseRevision: 0,
-      kind: 'reset',
-      previousLength: 0,
-      firstChangedIndex: 0,
-    },
+    'session-a': restartedReset,
   });
+  // The same lineage holds after the batch record was pruned.
+  assert.deepEqual(aggregateTranscriptMutations(9, [restarted]), restartedReset);
 });

@@ -11,15 +11,13 @@ import {
   settledMarkdownFlags,
 } from './settledMarkdownCache';
 
-test('settled cache returns the same element for the same key', () => {
+test('the settled cache reuses an element per key and evicts the least recently used past its bound', () => {
   resetSettledMarkdownCacheForTest();
   const first = getSettledMarkdownElement('a:1:c', () => createElement('p', null, 'one'));
   const second = getSettledMarkdownElement('a:1:c', () => createElement('p', null, 'other'));
   assert.equal(second, first);
   assert.equal(settledMarkdownCacheSize(), 1);
-});
 
-test('settled cache is bounded and evicts the least recently used entry', () => {
   resetSettledMarkdownCacheForTest();
   for (let index = 0; index < SETTLED_MARKDOWN_CACHE_LIMIT + 5; index += 1) {
     getSettledMarkdownElement(`k:${String(index)}`, () =>

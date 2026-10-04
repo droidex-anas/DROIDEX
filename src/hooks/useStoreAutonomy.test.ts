@@ -2,28 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { adaptEvent, initialState, reducer, toastMessageForEvent } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-const session: SessionSummary = {
-  appSessionId: 'app-1',
+const session = sessionSummary('app-1', {
   providerSessionId: 'provider-1',
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
   title: 'Chat',
-  goal: '',
-  cwd: '',
   workspaceKind: 'none',
   autonomy: 'medium',
   phase: 'running',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: 1,
-  updatedAt: 1,
-};
+});
 
 test('changing the default autonomy never rewrites an explicit draft override', () => {
   const drafted = reducer(initialState, { type: 'SET_DRAFT_AUTONOMY', autonomy: 'high' });
@@ -104,7 +91,7 @@ test('closing a session drops its pending autonomy entry', () => {
   assert.equal(closed.pendingAutonomy['app-1'], undefined);
 });
 
-test('a failed autonomy update settles pending and toasts without failing the session', () => {
+test('a failed autonomy update settles its session and toasts; without a session it does nothing', () => {
   const failure = {
     type: 'error' as const,
     code: 'session.autonomy_update_failed',
@@ -126,14 +113,6 @@ test('a failed autonomy update settles pending and toasts without failing the se
   assert.equal(next.pendingAutonomy['app-1'], undefined);
   assert.equal(next.sessions['app-1']?.phase, 'running');
   assert.equal(next.sessions['app-1']?.autonomy, 'medium');
-});
 
-test('an autonomy failure without a session id produces no reducer action', () => {
-  const action = adaptEvent({
-    type: 'error',
-    code: 'session.autonomy_update_failed',
-    message: 'no session',
-    recoverable: true,
-  });
-  assert.equal(action, null);
+  assert.equal(adaptEvent({ ...failure, appSessionId: undefined }), null);
 });
