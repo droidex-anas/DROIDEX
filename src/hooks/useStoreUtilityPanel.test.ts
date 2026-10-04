@@ -1,29 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type AppState } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-function sessionSummary(appSessionId: string): SessionSummary {
-  return {
-    appSessionId,
+const chat = (appSessionId: string) =>
+  sessionSummary(appSessionId, {
     providerSessionId: `provider-${appSessionId}`,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
     goal: appSessionId,
     cwd: '/workspace',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
+  });
 
 function activeState(appSessionId: string): AppState {
   return {
@@ -32,6 +17,23 @@ function activeState(appSessionId: string): AppState {
     rightPanelOpen: true,
     utilityPanels: {},
   };
+}
+
+const capturedChange = {
+  path: 'src/app.ts',
+  verb: 'edit' as const,
+  ops: [{ type: 'add' as const, text: 'hello' }],
+  added: 1,
+  removed: 0,
+};
+
+/** Requests a Review focus on the last turn, as a transcript file click does. */
+function focusReview(
+  state: AppState,
+  path: string | undefined,
+  change?: typeof capturedChange,
+): AppState {
+  return reducer(state, { type: 'OPEN_REVIEW_AT', scope: 'last_turn', path, change });
 }
 
 function browser(appSessionId: string) {
@@ -73,43 +75,16 @@ test('opening Context collapses the active session utility pane without closing 
   assert.equal(state.utilityPanels['session-a'].tabs[0].id, 'terminal-1');
 });
 
-test('an explicit session id keeps delayed tab closes scoped to their origin', () => {
+test('an explicit session id keeps delayed tab closes and updates scoped to their origin', () => {
   let state = reducer(activeState('session-a'), {
     type: 'OPEN_UTILITY_TOOL',
     tool: 'terminal',
     tabId: 'terminal-a',
   });
   state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'session-b' });
-  state = reducer(state, {
-    type: 'OPEN_UTILITY_TOOL',
-    tool: 'terminal',
-    tabId: 'terminal-b',
-  });
+  state = reducer(state, { type: 'OPEN_UTILITY_TOOL', tool: 'terminal', tabId: 'terminal-b' });
 
-  state = reducer(state, {
-    type: 'CLOSE_UTILITY_TAB',
-    tabId: 'terminal-a',
-    appSessionId: 'session-a',
-  });
-
-  assert.equal(state.utilityPanels['session-a'].tabs.length, 0);
-  assert.equal(state.utilityPanels['session-b'].tabs[0].id, 'terminal-b');
-});
-
-test('an explicit session id keeps delayed tab updates scoped to their origin', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_UTILITY_TOOL',
-    tool: 'terminal',
-    tabId: 'terminal-a',
-  });
-  state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'session-b' });
-  state = reducer(state, {
-    type: 'OPEN_UTILITY_TOOL',
-    tool: 'terminal',
-    tabId: 'terminal-b',
-  });
-
-  state = reducer(state, {
+  const updated = reducer(state, {
     type: 'UPDATE_UTILITY_TAB',
     tabId: 'terminal-a',
     appSessionId: 'session-a',
@@ -117,11 +92,18 @@ test('an explicit session id keeps delayed tab updates scoped to their origin', 
     cwd: '/workspace-a',
     label: 'zsh',
   });
+  assert.equal(updated.utilityPanels['session-a'].tabs[0].terminalId, 'pty-a');
+  assert.equal(updated.utilityPanels['session-a'].tabs[0].cwd, '/workspace-a');
+  assert.equal(updated.utilityPanels['session-a'].tabs[0].label, 'zsh');
+  assert.equal(updated.utilityPanels['session-b'].tabs[0].terminalId, undefined);
 
-  assert.equal(state.utilityPanels['session-a'].tabs[0].terminalId, 'pty-a');
-  assert.equal(state.utilityPanels['session-a'].tabs[0].cwd, '/workspace-a');
-  assert.equal(state.utilityPanels['session-a'].tabs[0].label, 'zsh');
-  assert.equal(state.utilityPanels['session-b'].tabs[0].terminalId, undefined);
+  const closed = reducer(state, {
+    type: 'CLOSE_UTILITY_TAB',
+    tabId: 'terminal-a',
+    appSessionId: 'session-a',
+  });
+  assert.equal(closed.utilityPanels['session-a'].tabs.length, 0);
+  assert.equal(closed.utilityPanels['session-b'].tabs[0].id, 'terminal-b');
 });
 
 test('legacy Review and Browser actions route through utility tabs', () => {
@@ -172,67 +154,52 @@ test('browser updates preserve an explicitly hidden browser pane', () => {
   );
 });
 
-test('a session switch drops a pending review-focus request', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
-  });
+test('a session switch drops a pending review focus and its captured change', () => {
+  let state = focusReview(activeState('session-a'), 'src/app.ts', capturedChange);
   assert.equal(state.reviewFocusPath, 'src/app.ts');
+  assert.equal(state.reviewFocusChange, capturedChange);
 
   // The request belongs to session-a; it must not fire in session-b's panel.
   state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'session-b' });
   assert.equal(state.reviewFocusPath, null);
+  assert.equal(state.reviewFocusChange, null);
 
   // Re-selecting the already-active session keeps an in-flight request alive.
-  state = reducer(state, { type: 'OPEN_REVIEW_AT', scope: 'last_turn', path: 'src/b.ts' });
+  state = focusReview(state, 'src/b.ts');
   state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'session-b' });
   assert.equal(state.reviewFocusPath, 'src/b.ts');
 });
 
-test('starting a new chat drops a pending review-focus request', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
+test('starting a new chat or creating another session drops a pending review focus', () => {
+  const draft = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
+    type: 'START_CHAT',
+    cwd: '/repo',
+    executionMode: 'worktree',
   });
-  state = reducer(state, { type: 'START_CHAT', cwd: '/repo', executionMode: 'worktree' });
-  assert.equal(state.activeAppSessionId, null);
-  assert.equal(state.reviewFocusPath, null);
-});
+  assert.equal(draft.activeAppSessionId, null);
+  assert.equal(draft.reviewFocusPath, null);
 
-test('creating another session drops a pending review-focus request', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
-  });
-  state = reducer(state, {
+  let created = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
     type: 'SET_PENDING_COMPOSE',
     clientRef: 'ref-1',
     text: 'start another session',
     skills: [],
     files: [],
   });
-  state = reducer(state, {
+  created = reducer(created, {
     type: 'SESSION_CREATED',
     clientRef: 'ref-1',
-    session: sessionSummary('session-b'),
+    session: chat('session-b'),
   });
-  assert.equal(state.activeAppSessionId, 'session-b');
-  assert.equal(state.reviewFocusPath, null);
+  assert.equal(created.activeAppSessionId, 'session-b');
+  assert.equal(created.reviewFocusPath, null);
 });
 
 test('a background resume preserves the active session review-focus request', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
-  });
-  state = reducer(state, {
+  const state = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
     type: 'SESSION_CREATED',
     clientRef: 'resume:session-b',
-    session: sessionSummary('session-b'),
+    session: chat('session-b'),
   });
 
   assert.equal(state.activeAppSessionId, 'session-a');
@@ -240,63 +207,21 @@ test('a background resume preserves the active session review-focus request', ()
 });
 
 test('each review-focus request bumps the request generation', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
-  });
-  const first = state.reviewFocusRequestId;
+  const first = focusReview(activeState('session-a'), 'src/app.ts');
   // A repeated click for the same file is a new request: the Review pane's
   // fallback dedupe keys on this id, so it must change to re-arm the chain.
-  state = reducer(state, { type: 'OPEN_REVIEW_AT', scope: 'last_turn', path: 'src/app.ts' });
-  assert.equal(state.reviewFocusRequestId, first + 1);
-});
-
-const capturedChange = {
-  path: 'src/app.ts',
-  verb: 'edit' as const,
-  ops: [{ type: 'add' as const, text: 'hello' }],
-  added: 1,
-  removed: 0,
-};
-
-test('OPEN_REVIEW_AT stores the captured transcript change for folderless review', () => {
-  const state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
-    change: capturedChange,
-  });
-  assert.equal(state.reviewFocusPath, 'src/app.ts');
-  assert.equal(state.reviewFocusChange, capturedChange);
+  assert.equal(
+    focusReview(first, 'src/app.ts').reviewFocusRequestId,
+    first.reviewFocusRequestId + 1,
+  );
 });
 
 test('closing Review clears a pending captured change even without a focus path', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    change: capturedChange,
-  });
+  let state = focusReview(activeState('session-a'), undefined, capturedChange);
   assert.equal(state.reviewFocusPath, null);
   assert.equal(state.reviewFocusChange, capturedChange);
 
-  state = {
-    ...state,
-    reviewOpenAppSessionId: null,
-    utilityPanels: {},
-  };
+  state = { ...state, reviewOpenAppSessionId: null, utilityPanels: {} };
   state = reducer(state, { type: 'SET_REVIEW_OPEN', open: false });
-  assert.equal(state.reviewFocusChange, null);
-});
-
-test('a session switch drops a pending captured review change', () => {
-  let state = reducer(activeState('session-a'), {
-    type: 'OPEN_REVIEW_AT',
-    scope: 'last_turn',
-    path: 'src/app.ts',
-    change: capturedChange,
-  });
-  state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'session-b' });
-  assert.equal(state.reviewFocusPath, null);
   assert.equal(state.reviewFocusChange, null);
 });

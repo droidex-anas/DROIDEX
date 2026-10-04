@@ -7,11 +7,8 @@ import { AgentAvatar } from './AgentAvatar';
 const render = (props: { seed: string; working?: boolean }) =>
   renderToStaticMarkup(createElement(AgentAvatar, props));
 
-test('the same seed always produces the same creature', () => {
+test('a seed always produces the same creature, and different seeds differ', () => {
   assert.equal(render({ seed: 'child-1' }), render({ seed: 'child-1' }));
-});
-
-test('different seeds produce different creatures', () => {
   assert.notEqual(render({ seed: 'child-1' }), render({ seed: 'child-2' }));
 });
 

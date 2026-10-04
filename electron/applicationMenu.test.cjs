@@ -48,6 +48,12 @@ test('macOS menu exposes supported editing, reload, window, update, and help act
     submenu(template, 'View').some(({ role }) => role === 'toggleDevTools'),
     false,
   );
+  // Developer tools stay available only in development builds.
+  const development = createApplicationMenuTemplate(menuOptions({ isPackaged: false }));
+  assert.equal(
+    submenu(development, 'View').some(({ role }) => role === 'toggleDevTools'),
+    true,
+  );
 });
 
 test('menu actions target the updater, security pane, help, and release page', () => {
@@ -88,14 +94,6 @@ test('reload actions preserve safe shell reload behavior and accelerators', () =
   view[0].click();
   view[1].click();
   assert.deepEqual(reloads, [false, true]);
-});
-
-test('developer tools stay available only in development builds', () => {
-  const template = createApplicationMenuTemplate(menuOptions({ isPackaged: false }));
-  assert.equal(
-    submenu(template, 'View').some(({ role }) => role === 'toggleDevTools'),
-    true,
-  );
 });
 
 test('installer wires native dependencies and logs failed system actions', async () => {

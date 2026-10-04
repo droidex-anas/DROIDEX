@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { ChildAccess, ChildSessionInfo } from '../hooks/storeChildSession';
 import type { TranscriptEvent } from '../types/bridge';
 import {
   childSessionActivityForTarget,
@@ -17,7 +18,6 @@ import {
   isPendingChildPlaceholder,
   mergeChildSessionSpawn,
   orderedChildSessions,
-  selectedChildForParent,
   shouldOpenSelectedChild,
   shouldRequestReleasedChildHistory,
   spawnedChildSessions,
@@ -27,14 +27,44 @@ import {
   visibleSessionCanCompact,
   visibleSessionIsPending,
   visibleSessionTarget,
+  type VisibleSessionTarget,
 } from './childSessions';
 import { childSessionInfo } from './tools';
+import { childSummary } from '../test/childSummary';
 
 function ev(
   p: Partial<TranscriptEvent> &
     Pick<TranscriptEvent, 'id' | 'sourceSessionId' | 'role' | 'ts' | 'kind'>,
 ): TranscriptEvent {
   return { appSessionId: 'app-1', ...p } as TranscriptEvent;
+}
+
+const child = (overrides: Partial<ChildSessionInfo> = {}): ChildSessionInfo =>
+  childSummary('parent-a', 'child-a', { status: 'running', ...overrides });
+
+const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
+
+/** The visible target for parent-a/child-a with the given child and access. */
+function childTarget(summary: ChildSessionInfo, access?: ChildAccess) {
+  return visibleSessionTarget(
+    'parent-a',
+    selection,
+    { 'parent-a': { 'child-a': summary } },
+    access ? { 'parent-a': { 'child-a': access } } : {},
+  );
+}
+
+function readyAccess(runtimeGeneration: number): ChildAccess {
+  return { state: 'ready', requestId: 'ready', runtimeGeneration };
+}
+
+/** A git baseline the test releases by hand, to race state changes against it. */
+function heldBaseline() {
+  let release = (): void => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { wait: () => promise, release };
 }
 
 const spawn = (toolArgs: Record<string, unknown>): TranscriptEvent =>
@@ -62,54 +92,32 @@ test('childSessionTargetFromEvent falls back to the spawn event id', () => {
 
 test('resolveWaveSessions matches a registered child by spawn event id when toolUseId is absent', () => {
   const spawnEvent = spawn({ subagent_type: 'explorer' });
-  const child = {
+  const registered = child({
     parentAppSessionId: spawnEvent.appSessionId,
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state' as const,
-    spawnLink: { kind: 'tool-use' as const, id: spawnEvent.id },
-  };
-  const [resolved] = resolveWaveSessions([spawnEvent], [child]);
+    spawnLink: { kind: 'tool-use', id: spawnEvent.id },
+  });
+  const [resolved] = resolveWaveSessions([spawnEvent], [registered]);
   assert.equal(resolved?.childSessionId, 'child-a');
   assert.equal(resolved?.status, 'running');
   const siblings = resolveWaveSessions(
     [spawnEvent],
-    [child, { ...child, childSessionId: 'child-b' }],
+    [registered, { ...registered, childSessionId: 'child-b' }],
   );
   assert.deepEqual(siblings.map(childSessionKey), ['child-a', 'child-b']);
 });
 
-test('mergeChildSessionSpawn merges a label-only delta with a later description-only delta', () => {
-  const merged = mergeChildSessionSpawn(
-    spawn({ subagent_type: 'worker' }),
-    spawn({ description: 'fix the bug' }),
-  );
-  assert.deepEqual(childSessionInfo(merged.toolArgs), {
-    label: 'worker',
-    description: 'fix the bug',
-  });
-});
-
-test('mergeChildSessionSpawn merges a description-only delta with a later label-only delta', () => {
-  const merged = mergeChildSessionSpawn(
-    spawn({ description: 'fix the bug' }),
-    spawn({ subagent_type: 'worker' }),
-  );
-  assert.deepEqual(childSessionInfo(merged.toolArgs), {
-    label: 'worker',
-    description: 'fix the bug',
-  });
-});
-
-test('mergeChildSessionSpawn keeps the latest args when they already carry both fields', () => {
+test('mergeChildSessionSpawn combines label and description deltas in either order', () => {
+  const merged = { label: 'worker', description: 'fix the bug' };
+  const label = spawn({ subagent_type: 'worker' });
+  const description = spawn({ description: 'fix the bug' });
+  assert.deepEqual(childSessionInfo(mergeChildSessionSpawn(label, description).toolArgs), merged);
+  assert.deepEqual(childSessionInfo(mergeChildSessionSpawn(description, label).toolArgs), merged);
+  // Latest args that already carry both fields win as they are.
   const next = spawn({ subagent_type: 'worker', description: 'do X' });
-  assert.deepEqual(
-    childSessionInfo(mergeChildSessionSpawn(spawn({ subagent_type: 'worker' }), next).toolArgs),
-    { label: 'worker', description: 'do X' },
-  );
+  assert.deepEqual(childSessionInfo(mergeChildSessionSpawn(label, next).toolArgs), {
+    label: 'worker',
+    description: 'do X',
+  });
 });
 
 test('a spawn is timed from its first delta, not from the last one to stream in', () => {
@@ -125,7 +133,7 @@ test('a spawn is timed from its first delta, not from the last one to stream in'
   );
 });
 
-test('childSessionLatest surfaces a failed tool result as a failure, not stale activity', () => {
+test('childSessionLatest surfaces failures and errors, not stale activity', () => {
   const out = childSessionLatest({
     kind: 'tool_result',
     text: 'command exited 1',
@@ -134,53 +142,12 @@ test('childSessionLatest surfaces a failed tool result as a failure, not stale a
   });
   assert.equal(out?.head, 'Failed');
   assert.equal(out?.body, 'command exited 1');
-});
-
-test('childSessionLatest maps an error event to Error and a missing latest to null', () => {
   assert.equal(childSessionLatest({ kind: 'error', text: 'boom' })?.head, 'Error');
   assert.equal(childSessionLatest(undefined), null);
 });
 
-test('selected child targeting is parent-scoped and independent of session mode', () => {
-  const child = {
-    parentAppSessionId: 'mission-parent',
-    childSessionId: 'worker-logical',
-    role: 'validator' as const,
-    status: 'paused' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-  const children = { 'mission-parent': { 'worker-logical': child } };
-
-  assert.equal(
-    selectedChildForParent(
-      'mission-parent',
-      { parentAppSessionId: 'mission-parent', childSessionId: 'worker-logical' },
-      children,
-    ),
-    child,
-  );
-  assert.equal(
-    selectedChildForParent(
-      'other-parent',
-      { parentAppSessionId: 'mission-parent', childSessionId: 'worker-logical' },
-      children,
-    ),
-    undefined,
-  );
-});
-
 test('switching to a feature without an exact child clears the previous prompt target', () => {
-  const child = {
-    parentAppSessionId: 'mission-parent',
-    childSessionId: 'worker-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
+  const worker = child({ parentAppSessionId: 'mission-parent', childSessionId: 'worker-a' });
   const progress = [
     {
       id: 'progress-a',
@@ -200,40 +167,23 @@ test('switching to a feature without an exact child clears the previous prompt t
     },
   ];
 
-  assert.equal(childSelectionForFeature(progress, [child], 'feature-a'), 'worker-a');
-  assert.equal(childSelectionForFeature(progress, [child], 'feature-b'), null);
-  assert.equal(childSelectionForFeature(progress, [child], 'feature-without-progress'), null);
+  assert.equal(childSelectionForFeature(progress, [worker], 'feature-a'), 'worker-a');
+  assert.equal(childSelectionForFeature(progress, [worker], 'feature-b'), null);
+  assert.equal(childSelectionForFeature(progress, [worker], 'feature-without-progress'), null);
   assert.deepEqual(
     visibleSessionTarget(
       'mission-parent',
       null,
-      { 'mission-parent': { 'worker-a': child } },
-      {
-        'mission-parent': {
-          'worker-a': { state: 'ready', requestId: 'ready-a', runtimeGeneration: 1 },
-        },
-      },
+      { 'mission-parent': { 'worker-a': worker } },
+      { 'mission-parent': { 'worker-a': readyAccess(1) } },
     ),
     { kind: 'primary' },
   );
 });
 
 test('child ordering gives unlabeled siblings one stable label across surfaces', () => {
-  const later = {
-    parentAppSessionId: 'mission-parent',
-    childSessionId: 'worker-later',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-    startedAt: 20,
-  };
-  const earlier = {
-    ...later,
-    childSessionId: 'worker-earlier',
-    startedAt: 10,
-  };
+  const later = child({ childSessionId: 'worker-later', startedAt: 20 });
+  const earlier = child({ childSessionId: 'worker-earlier', startedAt: 10 });
 
   const ordered = orderedChildSessions([later, earlier]);
   assert.deepEqual(
@@ -262,17 +212,11 @@ test('spawned sessions cover a spawn the store has not registered yet', () => {
   // Streaming deltas arrive as further tool_call events on the same tool-use id:
   // one agent, with the fields spread across them merged.
   const spawnADelta = { ...spawnA, id: 'e2', ts: 11, toolArgs: { description: 'read the code' } };
-  const registered = {
+  const registered = child({
     parentAppSessionId: 'app-1',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-    spawnLink: { kind: 'tool-use' as const, id: 'tool-a' },
+    spawnLink: { kind: 'tool-use', id: 'tool-a' },
     startedAt: 50,
-  };
+  });
 
   const pending = spawnedChildSessions([spawnA, spawnADelta], []);
   assert.equal(pending.length, 1);
@@ -285,47 +229,34 @@ test('spawned sessions cover a spawn the store has not registered yet', () => {
   // Registration replaces the placeholder with the stable logical child identity.
   const resolved = spawnedChildSessions([spawnA], [registered]);
   assert.deepEqual(
-    resolved.map((child) => child.childSessionId),
+    resolved.map((childSession) => childSession.childSessionId),
     ['child-a'],
   );
   assert.equal(childSessionKey(pending[0]), 'pending-tool-a');
   assert.equal(childSessionKey(resolved[0]), 'child-a');
   // The spawn event's time is the true start, not the store's later stamp.
   assert.equal(resolved[0].startedAt, 10);
-});
 
-test('spawned sessions keep a child whose spawn is outside the loaded transcript', () => {
-  const restored = {
-    parentAppSessionId: 'app-1',
+  // A child whose spawn is outside the loaded transcript is kept too.
+  const restored = child({
     childSessionId: 'child-old',
-    role: 'worker' as const,
-    status: 'completed' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-    spawnLink: { kind: 'tool-use' as const, id: 'tool-old' },
+    status: 'completed',
+    spawnLink: { kind: 'tool-use', id: 'tool-old' },
     startedAt: 5,
-  };
+  });
   assert.deepEqual(
-    spawnedChildSessions([], [restored]).map((child) => child.childSessionId),
+    spawnedChildSessions([], [restored]).map((childSession) => childSession.childSessionId),
     ['child-old'],
   );
 });
 
 test('the panel order pins working agents on top, then newest first, without renumbering', () => {
-  const base = {
-    parentAppSessionId: 'app-1',
-    role: 'worker' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
   const rows = workingFirstChildSessions([
-    { ...base, childSessionId: 'c1', status: 'completed', startedAt: 10 },
-    { ...base, childSessionId: 'c2', status: 'running', startedAt: 20 },
-    { ...base, childSessionId: 'c3', status: 'paused', startedAt: 30 },
-    { ...base, childSessionId: 'c4', status: 'pending', startedAt: 40 },
-    { ...base, childSessionId: 'c5', status: 'running', startedAt: 50 },
+    child({ childSessionId: 'c1', status: 'completed', startedAt: 10 }),
+    child({ childSessionId: 'c2', status: 'running', startedAt: 20 }),
+    child({ childSessionId: 'c3', status: 'paused', startedAt: 30 }),
+    child({ childSessionId: 'c4', status: 'pending', startedAt: 40 }),
+    child({ childSessionId: 'c5', status: 'running', startedAt: 50 }),
   ]);
   assert.deepEqual(
     rows.map((row) => [row.child.childSessionId, row.name]),
@@ -342,22 +273,13 @@ test('the panel order pins working agents on top, then newest first, without ren
 });
 
 test('queued children are not live and do not sort as working', () => {
-  const queued = {
-    parentAppSessionId: 'app-1',
+  const queued = child({
     childSessionId: 'queued',
-    role: 'worker' as const,
-    status: 'running' as const,
     queued: true,
-    modelId: 'model-default',
     transcriptAvailable: false,
     startedAt: 50,
-  };
-  const running = {
-    ...queued,
-    childSessionId: 'live',
-    queued: undefined,
-    startedAt: 10,
-  };
+  });
+  const running = child({ childSessionId: 'live', transcriptAvailable: false, startedAt: 10 });
   assert.equal(childSessionIsLive(queued, { available: true }), false);
   assert.equal(childSessionIsLive(running, { available: true }), true);
   assert.deepEqual(
@@ -370,21 +292,14 @@ test('queued children are not live and do not sort as working', () => {
 // status" placeholders). They must join the list *behind* the newest rows so
 // the visible head of the panel never reshuffles while the user reads.
 test('older spawns revealed by history paging sort behind the existing rows', () => {
-  const base = {
-    parentAppSessionId: 'app-1',
-    role: 'worker' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
   const recent = [
-    { ...base, childSessionId: 'new-1', status: 'completed' as const, startedAt: 100 },
-    { ...base, childSessionId: 'new-2', status: 'completed' as const, startedAt: 200 },
+    child({ childSessionId: 'new-1', status: 'completed', startedAt: 100 }),
+    child({ childSessionId: 'new-2', status: 'completed', startedAt: 200 }),
   ];
   const before = workingFirstChildSessions(recent).map((row) => row.child.childSessionId);
   const paged = [
-    { ...base, childSessionId: 'pending-old-1', status: 'pending' as const, startedAt: 1 },
-    { ...base, childSessionId: 'pending-old-2', status: 'pending' as const, startedAt: 2 },
+    child({ childSessionId: 'pending-old-1', status: 'pending', startedAt: 1 }),
+    child({ childSessionId: 'pending-old-2', status: 'pending', startedAt: 2 }),
     ...recent,
   ];
   const after = workingFirstChildSessions(paged).map((row) => row.child.childSessionId);
@@ -393,24 +308,15 @@ test('older spawns revealed by history paging sort behind the existing rows', ()
 });
 
 test('running child activity stays running even without an open runtime', () => {
-  const child = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-    spawnLink: { kind: 'tool-use' as const, id: 'tool-a' },
-  };
+  const running = child({ spawnLink: { kind: 'tool-use', id: 'tool-a' } });
 
   // Autonomous subagents never open a runtime; the store status is authoritative.
   assert.equal(
-    childSessionActivityForTarget([child], [], { toolUseId: 'tool-a' })?.status,
+    childSessionActivityForTarget([running], [], { toolUseId: 'tool-a' })?.status,
     'running',
   );
   assert.equal(
-    childSessionActivityForTarget([{ ...child, status: 'paused' as const }], [], {
+    childSessionActivityForTarget([{ ...running, status: 'paused' }], [], {
       toolUseId: 'tool-a',
     })?.status,
     'paused',
@@ -418,29 +324,14 @@ test('running child activity stays running even without an open runtime', () => 
 });
 
 test('visible child actionability is exact and readiness-gated', () => {
-  const running = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
+  const running = child();
   const children = {
     'parent-a': { 'child-a': running },
     'parent-b': { 'child-a': { ...running, parentAppSessionId: 'parent-b' } },
   };
-  const ready = visibleSessionTarget(
-    'parent-a',
-    { parentAppSessionId: 'parent-a', childSessionId: 'child-a' },
-    children,
-    {
-      'parent-a': {
-        'child-a': { state: 'ready', requestId: 'request-a', runtimeGeneration: 4 },
-      },
-    },
-  );
+  const ready = visibleSessionTarget('parent-a', selection, children, {
+    'parent-a': { 'child-a': { state: 'ready', requestId: 'request-a', runtimeGeneration: 4 } },
+  });
   assert.equal(ready.kind, 'child');
   if (ready.kind !== 'child') assert.fail('expected exact child target');
   assert.equal(ready.child.parentAppSessionId, 'parent-a');
@@ -448,35 +339,15 @@ test('visible child actionability is exact and readiness-gated', () => {
   assert.equal(ready.canInterrupt, true);
   assert.equal(ready.settingsReadiness, 'ready');
 
-  const wrongParent = visibleSessionTarget(
-    'parent-b',
-    { parentAppSessionId: 'parent-a', childSessionId: 'child-a' },
-    children,
-    {},
-  );
+  const wrongParent = visibleSessionTarget('parent-b', selection, children, {});
   assert.deepEqual(wrongParent, { kind: 'primary' });
 });
 
 test('completed and historical children stay selected while actions are disabled', () => {
-  const completed = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'completed' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-  const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
-  const children = { 'parent-a': { 'child-a': completed } };
+  const completed = child({ status: 'completed' });
 
-  for (const access of [
-    { state: 'ready' as const, requestId: 'ready', runtimeGeneration: 2 },
-    { state: 'history' as const, requestId: 'history' },
-  ]) {
-    const target = visibleSessionTarget('parent-a', selection, children, {
-      'parent-a': { 'child-a': access },
-    });
+  for (const access of [readyAccess(2), { state: 'history' as const, requestId: 'history' }]) {
+    const target = childTarget(completed, access);
     assert.equal(target.kind, 'child');
     if (target.kind !== 'child') assert.fail('expected selected child target');
     assert.equal(target.childSessionId, 'child-a');
@@ -485,32 +356,15 @@ test('completed and historical children stay selected while actions are disabled
     assert.equal(target.settingsReadiness, 'failed');
   }
 
-  const beforeHistorySettlement = visibleSessionTarget('parent-a', selection, children, {});
+  const beforeHistorySettlement = childTarget(completed);
   assert.equal(beforeHistorySettlement.kind, 'child');
   if (beforeHistorySettlement.kind !== 'child') assert.fail('expected selected child target');
   assert.equal(beforeHistorySettlement.settingsReadiness, 'failed');
 });
 
 test('visible pending state never inherits liveness across the parent-child boundary', () => {
-  const running = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-  const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
-  const children = { 'parent-a': { 'child-a': running } };
-  const readyChild = visibleSessionTarget('parent-a', selection, children, {
-    'parent-a': {
-      'child-a': { state: 'ready', requestId: 'ready', runtimeGeneration: 2 },
-    },
-  });
-  const historicalChild = visibleSessionTarget('parent-a', selection, children, {
-    'parent-a': { 'child-a': { state: 'history', requestId: 'history' } },
-  });
+  const readyChild = childTarget(child(), readyAccess(2));
+  const historicalChild = childTarget(child(), { state: 'history', requestId: 'history' });
 
   assert.equal(visibleSessionIsPending(readyChild, false, null), true);
   assert.equal(visibleSessionIsPending(historicalChild, true, 'primary'), false);
@@ -521,235 +375,72 @@ test('visible pending state never inherits liveness across the parent-child boun
   assert.equal(visibleSessionCanCompact({ kind: 'primary' }), true);
 });
 
-test('child prompt commit suppresses every effect when the runtime closes during git baseline', async () => {
-  const child = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-  const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
-  const children = { 'parent-a': { 'child-a': child } };
-  let current = visibleSessionTarget('parent-a', selection, children, {
-    'parent-a': {
-      'child-a': { state: 'ready', requestId: 'ready', runtimeGeneration: 7 },
-    },
-  });
-  const captured = childRuntimeSubmitTarget(current);
+type BaselineChange = {
+  target?: VisibleSessionTarget;
+  composerRevision?: number;
+  canCommit?: boolean;
+};
+
+/** Starts a child prompt commit on runtime 7, applies `change` while the git baseline is held, then releases it. */
+async function commitAcrossBaseline(change: BaselineChange) {
+  const captured = childRuntimeSubmitTarget(childTarget(child(), readyAccess(7)));
   assert.ok(captured);
-  let releaseBaseline = (): void => undefined;
-  const baseline = new Promise<void>((resolve) => {
-    releaseBaseline = resolve;
-  });
-  const composerRevision = 1;
-  let transcriptEffects = 0;
-  let resetEffects = 0;
-  let commandEffects = 0;
-  const submission = commitChildPromptAfterBaseline({
-    capturedTarget: captured,
-    capturedComposerRevision: composerRevision,
-    waitForBaseline: () => baseline,
-    currentTarget: () => current,
-    currentComposerRevision: () => composerRevision,
-    appendTranscript: () => {
-      transcriptEffects += 1;
-    },
-    resetComposer: () => {
-      resetEffects += 1;
-    },
-    sendCommand: () => {
-      commandEffects += 1;
-    },
-  });
-  current = visibleSessionTarget('parent-a', selection, children, {
-    'parent-a': {
-      'child-a': { state: 'closed', requestId: null },
-    },
-  });
-  releaseBaseline();
-
-  assert.equal(await submission, false);
-  assert.equal(composerRevision, 1);
-  assert.equal(transcriptEffects, 0);
-  assert.equal(resetEffects, 0);
-  assert.equal(commandEffects, 0);
-});
-
-test('child prompt commit rejects a replacement runtime with the same logical child', async () => {
-  const child = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
+  let current: Required<BaselineChange> = {
+    target: childTarget(child(), readyAccess(7)),
+    composerRevision: 1,
+    canCommit: true,
   };
-  const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
-  const children = { 'parent-a': { 'child-a': child } };
-  const ready = (runtimeGeneration: number) =>
-    visibleSessionTarget('parent-a', selection, children, {
-      'parent-a': {
-        'child-a': { state: 'ready', requestId: 'ready', runtimeGeneration },
-      },
-    });
-  let current = ready(11);
-  const captured = childRuntimeSubmitTarget(current);
-  assert.ok(captured);
-  let releaseBaseline = (): void => undefined;
-  const baseline = new Promise<void>((resolve) => {
-    releaseBaseline = resolve;
-  });
-
-  let effects = 0;
-  const admitted = commitChildPromptAfterBaseline({
-    capturedTarget: captured,
-    capturedComposerRevision: 1,
-    waitForBaseline: () => baseline,
-    currentTarget: () => current,
-    currentComposerRevision: () => 1,
-    appendTranscript: () => {
-      effects += 1;
-    },
-    resetComposer: () => {
-      effects += 1;
-    },
-    sendCommand: () => {
-      effects += 1;
-    },
-  });
-  current = ready(12);
-  releaseBaseline();
-
-  assert.equal(await admitted, false);
-  assert.equal(effects, 0);
-});
-
-test('child prompt commit preserves a composer revised during git baseline', async () => {
-  const child = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-default',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-  const selection = { parentAppSessionId: 'parent-a', childSessionId: 'child-a' };
-  const target = visibleSessionTarget(
-    'parent-a',
-    selection,
-    { 'parent-a': { 'child-a': child } },
-    {
-      'parent-a': {
-        'child-a': { state: 'ready', requestId: 'ready', runtimeGeneration: 4 },
-      },
-    },
-  );
-  const captured = childRuntimeSubmitTarget(target);
-  assert.ok(captured);
-  let composerRevision = 8;
-  let transcriptEffects = 0;
-  let resetEffects = 0;
-  let commandEffects = 0;
-  let releaseBaseline = (): void => undefined;
-  const baseline = new Promise<void>((resolve) => {
-    releaseBaseline = resolve;
-  });
-  const submission = commitChildPromptAfterBaseline({
-    capturedTarget: captured,
-    capturedComposerRevision: composerRevision,
-    waitForBaseline: () => baseline,
-    currentTarget: () => target,
-    currentComposerRevision: () => composerRevision,
-    appendTranscript: () => {
-      transcriptEffects += 1;
-    },
-    resetComposer: () => {
-      resetEffects += 1;
-    },
-    sendCommand: () => {
-      commandEffects += 1;
-    },
-  });
-
-  composerRevision += 2;
-  releaseBaseline();
-
-  assert.equal(await submission, true);
-  assert.equal(transcriptEffects, 1);
-  assert.equal(resetEffects, 0);
-  assert.equal(commandEffects, 1);
-});
-
-test('child prompt commit preserves the composer when an update starts during baseline capture', async () => {
-  const target = {
-    kind: 'child' as const,
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'child-a',
-    role: 'worker' as const,
-    label: 'Worker',
-    canSend: true,
-    access: { state: 'ready' as const, requestId: 'ready', runtimeGeneration: 1 },
-  };
-  const captured = childRuntimeSubmitTarget(target);
-  assert.ok(captured);
+  const baseline = heldBaseline();
   const effects: string[] = [];
-
-  const committed = await commitChildPromptAfterBaseline({
+  const committed = commitChildPromptAfterBaseline({
     capturedTarget: captured,
     capturedComposerRevision: 1,
-    waitForBaseline: async () => undefined,
-    currentTarget: () => target,
-    currentComposerRevision: () => 1,
-    canCommit: () => false,
+    waitForBaseline: baseline.wait,
+    currentTarget: () => current.target,
+    currentComposerRevision: () => current.composerRevision,
+    canCommit: () => current.canCommit,
     appendTranscript: () => effects.push('append'),
     resetComposer: () => effects.push('reset'),
     sendCommand: () => effects.push('send'),
   });
+  current = { ...current, ...change };
+  baseline.release();
+  return { committed: await committed, effects };
+}
 
-  assert.equal(committed, false);
-  assert.deepEqual(effects, []);
+test('child prompt commit drops every effect when the runtime closes, is replaced, or an update starts', async () => {
+  const changes: Array<[string, BaselineChange]> = [
+    ['runtime closed', { target: childTarget(child(), { state: 'closed', requestId: null }) }],
+    ['replacement runtime of the same child', { target: childTarget(child(), readyAccess(8)) }],
+    ['update started', { canCommit: false }],
+  ];
+  for (const [label, change] of changes) {
+    assert.deepEqual(await commitAcrossBaseline(change), { committed: false, effects: [] }, label);
+  }
+});
+
+test('child prompt commit preserves a composer revised during git baseline', async () => {
+  assert.deepEqual(await commitAcrossBaseline({ composerRevision: 3 }), {
+    committed: true,
+    effects: ['append', 'send'],
+  });
 });
 
 test('primary and exact child transcripts remain isolated while switching', () => {
+  const text = (id: string, sourceSessionId: string, ts: number) =>
+    ev({
+      id,
+      sourceSessionId,
+      role: sourceSessionId.startsWith('child') ? 'worker' : 'primary',
+      ts,
+      kind: 'text',
+      text: id,
+    });
   const transcript = [
-    ev({
-      id: 'user',
-      sourceSessionId: 'user',
-      role: 'primary',
-      author: 'user',
-      ts: 1,
-      kind: 'text',
-      text: 'primary prompt',
-    }),
-    ev({
-      id: 'primary',
-      sourceSessionId: 'parent-a',
-      role: 'primary',
-      ts: 2,
-      kind: 'text',
-      text: 'primary answer',
-    }),
-    ev({
-      id: 'child-a',
-      sourceSessionId: 'child-a',
-      role: 'worker',
-      ts: 3,
-      kind: 'text',
-      text: 'child A output',
-    }),
-    ev({
-      id: 'child-b',
-      sourceSessionId: 'child-b',
-      role: 'worker',
-      ts: 4,
-      kind: 'text',
-      text: 'child B output',
-    }),
+    { ...text('user', 'user', 1), author: 'user' as const },
+    text('primary', 'parent-a', 2),
+    text('child-a', 'child-a', 3),
+    text('child-b', 'child-b', 4),
   ];
 
   assert.deepEqual(
@@ -766,134 +457,41 @@ test('primary and exact child transcripts remain isolated while switching', () =
   );
 });
 
-test('child open retries require explicit reselection after terminal access', () => {
-  assert.equal(shouldOpenSelectedChild(undefined), true);
-  assert.equal(shouldOpenSelectedChild({ state: 'opening', requestId: 'request-a' }), false);
-  assert.equal(
-    shouldOpenSelectedChild({
-      state: 'ready',
-      requestId: 'request-a',
-      runtimeGeneration: 2,
-    }),
-    false,
-  );
-  assert.equal(shouldOpenSelectedChild({ state: 'history', requestId: 'request-a' }), false);
-  assert.equal(shouldOpenSelectedChild({ state: 'failed', requestId: 'request-a' }), false);
-  assert.equal(shouldOpenSelectedChild({ state: 'closed', requestId: null }), false);
-});
-
-test('released child history rehydrates without requiring runtime access', () => {
-  assert.equal(shouldRequestReleasedChildHistory(undefined), true);
-  assert.equal(
-    shouldRequestReleasedChildHistory({ state: 'opening', requestId: 'request-a' }),
-    false,
-  );
-  assert.equal(
-    shouldRequestReleasedChildHistory({
-      state: 'ready',
-      requestId: 'request-a',
-      runtimeGeneration: 2,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldRequestReleasedChildHistory({ state: 'history', requestId: 'request-a' }),
-    true,
-  );
-  assert.equal(
-    shouldRequestReleasedChildHistory({ state: 'failed', requestId: 'request-a' }),
-    true,
-  );
-  assert.equal(shouldRequestReleasedChildHistory({ state: 'closed', requestId: null }), true);
+test('only an unopened child opens itself; released history rehydrates from any settled access', () => {
+  // [access, opens the selected child, requests released history]
+  const cases: Array<[ChildAccess | undefined, boolean, boolean]> = [
+    [undefined, true, true],
+    [{ state: 'opening', requestId: 'request-a' }, false, false],
+    [{ state: 'ready', requestId: 'request-a', runtimeGeneration: 2 }, false, true],
+    [{ state: 'history', requestId: 'request-a' }, false, true],
+    [{ state: 'failed', requestId: 'request-a' }, false, true],
+    [{ state: 'closed', requestId: null }, false, true],
+  ];
+  for (const [access, opens, requestsHistory] of cases) {
+    const label = access?.state ?? 'no access';
+    assert.equal(shouldOpenSelectedChild(access), opens, label);
+    assert.equal(shouldRequestReleasedChildHistory(access), requestsHistory, label);
+  }
 });
 
 test('feature navigation uses only the latest exact progress child link', () => {
-  assert.equal(
-    childSessionIdForFeature(
-      [
-        {
-          type: 'worker_started',
-          timestamp: '2026-07-29T10:00:00.000Z',
-          featureId: 'feature-a',
-          workerChildSessionId: 'worker-a',
-        },
-        {
-          type: 'worker_started',
-          timestamp: '2026-07-29T10:01:00.000Z',
-          featureId: 'feature-b',
-          workerChildSessionId: 'worker-b',
-        },
-        {
-          type: 'worker_restarted',
-          timestamp: '2026-07-29T10:02:00.000Z',
-          featureId: 'feature-a',
-          workerChildSessionId: 'worker-a-2',
-        },
-      ],
-      'feature-a',
-    ),
-    'worker-a-2',
-  );
-  assert.equal(
-    childSessionIdForFeature(
-      [
-        {
-          type: 'feature_started',
-          timestamp: '2026-07-29T10:00:00.000Z',
-          featureId: 'feature-a',
-        },
-      ],
-      'feature-a',
-    ),
-    undefined,
-  );
+  const progress = [
+    { featureId: 'feature-a', workerChildSessionId: 'worker-a' },
+    { featureId: 'feature-b', workerChildSessionId: 'worker-b' },
+    { featureId: 'feature-a', workerChildSessionId: 'worker-a-2' },
+    { featureId: 'feature-c' },
+  ].map((entry, index) => ({
+    type: 'worker_started' as const,
+    timestamp: `2026-07-29T10:0${index}:00.000Z`,
+    ...entry,
+  }));
 
-  const childSessionId = childSessionIdForFeature(
-    [
-      {
-        type: 'worker_started',
-        timestamp: '2026-07-29T10:00:00.000Z',
-        featureId: 'feature-a',
-        workerChildSessionId: 'worker-a',
-      },
-    ],
-    'feature-a',
-  );
-  const siblingEvents = [
-    ev({
-      id: 'worker-a-tool',
-      sourceSessionId: 'worker-a',
-      role: 'worker',
-      ts: 1,
-      kind: 'tool_call',
-      toolName: 'Bash',
-    }),
-    ev({
-      id: 'worker-b-tool',
-      sourceSessionId: 'worker-b',
-      role: 'worker',
-      ts: 2,
-      kind: 'tool_call',
-      toolName: 'Bash',
-    }),
-  ];
-  assert.deepEqual(
-    transcriptForVisibleSession(siblingEvents, childSessionId ?? null).map((event) => event.id),
-    ['worker-a-tool'],
-  );
+  assert.equal(childSessionIdForFeature(progress, 'feature-a'), 'worker-a-2');
+  assert.equal(childSessionIdForFeature(progress, 'feature-c'), undefined);
 });
 
-test('child display preserves same-role sibling identity and required metadata', () => {
-  const first = {
-    parentAppSessionId: 'parent-a',
-    childSessionId: 'worker-a',
-    role: 'worker' as const,
-    status: 'running' as const,
-    modelId: 'model-a',
-    reasoningEffort: 'high' as const,
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
+test('child metadata shows provider-managed autonomy unless the runtime confirmed one', () => {
+  const first = child({ childSessionId: 'worker-a', modelId: 'model-a', reasoningEffort: 'high' });
   const second = {
     ...first,
     childSessionId: 'worker-b',
@@ -901,8 +499,6 @@ test('child display preserves same-role sibling identity and required metadata',
     transcriptAvailable: false,
   };
 
-  assert.equal(childSessionLabel(first, 0), 'Worker 1');
-  assert.equal(childSessionLabel(second, 1), 'Worker 2');
   // Without a live runtime confirmation the child shows "provider managed",
   // never a parent or guessed autonomy value.
   assert.equal(
@@ -920,29 +516,18 @@ test('child display preserves same-role sibling identity and required metadata',
 });
 
 test('spawn navigation resolves only an exact tool-use link', () => {
+  const sibling = { status: 'completed' as const, label: 'same label' };
   const childSessions = [
-    {
-      parentAppSessionId: 'parent-a',
+    child({
+      ...sibling,
       childSessionId: 'worker-a',
-      role: 'worker' as const,
-      status: 'completed' as const,
-      label: 'same label',
-      modelId: 'model-a',
-      spawnLink: { kind: 'tool-use' as const, id: 'tool-a' },
-      transcriptAvailable: true,
-      streamFidelity: 'state',
-    },
-    {
-      parentAppSessionId: 'parent-a',
+      spawnLink: { kind: 'tool-use', id: 'tool-a' },
+    }),
+    child({
+      ...sibling,
       childSessionId: 'worker-b',
-      role: 'worker' as const,
-      status: 'completed' as const,
-      label: 'same label',
-      modelId: 'model-a',
-      spawnLink: { kind: 'tool-use' as const, id: 'tool-b' },
-      transcriptAvailable: true,
-      streamFidelity: 'state',
-    },
+      spawnLink: { kind: 'tool-use', id: 'tool-b' },
+    }),
   ];
 
   assert.equal(

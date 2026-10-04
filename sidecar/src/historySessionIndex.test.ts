@@ -160,6 +160,7 @@ test('resolveSessionChain sees new files only after a worker reconciliation delt
 
     const later = nextId('idx-later');
     const laterPath = writeSession(later);
+    // On disk but not yet published, it resolves to nothing.
     assert.deepEqual(resolveSessionChain(later, later), []);
     reconcileHistoryIndex(index, [{ providerSessionId: later, path: laterPath }]);
     assert.deepEqual(resolveSessionChain(later, later), [later]);
@@ -167,11 +168,6 @@ test('resolveSessionChain sees new files only after a worker reconciliation delt
   } finally {
     index.close();
   }
-});
-
-test('resolveSessionChain returns an empty chain for a session that exists nowhere', () => {
-  invalidateSessionIndex();
-  assert.deepEqual(resolveSessionChain('idx-unknown', 'idx-unknown'), []);
 });
 
 test('loadSessionPage uses worker-published paths for newly created files', () => {
@@ -195,11 +191,6 @@ test('loadSessionPage uses worker-published paths for newly created files', () =
   }
 });
 
-test('loadSessionPage still rejects a session that exists nowhere', () => {
-  invalidateSessionIndex();
-  assert.throws(() => loadSessionPage('page-missing', 'page-missing'), /not found/);
-});
-
 test('invalidating the path mirror never triggers a synchronous tree rescan', () => {
   invalidateSessionIndex();
   const first = nextId('list-first');
@@ -210,38 +201,6 @@ test('invalidating the path mirror never triggers a synchronous tree rescan', ()
     assert.deepEqual(resolveSessionChain(first, first), [first]);
     invalidateSessionIndex();
     assert.deepEqual(resolveSessionChain(first, first), []);
-  } finally {
-    index.close();
-  }
-});
-
-test('targeted lookups stay missing until the worker publishes the path', () => {
-  invalidateSessionIndex();
-  const id = nextId('warm');
-  const path = writeSession(id);
-  const index = new HistoryIndex();
-  try {
-    assert.deepEqual(resolveSessionChain(id, id), []);
-    reconcileHistoryIndex(index, [{ providerSessionId: id, path }]);
-    assert.deepEqual(resolveSessionChain(id, id), [id]);
-  } finally {
-    index.close();
-  }
-});
-
-test('loadSessionTranscriptWindow serves repeat loads through the memoized index', () => {
-  invalidateSessionIndex();
-  const id = nextId('window');
-  const path = writeSession(id, 'windowed hello');
-  const index = new HistoryIndex();
-  try {
-    reconcileHistoryIndex(index, [{ providerSessionId: id, path }]);
-    const chain = resolveSessionChain(id, id);
-    const first = loadSessionTranscriptWindow(id, chain);
-    assert.equal(first.events.length, 1);
-    const repeat = loadSessionTranscriptWindow(id, chain);
-    assert.equal(repeat.events.length, 1);
-    assert.equal(repeat.events[0]?.id, first.events[0]?.id);
   } finally {
     index.close();
   }

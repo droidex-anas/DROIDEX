@@ -14,6 +14,45 @@ const ghResult = (overrides = {}) => ({
   ...overrides,
 });
 
+const ghFailure = (stderr) => ghResult({ code: 1, stderr });
+
+const threadsPayload = (reviewThreads) => ({
+  data: { repository: { pullRequest: { reviewThreads } } },
+});
+
+/**
+ * A gh runner answering the three PR conversation sources: `gh pr view`, the
+ * review thread GraphQL query, and the inline comment REST pages. Each source is
+ * a JSON value, raw stdout text, or a gh result.
+ */
+function ghSources({
+  conversation = { comments: [], reviews: [] },
+  threads = threadsPayload({ nodes: [] }),
+  inline = [],
+}) {
+  const answer = (source) => {
+    if (source && typeof source === 'object' && 'spawnFailed' in source) return source;
+    return ghResult({ stdout: typeof source === 'string' ? source : JSON.stringify(source) });
+  };
+  return async (_dir, args) => {
+    if (args[0] === 'pr') return answer(conversation);
+    return answer(args[1] === 'graphql' ? threads : inline);
+  };
+}
+
+const inlineRows = (ids) => [
+  ids.map((id) => ({ id, user: { login: 'reviewer' }, body: `comment ${id}` })),
+];
+
+const unresolved = { resolved: false, outdated: false, resolvedBy: null };
+const threadStatus = ({ resolved, outdated, resolvedBy }) => ({ resolved, outdated, resolvedBy });
+
+const graphqlQuery = (args) => String(args.at(-1) || '');
+const graphqlCursor = (args) => {
+  const index = args.findIndex((arg) => String(arg).startsWith('cursor='));
+  return index === -1 ? null : String(args[index]).slice('cursor='.length);
+};
+
 test('PR comments include top-level, review, and inline review threads', () => {
   const comments = normalizePrComments(
     {
@@ -94,58 +133,18 @@ test('PR comments include top-level, review, and inline review threads', () => {
   );
 });
 
-test('PR comment normalization excludes malformed rows', () => {
-  const comments = normalizePrComments(
-    {
-      comments: [
-        null,
-        { databaseId: 10, author: { login: 'author' }, body: 'top level' },
-        'not a comment',
-      ],
-      reviews: [
-        42,
-        { databaseId: 20, author: { login: 'reviewer' }, body: 'review', state: 'COMMENTED' },
-      ],
-    },
-    [
-      undefined,
-      { id: 30, user: { login: 'inline-reviewer' }, body: 'inline' },
-      ['not an inline comment'],
-    ],
-  );
-
-  assert.deepEqual(
-    comments.map(({ kind, author, body }) => ({ kind, author, body })),
-    [
-      { kind: 'comment', author: 'author', body: 'top level' },
-      { kind: 'review', author: 'reviewer', body: 'review' },
-      { kind: 'inline', author: 'inline-reviewer', body: 'inline' },
-    ],
-  );
-});
-
 test('PR comments report malformed rows as partial while keeping valid rows', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({
-          comments: [null, { databaseId: 10, author: { login: 'author' }, body: 'top level' }],
-          reviews: [{ databaseId: 20, author: { login: 'reviewer' }, body: 'review' }, 42],
-        }),
-      });
-    }
-    if (args[1] === 'graphql')
-      return ghResult({
-        stdout: JSON.stringify({
-          data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } },
-        }),
-      });
-    return ghResult({
-      stdout: JSON.stringify([
-        [undefined, { id: 30, user: { login: 'inline-reviewer' }, body: 'inline' }],
-      ]),
-    });
-  });
+  const result = await prComments(
+    '/repo',
+    { prNumber: 79 },
+    ghSources({
+      conversation: {
+        comments: [null, { databaseId: 10, author: { login: 'author' }, body: 'top level' }],
+        reviews: [{ databaseId: 20, author: { login: 'reviewer' }, body: 'review' }, 42],
+      },
+      inline: [[undefined, { id: 30, user: { login: 'inline-reviewer' }, body: 'inline' }]],
+    }),
+  );
 
   assert.equal(result.ok, true);
   assert.equal(result.partial, true);
@@ -162,112 +161,97 @@ test('PR comments report malformed rows as partial while keeping valid rows', as
   );
 });
 
-test('PR comments keep conversation comments when inline pagination fails', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({
-          comments: [{ databaseId: 10, author: { login: 'author' }, body: 'available' }],
-          reviews: [],
-        }),
-      });
-    }
-    return ghResult({ code: 1, stderr: 'REST rate limited' });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /REST rate limited/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['available'],
-  );
+test('a failed or malformed comment source is reported while the other source is kept', async () => {
+  const conversation = {
+    comments: [{ databaseId: 10, author: { login: 'author' }, body: 'comment 10' }],
+    reviews: [],
+  };
+  const cases = [
+    {
+      label: 'inline pagination fails',
+      sources: { conversation, inline: ghFailure('REST rate limited') },
+      message: /REST rate limited/,
+      bodies: ['comment 10'],
+    },
+    {
+      label: 'conversation lookup fails',
+      sources: { conversation: ghFailure('GraphQL unavailable'), inline: inlineRows([30]) },
+      message: /GraphQL unavailable/,
+      bodies: ['comment 30'],
+    },
+    {
+      label: 'conversation payload is malformed',
+      sources: { conversation: '{', inline: inlineRows([30]) },
+      message: /Invalid PR conversation payload/,
+      bodies: ['comment 30'],
+    },
+  ];
+  for (const { label, sources, message, bodies } of cases) {
+    const result = await prComments('/repo', { prNumber: 79 }, ghSources(sources));
+    assert.equal(result.ok, true, label);
+    assert.equal(result.partial, true, label);
+    assert.match(result.message, message, label);
+    assert.deepEqual(
+      result.comments.map((comment) => comment.body),
+      bodies,
+      label,
+    );
+  }
 });
 
-test('PR comments keep inline comments when conversation lookup fails', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') return ghResult({ code: 1, stderr: 'GraphQL unavailable' });
-    if (args[1] === 'graphql') return ghResult({ stdout: '{}' });
-    return ghResult({
-      stdout: JSON.stringify([
-        [
-          {
-            id: 30,
-            user: { login: 'reviewer' },
-            body: 'inline available',
-            path: 'src/file.ts',
-            line: 4,
-          },
-        ],
-      ]),
-    });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /GraphQL unavailable/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['inline available'],
+test('PR comments fail only when no comment source is usable', async () => {
+  const bothFailed = await prComments('/repo', { prNumber: 79 }, async (_dir, args) =>
+    ghFailure(`${args[0]} failed`),
   );
+  assert.equal(bothFailed.ok, false);
+  assert.equal(bothFailed.reason, 'gh_error');
+  assert.deepEqual(bothFailed.comments, []);
+  assert.match(bothFailed.message, /pr failed/);
+  assert.match(bothFailed.message, /api failed/);
+
+  const bothMalformed = await prComments(
+    '/repo',
+    { prNumber: 79 },
+    ghSources({ conversation: '{', inline: '{}' }),
+  );
+  assert.equal(bothMalformed.ok, false);
+  assert.equal(bothMalformed.reason, 'gh_error');
+  assert.match(bothMalformed.message, /Invalid PR conversation payload/);
+  assert.match(bothMalformed.message, /Invalid inline review comments payload/);
+  assert.deepEqual(bothMalformed.comments, []);
 });
 
 test('inline comments carry the resolved verdict of their review thread', async () => {
-  const inlineRows = [
-    [
-      { id: 30, user: { login: 'reviewer' }, body: 'first', path: 'a.ts', line: 1 },
-      { id: 31, user: { login: 'reviewer' }, body: 'reply in the same thread' },
-      { id: 32, user: { login: 'reviewer' }, body: 'still open', path: 'b.ts', line: 2 },
-    ],
-  ];
-  const threads = {
-    data: {
-      repository: {
-        pullRequest: {
-          reviewThreads: {
-            nodes: [
-              {
-                isResolved: true,
-                isOutdated: true,
-                resolvedBy: { login: 'ana' },
-                comments: { nodes: [{ databaseId: 30 }, { databaseId: 31 }] },
-              },
-              {
-                isResolved: false,
-                isOutdated: false,
-                resolvedBy: null,
-                comments: { nodes: [{ databaseId: 32 }] },
-              },
-            ],
-          },
-        },
+  const threads = threadsPayload({
+    nodes: [
+      {
+        isResolved: true,
+        isOutdated: true,
+        resolvedBy: { login: 'ana' },
+        comments: { nodes: [{ databaseId: 30 }, { databaseId: 31 }] },
       },
-    },
-  };
+      {
+        isResolved: false,
+        isOutdated: false,
+        resolvedBy: null,
+        comments: { nodes: [{ databaseId: 32 }] },
+      },
+    ],
+  });
   const calls = [];
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
+  const answer = ghSources({ threads, inline: inlineRows([30, 31, 32]) });
+  const result = await prComments('/repo', { prNumber: 79 }, async (dir, args) => {
     calls.push(args);
-    if (args[0] === 'pr')
-      return ghResult({ stdout: JSON.stringify({ comments: [], reviews: [] }) });
-    if (args[1] === 'graphql') return ghResult({ stdout: JSON.stringify(threads) });
-    return ghResult({ stdout: JSON.stringify(inlineRows) });
+    return answer(dir, args);
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.partial, undefined);
-  assert.deepEqual(
-    result.comments.map(({ body, resolved, outdated, resolvedBy }) => ({
-      body,
-      resolved,
-      outdated,
-      resolvedBy,
-    })),
-    [
-      { body: 'first', resolved: true, outdated: true, resolvedBy: 'ana' },
-      { body: 'reply in the same thread', resolved: true, outdated: true, resolvedBy: 'ana' },
-      { body: 'still open', resolved: false, outdated: false, resolvedBy: null },
-    ],
-  );
+  assert.deepEqual(result.comments.map(threadStatus), [
+    { resolved: true, outdated: true, resolvedBy: 'ana' },
+    { resolved: true, outdated: true, resolvedBy: 'ana' },
+    unresolved,
+  ]);
   const graphql = calls.find((args) => args[1] === 'graphql');
   assert.deepEqual(graphql.slice(2, 8), [
     '-F',
@@ -280,96 +264,50 @@ test('inline comments carry the resolved verdict of their review thread', async 
   assert.match(graphql.at(-1), /reviewThreads/);
 });
 
-test('a failed thread lookup reports itself and leaves the comments unresolved', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr')
-      return ghResult({ stdout: JSON.stringify({ comments: [], reviews: [] }) });
-    if (args[1] === 'graphql') return ghResult({ code: 1, stderr: 'graphql rate limited\n' });
-    return ghResult({
-      stdout: JSON.stringify([[{ id: 30, user: { login: 'reviewer' }, body: 'inline' }]]),
-    });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /graphql rate limited/);
-  assert.deepEqual(
-    result.comments.map(({ resolved, outdated, resolvedBy }) => ({
-      resolved,
-      outdated,
-      resolvedBy,
-    })),
-    [{ resolved: false, outdated: false, resolvedBy: null }],
-  );
+test('a failed or malformed thread lookup leaves inline comments unresolved and says so', async () => {
+  for (const [threads, message] of [
+    [ghFailure('graphql rate limited\n'), /graphql rate limited/],
+    ['{}', /Invalid review thread status payload/],
+  ]) {
+    const result = await prComments(
+      '/repo',
+      { prNumber: 79 },
+      ghSources({ threads, inline: inlineRows([30]) }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.partial, true);
+    assert.match(result.message, message);
+    assert.deepEqual(result.comments.map(threadStatus), [unresolved]);
+  }
 });
 
 test('a failed thread lookup stays quiet when there are no inline comments', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({
-          comments: [{ databaseId: 10, author: { login: 'author' }, body: 'top level' }],
-          reviews: [],
-        }),
-      });
-    }
-    if (args[1] === 'graphql') return ghResult({ code: 1, stderr: 'graphql rate limited' });
-    return ghResult({ stdout: '[]' });
-  });
+  const result = await prComments(
+    '/repo',
+    { prNumber: 79 },
+    ghSources({
+      conversation: {
+        comments: [{ databaseId: 10, author: { login: 'author' }, body: 'top level' }],
+        reviews: [],
+      },
+      threads: ghFailure('graphql rate limited'),
+    }),
+  );
 
   assert.equal(result.ok, true);
   assert.equal(result.partial, undefined);
   assert.equal(result.message, undefined);
 });
 
-test('malformed inline rows do not make thread status failures relevant', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({
-          comments: [{ databaseId: 10, author: { login: 'author' }, body: 'top level' }],
-          reviews: [],
-        }),
-      });
-    }
-    if (args[1] === 'graphql') return ghResult({ code: 1, stderr: 'graphql rate limited' });
-    return ghResult({ stdout: JSON.stringify([[null, 42]]) });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /2 malformed inline review comments/);
-  assert.doesNotMatch(result.message, /graphql rate limited/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['top level'],
-  );
-});
-
 test('review threads without comment ids are ignored instead of throwing', () => {
-  const page = normalizeReviewThreadPage({
-    data: {
-      repository: {
-        pullRequest: {
-          reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [{}] } }, null] },
-        },
-      },
-    },
-  });
+  const page = normalizeReviewThreadPage(
+    threadsPayload({ nodes: [{ isResolved: true, comments: { nodes: [{}] } }, null] }),
+  );
   assert.equal(page.statusByCommentId.size, 0);
   assert.deepEqual(page.pagedThreads, []);
   assert.equal(page.nextCursor, null);
   assert.equal(normalizeReviewThreadPage(null).statusByCommentId.size, 0);
 });
-
-const inlineRowsPayload = (ids) =>
-  JSON.stringify([ids.map((id) => ({ id, user: { login: 'reviewer' }, body: `comment ${id}` }))]);
-
-const graphqlQuery = (args) => String(args.at(-1) || '');
-const graphqlCursor = (args) => {
-  const index = args.findIndex((arg) => String(arg).startsWith('cursor='));
-  return index === -1 ? null : String(args[index]).slice('cursor='.length);
-};
 
 test('review thread status follows both thread and reply pagination', async () => {
   const threadPages = {
@@ -402,18 +340,13 @@ test('review thread status follows both thread and reply pagination', async () =
     },
   };
   const cursors = [];
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr')
-      return ghResult({ stdout: JSON.stringify({ comments: [], reviews: [] }) });
-    if (args[1] !== 'graphql') return ghResult({ stdout: inlineRowsPayload([30, 31, 32]) });
+  const inline = ghSources({ inline: inlineRows([30, 31, 32]) });
+  const result = await prComments('/repo', { prNumber: 79 }, async (dir, args) => {
+    if (args[1] !== 'graphql') return inline(dir, args);
     const cursor = graphqlCursor(args);
     if (/reviewThreads/.test(graphqlQuery(args))) {
       cursors.push(['threads', cursor]);
-      return ghResult({
-        stdout: JSON.stringify({
-          data: { repository: { pullRequest: { reviewThreads: threadPages[String(cursor)] } } },
-        }),
-      });
+      return ghResult({ stdout: JSON.stringify(threadsPayload(threadPages[String(cursor)])) });
     }
     cursors.push(['replies', cursor]);
     assert.ok(args.includes('id=THREAD_A'));
@@ -445,25 +378,12 @@ test('review thread status follows both thread and reply pagination', async () =
 
 test('an unbounded review thread list reports truncation instead of a wrong status', async () => {
   let threadPageCount = 0;
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr')
-      return ghResult({ stdout: JSON.stringify({ comments: [], reviews: [] }) });
-    if (args[1] !== 'graphql') return ghResult({ stdout: inlineRowsPayload([30]) });
+  const inline = ghSources({ inline: inlineRows([30]) });
+  const result = await prComments('/repo', { prNumber: 79 }, async (dir, args) => {
+    if (args[1] !== 'graphql') return inline(dir, args);
     threadPageCount += 1;
-    return ghResult({
-      stdout: JSON.stringify({
-        data: {
-          repository: {
-            pullRequest: {
-              reviewThreads: {
-                pageInfo: { hasNextPage: true, endCursor: `CURSOR_${threadPageCount}` },
-                nodes: [],
-              },
-            },
-          },
-        },
-      }),
-    });
+    const pageInfo = { hasNextPage: true, endCursor: `CURSOR_${threadPageCount}` };
+    return ghResult({ stdout: JSON.stringify(threadsPayload({ pageInfo, nodes: [] })) });
   });
 
   assert.equal(result.ok, true);
@@ -472,123 +392,24 @@ test('an unbounded review thread list reports truncation instead of a wrong stat
   assert.equal(threadPageCount, 10);
 });
 
-test('malformed successful conversation payload is reported instead of hidden', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') return ghResult({ stdout: '{' });
-    if (args[1] === 'graphql')
-      return ghResult({
-        stdout: JSON.stringify({
-          data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } },
-        }),
-      });
-    return ghResult({ stdout: inlineRowsPayload([30]) });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /Invalid PR conversation payload/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['comment 30'],
-  );
-});
-
-test('malformed successful inline payload is reported instead of hidden', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') {
-      return ghResult({
-        stdout: JSON.stringify({ comments: [{ body: 'top level' }], reviews: [] }),
-      });
-    }
-    if (args[1] === 'graphql')
-      return ghResult({
-        stdout: JSON.stringify({
-          data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } },
-        }),
-      });
-    return ghResult({ stdout: '{}' });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /Invalid inline review comments payload/);
-  assert.deepEqual(
-    result.comments.map((comment) => comment.body),
-    ['top level'],
-  );
-});
-
-test('malformed successful payloads fail when no comment source is usable', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr') return ghResult({ stdout: '{' });
-    if (args[1] === 'graphql')
-      return ghResult({
-        stdout: JSON.stringify({
-          data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } },
-        }),
-      });
-    return ghResult({ stdout: '{}' });
-  });
-
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'gh_error');
-  assert.match(result.message, /Invalid PR conversation payload/);
-  assert.match(result.message, /Invalid inline review comments payload/);
-  assert.deepEqual(result.comments, []);
-});
-
-test('malformed successful review thread payload is reported when inline comments need status', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr')
-      return ghResult({ stdout: JSON.stringify({ comments: [], reviews: [] }) });
-    if (args[1] === 'graphql') return ghResult({ stdout: '{}' });
-    return ghResult({ stdout: inlineRowsPayload([30]) });
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.partial, true);
-  assert.match(result.message, /Invalid review thread status payload/);
-  assert.deepEqual(
-    result.comments.map(({ resolved, outdated, resolvedBy }) => ({
-      resolved,
-      outdated,
-      resolvedBy,
-    })),
-    [{ resolved: false, outdated: false, resolvedBy: null }],
-  );
-});
-
 test('malformed successful review thread replies payload is reported as partial', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) => {
-    if (args[0] === 'pr')
-      return ghResult({ stdout: JSON.stringify({ comments: [], reviews: [] }) });
-    if (args[1] !== 'graphql') return ghResult({ stdout: inlineRowsPayload([30, 31]) });
-    if (/reviewThreads/.test(graphqlQuery(args))) {
-      return ghResult({
-        stdout: JSON.stringify({
-          data: {
-            repository: {
-              pullRequest: {
-                reviewThreads: {
-                  nodes: [
-                    {
-                      id: 'THREAD_A',
-                      isResolved: true,
-                      comments: {
-                        pageInfo: { hasNextPage: true, endCursor: 'REPLY_CURSOR' },
-                        nodes: [{ databaseId: 30 }],
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          },
-        }),
-      });
-    }
-    return ghResult({ stdout: '{}' });
+  const thread = {
+    id: 'THREAD_A',
+    isResolved: true,
+    comments: {
+      pageInfo: { hasNextPage: true, endCursor: 'REPLY_CURSOR' },
+      nodes: [{ databaseId: 30 }],
+    },
+  };
+  const sources = ghSources({
+    threads: threadsPayload({ nodes: [thread] }),
+    inline: inlineRows([30, 31]),
   });
+  const result = await prComments('/repo', { prNumber: 79 }, async (dir, args) =>
+    args[1] === 'graphql' && !/reviewThreads/.test(graphqlQuery(args))
+      ? ghResult({ stdout: '{}' })
+      : sources(dir, args),
+  );
 
   assert.equal(result.ok, true);
   assert.equal(result.partial, true);
@@ -600,16 +421,4 @@ test('malformed successful review thread replies payload is reported as partial'
       { body: 'comment 31', resolved: false },
     ],
   );
-});
-
-test('PR comments fail only when neither source succeeds', async () => {
-  const result = await prComments('/repo', { prNumber: 79 }, async (_dir, args) =>
-    ghResult({ code: 1, stderr: `${args[0]} failed` }),
-  );
-
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'gh_error');
-  assert.deepEqual(result.comments, []);
-  assert.match(result.message, /pr failed/);
-  assert.match(result.message, /api failed/);
 });

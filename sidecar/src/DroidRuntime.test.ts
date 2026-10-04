@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DroidRuntime, createInitializeSessionParams } from './DroidRuntime.js';
 import { HistoryIndex } from './history.js';
+import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 
 // Answers every request the way Droid answers load_session for a session it
 // will not open.
@@ -75,7 +76,7 @@ test('names the owning organization when Droid refuses a session file it has on 
   }
 });
 
-test('passes compaction settings when initializing a session', () => {
+test('passes compaction settings, including the current-model sentinel, when initializing a session', () => {
   const params = createInitializeSessionParams({
     cwd: '/tmp/project',
     interactionMode: 'auto',
@@ -86,17 +87,14 @@ test('passes compaction settings when initializing a session', () => {
 
   assert.equal(params.compactionModel, 'summary-model');
   assert.equal(params.compactionTokenLimit, 400_000);
-});
 
-test('passes current-model compaction sentinel when initializing a session', () => {
-  const params = createInitializeSessionParams({
+  const sentinel = createInitializeSessionParams({
     cwd: '/tmp/project',
     interactionMode: 'auto',
     modelId: 'main-model',
     compactionModel: 'current-model',
   });
-
-  assert.equal(params.compactionModel, 'current-model');
+  assert.equal(sentinel.compactionModel, 'current-model');
 });
 
 test('edits-only uses native Off so commands still reach the permission callback', () => {
@@ -113,4 +111,27 @@ test('edits-only uses native Off so commands still reach the permission callback
     });
     assert.equal(params.autonomyLevel, expected);
   }
+});
+
+test('readContextBreakdown tries the public seam, then the private RPC, best effort', async () => {
+  const session = new FakeFactorySession('backend', {}, []);
+  const runtime = new DroidRuntime();
+  Reflect.set(session, 'getContextBreakdown', () => Promise.resolve({ usedTokens: 10 }));
+  assert.deepEqual(await runtime.readContextBreakdown(session), { usedTokens: 10 });
+
+  Reflect.deleteProperty(session, 'getContextBreakdown');
+  let rpcMethod = '';
+  Reflect.set(session, '_client', {
+    _sessionRpcWithoutParams: (method: string) => {
+      rpcMethod = method;
+      return Promise.resolve({ freeTokens: 90 });
+    },
+  });
+  assert.deepEqual(await runtime.readContextBreakdown(session), { freeTokens: 90 });
+  assert.equal(rpcMethod, 'droid.get_context_breakdown');
+
+  Reflect.set(session, '_client', {
+    _sessionRpcWithoutParams: () => Promise.reject(new Error('transport closed')),
+  });
+  assert.equal(await runtime.readContextBreakdown(session), undefined);
 });

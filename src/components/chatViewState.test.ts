@@ -41,116 +41,66 @@ function activeState(): AppState {
   };
 }
 
-test('chat selector ignores background session stream updates', () => {
-  const previous = activeState();
-  const next: AppState = {
-    ...previous,
-    transcripts: {
-      ...previous.transcripts,
-      background: [...previous.transcripts.background],
-    },
-    transcriptRetainedCost: {
-      ...previous.transcriptRetainedCost,
-      background: 10,
-    },
-    transcriptMutations: {
-      background: {
-        revision: 1,
-        baseRevision: 0,
-        kind: 'append',
-        previousLength: 0,
-        firstChangedIndex: 0,
-      },
-    },
+function appendMutation() {
+  return {
+    revision: 1,
+    baseRevision: 0,
+    kind: 'append' as const,
+    previousLength: 0,
+    firstChangedIndex: 0,
   };
+}
 
-  assert.equal(
-    equalVisibleChatState(selectChatViewState(previous), selectChatViewState(next)),
-    true,
-  );
-});
-
-test('chat selector observes active transcript provenance updates', () => {
+function visibleStateEqual(change: (previous: AppState) => AppState): boolean {
   const previous = activeState();
-  const next: AppState = {
+  return equalVisibleChatState(
+    selectChatViewState(previous),
+    selectChatViewState(change(previous)),
+  );
+}
+
+test('chat selector ignores background streams and telemetry-only summary updates', () => {
+  const backgroundStream = visibleStateEqual((previous) => ({
     ...previous,
-    transcriptMutations: {
-      active: {
-        revision: 1,
-        baseRevision: 0,
-        kind: 'append',
-        previousLength: 0,
-        firstChangedIndex: 0,
-      },
-    },
-  };
+    transcripts: { ...previous.transcripts, background: [...previous.transcripts.background] },
+    transcriptRetainedCost: { ...previous.transcriptRetainedCost, background: 10 },
+    transcriptMutations: { background: appendMutation() },
+  }));
+  assert.equal(backgroundStream, true);
 
-  assert.equal(
-    equalVisibleChatState(selectChatViewState(previous), selectChatViewState(next)),
-    false,
-  );
-});
-
-test('chat selector observes active transcript updates', () => {
-  const previous = activeState();
-  const next: AppState = {
-    ...previous,
-    transcripts: {
-      ...previous.transcripts,
-      active: [...previous.transcripts.active],
-    },
-  };
-
-  assert.equal(
-    equalVisibleChatState(selectChatViewState(previous), selectChatViewState(next)),
-    false,
-  );
-});
-
-test('chat selector ignores telemetry-only session summary updates', () => {
-  const previous = activeState();
-  const next: AppState = {
+  const telemetry = visibleStateEqual((previous) => ({
     ...previous,
     sessions: {
       ...previous.sessions,
       active: session('active', { tokensOut: 10, updatedAt: 2_000 }),
     },
-  };
-
-  assert.equal(
-    equalVisibleChatState(selectChatViewState(previous), selectChatViewState(next)),
-    true,
-  );
+  }));
+  assert.equal(telemetry, true);
 });
 
-test('chat selector observes visible session title updates', () => {
-  const previous = activeState();
-  const next: AppState = {
-    ...previous,
-    sessions: {
-      ...previous.sessions,
-      active: session('active', { title: 'Renamed' }),
-    },
+test('chat selector observes the visible transcript, its provenance, and visible session fields', () => {
+  const changes: Record<string, (previous: AppState) => AppState> = {
+    'transcript provenance': (previous) => ({
+      ...previous,
+      transcriptMutations: { active: appendMutation() },
+    }),
+    transcript: (previous) => ({
+      ...previous,
+      transcripts: { ...previous.transcripts, active: [...previous.transcripts.active] },
+    }),
+    title: (previous) => ({
+      ...previous,
+      sessions: { ...previous.sessions, active: session('active', { title: 'Renamed' }) },
+    }),
+    interruptReason: (previous) => ({
+      ...previous,
+      sessions: {
+        ...previous.sessions,
+        active: session('active', { interruptReason: 'could not reconnect' }),
+      },
+    }),
   };
-
-  assert.equal(
-    equalVisibleChatState(selectChatViewState(previous), selectChatViewState(next)),
-    false,
-  );
-});
-
-test('chat selector observes interruptReason on the visible session', () => {
-  const previous = activeState();
-  const next: AppState = {
-    ...previous,
-    sessions: {
-      ...previous.sessions,
-      active: session('active', { interruptReason: 'could not reconnect' }),
-    },
-  };
-
-  assert.equal(
-    equalVisibleChatState(selectChatViewState(previous), selectChatViewState(next)),
-    false,
-  );
+  for (const [name, change] of Object.entries(changes)) {
+    assert.equal(visibleStateEqual(change), false, name);
+  }
 });

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Markdown } from './Markdown';
+import { fitSvgMarkup } from '../lib/svgMarkup';
 import { LayoutTemplate } from 'lucide-react';
 
 type Segment =
@@ -74,26 +75,7 @@ function parseSpecSegments(markdown: string): Segment[] {
 }
 
 function SvgVisualCard({ svgContent, index }: { svgContent: string; index: number }) {
-  const safeSvg = useMemo(() => {
-    let raw = svgContent.trim();
-
-    // If the extracted content from a code block is just inner SVG markup,
-    // wrap it in a proper <svg> root so it renders.
-    if (!raw.startsWith('<svg')) {
-      raw = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="100%">${raw}</svg>`;
-    }
-
-    // Strip any fixed pixel widths so the SVG scales to its container.
-    raw = raw.replace(/width="\d+(?:px)?"/gi, 'width="100%"');
-    raw = raw.replace(/height="\d+(?:px)?"/gi, '');
-
-    // Ensure xmlns is present.
-    if (!raw.includes('xmlns=')) {
-      raw = raw.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-
-    return raw;
-  }, [svgContent]);
+  const safeSvg = useMemo(() => fitSvgMarkup(svgContent), [svgContent]);
 
   return (
     <motion.div

@@ -36,28 +36,20 @@ function payload(overrides = {}) {
   };
 }
 
-test('resolves shown only after Electron emits show', async () => {
+test('resolves shown only after Electron emits show and stays owned until it closes', async () => {
   let resolved = false;
   const pending = showDesktopNotification(FakeNotification, payload());
+  const shown = FakeNotification.latest;
   pending.then(() => {
     resolved = true;
   });
   await Promise.resolve();
 
   assert.equal(resolved, false);
-  FakeNotification.latest.emit('show');
-  assert.deepEqual(await pending, { shown: true });
-  FakeNotification.latest.emit('close');
-});
-
-test('shown notifications remain owned until they close', async () => {
-  const pending = showDesktopNotification(FakeNotification, payload());
-  const shown = FakeNotification.latest;
   shown.emit('show');
-  await pending;
+  assert.deepEqual(await pending, { shown: true });
 
   closeAllDesktopNotifications();
-
   assert.equal(shown.closed, true);
 });
 

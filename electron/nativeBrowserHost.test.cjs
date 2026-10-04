@@ -14,23 +14,14 @@ function createHost() {
   };
 }
 
-test('attaching a browser view to its current host is idempotent', () => {
-  const host = createHost();
-  const view = {};
-  const entry = { view, windowAttached: false, hostWindow: null };
-
-  assert.equal(attachChildView(entry, host), true);
-  assert.equal(attachChildView(entry, host), false);
-  assert.deepEqual(host.calls, [['add', view]]);
-});
-
-test('moving a browser view removes it from the previous host first', () => {
+test('attaching a browser view is idempotent per host and moving it removes it from the previous host first', () => {
   const firstHost = createHost();
   const secondHost = createHost();
   const view = {};
   const entry = { view, windowAttached: false, hostWindow: null };
 
-  attachChildView(entry, firstHost);
+  assert.equal(attachChildView(entry, firstHost), true);
+  assert.equal(attachChildView(entry, firstHost), false);
   attachChildView(entry, secondHost);
 
   assert.deepEqual(firstHost.calls, [

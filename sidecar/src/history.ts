@@ -199,30 +199,6 @@ export function loadMissionControlSessions(
     .sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
-export function loadHistoricalSessions(options: HistoricalSummaryFilter = {}): HistoricalSession[] {
-  const rows: HistoricalSession[] = [];
-  const cached = readStoredSummaryPatches();
-  const workspaceCwds = options.workspaceCwds
-    ? new Set(options.workspaceCwds.filter(Boolean))
-    : null;
-  if (workspaceCwds?.size === 0 && !options.includePlainChats) return [];
-  for (const [providerSessionId, file] of scanSessionFiles()) {
-    const { summary } = summarizeSessionFile(providerSessionId, file);
-    if (!summary) continue;
-    const patched = applyCachedSummary(summary, cached);
-    if (
-      (workspaceCwds || options.includePlainChats) &&
-      !shouldIncludeCwd(patched.cwd ?? '', workspaceCwds, options.includePlainChats)
-    )
-      continue;
-    rows.push({
-      summary: patched,
-      progress: [],
-    });
-  }
-  return rows.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
-}
-
 export function loadSessionHistory(): SessionHistoryEntry[] {
   const rows: SessionHistoryEntry[] = [];
   for (const [providerSessionId, path] of buildSessionIndex()) {
@@ -1468,10 +1444,6 @@ function scanSessionFileTree(): SessionFileScan {
     file.settingsMtimeMs = settingsMtimes.get(id) ?? null;
   }
   return { files, isComplete };
-}
-
-function scanSessionFiles(): Map<string, SessionFileStat> {
-  return scanSessionFileTree().files;
 }
 
 // Stats one session file and its settings sidecar, or returns null when the

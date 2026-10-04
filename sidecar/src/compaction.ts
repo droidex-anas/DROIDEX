@@ -64,15 +64,6 @@ export function compactionTriggerCeiling(maxContextTokens?: number): number | un
   return max === undefined ? undefined : Math.max(1, Math.floor(max * COMPACTION_WINDOW_FRACTION));
 }
 
-export function clampCompactionTokenLimit(
-  limit: number | undefined,
-  maxContextTokens?: number,
-): number | undefined {
-  if (limit === undefined) return undefined;
-  const ceiling = compactionTriggerCeiling(maxContextTokens);
-  return ceiling === undefined ? limit : Math.min(limit, ceiling);
-}
-
 export function daemonDefaultCompactionTokenLimit(maxContextTokens?: number): number {
   return Math.min(normalizeCompactionTokenLimit(maxContextTokens) ?? 250_000, 250_000);
 }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import {
   buildSessionSearchSnippet,
@@ -40,25 +40,26 @@ function toolUseLine(id: string, input: string, ts: number): string {
   });
 }
 
-function writeSession(lines: string[]): { candidate: SessionSearchCandidate; directory: string } {
+/** A provider session file in a scratch directory removed after the test. */
+function writeSession(t: TestContext, lines: string[]): SessionSearchCandidate {
   const directory = mkdtempSync(join(tmpdir(), 'session-search-extraction-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, 'provider.jsonl');
   writeFileSync(path, `${lines.join('\n')}\n`);
-  const stat = statSync(path);
   return {
-    directory,
-    candidate: {
-      providerSessionId: 'provider',
-      appSessionId: 'app',
-      path,
-      sizeBytes: stat.size,
-    },
+    providerSessionId: 'provider',
+    appSessionId: 'app',
+    path,
+    sizeBytes: statSync(path).size,
   };
 }
 
-async function readAll(candidate: SessionSearchCandidate): Promise<SessionSearchRecord[]> {
+async function readAll(
+  candidate: SessionSearchCandidate,
+  initialByteOffset = 0,
+): Promise<SessionSearchRecord[]> {
   const records: SessionSearchRecord[] = [];
-  let byteOffset = 0;
+  let byteOffset = initialByteOffset;
   for (;;) {
     const slice = await readSessionSearchSlice(candidate, byteOffset);
     assert.ok(slice.nextByteOffset > byteOffset || slice.reachedEnd);
@@ -74,24 +75,10 @@ function content(
   return records.map(({ ts, author, text }) => ({ ts, author, text }));
 }
 
-test('extracts searchable user and assistant text with whitespace flattened', async () => {
-  const fixture = writeSession([
+test('extracts flattened user and assistant text, never tool IO, llm-only context, notices or corrupt lines', async (t) => {
+  const candidate = writeSession(t, [
     messageLine('one', 'user', 'hello\nthere', 1_000),
-    messageLine('two', 'assistant', 'general   kenobi', 2_000),
-  ]);
-  try {
-    assert.deepEqual(content(await readAll(fixture.candidate)), [
-      { ts: 1_000, author: 'user', text: 'hello there' },
-      { ts: 2_000, author: 'assistant', text: 'general kenobi' },
-    ]);
-  } finally {
-    rmSync(fixture.directory, { recursive: true, force: true });
-  }
-});
-
-test('excludes tool IO, llm-only context, internal notices, and corrupt lines', async () => {
-  const fixture = writeSession([
-    toolUseLine('tool', 'grep secret src/', 1_000),
+    toolUseLine('tool', 'grep secret src/', 1_500),
     messageLine('hidden', 'user', 'private review instructions', 2_000, 'llm_only'),
     messageLine(
       'internal',
@@ -101,17 +88,16 @@ test('excludes tool IO, llm-only context, internal notices, and corrupt lines', 
     ),
     '{not-json',
     messageLine('visible', 'user', 'the token llm_only is ordinary chat here', 4_000),
+    messageLine('two', 'assistant', 'general   kenobi', 5_000),
   ]);
-  try {
-    assert.deepEqual(content(await readAll(fixture.candidate)), [
-      { ts: 4_000, author: 'user', text: 'the token llm_only is ordinary chat here' },
-    ]);
-  } finally {
-    rmSync(fixture.directory, { recursive: true, force: true });
-  }
+  assert.deepEqual(content(await readAll(candidate)), [
+    { ts: 1_000, author: 'user', text: 'hello there' },
+    { ts: 4_000, author: 'user', text: 'the token llm_only is ordinary chat here' },
+    { ts: 5_000, author: 'assistant', text: 'general kenobi' },
+  ]);
 });
 
-test('oversized JSONL records are discarded and scanning resumes at the next record', async () => {
+test('oversized JSONL records are discarded and scanning resumes at the next record', async (t) => {
   const oversized = messageLine(
     'oversized',
     'user',
@@ -119,17 +105,13 @@ test('oversized JSONL records are discarded and scanning resumes at the next rec
     1_000,
   );
   const wanted = messageLine('wanted', 'assistant', 'bounded otter marker', 2_000);
-  const fixture = writeSession([oversized, wanted]);
-  try {
-    const first = await readSessionSearchSlice(fixture.candidate, 0, DEFAULT_SEARCH_SLICE_BYTES);
-    assert.ok(first.nextByteOffset > DEFAULT_SEARCH_SLICE_BYTES);
-    assert.deepEqual(first.records, []);
-    assert.deepEqual(content(await readAllFrom(fixture.candidate, first.nextByteOffset)), [
-      { ts: 2_000, author: 'assistant', text: 'bounded otter marker' },
-    ]);
-  } finally {
-    rmSync(fixture.directory, { recursive: true, force: true });
-  }
+  const candidate = writeSession(t, [oversized, wanted]);
+  const first = await readSessionSearchSlice(candidate, 0, DEFAULT_SEARCH_SLICE_BYTES);
+  assert.ok(first.nextByteOffset > DEFAULT_SEARCH_SLICE_BYTES);
+  assert.deepEqual(first.records, []);
+  assert.deepEqual(content(await readAll(candidate, first.nextByteOffset)), [
+    { ts: 2_000, author: 'assistant', text: 'bounded otter marker' },
+  ]);
 });
 
 test('centers and ellipsizes a case-insensitive search snippet', () => {
@@ -141,18 +123,3 @@ test('centers and ellipsizes a case-insensitive search snippet', () => {
   assert.ok(snippet.includes('Needle in a haystack'));
   assert.equal(buildSessionSearchSnippet(text, 'missing'), null);
 });
-
-async function readAllFrom(
-  candidate: SessionSearchCandidate,
-  initialByteOffset: number,
-): Promise<SessionSearchRecord[]> {
-  const records: SessionSearchRecord[] = [];
-  let byteOffset = initialByteOffset;
-  for (;;) {
-    const slice = await readSessionSearchSlice(candidate, byteOffset);
-    assert.ok(slice.nextByteOffset > byteOffset || slice.reachedEnd);
-    records.push(...slice.records);
-    byteOffset = slice.nextByteOffset;
-    if (slice.reachedEnd) return records;
-  }
-}

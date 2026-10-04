@@ -14,6 +14,11 @@ const {
   fileDiff,
   markTurnStart,
   removeWorktree,
+  allowedWorktreeTarget,
+  isWithin,
+  matchRemote,
+  sanitizeSegment,
+  validBranchName,
 } = require('./git.cjs');
 
 // Integration tests for the last_turn review scope, driven through the module's
@@ -368,4 +373,88 @@ test('repoStatus counts what the repository line shows, and is null outside one'
     },
   );
   assert.equal(await repoStatus(path.join(dir, 'missing')), null);
+});
+
+test('validBranchName accepts normal names and rejects option-like or malformed ones', () => {
+  for (const name of ['main', 'feature/foo', 'fix/issue-27/part.2', 'v1.0', 'HEAD-2']) {
+    assert.equal(validBranchName(name), true, name);
+  }
+  const bad = [
+    null,
+    undefined,
+    '',
+    42,
+    '-D', // leading dash would be parsed as a git option
+    '--force',
+    '@',
+    'a..b',
+    'a@{1}',
+    'name.',
+    'a b',
+    'a\tb',
+    'a\nb',
+    'a~1',
+    'a^b',
+    'a:b',
+    'a?b',
+    'a*b',
+    'a[b',
+    'a\\b',
+    'a\x00b',
+    'a\x1fb',
+    'a\x7fb',
+    '/leading',
+    'trailing/',
+    'a//b',
+    '.hidden',
+    'nested/.hidden',
+    'name.lock',
+    'nested/name.lock/x',
+  ];
+  for (const name of bad) {
+    assert.equal(validBranchName(name), false, String(name));
+  }
+});
+
+test('sanitizeSegment collapses unsafe characters and trims dashes', () => {
+  assert.equal(sanitizeSegment('feature/foo bar'), 'feature-foo-bar');
+  assert.equal(sanitizeSegment('--weird--'), 'weird');
+  assert.equal(sanitizeSegment('a.b-c_d'), 'a.b-c_d');
+  assert.equal(sanitizeSegment(''), '');
+  assert.equal(sanitizeSegment(null), '');
+  assert.equal(sanitizeSegment('///'), '');
+  assert.equal(sanitizeSegment('x'.repeat(200)).length, 80);
+});
+
+test('isWithin matches exact paths and children on a separator boundary', () => {
+  const base = path.join(path.sep, 'repo');
+  assert.equal(isWithin(base, base), true);
+  assert.equal(isWithin(base, path.join(base, 'sub', 'file')), true);
+  // "/repo-evil" shares the prefix but is not inside "/repo"
+  assert.equal(isWithin(base, `${base}-evil`), false);
+  assert.equal(isWithin(base, path.join(path.sep, 'other')), false);
+});
+
+test('allowedWorktreeTarget keeps targets inside repo, parent, or home', () => {
+  const root = path.join(path.sep, 'private', 'srv', 'repo');
+  assert.equal(allowedWorktreeTarget(root, path.join(root, '.worktrees', 'wt')), true);
+  assert.equal(allowedWorktreeTarget(root, path.join(path.dirname(root), 'sibling')), true);
+  assert.equal(allowedWorktreeTarget(root, path.join(os.homedir(), 'worktrees', 'wt')), true);
+  assert.equal(allowedWorktreeTarget(root, path.join(path.sep, 'etc', 'planted')), false);
+  assert.equal(allowedWorktreeTarget(root, path.join(path.sep, 'tmp', 'planted')), false);
+  // nesting inside the .git dir would corrupt the repo
+  assert.equal(allowedWorktreeTarget(root, path.join(root, '.git', 'wt')), false);
+  // prefix sibling of root is only allowed because it sits in root's parent
+  assert.equal(allowedWorktreeTarget(root, `${root}-evil`), true);
+});
+
+test('matchRemote prefers the longest configured remote name', () => {
+  assert.equal(matchRemote('origin/main', ['origin']), 'origin');
+  assert.equal(matchRemote('foo/bar/feature', ['foo', 'foo/bar']), 'foo/bar');
+  assert.equal(matchRemote('origin', ['origin']), 'origin');
+  assert.equal(matchRemote('originals/x', ['origin']), null);
+  assert.equal(matchRemote('dev', ['origin']), null);
+  assert.equal(matchRemote('origin/main', []), null);
+  assert.equal(matchRemote(null, ['origin']), null);
+  assert.equal(matchRemote('origin/main', null), null);
 });

@@ -7,7 +7,6 @@ import {
   scrollTopForPreservedAnchor,
   shouldCancelViewportRestore,
   shouldCaptureViewportAnchorAfterScroll,
-  updateViewportAnchorGeometry,
 } from './conversationViewportAnchor';
 import {
   applyConversationContentResize,
@@ -59,48 +58,21 @@ test('disclosure anchoring captures, holds, adjusts both directions, and release
   assert.equal(disclosureAnchorDelta(container, anchor, 1000).mode, 'release');
 });
 
-test('settled transcript release waits for older-history paging to finish', () => {
+test('a conversation releases its transcript only when settled, bottom-pinned, and not paging', () => {
   assert.equal(shouldReleaseConversationTranscript(settledPinned), true);
-  assert.equal(
-    shouldReleaseConversationTranscript({
-      ...settledPinned,
-      isAutoPagingOlderHistory: true,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldReleaseConversationTranscript({
-      ...settledPinned,
-      isLoadingOlder: true,
-    }),
-    false,
-  );
-});
-
-test('settled primary and child conversations can release only while bottom-pinned', () => {
-  assert.equal(
-    shouldReleaseConversationTranscript({
-      ...settledPinned,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldReleaseConversationTranscript({
-      ...settledPinned,
-      isPinned: false,
-    }),
-    false,
-  );
-});
-
-test('live child conversations stay pinned in memory', () => {
-  assert.equal(
-    shouldReleaseConversationTranscript({
-      ...settledPinned,
-      isConversationLive: true,
-    }),
-    false,
-  );
+  for (const blocker of [
+    { isAutoPagingOlderHistory: true },
+    { isLoadingOlder: true },
+    { isPinned: false },
+    // Live primary and child conversations stay pinned in memory.
+    { isConversationLive: true },
+  ]) {
+    assert.equal(
+      shouldReleaseConversationTranscript({ ...settledPinned, ...blocker }),
+      false,
+      JSON.stringify(blocker),
+    );
+  }
 });
 
 test('user movement selects a fresh prepend anchor while older history is loading', () => {
@@ -139,22 +111,6 @@ test('row anchoring compensates for prepends and later interactive height change
 
   // Height changes below the anchor do not move the reading position.
   assert.equal(scrollTopForPreservedAnchor({ scrollTop: 2_020, rowOffsetTop: 780 }, 780), 2_020);
-});
-
-test('anchor geometry refresh keeps tracking the originally captured row', () => {
-  const anchor = {
-    rowId: 'message-42',
-    rowOffsetTop: 24,
-    scrollTop: 0,
-    scrollHeight: 20_000,
-  };
-
-  assert.deepEqual(updateViewportAnchorGeometry(anchor, 3_500, 3_476, 23_500), {
-    rowId: 'message-42',
-    rowOffsetTop: 3_500,
-    scrollTop: 3_476,
-    scrollHeight: 23_500,
-  });
 });
 
 test('older history loads only near the top with a cursor and no page in flight', () => {
@@ -317,98 +273,42 @@ test('content resize binding follows the live first child even with an empty tra
   const container = {} as HTMLDivElement;
   const welcome = {} as Element;
   const composeSkeleton = {} as Element;
+  const binding = { element: container, content: welcome, conversationKey: 'session-a' };
+  const shouldBind = (
+    current: typeof binding | null,
+    content: Element | null,
+    conversationKey: string,
+    element: HTMLDivElement | null = container,
+  ) => shouldBindConversationContentResize({ binding: current, element, content, conversationKey });
 
   // First bind while the transcript is still empty.
-  assert.equal(
-    shouldBindConversationContentResize({
-      binding: null,
-      element: container,
-      content: welcome,
-      conversationKey: 'session-a',
-    }),
-    true,
-  );
-  const binding = { element: container, content: welcome, conversationKey: 'session-a' };
-
+  assert.equal(shouldBind(null, welcome, 'session-a'), true);
   // Same child and conversation: nothing to rebind.
-  assert.equal(
-    shouldBindConversationContentResize({
-      binding,
-      element: container,
-      content: welcome,
-      conversationKey: 'session-a',
-    }),
-    false,
-  );
-
+  assert.equal(shouldBind(binding, welcome, 'session-a'), false);
   // The conversation content element is swapped with the transcript still at
   // zero events; the observer must follow the replacement child.
-  assert.equal(
-    shouldBindConversationContentResize({
-      binding,
-      element: container,
-      content: composeSkeleton,
-      conversationKey: 'session-a',
-    }),
-    true,
-  );
-
+  assert.equal(shouldBind(binding, composeSkeleton, 'session-a'), true);
   // A conversation switch rebinds even when the container keeps its child.
-  assert.equal(
-    shouldBindConversationContentResize({
-      binding,
-      element: container,
-      content: welcome,
-      conversationKey: 'session-b',
-    }),
-    true,
-  );
-
+  assert.equal(shouldBind(binding, welcome, 'session-b'), true);
   // No container or child means nothing can be observed.
-  assert.equal(
-    shouldBindConversationContentResize({
-      binding: null,
-      element: null,
-      content: null,
-      conversationKey: 'session-a',
-    }),
-    false,
-  );
+  assert.equal(shouldBind(null, null, 'session-a', null), false);
 });
 
 test('content resize compensation stays off during an unpinned user scroll', () => {
-  assert.equal(
+  const compensate = (
+    isPinned: boolean,
+    isSettlingHistoryPrepend: boolean,
+    isUserScrolling: boolean,
+  ) =>
     shouldCompensateConversationContentResize({
-      isPinned: false,
-      isSettlingHistoryPrepend: false,
-      isUserScrolling: true,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldCompensateConversationContentResize({
-      isPinned: true,
-      isSettlingHistoryPrepend: false,
-      isUserScrolling: true,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldCompensateConversationContentResize({
-      isPinned: false,
-      isSettlingHistoryPrepend: true,
-      isUserScrolling: true,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldCompensateConversationContentResize({
-      isPinned: false,
-      isSettlingHistoryPrepend: false,
-      isUserScrolling: false,
-    }),
-    true,
-  );
+      isPinned,
+      isSettlingHistoryPrepend,
+      isUserScrolling,
+    });
+  assert.equal(compensate(false, false, true), false);
+  assert.equal(compensate(true, false, true), true);
+  assert.equal(compensate(false, true, true), true);
+  assert.equal(compensate(false, false, false), true);
 });
 
 test('deferred content-resize restore skips when a newer owner took the generation', () => {

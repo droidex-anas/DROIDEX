@@ -76,7 +76,7 @@ test('designPromptDisplayFromText extracts instruction and browser chips from a 
   );
 });
 
-test('designPromptDisplayFromText ignores reference packs outside browser data', () => {
+test('designPromptDisplayFromText ignores packs outside browser data and prompts that are not packs', () => {
   const dir = join(tmpdir(), `droid-display-${Date.now()}-guarded`);
   mkdirSync(dir, { recursive: true });
   const outsidePath = join(tmpdir(), `droid-display-outside-${Date.now()}.json`);
@@ -112,8 +112,6 @@ test('designPromptDisplayFromText ignores reference packs outside browser data',
       browserRefs: undefined,
     },
   );
-});
-
-test('designPromptDisplayFromText leaves non-design prompts alone', () => {
+  // A prompt that is not a design pack is left alone.
   assert.equal(designPromptDisplayFromText('hello'), null);
 });

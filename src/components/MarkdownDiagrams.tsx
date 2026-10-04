@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Mermaid } from 'mermaid';
 
 import { useVisibleOnce } from '../hooks/useVisibleOnce';
+import { fitSvgMarkup } from '../lib/svgMarkup';
 
 /* Renderers for the fenced languages that draw a diagram instead of code. */
 
@@ -123,18 +124,7 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
 
 /* ── SVG code block renderer ── */
 export function SvgCodeBlock({ content }: { content: string }) {
-  const safeSvg = useMemo(() => {
-    let raw = content.trim();
-    if (!raw.startsWith('<svg')) {
-      raw = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="100%">${raw}</svg>`;
-    }
-    raw = raw.replace(/width="\d+(?:px)?"/gi, 'width="100%"');
-    raw = raw.replace(/height="\d+(?:px)?"/gi, '');
-    if (!raw.includes('xmlns=')) {
-      raw = raw.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-    return raw;
-  }, [content]);
+  const safeSvg = useMemo(() => fitSvgMarkup(content), [content]);
 
   return (
     <div className="rounded-2xl border border-droid-border bg-droid-elevated/30 overflow-hidden my-4">

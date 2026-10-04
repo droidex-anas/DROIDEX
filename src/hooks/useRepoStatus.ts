@@ -4,7 +4,7 @@ import type { RepoStatus } from '../lib/repoEnvironment';
 import { stable } from '../lib/stable';
 import { useDocumentVisible } from './useDocumentVisible';
 
-export function isCurrentRepoStatusRequest(requestId: number, latestRequestId: number): boolean {
+function isCurrentRepoStatusRequest(requestId: number, latestRequestId: number): boolean {
   return requestId === latestRequestId;
 }
 

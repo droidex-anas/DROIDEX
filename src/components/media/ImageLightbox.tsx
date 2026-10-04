@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ImageOff, X } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
+import { wrapTabFocus } from '../../lib/focusTrap';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
 
 /**
@@ -46,8 +47,7 @@ function ImageLightboxContent({
     };
   }, []);
 
-  // aria-modal contract: Tab cycles inside the dialog (same wrap logic as
-  // ThemeEditor) and the page behind it does not scroll while it is open.
+  // Capture keys before the page behind the dialog can handle them.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -55,28 +55,7 @@ function ImageLightboxContent({
         onClose();
         return;
       }
-      if (e.key !== 'Tab') return;
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-      const focusables = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-      const first = focusables.at(0);
-      const last = focusables.at(-1);
-      if (!first || !last) return;
-      const active = document.activeElement;
-      // The dialog itself holds focus right after opening, and it sits before
-      // every control, so it is the boundary in both directions.
-      const inside = active instanceof HTMLElement && dialog.contains(active) && active !== dialog;
-      if (e.shiftKey && (active === first || !inside)) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && (active === last || !inside)) {
-        e.preventDefault();
-        first.focus();
-      }
+      wrapTabFocus(e, dialogRef.current);
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => {

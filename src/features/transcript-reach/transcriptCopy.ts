@@ -8,7 +8,7 @@ export function copyTextForMessage(text: string): string {
   return parseTruncatedTail(text).body;
 }
 
-export function copyTextForCommand(command: string, output?: string): string {
+function copyTextForCommand(command: string, output?: string): string {
   const out = output ? stripAnsi(output).trimEnd() : '';
   return out ? `${command}\n\n${out}` : command;
 }

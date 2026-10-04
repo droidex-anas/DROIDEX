@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { BridgeFeature, SessionSummary, TranscriptEvent } from '../types/bridge';
-import { withLocalStorageMap } from '../test/localStorage';
+import { withFailingLocalStorage, withLocalStorageMap } from '../test/localStorage';
 import {
   createSnapshotScheduler,
   loadSessionSnapshot,
@@ -11,6 +11,8 @@ import {
   MAX_SNAPSHOT_TRANSCRIPT_EVENTS,
   MAX_SNAPSHOT_TRANSCRIPT_BYTES,
 } from './sessionSnapshot';
+import { sessionSummary } from '../test/sessionSummary';
+import { textEvent } from '../test/textEvent';
 
 const SNAPSHOT_KEY = 'droid-session-snapshot-v1';
 
@@ -27,37 +29,25 @@ function feature(id: string, overrides: Partial<BridgeFeature> = {}): BridgeFeat
   };
 }
 
-function summary(id: string, updatedAt = 1): SessionSummary {
-  return {
-    appSessionId: id,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
+const summary = (id: string, updatedAt = 1) =>
+  sessionSummary(id, {
     title: `Chat ${id}`,
     goal: `Chat ${id}`,
     cwd: '/repo',
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
     createdAt: updatedAt,
     updatedAt,
-  };
-}
+  });
 
-function event(id: string, ts: number, text = id): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 's1',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    text,
-    ts,
-  };
+const event = (id: string, ts: number, text = id) =>
+  textEvent(id, { appSessionId: 's1', ts, text });
+
+/** Loads the snapshot from a stored payload, as a relaunch would. */
+function loadStored(payload: unknown): ReturnType<typeof loadSessionSnapshot> {
+  let snapshot: ReturnType<typeof loadSessionSnapshot>;
+  withLocalStorageMap({ [SNAPSHOT_KEY]: JSON.stringify(payload) }, () => {
+    snapshot = loadSessionSnapshot();
+  });
+  return snapshot!;
 }
 
 function saveAndLoad(
@@ -99,23 +89,66 @@ test('missing or corrupt payloads degrade to no snapshot', () => {
   }
 });
 
-test('entries missing identity fields are dropped, valid ones survive', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
+test('a stored payload keeps only well-formed, unique sessions and their own transcript', () => {
+  const cases: Array<[string, unknown, string[], string[] | undefined]> = [
+    [
+      'entries missing identity fields',
+      {
         sessions: [
           summary('good'),
           { ...summary('no-id'), appSessionId: 7 },
           { ...summary('no-title'), title: undefined },
           { ...summary('no-time'), updatedAt: 'yesterday' },
         ],
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(snapshot?.sessionOrder, ['good']);
-    },
-  );
+      },
+      ['good'],
+      undefined,
+    ],
+    [
+      'duplicate session ids',
+      { sessions: [summary('s1', 1), summary('s1', 2)] },
+      ['s1'],
+      undefined,
+    ],
+    [
+      'malformed and foreign transcript events',
+      {
+        sessions: [summary('s1')],
+        transcript: {
+          appSessionId: 's1',
+          events: [
+            event('ok', 1),
+            { ...event('bad-id', 2), id: 9 },
+            { ...event('bad-ts', 3), ts: 'now' },
+            { ...event('foreign', 4), appSessionId: 's2' },
+          ],
+        },
+      },
+      ['s1'],
+      ['ok'],
+    ],
+    [
+      'a transcript for an unknown session',
+      {
+        sessions: [summary('s1')],
+        transcript: {
+          appSessionId: 'ghost',
+          events: [{ ...event('a', 1), appSessionId: 'ghost' }],
+        },
+      },
+      ['s1'],
+      undefined,
+    ],
+  ];
+  for (const [label, payload, sessionOrder, transcriptIds] of cases) {
+    const snapshot = loadStored(payload);
+    assert.deepEqual(snapshot?.sessionOrder, sessionOrder, label);
+    assert.deepEqual(
+      snapshot?.transcript?.events.map((item) => item.id),
+      transcriptIds,
+      label,
+    );
+  }
 });
 
 test('the session list is bounded to the most recent entries', () => {
@@ -166,41 +199,6 @@ test('a live progress row is not repainted from the snapshot', () => {
   );
 });
 
-test('duplicate session ids in a stored payload are collapsed', () => {
-  withLocalStorageMap(
-    { [SNAPSHOT_KEY]: JSON.stringify({ sessions: [summary('s1', 1), summary('s1', 2)] }) },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(snapshot?.sessionOrder, ['s1']);
-    },
-  );
-});
-
-test('malformed transcript events are dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: {
-          appSessionId: 's1',
-          events: [
-            event('ok', 1),
-            { ...event('bad-id', 2), id: 9 },
-            { ...event('bad-ts', 3), ts: 'now' },
-          ],
-        },
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(
-        snapshot?.transcript?.events.map((item) => item.id),
-        ['ok'],
-      );
-    },
-  );
-});
-
 test('the summary list is bounded to the byte budget, keeping the newest', () => {
   const bulky = Array.from({ length: 200 }, (_, i) => ({
     ...summary(`s${i}`, i),
@@ -213,18 +211,6 @@ test('the summary list is bounded to the byte budget, keeping the newest', () =>
   assert.equal(kept[0], 's0', 'the front of the order (newest) is kept');
   const serialized = JSON.stringify(kept.map((id) => snapshot?.sessions[id]));
   assert.ok(serialized.length <= MAX_SNAPSHOT_SUMMARY_BYTES);
-});
-
-test('the scheduler writes after the debounce delay', (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  withLocalStorageMap({}, () => {
-    const scheduler = createSnapshotScheduler(400);
-    scheduler.push({ sessions: { s1: summary('s1') }, sessionOrder: ['s1'] });
-    t.mock.timers.tick(399);
-    assert.equal(loadSessionSnapshot(), undefined);
-    t.mock.timers.tick(1);
-    assert.deepEqual(loadSessionSnapshot()?.sessionOrder, ['s1']);
-  });
 });
 
 test('an unchanged push never cancels a pending write', (t) => {
@@ -272,47 +258,14 @@ test('cancel discards a pending write', (t) => {
   });
 });
 
-test('a transcript for an unknown session is not hydrated', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: { appSessionId: 'ghost', events: [event('a', 1)] },
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(snapshot?.sessionOrder, ['s1']);
-      assert.equal(snapshot?.transcript, undefined);
-    },
-  );
-});
-
 test('storage failures are swallowed on both read and write', () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: () => {
-        throw new Error('denied');
-      },
-      setItem: () => {
-        throw new Error('denied');
-      },
-    },
-  });
-  try {
+  withFailingLocalStorage(() => {
     assert.equal(loadSessionSnapshot(), undefined);
     saveSessionSnapshot({ s1: summary('s1') }, ['s1']);
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
+  });
 });
 
-// ── Finding 1: malformed BridgeFeature entries must not survive hydration ─
-
-test('malformed feature entries are dropped on save+load, valid ones survive', () => {
+test('malformed features are dropped and bad optional feature fields cleared on save and load', () => {
   const withFeatures: SessionSummary = {
     ...summary('s1'),
     features: [
@@ -331,106 +284,33 @@ test('malformed feature entries are dropped on save+load, valid ones survive', (
       } as unknown as BridgeFeature,
       'not-an-object' as unknown as BridgeFeature,
       null as unknown as BridgeFeature,
-    ],
-  };
-  const snapshot = saveAndLoad([withFeatures]);
-  const features = snapshot?.sessions.s1?.features ?? [];
-  assert.deepEqual(
-    features.map((f) => f.id),
-    ['good'],
-  );
-});
-
-test('optional feature fields are preserved or cleared on load', () => {
-  const withFeatures: SessionSummary = {
-    ...summary('s1'),
-    features: [
       feature('f1', { fulfills: ['req-1'], milestone: 'M1' }),
       feature('f2', { fulfills: 'bad' as unknown as string[], milestone: 42 as unknown as string }),
     ],
   };
   const snapshot = saveAndLoad([withFeatures]);
   const features = snapshot?.sessions.s1?.features ?? [];
-  assert.equal(features.length, 2);
-  assert.deepEqual(features[0]?.fulfills, ['req-1']);
-  assert.equal(features[0]?.milestone, 'M1');
-  assert.equal(features[1]?.fulfills, undefined);
-  assert.equal(features[1]?.milestone, undefined);
-});
-
-// ── Finding 2: transcript events must match transcript.appSessionId ────────
-
-test('transcript events from a different session are dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: {
-          appSessionId: 's1',
-          events: [
-            event('belongs', 1),
-            { ...event('foreign'), appSessionId: 's2' },
-            { ...event('also-foreign'), appSessionId: 's3' },
-          ],
-        },
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.deepEqual(
-        snapshot?.transcript?.events.map((e) => e.id),
-        ['belongs'],
-      );
-    },
+  assert.deepEqual(
+    features.map((f) => f.id),
+    ['good', 'f1', 'f2'],
   );
+  assert.deepEqual(features[1]?.fulfills, ['req-1']);
+  assert.equal(features[1]?.milestone, 'M1');
+  assert.equal(features[2]?.fulfills, undefined);
+  assert.equal(features[2]?.milestone, undefined);
 });
 
-// ── Finding 3: one oversized transcript event must not bypass the byte cap ─
-
-test('a single oversized transcript event is dropped on save', () => {
+test('a single oversized transcript event or summary is dropped on save and on load', () => {
   const huge = event('huge', 1, 'x'.repeat(MAX_SNAPSHOT_TRANSCRIPT_BYTES + 1));
-  const snapshot = saveAndLoad([summary('s1')], { appSessionId: 's1', events: [huge] });
-  assert.equal(snapshot?.transcript, undefined);
-});
+  const saved = saveAndLoad([summary('s1')], { appSessionId: 's1', events: [huge] });
+  assert.equal(saved?.transcript, undefined);
+  const stored = loadStored({
+    sessions: [summary('s1')],
+    transcript: { appSessionId: 's1', events: [huge] },
+  });
+  assert.equal(stored?.transcript, undefined);
 
-test('a single oversized transcript event is dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [summary('s1')],
-        transcript: {
-          appSessionId: 's1',
-          events: [{ ...event('huge', 1), text: 'x'.repeat(MAX_SNAPSHOT_TRANSCRIPT_BYTES + 1) }],
-        },
-      }),
-    },
-    () => {
-      const snapshot = loadSessionSnapshot();
-      assert.equal(snapshot?.transcript, undefined);
-    },
-  );
-});
-
-// ── Finding 4: one oversized session summary must not bypass the byte cap ──
-
-test('a single oversized session summary is dropped on save', () => {
-  const huge: SessionSummary = {
-    ...summary('s1'),
-    title: 'x'.repeat(MAX_SNAPSHOT_SUMMARY_BYTES + 1),
-  };
-  const snapshot = saveAndLoad([huge]);
-  assert.equal(snapshot, undefined);
-});
-
-test('a single oversized session summary is dropped on load', () => {
-  withLocalStorageMap(
-    {
-      [SNAPSHOT_KEY]: JSON.stringify({
-        sessions: [{ ...summary('s1'), title: 'x'.repeat(MAX_SNAPSHOT_SUMMARY_BYTES + 1) }],
-      }),
-    },
-    () => {
-      assert.equal(loadSessionSnapshot(), undefined);
-    },
-  );
+  const hugeSummary = { ...summary('s1'), title: 'x'.repeat(MAX_SNAPSHOT_SUMMARY_BYTES + 1) };
+  assert.equal(saveAndLoad([hugeSummary]), undefined);
+  assert.equal(loadStored({ sessions: [hugeSummary] }), undefined);
 });

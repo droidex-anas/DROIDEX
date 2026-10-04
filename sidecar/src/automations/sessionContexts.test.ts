@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mergeSessionContext, SessionContextCache } from './sessionContexts.js';
 
-test('observed session updates preserve omitted fields and apply explicit clears', () => {
+test('observed updates keep omitted fields and apply clears, and a resolved context wins even when null', () => {
   const contexts = new SessionContextCache();
   contexts.observe({
     appSessionId: 'session-1',
@@ -23,9 +23,7 @@ test('observed session updates preserve omitted fields and apply explicit clears
     reasoningEffort: null,
     autonomy: 'medium',
   });
-});
 
-test('resolved session context is authoritative even when fields are null', () => {
   assert.deepEqual(
     mergeSessionContext(
       {

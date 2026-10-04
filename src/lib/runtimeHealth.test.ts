@@ -35,29 +35,21 @@ afterEach(() => {
   resetRuntimeHealthForTests();
 });
 
-test('browser and Vite keep send available when no sidecar supervisor exists', () => {
+test('send stays available without a sidecar supervisor: in a browser, Vite, or a bare window', () => {
   assert.equal(getRuntimeHealth().lifecycle, 'starting');
   assert.equal(getRuntimeHealth().transport, 'disconnected');
   assert.equal(canRunAgents(), true);
 
-  const restoreWindow = replaceGlobal('window', {});
-  try {
-    assert.equal(canRunAgents(), true);
-  } finally {
-    restoreWindow();
-  }
-});
-
-test('a window without sidecarStatus is still unsupervised', () => {
-  const restoreWindow = replaceGlobal('window', {
-    droidControl: {
-      bridgeInfo: async () => ({ port: 1, token: '' }),
-    },
-  });
-  try {
-    assert.equal(canRunAgents(), true);
-  } finally {
-    restoreWindow();
+  for (const window of [
+    {},
+    { droidControl: { bridgeInfo: async () => ({ port: 1, token: '' }) } },
+  ]) {
+    const restoreWindow = replaceGlobal('window', window);
+    try {
+      assert.equal(canRunAgents(), true);
+    } finally {
+      restoreWindow();
+    }
   }
 });
 

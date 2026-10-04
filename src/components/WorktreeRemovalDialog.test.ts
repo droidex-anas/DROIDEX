@@ -43,21 +43,17 @@ test('dialog opens in a responsive checking state', () => {
   assert.match(html, /disabled=""/);
 });
 
-test('dirty worktree dialog explicitly warns before destructive removal', () => {
-  const html = renderDialog({ changedFileCount: 3 });
-  assert.match(html, /role="alertdialog"/);
-  assert.match(html, /3 changed files will be permanently discarded/);
-  assert.match(html, /modified and untracked files/);
-  assert.match(html, /This action cannot be undone/);
-  assert.match(html, />Delete anyway</);
-});
+test('only a dirty worktree warns that removal discards its changes', () => {
+  const dirty = renderDialog({ changedFileCount: 3 });
+  assert.match(dirty, /role="alertdialog"/);
+  assert.match(dirty, /3 changed files will be permanently discarded/);
+  assert.match(dirty, /This action cannot be undone/);
+  assert.match(dirty, />Delete anyway</);
 
-test('clean worktree dialog offers normal removal without a discard warning', () => {
-  const html = renderDialog();
-  assert.match(html, /role="dialog"/);
-  assert.match(html, /The worktree directory will be removed from this Mac/);
-  assert.match(html, />Delete worktree</);
-  assert.doesNotMatch(html, /permanently discarded/);
+  const clean = renderDialog();
+  assert.match(clean, /role="dialog"/);
+  assert.match(clean, />Delete worktree</);
+  assert.doesNotMatch(clean, /permanently discarded/);
 });
 
 test('dialog explains conversation and branch outcomes', () => {

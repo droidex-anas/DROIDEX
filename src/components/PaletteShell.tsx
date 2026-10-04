@@ -4,6 +4,7 @@ import { NativeSurfaceObscurer } from '../hooks/useObscuresNativeSurfaces';
 import { motion } from 'framer-motion';
 import { Search, X } from 'lucide-react';
 import { pushEscapeLayer } from './environment/usePopover';
+import { wrapTabFocus } from '../lib/focusTrap';
 
 // Shared chrome for the command-palette overlays (⌘K command palette,
 // sidebar session search): backdrop, animated panel, search input row, and
@@ -52,22 +53,7 @@ export default function PaletteShell({
   useEffect(() => pushEscapeLayer(onClose), [onClose]);
 
   const trapTab = (event: React.KeyboardEvent) => {
-    if (event.key !== 'Tab') return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const focusable = panel.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(event, panelRef.current);
   };
 
   return createPortal(

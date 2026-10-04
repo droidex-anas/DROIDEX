@@ -51,6 +51,11 @@ test('paragraphs freeze only after a terminating blank line', () => {
   assert.deepEqual(kinds(closed), ['paragraph']);
   assert.equal(closed.pendingSource, '');
   assert.equal(closed.completedBlocks[0]?.source, 'Hello world\n\n');
+
+  // Math-like dollar runs do not change the paragraph boundary.
+  assert.equal(freezeCompletedPrefix('Energy $E = mc^2$ is still\n').pendingKind, 'paragraph');
+  const math = freezeCompletedPrefix('Energy $E = mc^2$ is done.\n\n');
+  assert.equal(math.completedBlocks[0]?.kind, 'paragraph');
 });
 
 test('a later paragraph does not rewrite an already-frozen one', () => {
@@ -78,19 +83,17 @@ test('lists stay pending until an interrupting block appears', () => {
   assert.equal(interrupted.pendingSource, '');
 });
 
-test('a fence opened inside a list keeps the whole list pending', () => {
-  const source = ['- item', '  ```js', '  const x = 1'].join('\n');
-  const document = freezeCompletedPrefix(`${source}\n`);
-  assert.equal(document.pendingKind, 'list');
-  assert.deepEqual(document.completedBlocks, []);
-  assert.equal(document.pendingSource.startsWith('- item\n'), true);
-});
+test('a fence inside a list keeps the whole list pending, open or closed', () => {
+  const opened = freezeCompletedPrefix(['- item', '  ```js', '  const x = 1', ''].join('\n'));
+  assert.equal(opened.pendingKind, 'list');
+  assert.deepEqual(opened.completedBlocks, []);
+  assert.equal(opened.pendingSource.startsWith('- item\n'), true);
 
-test('a closed fence inside a list still waits for the list to end', () => {
-  const source = ['- item', '  ```js', '  const x = 1', '  ```', ''].join('\n');
-  const document = freezeCompletedPrefix(source);
-  assert.deepEqual(document.completedBlocks, []);
-  assert.equal(document.pendingKind, 'list');
+  const closed = freezeCompletedPrefix(
+    ['- item', '  ```js', '  const x = 1', '  ```', ''].join('\n'),
+  );
+  assert.deepEqual(closed.completedBlocks, []);
+  assert.equal(closed.pendingKind, 'list');
 });
 
 test('nested longer outer fences do not close on a shorter inner run', () => {
@@ -113,18 +116,16 @@ test('an unclosed fence remains pending and preserves prior blocks', () => {
   assert.equal(document.pendingSource.startsWith('```js\n'), true);
 });
 
-test('a table with an incomplete trailing row stays pending', () => {
-  const source = ['| a | b |', '| --- | --- |', '| 1 |'].join('\n');
-  const document = freezeCompletedPrefix(`${source}\n`);
-  assert.deepEqual(document.completedBlocks, []);
-  assert.equal(document.pendingKind, 'table');
-});
+test('a table stays pending through an incomplete row and freezes once a heading interrupts it', () => {
+  const incomplete = freezeCompletedPrefix(['| a | b |', '| --- | --- |', '| 1 |', ''].join('\n'));
+  assert.deepEqual(incomplete.completedBlocks, []);
+  assert.equal(incomplete.pendingKind, 'table');
 
-test('a complete table freezes once a following heading interrupts it', () => {
-  const source = ['| a | b |', '| --- | --- |', '| 1 | 2 |', '', '# Next', ''].join('\n');
-  const document = freezeCompletedPrefix(source);
-  assert.deepEqual(kinds(document), ['table', 'heading']);
-  assert.equal(document.pendingSource, '');
+  const complete = freezeCompletedPrefix(
+    ['| a | b |', '| --- | --- |', '| 1 | 2 |', '', '# Next', ''].join('\n'),
+  );
+  assert.deepEqual(kinds(complete), ['table', 'heading']);
+  assert.equal(complete.pendingSource, '');
 });
 
 test('CRLF line endings freeze at the same boundaries as LF', () => {
@@ -166,11 +167,4 @@ test('streaming tokens never remove or rewrite frozen blocks', () => {
     'Tail paragraph that is still growing',
   ].join('\n');
   assertFrozenPrefixStable(`${full}\n`);
-});
-
-test('math-like dollar fences stay in pending until a blank line proves the paragraph closed', () => {
-  const open = freezeCompletedPrefix('Energy $E = mc^2$ is still\n');
-  assert.equal(open.pendingKind, 'paragraph');
-  const closed = freezeCompletedPrefix('Energy $E = mc^2$ is done.\n\n');
-  assert.equal(closed.completedBlocks[0]?.kind, 'paragraph');
 });

@@ -6,30 +6,27 @@ import { join } from 'node:path';
 import { childEnv } from './childEnv.js';
 import {
   availableChannels,
-  compareSemver,
   hasCliLogin,
   resolveDroidPath,
   windowsExecutableExtensions,
   wrapDroidInvocation,
 } from './Environment.js';
 
-test('compareSemver orders versions numerically', () => {
-  assert.ok(compareSemver('0.144.2', '0.144.1') > 0);
-  assert.ok(compareSemver('0.99.0', '0.100.0') < 0);
-  assert.equal(compareSemver('1.2.3', '1.2.3'), 0);
-});
+/** Runs `body` with `process.env[name]` set to `value`, restoring it after. */
+function withEnv(name: string, value: string, body: () => void): void {
+  const previous = process.env[name];
+  process.env[name] = value;
+  try {
+    body();
+  } finally {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+  }
+}
 
-test('compareSemver tolerates prefixes and missing values', () => {
-  assert.equal(compareSemver('v1.0.0', '1.0.0'), 0);
-  assert.ok(compareSemver(undefined, '0.0.1') < 0);
-  assert.equal(compareSemver(undefined, undefined), 0);
-});
-
-test('availableChannels reflects detected package managers in priority order', () => {
-  assert.deepEqual(
-    availableChannels({ brew: true, npm: true, curl: true, pnpm: false }, 'darwin'),
-    ['script', 'brew', 'npm'],
-  );
+test('availableChannels lists detected installers in priority order, per platform', () => {
+  const all = { brew: true, npm: true, curl: true, pnpm: false };
+  assert.deepEqual(availableChannels(all, 'darwin'), ['script', 'brew', 'npm']);
   assert.deepEqual(
     availableChannels({ brew: false, npm: true, curl: false, pnpm: false }, 'darwin'),
     ['npm'],
@@ -38,101 +35,54 @@ test('availableChannels reflects detected package managers in priority order', (
     availableChannels({ brew: false, npm: false, curl: false, pnpm: false }, 'darwin'),
     [],
   );
+  // Brew is a mac-only cask, and the shell script has no Windows channel.
+  assert.deepEqual(availableChannels(all, 'linux'), ['script', 'npm']);
+  assert.deepEqual(availableChannels({ ...all, brew: false }, 'win32'), ['npm']);
 });
 
-test('resolveDroidPath trusts an executable DROID_PATH', () => {
-  const prev = process.env.DROID_PATH;
-  process.env.DROID_PATH = process.execPath; // a real executable
-  try {
+test('resolveDroidPath trusts an executable DROID_PATH and ignores a stale one', () => {
+  withEnv('DROID_PATH', process.execPath, () => {
     assert.equal(resolveDroidPath(), process.execPath);
-  } finally {
-    if (prev === undefined) delete process.env.DROID_PATH;
-    else process.env.DROID_PATH = prev;
-  }
-});
-
-test('resolveDroidPath ignores a stale/non-executable DROID_PATH', () => {
-  const prev = process.env.DROID_PATH;
-  process.env.DROID_PATH = '/nonexistent/droid-binary-xyz';
-  try {
+  });
+  withEnv('DROID_PATH', '/nonexistent/droid-binary-xyz', () => {
     assert.notEqual(resolveDroidPath(), '/nonexistent/droid-binary-xyz');
-  } finally {
-    if (prev === undefined) delete process.env.DROID_PATH;
-    else process.env.DROID_PATH = prev;
-  }
+  });
 });
 
-test('availableChannels omits the shell-script channel on Windows', () => {
-  assert.deepEqual(
-    availableChannels({ brew: false, npm: true, curl: true, pnpm: false }, 'win32'),
-    ['npm'],
-  );
-});
-
-test('availableChannels omits brew off macOS (cask is mac-only)', () => {
-  assert.deepEqual(availableChannels({ brew: true, npm: true, curl: true, pnpm: false }, 'linux'), [
-    'script',
-    'npm',
-  ]);
-});
-
-test('wrapDroidInvocation routes a Windows .cmd shim through cmd.exe', () => {
-  const prev = process.env.ComSpec;
-  process.env.ComSpec = 'C\\\\Windows\\\\System32\\\\cmd.exe';
-  try {
-    assert.deepEqual(wrapDroidInvocation('C\\\\npm\\\\droid.cmd', ['exec'], 'win32'), {
+test('Windows launches route a .cmd shim through cmd.exe and keep default PATHEXT; POSIX spawns directly', () => {
+  const shim = 'C\\\\npm\\\\droid.cmd';
+  withEnv('ComSpec', 'C\\\\Windows\\\\System32\\\\cmd.exe', () => {
+    assert.deepEqual(wrapDroidInvocation(shim, ['exec'], 'win32'), {
       execPath: 'C\\\\Windows\\\\System32\\\\cmd.exe',
-      execArgs: ['/c', 'C\\\\npm\\\\droid.cmd', 'exec'],
+      execArgs: ['/c', shim, 'exec'],
     });
-  } finally {
-    if (prev === undefined) delete process.env.ComSpec;
-    else process.env.ComSpec = prev;
-  }
-});
-
-test('wrapDroidInvocation falls back when ComSpec is empty', () => {
-  const prev = process.env.ComSpec;
-  process.env.ComSpec = '';
-  try {
-    assert.deepEqual(wrapDroidInvocation('C\\\\npm\\\\droid.cmd', ['exec'], 'win32'), {
+  });
+  withEnv('ComSpec', '', () => {
+    assert.deepEqual(wrapDroidInvocation(shim, ['exec'], 'win32'), {
       execPath: 'cmd.exe',
-      execArgs: ['/c', 'C\\\\npm\\\\droid.cmd', 'exec'],
+      execArgs: ['/c', shim, 'exec'],
     });
-  } finally {
-    if (prev === undefined) delete process.env.ComSpec;
-    else process.env.ComSpec = prev;
-  }
-});
-
-test('windowsExecutableExtensions retains defaults for an empty PATHEXT', () => {
-  assert.deepEqual(windowsExecutableExtensions(''), ['.COM', '.EXE', '.BAT', '.CMD']);
-  assert.deepEqual(windowsExecutableExtensions('.EXE;.CMD'), ['.EXE', '.CMD']);
-});
-
-test('wrapDroidInvocation spawns the binary directly on POSIX', () => {
+  });
   assert.deepEqual(wrapDroidInvocation('/usr/local/bin/droid', ['exec'], 'darwin'), {
     execPath: '/usr/local/bin/droid',
     execArgs: ['exec'],
   });
+  assert.deepEqual(windowsExecutableExtensions(''), ['.COM', '.EXE', '.BAT', '.CMD']);
+  assert.deepEqual(windowsExecutableExtensions('.EXE;.CMD'), ['.EXE', '.CMD']);
 });
 
-test('hasCliLogin detects current Droid CLI credential markers', () => {
-  const authDir = mkdtempSync(join(tmpdir(), 'droid-auth-'));
-  try {
-    writeFileSync(join(authDir, 'auth.v2.key'), '');
-    assert.equal(hasCliLogin(authDir), true);
-  } finally {
-    rmSync(authDir, { recursive: true, force: true });
-  }
-});
-
-test('hasCliLogin ignores the retired auth.v2.file marker', () => {
-  const authDir = mkdtempSync(join(tmpdir(), 'droid-auth-'));
-  try {
-    writeFileSync(join(authDir, 'auth.v2.file'), '');
-    assert.equal(hasCliLogin(authDir), false);
-  } finally {
-    rmSync(authDir, { recursive: true, force: true });
+test('hasCliLogin detects the current credential marker, not the retired auth.v2.file', () => {
+  for (const [marker, loggedIn] of [
+    ['auth.v2.key', true],
+    ['auth.v2.file', false],
+  ] as const) {
+    const authDir = mkdtempSync(join(tmpdir(), 'droid-auth-'));
+    try {
+      writeFileSync(join(authDir, marker), '');
+      assert.equal(hasCliLogin(authDir), loggedIn);
+    } finally {
+      rmSync(authDir, { recursive: true, force: true });
+    }
   }
 });
 
