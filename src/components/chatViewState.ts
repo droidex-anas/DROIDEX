@@ -9,7 +9,7 @@ function startingCompose(current: AppState, tileId: string | null) {
   const tabId = current.tabStrip.activeTabId;
   return Object.values(current.pendingCompose)
     .filter((compose) => {
-      if (compose?.origin.tabId !== tabId) return false;
+      if (compose?.origin?.tabId !== tabId) return false;
       const sentFrom = compose.origin.tileId;
       return sentFrom === null || tileId === null || sentFrom === tileId;
     })

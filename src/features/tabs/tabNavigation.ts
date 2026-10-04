@@ -3,7 +3,7 @@
 // shows it; a strip change that focuses another place brings the live page
 // there.
 
-import type { Action } from '../../hooks/useStore';
+import type { Action, AppState } from '../../hooks/useStore';
 import {
   activeGrid,
   focusChatTile,
@@ -122,6 +122,25 @@ export function composeOrigin(strip: TabStrip): ComposeOrigin {
   return { tabId: strip.activeTabId, tileId: activeGrid(strip)?.focusedTileId ?? null };
 }
 
+/**
+ * A compose sent from a tile that closes has no place left. Its tab may later
+ * show a new chat, but that is not the one it was sent from.
+ */
+export function withComposeTileClosed(
+  pendingCompose: AppState['pendingCompose'],
+  tileId: string,
+): AppState['pendingCompose'] {
+  const sentFrom = Object.entries(pendingCompose).filter(
+    ([, compose]) => compose?.origin?.tileId === tileId,
+  );
+  if (sentFrom.length === 0) return pendingCompose;
+  const next = { ...pendingCompose };
+  for (const [clientRef, compose] of sentFrom) {
+    if (compose) next[clientRef] = { ...compose, origin: null };
+  }
+  return next;
+}
+
 // The tile still waiting for a chat sent from `origin`: the tile itself while
 // it shows a new chat, or the new chat of a tab split since the send.
 function waitingTile(grid: TileGrid, origin: ComposeOrigin): Tile | undefined {
@@ -137,11 +156,12 @@ function waitingTile(grid: TileGrid, origin: ComposeOrigin): Tile | undefined {
  */
 export function placeCreatedChat(
   state: TabStripSource,
-  origin: ComposeOrigin,
+  origin: ComposeOrigin | null,
   appSessionId: string,
 ): { tabStrip: TabStrip; focus: boolean } {
   const strip = state.tabStrip;
   const unplaced = { tabStrip: strip, focus: false };
+  if (!origin) return unplaced;
   const isActive = origin.tabId === strip.activeTabId;
   const live = livePage(state);
   const page = isActive ? live : strip.tabs.find((tab) => tab.id === origin.tabId)?.page;
@@ -154,11 +174,11 @@ export function placeCreatedChat(
       ? { tabStrip: strip, focus: true }
       : { tabStrip: withTabPage(strip, origin.tabId, chat), focus: false };
   }
+  const tile = waitingTile(page.grid, origin);
+  if (!tile) return unplaced;
   if (isMission(state, appSessionId)) {
     return isActive ? { tabStrip: openTab(strip, chat, live), focus: true } : unplaced;
   }
-  const tile = waitingTile(page.grid, origin);
-  if (!tile) return unplaced;
   if (isActive && tile.id === page.grid.focusedTileId) return { tabStrip: strip, focus: true };
   const grid = withTilePage(page.grid, tile.id, chat);
   return { tabStrip: withTabPage(strip, origin.tabId, { kind: 'tiles', grid }), focus: false };

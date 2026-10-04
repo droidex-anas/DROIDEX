@@ -315,9 +315,29 @@ test('a chat sent from a tile opens nowhere once the tile is gone or shows anoth
   assert.equal(closed.activeAppSessionId, 'a');
   assert.ok(Object.hasOwn(closed.sessions, 'n'));
 
+  // A new chat started after the tile closed is not the place it was sent from.
+  const restarted = reduce(
+    sent,
+    { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'new-chat') },
+    { type: 'START_CHAT', cwd: '/other', executionMode: 'local' },
+    created,
+  );
+  assert.deepEqual(strip(restarted), ['[new-chat]']);
+  assert.equal(restarted.activeAppSessionId, null);
+  assert.equal(restarted.draftChat?.cwd, '/other');
+
   const replaced = reduce(sent, { type: 'SET_ACTIVE_SESSION', id: 'b' }, created);
   assert.deepEqual(strip(replaced), ['[a|b*]']);
   assert.equal(replaced.activeAppSessionId, 'b');
+
+  const mission: Action = {
+    type: 'SESSION_CREATED',
+    clientRef: 'c1',
+    session: { ...session('m'), sessionPurpose: 'mission-control' },
+  };
+  const missionReplaced = reduce(sent, { type: 'SET_ACTIVE_SESSION', id: 'b' }, mission);
+  assert.deepEqual(strip(missionReplaced), ['[a|b*]']);
+  assert.equal(missionReplaced.activeAppSessionId, 'b');
 
   // The tab closed down to the tile is still the place the chat was sent from.
   const narrowed = reduce(sent, { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'a') }, created);

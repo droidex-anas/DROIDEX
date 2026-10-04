@@ -20,6 +20,7 @@ import {
   showChat,
   showNewChat,
   showView,
+  withComposeTileClosed,
   type ComposeOrigin,
 } from '../features/tabs/tabNavigation';
 import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
@@ -454,9 +455,13 @@ export interface AppState {
   skillsProviderSessionId?: string | null;
 
   // Attachments for the first message of a not-yet-created session, keyed by clientRef.
-  // `origin` is the place the compose was sent from; its chat opens there.
+  // `origin` is the place the compose was sent from; its chat opens there. It
+  // is null once that tile has closed.
   pendingCompose: Partial<
-    Record<string, { text: string; skills: string[]; files: string[]; origin: ComposeOrigin }>
+    Record<
+      string,
+      { text: string; skills: string[]; files: string[]; origin: ComposeOrigin | null }
+    >
   >;
   // Bounded settlement identity for the latest successful foreground create.
   // PromptInput uses it to distinguish that activation from a failure followed
@@ -2259,7 +2264,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // focuses. It runs against the new strip so it sees which chats stay on
       // screen; the strip it computes for itself is replaced.
       const navigation = enteredPlaceNavigation(state, tabStrip);
-      const entered: AppState = { ...state, tabStrip };
+      const pendingCompose =
+        action.type === 'CLOSE_TILE'
+          ? withComposeTileClosed(state.pendingCompose, action.tileId)
+          : state.pendingCompose;
+      const entered: AppState = { ...state, tabStrip, pendingCompose };
       const navigated = navigation ? reducer(entered, navigation) : entered;
       return withTilesSeen({ ...navigated, tabStrip }, Date.now());
     }
