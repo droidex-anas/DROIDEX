@@ -196,6 +196,46 @@ test('only three settled off-screen runtimes stay warm, longest idle released fi
   }
 });
 
+test('a failed release waits five minutes before counting toward the cap again', async () => {
+  let failRelease = true;
+  const h = ownerHarness({
+    retire: (appSessionId) => {
+      if (appSessionId === 'oldest' && failRelease)
+        return Promise.reject(new Error('flush failed'));
+      h.retired.push(appSessionId);
+      h.live.delete(appSessionId);
+      return Promise.resolve();
+    },
+  });
+  try {
+    h.add('oldest', 1_000);
+    h.add('second', 2_000);
+    h.add('third', 3_000);
+    h.add('newest', 4_000);
+    h.show();
+    const retryAt = h.clock.now + 5 * 60_000;
+
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, []);
+    assert.equal(h.errors.length, 1);
+    assert.equal(h.owner.armedFor(), retryAt);
+
+    h.clock.now = retryAt - 1;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, []);
+    assert.equal(h.errors.length, 1, 'a sweep during cooldown must not retry the release');
+    assert.equal(h.statuses.length, 1);
+
+    failRelease = false;
+    h.clock.now = retryAt + 1;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest']);
+    assert.equal(h.owner.armedFor(), 2_000 + IDLE_MS);
+  } finally {
+    h.owner.stop();
+  }
+});
+
 test('nothing is retirable until the renderer has reported what is on screen', async () => {
   const h = ownerHarness();
   h.add('background', 0);

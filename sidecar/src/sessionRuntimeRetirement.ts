@@ -8,6 +8,8 @@ import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 // a released chat warms its runtime while the user types (sessionRuntimeWarmUp).
 export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
 const SESSION_RUNTIME_IDLE_LIMIT = 3;
+// A failed close must not retry and emit diagnostics every turn of the event loop.
+const SESSION_RUNTIME_RELEASE_RETRY_MS = 5 * 60_000;
 
 const SESSION_RUNTIME_RETIRED_STATUS =
   'Session runtime released to free memory. Sending a message restores it.';
@@ -159,6 +161,7 @@ export class SessionRuntimeRetirement {
   // When each session left the screen. A session read for twenty minutes
   // without a reply must not count as idle for those twenty minutes.
   private readonly leftScreenAt = new Map<string, number>();
+  private readonly releaseRetryAt = new Map<string, number>();
   private stopped = false;
   private sweeping: Promise<void> | null = null;
 
@@ -182,13 +185,18 @@ export class SessionRuntimeRetirement {
       return;
     }
     const now = this.dependencies.now();
-    this.timer.armFor(nextSessionRetirementAt(this.facts(), now, this.dependencies.idleMs), now);
+    let dueAt = nextSessionRetirementAt(this.facts(now), now, this.dependencies.idleMs);
+    for (const retryAt of this.releaseRetryAt.values()) {
+      if (retryAt > now && (dueAt === undefined || retryAt < dueAt)) dueAt = retryAt;
+    }
+    this.timer.armFor(dueAt, now);
   }
 
   stop(): void {
     this.stopped = true;
     this.timer.cancel();
     this.leftScreenAt.clear();
+    this.releaseRetryAt.clear();
   }
 
   armedFor(): number | undefined {
@@ -207,33 +215,40 @@ export class SessionRuntimeRetirement {
 
   private async sweepOnce(): Promise<void> {
     const d = this.dependencies;
-    for (const appSessionId of retirableSessions(this.facts(), d.now(), d.idleMs)) {
+    const startedAt = d.now();
+    for (const appSessionId of retirableSessions(this.facts(startedAt), startedAt, d.idleMs)) {
       if (this.stopped) break;
       // Each release awaits, and a prompt can reach a session still waiting in
       // this queue during that window, so the decision is taken again here.
-      if (!retirableSessions(this.facts(), d.now(), d.idleMs).includes(appSessionId)) continue;
+      const now = d.now();
+      if (!retirableSessions(this.facts(now), now, d.idleMs).includes(appSessionId)) continue;
       d.appendProgress(appSessionId, SESSION_RUNTIME_RETIRED_STATUS);
       try {
         await d.retire(appSessionId);
       } catch (error) {
+        this.releaseRetryAt.set(appSessionId, d.now() + SESSION_RUNTIME_RELEASE_RETRY_MS);
         d.emitError(
           appSessionId,
           `Could not release this session's idle runtime: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    // The sweep supersedes wakeups armed while a release was pending.
+    this.timer.cancel();
     this.arm();
   }
 
   // Nothing is retirable until the renderer has told us what the user is
   // looking at: without that signal we cannot tell a background session from
   // the one on screen.
-  private facts(): SessionRetirementFacts[] {
+  private facts(now: number): SessionRetirementFacts[] {
     const live = this.dependencies.liveSessions();
     this.forgetClosedSessions(live);
     const onScreen = this.dependencies.onScreenAppSessionIds();
     if (!onScreen) return [];
-    return live.map((session) => this.describe(session, onScreen));
+    return live
+      .filter((session) => (this.releaseRetryAt.get(session.summary.appSessionId) ?? 0) <= now)
+      .map((session) => this.describe(session, onScreen));
   }
 
   private describe(live: LiveSession, onScreen: ReadonlySet<string>): SessionRetirementFacts {
@@ -258,10 +273,12 @@ export class SessionRuntimeRetirement {
   }
 
   private forgetClosedSessions(live: readonly LiveSession[]): void {
-    if (this.leftScreenAt.size === 0) return;
+    if (this.leftScreenAt.size === 0 && this.releaseRetryAt.size === 0) return;
     const open = new Set(live.map((session) => session.summary.appSessionId));
-    for (const appSessionId of this.leftScreenAt.keys()) {
-      if (!open.has(appSessionId)) this.leftScreenAt.delete(appSessionId);
+    for (const timestamps of [this.leftScreenAt, this.releaseRetryAt]) {
+      for (const appSessionId of timestamps.keys()) {
+        if (!open.has(appSessionId)) timestamps.delete(appSessionId);
+      }
     }
   }
 }
