@@ -1,27 +1,16 @@
-// A top-level session's provider runtime is an OS process, and an idle one is
-// not cheap: measured on this machine by PID, a Claude Code CLI holds 291 to
-// 295 MiB, a `codex app-server` thread about 241 MiB, and a Droid runtime about
-// 367 MiB across 17 threads. Nothing releases one during an app run: the
-// renderer never sends session.close, so eight open workspaces hold eight of
-// them until quit. These rules release the ones the user has demonstrably
-// walked away from. The transcript is served from history either way.
+// Provider runtimes cost hundreds of MiB each; keep at most three settled
+// off-screen runtimes live, releasing the longest idle first. History survives.
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionPhase } from './protocol.js';
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 
-// Six times the child budget, because of where the cost lands rather than how
-// large it is: a child pays behind its own loading state, while a session used
-// to pay after the user had typed a prompt and pressed enter. Selecting the
-// chat now starts its runtime first (sessionRuntimeWarmUp), so that reload runs
-// while the user types instead of after: measured on this machine, a Claude
-// Code session answers again 2.0 to 2.1 s after the resume call, and a Codex
-// process opens a thread in about 0.2 s. Thirty minutes stands; the memory
-// figures above argue about how many runtimes may sit idle, not about how long
-// one the user has walked away from should wait.
+// The three most recently idle runtimes retain the 30-minute budget; selecting
+// a released chat warms its runtime while the user types (sessionRuntimeWarmUp).
 export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
+const SESSION_RUNTIME_IDLE_LIMIT = 3;
 
 const SESSION_RUNTIME_RETIRED_STATUS =
-  'Session runtime released after 30 minutes idle to free memory. Sending a message restores it.';
+  'Session runtime released to free memory. Sending a message restores it.';
 
 // `streaming` is the authority on whether a turn is in flight: nothing moves a
 // settled session out of 'running' or 'planning'. These phases mean the session
@@ -122,20 +111,27 @@ export function retirableSessions(
   now: number,
   idleMs: number,
 ): string[] {
-  const due: string[] = [];
+  const eligible: SessionRetirementFacts[] = [];
   for (const session of facts) {
-    if (isDueForRetirement(session, now, idleMs)) due.push(session.appSessionId);
+    if (isRetirableSession(session)) eligible.push(session);
   }
-  return due;
+  eligible.sort((a, b) => a.idleSince - b.idleSince);
+  const excess = eligible.length - SESSION_RUNTIME_IDLE_LIMIT;
+  return eligible
+    .filter((session, index) => index < excess || isDueForRetirement(session, now, idleMs))
+    .map((session) => session.appSessionId);
 }
 
 export function nextSessionRetirementAt(
   facts: Iterable<SessionRetirementFacts>,
+  now: number,
   idleMs: number,
 ): number | undefined {
   let earliest: number | undefined;
+  let count = 0;
   for (const session of facts) {
     if (!isRetirableSession(session)) continue;
+    if (++count > SESSION_RUNTIME_IDLE_LIMIT) return now;
     const dueAt = session.idleSince + idleMs;
     if (earliest === undefined || dueAt < earliest) earliest = dueAt;
   }
@@ -189,10 +185,8 @@ export class SessionRuntimeRetirement {
       this.timer.cancel();
       return;
     }
-    this.timer.armFor(
-      nextSessionRetirementAt(this.facts(), this.dependencies.idleMs),
-      this.dependencies.now(),
-    );
+    const now = this.dependencies.now();
+    this.timer.armFor(nextSessionRetirementAt(this.facts(), now, this.dependencies.idleMs), now);
   }
 
   stop(): void {
@@ -205,9 +199,8 @@ export class SessionRuntimeRetirement {
     return this.timer.armedFor();
   }
 
-  // Release the provider process behind every session settled and untouched
-  // past the idle budget. The transcript, history, and sidebar entry survive;
-  // the next prompt reloads the provider session.
+  // Release settled off-screen runtimes over the cap or past the idle budget.
+  // The transcript, history, and sidebar entry survive.
   sweep(): Promise<void> {
     if (this.sweeping) return this.sweeping;
     this.sweeping = this.sweepOnce().finally(() => {
@@ -222,8 +215,7 @@ export class SessionRuntimeRetirement {
       if (this.stopped) break;
       // Each release awaits, and a prompt can reach a session still waiting in
       // this queue during that window, so the decision is taken again here.
-      const current = this.factsFor(appSessionId);
-      if (!current || !isDueForRetirement(current, d.now(), d.idleMs)) continue;
+      if (!retirableSessions(this.facts(), d.now(), d.idleMs).includes(appSessionId)) continue;
       d.appendProgress(appSessionId, SESSION_RUNTIME_RETIRED_STATUS);
       try {
         await d.retire(appSessionId);
@@ -246,15 +238,6 @@ export class SessionRuntimeRetirement {
     const onScreen = this.dependencies.onScreenAppSessionIds();
     if (!onScreen) return [];
     return live.map((session) => this.describe(session, onScreen));
-  }
-
-  private factsFor(appSessionId: string): SessionRetirementFacts | undefined {
-    const onScreen = this.dependencies.onScreenAppSessionIds();
-    if (!onScreen) return undefined;
-    const live = this.dependencies
-      .liveSessions()
-      .find((session) => session.summary.appSessionId === appSessionId);
-    return live ? this.describe(live, onScreen) : undefined;
   }
 
   private describe(live: LiveSession, onScreen: ReadonlySet<string>): SessionRetirementFacts {

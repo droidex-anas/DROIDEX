@@ -52,12 +52,12 @@ test('a settled background session is retirable once it passes the idle budget, 
 
   // The next deadline follows the session that went idle first.
   const two = [facts('older', 1_000), facts('newer', 4_000)];
-  assert.equal(nextSessionRetirementAt(two, IDLE_MS), 1_000 + IDLE_MS);
+  assert.equal(nextSessionRetirementAt(two, 10_000, IDLE_MS), 1_000 + IDLE_MS);
   assert.equal(
-    nextSessionRetirementAt([facts('busy', 1_000, { streaming: true })], IDLE_MS),
+    nextSessionRetirementAt([facts('busy', 1_000, { streaming: true })], 10_000, IDLE_MS),
     undefined,
   );
-  assert.equal(nextSessionRetirementAt([], IDLE_MS), undefined);
+  assert.equal(nextSessionRetirementAt([], 10_000, IDLE_MS), undefined);
 });
 
 test('a session on screen, with work, unsaved intent, or a resource in use is never retirable', () => {
@@ -161,6 +161,40 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
     },
   };
 }
+
+test('only three settled off-screen runtimes stay warm, longest idle released first', async () => {
+  const h = ownerHarness();
+  try {
+    h.add('newest', 4_000);
+    h.add('oldest', 1_000);
+    h.add('second', 2_000);
+    h.add('third', 3_000);
+    h.add('visible', 0);
+    h.add('working', 0, { streaming: true });
+    h.show('visible');
+
+    assert.equal(h.owner.armedFor(), h.clock.now, 'exceeding the cap arms an immediate sweep');
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest']);
+    assert.deepEqual(h.statuses, [
+      {
+        appSessionId: 'oldest',
+        text: 'Session runtime released to free memory. Sending a message restores it.',
+      },
+    ]);
+
+    h.clock.now = 2_000 + IDLE_MS - 1;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest'], 'the remaining three keep their idle budget');
+
+    h.clock.now = 4_000 + IDLE_MS;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest', 'second', 'third', 'newest']);
+    assert.deepEqual([...h.live.keys()], ['visible', 'working']);
+  } finally {
+    h.owner.stop();
+  }
+});
 
 test('nothing is retirable until the renderer has reported what is on screen', async () => {
   const h = ownerHarness();

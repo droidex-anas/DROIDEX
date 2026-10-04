@@ -599,7 +599,7 @@ test('a settled background session past the budget is released, says why, and re
       'the client must learn the runtime is gone',
     );
     assert.ok(
-      appendedTexts(h, session).some((text) => /released after 30 minutes idle/.test(text)),
+      appendedTexts(h, session).some((text) => /released to free memory/.test(text)),
       'a retired session must leave a visible reason in its transcript',
     );
 
