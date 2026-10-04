@@ -177,25 +177,71 @@ export function formatChord(chord: string): string {
   return [...names, parsed.key].join('+');
 }
 
+/** The Command and Control keys a chord needs held on this platform. */
+function heldModifiers(chord: Chord): { meta: boolean; control: boolean } {
+  return { meta: APPLE && chord.meta, control: APPLE ? chord.ctrl : chord.ctrl || chord.meta };
+}
+
 export function matchesChord(event: ChordEvent, chord: string): boolean {
   const parsed = parseChord(chord);
   if (!parsed) return false;
-  const wantMeta = APPLE && parsed.meta;
-  const wantCtrl = APPLE ? parsed.ctrl : parsed.ctrl || parsed.meta;
+  const held = heldModifiers(parsed);
   return (
-    event.metaKey === wantMeta &&
-    event.ctrlKey === wantCtrl &&
+    event.metaKey === held.meta &&
+    event.ctrlKey === held.control &&
     event.altKey === parsed.alt &&
     event.shiftKey === parsed.shift &&
     keyFromEvent(event) === parsed.key
   );
 }
 
+const TAB_NUMBER_CHORDS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+  (digit) => `Meta+${digit}`,
+);
+
 /** The fixed browser chords that pick a tab by position: 1 to 9, or null. */
 export function tabNumberFromEvent(event: ChordEvent): number | null {
   const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
   if (!digit || !matchesChord(event, `Meta+${digit}`)) return null;
   return Number(digit);
+}
+
+/** A chord in the terms the desktop host compares with a key press in the native browser. */
+export interface NativeBrowserChord {
+  meta: boolean;
+  control: boolean;
+  alt: boolean;
+  shift: boolean;
+  /** The physical key (`KeyD`, `BracketRight`), or null to compare `key` instead. */
+  code: string | null;
+  key: string;
+}
+
+const CODE_BY_PUNCTUATION = new Map(
+  Object.entries(PUNCTUATION_BY_CODE).map(([code, key]) => [key, code]),
+);
+
+function codeForKey(key: string): string | null {
+  if (/^[A-Z]$/.test(key)) return `Key${key}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  return CODE_BY_PUNCTUATION.get(key) ?? null;
+}
+
+/** Every chord this window acts on, for the desktop host to take from a focused browser page. */
+export function nativeBrowserChords(bindings: ShortcutBindings): NativeBrowserChord[] {
+  return [...Object.values(bindings), ...TAB_NUMBER_CHORDS].flatMap((chord) => {
+    const parsed = parseChord(chord);
+    if (!parsed) return [];
+    return [
+      {
+        ...heldModifiers(parsed),
+        alt: parsed.alt,
+        shift: parsed.shift,
+        code: codeForKey(parsed.key),
+        key: parsed.key,
+      },
+    ];
+  });
 }
 
 /** Browser convention: a primary-modifier click or a middle click opens a new tab. */

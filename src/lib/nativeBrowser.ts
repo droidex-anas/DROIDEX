@@ -1,4 +1,5 @@
 import { isDesktop } from './desktop';
+import type { NativeBrowserChord } from './shortcuts';
 import type {
   BrowserBox,
   BrowserConsoleEvent,
@@ -52,6 +53,11 @@ export interface NativeBrowserDesignPrompt {
   selection: NativeBrowserSelection;
   instruction: string;
 }
+
+/** A key press the desktop host took from a browser page because it matched an app chord. */
+export type NativeBrowserKeyPress = Required<
+  Pick<KeyboardEventInit, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'repeat'>
+>;
 
 export interface NativeBrowserAgentAction {
   requestId: string;
@@ -181,24 +187,32 @@ export async function runNativeBrowserAgentAction(
       fn();
     };
     const timeout = window.setTimeout(() => {
-      finish(() => reject(new Error(`Droid Control browser action ${request.action} timed out.`)));
+      finish(() => {
+        reject(new Error(`Droid Control browser action ${request.action} timed out.`));
+      });
     }, timeoutMs);
 
     unlisten = window.droidControl!.onNativeBrowserAgentResult((result) => {
       if (result.requestId !== request.requestId) return;
       window.clearTimeout(timeout);
-      finish(() => resolve(result));
+      finish(() => {
+        resolve(result);
+      });
     });
     window
       .droidControl!.nativeBrowserAgentAction(request)
       .then((result) => {
-        if (!result || result.requestId !== request.requestId) return;
+        if (result?.requestId !== request.requestId) return;
         window.clearTimeout(timeout);
-        finish(() => resolve(result));
+        finish(() => {
+          resolve(result);
+        });
       })
       .catch((err) => {
         window.clearTimeout(timeout);
-        finish(() => reject(err));
+        finish(() => {
+          reject(err);
+        });
       });
   });
 }
@@ -346,6 +360,20 @@ export async function onNativeBrowserLoadFailed(
   return window.droidControl!.onNativeBrowserLoadFailed(handler);
 }
 
+/**
+ * Has the desktop host take `chords` from a focused browser page, whose key
+ * presses never reach this window, and hand each press to `onPress`.
+ */
+export function forwardNativeBrowserShortcuts(
+  chords: NativeBrowserChord[],
+  onPress: (press: NativeBrowserKeyPress) => void,
+): () => void {
+  const desktop = window.droidControl;
+  if (!desktop) return () => undefined;
+  void desktop.nativeBrowserSetShortcuts(chords);
+  return desktop.onNativeBrowserShortcut(onPress);
+}
+
 export async function waitForNextNativeBrowserLoad(
   browserSessionId: string,
   timeoutMs = 8_000,
@@ -361,21 +389,26 @@ export async function waitForNextNativeBrowserLoad(
       unlisten?.();
       fn();
     };
-    const timeout = window.setTimeout(
-      () => finish(() => reject(new Error('Droid Control browser page load timed out.'))),
-      timeoutMs,
-    );
+    const timeout = window.setTimeout(() => {
+      finish(() => {
+        reject(new Error('Droid Control browser page load timed out.'));
+      });
+    }, timeoutMs);
     void onNativeBrowserLoaded((event) => {
       if (event.browserSessionId !== browserSessionId) return;
       window.clearTimeout(timeout);
-      finish(() => resolve(event));
+      finish(() => {
+        resolve(event);
+      });
     })
       .then((nextUnlisten) => {
         unlisten = nextUnlisten;
       })
       .catch((err) => {
         window.clearTimeout(timeout);
-        finish(() => reject(err));
+        finish(() => {
+          reject(err);
+        });
       });
   });
 }

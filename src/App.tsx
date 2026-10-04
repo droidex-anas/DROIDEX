@@ -24,6 +24,7 @@ import {
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
 import { getApiKey, setAppIcon, terminalHasChildren } from './lib/desktop';
+import { forwardNativeBrowserShortcuts } from './lib/nativeBrowser';
 import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import {
@@ -77,6 +78,7 @@ import {
   SHORTCUT_DEFINITIONS,
   formatChord,
   matchesChord,
+  nativeBrowserChords,
   tabNumberFromEvent,
   type ShortcutAction,
 } from './lib/shortcuts';
@@ -718,8 +720,14 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', handler);
+    const stopForwarding = embedded
+      ? null
+      : forwardNativeBrowserShortcuts(nativeBrowserChords(state.shortcutBindings), (press) => {
+          handler(new KeyboardEvent('keydown', press));
+        });
     return () => {
       window.removeEventListener('keydown', handler);
+      stopForwarding?.();
     };
   }, [dispatch, embedded, openUtilityTool, state.shortcutBindings, store, toggleUtilityPane]);
 

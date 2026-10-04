@@ -8,6 +8,7 @@ import {
   defaultShortcutBindings,
   formatChord,
   matchesChord,
+  nativeBrowserChords,
   parseChord,
   serializeChord,
   tabNumberFromEvent,
@@ -117,3 +118,26 @@ test('tabNumberFromEvent reads only the bare primary-modifier digits 1 to 9', ()
   assert.equal(tabNumberFromEvent(event({ key: '3', code: 'Digit3' })), null);
 });
 
+test('the native browser hands back every bound chord and tab digit as the press that matches it', () => {
+  const bindings = { ...defaultShortcutBindings(), openSettings: 'Meta+F5' };
+  const chords = nativeBrowserChords(bindings);
+  assert.equal(chords.length, SHORTCUT_DEFINITIONS.length + 9);
+  for (const [index, binding] of Object.values(bindings).entries()) {
+    const chord = chords[index];
+    const press = event({
+      key: chord.key,
+      code: chord.code ?? '',
+      metaKey: chord.meta,
+      ctrlKey: chord.control,
+      altKey: chord.alt,
+      shiftKey: chord.shift,
+    });
+    assert.equal(matchesChord(press, binding), true, binding);
+  }
+  assert.deepEqual(
+    chords.find((chord) => chord.key === ']' && chord.shift),
+    { meta: false, control: true, alt: false, shift: true, code: 'BracketRight', key: ']' },
+  );
+  assert.equal(chords.find((chord) => chord.key === 'F5')?.code, null);
+  assert.equal(chords.at(-1)?.code, 'Digit9');
+});
