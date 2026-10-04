@@ -356,10 +356,35 @@ test('a chat sent from a tile opens nowhere once the tile is gone or shows anoth
   assert.deepEqual(strip(missionReplaced), ['[a|b*]']);
   assert.equal(missionReplaced.activeAppSessionId, 'b');
 
-  // The tab closed down to the tile is still the place the chat was sent from.
+  // The tab closed down to the tile is still the place the chat was sent from,
+  // until it shows another chat.
   const narrowed = reduce(sent, { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'a') }, created);
   assert.deepEqual(strip(narrowed), ['[n]']);
   assert.equal(narrowed.activeAppSessionId, 'n');
+  const narrowedReplaced = reduce(
+    sent,
+    { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'a') },
+    { type: 'SET_ACTIVE_SESSION', id: 'b' },
+    created,
+  );
+  assert.deepEqual(strip(narrowedReplaced), ['[b]']);
+  assert.equal(narrowedReplaced.activeAppSessionId, 'b');
+});
+
+test('a chat sent from a tab that now shows another chat opens nowhere', () => {
+  const sent = reduce(withChats('a', 'b'), { type: 'OPEN_NEW_CHAT_TAB' }, ...send('c1'));
+  const created = reduce(
+    sent,
+    { type: 'SET_ACTIVE_SESSION', id: 'b' },
+    {
+      type: 'SESSION_CREATED',
+      clientRef: 'c1',
+      session: session('n'),
+    },
+  );
+  assert.deepEqual(strip(created), ['a', '[b]']);
+  assert.equal(created.activeAppSessionId, 'b');
+  assert.ok(Object.hasOwn(created.sessions, 'n'));
 });
 
 test('a chat still preparing when its tile closes opens nowhere', () => {

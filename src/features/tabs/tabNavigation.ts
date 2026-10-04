@@ -141,10 +141,9 @@ export function withComposeTileClosed(state: ComposeOrigins, tileId: string): Co
 
 /**
  * Where a chat sent from `origin` opens, and whether that is the focused place.
- * The tile it was sent from takes it: a tab that is not split whatever it shows
- * by then, a tile of a split tab only while it still shows the new chat, so no
- * other chat is replaced. A mission started from a split tab opens in a tab of
- * its own.
+ * The tile it was sent from takes it, split or not, only while that tile still
+ * shows the new chat, so no other chat or view is replaced. A mission started
+ * from a split tab opens in a tab of its own.
  */
 export function placeCreatedChat(
   state: TabStripSource,
@@ -161,7 +160,7 @@ export function placeCreatedChat(
   const page = isActive ? live : tab.page;
   const chat: TilePage = { kind: 'chat', appSessionId };
   if (page.kind !== 'tiles') {
-    if (origin.tileId !== tab.tileId) return unplaced;
+    if (origin.tileId !== tab.tileId || page.kind !== 'new-chat') return unplaced;
     return isActive
       ? { tabStrip: strip, focus: true }
       : { tabStrip: withTabPage(strip, tab.id, chat), focus: false };
