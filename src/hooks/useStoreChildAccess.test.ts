@@ -222,13 +222,13 @@ test('switching parents, starting a draft, or creating a parent invalidates an o
       'create a parent',
       (state) =>
         reducer(
-          reducer(state, {
+          reducer(reducer(state, { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'hold-1' }), {
             type: 'SET_PENDING_COMPOSE',
             clientRef: 'new-parent',
             text: 'start parent',
             skills: [],
             files: [],
-            origin: { tabId: state.tabStrip.activeTabId, tileId: null },
+            originHoldId: 'hold-1',
           }),
           { type: 'SESSION_CREATED', clientRef: 'new-parent', session: session('parent-b') },
         ),

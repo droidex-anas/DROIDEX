@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type Action, type AppState } from '../../hooks/useStore';
-import { composeOrigin } from './tabNavigation';
 import { activeTabDraft, loadTabStrip, saveTabStrip } from './tabStorage';
 import { livePage, tabPage, type TabPage } from './tabStrip';
 import { gridTiles } from './tileGrid';
@@ -73,6 +72,27 @@ function splitWith(appSessionId: string | null): Action {
   return { type: 'SPLIT_TILE', targetTileId: null, edge: 'right', appSessionId };
 }
 
+// What the composer dispatches once a send holding `holdId` is ready to create.
+function registerCompose(holdId: string, clientRef: string): Action {
+  return {
+    type: 'SET_PENDING_COMPOSE',
+    clientRef,
+    text: 'hi',
+    skills: [],
+    files: [],
+    originHoldId: holdId,
+  };
+}
+
+// A send from the focused place that is ready at once.
+function send(clientRef: string): Action[] {
+  return [
+    { type: 'HOLD_COMPOSE_ORIGIN', holdId: clientRef },
+    registerCompose(clientRef, clientRef),
+    { type: 'RELEASE_COMPOSE_ORIGIN', holdId: clientRef },
+  ];
+}
+
 function tabIdShowing(state: AppState, label: string): string {
   const index = strip(state).findIndex((entry) => entry.replace(/[[\]]/g, '') === label);
   return state.tabStrip.tabs[index].id;
@@ -141,20 +161,17 @@ test('closing the last tab leaves a new chat in the same workspace', () => {
 });
 
 test('a chat sent from a tab the user has left opens in that tab', () => {
-  const sending = reduce(withChats('a'), { type: 'OPEN_NEW_CHAT_TAB' });
+  const sending = reduce(
+    withChats('a'),
+    { type: 'OPEN_NEW_CHAT_TAB' },
+    { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'h1' },
+  );
   const sendingTabId = sending.tabStrip.activeTabId;
   // The user leaves while the folder is prepared, before the compose registers.
   const created = reduce(
     sending,
     { type: 'ACTIVATE_TAB', tabId: tabIdShowing(sending, 'a') },
-    {
-      type: 'SET_PENDING_COMPOSE',
-      clientRef: 'c1',
-      text: 'hi',
-      skills: [],
-      files: [],
-      origin: { tabId: sendingTabId, tileId: null },
-    },
+    registerCompose('h1', 'c1'),
     { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') },
   );
   assert.deepEqual(strip(created), ['[a]', 'n']);
@@ -267,15 +284,7 @@ test('a split tab holds one new chat, and a chat sent from it opens in its tile'
   );
   assert.deepEqual(strip(again), ['[a|new-chat*]']);
 
-  const compose = (clientRef: string): Action => ({
-    type: 'SET_PENDING_COMPOSE',
-    clientRef,
-    text: 'hi',
-    skills: [],
-    files: [],
-    origin: composeOrigin(again.tabStrip),
-  });
-  const created = reduce(again, compose('c1'), {
+  const created = reduce(again, ...send('c1'), {
     type: 'SESSION_CREATED',
     clientRef: 'c1',
     session: session('n'),
@@ -286,7 +295,7 @@ test('a split tab holds one new chat, and a chat sent from it opens in its tile'
   // The user moves to another tile before the create lands.
   const left = reduce(
     again,
-    compose('c2'),
+    ...send('c2'),
     { type: 'FOCUS_TILE', tileId: tileIdShowing(again, 'a') },
     { type: 'SESSION_CREATED', clientRef: 'c2', session: session('m') },
   );
@@ -295,15 +304,7 @@ test('a split tab holds one new chat, and a chat sent from it opens in its tile'
 });
 
 test('a chat sent from a tile opens nowhere once the tile is gone or shows another chat', () => {
-  const split = reduce(withChats('a', 'b'), splitWith(null));
-  const sent = reduce(split, {
-    type: 'SET_PENDING_COMPOSE',
-    clientRef: 'c1',
-    text: 'hi',
-    skills: [],
-    files: [],
-    origin: composeOrigin(split.tabStrip),
-  });
+  const sent = reduce(withChats('a', 'b'), splitWith(null), ...send('c1'));
   const created: Action = { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') };
 
   const closed = reduce(
@@ -325,6 +326,22 @@ test('a chat sent from a tile opens nowhere once the tile is gone or shows anoth
   assert.deepEqual(strip(restarted), ['[new-chat]']);
   assert.equal(restarted.activeAppSessionId, null);
   assert.equal(restarted.draftChat?.cwd, '/other');
+
+  // Closed down to the tile and split again, the tab still knows which tile it is.
+  const resplit = reduce(
+    sent,
+    { type: 'CLOSE_TILE', tileId: tileIdShowing(sent, 'a') },
+    splitWith('a'),
+  );
+  const resplitRestarted = reduce(
+    resplit,
+    { type: 'CLOSE_TILE', tileId: tileIdShowing(resplit, 'new-chat') },
+    { type: 'START_CHAT', cwd: '/other', executionMode: 'local' },
+    created,
+  );
+  assert.deepEqual(strip(resplitRestarted), ['[new-chat]']);
+  assert.equal(resplitRestarted.activeAppSessionId, null);
+  assert.equal(resplitRestarted.draftChat?.cwd, '/other');
 
   const replaced = reduce(sent, { type: 'SET_ACTIVE_SESSION', id: 'b' }, created);
   assert.deepEqual(strip(replaced), ['[a|b*]']);
@@ -350,18 +367,10 @@ test('a chat still preparing when its tile closes opens nowhere', () => {
     type: 'HOLD_COMPOSE_ORIGIN',
     holdId: 'h1',
   });
-  // What the composer does once the folder is ready.
   const register = (state: AppState): AppState =>
     reduce(
       state,
-      {
-        type: 'SET_PENDING_COMPOSE',
-        clientRef: 'c1',
-        text: 'hi',
-        skills: [],
-        files: [],
-        origin: state.heldComposeOrigins['h1'] ?? null,
-      },
+      registerCompose('h1', 'c1'),
       { type: 'RELEASE_COMPOSE_ORIGIN', holdId: 'h1' },
       { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') },
     );
@@ -470,24 +479,25 @@ test('stored tabs load with the live page and without invalid or duplicate entri
       draftChat: draft,
       tabStrip: {
         tabs: [
-          { id: 't1', page: { kind: 'chat', appSessionId: 'a' } },
-          { id: 't2', page: { kind: 'chat', appSessionId: 'a' } },
-          { id: 't3', page: { kind: 'unknown' } as never },
-          { id: 't4', page: { kind: 'projects' } },
+          { id: 't1', page: { kind: 'chat', appSessionId: 'a' }, tileId: 'u1' },
+          { id: 't2', page: { kind: 'chat', appSessionId: 'a' }, tileId: 'u2' },
+          { id: 't3', page: { kind: 'unknown' } as never, tileId: 'u3' },
+          { id: 't4', page: { kind: 'projects' }, tileId: 'u4' },
         ],
         activeTabId: 't4',
         closedTabs: [{ page: { kind: 'projects' }, index: 0 }],
       },
     });
     const loaded = loadTabStrip();
-    assert.deepEqual(loaded, {
-      tabs: [
+    assert.deepEqual(
+      loaded.tabs.map((tab) => ({ id: tab.id, page: tab.page })),
+      [
         { id: 't1', page: { kind: 'chat', appSessionId: 'a' } },
         { id: 't4', page: { kind: 'new-chat', draft } },
       ],
-      activeTabId: 't4',
-      closedTabs: [],
-    });
+    );
+    assert.equal(loaded.activeTabId, 't4');
+    assert.deepEqual(loaded.closedTabs, []);
     assert.deepEqual(activeTabDraft(loaded), draft);
   });
 });

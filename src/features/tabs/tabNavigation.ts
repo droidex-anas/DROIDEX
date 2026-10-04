@@ -6,6 +6,7 @@
 import type { Action, AppState } from '../../hooks/useStore';
 import {
   activeGrid,
+  activeTab,
   focusChatTile,
   focusTabShowing,
   focusedPage,
@@ -20,15 +21,7 @@ import {
   type TabStripSource,
   type ViewPage,
 } from './tabStrip';
-import {
-  focusTile,
-  gridTiles,
-  newChatTile,
-  withTilePage,
-  type Tile,
-  type TileGrid,
-  type TilePage,
-} from './tileGrid';
+import { focusTile, gridTiles, newChatTile, withTilePage, type TilePage } from './tileGrid';
 
 // The existing navigation action that shows `page` in the focused place.
 function pageNavigation(page: FocusedPage): Action {
@@ -112,14 +105,17 @@ export function showView(state: TabStripSource, view: ViewPage): TabStrip {
   return openTab(state.tabStrip, view, live);
 }
 
-/** Where a compose was sent from: its tab, and its tile when that tab was split. */
+/** Where a compose was sent from: its tab, and the tile it was, split or not. */
 export interface ComposeOrigin {
   tabId: string;
-  tileId: string | null;
+  tileId: string;
 }
 
-export function composeOrigin(strip: TabStrip): ComposeOrigin {
-  return { tabId: strip.activeTabId, tileId: activeGrid(strip)?.focusedTileId ?? null };
+export function composeOrigin(strip: TabStrip): ComposeOrigin | null {
+  const tab = activeTab(strip);
+  if (!tab) return null;
+  const tileId = tab.page.kind === 'tiles' ? tab.page.grid.focusedTileId : tab.tileId;
+  return { tabId: tab.id, tileId };
 }
 
 type ComposeOrigins = Pick<AppState, 'pendingCompose' | 'heldComposeOrigins'>;
@@ -143,18 +139,12 @@ export function withComposeTileClosed(state: ComposeOrigins, tileId: string): Co
   return { pendingCompose, heldComposeOrigins };
 }
 
-// The tile still waiting for a chat sent from `origin`: the tile itself while
-// it shows a new chat, or the new chat of a tab split since the send.
-function waitingTile(grid: TileGrid, origin: ComposeOrigin): Tile | undefined {
-  if (origin.tileId === null) return newChatTile(grid);
-  return gridTiles(grid).find((tile) => tile.id === origin.tileId && tile.page.kind === 'new-chat');
-}
-
 /**
  * Where a chat sent from `origin` opens, and whether that is the focused place.
- * A tab that was not split takes it whatever it shows by then; a tile only
- * while it still shows the new chat, so no other chat is replaced. A mission
- * started from a split tab opens in a tab of its own.
+ * The tile it was sent from takes it: a tab that is not split whatever it shows
+ * by then, a tile of a split tab only while it still shows the new chat, so no
+ * other chat is replaced. A mission started from a split tab opens in a tab of
+ * its own.
  */
 export function placeCreatedChat(
   state: TabStripSource,
@@ -164,24 +154,26 @@ export function placeCreatedChat(
   const strip = state.tabStrip;
   const unplaced = { tabStrip: strip, focus: false };
   if (!origin) return unplaced;
-  const isActive = origin.tabId === strip.activeTabId;
+  const tab = strip.tabs.find((entry) => entry.id === origin.tabId);
+  if (!tab) return unplaced;
+  const isActive = tab.id === strip.activeTabId;
   const live = livePage(state);
-  const page = isActive ? live : strip.tabs.find((tab) => tab.id === origin.tabId)?.page;
+  const page = isActive ? live : tab.page;
   const chat: TilePage = { kind: 'chat', appSessionId };
-  if (!page) return unplaced;
   if (page.kind !== 'tiles') {
-    // A split tab closed down to its new chat is still that place.
-    if (origin.tileId !== null && page.kind !== 'new-chat') return unplaced;
+    if (origin.tileId !== tab.tileId) return unplaced;
     return isActive
       ? { tabStrip: strip, focus: true }
-      : { tabStrip: withTabPage(strip, origin.tabId, chat), focus: false };
+      : { tabStrip: withTabPage(strip, tab.id, chat), focus: false };
   }
-  const tile = waitingTile(page.grid, origin);
+  const tile = gridTiles(page.grid).find(
+    (entry) => entry.id === origin.tileId && entry.page.kind === 'new-chat',
+  );
   if (!tile) return unplaced;
   if (isMission(state, appSessionId)) {
     return isActive ? { tabStrip: openTab(strip, chat, live), focus: true } : unplaced;
   }
   if (isActive && tile.id === page.grid.focusedTileId) return { tabStrip: strip, focus: true };
   const grid = withTilePage(page.grid, tile.id, chat);
-  return { tabStrip: withTabPage(strip, origin.tabId, { kind: 'tiles', grid }), focus: false };
+  return { tabStrip: withTabPage(strip, tab.id, { kind: 'tiles', grid }), focus: false };
 }

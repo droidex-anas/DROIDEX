@@ -21,6 +21,7 @@ import {
   MAX_TILES_PER_COLUMN,
   clampSplit,
   gridTiles,
+  newTileId,
   type Tile,
   type TileColumn,
   type TileGrid,
@@ -141,7 +142,7 @@ export function loadTabStrip(): TabStrip {
       const page = sanitized && pageWithoutChats(sanitized, isOpen, false);
       if (!page || tabs.some((tab) => tab.id === id)) continue;
       if (page.kind !== 'tiles' && tabs.some((tab) => showsPlace(tab.page, page))) continue;
-      tabs.push({ id, page });
+      tabs.push({ id, page, tileId: newTileId() });
     }
     if (tabs.length === 0) return initialTabStrip();
     const active = tabs.find((tab) => tab.id === parsed.activeTabId) ?? tabs[0];
@@ -167,7 +168,7 @@ export function saveTabStrip(state: LivePageSource): void {
     getLocalStorage()?.setItem(
       TAB_STRIP_STORAGE_KEY,
       JSON.stringify({
-        tabs: strip.tabs.map((tab) => ({ ...tab, page: tabPage(strip, tab, live) })),
+        tabs: strip.tabs.map((tab) => ({ id: tab.id, page: tabPage(strip, tab, live) })),
         activeTabId: strip.activeTabId,
       }),
     );

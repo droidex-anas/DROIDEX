@@ -121,14 +121,15 @@ test('chat selector observes the visible transcript, its provenance, and visible
 });
 
 test('a new chat shows the message sent from its own place while it starts', () => {
-  const tabId = initialState.tabStrip.activeTabId;
-  const state: AppState = {
+  const [tab] = initialState.tabStrip.tabs;
+  const sentFrom = (tileId: string): AppState => ({
     ...initialState,
     pendingCompose: {
-      fromTile: { text: 'hi', skills: [], files: [], origin: { tabId, tileId: 'left' } },
+      fromTile: { text: 'hi', skills: [], files: [], origin: { tabId: tab.id, tileId } },
     },
-  };
-  assert.equal(selectChatViewState(state, null, 'left').startingCompose?.text, 'hi');
-  assert.equal(selectChatViewState(state, null, null).startingCompose?.text, 'hi');
-  assert.equal(selectChatViewState(state, null, 'right').startingCompose, undefined);
+  });
+  assert.equal(selectChatViewState(sentFrom('left'), null, 'left').startingCompose?.text, 'hi');
+  assert.equal(selectChatViewState(sentFrom('left'), null, 'right').startingCompose, undefined);
+  assert.equal(selectChatViewState(sentFrom('left'), null, null).startingCompose, undefined);
+  assert.equal(selectChatViewState(sentFrom(tab.tileId), null, null).startingCompose?.text, 'hi');
 });

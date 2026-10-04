@@ -180,12 +180,16 @@ test('starting a new chat or creating another session drops a pending review foc
   assert.equal(draft.reviewFocusPath, null);
 
   let created = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
+    type: 'HOLD_COMPOSE_ORIGIN',
+    holdId: 'hold-1',
+  });
+  created = reducer(created, {
     type: 'SET_PENDING_COMPOSE',
     clientRef: 'ref-1',
     text: 'start another session',
     skills: [],
     files: [],
-    origin: { tabId: initialState.tabStrip.activeTabId, tileId: null },
+    originHoldId: 'hold-1',
   });
   created = reducer(created, {
     type: 'SESSION_CREATED',

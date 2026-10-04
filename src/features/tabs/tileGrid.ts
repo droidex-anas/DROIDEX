@@ -60,8 +60,7 @@ export function newChatTile(grid: TileGrid): Tile | undefined {
   return gridTiles(grid).find((tile) => tile.page.kind === 'new-chat');
 }
 
-export function singleTileGrid(page: TilePage): TileGrid {
-  const tile: Tile = { id: newTileId(), page };
+export function singleTileGrid(tile: Tile): TileGrid {
   return {
     columns: [{ tiles: [tile], rowSplit: EVEN_SPLIT }],
     columnSplit: EVEN_SPLIT,

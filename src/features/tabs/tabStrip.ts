@@ -47,6 +47,9 @@ export type ViewPage = Extract<TabPage, { kind: 'projects' | 'pull-requests' | '
 export interface Tab {
   id: string;
   page: TabPage;
+  // The tile id of an unsplit page: it takes this id when the tab splits, and
+  // a grid closing down to one tile leaves that tile's id here.
+  tileId: string;
 }
 
 interface ClosedTab {
@@ -90,17 +93,13 @@ export type TabStripSource = LivePageSource & Pick<AppState, 'sessions'>;
 
 const MAX_CLOSED_TABS = 20;
 
-function newTabId(): string {
-  return crypto.randomUUID();
+function newTab(page: TabPage): Tab {
+  return { id: crypto.randomUUID(), page, tileId: newTileId() };
 }
 
 export function initialTabStrip(): TabStrip {
-  const id = newTabId();
-  return {
-    tabs: [{ id, page: { kind: 'new-chat', draft: null } }],
-    activeTabId: id,
-    closedTabs: [],
-  };
+  const tab = newTab({ kind: 'new-chat', draft: null });
+  return { tabs: [tab], activeTabId: tab.id, closedTabs: [] };
 }
 
 function liveFocusedPage(state: LivePageSource): FocusedPage {
@@ -116,9 +115,13 @@ function liveFocusedPage(state: LivePageSource): FocusedPage {
   }
 }
 
+export function activeTab(strip: TabStrip): Tab | undefined {
+  return strip.tabs.find((tab) => tab.id === strip.activeTabId);
+}
+
 /** The active tab's grid as stored: its focused tile's page is stale, the live one wins. */
 export function activeGrid(strip: TabStrip): TileGrid | null {
-  const page = strip.tabs.find((tab) => tab.id === strip.activeTabId)?.page;
+  const page = activeTab(strip)?.page;
   return page?.kind === 'tiles' ? page.grid : null;
 }
 
@@ -137,6 +140,19 @@ export function focusedPage(page: TabPage): FocusedPage {
 function gridPage(grid: TileGrid): TabPage {
   const tiles = gridTiles(grid);
   return tiles.length === 1 ? tiles[0].page : { kind: 'tiles', grid };
+}
+
+function withGrid(tab: Tab, grid: TileGrid): Tab {
+  const tiles = gridTiles(grid);
+  if (tiles.length > 1) return { ...tab, page: { kind: 'tiles', grid } };
+  return { ...tab, page: tiles[0].page, tileId: tiles[0].id };
+}
+
+function withActiveGrid(strip: TabStrip, grid: TileGrid): TabStrip {
+  return {
+    ...strip,
+    tabs: strip.tabs.map((tab) => (tab.id === strip.activeTabId ? withGrid(tab, grid) : tab)),
+  };
 }
 
 // What the sidebar's New chat would open from here: the active chat's
@@ -255,7 +271,7 @@ function insertTab(strip: TabStrip, page: TabPage, live: TabPage, index: number)
     const focused = focusTabShowing(strip, page, live);
     if (focused !== strip) return focused;
   }
-  const tab: Tab = { id: newTabId(), page };
+  const tab = newTab(page);
   const tabs = withActivePageStored(strip, live);
   tabs.splice(index, 0, tab);
   return { ...strip, tabs, activeTabId: tab.id };
@@ -282,11 +298,26 @@ function closeTab(strip: TabStrip, tabId: string, live: TabPage, fallback: TabPa
   if (!closingActive) return { ...strip, tabs, closedTabs };
   if (tabs.length === 0) {
     if (live.kind === 'new-chat') return strip;
-    const fresh: Tab = { id: newTabId(), page: fallback };
+    const fresh = newTab(fallback);
     return { tabs: [fresh], activeTabId: fresh.id, closedTabs };
   }
   const neighbor = strip.tabs[index + 1] ?? strip.tabs[index - 1];
   return { tabs, activeTabId: neighbor.id, closedTabs };
+}
+
+function gridWithoutChats(
+  grid: TileGrid,
+  isGone: (appSessionId: string) => boolean,
+  keepsFocused: boolean,
+): TileGrid | null {
+  let rest = grid;
+  for (const tile of gridTiles(grid)) {
+    if (tile.page.kind !== 'chat' || !isGone(tile.page.appSessionId)) continue;
+    if (keepsFocused && tile.id === grid.focusedTileId) continue;
+    if (gridTiles(rest).length === 1) return null;
+    rest = removeTile(rest, tile.id);
+  }
+  return rest;
 }
 
 /**
@@ -300,14 +331,21 @@ export function pageWithoutChats(
 ): TabPage | null {
   if (page.kind === 'chat') return !keepsFocused && isGone(page.appSessionId) ? null : page;
   if (page.kind !== 'tiles') return page;
-  let grid = page.grid;
-  for (const tile of gridTiles(page.grid)) {
-    if (tile.page.kind !== 'chat' || !isGone(tile.page.appSessionId)) continue;
-    if (keepsFocused && tile.id === grid.focusedTileId) continue;
-    if (gridTiles(grid).length === 1) return null;
-    grid = removeTile(grid, tile.id);
-  }
-  return grid === page.grid ? page : gridPage(grid);
+  const grid = gridWithoutChats(page.grid, isGone, keepsFocused);
+  if (grid === page.grid) return page;
+  return grid && gridPage(grid);
+}
+
+// As pageWithoutChats, for an open tab, which keeps the tile it closes down to.
+function tabWithoutChats(
+  tab: Tab,
+  isGone: (appSessionId: string) => boolean,
+  keepsFocused: boolean,
+): Tab | null {
+  if (tab.page.kind !== 'tiles') return pageWithoutChats(tab.page, isGone, keepsFocused) && tab;
+  const grid = gridWithoutChats(tab.page.grid, isGone, keepsFocused);
+  if (grid === tab.page.grid) return tab;
+  return grid && withGrid(tab, grid);
 }
 
 // The tab returns where it was, or at the end if the strip has since shrunk. A
@@ -335,9 +373,10 @@ function reorderTabs(strip: TabStrip, tabIds: string[]): TabStrip {
 // The live page as a grid, when it can take tiles: a chat, a new chat, or tiles.
 function splittableGrid(state: TabStripSource, live: TabPage): TileGrid | null {
   if (live.kind === 'tiles') return live.grid;
-  if (live.kind === 'new-chat') return singleTileGrid(live);
-  if (live.kind === 'chat' && !isMission(state, live.appSessionId)) return singleTileGrid(live);
-  return null;
+  if (live.kind !== 'chat' && live.kind !== 'new-chat') return null;
+  if (live.kind === 'chat' && isMission(state, live.appSessionId)) return null;
+  const tab = activeTab(state.tabStrip);
+  return tab ? singleTileGrid({ id: tab.tileId, page: live }) : null;
 }
 
 /**
@@ -346,11 +385,9 @@ function splittableGrid(state: TabStripSource, live: TabPage): TileGrid | null {
  */
 export function withoutOtherTabsShowing(strip: TabStrip, appSessionId: string): TabStrip {
   const isMoved = (id: string) => id === appSessionId;
-  const tabs = strip.tabs.flatMap((tab) => {
-    if (tab.id === strip.activeTabId) return [tab];
-    const page = pageWithoutChats(tab.page, isMoved, false);
-    return page ? [{ ...tab, page }] : [];
-  });
+  const tabs = strip.tabs.flatMap((tab) =>
+    tab.id === strip.activeTabId ? [tab] : (tabWithoutChats(tab, isMoved, false) ?? []),
+  );
   return { ...strip, tabs };
 }
 
@@ -372,7 +409,7 @@ function splitTab(
       appSessionId === null
         ? focusTile(grid, shown.id)
         : moveTile(grid, shown.id, targetTileId, edge);
-    return next === grid ? strip : withTabPage(strip, strip.activeTabId, gridPage(next));
+    return next === grid ? strip : withActiveGrid(strip, next);
   }
   if (!canSplit(grid, targetTileId, edge)) return strip;
   if (appSessionId !== null && isMission(state, appSessionId)) return strip;
@@ -392,7 +429,7 @@ function withLiveGrid(
 ): TabStrip {
   if (live.kind !== 'tiles') return strip;
   const grid = update(live.grid);
-  return grid === live.grid ? strip : withTabPage(strip, strip.activeTabId, gridPage(grid));
+  return grid === live.grid ? strip : withActiveGrid(strip, grid);
 }
 
 export function reduceTabStrip(state: TabStripSource, action: TabAction): TabStrip {
@@ -432,11 +469,9 @@ export function reduceTabStrip(state: TabStripSource, action: TabAction): TabStr
 
 /** Drops the chats that no longer exist from the open tabs, their tiles and the closed tabs. */
 export function withoutChats(strip: TabStrip, isGone: (appSessionId: string) => boolean): TabStrip {
-  const tabs = strip.tabs.flatMap((tab) => {
-    const page = pageWithoutChats(tab.page, isGone, tab.id === strip.activeTabId);
-    if (page === tab.page) return [tab];
-    return page ? [{ ...tab, page }] : [];
-  });
+  const tabs = strip.tabs.flatMap(
+    (tab) => tabWithoutChats(tab, isGone, tab.id === strip.activeTabId) ?? [],
+  );
   const closedTabs = strip.closedTabs.flatMap((closed) => {
     const page = pageWithoutChats(closed.page, isGone, false);
     if (page === closed.page) return [closed];

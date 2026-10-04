@@ -1,17 +1,18 @@
+import { activeTab } from '../features/tabs/tabStrip';
 import type { AppState } from '../hooks/useStore';
 
 const EMPTY_TRANSCRIPT: never[] = [];
 
 // The latest compose sent from this new chat that is still waiting for its
-// session; `tileId` is null in a tab that is not split. A tab split or closed
-// down to one tile since the send still waits for it.
+// session; `tileId` is null in a tab that is not split, which is its own tile.
 function startingCompose(current: AppState, tileId: string | null) {
-  const tabId = current.tabStrip.activeTabId;
+  const tab = activeTab(current.tabStrip);
+  if (!tab) return undefined;
+  const shownTileId = tileId ?? tab.tileId;
   return Object.values(current.pendingCompose)
     .filter((compose) => {
-      if (compose?.origin?.tabId !== tabId) return false;
-      const sentFrom = compose.origin.tileId;
-      return sentFrom === null || tileId === null || sentFrom === tileId;
+      const origin = compose?.origin;
+      return origin?.tabId === tab.id && origin.tileId === shownTileId;
     })
     .at(-1);
 }

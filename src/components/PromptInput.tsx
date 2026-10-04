@@ -1154,7 +1154,6 @@ export default function PromptInput({
     dispatch({ type: 'HOLD_COMPOSE_ORIGIN', holdId });
     return holdId;
   };
-  const heldComposeOrigin = (holdId: string) => store.getState().heldComposeOrigins[holdId] ?? null;
 
   const schedulePrompt = async (runAt: number, timezone: string) => {
     if (!activeSession || visibleTarget.kind !== 'primary') {
@@ -1374,7 +1373,7 @@ export default function PromptInput({
         text: displayText,
         skills: skillNames,
         files: allFiles,
-        origin: heldComposeOrigin(originHoldId),
+        originHoldId,
       });
     };
 
@@ -1934,7 +1933,7 @@ export default function PromptInput({
         text: '',
         skills: [],
         files: [],
-        origin: heldComposeOrigin(originHoldId),
+        originHoldId,
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
