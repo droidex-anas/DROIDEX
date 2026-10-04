@@ -64,11 +64,7 @@ function isRetirableSession(facts: SessionRetirementFacts): boolean {
   );
 }
 
-export function isDueForRetirement(
-  facts: SessionRetirementFacts,
-  now: number,
-  idleMs: number,
-): boolean {
+function isDueForRetirement(facts: SessionRetirementFacts, now: number, idleMs: number): boolean {
   // Monotonic activity timestamps can lead the wall clock by a tick.
   return isRetirableSession(facts) && Math.max(0, now - facts.idleSince) >= idleMs;
 }
