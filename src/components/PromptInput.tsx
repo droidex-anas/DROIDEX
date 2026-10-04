@@ -59,7 +59,6 @@ import {
 import { newQueueId } from '../lib/promptQueue';
 import {
   composePrompt,
-  hasAppContextForTranscript,
   isVisualizeCommand,
   parseSlashSkillInvocation,
   promptTextWithVisualize,
@@ -92,6 +91,7 @@ import {
 } from './composer/menuItems';
 import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
+import { createComposerTranscriptSelector } from './composer/composerTranscript';
 import {
   childRuntimeSubmitTarget,
   childSessionLabel,
@@ -234,10 +234,6 @@ export function shouldStopTurnStarting({
 function basename(p: string): string {
   const i = p.lastIndexOf('/');
   return i >= 0 ? p.slice(i + 1) : p;
-}
-
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 // A dialog the user asks for, so its code loads when they do. Declared here
@@ -448,21 +444,6 @@ export default function PromptInput({
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
 
-  // The user's own prompts in this conversation, oldest to newest, for ArrowUp
-  // recall (reuse a previous prompt). Consecutive duplicates are collapsed.
-  const promptHistory = useStoreSelector((current) => {
-    const events = activeSession ? (current.transcripts[activeSession.appSessionId] ?? []) : [];
-    const out: string[] = [];
-    for (const ev of events) {
-      // An agent's brief is a user-authored row too, but the parent's composer
-      // recalls what THIS user typed, not what the chat sent to a subagent.
-      if (ev.author !== 'user' || ev.kind !== 'text' || ev.role !== 'primary') continue;
-      const text = ev.text ?? '';
-      if (!text.trim()) continue;
-      if (out[out.length - 1] !== text) out.push(text);
-    }
-    return out;
-  }, sameStrings);
   // A stored pick this build cannot run falls back to Droid, and the chip shows
   // the fallback rather than a selection the picker would render as disabled.
   const draftProvider = effectiveProvider(state.draftProvider, state.providerStatuses);
@@ -518,11 +499,12 @@ export default function PromptInput({
           },
         ]
       : draftSelections;
-  const hasAppContext = useStoreSelector((current) => {
-    if (!activeSession) return false;
-    const events = current.transcripts[activeSession.appSessionId] ?? [];
-    return hasAppContextForTranscript(events, targetChildSessionId);
-  });
+  const selectTranscript = useMemo(
+    () =>
+      createComposerTranscriptSelector(activeSession?.appSessionId ?? null, targetChildSessionId),
+    [activeSession?.appSessionId, targetChildSessionId],
+  );
+  const { promptHistory, hasAppContext } = useStoreSelector(selectTranscript);
   const primaryWorkingDirectory = useSessionWorkingDirectory(activeSession);
   const childWorkingDirectory = useSessionWorkingDirectory(
     targetChild ? activeSession : null,
