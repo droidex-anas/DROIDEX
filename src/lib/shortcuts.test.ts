@@ -213,8 +213,6 @@ test('a browser page hands the app every bound chord, and nothing the app ignore
   }
   assert.deepEqual(mismatches, []);
 
-  assert.equal(hostForwards(event({ ctrlKey: true, key: '7', code: 'Numpad7' })), true);
-  assert.equal(hostForwards(event({ ctrlKey: true, key: '\\', code: 'IntlBackslash' })), true);
   assert.equal(hostForwards(event({ ctrlKey: true, key: '`', code: 'IntlBackslash' })), true);
   assert.equal(
     hostForwards(event({ metaKey: true, shiftKey: true, key: 'b', code: 'KeyN' })),

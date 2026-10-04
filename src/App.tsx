@@ -177,7 +177,6 @@ export default function App() {
       ? current.sessions[current.activeAppSessionId]
       : null;
     return {
-      activeAppSessionId: current.activeAppSessionId,
       activeSession,
       activeTabSplit: activeGrid(current.tabStrip) !== null,
       childAccess: current.childAccess,

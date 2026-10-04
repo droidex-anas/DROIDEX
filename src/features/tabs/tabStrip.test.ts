@@ -4,6 +4,7 @@ import { initialState, reducer, type Action, type AppState } from '../../hooks/u
 import { activeTabDraft, loadTabStrip, saveTabStrip } from './tabStorage';
 import { chatsOnScreen, isChatInView, livePage, tabPage, type TabPage } from './tabStrip';
 import { gridTiles } from './tileGrid';
+import { withLocalStorageMap } from '../../test/localStorage';
 import { sessionIsUnread } from '../../lib/sessions';
 import type { SessionSummary } from '../../types/bridge';
 
@@ -146,6 +147,22 @@ test('closing the active tab shows its neighbor, and reopening restores it in pl
 
   const reopened = reduce(closed, { type: 'REOPEN_CLOSED_TAB' });
   assert.deepEqual(strip(reopened), ['a', '[b]', 'c']);
+  assert.equal(reopened.activeAppSessionId, 'b');
+});
+
+test('a reopened split tab comes back without a chat opened elsewhere since it closed', () => {
+  const state = reduce(
+    withChats('a', 'b', 'c'),
+    { type: 'OPEN_TAB', page: { kind: 'chat', appSessionId: 'b' } },
+    splitWith('c'),
+  );
+  const closed = reduce(state, { type: 'CLOSE_TAB', tabId: state.tabStrip.activeTabId });
+  assert.deepEqual(strip(closed), ['[a]']);
+  assert.deepEqual(strip(reduce(closed, { type: 'REOPEN_CLOSED_TAB' })), ['a', '[b|c*]']);
+
+  const moved = reduce(closed, { type: 'SET_ACTIVE_SESSION', id: 'c' });
+  const reopened = reduce(moved, { type: 'REOPEN_CLOSED_TAB' });
+  assert.deepEqual(strip(reopened), ['c', '[b]']);
   assert.equal(reopened.activeAppSessionId, 'b');
 });
 
@@ -490,28 +507,8 @@ test('a split tab keeps its tiles when a view opens, and loses an archived chat'
   assert.equal(archived.activeAppSessionId, 'a');
 });
 
-function withLocalStorage(run: (data: Map<string, string>) => void): void {
-  const data = new Map<string, string>();
-  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key: string) => data.get(key) ?? null,
-      setItem: (key: string, value: string) => {
-        data.set(key, value);
-      },
-    },
-  });
-  try {
-    run(data);
-  } finally {
-    if (original) Object.defineProperty(globalThis, 'localStorage', original);
-    else delete (globalThis as { localStorage?: unknown }).localStorage;
-  }
-}
-
 test('stored tabs load with the live page and without invalid or duplicate entries', () => {
-  withLocalStorage(() => {
+  withLocalStorageMap({}, () => {
     const draft = { cwd: '/w', executionMode: 'local' } as const;
     saveTabStrip({
       mainView: 'session',
@@ -543,7 +540,8 @@ test('stored tabs load with the live page and without invalid or duplicate entri
 });
 
 test('a stored split tab loads whole, without a chat an earlier tab shows', () => {
-  withLocalStorage((data) => {
+  const data = new Map<string, string>();
+  withLocalStorageMap(data, () => {
     const state = reduce(
       withChats('a', 'b', 'c'),
       { type: 'OPEN_TAB', page: { kind: 'chat', appSessionId: 'b' } },
@@ -551,7 +549,11 @@ test('a stored split tab loads whole, without a chat an earlier tab shows', () =
     );
     assert.deepEqual(strip(state), ['a', '[b|c*]']);
     saveTabStrip(state);
-    assert.deepEqual(strip({ ...state, tabStrip: loadTabStrip() }), ['a', '[b|c*]']);
+    const live = livePage(state);
+    assert.deepEqual(
+      loadTabStrip().tabs.map((tab) => tab.page),
+      state.tabStrip.tabs.map((tab) => tabPage(state.tabStrip, tab, live)),
+    );
 
     const [key, saved] = [...data.entries()][0];
     const stored = JSON.parse(saved) as {

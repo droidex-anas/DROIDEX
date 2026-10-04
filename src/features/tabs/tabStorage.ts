@@ -21,7 +21,6 @@ import {
   MAX_TILES_PER_COLUMN,
   clampSplit,
   gridTiles,
-  newTileId,
   type Tile,
   type TileColumn,
   type TileGrid,
@@ -142,7 +141,7 @@ export function loadTabStrip(): TabStrip {
       const page = sanitized && pageWithoutChats(sanitized, isOpen, false);
       if (!page || tabs.some((tab) => tab.id === id)) continue;
       if (page.kind !== 'tiles' && tabs.some((tab) => showsPlace(tab.page, page))) continue;
-      tabs.push({ id, page, tileId: newTileId() });
+      tabs.push({ id, page, tileId: crypto.randomUUID() });
     }
     if (tabs.length === 0) return initialTabStrip();
     const active = tabs.find((tab) => tab.id === parsed.activeTabId) ?? tabs[0];

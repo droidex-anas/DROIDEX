@@ -116,7 +116,6 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
   return (
     <div
       data-electron-drag-region
-      data-testid="header-tabs"
       className="flex h-9 shrink-0 items-center gap-1 pr-3"
       style={{ paddingLeft: leadPx }}
     >

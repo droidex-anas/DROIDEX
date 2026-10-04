@@ -32,10 +32,6 @@ export const MAX_TILES_PER_COLUMN = 2;
 const MIN_SPLIT = 0.2;
 const EVEN_SPLIT = 0.5;
 
-export function newTileId(): string {
-  return crypto.randomUUID();
-}
-
 export function clampSplit(split: number): number {
   return Math.min(1 - MIN_SPLIT, Math.max(MIN_SPLIT, split));
 }

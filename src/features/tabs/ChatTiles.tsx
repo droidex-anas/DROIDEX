@@ -213,7 +213,6 @@ export function ChatTiles({
         return;
       case 'show':
         dispatch({ type: 'DROP_CHAT', tileId: target, appSessionId: result.appSessionId });
-        dispatch({ type: 'SELECT_CHILD', selection: null });
     }
   };
 

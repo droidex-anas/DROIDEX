@@ -17,7 +17,6 @@ import {
   gridTiles,
   moveTile,
   newChatTile,
-  newTileId,
   removeTile,
   singleTileGrid,
   splitTile,
@@ -94,7 +93,7 @@ export type TabStripSource = LivePageSource & Pick<AppState, 'sessions'>;
 const MAX_CLOSED_TABS = 20;
 
 function newTab(page: TabPage): Tab {
-  return { id: crypto.randomUUID(), page, tileId: newTileId() };
+  return { id: crypto.randomUUID(), page, tileId: crypto.randomUUID() };
 }
 
 export function initialTabStrip(): TabStrip {
@@ -419,7 +418,7 @@ function splitTab(
   if (!canSplit(grid, targetTileId, edge)) return strip;
   if (appSessionId !== null && isMission(state, appSessionId)) return strip;
   const tile: Tile = {
-    id: newTileId(),
+    id: crypto.randomUUID(),
     page: appSessionId === null ? newChatPage(state) : { kind: 'chat', appSessionId },
   };
   const split = { ...splitTile(grid, targetTileId, edge, tile), focusedTileId: tile.id };
