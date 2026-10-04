@@ -329,6 +329,10 @@ async function smokePackagedRuntime(architecture) {
             rejectStartup(new Error(`${name} packaged bridge sent invalid JSON`));
             return;
           }
+          if (message?.type === 'error') {
+            rejectStartup(new Error(`${name} packaged bridge error: ${message.message}`));
+            return;
+          }
           if (
             isReady ||
             message?.type !== 'events.batch' ||
