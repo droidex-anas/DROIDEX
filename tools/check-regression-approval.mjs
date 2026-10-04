@@ -77,86 +77,99 @@ async function main() {
   const postStatus = (headSha, context, state, description) =>
     request(`statuses/${headSha}`, { context, state, description, target_url: runUrl });
   await postStatus(pr.head.sha, GATE_CONTEXT, 'pending', 'Checking the current PR head and base.');
-  const current = await request(prPath);
-  if (current.number !== pr.number) throw new Error('GitHub returned a different PR.');
-  const isCurrentRevisionEvent =
-    current.head.sha === pr.head.sha &&
-    current.base.sha === pr.base.sha &&
-    current.base.ref === pr.base.ref;
-  if (current.head.sha !== pr.head.sha) {
-    throw new Error('The PR head changed. Run the guard for its current head.');
-  }
-
-  // Required statuses belong to the commit, so they cannot distinguish PRs
-  // sharing a head. The repository PR list defaults to open and is paginated.
-  const assertUniqueHead = async () => {
-    const matching = (await list('pulls')).filter(
-      (candidate) => candidate.head.sha === current.head.sha,
-    );
-    if (matching.length === 1 && matching[0].number === current.number) return;
-    const message = 'Keep one open PR per head commit, then rerun this guard.';
-    await postStatus(current.head.sha, GATE_CONTEXT, 'failure', message);
-    throw new Error(message);
-  };
-  await assertUniqueHead();
-
-  // GitHub caps this endpoint at 3000 files. Incomplete metadata cannot prove
-  // the suite unchanged, so large or racing comparisons fail closed.
-  if (!Number.isSafeInteger(current.changed_files) || current.changed_files > 3000) {
-    throw new Error('GitHub cannot provide the complete changed-file list for this PR.');
-  }
-  const files = await list(`${prPath}/files`);
-  if (files.length !== current.changed_files)
-    throw new Error('The PR changed-file list is incomplete.');
-  const touched = files.some((file) => {
-    if (typeof file.filename !== 'string') throw new Error('GitHub returned an invalid filename.');
-    return [file.filename, file.previous_filename].some((path) =>
-      path?.startsWith('sidecar/regression/'),
-    );
-  });
-
-  const approvalDescription = `PR #${current.number} base ${current.base.sha}`;
-  const approvalLabelEvent = event.label?.name === LABEL;
-  let approved = false;
-  if (
-    touched &&
-    approvalLabelEvent &&
-    event.action === 'labeled' &&
-    isCurrentRevisionEvent &&
-    process.env.GITHUB_RUN_ATTEMPT === '1'
-  ) {
-    if (event.sender?.type === 'User') {
-      const actor = encodeURIComponent(event.sender.login);
-      const { permission } = await request(`collaborators/${actor}/permission`);
-      approved = hasLabel(current) && ['write', 'admin'].includes(permission);
+  try {
+    const current = await request(prPath);
+    if (current.number !== pr.number) throw new Error('GitHub returned a different PR.');
+    const isCurrentRevisionEvent =
+      current.head.sha === pr.head.sha &&
+      current.base.sha === pr.base.sha &&
+      current.base.ref === pr.base.ref;
+    if (current.head.sha !== pr.head.sha) {
+      throw new Error('The PR head changed. Run the guard for its current head.');
     }
-    assertSamePullRequest(await request(prPath), current);
-    await postStatus(
-      current.head.sha,
-      APPROVAL_CONTEXT,
-      approved ? 'success' : 'failure',
-      approvalDescription,
-    );
-  } else if (approvalLabelEvent && event.action === 'unlabeled' && !hasLabel(current)) {
-    await postStatus(current.head.sha, APPROVAL_CONTEXT, 'failure', approvalDescription);
-  } else if (touched && hasLabel(current)) {
-    const statuses = await list(`commits/${current.head.sha}/statuses`);
-    const approval = statuses.find((status) => status.context === APPROVAL_CONTEXT);
-    approved =
-      approval?.state === 'success' &&
-      approval.description === approvalDescription &&
-      approval.creator?.login === 'github-actions[bot]';
-  }
 
-  await assertUniqueHead();
-  assertSamePullRequest(await request(prPath), current);
-  const allowed = !touched || approved;
-  let description = 'Review this head and base, then remove and re-add regression-approved.';
-  if (!touched) description = 'The held-out regression suite is unchanged.';
-  else if (approved) description = 'Regression edits approved for this PR head and base.';
-  await postStatus(current.head.sha, GATE_CONTEXT, allowed ? 'success' : 'failure', description);
-  console.log(description);
-  if (!allowed) process.exitCode = 1;
+    // Required statuses belong to the commit, so they cannot distinguish PRs
+    // sharing a head. The repository PR list defaults to open and is paginated.
+    const assertUniqueHead = async () => {
+      const matching = (await list('pulls')).filter(
+        (candidate) => candidate.head.sha === current.head.sha,
+      );
+      if (matching.length === 1 && matching[0].number === current.number) return;
+      throw new Error('Keep one open PR per head commit, then rerun this guard.');
+    };
+    await assertUniqueHead();
+
+    // GitHub caps this endpoint at 3000 files. Incomplete metadata cannot prove
+    // the suite unchanged, so large or racing comparisons fail closed.
+    if (!Number.isSafeInteger(current.changed_files) || current.changed_files > 3000) {
+      throw new Error('GitHub cannot provide the complete changed-file list for this PR.');
+    }
+    const files = await list(`${prPath}/files`);
+    if (files.length !== current.changed_files)
+      throw new Error('The PR changed-file list is incomplete.');
+    const touched = files.some((file) => {
+      if (typeof file.filename !== 'string')
+        throw new Error('GitHub returned an invalid filename.');
+      return [file.filename, file.previous_filename].some((path) =>
+        path?.startsWith('sidecar/regression/'),
+      );
+    });
+
+    const approvalDescription = `PR #${current.number} base ${current.base.sha}`;
+    const approvalLabelEvent = event.label?.name === LABEL;
+    let approved = false;
+    if (
+      touched &&
+      approvalLabelEvent &&
+      event.action === 'labeled' &&
+      isCurrentRevisionEvent &&
+      process.env.GITHUB_RUN_ATTEMPT === '1'
+    ) {
+      if (event.sender?.type === 'User') {
+        const actor = encodeURIComponent(event.sender.login);
+        const { permission } = await request(`collaborators/${actor}/permission`);
+        approved = hasLabel(current) && ['write', 'admin'].includes(permission);
+      }
+      assertSamePullRequest(await request(prPath), current);
+      await postStatus(
+        current.head.sha,
+        APPROVAL_CONTEXT,
+        approved ? 'success' : 'failure',
+        approvalDescription,
+      );
+    } else if (approvalLabelEvent && event.action === 'unlabeled' && !hasLabel(current)) {
+      await postStatus(current.head.sha, APPROVAL_CONTEXT, 'failure', approvalDescription);
+    } else if (touched && hasLabel(current)) {
+      const statuses = await list(`commits/${current.head.sha}/statuses`);
+      const approval = statuses.find((status) => status.context === APPROVAL_CONTEXT);
+      approved =
+        approval?.state === 'success' &&
+        approval.description === approvalDescription &&
+        approval.creator?.login === 'github-actions[bot]';
+    }
+
+    await assertUniqueHead();
+    assertSamePullRequest(await request(prPath), current);
+    const allowed = !touched || approved;
+    let description = 'Review this head and base, then remove and re-add regression-approved.';
+    if (!touched) description = 'The held-out regression suite is unchanged.';
+    else if (approved) description = 'Regression edits approved for this PR head and base.';
+    await postStatus(current.head.sha, GATE_CONTEXT, allowed ? 'success' : 'failure', description);
+    console.log(description);
+    if (!allowed) process.exitCode = 1;
+  } catch (error) {
+    try {
+      await postStatus(
+        pr.head.sha,
+        GATE_CONTEXT,
+        'failure',
+        'Regression guard failed. See this workflow run for details.',
+      );
+    } catch (statusError) {
+      console.error(`Could not report the regression guard failure: ${statusError.message}`);
+    }
+    throw error;
+  }
 }
 
 main().catch((error) => {

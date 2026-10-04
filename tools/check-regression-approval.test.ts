@@ -27,6 +27,7 @@ async function fixture(t: TestContext) {
   const openPullRequests = [pr];
   const files = [{ filename: 'sidecar/regression/contract.test.ts' }];
   let shareHeadOnApproval = false;
+  let metadataError = false;
   const server = createServer(async (request, response) => {
     const path = request.url?.split('?')[0];
     const statusSha = /^\/repos\/owner\/repo\/statuses\/([a-f0-9]{40})$/.exec(path ?? '')?.[1];
@@ -35,8 +36,13 @@ async function fixture(t: TestContext) {
     )?.[1];
     let result: unknown;
     if (path === '/repos/owner/repo/pulls') result = openPullRequests;
-    else if (path === `/repos/owner/repo/pulls/${pr.number}`) result = pr;
-    else if (path === `/repos/owner/repo/pulls/${pr.number}/files`) {
+    else if (path === `/repos/owner/repo/pulls/${pr.number}`) {
+      if (metadataError) {
+        response.writeHead(500).end('{}');
+        return;
+      }
+      result = pr;
+    } else if (path === `/repos/owner/repo/pulls/${pr.number}/files`) {
       result = files;
     } else if (path === '/repos/owner/repo/collaborators/maintainer/permission') {
       result = { permission };
@@ -111,6 +117,9 @@ async function fixture(t: TestContext) {
     shareHeadOnApproval: () => {
       shareHeadOnApproval = true;
     },
+    failMetadata: () => {
+      metadataError = true;
+    },
     setPermission: (value: string) => {
       permission = value;
     },
@@ -118,10 +127,16 @@ async function fixture(t: TestContext) {
 }
 
 test('regression approval stays bound to the reviewed PR head and base', async (t) => {
-  const { pr, run, setPermission, files, openPullRequests, shareHeadOnApproval } = await fixture(t);
+  const { pr, run, setPermission, files, openPullRequests, shareHeadOnApproval, failMetadata } =
+    await fixture(t);
   assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
   assert.deepEqual(await run('labeled'), { code: 0, status: 'success' });
   assert.deepEqual(await run('synchronize'), { code: 0, status: 'success' });
+  pr.changed_files = 3001;
+  assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
+  pr.changed_files = 2;
+  assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
+  pr.changed_files = 1;
 
   const staleHead = structuredClone(pr);
   pr.head.sha = 'c'.repeat(40);
@@ -160,4 +175,6 @@ test('regression approval stays bound to the reviewed PR head and base', async (
   pr.changed_files = 1;
   shareHeadOnApproval();
   assert.deepEqual(await run('labeled'), { code: 1, status: 'failure' });
+  failMetadata();
+  assert.deepEqual(await run('opened'), { code: 1, status: 'failure' });
 });

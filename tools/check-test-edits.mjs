@@ -8,6 +8,7 @@
 //
 // Skip detection is advisory syntax matching, not evaluation. Aliases,
 // computed methods, and template interpolations can evade it.
+// Regex literals can produce false positives.
 //
 // Usage: node tools/check-test-edits.mjs <base-ref> (or set TEST_EDITS_BASE)
 import { execFileSync } from 'node:child_process';

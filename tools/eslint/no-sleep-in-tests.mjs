@@ -47,12 +47,28 @@ export default {
           }
           if (call.type !== 'CallExpression' || call.callee !== identifier) continue;
 
-          // Only the timer's own callback may resolve this promise; nested
-          // functions can be invoked for unrelated reasons.
+          // Follow only the resolver's immediate callback, including a directly
+          // declared handler passed to a timer; nested calls stay unrelated.
           for (let callback = call.parent; callback; callback = callback.parent) {
             if (!FUNCTION_TYPES.has(callback.type)) continue;
-            const timer = callback.parent;
-            if (isDelayedTimer(timer) && timer.arguments[0] === callback) timers.add(timer);
+            const parent = callback.parent;
+            if (isDelayedTimer(parent) && parent.arguments[0] === callback) timers.add(parent);
+
+            let declaration;
+            if (callback.type === 'FunctionDeclaration') declaration = callback;
+            else if (parent.type === 'VariableDeclarator' && parent.parent.kind === 'const') {
+              declaration = parent;
+            }
+            const handler = declaration?.id;
+            if (handler?.type === 'Identifier') {
+              const binding = context.sourceCode
+                .getDeclaredVariables(declaration)
+                .find((candidate) => candidate.identifiers.includes(handler));
+              for (const { identifier } of binding?.references ?? []) {
+                const timer = identifier.parent;
+                if (isDelayedTimer(timer) && timer.arguments[0] === identifier) timers.add(timer);
+              }
+            }
             break;
           }
         }
