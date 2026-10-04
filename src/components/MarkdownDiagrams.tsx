@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Mermaid } from 'mermaid';
 
 import { useVisibleOnce } from '../hooks/useVisibleOnce';
-import { fitSvgMarkup } from '../lib/svgMarkup';
+import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
 
 /* Renderers for the fenced languages that draw a diagram instead of code. */
 
@@ -124,8 +124,11 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
 
 /* ── SVG code block renderer ── */
 export function SvgCodeBlock({ content }: { content: string }) {
-  const svgSource = useMemo(
-    () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(content))}`,
+  const image = useMemo(
+    () => ({
+      src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(content))}`,
+      alt: svgImageAlternative(content),
+    }),
     [content],
   );
 
@@ -138,7 +141,7 @@ export function SvgCodeBlock({ content }: { content: string }) {
         <span className="text-[11px] font-mono text-droid-text-muted/40">SVG</span>
       </div>
       <div className="p-4 flex items-center justify-center min-h-[100px]">
-        <img className="block w-full h-auto" src={svgSource} alt="SVG diagram" />
+        <img className="block w-full h-auto" src={image.src} alt={image.alt} />
       </div>
     </div>
   );

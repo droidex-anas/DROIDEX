@@ -25,7 +25,7 @@ test('disabled generated content renders svg and app fences as escaped code', ()
 
 test('generated SVG stays in image context in chat and spec previews', () => {
   const payload =
-    '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.pwned=true" viewBox="0 0 4 2"><rect width="4" height="2"/></svg>';
+    '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.pwned=true" viewBox="0 0 4 2"><title> Authored "<tspan>flow</tspan>" </title><desc>Input   to output</desc><rect width="4" height="2"/></svg>';
   const source = `\`\`\`svg\n${payload}\n\`\`\``;
   const previews = [
     createElement(Markdown, null, source),
@@ -34,9 +34,13 @@ test('generated SVG stays in image context in chat and spec previews', () => {
   for (const preview of previews) {
     const html = renderToStaticMarkup(preview);
     assert.match(html, /<img[^>]*src="data:image\/svg\+xml;charset=utf-8,/);
-    assert.match(html, /alt="SVG diagram"/);
+    assert.match(html, /alt="Authored &quot;flow&quot;\. Input to output"/);
     assert.doesNotMatch(html, /\sonload=/);
   }
+  assert.match(
+    renderToStaticMarkup(createElement(SpecRenderer, { content: '```svg\n<svg/>\n```' })),
+    /alt="SVG diagram"/,
+  );
 });
 
 test('restored app fences start inline without a Play card; a cut-off one alerts alone', () => {

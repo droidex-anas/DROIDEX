@@ -17,3 +17,16 @@ export function fitSvgMarkup(content: string): string {
   });
   return raw;
 }
+
+// Reads authored plain-text metadata; this is not a complete XML parser.
+export function svgImageAlternative(content: string): string {
+  const descriptions = ['title', 'desc'].flatMap((tag) => {
+    const text = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}\\s*>`, 'i')
+      .exec(content)?.[1]
+      ?.replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text ? [text] : [];
+  });
+  return descriptions.join('. ') || 'SVG diagram';
+}

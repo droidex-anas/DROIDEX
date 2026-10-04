@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Markdown } from './Markdown';
-import { fitSvgMarkup } from '../lib/svgMarkup';
+import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
 import { LayoutTemplate } from 'lucide-react';
 
 type Segment =
@@ -75,8 +75,11 @@ function parseSpecSegments(markdown: string): Segment[] {
 }
 
 function SvgVisualCard({ svgContent, index }: { svgContent: string; index: number }) {
-  const svgSource = useMemo(
-    () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(svgContent))}`,
+  const image = useMemo(
+    () => ({
+      src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(svgContent))}`,
+      alt: svgImageAlternative(svgContent),
+    }),
     [svgContent],
   );
 
@@ -98,7 +101,7 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
 
       {/* Rendered SVG */}
       <div className="pt-9 pb-5 px-5 flex items-center justify-center min-h-[100px]">
-        <img className="block w-full h-auto" src={svgSource} alt="SVG diagram" />
+        <img className="block w-full h-auto" src={image.src} alt={image.alt} />
       </div>
     </motion.div>
   );
