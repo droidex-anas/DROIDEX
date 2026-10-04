@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type Action, type AppState } from '../../hooks/useStore';
 import { activeTabDraft, loadTabStrip, saveTabStrip } from './tabStorage';
-import { livePage, tabPage, type TabPage } from './tabStrip';
+import { chatsOnScreen, isChatInView, livePage, tabPage, type TabPage } from './tabStrip';
 import { gridTiles } from './tileGrid';
 import { sessionIsUnread } from '../../lib/sessions';
 import type { SessionSummary } from '../../types/bridge';
@@ -233,6 +233,21 @@ test('a chat in a tile beside the focused one reads as seen while it changes', (
   });
   assert.equal(finished.activeAppSessionId, 'b');
   assert.ok(!sessionIsUnread(finished.sessions.a, 'b', finished.sessionLastSeen.a));
+});
+
+test('full-content views hide every chat and returning restores tile visibility', () => {
+  const split = reduce(withChats('a', 'b'), splitWith('b'));
+  assert.deepEqual(chatsOnScreen(split), ['b', 'a']);
+  for (const type of ['OPEN_PROJECTS', 'OPEN_AUTOMATIONS', 'OPEN_PULL_REQUESTS'] as const) {
+    const viewed = reduce(split, { type });
+    assert.equal(viewed.activeAppSessionId, 'b');
+    assert.deepEqual(chatsOnScreen(viewed), []);
+    assert.deepEqual(chatsOnScreen({ ...split, mainView: viewed.mainView }), []);
+    assert.equal(isChatInView(viewed, 'a'), false);
+    assert.equal(isChatInView(viewed, 'b'), false);
+    const back = reduce(viewed, { type: 'ACTIVATE_TAB', tabId: split.tabStrip.activeTabId });
+    assert.deepEqual(chatsOnScreen(back), ['b', 'a']);
+  }
 });
 
 test('choosing a chat focuses the tile showing it, or replaces the focused tile', () => {

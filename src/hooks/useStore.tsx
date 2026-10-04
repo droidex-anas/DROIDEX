@@ -1949,7 +1949,10 @@ export function reducer(state: AppState, action: Action): AppState {
         !sessionIsLive(outgoingSession) &&
         state.transcriptViewportPinned[outgoingAppSessionId] !== false &&
         // A chat left for another tile stays on screen.
-        !isChatInView({ activeAppSessionId: action.id, tabStrip }, outgoingAppSessionId)
+        !isChatInView(
+          { mainView: 'session', activeAppSessionId: action.id, tabStrip },
+          outgoingAppSessionId,
+        )
       ) {
         next = releaseSessionTranscriptWindow(
           next,

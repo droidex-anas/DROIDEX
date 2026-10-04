@@ -197,14 +197,19 @@ export function chatsBesideFocus(strip: TabStrip): string[] {
   );
 }
 
-/** Every chat the chat area shows: the active chat first, then the tiles beside it. */
-export function chatsOnScreen(state: Pick<AppState, 'activeAppSessionId' | 'tabStrip'>): string[] {
+/** The active chat, then the tiles beside it, even behind a full-content view. */
+export function selectedChats(state: Pick<AppState, 'activeAppSessionId' | 'tabStrip'>): string[] {
   const beside = chatsBesideFocus(state.tabStrip);
   return state.activeAppSessionId ? [state.activeAppSessionId, ...beside] : beside;
 }
 
+/** The chats the session view shows; a full-content view shows none. */
+export function chatsOnScreen(state: Omit<LivePageSource, 'draftChat'>): string[] {
+  return state.mainView === 'session' ? selectedChats(state) : [];
+}
+
 export function isChatInView(
-  state: Pick<AppState, 'activeAppSessionId' | 'tabStrip'>,
+  state: Omit<LivePageSource, 'draftChat'>,
   appSessionId: string,
 ): boolean {
   return chatsOnScreen(state).includes(appSessionId);

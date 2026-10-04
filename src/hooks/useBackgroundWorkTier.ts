@@ -15,8 +15,12 @@ interface SentBackgroundWork {
 
 export function useBackgroundWorkTier(): void {
   const documentVisible = useDocumentVisible();
-  const focusedAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
+  const activeAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
   const visibleAppSessionIds = useStoreSelector(chatsOnScreen, sameEntries);
+  const focusedAppSessionId =
+    activeAppSessionId && visibleAppSessionIds.includes(activeAppSessionId)
+      ? activeAppSessionId
+      : null;
   const connected = useStoreSelector((state) => state.connection === 'connected');
   const dispatch = useStoreDispatch();
   const lastSent = useRef<SentBackgroundWork | null>(null);
