@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from 'react';
-import { isPlaceDrag, type PlaceDrag } from './tileDrag';
+import { endPlaceDrag, isPlaceDrag, type PlaceDrag } from './tileDrag';
 import type { TileGrid } from './tileGrid';
 import { pointerZone, tileDrop, type DropZone, type TileDrop } from './tileLayout';
 
@@ -40,6 +40,10 @@ export function TileDropTarget({
   return (
     <div
       className="absolute inset-0 z-30"
+      // No pointer events arrive while a drag runs, so one here means the drag
+      // ended without reaching its source, as when the dragged row unmounted.
+      onPointerMove={endPlaceDrag}
+      onPointerDown={endPlaceDrag}
       onDragOver={(event) => {
         const target = targetAt(event);
         setZone(target?.zone ?? null);
