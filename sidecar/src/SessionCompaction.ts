@@ -10,12 +10,7 @@ import {
 } from './autoCompactionWatchdog.js';
 import { extractCompactionNotification } from './normalize.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
-import type {
-  FactoryDefaultSettings,
-  SessionInteractionMode,
-  SessionRole,
-  SessionSummary,
-} from './protocol.js';
+import type { FactoryDefaultSettings, SessionInteractionMode } from './protocol.js';
 import type {
   ChildOperationTarget,
   LiveOperationTarget,
@@ -117,17 +112,6 @@ export interface SessionCompactionDependencies extends SessionCompactionExecutio
     target: PrimaryAutomaticCompactionTarget,
     notification: Record<string, unknown>,
   ): void;
-}
-
-export function childCompactionModelId(
-  summary: Pick<SessionSummary, 'modelId' | 'workerModelId' | 'validatorModelId'>,
-  settings: { modelId?: string } | undefined,
-  role: SessionRole,
-): string | undefined {
-  let roleModelId: string | undefined;
-  if (role === 'worker') roleModelId = summary.workerModelId;
-  else if (role === 'validator') roleModelId = summary.validatorModelId;
-  return settings?.modelId ?? roleModelId ?? summary.modelId;
 }
 
 export class SessionCompaction {

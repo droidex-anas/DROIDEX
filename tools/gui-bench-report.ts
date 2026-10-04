@@ -122,27 +122,23 @@ export function renderReport(results: RunResult[], trees: BenchTreeRef[]): strin
   const baseline = results.filter((result) => result.tree === 'baseline');
   const candidate = results.filter((result) => result.tree === 'candidate');
   const lines: string[] = [];
-  lines.push('# DROIDEX GUI bench: origin/main vs cursor/perf-integration-e50f');
+  lines.push('# DROIDEX GUI bench: baseline vs candidate');
   lines.push('');
   lines.push('## Caveat');
   lines.push('');
   lines.push(
-    'This VM runs Electron 39.8.10 and software-rasterizes (GPU process fails). Absolute FPS is **not** the owner’s machine. Relative CPU, main-thread long tasks, dropped rAF frames, RSS, session-switch times, and blank-during-scroll **are** the comparison.',
+    'If the host software-rasterizes, absolute FPS does not represent a hardware-accelerated desktop. Compare both trees on the same host using CPU, main-thread long tasks, dropped rAF frames, RSS, session-switch times, and blank-during-scroll.',
   );
   lines.push('');
   lines.push('## Refs');
   lines.push('');
-  lines.push('- **baseline** `origin/main` `/home/ubuntu/wt/baseline-main` `99f5ca882147a1641298072e5b64deeaa3d52062`');
-  lines.push(
-    '- **candidate product** `cursor/perf-integration-e50f` `76bdea9fd1312e0d46c7bd294440582d47170634` (virtualizer + perf phases). Bench-only Electron hoist + CDP tooling live on `cursor/perf-gui-bench-e50f`.',
-  );
   const historyShas = [...new Set(results.map((row) => `${row.tree} history ${row.sha}`))];
   for (const line of historyShas) lines.push(`- measured: ${line}`);
   for (const tree of trees) lines.push(`- **${tree.name} tooling HEAD at report** \`${tree.sha}\` (${tree.root})`);
   lines.push('');
   lines.push('## Method');
   lines.push('');
-  lines.push('- One Electron app at a time, alternating baseline/candidate, 3 runs each. 4 CPUs / 16 GB. `--no-sandbox`, `DISPLAY=:1`.');
+  lines.push('- One Electron app at a time, alternating baseline/candidate for the requested number of runs.');
   lines.push('- Seeded Factory JSONL history (`gui-bench-3k` ~3000 events, `gui-bench-10k` ~10000 events, `gui-bench-children` 24 child sessions). Separate `DROIDEX_USER_DATA_DIR` and `HOME` per run.');
   lines.push('- Drive via CDP `Input.dispatchMouseEvent` `mouseWheel` at gentle −40 px, normal −120 px, flick −480 px per 16 ms tick.');
   lines.push('- Frames: in-page `requestAnimationFrame` timestamps. A drop is a rAF gap > 1.5×16.67 ms (~25 ms).');
@@ -150,12 +146,9 @@ export function renderReport(results: RunResult[], trees: BenchTreeRef[]): strin
   lines.push(
     '- Blank: each rAF, largest contiguous viewport gap not covered by `[data-feed-row-id]`. A **hit** is a hole taller than 96 px (one estimated row). Ordinary 16 px list gaps are not hits.',
   );
-  lines.push('- CPU/RSS: `/proc` tree of the Electron PID (sum of descendants). Cross-check `droidControl.getPerformanceMetrics()` on candidate only — origin/main does not expose it.');
+  lines.push('- CPU/RSS: `/proc` tree of the Electron PID (sum of descendants).');
   lines.push(
-    '- Candidate launch required hoisting `let mainWindow = null` above `sidecarSupervisor.subscribe` in `electron/main.cjs`. As committed on `76bdea9`, Electron throws `Cannot access \'mainWindow\' before initialization` and never creates a window. Measurement used that hoist; it is not a renderer/virtualizer change.',
-  );
-  lines.push(
-    '- Streaming: candidate-only. A **dev-only** sidecar bundle injects `ReplayFactoryRuntime` through `SessionManager` `dependencies.runtime` (not in `sidecar/dist` production build). origin/main has no `replayRuntime.ts`; mixing the candidate sidecar under baseline Electron was refused.',
+    '- Streaming: a **dev-only** sidecar bundle injects `ReplayFactoryRuntime` through `SessionManager` `dependencies.runtime`. It is separate from the production sidecar bundle.',
   );
   lines.push('');
   const metric = (name: string, pick: (row: RunResult) => number, digits = 1) => {
@@ -170,7 +163,7 @@ export function renderReport(results: RunResult[], trees: BenchTreeRef[]): strin
   metric('cold open 10k (ms)', (row) => row.coldOpen10kMs);
   metric('switch to 3k (ms)', (row) => row.switchTo3kMs);
   metric('warm switch to 10k (ms)', (row) => row.switchTo10kWarmMs);
-  metric('idle CPU % (sum of tree, 4-core host)', (row) => row.idleCpuPercent);
+  metric('idle CPU % (sum of tree)', (row) => row.idleCpuPercent);
   metric('idle RSS (MiB)', (row) => row.idleRssBytes / (1024 * 1024));
   metric('children chat open (ms)', (row) => row.children.openMs);
   metric('children mounted rows', (row) => row.children.mountedRows, 0);
@@ -220,10 +213,6 @@ export function renderReport(results: RunResult[], trees: BenchTreeRef[]): strin
   if (streamB.length === 0 && streamC.length === 0) {
     lines.push('Streaming pass did not run.');
   } else {
-    lines.push(
-      'Candidate streams through the real sidecar path (`ReplayFactoryRuntime` → SessionManager → bridge → renderer). Baseline is unwired (no replay runtime on origin/main).',
-    );
-    lines.push('');
     lines.push('| metric | baseline | candidate | Δ |');
     lines.push('| --- | --- | --- | --- |');
     const add = (name: string, pick: (row: StreamingMetrics) => number, digits = 1) => {
@@ -246,7 +235,7 @@ export function renderReport(results: RunResult[], trees: BenchTreeRef[]): strin
     add('RSS (MiB)', (row) => row.rssBytes / (1024 * 1024));
     lines.push('');
     lines.push(
-      'receiveToPaint is the renderer’s cumulative histogram from page start, not a stream-only delta. Compare count before vs after: idle opens were ~5 samples; a successful replay turn lands two hundred-plus samples, so p50/p95 are dominated by the streamed answer.',
+      'receiveToPaint is the renderer’s cumulative histogram from page start, not a stream-only delta. Compare count before vs after to determine how much the streamed answer contributes.',
     );
     const failedReasons = [
       ...new Set(
@@ -262,74 +251,28 @@ export function renderReport(results: RunResult[], trees: BenchTreeRef[]): strin
     }
   }
   lines.push('');
-  lines.push('## Findings');
+  lines.push('## Interpretation');
   lines.push('');
-  const blank10k = scrollSeries(results, 'candidate', '10k', 'flick');
-  const blankBase = scrollSeries(results, 'baseline', '10k', 'flick');
   lines.push(
-    `- **Blank during scroll (owner’s question):** with a 96 px hole threshold, candidate blank-hit ratio is ${fmt(blank10k.blankHit, 3)} on 10k flick (baseline ${fmt(blankBase.blankHit, 3)}). Largest hole median is ${fmt(blank10k.holePx)} px on candidate 10k flick vs ${fmt(blankBase.holePx)} px baseline — consistent with the 16 px list gap, not missing rows. The ~17-row virtualizer window did **not** produce unfilled viewport holes in these wheel-driven scrolls.`,
+    '- **Blank during scroll:** compare blank-hit ratio and largest hole with the transcript content. Empty space below a short transcript is not a virtualizer miss.',
   );
-  const mounted = scrollSeries(results, 'candidate', '10k', 'normal');
-  const mountedB = scrollSeries(results, 'baseline', '10k', 'normal');
   lines.push(
-    `- **Mounted rows:** candidate 10k normal ${fmt(mounted.mounted, 0)} vs baseline ${fmt(mountedB.mounted, 0)}. Virtualizer is doing what it claims.`,
+    '- **Subagent cards:** the seeded history contains 24 children, but the replay streaming scenario drives one session. Concurrent child streaming and sibling re-render isolation are not measured.',
   );
-  const dropped = scrollSeries(results, 'candidate', '10k', 'gentle');
-  const droppedB = scrollSeries(results, 'baseline', '10k', 'gentle');
   lines.push(
-    `- **Dropped rAF, 10k gentle:** candidate ${fmt(dropped.dropped, 0)} vs baseline ${fmt(droppedB.dropped, 0)}. Spread on candidate is wide; this is a smoothness finding, not a blank-content finding.`,
-  );
-  const idleCpuB = spread(baseline.map((row) => row.idleCpuPercent));
-  const idleCpuC = spread(candidate.map((row) => row.idleCpuPercent));
-  lines.push(`- **Idle CPU:** candidate ${fmt(idleCpuC)} vs baseline ${fmt(idleCpuB)} (worse).`);
-  const idleRssB = spread(baseline.map((row) => row.idleRssBytes / (1024 * 1024)));
-  const idleRssC = spread(candidate.map((row) => row.idleRssBytes / (1024 * 1024)));
-  lines.push(`- **Idle RSS:** candidate ${fmt(idleRssC)} MiB vs baseline ${fmt(idleRssB)} MiB.`);
-  const warmB = spread(baseline.map((row) => row.switchTo10kWarmMs));
-  const warmC = spread(candidate.map((row) => row.switchTo10kWarmMs));
-  lines.push(`- **Warm switch to 10k:** candidate ${fmt(warmC)} ms vs baseline ${fmt(warmB)} ms.`);
-  lines.push(
-    '- **Subagent cards:** seeded 24-child chat. Sidebar shows 5 `subagent-row` nodes (list limit). The parent feed only has 3 mounted rows, so the viewport below that short transcript is empty by content (~478 px hole, blank-hit 1.0) — that is not a virtualizer miss. Concurrent live child *streaming* was not driven in the desktop app; the replay `streaming` scenario is a single session. Sibling re-render isolation under concurrent child tokens was **not** measured here and is not fabricated.',
-  );
-  if (wiredC.length > 0) {
-    const paint = spread(wiredC.map((row) => row.receiveToPaintP50Ms ?? 0));
-    const droppedStream = spread(wiredC.map((row) => row.droppedFrames));
-    const paints = spread(wiredC.map((row) => row.receiveToPaintCount ?? 0));
-    const events = spread(wiredC.map((row) => row.eventsReceived ?? 0));
-    lines.push(
-      `- **Streaming (candidate only):** receiveToPaint p50 ${fmt(paint)} ms, dropped rAF ${fmt(droppedStream, 0)}, paint samples ${fmt(paints, 0)} / eventsReceived ${fmt(events, 0)}. Baseline cannot be compared without mixing trees.`,
-    );
-  }
-  lines.push(
-    '- **Long tasks during scroll:** both trees reported 0 tasks >50 ms after filtering to the scroll phase. Either the software-raster path is not producing longtask entries, or scroll work is under 50 ms on this host. Do not read this as “no jank” — dropped rAF is the jank signal.',
+    '- **Long tasks during scroll:** zero tasks >50 ms does not establish smoothness. Work below that threshold or missing observer entries can still accompany dropped rAF frames.',
   );
   lines.push('');
   lines.push('## Reproduce');
   lines.push('');
+  lines.push('Build the baseline and candidate worktrees configured in `tools/gui-bench-run.ts`, then run on a Linux desktop host:');
+  lines.push('');
   lines.push('```bash');
-  lines.push('# Shared node_modules already present. Never npm ci.');
-  lines.push('cd /workspace');
-  lines.push('git worktree add /home/ubuntu/wt/baseline-main origin/main');
-  lines.push('ln -s /workspace/node_modules /home/ubuntu/wt/baseline-main/node_modules');
-  lines.push('ln -s /workspace/sidecar/node_modules /home/ubuntu/wt/baseline-main/sidecar/node_modules');
-  lines.push('cd /home/ubuntu/wt/baseline-main && npm run build');
-  lines.push('');
-  lines.push('cd /workspace');
-  lines.push('git fetch origin cursor/perf-gui-bench-e50f');
-  lines.push('git worktree add /home/ubuntu/wt/gui-bench origin/cursor/perf-gui-bench-e50f');
-  lines.push('ln -s /workspace/node_modules /home/ubuntu/wt/gui-bench/node_modules');
-  lines.push('ln -s /workspace/sidecar/node_modules /home/ubuntu/wt/gui-bench/sidecar/node_modules');
-  lines.push('cd /home/ubuntu/wt/gui-bench && npm run build');
-  lines.push('');
-  lines.push('export DISPLAY=:1 XAUTHORITY=/home/ubuntu/.Xauthority');
-  lines.push('cd /home/ubuntu/wt/gui-bench');
-  lines.push('npm run gui-bench:seed -- --home /tmp/droidex-gui-bench/template-home');
   lines.push('npm run gui-bench:run -- --runs 3');
-  lines.push('# History already captured: npm run gui-bench:run -- --runs 3 --streaming-only');
   lines.push('```');
   lines.push('');
   lines.push('Raw per-run JSON: `/opt/cursor/artifacts/gui_bench_raw.json`.');
   lines.push('Seed manifest: `/opt/cursor/artifacts/gui_bench_seed_manifest.json`.');
-  lines.push('Screenshots: `/opt/cursor/artifacts/gui_bench_baseline_10k_seeded_chat.png`, `gui_bench_candidate_10k_seeded_chat.png`, `gui_bench_candidate_replay_stream.png`.');
+  lines.push('Screenshots: `/opt/cursor/artifacts/gui_bench_*_run*.png`.');
   return `${lines.join('\n')}\n`;
 }

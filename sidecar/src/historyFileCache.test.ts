@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
@@ -24,7 +25,7 @@ import {
   providerSessionJsonl,
   type ProviderMessageRole,
 } from './testing/providerSessionFixtures.js';
-import { persistTestSummaries } from './testing/historyPersistenceFixture.js';
+import { persistTestEvent, persistTestSummaries } from './testing/historyPersistenceFixture.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
@@ -34,7 +35,6 @@ process.env.HOME = home;
 const {
   HistoryIndex,
   createHistorySessionFileCache,
-  loadHistoricalSessions,
   SESSION_INDEX_FILENAME,
   SESSION_SEARCH_INDEX_FILENAME,
 } = await import('./history.js');
@@ -144,7 +144,7 @@ function setCachedSummaryJson(providerSessionId: string, json: string): void {
   }
 }
 
-test('reconcile populates the cache to match the uncached scan, and a second boot reconciles nothing', () => {
+test('reconcile hides Task children, preserves forks, and a second boot reconciles nothing', () => {
   writeSession(home, 'cache-plain', '');
   const workspace = join(home, 'workspace-a');
   writeSession(home, 'cache-workspace', workspace);
@@ -152,29 +152,42 @@ test('reconcile populates the cache to match the uncached scan, and a second boo
     callingSessionId: 'cache-workspace',
     callingToolUseId: 'tool-1',
   });
+  writeSession(home, 'worker-old', workspace, {
+    callingSessionId: 'cache-workspace',
+    callingToolUseId: 'tool-r',
+  });
+  writeSession(home, 'worker-new', workspace, {
+    callingSessionId: 'cache-workspace',
+    callingToolUseId: 'tool-r',
+  });
+  writeSession(home, 'forked-session', workspace, { parent: 'cache-workspace' });
+  writeSession(home, 'fork-task-child', workspace, {
+    parent: 'forked-session',
+    callingSessionId: 'forked-session',
+    callingToolUseId: 'tool-9',
+  });
 
   const index = new HistoryIndex();
   try {
-    assert.equal(reconcile(index), 3);
+    assert.equal(reconcile(index), 7);
     // The Task child is cached as a known non-top-level file, not re-read later.
-    assert.equal(index.sessionFileCacheSize, 3);
+    assert.equal(index.sessionFileCacheSize, 7);
 
     const cached = index.listHistoricalSessions();
-    const uncached = loadHistoricalSessions();
-    for (const id of ['cache-plain', 'cache-workspace']) {
+    assert.deepEqual(cached.map((row) => row.summary.appSessionId).sort(), [
+      'cache-plain',
+      'cache-workspace',
+      'forked-session',
+    ]);
+    for (const id of ['cache-plain', 'cache-workspace', 'forked-session']) {
       const cachedRow = cached.find((row) => row.summary.appSessionId === id);
-      const uncachedRow = uncached.find((row) => row.summary.appSessionId === id);
       assert.ok(cachedRow, `cached list contains ${id}`);
-      assert.ok(uncachedRow, `uncached scan contains ${id}`);
-      assert.equal(cachedRow.summary.title, uncachedRow.summary.title);
-      assert.equal(cachedRow.summary.cwd, uncachedRow.summary.cwd);
-      assert.equal(cachedRow.summary.createdAt, uncachedRow.summary.createdAt);
-      assert.equal(cachedRow.summary.updatedAt, uncachedRow.summary.updatedAt);
+      assert.equal(cachedRow.summary.title, `Chat ${id}`);
+      assert.equal(cachedRow.summary.cwd, id === 'cache-plain' ? '' : workspace);
+      const file = statSync(join(home, '.factory', 'sessions', `${id}.jsonl`));
+      assert.equal(cachedRow.summary.createdAt, file.birthtimeMs);
+      assert.equal(cachedRow.summary.updatedAt, file.mtimeMs);
     }
-    assert.equal(
-      cached.some((row) => row.summary.appSessionId === 'cache-child'),
-      false,
-    );
   } finally {
     index.close();
   }
@@ -183,7 +196,7 @@ test('reconcile populates the cache to match the uncached scan, and a second boo
   try {
     assert.equal(rebooted.sessionFileCacheSize, 0, 'the main-thread mirror starts without disk IO');
     assert.equal(reconcile(rebooted), 0);
-    assert.equal(rebooted.sessionFileCacheSize, 3, 'the worker snapshot hydrates the mirror');
+    assert.equal(rebooted.sessionFileCacheSize, 7, 'the worker snapshot hydrates the mirror');
   } finally {
     rebooted.close();
   }
@@ -317,26 +330,82 @@ test('opening the canonical index does not open or mutate the worker-owned deriv
   assert.equal(existsSync(searchIndexPath()), false);
 });
 
-test('cached list applies app summary patches before filtering', (t) => {
+test('cached list applies app summary patches and compaction state before filtering', (t) => {
   const workspace = join(home, 'workspace-patch');
   writeSession(home, 'cache-patched', workspace);
 
   const index = new HistoryIndex();
   t.after(() => index.close());
   reconcile(index);
-  persistTestSummaries([patchFor('cache-patched', '')]);
+  persistTestSummaries([
+    { ...patchFor('cache-patched', ''), autoCompactions: 3, contextWindowTokens: 200000 },
+  ]);
 
   const plain = index.listHistoricalSessions({ includePlainChats: true });
   const plainRow = plain.find((row) => row.summary.appSessionId === 'cache-patched');
   assert.ok(plainRow);
   assert.equal(plainRow.summary.cwd, '');
   assert.equal(plainRow.summary.workspaceKind, 'none');
+  assert.equal(plainRow.summary.autoCompactions, 3);
+  assert.equal(plainRow.summary.contextWindowTokens, 200000);
 
   const scoped = index.listHistoricalSessions({ workspaceCwds: [workspace] });
   assert.equal(
     scoped.some((row) => row.summary.appSessionId === 'cache-patched'),
     false,
   );
+});
+
+test('historical compaction markers hydrate the summary generation', (t) => {
+  const cwd = join(home, 'workspace-external-compactions');
+  writeSession(home, 'external-compactions', cwd);
+  const index = new HistoryIndex();
+  t.after(() => index.close());
+  persistTestSummaries([patchFor('external-compactions', cwd)]);
+  for (let i = 0; i < 4; i++) {
+    persistTestEvent({
+      id: `external-compaction-${String(i)}`,
+      appSessionId: 'external-compactions',
+      sourceSessionId: 'primary',
+      role: 'primary',
+      kind: 'compaction',
+      ts: i,
+    });
+    persistTestEvent({
+      id: `compaction-external-compactions-summary-${String(i)}`,
+      appSessionId: 'external-compactions',
+      sourceSessionId: 'external-compactions',
+      role: 'primary',
+      kind: 'compaction',
+      ts: i,
+    });
+  }
+  persistTestEvent({
+    id: 'compaction-worker-summary',
+    appSessionId: 'external-compactions',
+    sourceSessionId: 'worker-1',
+    role: 'worker',
+    kind: 'compaction',
+    ts: 5,
+  });
+  reconcile(index);
+
+  const rows = index.listHistoricalSessions({ workspaceCwds: [cwd] });
+
+  const row = rows.find((item) => item.summary.appSessionId === 'external-compactions');
+  assert.equal(row?.summary.autoCompactions, 4);
+});
+
+test('cached list returns every session when no limit is requested', (t) => {
+  const cwd = join(home, 'workspace-nolimit');
+  for (let i = 0; i < 7; i++) writeSession(home, `nolimit-${i}`, cwd);
+
+  const index = new HistoryIndex();
+  t.after(() => index.close());
+  reconcile(index);
+  const rows = index.listHistoricalSessions({ workspaceCwds: [cwd] });
+
+  assert.equal(rows.filter((row) => row.summary.cwd === cwd).length, 7);
 });
 
 test('a corrupt or superseded cache row is dropped and rebuilt on the next boot', (t) => {

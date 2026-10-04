@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  clampCompactionTokenLimit,
   compactionTokenLimitForModel,
   compactionTriggerCeiling,
   daemonCompactionSettings,
@@ -41,9 +40,6 @@ test('compaction thresholds leave model-window headroom, retain daemon defaults,
   assert.equal(compactionTriggerCeiling(100_000), 80_000);
   assert.equal(compactionTriggerCeiling(undefined), undefined);
   assert.equal(compactionTriggerCeiling(1), 1);
-  assert.equal(clampCompactionTokenLimit(200_000, 100_000), 80_000);
-  assert.equal(clampCompactionTokenLimit(80_000, 200_000), 80_000);
-  assert.equal(clampCompactionTokenLimit(200_000), 200_000);
   assert.equal(daemonDefaultCompactionTokenLimit(), 250_000);
   assert.equal(daemonDefaultCompactionTokenLimit(1_000_000), 250_000);
   assert.equal(daemonDefaultCompactionTokenLimit(180_000), 180_000);

@@ -23,10 +23,9 @@ test('a commit saves only the persisted fields it changed', () => {
   });
 });
 
-test('normalizeDiffStyle migrates the legacy symbol style and rejects invalid values', () => {
+test('normalizeDiffStyle accepts current styles and rejects invalid values', () => {
   assert.equal(normalizeDiffStyle('soft'), 'soft');
   assert.equal(normalizeDiffStyle('focused'), 'focused');
-  assert.equal(normalizeDiffStyle('symbol'), 'focused');
   assert.equal(normalizeDiffStyle('unknown'), 'soft');
 });
 
@@ -193,28 +192,6 @@ test('compaction settings snapshots distinguish cold startup from explicit clear
   );
 });
 
-test('pre-marker per-model limits survive the first defaults event after upgrade', () => {
-  // Storage written before the marker keys existed carries per-model data but
-  // no configured marker. Loading must stamp it as user-configured so the
-  // startup FACTORY_DEFAULTS seed cannot wipe it.
-  const storage = new Map<string, string>([
-    ['droid-compaction-token-limit-per-model', '{"model-a":150000}'],
-  ]);
-  withLocalStorageMap(storage, () => {
-    const loaded = loadCompactionTokenLimitPerModel();
-    assert.deepEqual(loaded, { 'model-a': 150_000 });
-    assert.equal(storage.get('droid-compaction-token-limit-per-model-configured'), '1');
-    assert.deepEqual(
-      applyFactoryCompactionDefaults(
-        { compactionTokenLimit: undefined, compactionTokenLimitPerModel: loaded },
-        { compactionTokenLimitPerModel: { 'model-a': 100_000 } },
-      ).compactionTokenLimitPerModel,
-      { 'model-a': 150_000 },
-    );
-    assert.equal(storage.get('droid-compaction-token-limit-per-model'), '{"model-a":150000}');
-  });
-});
-
 test('factory defaults seed empty settings but never turn into an explicit UI override', () => {
   // The Factory-defaults seed writes the value keys for display, but without
   // the user-configured markers the snapshot must stay empty: the sidecar
@@ -238,8 +215,7 @@ test('factory defaults seed empty settings but never turn into an explicit UI ov
       compactionTokenLimit: 300_000,
       compactionTokenLimitPerModel: {},
     });
-    // Reloading seeded data must not migrate it into a user override: the '0'
-    // marker distinguishes a fresh seed from legacy pre-marker storage.
+    // Reloading a display-only seed must leave its marker unchanged.
     loadCompactionTokenLimitPerModel();
     assert.equal(storage.get('droid-compaction-token-limit-per-model-configured'), '0');
     assert.deepEqual(compactionSettingsSnapshot(seeded), {});

@@ -3,7 +3,6 @@ import test from 'node:test';
 import type { FactoryDefaultSettings, PermissionOutcome, SessionSummary } from './protocol.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
-  childCompactionModelId,
   SessionCompaction,
   type ChildCompactionTarget,
   type PrimaryCompactionTarget,
@@ -199,17 +198,6 @@ test('limit resolution preserves UI, exposed, default, override, and window prec
     [],
   );
   assert.equal(await h.compaction.resolveLimit({ modelId: 'model-a' }), 800);
-  const summary = {
-    modelId: 'parent-model',
-    workerModelId: 'worker-model',
-    validatorModelId: 'validator-model',
-  };
-  assert.equal(
-    childCompactionModelId(summary, { modelId: 'loaded-model' }, 'worker'),
-    'loaded-model',
-  );
-  assert.equal(childCompactionModelId(summary, undefined, 'worker'), 'worker-model');
-  assert.equal(childCompactionModelId(summary, undefined, 'validator'), 'validator-model');
 });
 
 test('arm writes only while its exact target remains current, up to the provider write', async () => {

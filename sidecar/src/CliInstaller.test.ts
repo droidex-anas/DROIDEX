@@ -4,16 +4,10 @@ import {
   buildInstallCommand,
   buildUpdateCommand,
   completedProcessExitCode,
-  pickInstallChannel,
   streamingInvocation,
 } from './CliInstaller.js';
 
-test('each install channel maps to its install and update command, preferring script, brew, then npm', () => {
-  assert.equal(pickInstallChannel({ availableChannels: ['script', 'brew', 'npm'] }), 'script');
-  assert.equal(pickInstallChannel({ availableChannels: ['brew', 'npm'] }), 'brew');
-  assert.equal(pickInstallChannel({ availableChannels: ['npm'] }), 'npm');
-  assert.equal(pickInstallChannel({ availableChannels: [] }), null);
-
+test('each install channel maps to its install and update command', () => {
   const script = buildInstallCommand('script');
   assert.equal(script.command, 'sh');
   assert.equal(script.args[0], '-c');

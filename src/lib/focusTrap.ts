@@ -1,12 +1,13 @@
-import type { KeyboardEvent } from 'react';
-
 export const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // aria-modal contract: Tab cycles inside the dialog. Focus on the dialog
 // itself (a click on non-focusable content) or outside it wraps to the edges
 // instead of walking into the page behind the scrim.
-export function wrapTabFocus(event: KeyboardEvent, dialog: HTMLElement | null): void {
+export function wrapTabFocus(
+  event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'preventDefault'>,
+  dialog: HTMLElement | null,
+): void {
   if (event.key !== 'Tab' || !dialog) return;
   const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
   // Every control disabled (work pending): Tab stays on the dialog.

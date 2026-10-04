@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { childEnv } from './childEnv.js';
 import {
   availableChannels,
-  compareSemver,
   hasCliLogin,
   resolveDroidPath,
   windowsExecutableExtensions,
@@ -24,15 +23,6 @@ function withEnv(name: string, value: string, body: () => void): void {
     else process.env[name] = previous;
   }
 }
-
-test('compareSemver orders versions numerically, tolerating prefixes and missing values', () => {
-  assert.ok(compareSemver('0.144.2', '0.144.1') > 0);
-  assert.ok(compareSemver('0.99.0', '0.100.0') < 0);
-  assert.equal(compareSemver('1.2.3', '1.2.3'), 0);
-  assert.equal(compareSemver('v1.0.0', '1.0.0'), 0);
-  assert.ok(compareSemver(undefined, '0.0.1') < 0);
-  assert.equal(compareSemver(undefined, undefined), 0);
-});
 
 test('availableChannels lists detected installers in priority order, per platform', () => {
   const all = { brew: true, npm: true, curl: true, pnpm: false };

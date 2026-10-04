@@ -64,25 +64,18 @@ test('malformed agent config sanitizes to defaults', () => {
   );
 });
 
-test("a legacy primary default model becomes Droid's saved harness default", () => {
+test('loadHarnessModels restores current per-harness defaults', () => {
+  const expected = {
+    droid: { modelId: 'model-a', reasoning: 'low' },
+    claude: { modelId: 'model-b', reasoning: 'high' },
+    codex: {},
+  };
   withLocalStorageMap(
     {
-      'droid-agent-config-v2': JSON.stringify({
-        primary: { modelId: 'model-a', reasoning: 'low' },
-        worker: { modelId: undefined, reasoning: 'medium' },
-      }),
+      'droid-harness-models-v1': JSON.stringify(expected),
     },
     () => {
-      const expected = {
-        droid: { modelId: 'model-a', reasoning: 'low' },
-        claude: {},
-        codex: {},
-      };
       assert.deepEqual(loadHarnessModels(), expected);
-      assert.deepEqual(
-        JSON.parse(globalThis.localStorage?.getItem('droid-harness-models-v1') ?? '{}'),
-        expected,
-      );
     },
   );
 });

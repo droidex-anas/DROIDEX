@@ -63,10 +63,8 @@ export function saveCompactionTokenLimit(
     const storage = getLocalStorage();
     if (value === undefined) storage?.removeItem(COMPACTION_TOKEN_LIMIT_STORAGE_KEY);
     else storage?.setItem(COMPACTION_TOKEN_LIMIT_STORAGE_KEY, String(value));
-    // A seed writes an explicit '0' marker: it distinguishes seeded data from
-    // legacy pre-marker data (no marker at all), which load() migrates to
-    // user-configured. Seeds only run while the user has not configured the
-    // value, so this never downgrades a '1'.
+    // Seeds run only while the user has not configured the value, so this
+    // never downgrades an explicit choice.
     storage?.setItem(
       COMPACTION_TOKEN_LIMIT_CONFIGURED_STORAGE_KEY,
       (options.userConfigured ?? true) ? '1' : '0',
@@ -87,20 +85,6 @@ export function loadCompactionTokenLimitPerModel(): Record<string, number> {
     for (const [id, value] of Object.entries(parsed)) {
       const n = normalizeTokenLimit(value);
       if (id && n !== undefined) out[id] = n;
-    }
-    // Migration: per-model data written before the marker keys existed came
-    // almost always from explicit user edits (the old defaults seed was rare
-    // and wrote the same values the CLI file carried anyway). Stamp it as
-    // user-configured so the next defaults event cannot wipe it.
-    try {
-      if (
-        Object.keys(out).length > 0 &&
-        storage?.getItem(COMPACTION_TOKEN_LIMIT_PER_MODEL_CONFIGURED_STORAGE_KEY) === null
-      ) {
-        storage.setItem(COMPACTION_TOKEN_LIMIT_PER_MODEL_CONFIGURED_STORAGE_KEY, '1');
-      }
-    } catch {
-      // A failed marker write must not discard the successfully loaded data.
     }
     return out;
   } catch {
@@ -125,8 +109,7 @@ export function saveCompactionTokenLimitPerModel(
   try {
     const storage = getLocalStorage();
     storage?.setItem(COMPACTION_TOKEN_LIMIT_PER_MODEL_STORAGE_KEY, JSON.stringify(value));
-    // See saveCompactionTokenLimit: '0' marks seeded data so the legacy
-    // migration in load() only fires for pre-marker storage.
+    // Keep display-only seeds distinct from explicit user choices.
     storage?.setItem(
       COMPACTION_TOKEN_LIMIT_PER_MODEL_CONFIGURED_STORAGE_KEY,
       (options.userConfigured ?? true) ? '1' : '0',

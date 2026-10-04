@@ -10,6 +10,7 @@ import { SessionTimeline } from './SessionTimeline.js';
 import type { ProviderSession, ProviderVoiceEvent } from './providers/session.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
+import { reconciledHistorySessions } from './testing/historyCharacterizationSupport.js';
 
 const originalHome = process.env.HOME;
 const originalUserDataDir = process.env.DROIDEX_USER_DATA_DIR;
@@ -19,8 +20,7 @@ process.env.HOME = home;
 // developer's environment would aim this suite at their real session files.
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { loadHistoricalSessions, HistoryIndex, createHistorySessionFileCache } =
-  await import('./history.js');
+const { HistoryIndex, createHistorySessionFileCache } = await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
 const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
@@ -51,14 +51,12 @@ function writeSession(id: string, title: string): void {
   );
 }
 
-// These tests pin the uncached scan's freshness contract: it backs the
-// session file cache reconcile, so a change written between two scans must
-// show up in the second one.
+// Changes written between reconciles must appear in the next cached list.
 
 test('files created, rewritten, given settings, or deleted between scans show in the next scan', () => {
   seq += 1;
   const id = `scan-fresh-${seq}`;
-  const scanned = () => loadHistoricalSessions().find((row) => row.summary.appSessionId === id);
+  const scanned = () => reconciledHistorySessions().find((row) => row.summary.appSessionId === id);
   writeSession(id, 'before the rewrite');
   assert.equal(scanned()?.summary.title, 'before the rewrite');
   assert.equal(scanned()?.summary.modelId, undefined);
@@ -129,7 +127,9 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   );
   await transcript.flush();
 
-  const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
+  const listed = reconciledHistorySessions().find(
+    (row) => row.summary.appSessionId === appSessionId,
+  );
   assert.equal(listed?.summary.provider, 'claude');
   assert.equal(listed?.summary.resumeId, 'thread-abc');
   // Without a model on the head line the restored session cannot be resumed.
@@ -141,7 +141,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   // A later choice lives in the settings file beside the transcript and wins
   // over the head line the chat started from.
   writeProviderSessionSettings(appSessionId, { fastMode: false, contextWindowTokens: 200000 });
-  const restored = loadHistoricalSessions().find(
+  const restored = reconciledHistorySessions().find(
     (row) => row.summary.appSessionId === appSessionId,
   );
   assert.equal(restored?.summary.fastMode, false);
@@ -260,7 +260,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       );
     }
     assert.ok(
-      !loadHistoricalSessions().some((row) => row.summary.appSessionId.startsWith('child-')),
+      !reconciledHistorySessions().some((row) => row.summary.appSessionId.startsWith('child-')),
     );
     assert.deepEqual(
       parseFullSessionTranscript(
@@ -307,7 +307,9 @@ test('a failed transcript write reaches its caller and does not stop the lines a
     ['kept', 'Answer.'],
   );
   // The head line went out with the first line that landed.
-  const listed = loadHistoricalSessions().find((row) => row.summary.appSessionId === appSessionId);
+  const listed = reconciledHistorySessions().find(
+    (row) => row.summary.appSessionId === appSessionId,
+  );
   assert.equal(listed?.summary.modelId, 'claude-sonnet-4-5');
 });
 
@@ -368,7 +370,7 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', a
       ],
     );
   }
-  assert.ok(loadHistoricalSessions().some((row) => row.summary.appSessionId === appSessionId));
+  assert.ok(reconciledHistorySessions().some((row) => row.summary.appSessionId === appSessionId));
 });
 
 test('voice finals append once and extend under the same id across runtime replacement', async () => {
@@ -546,7 +548,7 @@ test('permission migration persists beside old provider transcripts and survives
       }),
     );
     assert.equal(
-      loadHistoricalSessions().find((row) => row.summary.appSessionId === id)?.summary.autonomy,
+      reconciledHistorySessions().find((row) => row.summary.appSessionId === id)?.summary.autonomy,
       after,
     );
     const settingsPath = join(providerSessionsDir(), `${id}.settings.json`);
@@ -555,7 +557,7 @@ test('permission migration persists beside old provider transcripts and survives
     assert.equal(settings.autonomyLevel, after);
     writeFileSync(settingsPath, JSON.stringify({ ...settings, autonomyLevel: 'low' }));
     assert.equal(
-      loadHistoricalSessions().find((row) => row.summary.appSessionId === id)?.summary.autonomy,
+      reconciledHistorySessions().find((row) => row.summary.appSessionId === id)?.summary.autonomy,
       'low',
     );
   }

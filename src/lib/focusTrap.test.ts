@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { KeyboardEvent } from 'react';
 import { wrapTabFocus } from './focusTrap';
 
 interface FakeElement {
@@ -31,7 +30,7 @@ function fakeDialog(controlCount: number) {
 function pressTab(dialog: ReturnType<typeof fakeDialog>['dialog'], shiftKey: boolean): boolean {
   let prevented = false;
   const event = { key: 'Tab', shiftKey, preventDefault: () => (prevented = true) };
-  wrapTabFocus(event as unknown as KeyboardEvent, dialog as unknown as HTMLElement);
+  wrapTabFocus(event, dialog as unknown as HTMLElement);
   return prevented;
 }
 
