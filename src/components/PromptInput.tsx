@@ -265,6 +265,8 @@ export default function PromptInput({
     useAppUpdate();
   const runtimeReady = useRuntimeHealth().canRunAgents;
   const runtimeActionsBlocked = appUpdateInstalling || !runtimeReady;
+  const turnStartingClientRef = useRef<string | null>(null);
+  const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
   const state = useStoreSelector(
     (current) => ({
       activeSession: appSessionId ? current.sessions[appSessionId] : null,
@@ -274,13 +276,16 @@ export default function PromptInput({
         ? sideChatPanel(current.sideChats, appSessionId).attachedReplies
         : undefined,
       agentConfig: current.agentConfig,
-      harnessModels: current.harnessModels,
-      childAccess: current.childAccess,
-      childSessions: current.childSessions,
+      harnessModel:
+        current.harnessModels[
+          (appSessionId ? current.sessions[appSessionId] : null)?.provider ??
+            effectiveProvider(current.draftProvider, current.providerStatuses)
+        ],
+      childSessions: appSessionId ? current.childSessions[appSessionId] : undefined,
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
-      composerSeed: current.composerSeed,
+      composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -289,18 +294,26 @@ export default function PromptInput({
       draftProvider: current.draftProvider,
       providerStatuses: current.providerStatuses,
       imagePasteQuality: current.imagePasteQuality,
-      lastCreatedSessionRequest: current.lastCreatedSessionRequest,
+      lastCreatedSessionRequest:
+        current.lastCreatedSessionRequest?.clientRef === turnStartingClientRef.current ||
+        current.lastCreatedSessionRequest?.clientRef === voiceAwaiting.current?.clientRef
+          ? current.lastCreatedSessionRequest
+          : null,
       liveEnterBehavior: current.liveEnterBehavior,
       missionControlMode: current.missionControlMode,
       modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
-      pendingAutonomy: current.pendingAutonomy,
+      autonomyPending: appSessionId ? appSessionId in current.pendingAutonomy : false,
       pendingActiveModelUpdate: appSessionId
         ? current.pendingModelUpdates[appSessionId]
         : undefined,
-      pendingCompose: current.pendingCompose,
-      promptQueue: current.promptQueue,
-      selectedChild: current.selectedChild,
+      // The whole map, and only while this composer awaits its own request: a
+      // registration and its failure can commit in one render, which a pending flag misses.
+      pendingComposeWhileWaiting:
+        turnStartingClientRef.current !== null || voiceAwaiting.current !== null
+          ? current.pendingCompose
+          : null,
+      promptQueue: appSessionId ? current.promptQueue[appSessionId] : undefined,
       skills: current.skills,
       skillsProviderSessionId: current.skillsProviderSessionId,
       specMode: current.specMode,
@@ -436,7 +449,6 @@ export default function PromptInput({
   const submittingRef = useRef(false);
   const turnStartingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const turnStartingTargetKeyRef = useRef<string | null>(null);
-  const turnStartingClientRef = useRef<string | null>(null);
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
@@ -462,12 +474,15 @@ export default function PromptInput({
       ? activeSession?.interactionMode === 'spec' ||
         (!activeSession && state.specMode && !draftingProject)
       : false;
-  const selectedChild = state.selectedChild;
-  const visibleTarget: VisibleSessionTarget = visibleSessionTarget(
-    activeSession?.appSessionId,
-    selectedChild,
-    state.childSessions,
-    state.childAccess,
+  const visibleTarget: VisibleSessionTarget = useStoreSelector(
+    (current) =>
+      visibleSessionTarget(
+        activeSession?.appSessionId,
+        current.selectedChild,
+        current.childSessions,
+        current.childAccess,
+      ),
+    shallowEqual,
   );
   const visibleTargetRef = useRef(visibleTarget);
   visibleTargetRef.current = visibleTarget;
@@ -513,9 +528,9 @@ export default function PromptInput({
   const workingDirectory = targetChild ? childWorkingDirectory : primaryWorkingDirectory;
   const targetChildIndex =
     visibleTarget.kind === 'child' && activeSession
-      ? orderedChildSessions(
-          Object.values(state.childSessions[activeSession.appSessionId] ?? {}),
-        ).findIndex((childSession) => childSession.childSessionId === visibleTarget.childSessionId)
+      ? orderedChildSessions(Object.values(state.childSessions ?? {})).findIndex(
+          (childSession) => childSession.childSessionId === visibleTarget.childSessionId,
+        )
       : -1;
   const childSettingsTarget = buildVisibleChildSettingsTarget(
     visibleTarget,
@@ -753,7 +768,7 @@ export default function PromptInput({
         visibleTargetKey,
         pendingClientRef: turnStartingClientRef.current,
         pendingWasRegistered: turnStartingPendingRegisteredRef.current,
-        pendingCompose: state.pendingCompose,
+        pendingCompose: store.getState().pendingCompose,
         lastCreatedSessionRequest: state.lastCreatedSessionRequest,
       })
     ) {
@@ -762,7 +777,8 @@ export default function PromptInput({
   }, [
     isLive,
     state.lastCreatedSessionRequest,
-    state.pendingCompose,
+    state.pendingComposeWhileWaiting,
+    store,
     stopTurnStarting,
     turnStarting,
     visibleTargetKey,
@@ -992,7 +1008,7 @@ export default function PromptInput({
     state.models,
     state.providerStatuses,
   );
-  const harnessModel = state.harnessModels[composerProvider];
+  const harnessModel = state.harnessModel;
   // Catalog validation applies to draft preferences, never to saved chat settings.
   const primaryModelId = chatScoped
     ? chatModelSettings?.modelId
@@ -1601,9 +1617,7 @@ export default function PromptInput({
     if (!committed && showTurnStarting) stopTurnStarting();
   };
 
-  const queue: QueuedPrompt[] = activeSession
-    ? (state.promptQueue[activeSession.appSessionId] ?? [])
-    : [];
+  const queue: QueuedPrompt[] = state.promptQueue ?? [];
 
   useQueuedPromptDelivery({
     appSessionId: activeSession?.appSessionId ?? null,
@@ -1878,8 +1892,6 @@ export default function PromptInput({
       });
   };
 
-  const voiceAwaiting = useRef<{ clientRef: string; registered: boolean } | null>(null);
-
   // The orb: talk to the chat that is open, or start one and talk to that. A
   // chat created this way opens with no prompt, so the first request is the
   // spoken one.
@@ -1986,9 +1998,10 @@ export default function PromptInput({
       voice.openOn(created.appSessionId, { nameFromSpeech: true });
       return;
     }
-    if (waiting.registered && !state.pendingCompose[waiting.clientRef])
+    if (waiting.registered && !state.pendingComposeWhileWaiting?.[waiting.clientRef]) {
       voiceAwaiting.current = null;
-  }, [activeSession, state.lastCreatedSessionRequest, state.pendingCompose, voice]);
+    }
+  }, [activeSession, state.lastCreatedSessionRequest, state.pendingComposeWhileWaiting, voice]);
 
   const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
@@ -2272,7 +2285,7 @@ export default function PromptInput({
                 scope="session"
                 provider={activeSession.provider}
                 value={activeSession.autonomy}
-                pending={activeSession.appSessionId in state.pendingAutonomy}
+                pending={state.autonomyPending}
                 onSelect={(level) => {
                   dispatch({
                     type: 'AUTONOMY_UPDATE_REQUESTED',
