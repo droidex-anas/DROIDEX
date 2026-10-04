@@ -2,10 +2,8 @@ import type { AppState } from '../hooks/useStore';
 
 const EMPTY_TRANSCRIPT: never[] = [];
 
-export function selectChatViewState(current: AppState) {
-  const activeSession = current.activeAppSessionId
-    ? current.sessions[current.activeAppSessionId]
-    : null;
+export function selectChatViewState(current: AppState, appSessionId: string | null) {
+  const activeSession = appSessionId ? (current.sessions[appSessionId] ?? null) : null;
   return {
     activeSession,
     allTranscript: activeSession

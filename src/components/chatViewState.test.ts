@@ -54,8 +54,8 @@ function appendMutation() {
 function visibleStateEqual(change: (previous: AppState) => AppState): boolean {
   const previous = activeState();
   return equalVisibleChatState(
-    selectChatViewState(previous),
-    selectChatViewState(change(previous)),
+    selectChatViewState(previous, 'active'),
+    selectChatViewState(change(previous), 'active'),
   );
 }
 
@@ -76,6 +76,18 @@ test('chat selector ignores background streams and telemetry-only summary update
     },
   }));
   assert.equal(telemetry, true);
+});
+
+test('chat selector follows the session its view shows, not the active one', () => {
+  const previous = activeState();
+  const next: AppState = {
+    ...previous,
+    transcripts: { ...previous.transcripts, background: [...previous.transcripts.background] },
+  };
+
+  const shown = selectChatViewState(next, 'background');
+  assert.equal(shown.activeSession?.appSessionId, 'background');
+  assert.equal(equalVisibleChatState(selectChatViewState(previous, 'background'), shown), false);
 });
 
 test('chat selector observes the visible transcript, its provenance, and visible session fields', () => {

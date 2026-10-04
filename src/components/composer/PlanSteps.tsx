@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronDown } from 'lucide-react';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
@@ -58,28 +58,28 @@ function StepRing({
   );
 }
 
-// The model's plan for the active session, tucked behind the composer. Mission
-// control owns its own feature progress, so this stays out of those sessions.
+// The model's plan for the composer's session, tucked behind the composer.
+// Mission control owns its own feature progress, so this stays out of those
+// sessions.
 export default function PlanSteps({
+  appSessionId,
   expanded,
   onExpandedChange,
 }: {
+  appSessionId: string | null;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
 }) {
-  const { appSessionId, isMissionControl, selectedAgent } = useStoreSelector((state) => {
-    const activeSession = state.activeAppSessionId
-      ? state.sessions[state.activeAppSessionId]
-      : null;
+  const { isMissionControl, selectedAgent } = useStoreSelector((state) => {
+    const session = appSessionId ? state.sessions[appSessionId] : null;
     const visibleTarget = visibleSessionTarget(
-      activeSession?.appSessionId,
+      appSessionId ?? undefined,
       state.selectedChild,
       state.childSessions,
       state.childAccess,
     );
     return {
-      appSessionId: activeSession?.appSessionId ?? null,
-      isMissionControl: activeSession?.sessionPurpose === 'mission-control',
+      isMissionControl: session?.sessionPurpose === 'mission-control',
       selectedAgent: visibleTarget.kind === 'child' ? visibleTarget.childSessionId : null,
     };
   }, shallowEqual);
@@ -129,6 +129,7 @@ export function PlanStepsPanel({
   onExpandedChange: (expanded: boolean) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
   useEffect(() => {
     onExpandedChange(false);
   }, [resetKey, onExpandedChange]);
@@ -167,7 +168,7 @@ export function PlanStepsPanel({
               onExpandedChange(!expanded);
             }}
             aria-expanded={expanded}
-            aria-controls="plan-steps-list"
+            aria-controls={listId}
             className="flex w-full min-w-0 items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-droid-active/40"
           >
             <StepRing
@@ -184,7 +185,7 @@ export function PlanStepsPanel({
           </button>
 
           <motion.div
-            id="plan-steps-list"
+            id={listId}
             initial={false}
             animate={{ height: expanded ? 'auto' : 0 }}
             transition={{ duration: 0.24, ease: EASE }}

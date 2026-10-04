@@ -169,6 +169,7 @@ export default function App() {
       ? current.sessions[current.activeAppSessionId]
       : null;
     return {
+      activeAppSessionId: current.activeAppSessionId,
       activeSession,
       childAccess: current.childAccess,
       commandPaletteOpen: current.commandPaletteOpen,
@@ -794,11 +795,15 @@ export default function App() {
               ) : (
                 <>
                   <ChatView
+                    appSessionId={state.activeAppSessionId}
                     rightInset={rightPanelVisible}
                     isObscured={paneExpanded}
                     besidePane={showUtilityPane}
                   />
-                  <PromptInput rightInset={rightPanelVisible} />
+                  <PromptInput
+                    appSessionId={state.activeAppSessionId}
+                    rightInset={rightPanelVisible}
+                  />
                   {activeSession && state.sideChatPlacement === 'floating' ? (
                     <Suspense fallback={null}>
                       <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />

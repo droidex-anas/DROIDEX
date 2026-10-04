@@ -252,10 +252,13 @@ const VOICE_PROJECT_TASK =
   'The user is about to say the goal of this project out loud, in a voice conversation on this chat. Until they do there is nothing to plan: reply with one short question asking what this project should get done.';
 
 export default function PromptInput({
+  appSessionId,
   rightInset = false,
   compact = false,
   onOverlayChange,
 }: {
+  // The chat this composer writes into; null drafts a new chat.
+  appSessionId: string | null;
   rightInset?: boolean;
   compact?: boolean;
   onOverlayChange?: (open: boolean) => void;
@@ -268,12 +271,9 @@ export default function PromptInput({
   const runtimeActionsBlocked = appUpdateInstalling || !runtimeReady;
   const state = useStoreSelector(
     (current) => ({
-      activeAppSessionId: current.activeAppSessionId,
-      activeSession: current.activeAppSessionId
-        ? current.sessions[current.activeAppSessionId]
-        : null,
-      attachedReplies: current.activeAppSessionId
-        ? sideChatPanel(current.sideChats, current.activeAppSessionId).attachedReplies
+      activeSession: appSessionId ? current.sessions[appSessionId] : null,
+      attachedReplies: appSessionId
+        ? sideChatPanel(current.sideChats, appSessionId).attachedReplies
         : undefined,
       agentConfig: current.agentConfig,
       harnessModels: current.harnessModels,
@@ -297,8 +297,8 @@ export default function PromptInput({
       modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
       pendingAutonomy: current.pendingAutonomy,
-      pendingActiveModelUpdate: current.activeAppSessionId
-        ? current.pendingModelUpdates[current.activeAppSessionId]
+      pendingActiveModelUpdate: appSessionId
+        ? current.pendingModelUpdates[appSessionId]
         : undefined,
       pendingCompose: current.pendingCompose,
       promptQueue: current.promptQueue,
@@ -310,8 +310,8 @@ export default function PromptInput({
     shallowEqual,
   );
   const store = useStoreApi();
-  const { fastMode, setFastMode } = useFastMode(state.activeAppSessionId ?? undefined);
-  const { contextWindowTokens } = useContextWindow(state.activeAppSessionId ?? undefined);
+  const { fastMode, setFastMode } = useFastMode(appSessionId ?? undefined);
+  const { contextWindowTokens } = useContextWindow(appSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -444,7 +444,7 @@ export default function PromptInput({
   const consumedComposerSeedId = useRef<number | null>(null);
 
   const activeSession = state.activeSession;
-  const primaryIsLive = useSessionLive(state.activeAppSessionId);
+  const primaryIsLive = useSessionLive(appSessionId);
 
   // The user's own prompts in this conversation, oldest to newest, for ArrowUp
   // recall (reuse a previous prompt). Consecutive duplicates are collapsed.
@@ -1146,7 +1146,7 @@ export default function PromptInput({
       throw new Error('Open the conversation you want to continue.');
     }
     if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
-    const appSessionId = activeSession.appSessionId;
+    const scheduledAppSessionId = activeSession.appSessionId;
     const generation = scheduleGeneration.current;
     const revision = composerRevisionRef.current;
     const intakeCutoff = nextIntakeSeqRef.current;
@@ -1156,10 +1156,9 @@ export default function PromptInput({
       path,
       sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
     }));
+    // The generation moves whenever this composer's target does.
     const stillTargeted = () =>
-      scheduleGeneration.current === generation &&
-      store.getState().activeAppSessionId === appSessionId &&
-      visibleTargetRef.current.kind === 'primary';
+      scheduleGeneration.current === generation && visibleTargetRef.current.kind === 'primary';
     submittingRef.current = true;
     try {
       const [images, documents, client, schedules] = await Promise.all([
@@ -1194,7 +1193,7 @@ export default function PromptInput({
         title: (input.trim() || skills[0] || 'Scheduled prompt').replace(/\s+/g, ' ').slice(0, 80),
         prompt: composePrompt(text, skills, []),
         files: paths,
-        target: { kind: 'existing-session', appSessionId },
+        target: { kind: 'existing-session', appSessionId: scheduledAppSessionId },
         schedule: { kind: 'once', runAt },
         timezone,
       });
@@ -2056,7 +2055,7 @@ export default function PromptInput({
         )}
         {/* The full voice surface covers this composer and shows the same two
             cards itself, so only one of the two places owns an ask at a time. */}
-        <InlineInteractions plans asks={voice.view !== 'full'} />
+        <InlineInteractions appSessionId={appSessionId} plans asks={voice.view !== 'full'} />
 
         {missionPreview ? (
           <div
@@ -2097,7 +2096,7 @@ export default function PromptInput({
           </div>
         )}
 
-        <ComposerDock />
+        <ComposerDock appSessionId={appSessionId} />
 
         {voiceHere && (
           <Suspense fallback={null}>
@@ -2406,12 +2405,14 @@ export default function PromptInput({
                       !missionPreview &&
                       !childSettingsTarget ? (
                         <ModelSliderPopover
+                          appSessionId={appSessionId}
                           onClose={() => {
                             setModelsOpen(false);
                           }}
                         />
                       ) : (
                         <ModelSelectorPopover
+                          appSessionId={appSessionId}
                           onClose={() => {
                             setModelsOpen(false);
                           }}

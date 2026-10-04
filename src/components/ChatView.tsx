@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { GripVertical, ChevronRight, Square } from 'lucide-react';
-import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
@@ -239,10 +239,13 @@ function ChatHeader({
 }
 
 export default function ChatView({
+  appSessionId,
   rightInset = false,
   isObscured = false,
   besidePane = false,
 }: {
+  // The chat this view shows; null is the new-chat welcome.
+  appSessionId: string | null;
   rightInset?: boolean;
   isObscured?: boolean;
   // The utility pane is open beside the chat, so the chat's scrollbar ends
@@ -251,12 +254,16 @@ export default function ChatView({
 }) {
   const dispatch = useStoreDispatch();
   const openAgent = useOpenAgent();
+  const selectState = useCallback(
+    (current: AppState) => selectChatViewState(current, appSessionId),
+    [appSessionId],
+  );
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
       isObscured || equalVisibleChatState(previous, next),
     [isObscured],
   );
-  const state = useStoreSelector(selectChatViewState, equalChatState);
+  const state = useStoreSelector(selectState, equalChatState);
   const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
@@ -613,18 +620,14 @@ export default function ChatView({
   // carries the way back to the conversation that started it. It is selected
   // apart from the chat state so a project snapshot never re-renders the feed.
   const origin = useStoreSelector(
-    (current) => threadOrigin(current.projects, current.activeAppSessionId ?? undefined),
+    (current) => threadOrigin(current.projects, appSessionId ?? undefined),
     equalOrigin,
   );
   // Mid-turn but stopped on the user is not working, so the header drops its shimmer.
   const blockedOnUser = useStoreSelector(
     (current) =>
-      current.activeAppSessionId !== null &&
-      sessionAttention(
-        current.activeAppSessionId,
-        current.pendingPermissions,
-        current.pendingQuestions,
-      ) !== null,
+      appSessionId !== null &&
+      sessionAttention(appSessionId, current.pendingPermissions, current.pendingQuestions) !== null,
   );
   const chatHeaderSub = viewingChildSession
     ? {
@@ -700,7 +703,7 @@ export default function ChatView({
   // tell a backgrounded server is still alive without each one touching the store.
   const liveProcesses =
     useStoreSelector((current) =>
-      current.activeAppSessionId ? current.agentProcesses[current.activeAppSessionId] : undefined,
+      appSessionId ? current.agentProcesses[appSessionId] : undefined,
     ) ?? NO_LIVE_PROCESSES;
   const messageFeedAgentMonitor = agentMonitor;
   let conversationContent: ReactNode;
