@@ -122,23 +122,25 @@ export function composeOrigin(strip: TabStrip): ComposeOrigin {
   return { tabId: strip.activeTabId, tileId: activeGrid(strip)?.focusedTileId ?? null };
 }
 
+type ComposeOrigins = Pick<AppState, 'pendingCompose' | 'heldComposeOrigins'>;
+
 /**
- * A compose sent from a tile that closes has no place left. Its tab may later
- * show a new chat, but that is not the one it was sent from.
+ * A compose sent from a tile that closes has no place left, whether it is
+ * still preparing or already waiting for its chat. Its tab may later show a
+ * new chat, but that is not the one it was sent from.
  */
-export function withComposeTileClosed(
-  pendingCompose: AppState['pendingCompose'],
-  tileId: string,
-): AppState['pendingCompose'] {
-  const sentFrom = Object.entries(pendingCompose).filter(
-    ([, compose]) => compose?.origin?.tileId === tileId,
-  );
-  if (sentFrom.length === 0) return pendingCompose;
-  const next = { ...pendingCompose };
-  for (const [clientRef, compose] of sentFrom) {
-    if (compose) next[clientRef] = { ...compose, origin: null };
+export function withComposeTileClosed(state: ComposeOrigins, tileId: string): ComposeOrigins {
+  const isClosed = (origin: ComposeOrigin | null | undefined) => origin?.tileId === tileId;
+  const pendingCompose = { ...state.pendingCompose };
+  for (const [clientRef, compose] of Object.entries(state.pendingCompose)) {
+    if (compose && isClosed(compose.origin))
+      pendingCompose[clientRef] = { ...compose, origin: null };
   }
-  return next;
+  const heldComposeOrigins = { ...state.heldComposeOrigins };
+  for (const [holdId, origin] of Object.entries(state.heldComposeOrigins)) {
+    if (isClosed(origin)) heldComposeOrigins[holdId] = null;
+  }
+  return { pendingCompose, heldComposeOrigins };
 }
 
 // The tile still waiting for a chat sent from `origin`: the tile itself while

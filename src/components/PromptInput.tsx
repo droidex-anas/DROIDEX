@@ -126,7 +126,6 @@ import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
 import { useAskSideChat } from './sidechats/useAskSideChat';
 import { effectiveProvider } from '../features/providers/providerDraft';
-import { composeOrigin } from '../features/tabs/tabNavigation';
 import {
   PROVIDER_MARKS,
   providerDefaultModel,
@@ -1138,12 +1137,24 @@ export default function PromptInput({
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
+    const originHoldId = holdComposeOrigin();
     try {
-      await runSubmit(mode, autonomyOverride);
+      await runSubmit(originHoldId, mode, autonomyOverride);
     } finally {
+      dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
       submittingRef.current = false;
     }
   };
+
+  // The chat a send creates opens in the place it was sent from, even if the
+  // user switches tabs while attachments settle or the folder is prepared. The
+  // store forgets that place if its tile closes first.
+  const holdComposeOrigin = () => {
+    const holdId = crypto.randomUUID();
+    dispatch({ type: 'HOLD_COMPOSE_ORIGIN', holdId });
+    return holdId;
+  };
+  const heldComposeOrigin = (holdId: string) => store.getState().heldComposeOrigins[holdId] ?? null;
 
   const schedulePrompt = async (runAt: number, timezone: string) => {
     if (!activeSession || visibleTarget.kind !== 'primary') {
@@ -1225,7 +1236,7 @@ export default function PromptInput({
     }
   };
 
-  const runSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
+  const runSubmit = async (originHoldId: string, mode: SubmitMode, autonomyOverride?: Autonomy) => {
     const updateInterruptedSubmit = () => {
       if (isAppUpdateInstalling()) {
         toast.info('DROIDEX is installing an update. New turns will resume after restart.');
@@ -1238,9 +1249,6 @@ export default function PromptInput({
       return false;
     };
     if (updateInterruptedSubmit()) return;
-    // A chat this send creates opens in the place it was sent from, even if the
-    // user switches tabs while attachments settle or the folder is prepared.
-    const sendingFrom = composeOrigin(store.getState().tabStrip);
     const text = input.trim();
     // Snapshot the composer revision before the settle wait: text, files, and
     // skills are render-closure snapshots, so anything typed or staged while
@@ -1366,7 +1374,7 @@ export default function PromptInput({
         text: displayText,
         skills: skillNames,
         files: allFiles,
-        origin: sendingFrom,
+        origin: heldComposeOrigin(originHoldId),
       });
     };
 
@@ -1904,7 +1912,7 @@ export default function PromptInput({
     voiceAwaiting.current = { clientRef, registered: false };
     if (projectDraft) projectStartRef.current = clientRef;
     const draftAtStart = store.getState().draftChat;
-    const startingFrom = composeOrigin(store.getState().tabStrip);
+    const originHoldId = holdComposeOrigin();
     void (async () => {
       // Named for now by when it started; the first thing said in it renames it.
       const placeholder = `${projectDraft ? 'Voice project' : 'Voice chat'} ${new Date().toLocaleTimeString(
@@ -1926,7 +1934,7 @@ export default function PromptInput({
         text: '',
         skills: [],
         files: [],
-        origin: startingFrom,
+        origin: heldComposeOrigin(originHoldId),
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
@@ -1961,13 +1969,17 @@ export default function PromptInput({
           state.compactionModel === 'current-model' ? undefined : state.compactionModel,
         ...compactionSettingsSnapshot(compactionSettingsInput),
       });
-    })().catch(() => {
-      // The chat was never created, so nothing is being waited for and the orb
-      // works again. The failure itself is reported by the command that raised
-      // it.
-      voiceAwaiting.current = null;
-      releaseProjectStart(clientRef);
-    });
+    })()
+      .catch(() => {
+        // The chat was never created, so nothing is being waited for and the
+        // orb works again. The failure itself is reported by the command that
+        // raised it.
+        voiceAwaiting.current = null;
+        releaseProjectStart(clientRef);
+      })
+      .finally(() => {
+        dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
+      });
   };
 
   const startVoice = () => {

@@ -15,6 +15,7 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  composeOrigin,
   enteredPlaceNavigation,
   placeCreatedChat,
   showChat,
@@ -463,6 +464,9 @@ export interface AppState {
       { text: string; skills: string[]; files: string[]; origin: ComposeOrigin | null }
     >
   >;
+  // Where each send was made from while it prepares, before it has a pending
+  // compose, keyed by hold id. Null once that tile has closed.
+  heldComposeOrigins: Partial<Record<string, ComposeOrigin | null>>;
   // Bounded settlement identity for the latest successful foreground create.
   // PromptInput uses it to distinguish that activation from a failure followed
   // by the user selecting an unrelated existing session.
@@ -509,8 +513,11 @@ export type Action =
       text: string;
       skills: string[];
       files: string[];
-      origin: ComposeOrigin;
+      origin: ComposeOrigin | null;
     }
+  // A send holds the place it was made from until its pending compose takes it.
+  | { type: 'HOLD_COMPOSE_ORIGIN'; holdId: string }
+  | { type: 'RELEASE_COMPOSE_ORIGIN'; holdId: string }
   | { type: 'SESSION_UPDATED'; session: SessionSummary }
   | { type: 'SESSION_CLOSED'; appSessionId: string }
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
@@ -895,6 +902,7 @@ export const initialState: AppState = {
   harnessModels: loadHarnessModels(),
   agentConfig: loadAgentConfig(),
   pendingCompose: {},
+  heldComposeOrigins: {},
   lastCreatedSessionRequest: null,
   pendingForks: {},
   sideChats: {},
@@ -1318,6 +1326,19 @@ export function reducer(state: AppState, action: Action): AppState {
             origin: action.origin,
           },
         },
+      };
+    case 'HOLD_COMPOSE_ORIGIN':
+      return {
+        ...state,
+        heldComposeOrigins: {
+          ...state.heldComposeOrigins,
+          [action.holdId]: composeOrigin(state.tabStrip),
+        },
+      };
+    case 'RELEASE_COMPOSE_ORIGIN':
+      return {
+        ...state,
+        heldComposeOrigins: withoutKey(state.heldComposeOrigins, action.holdId),
       };
 
     case 'SESSION_UPDATED': {
@@ -2264,11 +2285,9 @@ export function reducer(state: AppState, action: Action): AppState {
       // focuses. It runs against the new strip so it sees which chats stay on
       // screen; the strip it computes for itself is replaced.
       const navigation = enteredPlaceNavigation(state, tabStrip);
-      const pendingCompose =
-        action.type === 'CLOSE_TILE'
-          ? withComposeTileClosed(state.pendingCompose, action.tileId)
-          : state.pendingCompose;
-      const entered: AppState = { ...state, tabStrip, pendingCompose };
+      const composes =
+        action.type === 'CLOSE_TILE' ? withComposeTileClosed(state, action.tileId) : null;
+      const entered: AppState = { ...state, ...composes, tabStrip };
       const navigated = navigation ? reducer(entered, navigation) : entered;
       return withTilesSeen({ ...navigated, tabStrip }, Date.now());
     }

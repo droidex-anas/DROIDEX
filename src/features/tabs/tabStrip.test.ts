@@ -345,6 +345,42 @@ test('a chat sent from a tile opens nowhere once the tile is gone or shows anoth
   assert.equal(narrowed.activeAppSessionId, 'n');
 });
 
+test('a chat still preparing when its tile closes opens nowhere', () => {
+  const held = reduce(withChats('a'), splitWith(null), {
+    type: 'HOLD_COMPOSE_ORIGIN',
+    holdId: 'h1',
+  });
+  // What the composer does once the folder is ready.
+  const register = (state: AppState): AppState =>
+    reduce(
+      state,
+      {
+        type: 'SET_PENDING_COMPOSE',
+        clientRef: 'c1',
+        text: 'hi',
+        skills: [],
+        files: [],
+        origin: state.heldComposeOrigins['h1'] ?? null,
+      },
+      { type: 'RELEASE_COMPOSE_ORIGIN', holdId: 'h1' },
+      { type: 'SESSION_CREATED', clientRef: 'c1', session: session('n') },
+    );
+
+  const restarted = register(
+    reduce(
+      held,
+      { type: 'CLOSE_TILE', tileId: tileIdShowing(held, 'new-chat') },
+      { type: 'START_CHAT', cwd: '/other', executionMode: 'local' },
+    ),
+  );
+  assert.deepEqual(strip(restarted), ['[new-chat]']);
+  assert.equal(restarted.draftChat?.cwd, '/other');
+  assert.deepEqual(restarted.heldComposeOrigins, {});
+
+  const narrowed = register(reduce(held, { type: 'CLOSE_TILE', tileId: tileIdShowing(held, 'a') }));
+  assert.deepEqual(strip(narrowed), ['[n]']);
+});
+
 test('closing a tile focuses its neighbor, and the last tile is the tab page again', () => {
   const split = reduce(withChats('a', 'b', 'c'), splitWith('b'), {
     type: 'SPLIT_TILE',
