@@ -6,6 +6,7 @@ import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatChord } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { HoverTooltip } from '../../components/HoverTooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
 import { PROVIDER_MARKS } from '../providers/providerIdentity';
@@ -158,74 +159,81 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
                   : 'text-droid-text-muted hover:bg-droid-elevated/40 hover:text-droid-text'
               }`}
             >
-              <button
-                type="button"
-                title={item.title}
-                aria-current={active ? 'page' : undefined}
-                // Browsers switch on press, so a drag that starts on a
-                // background tab carries that tab.
-                onPointerDown={(event) => {
-                  if (event.button === 0) activate(item.id);
-                }}
-                onClick={() => {
-                  activate(item.id);
-                }}
-                onMouseDown={(event) => {
-                  if (event.button === 1) event.preventDefault();
-                }}
-                onAuxClick={(event) => {
-                  if (event.button === 1) close(item.id);
-                }}
-                className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 pr-7 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
-              >
-                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                  <TabGlyph item={item} />
-                </span>
-                <span className={`truncate text-[13px] ${active ? 'font-medium' : ''}`}>
-                  {item.label}
-                </span>
-                {item.tileCount > 1 && (
-                  <span
-                    aria-label={`${String(item.tileCount)} chats side by side`}
-                    className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted"
-                  >
-                    <Columns className="h-3 w-3" />
-                    {item.tileCount}
+              <HoverTooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">
+                <button
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  // Browsers switch on press, so a drag that starts on a
+                  // background tab carries that tab.
+                  onPointerDown={(event) => {
+                    if (event.button === 0) activate(item.id);
+                  }}
+                  onClick={() => {
+                    activate(item.id);
+                  }}
+                  onMouseDown={(event) => {
+                    if (event.button === 1) event.preventDefault();
+                  }}
+                  onAuxClick={(event) => {
+                    if (event.button === 1) close(item.id);
+                  }}
+                  className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 pr-7 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+                >
+                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                    <TabGlyph item={item} />
                   </span>
-                )}
-              </button>
-              <button
-                type="button"
-                aria-label={`Close ${item.label}`}
-                title={`Close tab (${formatChord(closeTabChord)})`}
-                onPointerDown={(event) => {
-                  // Closing must not first switch to the tab or start a drag.
-                  event.stopPropagation();
-                }}
-                onClick={() => {
-                  close(item.id);
-                }}
-                className={`absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-droid-text-muted transition-[opacity,color,background-color] hover:bg-droid-active hover:text-droid-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
-                  active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}
+                  <span className={`truncate text-[13px] ${active ? 'font-medium' : ''}`}>
+                    {item.label}
+                  </span>
+                  {item.tileCount > 1 && (
+                    <span
+                      aria-label={`${String(item.tileCount)} chats side by side`}
+                      className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted"
+                    >
+                      <Columns className="h-3 w-3" />
+                      {item.tileCount}
+                    </span>
+                  )}
+                </button>
+              </HoverTooltip>
+              <HoverTooltip
+                label={`Close tab (${formatChord(closeTabChord)})`}
+                placement="bottom"
+                className="absolute right-1 top-1/2 -translate-y-1/2"
               >
-                <X className="h-3 w-3" />
-              </button>
+                <button
+                  type="button"
+                  aria-label={`Close ${item.label}`}
+                  onPointerDown={(event) => {
+                    // Closing must not first switch to the tab or start a drag.
+                    event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    close(item.id);
+                  }}
+                  className={`flex h-5 w-5 items-center justify-center rounded-md text-droid-text-muted transition-[opacity,color,background-color] hover:bg-droid-active hover:text-droid-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
+                    active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </HoverTooltip>
             </Reorder.Item>
           );
         })}
       </Reorder.Group>
-      <button
-        type="button"
-        aria-label="New tab"
-        title={`New tab (${formatChord(newTabChord)})`}
-        onClick={() => {
-          dispatch({ type: 'OPEN_NEW_CHAT_TAB' });
-        }}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </button>
+      <HoverTooltip label={`New tab (${formatChord(newTabChord)})`} placement="bottom">
+        <button
+          type="button"
+          aria-label="New tab"
+          onClick={() => {
+            dispatch({ type: 'OPEN_NEW_CHAT_TAB' });
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </HoverTooltip>
       <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">{controls}</div>
     </div>
   );

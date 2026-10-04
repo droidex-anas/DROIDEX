@@ -93,7 +93,9 @@ export function HoverTooltip({
         onMouseEnter={showSoon}
         onMouseLeave={hide}
         onPointerDownCapture={hide}
-        onFocusCapture={() => {
+        onFocusCapture={(event) => {
+          // A click focuses too; only keyboard focus should open it at once.
+          if (!event.target.matches(':focus-visible')) return;
           cancelTimer();
           setOpen(true);
         }}
