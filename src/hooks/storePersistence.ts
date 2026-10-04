@@ -1,4 +1,5 @@
 import { saveDraftProvider } from '../features/providers/providerDraft';
+import { saveTabStrip } from '../features/tabs/tabStrip';
 import { saveDefaultAutonomy } from '../lib/autonomy';
 import { saveChatMetadata } from '../lib/chatMetadata';
 import { saveSessionNotes } from '../lib/sessionNotes';
@@ -65,6 +66,7 @@ const FIELD_SAVERS = [
   saver('harnessModels', saveHarnessModels),
   saver('agentConfig', saveAgentConfig),
   saver('compactionModel', saveCompactionModel),
+  saver('tabStrip', saveTabStrip),
 ];
 
 function saver<Field extends keyof AppState>(field: Field, save: (value: AppState[Field]) => void) {

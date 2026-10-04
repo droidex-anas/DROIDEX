@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { useEffect, useRef, type MouseEvent } from 'react';
+import { shallowEqual, useStoreDispatch, useStoreSelector, type Action } from '../hooks/useStore';
 import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
 import { isEmbedded } from '../lib/embed';
+import { opensInNewTab } from '../lib/shortcuts';
+import type { TabPage } from '../features/tabs/tabStrip';
 import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { GitPullRequestIcon } from './environment/GithubIcons';
 import { Clock } from '@droidex/icons';
@@ -44,19 +46,36 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
 
   if (isEmbedded()) return null;
 
+  // A primary-modifier or middle click gives the view its own tab, then shows
+  // it there. Other auxiliary buttons (right click) do nothing.
+  const navigate = (event: MouseEvent, page: TabPage, navigation: Action) => {
+    const newTab = opensInNewTab(event);
+    if (event.button !== 0 && !newTab) return;
+    if (newTab) dispatch({ type: 'OPEN_TAB', page });
+    dispatch(navigation);
+  };
+  const openPullRequests = (event: MouseEvent) => {
+    const cwd = resolvePrWorkspaceCwd({
+      boundCwd: state.prWorkspaceCwd,
+      activeCwd: state.activeSession?.cwd,
+      workspaceKind: state.activeSession?.workspaceKind,
+      workspaceCwds: state.workspaceCwds,
+    });
+    navigate(event, { kind: 'pull-requests' }, { type: 'OPEN_PULL_REQUESTS', cwd });
+  };
+  const openProjects = (event: MouseEvent) => {
+    navigate(event, { kind: 'projects' }, { type: 'OPEN_PROJECTS' });
+  };
+  const openAutomations = (event: MouseEvent) => {
+    navigate(event, { kind: 'automations' }, { type: 'OPEN_AUTOMATIONS' });
+  };
+
   return (
     <>
       <button
         data-testid="pull-requests-nav"
-        onClick={() => {
-          const cwd = resolvePrWorkspaceCwd({
-            boundCwd: state.prWorkspaceCwd,
-            activeCwd: state.activeSession?.cwd,
-            workspaceKind: state.activeSession?.workspaceKind,
-            workspaceCwds: state.workspaceCwds,
-          });
-          dispatch({ type: 'OPEN_PULL_REQUESTS', cwd });
-        }}
+        onClick={openPullRequests}
+        onAuxClick={openPullRequests}
         className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
           state.mainView === 'pull-requests' ? 'bg-droid-active' : ''
         }`}
@@ -76,9 +95,8 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         ref={projectsButtonRef}
         data-testid="projects-nav"
         aria-current={state.mainView === 'projects' ? 'page' : undefined}
-        onClick={() => {
-          dispatch({ type: 'OPEN_PROJECTS' });
-        }}
+        onClick={openProjects}
+        onAuxClick={openProjects}
         className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-droid-active text-droid-text' : 'text-droid-text hover:bg-droid-elevated'}`}
       >
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-droid-text-secondary">
@@ -93,9 +111,8 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
       <button
         ref={automationsButtonRef}
         data-testid="automations-nav"
-        onClick={() => {
-          dispatch({ type: 'OPEN_AUTOMATIONS' });
-        }}
+        onClick={openAutomations}
+        onAuxClick={openAutomations}
         aria-current={state.mainView === 'automations' ? 'page' : undefined}
         className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
           state.mainView === 'automations' ? 'bg-droid-active' : ''

@@ -18,6 +18,7 @@ function render(props: Partial<SessionContextMenuProps> = {}): string {
       provider: 'droid',
       resumeSessionId: 'droid-123',
       providerSessionId: 'droid-123',
+      onOpenInTab: () => undefined,
       onRename: () => undefined,
       onTogglePin: () => undefined,
       onArchive: () => undefined,
@@ -49,6 +50,7 @@ function renderWithWindow(props: Partial<SessionContextMenuProps> = {}): string 
 test('SessionContextMenu lists organization actions first, then the copy actions', () => {
   const html = render();
   const order = [
+    'Open in new tab',
     'Pin chat',
     'Rename chat',
     'Archive chat',
@@ -91,10 +93,10 @@ test('SessionContextMenu renders without a window global and skips the clamp', (
 });
 
 test('SessionContextMenu clamps to the viewport bottom using the rendered row count', () => {
-  // Full menu (cwd + provider id => 7 rows): 18 chrome + 7*30 = 228px tall.
+  // Full menu (cwd + provider id => 8 rows): 18 chrome + 8*30 = 258px tall.
   const html = renderWithWindow({ y: 790 });
   const top = /top:\s*([\d.]+)px/.exec(html);
   assert.ok(top, 'expected an inline top style');
-  // 800 - 228 - 8 margin = 564.
-  assert.equal(Number(top[1]), 564);
+  // 800 - 258 - 8 margin = 534.
+  assert.equal(Number(top[1]), 534);
 });

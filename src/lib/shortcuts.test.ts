@@ -10,6 +10,7 @@ import {
   matchesChord,
   parseChord,
   serializeChord,
+  tabNumberFromEvent,
 } from './shortcuts';
 
 // Node has no Mac user agent, so these exercise the non-Apple branch where the
@@ -104,3 +105,15 @@ test('defaults are collision-free and conflicts are reported both ways', () => {
     ['openSettings'],
   );
 });
+
+test('tabNumberFromEvent reads only the bare primary-modifier digits 1 to 9', () => {
+  assert.equal(tabNumberFromEvent(event({ ctrlKey: true, key: '3', code: 'Digit3' })), 3);
+  // Shift+3 reports '#' but is a different chord.
+  assert.equal(
+    tabNumberFromEvent(event({ ctrlKey: true, shiftKey: true, key: '#', code: 'Digit3' })),
+    null,
+  );
+  assert.equal(tabNumberFromEvent(event({ ctrlKey: true, key: '0', code: 'Digit0' })), null);
+  assert.equal(tabNumberFromEvent(event({ key: '3', code: 'Digit3' })), null);
+});
+

@@ -54,6 +54,7 @@ import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
+import { viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
 
@@ -251,7 +252,7 @@ export default function ChatView({
     [isObscured],
   );
   const state = useStoreSelector(selectChatViewState, equalChatState);
-  const sidebarCollapsed = useStoreSelector((current) => current.sidebarCollapsed);
+  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -827,7 +828,7 @@ export default function ChatView({
             (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
           }
           live={live}
-          leadPx={sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
+          leadPx={holdsWindowControls ? WINDOW_CONTROLS_LEAD_PX : 16}
           appSessionId={activeSession.appSessionId}
           {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
         />

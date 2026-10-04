@@ -47,7 +47,18 @@ import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
 import { addNativeSurfaceObscurer } from './hooks/useObscuresNativeSurfaces';
-import { WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
+import {
+  TOP_ROW_HEIGHT_PX,
+  WINDOW_CONTROLS_INSET_PX,
+  WINDOW_CONTROLS_LEAD_PX,
+} from './lib/windowChrome';
+import { HeaderTabs } from './features/tabs/HeaderTabs';
+import {
+  adjacentTabId,
+  numberedTabId,
+  showsTabStrip,
+  type TabAction,
+} from './features/tabs/tabStrip';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
@@ -65,6 +76,7 @@ import {
   SHORTCUT_DEFINITIONS,
   formatChord,
   matchesChord,
+  tabNumberFromEvent,
   type ShortcutAction,
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
@@ -173,6 +185,7 @@ export default function App() {
         : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
+      tabStripShown: showsTabStrip(current),
       theme: current.theme,
       utilityPanels: current.utilityPanels,
       workspaceCwds: current.workspaceCwds,
@@ -614,6 +627,11 @@ export default function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
+    // An embedded copy of the app shows no tabs, so its chords leave them be.
+    const tabAction = (action: () => TabAction) => () => {
+      if (!embedded) dispatch(action());
+    };
+    const tabStrip = () => store.getState().tabStrip;
     const run: Record<ShortcutAction, () => void> = {
       toggleSidebar: () => {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
@@ -625,6 +643,14 @@ export default function App() {
       openSettings: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
+      newTab: tabAction(() => ({ type: 'OPEN_NEW_CHAT_TAB' })),
+      closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
+      reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
+      nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),
+      previousTab: tabAction(() => ({
+        type: 'ACTIVATE_TAB',
+        tabId: adjacentTabId(tabStrip(), -1),
+      })),
     };
     const handler = (e: KeyboardEvent) => {
       // A saved binding wins over the fixed chords below, so rebinding an
@@ -638,6 +664,14 @@ export default function App() {
         // A held key auto-repeats and would toggle straight back.
         if (e.repeat) return;
         run[action]();
+        return;
+      }
+      const tabNumber = tabNumberFromEvent(e);
+      if (tabNumber !== null) {
+        if (isTerminalInputTarget(e.target) && !e.metaKey) return;
+        e.preventDefault();
+        const tabId = numberedTabId(tabStrip(), tabNumber);
+        if (tabId && !embedded) dispatch({ type: 'ACTIVATE_TAB', tabId });
         return;
       }
       if (isTerminalTabShortcut(e)) {
@@ -659,7 +693,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handler);
     };
-  }, [dispatch, openUtilityTool, state.shortcutBindings, toggleUtilityPane]);
+  }, [dispatch, embedded, openUtilityTool, state.shortcutBindings, store, toggleUtilityPane]);
 
   const setupBlocker =
     !showWizard &&
@@ -717,8 +751,12 @@ export default function App() {
         {/* Every view under `main` owns a drag row as its top row, so a view
             never shifts when the sidebar collapses. Collapsing only moves the
             window controls and the floating sidebar toggle into that row; the
-            chat header reads the collapsed state and leaves them room. */}
+            chat header reads the collapsed state and leaves them room. With a
+            second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
+          {state.tabStripShown && (
+            <HeaderTabs leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16} />
+          )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
               aria-hidden={paneExpanded}
@@ -974,7 +1012,8 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 12 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-none absolute top-0 right-0 h-full w-[312px] z-30"
+              className="pointer-events-none absolute bottom-0 right-0 w-[312px] z-30"
+              style={{ top: state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0 }}
             >
               <RightPanel />
             </motion.div>
@@ -1004,11 +1043,12 @@ export default function App() {
         </button>
       </div>
 
+      {/* The session's own controls stay in its header row, below the tabs. */}
       {!showUtilityPane && !fullContentRoute && (
         <div
           data-electron-drag-region
           className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
-          style={{ top: bannerStackHeight }}
+          style={{ top: bannerStackHeight + (state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0) }}
         >
           {workingDirectory && (
             <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />

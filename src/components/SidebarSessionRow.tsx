@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { GitFork, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
+import { opensInNewTab } from '../lib/shortcuts';
 import { reasoningEffortLabel } from '../lib/reasoningEffort';
 import { SESSION_MENU_WIDTH } from './SessionContextMenu';
 import type { SessionSummary } from '../types/bridge';
@@ -66,6 +67,7 @@ export interface SessionRowProps {
   renaming: boolean;
   now: number;
   onSelect: (appSessionId: string) => void;
+  onOpenInTab: (appSessionId: string) => void;
   onMenu: (appSessionId: string, position: { x: number; y: number }) => void;
   onRenameCommit: (appSessionId: string, title: string) => void;
   onRenameCancel: () => void;
@@ -92,6 +94,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.renaming === next.renaming &&
     prev.now === next.now &&
     prev.onSelect === next.onSelect &&
+    prev.onOpenInTab === next.onOpenInTab &&
     prev.onMenu === next.onMenu &&
     prev.onRenameCommit === next.onRenameCommit &&
     prev.onRenameCancel === next.onRenameCancel &&
@@ -114,6 +117,7 @@ export const SessionRow = memo(function SessionRow({
   renaming,
   now,
   onSelect,
+  onOpenInTab,
   onMenu,
   onRenameCommit,
   onRenameCancel,
@@ -303,8 +307,16 @@ export const SessionRow = memo(function SessionRow({
         data-app-session-id={session.appSessionId}
         title={`${title} · ${ACTIVITY_LABELS[activityStatus]}`}
         aria-current={active ? 'true' : undefined}
-        onClick={() => {
-          onSelect(session.appSessionId);
+        onClick={(e) => {
+          if (opensInNewTab(e)) onOpenInTab(session.appSessionId);
+          else onSelect(session.appSessionId);
+        }}
+        onMouseDown={(e) => {
+          // Middle press would otherwise start the browser's autoscroll.
+          if (e.button === 1) e.preventDefault();
+        }}
+        onAuxClick={(e) => {
+          if (opensInNewTab(e)) onOpenInTab(session.appSessionId);
         }}
         onContextMenu={(e) => {
           e.preventDefault();

@@ -15,6 +15,16 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  focusTabShowing,
+  livePage,
+  loadTabStrip,
+  pageNavigation,
+  reduceTabStrip,
+  withoutChats,
+  type TabAction,
+  type TabStrip,
+} from '../features/tabs/tabStrip';
+import {
   reduceVoice,
   withoutVoiceSession,
   type VoiceAction,
@@ -328,6 +338,9 @@ export interface AppState {
   modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
+  // Header tabs. The active tab's page is the live one above (mainView,
+  // activeAppSessionId, draftChat); see features/tabs/tabStrip.
+  tabStrip: TabStrip;
   automationEditorRequest: AutomationEditorRequest | null;
   prWorkspaceCwd: string | null;
   prWorkspaceNumber: number | null;
@@ -662,6 +675,7 @@ export type Action =
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
+  | TabAction
   | VoiceAction
   | {
       type: 'START_CHAT';
@@ -801,6 +815,7 @@ export const initialState: AppState = {
   utilityPanels: persistedUiState.utilityPanels ?? {},
   sidebarCollapsed: persistedUiState.sidebarCollapsed ?? false,
   mainView: persistedUiState.mainView ?? 'session',
+  tabStrip: loadTabStrip(),
   automationEditorRequest: null,
   prWorkspaceCwd: persistedUiState.prWorkspaceCwd ?? null,
   prWorkspaceNumber: persistedUiState.prWorkspaceNumber ?? null,
@@ -1386,8 +1401,16 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'ARCHIVE_CHAT': {
       const chatMetadata = archiveChat(state.chatMetadata, action.appSessionId, Date.now());
       const utilityPanels = removeSessionPanel(state.utilityPanels, action.appSessionId);
-      if (!chatMetadata && utilityPanels === state.utilityPanels) return state;
-      return { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels };
+      const tabStrip = withoutChats(state.tabStrip, (id) => id === action.appSessionId);
+      if (!chatMetadata && utilityPanels === state.utilityPanels && tabStrip === state.tabStrip) {
+        return state;
+      }
+      return {
+        ...state,
+        chatMetadata: chatMetadata ?? state.chatMetadata,
+        utilityPanels,
+        tabStrip,
+      };
     }
 
     case 'RESTORE_CHAT': {
@@ -1400,8 +1423,16 @@ export function reducer(state: AppState, action: Action): AppState {
       // chats and their PTYs remain live; only explicit deletion/archival cleans up panels.
       const chatMetadata = deleteChat(state.chatMetadata, action.appSessionId, Date.now());
       const utilityPanels = removeSessionPanel(state.utilityPanels, action.appSessionId);
-      if (!chatMetadata && utilityPanels === state.utilityPanels) return state;
-      return { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels };
+      const tabStrip = withoutChats(state.tabStrip, (id) => id === action.appSessionId);
+      if (!chatMetadata && utilityPanels === state.utilityPanels && tabStrip === state.tabStrip) {
+        return state;
+      }
+      return {
+        ...state,
+        chatMetadata: chatMetadata ?? state.chatMetadata,
+        utilityPanels,
+        tabStrip,
+      };
     }
 
     case 'SESSION_FEATURES': {
@@ -1730,6 +1761,7 @@ export function reducer(state: AppState, action: Action): AppState {
         listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
         earlierSessionsByCwd: action.earlierSessionsByCwd,
         activeAppSessionId,
+        tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
       };
     }
 
@@ -1840,6 +1872,13 @@ export function reducer(state: AppState, action: Action): AppState {
         reviewFocusChange: action.id === state.activeAppSessionId ? state.reviewFocusChange : null,
         mainView: 'session',
         automationEditorRequest: null,
+        tabStrip: action.id
+          ? focusTabShowing(
+              state.tabStrip,
+              { kind: 'chat', appSessionId: action.id },
+              livePage(state),
+            )
+          : state.tabStrip,
       };
     }
 
@@ -2097,6 +2136,11 @@ export function reducer(state: AppState, action: Action): AppState {
       return reduceVoice(state, action);
 
     case 'OPEN_PULL_REQUESTS':
+      return {
+        ...reducePrInbox(state, action),
+        automationEditorRequest: null,
+        tabStrip: focusTabShowing(state.tabStrip, { kind: 'pull-requests' }, livePage(state)),
+      };
     case 'CLOSE_PULL_REQUESTS':
     case 'MOVE_PR_TO_BACKLOG':
     case 'RESTORE_PR_FROM_BACKLOG': {
@@ -2112,6 +2156,7 @@ export function reducer(state: AppState, action: Action): AppState {
         mainView: 'projects',
         automationEditorRequest: null,
         rightPanelOpen: false,
+        tabStrip: focusTabShowing(state.tabStrip, { kind: 'projects' }, livePage(state)),
       };
     case 'CLOSE_PROJECTS':
       return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
@@ -2123,7 +2168,24 @@ export function reducer(state: AppState, action: Action): AppState {
           ? createAutomationEditorRequest(action.automationId)
           : null,
         rightPanelOpen: false,
+        tabStrip: focusTabShowing(state.tabStrip, { kind: 'automations' }, livePage(state)),
       };
+
+    case 'OPEN_TAB':
+    case 'OPEN_NEW_CHAT_TAB':
+    case 'ACTIVATE_TAB':
+    case 'CLOSE_TAB':
+    case 'REOPEN_CLOSED_TAB':
+    case 'REORDER_TABS': {
+      const tabStrip = reduceTabStrip(state, action);
+      if (tabStrip === state.tabStrip) return state;
+      if (tabStrip.activeTabId === state.tabStrip.activeTabId) return { ...state, tabStrip };
+      // The strip already names the tab being entered, so the navigation
+      // below finds no other tab to focus and simply shows that tab's page.
+      const entered = tabStrip.tabs.find((tab) => tab.id === tabStrip.activeTabId);
+      if (!entered) return { ...state, tabStrip };
+      return reducer({ ...state, tabStrip }, pageNavigation(entered.page));
+    }
 
     case 'CLOSE_AUTOMATIONS':
       return state.mainView !== 'automations' && !state.automationEditorRequest

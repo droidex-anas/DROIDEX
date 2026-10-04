@@ -12,7 +12,12 @@ export type ShortcutAction =
   | 'toggleSidebar'
   | 'toggleUtilityPane'
   | 'openCommandPalette'
-  | 'openSettings';
+  | 'openSettings'
+  | 'newTab'
+  | 'closeTab'
+  | 'reopenClosedTab'
+  | 'nextTab'
+  | 'previousTab';
 
 export interface ShortcutDefinition {
   action: ShortcutAction;
@@ -27,6 +32,11 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { action: 'toggleUtilityPane', label: 'Toggle utility pane', defaultChord: 'Meta+J' },
   { action: 'openCommandPalette', label: 'Command palette', defaultChord: 'Meta+K' },
   { action: 'openSettings', label: 'Open settings', defaultChord: 'Meta+,' },
+  { action: 'newTab', label: 'New tab', defaultChord: 'Meta+T' },
+  { action: 'closeTab', label: 'Close tab', defaultChord: 'Meta+W' },
+  { action: 'reopenClosedTab', label: 'Reopen closed tab', defaultChord: 'Meta+Shift+T' },
+  { action: 'nextTab', label: 'Next tab', defaultChord: 'Meta+Shift+]' },
+  { action: 'previousTab', label: 'Previous tab', defaultChord: 'Meta+Shift+[' },
 ];
 
 export type ShortcutBindings = Record<ShortcutAction, string>;
@@ -169,6 +179,19 @@ export function matchesChord(event: ChordEvent, chord: string): boolean {
     event.shiftKey === parsed.shift &&
     keyFromEvent(event) === parsed.key
   );
+}
+
+/** The fixed browser chords that pick a tab by position: 1 to 9, or null. */
+export function tabNumberFromEvent(event: ChordEvent): number | null {
+  const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
+  if (!digit || !matchesChord(event, `Meta+${digit}`)) return null;
+  return Number(digit);
+}
+
+/** Browser convention: a primary-modifier click or a middle click opens a new tab. */
+export function opensInNewTab(event: Pick<MouseEvent, 'button' | 'metaKey' | 'ctrlKey'>): boolean {
+  if (event.button === 1) return true;
+  return event.button === 0 && (APPLE ? event.metaKey : event.ctrlKey);
 }
 
 /** Other actions already bound to the same chord as `action`. */
