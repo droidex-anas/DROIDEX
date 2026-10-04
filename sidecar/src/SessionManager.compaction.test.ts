@@ -86,7 +86,7 @@ test('create arms daemon compaction, and its notifications stream before an acti
     assert.equal(turnSettled, false);
     assert.equal(started >= 0, true);
 
-    notifyDaemonCompaction(h, 'provider-1', 'completed');
+    notifyDaemonCompaction(h, 'provider-1', 'completed', 'first-completion');
     const completed = h.events.findIndex(
       (event) => event.type === 'event.appended' && event.event.kind === 'compaction',
     );
@@ -95,6 +95,18 @@ test('create arms daemon compaction, and its notifications stream before an acti
     assert.equal(completed > started, true);
     assert.equal(summary?.streaming, true);
     assert.equal(summary?.autoCompactions, 1);
+    notifyDaemonCompaction(h, 'provider-1', 'started');
+    notifyDaemonCompaction(h, 'provider-1', 'completed');
+    notifyDaemonCompaction(h, 'provider-1', 'completed');
+    assert.equal(sessionUpdates(h.events).at(-1)?.autoCompactions, 3);
+    notifyDaemonCompaction(h, 'provider-1', 'completed', 'first-completion');
+    assert.equal(sessionUpdates(h.events).at(-1)?.autoCompactions, 3);
+    assert.equal(
+      h.events.filter(
+        (event) => event.type === 'event.appended' && event.event.kind === 'compaction',
+      ).length,
+      3,
+    );
     // The daemon owns automatic compaction; the client never compacts on its own.
     assert.equal(callCount(h.calls, 'provider', 'compactSession', 'provider-1'), 0);
 

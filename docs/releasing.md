@@ -3,8 +3,8 @@
 This is the team checklist for publishing a DROIDEX macOS release. The source
 repository is public. Installers and update files remain isolated in the public
 [`droidex-releases`](https://github.com/droidex-anas/droidex-releases)
-repository so the app consumes only the seven verified release assets, never
-source archives.
+repository so the app consumes only verified release assets, including generated
+Sparkle deltas, never source archives.
 
 ## Before you start
 

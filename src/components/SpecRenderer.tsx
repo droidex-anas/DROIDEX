@@ -12,12 +12,12 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 
 function parseSpecSegments(markdown: string): Segment[] {
   const segments: Segment[] = [];
-  const matches: Array<{
+  const matches: {
     start: number;
     end: number;
     content: string;
     kind: 'svg' | 'mermaid' | 'inline';
-  }> = [];
+  }[] = [];
 
   // Pattern 1: fenced code blocks ```svg or ```mermaid
   const codeRegex = /```(?:svg|mermaid)\n([\s\S]*?)```/g;
@@ -75,7 +75,10 @@ function parseSpecSegments(markdown: string): Segment[] {
 }
 
 function SvgVisualCard({ svgContent, index }: { svgContent: string; index: number }) {
-  const safeSvg = useMemo(() => fitSvgMarkup(svgContent), [svgContent]);
+  const svgSource = useMemo(
+    () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(svgContent))}`,
+    [svgContent],
+  );
 
   return (
     <motion.div
@@ -95,10 +98,7 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
 
       {/* Rendered SVG */}
       <div className="pt-9 pb-5 px-5 flex items-center justify-center min-h-[100px]">
-        <div
-          className="w-full flex items-center justify-center [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:block"
-          dangerouslySetInnerHTML={{ __html: safeSvg }}
-        />
+        <img className="block w-full h-auto" src={svgSource} alt="SVG diagram" />
       </div>
     </motion.div>
   );

@@ -163,9 +163,6 @@
     }
   },
   "src/components/SpecRenderer.tsx": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 3
     }

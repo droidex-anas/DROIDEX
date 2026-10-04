@@ -113,16 +113,27 @@ function hashFile(path, algorithm, encoding) {
   return createHash(algorithm).update(readFileSync(path)).digest(encoding);
 }
 
+function enclosureAttribute(enclosure, name) {
+  return enclosure.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
+}
+
 function verifySparkleAppcast(architecture) {
   const appcastName = `appcast-${architecture}.xml`;
   const appcastPath = join(releaseDirectory, appcastName);
   const appcast = readFileSync(appcastPath);
   const text = appcast.toString('utf8');
-  const enclosure = text.match(
-    /<enclosure url="([^"]+)" length="(\d+)"[^>]*sparkle:edSignature="([^"]+)"/,
+  const enclosures = text.match(/<enclosure\b[^>]*>/g) ?? [];
+  const enclosure = enclosures.find(
+    (tag) => enclosureAttribute(tag, 'sparkle:deltaFrom') === undefined,
   );
   assert(enclosure, `${appcastName} is missing its signed enclosure`);
-  const [, url, declaredLength, archiveSignature] = enclosure;
+  const url = enclosureAttribute(enclosure, 'url');
+  const declaredLength = enclosureAttribute(enclosure, 'length');
+  const archiveSignature = enclosureAttribute(enclosure, 'sparkle:edSignature');
+  assert(
+    archiveSignature && /^\d+$/.test(declaredLength ?? ''),
+    `${appcastName} is missing its signed enclosure`,
+  );
   const archiveName = `droidex-${architecture}.zip`;
   const archivePath = join(releaseDirectory, archiveName);
   assert(
@@ -164,16 +175,22 @@ function verifySparkleAppcast(architecture) {
   );
 
   const deltaPrefix = `https://github.com/droidex-anas/droidex-releases/releases/download/v${packageJson.version}/`;
-  const deltas = [
-    ...text.matchAll(
-      /<enclosure url="([^"]+)" sparkle:deltaFrom="[^"]+" length="(\d+)"[^>]*sparkle:edSignature="([^"]+)"/g,
-    ),
-  ];
+  const deltas = enclosures.filter(
+    (tag) => enclosureAttribute(tag, 'sparkle:deltaFrom') !== undefined,
+  );
   assert(
     deltas.length === (text.match(/sparkle:deltaFrom=/g)?.length ?? 0),
     `${appcastName} has an unsigned or unrecognised delta enclosure`,
   );
-  for (const [, deltaUrl, deltaLength, deltaSignature] of deltas) {
+  for (const delta of deltas) {
+    const deltaFrom = enclosureAttribute(delta, 'sparkle:deltaFrom');
+    const deltaUrl = enclosureAttribute(delta, 'url');
+    const deltaLength = enclosureAttribute(delta, 'length');
+    const deltaSignature = enclosureAttribute(delta, 'sparkle:edSignature');
+    assert(
+      deltaFrom && deltaUrl && deltaSignature && /^\d+$/.test(deltaLength ?? ''),
+      `${appcastName} has an unsigned or unrecognised delta enclosure`,
+    );
     const deltaName = deltaUrl.slice(deltaPrefix.length);
     assert(
       deltaUrl.startsWith(deltaPrefix) &&

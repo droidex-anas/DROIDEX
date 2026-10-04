@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Markdown, MarkdownTree, markdownFenceOptions } from './Markdown';
+import { SpecRenderer } from './SpecRenderer';
 
 interface MarkdownProps {
   children: string;
@@ -20,6 +21,22 @@ test('disabled generated content renders svg and app fences as escaped code', ()
   const app = disabled('```app\n<p>Untrusted preview content</p>\n```');
   assert.match(app, /&lt;p&gt;Untrusted preview content&lt;\/p&gt;/);
   assert.doesNotMatch(app, /aria-label="Play app"/);
+});
+
+test('generated SVG stays in image context in chat and spec previews', () => {
+  const payload =
+    '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.pwned=true" viewBox="0 0 4 2"><rect width="4" height="2"/></svg>';
+  const source = `\`\`\`svg\n${payload}\n\`\`\``;
+  const previews = [
+    createElement(Markdown, null, source),
+    createElement(SpecRenderer, { content: source }),
+  ];
+  for (const preview of previews) {
+    const html = renderToStaticMarkup(preview);
+    assert.match(html, /<img[^>]*src="data:image\/svg\+xml;charset=utf-8,/);
+    assert.match(html, /alt="SVG diagram"/);
+    assert.doesNotMatch(html, /\sonload=/);
+  }
 });
 
 test('restored app fences start inline without a Play card; a cut-off one alerts alone', () => {
