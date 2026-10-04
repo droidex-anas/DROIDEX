@@ -272,6 +272,8 @@ export default function PromptInput({
   const state = useStoreSelector(
     (current) => ({
       activeSession: appSessionId ? current.sessions[appSessionId] : null,
+      // A split tab mounts a composer per tile; the focused one shows the live chat.
+      isFocused: appSessionId === current.activeAppSessionId,
       attachedReplies: appSessionId
         ? sideChatPanel(current.sideChats, appSessionId).attachedReplies
         : undefined,
@@ -942,7 +944,8 @@ export default function PromptInput({
   // Welcome-screen suggestion cards and saved notes seed the composer through
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
-  const composerSeed = state.composerSeed;
+  // Only the focused tile's composer takes the seed.
+  const composerSeed = state.isFocused ? state.composerSeed : null;
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
     consumedComposerSeedId.current = composerSeed.id;

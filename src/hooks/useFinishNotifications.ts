@@ -15,6 +15,7 @@ import {
   loadFinishNotificationSettings,
 } from '../lib/finishNotifications';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './useStore';
+import { isChatInView } from '../features/tabs/tabStrip';
 
 // Desktop finish banners: working→idle sessions raise a short OS notification.
 // Clicks open that chat via a main-process pending queue (push + focus pull).
@@ -22,9 +23,8 @@ import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from '.
 export function useFinishNotifications(enabled: boolean): void {
   const dispatch = useStoreDispatch();
   const store = useStoreApi();
-  const { activeAppSessionId, sessions, settingsOpen } = useStoreSelector(
+  const { sessions, settingsOpen } = useStoreSelector(
     (state) => ({
-      activeAppSessionId: state.activeAppSessionId,
       sessions: state.sessions,
       settingsOpen: state.settingsOpen,
     }),
@@ -36,8 +36,6 @@ export function useFinishNotifications(enabled: boolean): void {
   settingsOpenRef.current = settingsOpen;
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
-  const activeIdRef = useRef(activeAppSessionId);
-  activeIdRef.current = activeAppSessionId;
   const lastOpenedRef = useRef<{ id: string; at: number } | null>(null);
 
   const openSessionFromNotification = useCallback(
@@ -116,7 +114,7 @@ export function useFinishNotifications(enabled: boolean): void {
 
     for (const session of finished) {
       // Build snippet only when we may actually notify this session.
-      const isActive = session.appSessionId === activeIdRef.current;
+      const isActive = isChatInView(store.getState(), session.appSessionId);
       if (!settings.notifyActiveSession && isActive) continue;
 
       const decision = decideFinishNotification({

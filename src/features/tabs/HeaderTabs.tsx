@@ -1,5 +1,5 @@
 import { Reorder } from 'framer-motion';
-import { Clock, Plus, Spinner, SquarePen, X } from '@droidex/icons';
+import { Clock, Columns, Plus, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
@@ -9,15 +9,19 @@ import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
 import { PROVIDER_MARKS } from '../providers/providerIdentity';
 import type { ProviderKind, SessionSummary } from '../../types/bridge';
-import { livePage, tabPage, type TabPage } from './tabStrip';
+import { livePage, tabPage, type FocusedPage, type TabPage } from './tabStrip';
+import { focusedTile, gridTiles } from './tileGrid';
 
 interface TabItem {
   id: string;
-  kind: TabPage['kind'];
+  kind: FocusedPage['kind'];
   label: string;
   // Chat tabs only: the harness mark, and whether a turn is running.
   provider: ProviderKind | null;
   live: boolean;
+  // A split tab names every tile in its tooltip and shows its tile count.
+  title: string;
+  tileCount: number;
 }
 
 const VIEW_LABELS = {
@@ -27,20 +31,36 @@ const VIEW_LABELS = {
   automations: 'Automations',
 } as const;
 
-function tabItem(state: AppState, id: string, page: TabPage): TabItem {
+function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
+  const item = { id, provider: null, live: false, tileCount: 1 };
   if (page.kind !== 'chat') {
-    return { id, kind: page.kind, label: VIEW_LABELS[page.kind], provider: null, live: false };
+    const label = VIEW_LABELS[page.kind];
+    return { ...item, kind: page.kind, label, title: label };
   }
   // A restored tab can name a chat the first session list has not reported yet.
   const sessions: Partial<Record<string, SessionSummary>> = state.sessions;
   const session = sessions[page.appSessionId];
-  if (!session) return { id, kind: 'chat', label: 'Chat', provider: null, live: false };
+  if (!session) return { ...item, kind: 'chat', label: 'Chat', title: 'Chat' };
+  const label = chatDisplayTitle(session, state.chatMetadata[page.appSessionId]);
   return {
-    id,
+    ...item,
     kind: 'chat',
-    label: chatDisplayTitle(session, state.chatMetadata[page.appSessionId]),
+    label,
+    title: label,
     provider: session.provider,
     live: sessionIsLive(session),
+  };
+}
+
+// A split tab reads as its focused tile, and is live while any tile is.
+function tabItem(state: AppState, id: string, page: TabPage): TabItem {
+  if (page.kind !== 'tiles') return pageItem(state, id, page);
+  const items = gridTiles(page.grid).map((tile) => pageItem(state, id, tile.page));
+  return {
+    ...pageItem(state, id, focusedTile(page.grid).page),
+    live: items.some((item) => item.live),
+    title: items.map((item) => item.label).join(', '),
+    tileCount: items.length,
   };
 }
 
@@ -61,7 +81,9 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
         item.kind === other.kind &&
         item.label === other.label &&
         item.provider === other.provider &&
-        item.live === other.live
+        item.live === other.live &&
+        item.title === other.title &&
+        item.tileCount === other.tileCount
       );
     })
   );
@@ -136,7 +158,7 @@ export function HeaderTabs({ leadPx }: { leadPx: number }) {
             >
               <button
                 type="button"
-                title={item.label}
+                title={item.title}
                 aria-current={active ? 'page' : undefined}
                 // Browsers switch on press, so a drag that starts on a
                 // background tab carries that tab.
@@ -160,6 +182,15 @@ export function HeaderTabs({ leadPx }: { leadPx: number }) {
                 <span className={`truncate text-[13px] ${active ? 'font-medium' : ''}`}>
                   {item.label}
                 </span>
+                {item.tileCount > 1 && (
+                  <span
+                    aria-label={`${String(item.tileCount)} chats side by side`}
+                    className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted"
+                  >
+                    <Columns className="h-3 w-3" />
+                    {item.tileCount}
+                  </span>
+                )}
               </button>
               <button
                 type="button"

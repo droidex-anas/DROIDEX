@@ -1,5 +1,6 @@
 import type { AppState } from '../hooks/useStore';
 import type { SessionSummary } from '../types/bridge';
+import { isChatInView } from '../features/tabs/tabStrip';
 import {
   SIDEBAR_ROW_LIMITS as LIMITS,
   type SidebarMark,
@@ -41,6 +42,7 @@ type SidebarState = Pick<
   | 'pendingQuestions'
   | 'activeAppSessionId'
   | 'sessionLastSeen'
+  | 'tabStrip'
 >;
 
 /** Null when the request is too close to expiring to answer or act on. */
@@ -87,7 +89,7 @@ function sidebarRow(
     label: ACTIVITY_LABELS[status],
     unread: signals.unread,
   };
-  if (id === state.activeAppSessionId) row.onScreen = true;
+  if (isChatInView(state, id)) row.onScreen = true;
   if (isChatPinned(metadata[id])) row.pinned = true;
   if (signals.settledAt !== undefined) row.settledAt = signals.settledAt;
   if (signals.prDone) row.prDone = true;
@@ -131,7 +133,7 @@ function applyMark(
     if (!session) return { appSessionId, done: false, reason: 'Not in the sidebar.' };
     const signals = chatActivitySignals(session, state, preferences);
     const reason = markRefusal(mark, sessionActivityStatus(session, signals), {
-      onScreen: appSessionId === state.activeAppSessionId,
+      onScreen: isChatInView(state, appSessionId),
       hasNewActivity: session.updatedAt > updatedAt,
     });
     if (reason) return { appSessionId, done: false, reason };

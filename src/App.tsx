@@ -33,8 +33,6 @@ import {
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
-import ChatView from './components/ChatView';
-import PromptInput from './components/PromptInput';
 import RightPanel from './components/RightPanel';
 import EditorOpenMenu from './components/EditorOpenMenu';
 import Toaster from './components/Toaster';
@@ -53,12 +51,15 @@ import {
   WINDOW_CONTROLS_LEAD_PX,
 } from './lib/windowChrome';
 import { HeaderTabs } from './features/tabs/HeaderTabs';
+import { ChatTiles } from './features/tabs/ChatTiles';
 import {
+  activeGrid,
   adjacentTabId,
   numberedTabId,
   showsTabStrip,
   type TabAction,
 } from './features/tabs/tabStrip';
+import { adjacentTileId, nextSplit, type TileEdge } from './features/tabs/tileGrid';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
@@ -629,10 +630,28 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     // An embedded copy of the app shows no tabs, so its chords leave them be.
-    const tabAction = (action: () => TabAction) => () => {
-      if (!embedded) dispatch(action());
+    const tabAction = (action: () => TabAction | null) => () => {
+      if (embedded) return;
+      const next = action();
+      if (next) dispatch(next);
     };
     const tabStrip = () => store.getState().tabStrip;
+    const splitNewChat = (preferred: TileEdge) =>
+      tabAction(() => {
+        const grid = activeGrid(tabStrip());
+        const split = grid ? nextSplit(grid, preferred) : null;
+        return {
+          type: 'SPLIT_TILE',
+          targetTileId: split?.targetTileId ?? null,
+          edge: split?.edge ?? preferred,
+          appSessionId: null,
+        };
+      });
+    const focusAdjacentTile = (offset: 1 | -1) =>
+      tabAction(() => {
+        const grid = activeGrid(tabStrip());
+        return grid ? { type: 'FOCUS_TILE', tileId: adjacentTileId(grid, offset) } : null;
+      });
     const run: Record<ShortcutAction, () => void> = {
       toggleSidebar: () => {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
@@ -652,6 +671,14 @@ export default function App() {
         type: 'ACTIVATE_TAB',
         tabId: adjacentTabId(tabStrip(), -1),
       })),
+      splitRight: splitNewChat('right'),
+      splitDown: splitNewChat('bottom'),
+      nextTile: focusAdjacentTile(1),
+      previousTile: focusAdjacentTile(-1),
+      closeTile: tabAction(() => {
+        const grid = activeGrid(tabStrip());
+        return grid ? { type: 'CLOSE_TILE', tileId: grid.focusedTileId } : null;
+      }),
     };
     const handler = (e: KeyboardEvent) => {
       // A saved binding wins over the fixed chords below, so rebinding an
@@ -794,15 +821,10 @@ export default function App() {
                 </motion.div>
               ) : (
                 <>
-                  <ChatView
-                    appSessionId={state.activeAppSessionId}
+                  <ChatTiles
                     rightInset={rightPanelVisible}
                     isObscured={paneExpanded}
                     besidePane={showUtilityPane}
-                  />
-                  <PromptInput
-                    appSessionId={state.activeAppSessionId}
-                    rightInset={rightPanelVisible}
                   />
                   {activeSession && state.sideChatPlacement === 'floating' ? (
                     <Suspense fallback={null}>

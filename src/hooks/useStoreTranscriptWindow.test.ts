@@ -379,6 +379,26 @@ test('switching releases a settled pinned outgoing session but keeps instant tai
   assert.equal(next.transcripts.outgoing.at(-1)?.id, outgoing.at(-1)?.id);
 });
 
+test('a chat left for another tile stays on screen with its whole transcript', () => {
+  const outgoing = events('outgoing', 1_400);
+  const state = {
+    ...stateWithTranscript('outgoing', outgoing),
+    mainView: 'session' as const,
+    sessions: { outgoing: session('outgoing'), incoming: session('incoming') },
+    sessionOrder: ['incoming', 'outgoing'],
+  };
+
+  const split = reducer(state, {
+    type: 'SPLIT_TILE',
+    targetTileId: null,
+    edge: 'right',
+    appSessionId: 'incoming',
+  });
+
+  assert.equal(split.activeAppSessionId, 'incoming');
+  assert.equal(split.transcripts.outgoing, outgoing);
+});
+
 test('switching away releases a settled child tail without releasing parent history', () => {
   const primary = events('active', 2);
   const child = childEvents('child-a', 1_400);

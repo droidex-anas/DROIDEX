@@ -17,7 +17,12 @@ export type ShortcutAction =
   | 'closeTab'
   | 'reopenClosedTab'
   | 'nextTab'
-  | 'previousTab';
+  | 'previousTab'
+  | 'splitRight'
+  | 'splitDown'
+  | 'nextTile'
+  | 'previousTile'
+  | 'closeTile';
 
 export interface ShortcutDefinition {
   action: ShortcutAction;
@@ -37,6 +42,11 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { action: 'reopenClosedTab', label: 'Reopen closed tab', defaultChord: 'Meta+Shift+T' },
   { action: 'nextTab', label: 'Next tab', defaultChord: 'Meta+Shift+]' },
   { action: 'previousTab', label: 'Previous tab', defaultChord: 'Meta+Shift+[' },
+  { action: 'splitRight', label: 'Split with a new chat to the right', defaultChord: 'Meta+D' },
+  { action: 'splitDown', label: 'Split with a new chat below', defaultChord: 'Meta+Shift+D' },
+  { action: 'nextTile', label: 'Next tile', defaultChord: 'Meta+]' },
+  { action: 'previousTile', label: 'Previous tile', defaultChord: 'Meta+[' },
+  { action: 'closeTile', label: 'Close tile', defaultChord: 'Meta+Alt+W' },
 ];
 
 export type ShortcutBindings = Record<ShortcutAction, string>;
