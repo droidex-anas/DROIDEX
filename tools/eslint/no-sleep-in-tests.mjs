@@ -56,14 +56,20 @@ export default {
 
             let declaration;
             if (callback.type === 'FunctionDeclaration') declaration = callback;
-            else if (parent.type === 'VariableDeclarator' && parent.parent.kind === 'const') {
-              declaration = parent;
-            }
+            else if (parent.type === 'VariableDeclarator') declaration = parent;
             const handler = declaration?.id;
             if (handler?.type === 'Identifier') {
               const binding = context.sourceCode
                 .getDeclaredVariables(declaration)
                 .find((candidate) => candidate.identifiers.includes(handler));
+              // The handler's own initializer is its only allowed write.
+              if (
+                binding?.references.some(
+                  (reference) =>
+                    reference.isWrite() && (!reference.init || reference.writeExpr !== callback),
+                )
+              )
+                break;
               for (const { identifier } of binding?.references ?? []) {
                 const timer = identifier.parent;
                 if (isDelayedTimer(timer) && timer.arguments[0] === identifier) timers.add(timer);

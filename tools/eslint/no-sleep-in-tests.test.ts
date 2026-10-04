@@ -13,6 +13,10 @@ test('test lint rejects resolving delays while preserving rejection deadlines an
       new Promise((finish) => { function done(finish) { finish(); } setTimeout(done, 50); });
       new Promise((finish) => { function done() { finish(); } setTimeout(done, 50); });
       new Promise((finish) => { const done = () => finish(); setTimeout(done, 50); });
+      new Promise((finish) => { let done = () => finish(); setTimeout(done, 50); });
+      new Promise((finish) => { var done = () => finish(); setTimeout(done, 50); });
+      new Promise((finish, reject) => { let done = () => finish(); done = () => reject(); setTimeout(done, 50); });
+      new Promise((finish, reject) => { var done = () => finish(); var done = () => reject(); setTimeout(done, 50); });
     `,
     { filePath: 'tools/eslint/delay.spec.ts' },
   );
@@ -20,6 +24,6 @@ test('test lint rejects resolving delays while preserving rejection deadlines an
     result.messages
       .filter((message) => message.ruleId === 'test-policy/no-sleep')
       .map((message) => message.line),
-    [4, 7, 8],
+    [4, 7, 8, 9, 10],
   );
 });
