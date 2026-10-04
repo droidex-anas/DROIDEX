@@ -54,7 +54,7 @@ import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
-import { viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
+import { showsTabStrip, viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
 import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
 import { tileHandleProps } from '../features/tabs/tileDrag';
 
@@ -180,7 +180,7 @@ function ChatHeader({
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
-  // Null for a new chat's tile, which has no processes to list.
+  // The chat whose processes the header lists; null when it lists none.
   appSessionId: string | null;
   // In a split tab the title is the tile's drag handle and close button.
   tile: TileChrome | undefined;
@@ -277,6 +277,7 @@ export default function ChatView({
   );
   const state = useStoreSelector(selectState, equalChatState);
   const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const tabStripShown = useStoreSelector(showsTabStrip);
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -841,29 +842,38 @@ export default function ChatView({
   // Only the top-left tile's header row takes in the window controls.
   const leadPx =
     holdsWindowControls && (!tile || (tile.atTop && tile.atLeft)) ? WINDOW_CONTROLS_LEAD_PX : 16;
+  // A lone chat in a tab is named by its tab, whose row also lists its
+  // processes, so it needs a header only for a crumb back.
+  const namedByTab = tabStripShown && !tile;
+  let header: ReactNode = null;
+  if (activeSession && (!namedByTab || chatHeaderSub)) {
+    header = (
+      <ChatHeader
+        title={
+          // A thread's crumb names the chat that started it; a child session's
+          // crumb walks back to this chat instead, so it keeps its own title.
+          (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
+        }
+        live={live}
+        leadPx={leadPx}
+        appSessionId={namedByTab ? null : activeSession.appSessionId}
+        tile={tile}
+        {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
+      />
+    );
+  } else if (!activeSession && tile) {
+    header = (
+      <ChatHeader title="New chat" live={false} leadPx={leadPx} appSessionId={null} tile={tile} />
+    );
+  } else if (!tabStripShown) {
+    // The welcome screen has no header of its own, but the top row still
+    // belongs to the window chrome.
+    header = <div data-electron-drag-region className="h-9 shrink-0" />;
+  }
 
   return (
     <div data-testid="chat-view" className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-      {activeSession ? (
-        <ChatHeader
-          title={
-            // A thread's crumb names the chat that started it; a child session's
-            // crumb walks back to this chat instead, so it keeps its own title.
-            (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
-          }
-          live={live}
-          leadPx={leadPx}
-          appSessionId={activeSession.appSessionId}
-          tile={tile}
-          {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
-        />
-      ) : tile ? (
-        <ChatHeader title="New chat" live={false} leadPx={leadPx} appSessionId={null} tile={tile} />
-      ) : (
-        // The welcome screen has no header of its own, but the top row still
-        // belongs to the window chrome.
-        <div data-electron-drag-region className="h-9 shrink-0" />
-      )}
+      {header}
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
         <TranscriptReachHost
           items={feedItems}

@@ -52,6 +52,7 @@ import {
   WINDOW_CONTROLS_LEAD_PX,
 } from './lib/windowChrome';
 import { HeaderTabs } from './features/tabs/HeaderTabs';
+import { RunningProcessesMenu } from './components/RunningProcessesMenu';
 import { ChatTiles } from './features/tabs/ChatTiles';
 import {
   activeGrid,
@@ -178,6 +179,7 @@ export default function App() {
     return {
       activeAppSessionId: current.activeAppSessionId,
       activeSession,
+      activeTabSplit: activeGrid(current.tabStrip) !== null,
       childAccess: current.childAccess,
       commandPaletteOpen: current.commandPaletteOpen,
       customThemes: current.customThemes,
@@ -745,6 +747,48 @@ export default function App() {
   const bannerStackRef = useRef<HTMLDivElement>(null);
   const bannerStackHeight = useMeasuredHeight(bannerStackRef);
 
+  // A lone chat in a tab has no header of its own: the tab names it, and its
+  // running processes join these controls in the tab row.
+  const listsProcesses =
+    state.tabStripShown && !state.activeTabSplit && !isMissionControlView && !!activeSession;
+  const sessionControls = fullContentRoute ? null : (
+    <>
+      {listsProcesses && <RunningProcessesMenu appSessionId={activeSession.appSessionId} />}
+      {!showUtilityPane && (
+        <>
+          {workingDirectory && (
+            <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
+          )}
+          {canToggleContext && (
+            <button
+              onClick={toggleRightPanel}
+              aria-label="Toggle context panel"
+              aria-pressed={state.rightPanelOpen}
+              // No pressed fill: like the sidebar and utility toggles beside it,
+              // the open panel is its own evidence; the icon only brightens.
+              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
+                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
+              }`}
+              title="Toggle context"
+            >
+              <ContextListIcon className="h-4 w-4" />
+            </button>
+          )}
+          {!!activeSession && (
+            <button
+              ref={utilityPaneToggleRef}
+              onClick={toggleUtilityPane}
+              className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+              title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+
   return (
     <div
       id="app-root"
@@ -793,7 +837,10 @@ export default function App() {
             second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
           {state.tabStripShown && (
-            <HeaderTabs leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16} />
+            <HeaderTabs
+              leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
+              controls={sessionControls}
+            />
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
@@ -1080,41 +1127,14 @@ export default function App() {
         </button>
       </div>
 
-      {/* The session's own controls stay in its header row, below the tabs. */}
-      {!showUtilityPane && !fullContentRoute && (
+      {/* Without tabs, the session's controls float at the end of the view's own top row. */}
+      {!state.tabStripShown && !showUtilityPane && !fullContentRoute && (
         <div
           data-electron-drag-region
           className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
-          style={{ top: bannerStackHeight + (state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0) }}
+          style={{ top: bannerStackHeight }}
         >
-          {workingDirectory && (
-            <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
-          )}
-          {canToggleContext && (
-            <button
-              onClick={toggleRightPanel}
-              aria-label="Toggle context panel"
-              aria-pressed={state.rightPanelOpen}
-              // No pressed fill: like the sidebar and utility toggles beside it,
-              // the open panel is its own evidence; the icon only brightens.
-              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
-                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
-              }`}
-              title="Toggle context"
-            >
-              <ContextListIcon className="h-4 w-4" />
-            </button>
-          )}
-          {!!activeSession && (
-            <button
-              ref={utilityPaneToggleRef}
-              onClick={toggleUtilityPane}
-              className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
-              title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
-            >
-              <PanelRight className="h-4 w-4" />
-            </button>
-          )}
+          {sessionControls}
         </div>
       )}
 
