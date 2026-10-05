@@ -220,7 +220,7 @@ export function pageShowsChat(page: TabPage, appSessionId: string): boolean {
 }
 
 // New-chat drafts are never the same place: each is its own tab or tile.
-export function showsPlace(page: TabPage, place: FocusedPage): boolean {
+function showsPlace(page: TabPage, place: FocusedPage): boolean {
   switch (place.kind) {
     case 'new-chat':
       return false;
