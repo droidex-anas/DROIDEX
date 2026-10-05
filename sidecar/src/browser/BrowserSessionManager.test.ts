@@ -407,4 +407,17 @@ test('restore takes up a kept browser under its id and page, and leaves an open 
   assert.equal(updates.length, updateCount);
   await manager.reload('m2');
   assert.equal(runtimes.get('kept-2')?.reloads, 1);
+
+  const closing = manager.close('m2');
+  manager.restore([
+    {
+      appSessionId: 'm2',
+      browserSessionId: 'kept-2',
+      url: 'https://kept.example/',
+      viewport,
+      viewportMode: 'tablet',
+    },
+  ]);
+  await closing;
+  assert.equal(manager.hasSession('m2'), false);
 });

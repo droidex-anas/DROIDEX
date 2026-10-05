@@ -102,6 +102,9 @@ const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
+  // Browsers closed in this run, by browser session id. A restore sent before
+  // the app heard of the close must not bring one back over its closing page.
+  private readonly closed = new Set<string>();
 
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
@@ -414,13 +417,13 @@ export class BrowserSessionManager {
   /**
    * Takes up the browsers the app kept from its last run, each under its own
    * id and page, so the user's page is neither reloaded nor replaced. A chat
-   * that already has a browser keeps it.
+   * that already has a browser keeps it, and one closed here stays closed.
    */
   restore(browsers: Extract<ClientCommand, { type: 'browser.restore' }>['browsers']): void {
     for (const browser of browsers) {
       const { appSessionId, browserSessionId, url } = browser;
       if (!nonEmpty(appSessionId) || !nonEmpty(browserSessionId) || !nonEmpty(url)) continue;
-      if (this.hasSession(appSessionId)) continue;
+      if (this.hasSession(appSessionId) || this.closed.has(browserSessionId)) continue;
       this.sessionFor(appSessionId, browser.viewport, browser.viewportMode, {
         browserSessionId,
         url,
@@ -437,6 +440,7 @@ export class BrowserSessionManager {
     if (!session) return;
     // Gone before it shuts down, so nothing it answers meanwhile is shown.
     this.sessions.delete(appSessionId);
+    this.closed.add(session.id);
     await session.runtime.close();
   }
 
