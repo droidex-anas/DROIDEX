@@ -553,8 +553,6 @@ interface BrowserState {
   title?: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
-  screenshotPath?: string;
-  screenshotUrl?: string;
   scroll: { x: number; y: number };
   canGoBack?: boolean;
   canGoForward?: boolean;
@@ -609,6 +607,7 @@ type BrowserNativeAction =
   | 'goForward'
   | 'snapshot'
   | 'readPage'
+  | 'readText'
   | 'find'
   | 'click'
   | 'hover'
@@ -621,6 +620,7 @@ type BrowserNativeAction =
   | 'network'
   | 'console'
   | 'capture'
+  | 'screenshot'
   | 'close'
   | 'fillCredentials';
 
@@ -644,8 +644,9 @@ export interface BrowserNativeRequest {
   direction?: BrowserScrollDirection;
   pixels?: number;
   box?: BrowserBox;
+  region?: BrowserBox;
   fullPage?: boolean;
-  deviceScaleFactor?: number;
+  format?: 'jpeg' | 'png';
   clearNetworkLog?: boolean;
   clearConsoleLog?: boolean;
 }
@@ -660,7 +661,8 @@ export interface BrowserNativeResult {
   networkEvents?: BrowserNetworkEvent[];
   consoleEvents?: BrowserConsoleEvent[];
   image?: string;
-  /** What browser_read_page and browser_find show the agent. */
+  mimeType?: 'image/jpeg' | 'image/png';
+  /** What the reading tools show the agent; for a screenshot, its geometry. */
   text?: string;
   /** How many lines browser_find matched. */
   matches?: number;
@@ -988,12 +990,6 @@ export type ClientCommand =
       pixels?: number;
       ref?: string;
       source?: 'agent' | 'user';
-    }
-  | {
-      type: 'browser.screenshot';
-      appSessionId: string;
-      fullPage?: boolean;
-      deviceScaleFactor?: number;
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {

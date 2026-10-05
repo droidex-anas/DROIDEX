@@ -79,7 +79,7 @@ The system has **5 trust zones**:
 4. **Loopback WebSocket Zone** - Sidecar bridge on `127.0.0.1`
 
    - Assumes: Only the Electron app should connect, but any local process can attempt connection
-   - Entry Points: WebSocket upgrade at `ws://127.0.0.1:{BRIDGE_PORT}`, `/browser-assets` HTTP endpoint
+   - Entry Points: WebSocket upgrade at `ws://127.0.0.1:{BRIDGE_PORT}`
    - Validated by: `BRIDGE_TOKEN` query-string comparison (non-constant-time)
    - Risk: No Origin/CSRF check, token in URL, `BRIDGE_TOKEN=''` or `BRIDGE_ALLOW_LOCAL_NO_TOKEN=1` disables auth entirely, no `maxPayload`
 
@@ -151,10 +151,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - **`ws://127.0.0.1:{BRIDGE_PORT}`** - Command channel (~50 ClientCommand types)
   - **Input:** JSON messages with `type` discriminator and payload fields
   - **Validation:** TypeScript types only; no runtime schema validation (Zod available but unused on ingress)
-  - **Risk:** Any JSON shape dispatched; `connect` accepts API key; `browser.native.result` lets any client resolve another's pending request
-- **`GET /browser-assets?path=...&token=...`** - Serves browser design assets
-  - **Validation:** Token check + `isBrowserAssetPath` confinement
-  - **Risk:** Token in URL query string
+  - **Risk:** Any JSON shape dispatched; `connect` accepts API key
 
 ### Data Input Vectors
 

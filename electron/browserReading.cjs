@@ -3,9 +3,17 @@
 // in one document and is never reused; a ref from a document that has since
 // gone fails plainly instead of acting on something else.
 
-const { refFor, knownRef, forgetRefs } = require('./browserRefs.cjs');
+const {
+  send,
+  documentFrames,
+  viewportMapping,
+  scrollFrameIntoView,
+  axTree,
+  boundsOf,
+} = require('./browserFrames.cjs');
 const { createBrowserMasking, fieldOf, foldedNames } = require('./browserMasking.cjs');
-const { cleanText, matcher, TEXT_ROLES } = require('./browserText.cjs');
+const { markdownOf, cleanText, matcher, TEXT_ROLES } = require('./browserText.cjs');
+const { refFor, knownRef, forgetRefs } = require('./browserRefs.cjs');
 
 const MAX_NODES = 20_000;
 const MAX_REFS = 5_000;
@@ -53,6 +61,7 @@ const WRAPPER_ROLES = new Set([
 // Fields whose inside only repeats their value.
 const LEAF_ROLES = new Set(['textbox', 'searchbox', 'spinbutton', 'slider']);
 const STATE_PROPERTIES = ['checked', 'pressed', 'selected', 'expanded', 'disabled', 'required'];
+
 function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, redactUrl }) {
   const masking = createBrowserMasking({ savedSecretsFor });
   // Run against the guest's debugger; a guest that goes away mid-read fails.
@@ -69,18 +78,38 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       const render = newRender(entry, options);
       if (options.ref) {
         const target = await lookupRef(dbg, entry, options.ref);
-        const tree = await axTree(dbg, target.frameId);
+        const tree = await axTree(dbg, target.frame);
         const root = tree.nodes.find((node) => node.backendDOMNodeId === target.backendNodeId);
         if (!root)
           throw new Error(`${options.ref} is not on the page any more; call browser_read_page.`);
-        if (await masking.insideMaskedField(dbg, tree, root, contents.getURL()))
+        if (await masking.insideMaskedField(dbg, tree, root, target.frame))
           throw new Error(`${options.ref} is inside a masked field.`);
-        renderTree(render, tree, root, target.document, 0);
+        renderTree(render, tree, root, target.frame, 0);
       } else {
         await renderFrames(dbg, render);
       }
-      await masking.maskFields(dbg, render, contents.getURL());
-      return finish(render, options.maxChars, contents);
+      await masking.maskFields(dbg, render);
+      return finish(
+        render,
+        render.lines.map(indent).join('\n'),
+        options.maxChars,
+        contents,
+        'read one ref, raise max_chars, or use filter "interactive"',
+      );
+    });
+  }
+
+  // The main document's content as light markdown: headings, paragraphs, list
+  // items, table rows and links. Controls and field values are left out.
+  async function readText(contents, options = {}) {
+    return withPage(contents, async (dbg) => {
+      const [frame] = await documentFrames(dbg);
+      const render = newRender(undefined, {});
+      const tree = await axTree(dbg, frame);
+      const skip = await masking.sensitiveNodes(dbg, tree, frame);
+      const folded = foldedNames(tree.nodes);
+      const text = markdownOf(tree, render, { redactUrl, maxNodes: MAX_NODES, skip, folded });
+      return finish(render, text, options.maxChars, contents, 'raise max_chars');
     });
   }
 
@@ -89,7 +118,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       const matches = matcher(query);
       const render = newRender(entry, {});
       await renderFrames(dbg, render);
-      await masking.maskFields(dbg, render, contents.getURL());
+      await masking.maskFields(dbg, render);
       const hits = matches(render.lines.map((line) => line.text));
       const results = [];
       render.lines.forEach((line, index) => {
@@ -119,19 +148,38 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   // and the document it was resolved in.
   async function pointForRef(contents, entry, ref) {
     return withPage(contents, async (dbg) => {
-      const { backendNodeId, document } = await lookupRef(dbg, entry, ref);
-      await dbg.sendCommand('DOM.scrollIntoViewIfNeeded', { backendNodeId }).catch(() => undefined);
-      const { quads } = await onNode(ref, () =>
-        dbg.sendCommand('DOM.getContentQuads', { backendNodeId }),
-      );
-      const quad = quads?.find((candidate) => quadArea(candidate) > 1);
-      if (!quad) throw new Error(`${ref} has no visible box to act on.`);
+      const { quad, document, sessionId } = await visibleQuad(dbg, entry, ref);
       return {
         x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4),
         y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4),
         document,
+        sessionId,
       };
     });
+  }
+
+  // The ref's element scrolled into view: its first visible quad in the page's
+  // viewport, wherever its frame runs.
+  async function visibleQuad(dbg, entry, ref) {
+    const { backendNodeId, document, frame } = await lookupRef(dbg, entry, ref);
+    const { sessionId } = frame;
+    await scrollFrameIntoView(dbg, sessionId).catch(() => undefined);
+    await send(dbg, sessionId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId }).catch(
+      () => undefined,
+    );
+    const { quads } = await onNode(ref, () =>
+      send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }),
+    );
+    const quad = quads?.find((candidate) => quadArea(candidate) > 1);
+    if (!quad) throw new Error(`${ref} has no visible box to act on.`);
+    return { quad: (await viewportMapping(dbg, sessionId))(quad), document, sessionId };
+  }
+
+  // The ref's element as a viewport box, for a screenshot crop, and the
+  // session of the frame it is in.
+  async function refBox(dbg, entry, ref) {
+    const { quad, sessionId } = await visibleQuad(dbg, entry, ref);
+    return { ...boundsOf(quad), sessionId };
   }
 
   // Throws when the document a target was resolved in has gone.
@@ -160,13 +208,14 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   async function callOnRef(contents, entry, ref, args, functionDeclaration, before) {
     return withPage(contents, async (dbg) => {
-      const { backendNodeId, document } = await lookupRef(dbg, entry, ref);
+      const { backendNodeId, document, frame } = await lookupRef(dbg, entry, ref);
+      const { sessionId } = frame;
       const { object } = await onNode(ref, () =>
-        dbg.sendCommand('DOM.resolveNode', { backendNodeId }),
+        send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId }),
       );
       try {
         before?.();
-        const { result, exceptionDetails } = await dbg.sendCommand('Runtime.callFunctionOn', {
+        const { result, exceptionDetails } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
           objectId: object.objectId,
           returnByValue: true,
           functionDeclaration,
@@ -178,9 +227,9 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
           );
         return { value: result.value, document };
       } finally {
-        await dbg
-          .sendCommand('Runtime.releaseObject', { objectId: object.objectId })
-          .catch(() => undefined);
+        await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
+          () => undefined,
+        );
       }
     });
   }
@@ -202,7 +251,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     const frames = await documentFrames(dbg);
     const frame = frames.find((candidate) => candidate.loaderId === known.document);
     if (!frame) throw new Error(`${ref} belongs to the previous page; call browser_read_page.`);
-    return { ...known, frameId: frame.id };
+    return { ...known, frame };
   }
 
   function newRender(entry, options) {
@@ -217,7 +266,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       refsCut: false,
       // The least recently issued refs are forgotten once the answer is ready.
       forget: () => {
-        forgetRefs(entry);
+        if (entry) forgetRefs(entry);
       },
     };
   }
@@ -225,16 +274,16 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   async function renderFrames(dbg, render) {
     const frames = await documentFrames(dbg);
     for (const frame of frames) {
-      const tree = await axTree(dbg, frame.id);
+      const tree = await axTree(dbg, frame);
       const root = tree.nodes.find((node) => !node.parentId);
       if (!root) continue;
       const nested = frame !== frames[0];
       if (nested) render.lines.push({ depth: 0, text: `- frame "${redactUrl(frame.url)}"` });
-      renderTree(render, tree, root, frame.loaderId, nested ? 1 : 0);
+      renderTree(render, tree, root, frame, nested ? 1 : 0);
     }
   }
 
-  function renderTree(render, tree, root, document, baseDepth) {
+  function renderTree(render, tree, root, frame, baseDepth) {
     const byId = new Map(tree.nodes.map((node) => [node.nodeId, node]));
     const { lines, interactiveOnly } = render;
     const folded = foldedNames(tree.nodes);
@@ -248,12 +297,15 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       render.processed++;
       const role = node.role?.value ?? '';
       const name = nameOf(node);
+      // A field is never folded away, unnamed editable hosts included, so its
+      // value or content can be masked.
+      const field = fieldOf(node, frame);
       const skip =
         node.ignored ||
         role === 'InlineTextBox' ||
         role === 'ListMarker' ||
-        (WRAPPER_ROLES.has(role) && !name) ||
-        (interactiveOnly && !INTERACTIVE_ROLES.has(role));
+        (WRAPPER_ROLES.has(role) && !name && !field) ||
+        (interactiveOnly && !INTERACTIVE_ROLES.has(role) && !field);
       if (skip) {
         visitChildren(childrenOf(node), depth, parentName);
         return;
@@ -261,7 +313,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       let ref;
       if (node.backendDOMNodeId && render.refs < MAX_REFS) {
         render.refs++;
-        ref = refFor(render.entry, document, node.backendDOMNodeId);
+        ref = refFor(render.entry, frame.loaderId, node.backendDOMNodeId);
       } else if (node.backendDOMNodeId) {
         render.refsCut = true;
       }
@@ -270,7 +322,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         text: describe(node, role, name, ref),
         name,
         ref,
-        field: fieldOf(node),
+        field,
       };
       if (line.field) render.fields.push(line);
       const index = lines.push(line) - 1;
@@ -319,6 +371,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (render.processed + ++counted.nodes > MAX_NODES) return null;
       const role = node.role?.value ?? '';
       if (TEXT_ROLES.has(role) && !node.ignored) return node.name?.value ?? '';
+      if (fieldOf(node, frame)) return null;
       const wrapper = node.ignored || (WRAPPER_ROLES.has(role) && !nameOf(node));
       if (!wrapper) return null;
       const parts = childrenOf(node).map((child) => flatText(child, counted));
@@ -347,17 +400,15 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     return text;
   }
 
-  function finish(render, maxChars = DEFAULT_MAX_CHARS, contents) {
+  function finish(render, text, maxChars = DEFAULT_MAX_CHARS, contents, hint) {
     render.forget();
     const limit = Math.max(500, Math.min(Number(maxChars) || DEFAULT_MAX_CHARS, 100_000));
-    let body = render.lines.map(indent).join('\n');
+    let body = text;
     const notes = [];
     if (body.length > limit) {
       const lastLine = body.lastIndexOf('\n', limit);
       body = body.slice(0, lastLine > 0 ? lastLine : limit);
-      notes.push(
-        `cut at ${limit} characters; read one ref, raise max_chars, or use filter "interactive"`,
-      );
+      notes.push(`cut at ${limit} characters; ${hint}`);
     }
     if (render.exhausted) notes.push(`stopped after ${MAX_NODES} elements`);
     if (render.refsCut) notes.push(`refs stop after ${MAX_REFS} elements; read one ref for more`);
@@ -369,7 +420,18 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     return `[${cleanName(contents.getTitle()) || 'Untitled'} · ${redactUrl(contents.getURL())}]`;
   }
 
-  return { readPage, find, pointForRef, assertDocument, selectOption, selectorForRef };
+  return {
+    withPage,
+    readPage,
+    readText,
+    find,
+    pointForRef,
+    assertDocument,
+    selectOption,
+    selectorForRef,
+    refBox,
+    sensitiveBoxes: masking.sensitiveBoxes,
+  };
 }
 
 // Run inside the page on the ref's own element.
@@ -395,21 +457,6 @@ const CSS_PATH = `function () {
   }
   return ['html', ...parts].join(' > ');
 }`;
-
-async function documentFrames(dbg) {
-  const { frameTree } = await dbg.sendCommand('Page.getFrameTree');
-  const frames = [];
-  const walk = (tree) => {
-    frames.push(tree.frame);
-    for (const child of tree.childFrames ?? []) walk(child);
-  };
-  walk(frameTree);
-  return frames;
-}
-
-function axTree(dbg, frameId) {
-  return dbg.sendCommand('Accessibility.getFullAXTree', { frameId });
-}
 
 function ancestorsOf(lines, index) {
   const chain = [];

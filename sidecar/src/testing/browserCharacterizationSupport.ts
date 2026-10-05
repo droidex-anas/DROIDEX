@@ -74,9 +74,6 @@ export class FakeBrowserSessionManager implements SessionBrowserDependencies {
 
   readonly scroll: SessionBrowserDependencies['scroll'] = () => unsupportedBrowserMethod('scroll');
 
-  readonly screenshot: SessionBrowserDependencies['screenshot'] = () =>
-    unsupportedBrowserMethod('screenshot');
-
   readonly addReference: SessionBrowserDependencies['addReference'] = () =>
     unsupportedBrowserMethod('addReference');
 

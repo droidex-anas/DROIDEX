@@ -1,5 +1,4 @@
 import { join, resolve, sep } from 'node:path';
-import { realpath } from 'node:fs/promises';
 import { droidexUserDataDir } from '../droidexPaths.js';
 
 function browserDataRoot(baseDir = droidexUserDataDir()): string {
@@ -14,17 +13,6 @@ export function isBrowserAssetPath(filePath: string, baseDir?: string): boolean 
   const root = resolve(browserDataRoot(baseDir));
   const target = resolve(filePath);
   return target === root || target.startsWith(`${root}${sep}`);
-}
-
-export async function resolveBrowserAssetPath(
-  filePath: string,
-  baseDir?: string,
-): Promise<string | null> {
-  const [root, target] = await Promise.all([
-    realpath(browserDataRoot(baseDir)),
-    realpath(filePath),
-  ]);
-  return target === root || target.startsWith(`${root}${sep}`) ? target : null;
 }
 
 function sanitizeSegment(value: string): string {

@@ -21,7 +21,6 @@ export type SessionBrowsers = Pick<
   | 'type'
   | 'keypress'
   | 'scroll'
-  | 'screenshot'
   | 'addReference'
   | 'designPrompt'
 >;
@@ -126,15 +125,6 @@ export class SessionBrowser {
         cmd.ref,
       ),
     );
-  }
-
-  async screenshot(cmd: Extract<ClientCommand, { type: 'browser.screenshot' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, async () => {
-      await this.d.browsers.screenshot(this.requireBrowserAppSessionId(cmd.appSessionId), {
-        fullPage: cmd.fullPage,
-        deviceScaleFactor: cmd.deviceScaleFactor,
-      });
-    });
   }
 
   async addReference(

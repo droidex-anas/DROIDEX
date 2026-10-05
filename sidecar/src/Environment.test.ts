@@ -98,7 +98,6 @@ test('childEnv drops the app-private variables and keeps the user shell', () => 
     DROIDEX_HISTORY_DIR: '/profile/history',
     BRIDGE_PORT: '1234',
     BRIDGE_TOKEN: 'secret',
-    BROWSER_ASSET_TOKEN: 'secret',
     BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     ELECTRON_RUN_AS_NODE: '1',
     ELECTRON_START_URL: 'http://localhost:5173',

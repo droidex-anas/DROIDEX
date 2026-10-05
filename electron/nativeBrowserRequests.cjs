@@ -11,6 +11,7 @@ const ACTIONS = new Set([
   'goForward',
   'snapshot',
   'readPage',
+  'readText',
   'find',
   'click',
   'hover',
@@ -23,6 +24,7 @@ const ACTIONS = new Set([
   'network',
   'console',
   'capture',
+  'screenshot',
   'close',
   'fillCredentials',
 ]);
@@ -145,10 +147,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       return result(request, true, { snapshot: await snapshotAfter(request, url) });
     }
     if (request.action === 'capture') {
-      const image = await manager.capture(browserSessionId, request.box, {
-        fullPage: request.fullPage,
-        deviceScaleFactor: request.deviceScaleFactor,
-      });
+      const image = await manager.capture(browserSessionId, request.box);
       return result(request, true, { image });
     }
     return performAction(request);
@@ -163,6 +162,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       consoleEvents: outcome.consoleEvents,
       text: outcome.text,
       matches: outcome.matches,
+      image: outcome.image,
+      mimeType: outcome.mimeType,
       error: outcome.error,
     });
   }
@@ -210,6 +211,9 @@ function agentAction(request) {
     filter: request.filter,
     maxChars: request.maxChars,
     query: request.query,
+    region: request.region,
+    fullPage: request.fullPage,
+    format: request.format,
     x: request.x,
     y: request.y,
     selector: request.selector,
