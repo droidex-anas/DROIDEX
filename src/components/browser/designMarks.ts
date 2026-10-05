@@ -1,7 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import { removeDesignReferences } from '../../lib/commands';
 import type { NativeBrowserSelection } from '../../lib/nativeBrowser';
-import type { DesignReference, DesignSelectionScreenshot } from '../../types/bridge';
+import type {
+  BrowserViewport,
+  DesignReference,
+  DesignSelectionScreenshot,
+} from '../../types/bridge';
 
 // The marks a chat has picked in its browser page and not sent yet: each one a
 // design reference whose anchor carries its number. They show as chips in the
@@ -52,14 +56,18 @@ export function useDesignMarks(appSessionId: string | undefined): readonly Desig
   );
 }
 
-/** A pick as a reference, under an id no other pick has. */
-export function designReferenceFor(selection: NativeBrowserSelection): DesignReference {
+/** A pick as a reference, under an id no other pick has, at the page size it was made at. */
+export function designReferenceFor(
+  selection: NativeBrowserSelection,
+  viewport: BrowserViewport | undefined,
+): DesignReference {
   return {
     id: `${selection.anchor.id}-${crypto.randomUUID().slice(0, 8)}`,
     anchor: { ...selection.anchor, strokes: selection.anchor.strokes ?? selection.strokes },
     detail: selection.detail,
     url: selection.url,
     title: selection.title,
+    viewport,
     scroll: selection.scroll,
     screenshot: selection.screenshot,
   };

@@ -98,7 +98,8 @@ export function BrowserHost() {
         const appSessionId = event.browserSessionId && appSessionIdFor(event.browserSessionId);
         if (!appSessionId) return;
         if (event.type === 'select') {
-          const mark = addDesignMark(appSessionId, designReferenceFor(event.selection));
+          const viewport = browsersRef.current[appSessionId].viewport;
+          const mark = addDesignMark(appSessionId, designReferenceFor(event.selection, viewport));
           addDesignReference(appSessionId, mark);
           awaitingShot.set(event.pick, { appSessionId, id: mark.id });
         } else if (event.type === 'unselect') removeDesignMark(appSessionId, event.id);

@@ -79,6 +79,7 @@ interface ReferenceInput {
   detail?: DesignAnchorDetail;
   url?: string;
   title?: string;
+  viewport?: BrowserViewport;
   scroll?: { x: number; y: number };
 }
 
@@ -574,7 +575,7 @@ export class BrowserSessionManager {
       detail: input.detail ? { ...input.detail, id } : undefined,
       url: input.url ?? session?.state.url ?? 'about:blank',
       title: input.title ?? session?.state.title,
-      viewport: session?.state.viewport ?? DEFAULT_BROWSER_VIEWPORT,
+      viewport: input.viewport ?? session?.state.viewport ?? DEFAULT_BROWSER_VIEWPORT,
       scroll: input.scroll ?? session?.state.scroll ?? { x: 0, y: 0 },
       screenshot,
       createdAt: new Date().toISOString(),
