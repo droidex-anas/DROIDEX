@@ -2,6 +2,8 @@
 // replaces the page (hash and History changes keep it), and when it ends.
 
 const NAVIGATION_WAIT_MS = 7_000;
+// How long after an input or a script a navigation it caused may take to start.
+const NAVIGATION_GRACE_MS = 150;
 
 function observeNavigation(contents) {
   let started = false;
@@ -70,4 +72,4 @@ function isNavigationError(error) {
   ].some((part) => message.includes(part));
 }
 
-module.exports = { observeNavigation, isNavigationError };
+module.exports = { observeNavigation, isNavigationError, NAVIGATION_GRACE_MS };

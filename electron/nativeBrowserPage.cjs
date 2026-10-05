@@ -3,6 +3,7 @@ const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserWait } = require('./browserWait.cjs');
+const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { useDevice } = require('./browserDevice.cjs');
 
@@ -14,6 +15,7 @@ function createNativeBrowserPage({
   restoreForAction,
   liveContents,
   credentials,
+  devTools,
   runWithWebContentsDebugger,
   findEntryForContents,
   nativeImage,
@@ -106,6 +108,47 @@ function createNativeBrowserPage({
       // The page takes its new size at full speed, shown or not.
       await unthrottled(contents, () => laidOutAt(contents, request.viewport));
       return actions.act(contents, entry, { ...request, action: 'snapshot' });
+    }
+    if (request.action === 'evaluate') {
+      // The user's answer can outlast the browser, its guest or the caller.
+      const stillOpen = () => {
+        if (findEntryForContents(contents) !== entry) throw new Error('The browser page closed.');
+      };
+      // Watched from the moment the script runs, not while the user is still
+      // being asked: only a navigation the script caused counts.
+      let navigation;
+      try {
+        // The page runs at full speed for the script, shown or not.
+        const value = await unthrottled(contents, async () => {
+          const ran = await devTools
+            .evaluate(contents, request.script, () => {
+              stillOpen();
+              if (Date.now() >= request.startBy)
+                throw new Error('The browser page did not finish in time.');
+              navigation = observeNavigation(contents);
+            })
+            .then(
+              (result) => ({ result }),
+              (error) => ({ error }),
+            );
+          // A script can send the page elsewhere. The answer then names the
+          // page that led to, and the next action finds it loaded. A script
+          // whose page went before it returned has only its failure to show.
+          if (navigation && !navigation.started())
+            await navigation.startsWithin(NAVIGATION_GRACE_MS);
+          if (!navigation?.started()) {
+            if (ran.error) throw ran.error;
+            return ran.result;
+          }
+          await navigation.wait();
+          return ran.error ? ran.error.message : ran.result;
+        });
+        stillOpen();
+        const after = await actions.act(contents, entry, { ...request, action: 'snapshot' });
+        return { ...after, text: `${value}\n${after.text}` };
+      } finally {
+        navigation?.dispose();
+      }
     }
     if (request.action === 'wait') {
       // The page runs at full speed while the agent waits on it.

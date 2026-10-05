@@ -7,6 +7,7 @@ const { runWithWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
 const { mountDevice } = require('./browserDevice.cjs');
 const { createNativeBrowserUrlPolicy } = require('./nativeBrowserUrls.cjs');
 const { createNativeBrowserCredentials } = require('./nativeBrowserCredentials.cjs');
+const { createBrowserDevTools } = require('./browserDevTools.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 const { createNativeBrowserViewFactory } = require('./nativeBrowserView.cjs');
 
@@ -55,12 +56,20 @@ function createNativeBrowserManager(options) {
     onInput: options.onBrowserInput,
     listEntries: () => nativeBrowsers.values(),
   });
+  const devTools = createBrowserDevTools({
+    appName: options.appName,
+    dialog: options.dialog,
+    getMainWindow: options.getMainWindow,
+    isHostAppUrl: urls.isHostAppUrl,
+    runWithWebContentsDebugger,
+  });
   const page = createNativeBrowserPage({
     appName: options.appName,
     ensureEntry: ensureNativeBrowserEntry,
     restoreForAction: requireLoadedGuest,
     liveContents,
     credentials,
+    devTools,
     runWithWebContentsDebugger,
     findEntryForContents: findNativeBrowserEntryForWebContents,
     nativeImage: options.nativeImage,

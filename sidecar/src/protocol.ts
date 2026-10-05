@@ -634,7 +634,8 @@ type BrowserNativeAction =
   | 'close'
   | 'fillCredentials'
   | 'wait'
-  | 'awaitViewport';
+  | 'awaitViewport'
+  | 'evaluate';
 
 export interface BrowserNativeRequest {
   requestId: string;
@@ -645,6 +646,8 @@ export interface BrowserNativeRequest {
   viewport?: BrowserViewport;
   viewportMode?: BrowserViewportMode;
   colorScheme?: BrowserColorScheme;
+  /** browser_evaluate: the JavaScript to run in the page. */
+  script?: string;
   ref?: string;
   filter?: 'interactive' | 'all';
   maxChars?: number;

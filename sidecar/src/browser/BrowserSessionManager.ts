@@ -69,6 +69,7 @@ export interface BrowserRuntime {
   awaitViewport(viewport: BrowserViewport): Promise<BrowserActionResult>;
   network(): Promise<BrowserNetworkEvent[]>;
   console(): Promise<BrowserConsoleEvent[]>;
+  evaluate(script: string): Promise<BrowserActionResult>;
   fillCredentials?(): Promise<BrowserActionResult>;
   close(): Promise<void>;
 }
@@ -310,6 +311,12 @@ export class BrowserSessionManager {
   /** The console messages since the last read. */
   async console(appSessionId: string): Promise<BrowserConsoleEvent[]> {
     return this.requireSession(appSessionId).runtime.console();
+  }
+
+  /** Runs script in the page, on a site the user allowed for developer tools. */
+  async evaluate(appSessionId: string, script: string): Promise<BrowserOutcome> {
+    const session = this.requireSession(appSessionId);
+    return this.applied(session, await session.runtime.evaluate(script));
   }
 
   async fillCredentials(appSessionId: string): Promise<BrowserOutcome> {

@@ -8,11 +8,14 @@
 const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
-const { observeNavigation, isNavigationError } = require('./browserNavigation.cjs');
+const {
+  observeNavigation,
+  isNavigationError,
+  NAVIGATION_GRACE_MS,
+} = require('./browserNavigation.cjs');
 const { createBrowserCover } = require('./browserCover.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
-const NAVIGATION_GRACE_MS = 150;
 const MAX_CLICKS = 3;
 const MAX_REPEAT = 50;
 const SCROLL_SETTLE_MS = 1_000;

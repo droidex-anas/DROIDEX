@@ -148,6 +148,10 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     return this.act({ action: 'wait', ...condition });
   }
 
+  async evaluate(script: string): Promise<BrowserActionResult> {
+    return this.act({ action: 'evaluate', script });
+  }
+
   async fillCredentials(): Promise<BrowserActionResult> {
     return this.act({ action: 'fillCredentials' });
   }
