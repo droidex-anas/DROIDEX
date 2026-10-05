@@ -58,13 +58,13 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
       throw new Error('The page moved before the pick was captured.');
     const clip = clipFor(view, options, box);
     const masks = await masksFor(dbg, view, options);
-    const scale = Math.min(1, MAX_EDGE / Math.max(clip.width, clip.height));
-    let image = await capture(dbg, contents, view, clip, scale, options);
+    const fitted = Math.min(1, MAX_EDGE / Math.max(clip.width, clip.height));
+    const { image: captured, scale } = await capture(dbg, contents, view, clip, fitted, options);
     const after = await viewOf(dbg);
     if (after.key !== view.key) return undefined;
     if (JSON.stringify(await masksFor(dbg, after, options)) !== JSON.stringify(masks))
       return undefined;
-    if (masks.length) image = paint(nativeImage, image, masks, clip, scale);
+    const image = masks.length ? paint(nativeImage, captured, masks, clip, scale) : captured;
     const png = options.format === 'png';
     const { width, height } = image.getSize();
     return {
@@ -76,17 +76,38 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
     };
   }
 
-  // CDP redraws the page before it copies it, so the image matches the DOM
-  // the masks were read from (a copy of the composited surface can still
-  // show the frame before a scroll). Clips are in page coordinates, at CSS
-  // size; only the full page renders beyond the viewport.
+  // The image and its pixels per CSS pixel. CDP redraws the page before it
+  // copies it, so the image matches the DOM the masks were read from (a copy
+  // of the composited surface can still show the frame before a scroll).
+  // Clips are in page coordinates, at CSS size; only the full page renders
+  // beyond the viewport.
   async function capture(dbg, contents, view, clip, scale, options) {
+    if (options.at) return captureShown(dbg, contents, view, clip);
     const origin = options.fullPage ? { x: 0, y: 0 } : { x: view.pageX, y: view.pageY };
-    const captured = dbg.sendCommand('Page.captureScreenshot', {
-      format: 'png',
-      captureBeyondViewport: Boolean(options.fullPage),
-      clip: { ...clip, x: origin.x + clip.x, y: origin.y + clip.y, scale: scale / view.dpr },
-    });
+    const captured = dbg
+      .sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: Boolean(options.fullPage),
+        clip: { ...clip, x: origin.x + clip.x, y: origin.y + clip.y, scale: scale / view.dpr },
+      })
+      .then(({ data }) => nativeImage.createFromBuffer(Buffer.from(data, 'base64')));
+    return { image: await inTime(contents, captured), scale };
+  }
+
+  // A design pick is copied from the frame the pane already shows: CDP's
+  // capture draws the whole page at the clip's offset and scale for a frame,
+  // which the user sees as the page flashing on every pick and stroke. Once
+  // the page has painted twice, that frame holds the DOM the masks came from.
+  async function captureShown(dbg, contents, view, clip) {
+    // A pinch-zoomed page is not drawn at its CSS size; its masks would miss.
+    if (view.zoom !== 1) throw new Error('The page is zoomed; no screenshot was taken.');
+    if (!(await framePainted(dbg))) throw new Error(NOT_DRAWN);
+    const image = await inTime(contents, contents.capturePage(clip));
+    if (image.isEmpty()) throw new Error(NOT_DRAWN);
+    return { image, scale: image.getSize().width / clip.width };
+  }
+
+  async function inTime(contents, captured) {
     let timer;
     const late = new Promise((_, reject) => {
       timer = setTimeout(() => {
@@ -97,8 +118,7 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
         reject(new Error(NOT_DRAWN));
       }, CAPTURE_MS);
     });
-    const { data } = await Promise.race([captured, late]).finally(() => clearTimeout(timer));
-    return nativeImage.createFromBuffer(Buffer.from(data, 'base64'));
+    return Promise.race([captured, late]).finally(() => clearTimeout(timer));
   }
 
   async function masksFor(dbg, view, options) {
@@ -130,6 +150,7 @@ async function viewOf(dbg) {
     pageX: css.pageX,
     pageY: css.pageY,
     dpr: metrics.visualViewport.clientWidth / css.clientWidth || 1,
+    zoom: css.zoom ?? 1,
     contentWidth: Math.ceil(metrics.cssContentSize.width),
     contentHeight: Math.ceil(metrics.cssContentSize.height),
     url: frameTree.frame.url,
