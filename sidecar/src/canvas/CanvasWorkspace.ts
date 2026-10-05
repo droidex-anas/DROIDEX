@@ -2,7 +2,7 @@
 // revisions, attachments and mutation retries (spec §7). Commits run one at a
 // time, each one writes and flushes its revision tree before it replaces a
 // manifest, and the lease is checked once more with the replacement ready and
-// nothing published. A terminated process reopens on a complete old or new head.
+// nothing published. `canvasHeads.ts` owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
 import { canvasError, CanvasCommandError } from './canvasError.js';
@@ -12,6 +12,7 @@ import {
   type CanvasFileSystem,
   type NewRevision,
 } from './canvasFiles.js';
+import { CanvasHeads } from './canvasHeads.js';
 import {
   canvasChange,
   canvasSnapshot,
@@ -72,29 +73,12 @@ export class CanvasWorkspace {
   private constructor(
     private readonly files: CanvasFiles,
     private readonly deps: CanvasWorkspaceDeps,
-    private readonly canvases: Map<string, CanvasManifest>,
-    private readonly damaged: Set<string>,
+    private readonly heads: CanvasHeads,
   ) {}
 
   static async open(directory: string, deps: CanvasWorkspaceDeps): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
-    await files.createRoot();
-    const canvases = new Map<string, CanvasManifest>();
-    const damaged = new Set<string>();
-    for (const canvasId of await files.listCanvasIds()) {
-      const load = await files.loadManifest(canvasId);
-      if (load.state === 'missing') continue;
-      if (load.state === 'damaged') {
-        // Left untouched on disk: repairing it here would be a guess, and one
-        // unreadable board must not keep the others closed.
-        console.error(`Canvas ${canvasId} was not opened because ${load.reason}.`);
-        damaged.add(canvasId);
-        continue;
-      }
-      await files.removeTemporaries(canvasId);
-      canvases.set(canvasId, load.manifest);
-    }
-    return new CanvasWorkspace(files, deps, canvases, damaged);
+    return new CanvasWorkspace(files, deps, await CanvasHeads.load(files));
   }
 
   snapshot(canvasId: string): CanvasSnapshot {
@@ -102,27 +86,24 @@ export class CanvasWorkspace {
   }
 
   listCanvases(): CanvasSummary[] {
-    return [...this.canvases.values()].map(canvasSummary);
+    return this.heads.all().map(canvasSummary);
   }
 
   /** Canvases that exist on disk but are not served, for a recovery action. */
   damagedCanvasIds(): string[] {
-    return [...this.damaged].sort();
+    return this.heads.damagedIds();
   }
 
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */
   attachedCanvasId(appSessionId: string): string | null {
-    for (const manifest of this.canvases.values()) {
-      if (manifest.attachedAppSessionIds.includes(appSessionId)) return manifest.canvasId;
-    }
-    return null;
+    return this.heads.attachedCanvasId(appSessionId);
   }
 
   createCanvas(): Promise<CanvasSnapshot> {
     return this.admit(() =>
       this.commit(async () => {
         const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
-        await this.install(manifest, this.openGate());
+        await this.heads.install(manifest, this.openGate());
         return canvasSnapshot(manifest);
       }),
     );
@@ -138,7 +119,7 @@ export class CanvasWorkspace {
         if (next.attachedAppSessionIds.includes(appSessionId)) return;
         next.attachedAppSessionIds.push(appSessionId);
         next.updatedAt = Date.now();
-        await this.install(next, this.openGate());
+        await this.heads.install(next, this.openGate());
       }),
     );
   }
@@ -199,7 +180,7 @@ export class CanvasWorkspace {
           fingerprint,
           designs: structuredClone(designs),
         });
-        await this.install(next, beforeRename);
+        await this.heads.install(next, beforeRename);
         if (unattached) this.deps.bindScopeCanvas(scope.scopeId, canvasId);
         return { canvasId, frames: designs.map(toFrame) };
       });
@@ -252,7 +233,7 @@ export class CanvasWorkspace {
           fingerprint,
           ...receipt,
         });
-        await this.install(next, this.scopedGate(scope, [input.designId]));
+        await this.heads.install(next, this.scopedGate(scope, [input.designId]));
         return receipt;
       });
     });
@@ -295,7 +276,7 @@ export class CanvasWorkspace {
           sequence: next.sequence,
           designs: moved,
         });
-        await this.install(next, this.scopedGate(scope, designIds));
+        await this.heads.install(next, this.scopedGate(scope, designIds));
         return canvasChange(next, moved);
       });
     });
@@ -337,61 +318,15 @@ export class CanvasWorkspace {
     return next;
   }
 
-  /**
-   * Publishes a manifest: durable first, then visible to readers. `beforeRename`
-   * is the final lease check, and a failure anywhere else may still have landed
-   * the rename, so the head on disk decides what memory holds next.
-   */
-  private async install(manifest: CanvasManifest, beforeRename: () => void): Promise<void> {
-    let abandonment: unknown;
-    try {
-      await this.files.writeManifest(manifest, () => {
-        try {
-          beforeRename();
-        } catch (error) {
-          abandonment = error;
-          throw error;
-        }
-      });
-    } catch (error) {
-      // Anything but our own abort may have landed the rename, so the head on
-      // disk decides what memory holds next.
-      if (error !== abandonment) await this.reconcile(manifest.canvasId);
-      throw error;
-    }
-    this.canvases.set(manifest.canvasId, manifest);
-  }
-
-  /**
-   * Rereads one canvas after a save whose outcome is unknown. A head that
-   * cannot be reread is held damaged until the workspace is reopened, because
-   * serving either the old or the new one would be a guess.
-   */
-  private async reconcile(canvasId: string): Promise<void> {
-    try {
-      const load = await this.files.loadManifest(canvasId);
-      if (load.state === 'loaded') {
-        this.canvases.set(canvasId, load.manifest);
-        return;
-      }
-      const reason = load.state === 'damaged' ? load.reason : 'its manifest is gone';
-      console.error(`Canvas ${canvasId} could not be reread because ${reason}.`);
-    } catch (error) {
-      console.error(`Canvas ${canvasId} could not be reread:`, error);
-    }
-    this.canvases.delete(canvasId);
-    this.damaged.add(canvasId);
-  }
-
   /** Canvas files are kept: detaching a chat only drops the reference. */
   private async detachFrom(appSessionId: string, keep: string | null): Promise<void> {
-    for (const manifest of [...this.canvases.values()]) {
+    for (const manifest of this.heads.all()) {
       if (manifest.canvasId === keep) continue;
       if (!manifest.attachedAppSessionIds.includes(appSessionId)) continue;
       const next = structuredClone(manifest);
       next.attachedAppSessionIds = next.attachedAppSessionIds.filter((id) => id !== appSessionId);
       next.updatedAt = Date.now();
-      await this.install(next, this.openGate());
+      await this.heads.install(next, this.openGate());
     }
   }
 
@@ -480,9 +415,9 @@ export class CanvasWorkspace {
     const canvasId = scope.canvasId;
     if (canvasId === null)
       throw canvasError('invalid_input', 'This chat has no canvas yet. Create a frame first.');
-    const manifest = this.canvases.get(canvasId);
+    const manifest = this.heads.find(canvasId);
     if (manifest) return manifest;
-    if (this.damaged.has(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
+    if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
     throw canvasError('scope_expired', 'That request names a canvas this workspace does not hold.');
   }
 
@@ -498,9 +433,9 @@ export class CanvasWorkspace {
   }
 
   private canvas(canvasId: string): CanvasManifest {
-    const manifest = this.canvases.get(canvasId);
+    const manifest = this.heads.find(canvasId);
     if (manifest) return manifest;
-    if (this.damaged.has(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
+    if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
     throw canvasError('invalid_input', 'That canvas is not open.');
   }
 
@@ -511,7 +446,7 @@ export class CanvasWorkspace {
   }
 
   private nextCanvasName(): string {
-    return `Canvas ${String(this.canvases.size + 1)}`;
+    return `Canvas ${String(this.heads.all().length + 1)}`;
   }
 }
 
