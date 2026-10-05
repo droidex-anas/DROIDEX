@@ -12,6 +12,8 @@ import { useElementSize } from './useElementSize';
 // with every mark; closed unsent, what it holds goes on in the composer's draft.
 
 interface QuickPrompt {
+  /** The chat that owns the browser and its marks, which the text goes to. */
+  appSessionId: string;
   browserSessionId: string;
   anchorId: string;
   /** The mark's box in the page, as the page last reported it. */
@@ -33,11 +35,13 @@ interface DesignQuickPromptState {
 }
 
 export function useDesignQuickPrompt({
+  appSessionId,
   browserSessionId,
   designMode,
   drawing,
   marks,
 }: {
+  appSessionId?: string;
   browserSessionId?: string;
   designMode: boolean;
   drawing: boolean;
@@ -53,25 +57,44 @@ export function useDesignQuickPrompt({
   // Another pick moves the box to its mark, keeping what was typed.
   const show = useCallback(
     ({ anchorId, box }: Target) => {
-      if (!browserSessionId) return;
-      setPrompt((current) => ({ browserSessionId, anchorId, box, text: current?.text ?? '' }));
+      if (!appSessionId || !browserSessionId) return;
+      setPrompt((current) => ({
+        appSessionId,
+        browserSessionId,
+        anchorId,
+        box,
+        text: current?.text ?? '',
+      }));
     },
-    [browserSessionId],
+    [appSessionId, browserSessionId],
   );
 
   const close = useCallback(() => {
-    const text = promptRef.current?.text.trim();
+    const current = promptRef.current;
+    const text = current?.text.trim();
     promptRef.current = null;
     setPrompt(null);
-    if (text) dispatch({ type: 'SEED_COMPOSER', text, focus: false });
+    if (current && text) {
+      dispatch({ type: 'SEED_COMPOSER', appSessionId: current.appSessionId, text, focus: false });
+    }
   }, [dispatch]);
 
+  // However the box goes, even with the browser itself, its text stays in the draft.
+  useEffect(() => close, [close]);
+
   const send = useCallback(() => {
-    const text = promptRef.current?.text.trim();
-    if (!text) return;
+    const current = promptRef.current;
+    const text = current?.text.trim();
+    if (!current || !text) return;
     promptRef.current = null;
     setPrompt(null);
-    dispatch({ type: 'SEED_COMPOSER', text, send: true, focus: false });
+    dispatch({
+      type: 'SEED_COMPOSER',
+      appSessionId: current.appSessionId,
+      text,
+      send: true,
+      focus: false,
+    });
   }, [dispatch]);
 
   const setText = useCallback((text: string) => {
