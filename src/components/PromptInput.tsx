@@ -91,7 +91,11 @@ import {
   offersContextWindow,
 } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
-import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
+import {
+  composerSeedFor,
+  composerTextAfterSeed,
+  resetComposerAfterSubmit,
+} from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
   chipNamedBy,
@@ -280,8 +284,6 @@ export default function PromptInput({
   const state = useStoreSelector(
     (current) => ({
       activeSession: appSessionId ? current.sessions[appSessionId] : null,
-      // A split tab mounts a composer per tile; the focused one shows the live chat.
-      isFocused: appSessionId === current.activeAppSessionId,
       attachedReplies: appSessionId
         ? sideChatPanel(current.sideChats, appSessionId).attachedReplies
         : undefined,
@@ -295,7 +297,9 @@ export default function PromptInput({
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
-      composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
+      // A split tab mounts a composer per tile. A seed for a chat goes to its
+      // own composer, and any other seed to the focused tile's.
+      composerSeed: composerSeedFor(current.composerSeed, appSessionId, current.activeAppSessionId),
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -955,8 +959,7 @@ export default function PromptInput({
   // Welcome-screen suggestion cards and saved notes seed the composer through
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
-  // Only the focused tile's composer takes the seed.
-  const composerSeed = state.isFocused ? state.composerSeed : null;
+  const composerSeed = state.composerSeed;
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
     consumedComposerSeedId.current = composerSeed.id;

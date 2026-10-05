@@ -714,7 +714,14 @@ export type Action =
       branch?: string;
       project?: true;
     }
-  | { type: 'SEED_COMPOSER'; text: string; replace?: boolean; send?: boolean; focus?: boolean }
+  | {
+      type: 'SEED_COMPOSER';
+      text: string;
+      replace?: boolean;
+      appSessionId?: string;
+      send?: boolean;
+      focus?: boolean;
+    }
   | { type: 'CLEAR_COMPOSER_SEED' }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
   | { type: 'SESSION_NOTE_MARK_USED'; appSessionId: string; noteId: string }
@@ -2324,14 +2331,22 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SEED_COMPOSER':
-      return {
-        ...state,
-        composerSeed: createComposerSeed(action.text, action.replace, {
-          send: action.send,
-          focus: action.focus,
-        }),
-      };
+    case 'SEED_COMPOSER': {
+      const composerSeed = createComposerSeed(action.text, action.replace, {
+        appSessionId: action.appSessionId,
+        send: action.send,
+        focus: action.focus,
+      });
+      // A prompt sent with a chat's marks goes to that chat, never to a child
+      // open in it, which would get the text without the marks.
+      const next =
+        action.send &&
+        action.appSessionId &&
+        state.selectedChild?.parentAppSessionId === action.appSessionId
+          ? reduceSelectChild(state, { selection: null })
+          : state;
+      return { ...next, composerSeed };
+    }
     // The composer consumes the seed once; it must not linger, or remounting
     // the composer (e.g. toggling Mission Control) would re-apply stale text.
     case 'CLEAR_COMPOSER_SEED':

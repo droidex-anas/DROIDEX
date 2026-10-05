@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { composerSeedFor } from '../lib/composerReset';
 import { initialState, reducer } from './useStore';
 
 test('a composer seed records its replace intent and clears once consumed', () => {
@@ -32,4 +33,27 @@ test('a composer seed records its replace intent and clears once consumed', () =
   assert.equal(sending.composerSeed?.send, true);
   assert.equal(sending.composerSeed?.focus, false);
   assert.equal(seeded.composerSeed?.focus, true);
+});
+
+test('a seed for a chat reaches only that chat, and a send leaves its child', () => {
+  const state = {
+    ...initialState,
+    activeAppSessionId: 'other',
+    selectedChild: { parentAppSessionId: 'owner', childSessionId: 'child' },
+  };
+  const sent = reducer(state, {
+    type: 'SEED_COMPOSER',
+    appSessionId: 'owner',
+    text: 'make this bolder',
+    send: true,
+  });
+  assert.equal(composerSeedFor(sent.composerSeed, 'owner', 'other'), sent.composerSeed);
+  assert.equal(composerSeedFor(sent.composerSeed, 'other', 'other'), null);
+  assert.equal(sent.selectedChild, null);
+
+  // An unscoped seed still goes to the focused tile.
+  const note = reducer(state, { type: 'SEED_COMPOSER', text: 'a note' });
+  assert.equal(composerSeedFor(note.composerSeed, 'other', 'other'), note.composerSeed);
+  assert.equal(composerSeedFor(note.composerSeed, 'owner', 'other'), null);
+  assert.equal(note.selectedChild, state.selectedChild);
 });

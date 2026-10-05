@@ -233,6 +233,7 @@ export default function BrowserWorkspace({
   const shownViewport = browser?.viewport ?? requestedViewport;
   const pageFrame = viewportMode === 'fit' ? frameSize : roomSize;
   const quickPrompt = useDesignQuickPrompt({
+    appSessionId: browserKey,
     browserSessionId: browser?.browserSessionId,
     designMode,
     drawing: designMode && pencilMode,
