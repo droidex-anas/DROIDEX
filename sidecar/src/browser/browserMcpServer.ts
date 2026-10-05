@@ -2,6 +2,7 @@ import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import type { BrowserSessionManager } from './BrowserSessionManager.js';
 import type { BrowserState, BrowserViewportMode, DesignReference } from './types.js';
+import { redactBrowserUrl } from './browserUrl.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import {
   browserActs,
@@ -416,7 +417,7 @@ function stateForTool(
 ): Record<string, unknown> {
   return {
     ok: true,
-    url: state.url,
+    url: redactBrowserUrl(state.url),
     title: state.title,
     viewport: state.viewport,
     viewportMode: state.viewportMode,
@@ -442,7 +443,7 @@ function designReferenceSummary(ref: DesignReference): Record<string, unknown> {
     selector: ref.detail?.selector,
     selectorVerified: ref.detail?.selectorVerified,
     screenshotPath: anchor.screenshotPath,
-    url: ref.url,
+    url: redactBrowserUrl(ref.url),
   };
   if (anchor.strokes) out.strokes = anchor.strokes;
   // The annotated screenshot bytes are returned as a separate image block by
