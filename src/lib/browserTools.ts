@@ -72,6 +72,8 @@ export function describeBrowserCall(tool: string, args: unknown): BrowserStep | 
 export interface BrowserPage {
   title?: string;
   url: string;
+  /** The address is an open's argument, not yet confirmed or redacted by its result. */
+  pending?: boolean;
 }
 
 /** Whether the address is whole: one the tools redacted is not a link to hand out. */
@@ -110,7 +112,7 @@ export function browserPageOf(events: TranscriptEvent[]): BrowserPage | null {
     } else if (browserToolOf(event.toolName) === 'browser_open' && !answered.has(event.toolUseId)) {
       // An open that failed or was refused never becomes the page.
       const url = describeBrowserCall('browser_open', event.toolArgs)?.object;
-      if (url) return { url };
+      if (url) return { url, pending: true };
     }
   }
   return null;
