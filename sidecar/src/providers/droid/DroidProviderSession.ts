@@ -164,6 +164,9 @@ export class DroidProviderSession implements ProviderSession {
     if (Object.keys(next).length === 0) return;
     if (!modelId) {
       await this.droid.updateSettings(next);
+      // A switch still to be reported must not carry back the effort replaced here.
+      if (this.pendingSwitch && reasoningEffort)
+        this.pendingSwitch.reasoningEffort = reasoningEffort;
       return;
     }
     // The user's pick replaces any switch Droid made before it, unless the
