@@ -45,6 +45,12 @@ class FakeElement {
   get innerText() {
     return this.textContent;
   }
+  get isContentEditable() {
+    return this.getAttribute('contenteditable') !== null;
+  }
+  closest() {
+    return null;
+  }
   get outerHTML() {
     const tag = this.tagName.toLowerCase();
     const attributes = this.attributes.map((attr) => ` ${attr.name}="${attr.value}"`).join('');
@@ -112,4 +118,9 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
       '<div data-authorization="[redacted]" data-author="Ada"></div>' +
       '</form>',
   );
+});
+
+test('the hover label never shows what an editable element holds', () => {
+  assert.equal(preload.hoverName(el('h1', { contenteditable: '' }, [], 'sk-live-secret')), 'h1');
+  assert.equal(preload.hoverName(el('h1', {}, [], 'Pricing')), 'Pricing');
 });

@@ -33,9 +33,36 @@ export interface NativeBrowserLoadFailed {
   crashed?: boolean;
 }
 
-export interface NativeBrowserDesignPrompt {
-  selection: NativeBrowserSelection;
-  instruction: string;
+/**
+ * What a page in design mode reports: a pick, its crop once taken (none when
+ * it could not be taken safely), a mark taken away, or a key for the app.
+ */
+export type NativeBrowserDesignEvent = { browserSessionId?: string } & (
+  | { type: 'select'; selection: NativeBrowserSelection; pick: number }
+  | { type: 'shot'; pick: number; screenshot?: DesignSelectionScreenshot }
+  | { type: 'unselect'; id: string }
+  | { type: 'key'; key: 'draw' | 'escape' }
+);
+
+/** The colours and font the page's design overlay is drawn with, from the app's tokens. */
+export interface DesignOverlayTheme {
+  accent: string;
+  onAccent: string;
+  surface: string;
+  text: string;
+  muted: string;
+  border: string;
+  shadow: string;
+  font: string;
+}
+
+export interface NativeBrowserDesignState {
+  designMode: boolean;
+  pencilMode: boolean;
+  /** How large the pane draws the page, so the overlay keeps its size on screen. */
+  scale: number;
+  marks: { id: string; number: number }[];
+  theme: DesignOverlayTheme;
 }
 
 /** A key press the desktop host took from a browser page because it matched an app chord. */
@@ -103,36 +130,19 @@ export async function goForwardNativeBrowser(browserSessionId: string): Promise<
   return window.droidControl!.nativeBrowserGoForward(browserSessionId);
 }
 
-/** `scale` is how large the pane draws the page, so design labels keep their size. */
-export async function setNativeBrowserDesignMode(
+export async function setNativeBrowserDesignState(
   browserSessionId: string,
-  active: boolean,
-  scale = 1,
+  state: NativeBrowserDesignState,
 ): Promise<void> {
   if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserSetDesignMode(browserSessionId, active, scale);
+  await window.droidControl!.nativeBrowserSetDesignState(browserSessionId, state);
 }
 
-export async function setNativeBrowserPencilMode(
-  browserSessionId: string,
-  active: boolean,
-): Promise<void> {
-  if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserSetPencilMode(browserSessionId, active);
-}
-
-export function onNativeBrowserSelection(
-  handler: (selection: NativeBrowserSelection) => void,
+export function onNativeBrowserDesignEvent(
+  handler: (event: NativeBrowserDesignEvent) => void,
 ): () => void {
   if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserSelection(handler);
-}
-
-export function onNativeBrowserDesignPrompt(
-  handler: (prompt: NativeBrowserDesignPrompt) => void,
-): () => void {
-  if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserDesignPrompt(handler);
+  return window.droidControl!.onNativeBrowserDesignEvent(handler);
 }
 
 export function onNativeBrowserLoaded(handler: (event: NativeBrowserLoaded) => void): () => void {

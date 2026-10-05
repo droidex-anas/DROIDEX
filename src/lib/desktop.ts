@@ -1,9 +1,9 @@
 import type {
-  NativeBrowserDesignPrompt,
+  NativeBrowserDesignEvent,
+  NativeBrowserDesignState,
   NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
-  NativeBrowserSelection,
   NativeBrowserAgentPoint,
   NativeBrowserFrame,
   NativeBrowserWorking,
@@ -309,16 +309,13 @@ interface DroidControlApi {
   nativeBrowserWatch: (browserSessionId: string, watching: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
-  nativeBrowserSetDesignMode: (
+  nativeBrowserSetDesignState: (
     browserSessionId: string,
-    active: boolean,
-    scale: number,
+    state: NativeBrowserDesignState,
   ) => Promise<void>;
-  nativeBrowserSetPencilMode: (browserSessionId: string, active: boolean) => Promise<void>;
   nativeBrowserSetShortcuts: (chords: NativeBrowserChord[]) => Promise<void>;
   onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
-  onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
-  onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;
+  onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;

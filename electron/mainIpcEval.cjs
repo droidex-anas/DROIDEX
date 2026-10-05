@@ -27,11 +27,7 @@ const PR_WORKSPACE_OPERATIONS = {
 
 // Browser pane pages send these through nativeBrowserPreload.cjs, so they
 // cannot require the main window.
-const BROWSER_PANE_CHANNELS = [
-  'native-browser-selection',
-  'native-browser-design-prompt',
-  'native-browser-credential-capture',
-];
+const BROWSER_PANE_CHANNELS = ['native-browser-design-event', 'native-browser-credential-capture'];
 
 function createBrowserWindowStub() {
   const created = Promise.withResolvers();

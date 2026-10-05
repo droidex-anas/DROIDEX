@@ -11,15 +11,8 @@ import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { useSessionLive } from '../../hooks/useSessionLive';
-import {
-  addDesignReference,
-  openBrowser,
-  reloadBrowser,
-  resizeBrowserViewport,
-  sendDesignPrompt,
-} from '../../lib/commands';
-import type { BrowserViewportMode, DesignReference } from '../../types/bridge';
+import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
+import type { BrowserViewportMode } from '../../types/bridge';
 import { normalizeUrl, sameViewport, viewportForMode, viewportFromFrame } from './browserViewport';
 import { NativeBrowserSurface } from './NativeBrowserSurface';
 import { ViewportMenu } from './ViewportMenu';
@@ -27,19 +20,17 @@ import { isDesktop } from '../../lib/desktop';
 import {
   goBackNativeBrowser,
   goForwardNativeBrowser,
-  type NativeBrowserDesignPrompt,
   type NativeBrowserLoadFailed,
-  type NativeBrowserSelection,
 } from '../../lib/nativeBrowser';
 import { BrowserToolbar } from './BrowserToolbar';
+import { DesignModePill } from './DesignModePill';
+import { useDesignMarks } from './designMarks';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
 import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
-import { browserTranscriptReferencesFromDesignReferences } from './browserTranscriptReferences';
 import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
 import { useElementSize } from './useElementSize';
 import { isEditTool } from '../../lib/diff';
-import { createLocalDesignTranscriptEvent, newQueueId } from '../../lib/promptQueue';
 
 // In full screen the chat's composer floats over the bottom of the page, with
 // a row of small things just above it; a standard size is fitted into the room
@@ -78,7 +69,7 @@ export default function BrowserWorkspace({
   const browserError = browserKey ? state.browserErrors[browserKey] : state.browserGlobalError;
   const designMode = isDesignModeOpen(state.designModes, browserKey);
   const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
-  const sessionLive = useSessionLive(requestedChatId ?? null);
+  const designMarks = useDesignMarks(browserKey);
   const nativeBrowser = isDesktop();
   const frameRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
@@ -316,71 +307,47 @@ export default function BrowserWorkspace({
     [activeUrl, browser?.browserSessionId, startLoading, stopLoading],
   );
 
-  const emitDesignTranscript = useCallback(
-    (text: string, refs: DesignReference[]) => {
-      if (!requestedChatId) return;
-      const browserRefs = browserTranscriptReferencesFromDesignReferences(refs);
-      dispatch({
-        type: 'SESSION_TRANSCRIPT',
-        event: createLocalDesignTranscriptEvent(requestedChatId, text, browserRefs),
-      });
-    },
-    [dispatch, requestedChatId],
-  );
-
-  // Stage a design prompt in the same client-side queue normal prompts use so
-  // it shows up as a draggable item and is delivered (with its references) once
-  // the current turn finishes, instead of hitting the backend mid-turn.
-  const queueDesignPrompt = useCallback(
-    (text: string, refs: DesignReference[], ids: string[]) => {
-      if (!browserKey || !requestedChatId) return;
-      dispatch({
-        type: 'QUEUE_PROMPT',
-        appSessionId: requestedChatId,
-        prompt: {
-          id: newQueueId(),
-          text,
-          skills: [],
-          files: [],
-          design: { browserKey, references: refs, referenceIds: ids },
-        },
-      });
-    },
-    [browserKey, dispatch, requestedChatId],
-  );
-
-  const handleSelection = useCallback(
-    (selection: NativeBrowserSelection) => {
-      if (browserKey) addDesignReference(browserKey, referenceFromNativeSelection(selection));
-    },
-    [browserKey],
-  );
-
   const handleLoadFailed = useCallback((failure: NativeBrowserLoadFailed) => {
     setLoadFailure(failure);
   }, []);
 
-  const handleNativePrompt = useCallback(
-    (prompt: NativeBrowserDesignPrompt) => {
-      if (!browserKey) return;
-      const text = prompt.instruction.trim();
-      if (!text) return;
-      const reference = referenceFromNativeSelection(prompt.selection);
-      const referenceId = reference.id;
-      if (!referenceId) return;
-      addDesignReference(browserKey, reference);
-      if (sessionLive) {
-        queueDesignPrompt(text, [reference], [referenceId]);
-      } else {
-        window.setTimeout(() => {
-          sendDesignPrompt(browserKey, text, [referenceId]);
-        }, 0);
-        emitDesignTranscript(text, [reference]);
-      }
-      dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
+  // Esc steps back one level: out of drawing first, then out of design mode.
+  const stepBackFromDesign = useCallback(() => {
+    if (!browserKey) return;
+    if (pencilMode) setPencilMode(false);
+    else dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
+  }, [browserKey, dispatch, pencilMode]);
+
+  // D and Esc pressed while the page has the focus. Picks become marks in the
+  // Browser host, which follows every chat's page.
+  const handleDesignKey = useCallback(
+    (key: 'draw' | 'escape') => {
+      if (key === 'draw') setPencilMode((drawing) => !drawing);
+      else stepBackFromDesign();
     },
-    [browserKey, dispatch, emitDesignTranscript, sessionLive, queueDesignPrompt],
+    [stepBackFromDesign],
   );
+
+  // The same keys while the app has the focus, unless it is in a text field.
+  useEffect(() => {
+    if (!designMode) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isTextEntry(event.target)) return;
+      const escape = event.key === 'Escape';
+      const draw =
+        event.key.toLowerCase() === 'd' && !event.metaKey && !event.ctrlKey && !event.altKey;
+      if (!escape && !draw) return;
+      event.preventDefault();
+      // Holding a key steps back or toggles drawing once, not on every repeat.
+      if (event.repeat) return;
+      if (escape) stepBackFromDesign();
+      else setPencilMode((drawing) => !drawing);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [designMode, stepBackFromDesign]);
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-droid-bg">
@@ -468,6 +435,7 @@ export default function BrowserWorkspace({
             viewportMode={viewportMode}
             designMode={designMode}
             pencilMode={designMode && pencilMode}
+            designMarks={designMarks}
             frameSize={viewportMode === 'fit' ? frameSize : roomSize}
             onLoaded={(event) => {
               setLoadFailure(null);
@@ -490,8 +458,7 @@ export default function BrowserWorkspace({
                 });
               }
             }}
-            onSelection={handleSelection}
-            onPrompt={handleNativePrompt}
+            onDesignKey={handleDesignKey}
             onLoadFailed={(failure) => {
               stopLoading();
               // Crashes are tracked by the Browser host, pane open or not.
@@ -511,6 +478,7 @@ export default function BrowserWorkspace({
           </div>
         )}
 
+        {/* Design mode's pill takes the size menu's place while it is on. */}
         {expanded ? (
           // A fitted page runs under the row and the composer, so it fades into
           // the app's background behind them; a standard size ends above them.
@@ -531,7 +499,7 @@ export default function BrowserWorkspace({
               style={{ '--page-room': `${String(roomSize.height)}px` } as CSSProperties}
             >
               {activity}
-              {browser && (
+              {browser && !designMode && (
                 <ViewportMenu
                   className="relative ml-auto shrink-0"
                   menuAlign="end"
@@ -543,7 +511,8 @@ export default function BrowserWorkspace({
             </div>
           </div>
         ) : (
-          browser && (
+          browser &&
+          !designMode && (
             <ViewportMenu
               className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2"
               mode={viewportMode}
@@ -552,22 +521,25 @@ export default function BrowserWorkspace({
             />
           )
         )}
+        <DesignModePill
+          open={Boolean(browser) && designMode}
+          drawing={pencilMode}
+          // In full screen the composer sits over the page's foot, so the pill
+          // rises above it and the activity row.
+          bottom={expanded ? 'calc(var(--composer-height, 0px) + 52px)' : undefined}
+          onDone={() => {
+            if (browserKey)
+              dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
+          }}
+        />
       </div>
     </div>
   );
 }
 
-function referenceFromNativeSelection(selection: NativeBrowserSelection): DesignReference {
-  return {
-    id: selection.anchor.id,
-    anchor: {
-      ...selection.anchor,
-      strokes: selection.anchor.strokes ?? selection.strokes,
-    },
-    detail: selection.detail,
-    url: selection.url,
-    title: selection.title,
-    scroll: selection.scroll,
-    screenshot: selection.screenshot,
-  };
+function isTextEntry(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+  );
 }

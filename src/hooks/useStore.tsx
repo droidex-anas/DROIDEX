@@ -224,7 +224,6 @@ export type { ImagePasteQuality } from '../lib/images';
 interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
-  referenceIds: string[];
 }
 
 export interface QueuedPrompt {
@@ -738,7 +737,7 @@ export type Action =
       canGoBack?: boolean;
       canGoForward?: boolean;
     }
-  | { type: 'BROWSER_CLOSED'; appSessionId: string }
+  | { type: 'BROWSER_CLOSED'; appSessionId: string; keepPane?: boolean }
   | { type: 'BROWSER_ERROR'; appSessionId?: string; message: string }
   | { type: 'TOGGLE_DESIGN_MODE'; appSessionId: string }
   | { type: 'SET_DESIGN_MODE'; appSessionId: string; open: boolean }
@@ -2449,7 +2448,8 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'BROWSER_CLOSED':
       // Full close: drop the session's browser, design mode, and open flag so a
-      // later reopen starts fresh (and it is excluded from persistence).
+      // later reopen starts fresh (and it is excluded from persistence). A
+      // browser closed with its chat's runtime leaves the pane open.
       return {
         ...state,
         browsers: Object.fromEntries(
@@ -2459,13 +2459,15 @@ export function reducer(state: AppState, action: Action): AppState {
           Object.entries(state.browserErrors).filter(([id]) => id !== action.appSessionId),
         ),
         designModes: clearDesignMode(state.designModes, action.appSessionId),
-        utilityPanels: {
-          ...state.utilityPanels,
-          [action.appSessionId]: removeUtilityTool(
-            state.utilityPanels[action.appSessionId],
-            'browser',
-          ),
-        },
+        utilityPanels: action.keepPane
+          ? state.utilityPanels
+          : {
+              ...state.utilityPanels,
+              [action.appSessionId]: removeUtilityTool(
+                state.utilityPanels[action.appSessionId],
+                'browser',
+              ),
+            },
       };
 
     case 'BROWSER_ERROR':
@@ -2917,7 +2919,7 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'browser.updated':
       return { type: 'BROWSER_UPDATED', browser: ev.state };
     case 'browser.closed':
-      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
+      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId, keepPane: ev.keepPane };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     case 'voice.answer':
