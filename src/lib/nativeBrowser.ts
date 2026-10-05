@@ -167,7 +167,8 @@ export function watchNativeBrowser(
     if (frame.browserSessionId === browserSessionId) handler(frame);
   });
   return () => {
-    unsubscribe();
+    // Main sends the page's last frame as it stops; it is still taken.
+    setTimeout(unsubscribe, 1000);
     const left = (watchers.get(browserSessionId) ?? 1) - 1;
     if (left > 0) watchers.set(browserSessionId, left);
     else {

@@ -85,7 +85,10 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       maxHeight: MAX_HEIGHT,
     });
     return () => {
+      // A frame still waiting for its time is the page's last state: it is
+      // sent now, so a card that stops watching keeps the picture it ended on.
       clearTimeout(timer);
+      if (latest) show();
       dbg.off('message', onMessage);
       void command('Page.stopScreencast');
     };
