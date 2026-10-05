@@ -486,6 +486,10 @@ export default function PromptInput({
   const consumedComposerSeedId = useRef<number | null>(null);
   // The draft a seed that goes out at once makes, sent once it is the draft.
   const seedToSend = useRef<string | null>(null);
+  // A seed that came while a submit was going out waits for it to settle, so
+  // it is not added to that prompt's text. The count moves as it settles.
+  const seedWaiting = useRef(false);
+  const [submitSettled, setSubmitSettled] = useState(0);
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
@@ -986,6 +990,10 @@ export default function PromptInput({
   const composerSeed = state.composerSeed;
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
+    if (submittingRef.current) {
+      seedWaiting.current = true;
+      return;
+    }
     consumedComposerSeedId.current = composerSeed.id;
     setHistoryIndex(null);
     // Notes and suggestion cards append to an in-progress draft. A surface
@@ -999,7 +1007,7 @@ export default function PromptInput({
     // unmounts this input) does not re-apply stale text over the user's edits,
     // and guard by seed id so a double-invoked effect cannot duplicate the text.
     dispatch({ type: 'CLEAR_COMPOSER_SEED' });
-  }, [composerSeed, input, dispatch, setVisualizeSelected]);
+  }, [composerSeed, input, dispatch, setVisualizeSelected, submitSettled]);
 
   // Restore the caret after a programmatic replacement. The editor syncs the
   // new text in its own effect (child effects run first), so by the time this
@@ -1171,6 +1179,13 @@ export default function PromptInput({
     return result;
   };
 
+  const settleSubmit = () => {
+    submittingRef.current = false;
+    if (!seedWaiting.current) return;
+    seedWaiting.current = false;
+    setSubmitSettled((count) => count + 1);
+  };
+
   // Re-entry guard: submit still awaits in-flight image encodes before the
   // input is cleared, so a second Enter during that window would resend.
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
@@ -1182,7 +1197,7 @@ export default function PromptInput({
       await runSubmit(originHoldId, mode, autonomyOverride);
     } finally {
       if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
 
@@ -1283,7 +1298,7 @@ export default function PromptInput({
       }
       toast.success('Prompt scheduled.');
     } finally {
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
 
