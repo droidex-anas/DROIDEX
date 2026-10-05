@@ -19,6 +19,7 @@ const MAX_NODES = 20_000;
 const MAX_REFS = 5_000;
 const DEFAULT_MAX_CHARS = 12_000;
 const MAX_FIND_RESULTS = 20;
+const SKIPPED_FRAME = 'a frame on the page could not be read, so its content is missing';
 const MAX_NAME_CHARS = 200;
 
 const INTERACTIVE_ROLES = new Set([
@@ -128,9 +129,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       render.forget();
       const partial = render.exhausted
         ? ' (the page was too large to search to the end)'
-        : render.refsCut
-          ? ` (refs stop after ${MAX_REFS} elements; read one ref for more)`
-          : '';
+        : render.skipped
+          ? ` (${SKIPPED_FRAME})`
+          : render.refsCut
+            ? ` (refs stop after ${MAX_REFS} elements; read one ref for more)`
+            : '';
       const complete = !render.exhausted && !render.skipped;
       if (results.length === 0)
         return {
@@ -413,6 +416,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       notes.push(`cut at ${limit} characters; ${hint}`);
     }
     if (render.exhausted) notes.push(`stopped after ${MAX_NODES} elements`);
+    if (render.skipped) notes.push(SKIPPED_FRAME);
     if (render.refsCut) notes.push(`refs stop after ${MAX_REFS} elements; read one ref for more`);
     if (notes.length) body += `\n… (${notes.join('; ')})`;
     return `${body || '(The page has no readable content.)'}\n${footer(contents)}`;
