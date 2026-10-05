@@ -123,6 +123,7 @@ function createNativeBrowserManager(options) {
     if (!entry) return;
     guests.release(entry.browserSessionId);
     entry.contents = null;
+    preview.sync(entry.browserSessionId);
     entry.shown = false;
     forgetLoad(entry);
     forgetLoadWaiters(entry);

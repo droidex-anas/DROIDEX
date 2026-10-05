@@ -49,8 +49,9 @@ export interface NativeBrowserFrame {
   browserSessionId: string;
   /** A JPEG, base64. */
   image: string;
-  /** The page's own width in CSS pixels. */
+  /** The page's own size in CSS pixels. */
   width: number;
+  height: number;
   /** The frame the page ended on, sent as its picture stops. */
   last?: boolean;
 }

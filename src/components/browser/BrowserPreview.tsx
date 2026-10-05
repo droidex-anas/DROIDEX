@@ -68,6 +68,10 @@ export function BrowserPreview({
     });
   }, [browserSessionId, cardKey, live, onScreen, visible]);
 
+  // The page is fitted whole inside the box, so a phone's tall page stands
+  // in the middle rather than being cut off below its top.
+  const fit = frame ? Math.min(width / frame.width, (width * 10) / 16 / frame.height) : 0;
+
   return (
     // The box is there from the start, so the card is seen arriving on screen;
     // it takes no room until there is a picture.
@@ -75,24 +79,30 @@ export function BrowserPreview({
       ref={boxRef}
       className={`relative overflow-hidden bg-droid-elevated ${frame ? 'aspect-[16/10] border-b border-droid-border' : ''}`}
     >
-      {frame && (
-        <img
-          src={`data:image/jpeg;base64,${frame.image}`}
-          alt=""
-          draggable={false}
-          className="block w-full select-none"
-        />
-      )}
-      {/* Mounted before the first frame, so a point that comes first is kept. */}
-      {browserSessionId && (
-        <BrowserAgentCursor
-          browserSessionId={browserSessionId}
-          scale={frame ? width / frame.width : 0}
-          shown={live && frame !== null}
-          working={working}
-          size={design.size.min}
-        />
-      )}
+      <div
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={frame ? { width: frame.width * fit, height: frame.height * fit } : undefined}
+      >
+        {frame && (
+          <img
+            src={`data:image/jpeg;base64,${frame.image}`}
+            alt=""
+            draggable={false}
+            className="block h-full w-full select-none"
+          />
+        )}
+        {/* Mounted before the first frame of a live card, so a point that
+            comes first is kept. */}
+        {browserSessionId && (live || frame) && (
+          <BrowserAgentCursor
+            browserSessionId={browserSessionId}
+            scale={fit}
+            shown={live && frame !== null}
+            working={working}
+            size={design.size.min}
+          />
+        )}
+      </div>
     </div>
   );
 }

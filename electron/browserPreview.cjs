@@ -61,8 +61,9 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       sendToRenderer('native-browser-frame', {
         browserSessionId,
         image: latest.data,
-        // The page's own width in CSS pixels, to place the cursor on the picture.
+        // The page's own size in CSS pixels, to place the cursor on the picture.
         width: latest.metadata.deviceWidth,
+        height: latest.metadata.deviceHeight,
         last,
       });
       latest = null;
