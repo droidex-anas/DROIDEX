@@ -152,10 +152,19 @@ export function startBridgeServer(options: {
     ws.on('close', disconnect);
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
+    // Commands sent while the client is caught up (the app sends its first ones
+    // the moment the socket opens) wait here and run in order once it is in.
+    let early: RawData[] | null = [];
+    ws.on('message', (raw) => {
+      if (early) early.push(raw);
+      else void handleMessage(ws, raw, pageId);
+    });
     const admitted = await resumeClient(ws, url);
     if (!admitted || ws.readyState !== ws.OPEN) return;
     clients.add(ws);
-    ws.on('message', (raw) => void handleMessage(ws, raw, pageId));
+    const waiting = early;
+    early = null;
+    for (const raw of waiting) void handleMessage(ws, raw, pageId);
   }
 
   async function resumeClient(ws: WebSocket, url: URL): Promise<boolean> {

@@ -71,7 +71,9 @@ export class SessionBrowser {
 
   async restore(cmd: Extract<ClientCommand, { type: 'browser.restore' }>): Promise<void> {
     await this.handleBrowser(undefined, () => {
-      this.d.browsers.restore(cmd.browsers);
+      // A browser closed while the app was away is closed for it too.
+      for (const appSessionId of this.d.browsers.restore(cmd.browsers))
+        this.d.emit({ type: 'browser.closed', appSessionId });
     });
   }
 
