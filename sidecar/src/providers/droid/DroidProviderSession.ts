@@ -30,7 +30,7 @@ export class DroidProviderSession implements ProviderSession {
   // on, then each one DROIDEX set, then each one Droid switched to itself.
   private modelId: string | undefined;
   private modelWritesInFlight = 0;
-  // Droid's own switch this turn, held until it says why or the turn ends.
+  // Droid's own switch, held until it says why or a turn reaches its result.
   private pendingSwitch: HarnessModelSwitch | undefined;
 
   constructor(
@@ -102,8 +102,9 @@ export class DroidProviderSession implements ProviderSession {
       if (!droidErrorDetails(message).errorKind) throw error;
       limitDetail = message;
     } finally {
+      // A switch not yet reported, because the turn failed or ended before its
+      // result, stays pending: the next turn reports it.
       stopListening();
-      this.pendingSwitch = undefined;
     }
     // A turn refused on the limit can still end in a successful result; only
     // the notice or the streamed error says it was refused.
