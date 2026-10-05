@@ -101,7 +101,10 @@ function createNativeBrowserViewFactory({
       if (current()) void loadUrl(entry, nextUrl);
       return { action: 'deny' };
     });
-    contents.on('before-input-event', onInput);
+    // Only the page the browser shows forwards app shortcuts, not one let go.
+    contents.on('before-input-event', (event, input) => {
+      if (current()) onInput(event, input);
+    });
     contents.on('console-message', (details) => {
       // Electron's own notices about the guest are not the page's.
       if (!current() || String(details.sourceId ?? '').startsWith('node:electron/')) return;
