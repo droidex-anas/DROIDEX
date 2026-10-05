@@ -2,9 +2,7 @@ function createNativeBrowserPage({
   appName,
   ensureEntry,
   restoreForAction,
-  safeWebContents,
-  scheduleIdleClose,
-  setHiddenBounds,
+  liveContents,
   normalizeBrowserViewport,
   credentials,
   runWithWebContentsDebugger,
@@ -27,73 +25,79 @@ function createNativeBrowserPage({
     return applyDesignState(entry);
   }
 
+  // A page the pane does not show never keeps the design overlay, so an agent
+  // working in it is never blocked by one.
   function applyDesignState(entry) {
-    if (!entry?.attached || !entry.visible) return undefined;
-    const contents = safeWebContents(entry?.view);
+    const contents = liveContents(entry);
     if (!contents) return undefined;
+    const designState = entry.shown
+      ? entry.state
+      : { ...entry.state, designMode: false, pencilMode: false };
     return contents
       .executeJavaScript(
-        `window.__DROIDMAXX_APPLY_DESIGN_STATE?.(${JSON.stringify(entry.state)});`,
+        `window.__DROIDMAXX_APPLY_DESIGN_STATE?.(${JSON.stringify(designState)});`,
         true,
       )
       .catch((err) => console.error(`failed to apply browser design state: ${err.message}`));
   }
 
   async function runAgentAction(request) {
+    const pageless = runPagelessAction(request);
+    if (pageless) return pageless;
     const entry = await restoreForAction(request.browserSessionId);
+    const contents = liveContents(entry);
+    if (!contents) throw new Error(`${appName} browser is not open.`);
+    const navigation = observeAgentNavigation(contents);
+    contents.setBackgroundThrottling(false);
     try {
-      const contents = safeWebContents(entry.view);
-      if (!contents) throw new Error(`${appName} browser is not open.`);
-      if (request.action === 'resize') {
-        entry.viewport = normalizeBrowserViewport(request.viewport);
-        // Attached bounds remain owned by the Browser pane layout.
-        if (!entry.attached) setHiddenBounds(entry, entry.viewport);
-        return { requestId: request.requestId, ok: true };
-      }
-      if (request.action === 'network') {
-        const networkEvents = entry.networkEvents.slice();
-        if (request.clearNetworkLog) entry.networkEvents.length = 0;
-        return { requestId: request.requestId, ok: true, networkEvents };
-      }
-      if (request.action === 'console') {
-        const consoleEvents = entry.consoleEvents.slice();
-        if (request.clearConsoleLog) entry.consoleEvents.length = 0;
-        return { requestId: request.requestId, ok: true, consoleEvents };
-      }
-      const navigation = observeAgentNavigation(contents);
-      contents.setBackgroundThrottling(false);
-      try {
-        if (request.action === 'fillCredentials') {
-          return withNativeBrowserHistory(
-            contents,
-            await credentials.fillForAgent(contents, request),
-          );
-        }
-        const execution = executeAgentAction(contents, request).then(
-          (result) => ({ type: 'result', result }),
-          (error) => ({ type: 'error', error }),
+      if (request.action === 'fillCredentials') {
+        return withNativeBrowserHistory(
+          contents,
+          await credentials.fillForAgent(contents, request),
         );
-        const outcome = await Promise.race([
-          execution,
-          navigation.wait().then(() => ({ type: 'navigation' })),
-        ]);
-        if (outcome.type === 'navigation') {
-          return await snapshotAfterNavigation(contents, request);
-        }
-        if (outcome.type === 'error') {
-          if (!navigation.started() || !isNavigationExecutionError(outcome.error))
-            throw outcome.error;
-          await navigation.wait();
-          return await snapshotAfterNavigation(contents, request);
-        }
-        return withNativeBrowserHistory(contents, outcome.result);
-      } finally {
-        navigation.dispose();
-        restoreBackgroundThrottling(contents, entry);
       }
+      const execution = executeAgentAction(contents, request).then(
+        (result) => ({ type: 'result', result }),
+        (error) => ({ type: 'error', error }),
+      );
+      const outcome = await Promise.race([
+        execution,
+        navigation.wait().then(() => ({ type: 'navigation' })),
+      ]);
+      if (outcome.type === 'navigation') {
+        return await snapshotAfterNavigation(contents, request);
+      }
+      if (outcome.type === 'error') {
+        if (!navigation.started() || !isNavigationExecutionError(outcome.error))
+          throw outcome.error;
+        await navigation.wait();
+        return await snapshotAfterNavigation(contents, request);
+      }
+      return withNativeBrowserHistory(contents, outcome.result);
     } finally {
-      scheduleIdleClose(entry);
+      navigation.dispose();
+      restoreBackgroundThrottling(contents);
     }
+  }
+
+  // Reading the logs or recording the viewport never needs the page itself,
+  // so it never wakes or remounts one.
+  function runPagelessAction(request) {
+    if (!['resize', 'network', 'console'].includes(request.action)) return undefined;
+    const entry = ensureEntry(request.browserSessionId);
+    if (request.action === 'resize') {
+      // The renderer sizes the page from the session's viewport.
+      entry.viewport = normalizeBrowserViewport(request.viewport);
+      return { requestId: request.requestId, ok: true };
+    }
+    if (request.action === 'network') {
+      const networkEvents = entry.networkEvents.slice();
+      if (request.clearNetworkLog) entry.networkEvents.length = 0;
+      return { requestId: request.requestId, ok: true, networkEvents };
+    }
+    const consoleEvents = entry.consoleEvents.slice();
+    if (request.clearConsoleLog) entry.consoleEvents.length = 0;
+    return { requestId: request.requestId, ok: true, consoleEvents };
   }
 
   async function executeAgentAction(contents, request) {
@@ -261,7 +265,7 @@ function createNativeBrowserPage({
 
   async function capture(browserSessionId, box, options = {}) {
     const entry = await restoreForAction(browserSessionId);
-    const contents = safeWebContents(entry.view);
+    const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
     contents.setBackgroundThrottling(false);
     try {
@@ -292,13 +296,14 @@ function createNativeBrowserPage({
       const image = rect ? await contents.capturePage(rect) : await contents.capturePage();
       return image.isEmpty() ? undefined : image.toPNG().toString('base64');
     } finally {
-      restoreBackgroundThrottling(contents, entry);
-      scheduleIdleClose(entry);
+      restoreBackgroundThrottling(contents);
     }
   }
 
-  function restoreBackgroundThrottling(contents, entry) {
-    if (entry.attached && entry.visible) return;
+  // Restored as soon as the work ends, shown or not: re-enabling throttling on a
+  // guest that is already hidden does not take effect, so a flag left lifted
+  // would keep the page running after the pane closes.
+  function restoreBackgroundThrottling(contents) {
     try {
       if (!contents.isDestroyed()) contents.setBackgroundThrottling(true);
     } catch {
@@ -348,7 +353,7 @@ function createNativeBrowserPage({
     const box = selection?.anchor?.box;
     if (!box || !(box.width > 0) || !(box.height > 0)) return undefined;
     const entry = findEntryForContents(senderContents);
-    const contents = safeWebContents(entry?.view);
+    const contents = liveContents(entry);
     if (!contents) return undefined;
     const padded = {
       x: Math.max(0, box.x - DESIGN_CAPTURE_PADDING),
@@ -369,15 +374,14 @@ function createNativeBrowserPage({
     return base64 ? { base64, box: padded } : undefined;
   }
 
-  function normalizeCaptureRect(entry, box) {
+  // Boxes are in the page's CSS pixels, which for a guest are also its view
+  // pixels; capturePage clips anything past the page's edge.
+  function normalizeCaptureRect(_entry, box) {
     if (!box) return undefined;
-    const bounds = entry.view?.getBounds?.() ?? { width: 0, height: 0 };
-    const maxWidth = bounds.width || Number.MAX_SAFE_INTEGER;
-    const maxHeight = bounds.height || Number.MAX_SAFE_INTEGER;
     const x = Math.max(0, Math.round(box.x));
     const y = Math.max(0, Math.round(box.y));
-    const width = Math.min(Math.round(box.width), maxWidth - x);
-    const height = Math.min(Math.round(box.height), maxHeight - y);
+    const width = Math.round(box.width);
+    const height = Math.round(box.height);
     if (width <= 0 || height <= 0) return undefined;
     return { x, y, width, height };
   }

@@ -191,7 +191,7 @@
       "count": 4
     },
     "@typescript-eslint/no-empty-function": {
-      "count": 9
+      "count": 3
     }
   },
   "src/components/browser/browserComposerPosition.ts": {
@@ -352,7 +352,7 @@
       "count": 4
     },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 18
+      "count": 17
     },
     "@typescript-eslint/prefer-optional-chain": {
       "count": 1

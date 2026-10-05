@@ -222,16 +222,14 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
-  nativeBrowserOpen: (browserSessionId, url, bounds, viewport) =>
-    ipcRenderer.invoke('native-browser-open', { browserSessionId, url, bounds, viewport }),
-  nativeBrowserAttach: (browserSessionId, bounds, url) =>
-    ipcRenderer.invoke('native-browser-attach', { browserSessionId, bounds, url }),
-  nativeBrowserDetach: (browserSessionId) =>
-    ipcRenderer.invoke('native-browser-detach', { browserSessionId }),
-  nativeBrowserSetBounds: (browserSessionId, bounds) =>
-    ipcRenderer.invoke('native-browser-set-bounds', { browserSessionId, bounds }),
-  nativeBrowserSetVisible: (browserSessionId, visible) =>
-    ipcRenderer.invoke('native-browser-visible', { browserSessionId, visible }),
+  nativeBrowserReserve: (browserSessionId, savedUrl) =>
+    ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl }),
+  nativeBrowserRelease: (browserSessionId) =>
+    ipcRenderer.invoke('native-browser-release', { browserSessionId }),
+  nativeBrowserShown: (browserSessionId, shown) =>
+    ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
+  nativeBrowserOpen: (browserSessionId, url, viewport) =>
+    ipcRenderer.invoke('native-browser-open', { browserSessionId, url, viewport }),
   nativeBrowserClose: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-close', { browserSessionId }),
   nativeBrowserReload: (browserSessionId) =>

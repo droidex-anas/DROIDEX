@@ -371,7 +371,6 @@ export function pruneRemovedSessionState(
     reviewOpenAppSessionId,
     pendingAutonomy: pruneSessionRecord(state.pendingAutonomy, retainedSessionIds),
     pendingModelUpdates: pruneSessionRecord(state.pendingModelUpdates, retainedSessionIds),
-    browserOpenKeys: pruneSessionRecord(state.browserOpenKeys, retainedSessionIds),
     browsers: pruneSessionRecord(state.browsers, retainedSessionIds),
     browserErrors: pruneSessionRecord(state.browserErrors, retainedSessionIds),
     designModes: pruneSessionRecord(state.designModes, retainedSessionIds),

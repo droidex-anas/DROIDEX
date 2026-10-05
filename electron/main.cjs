@@ -4,7 +4,6 @@ const {
   Menu,
   clipboard,
   Notification,
-  WebContentsView,
   dialog,
   ipcMain,
   nativeTheme,
@@ -27,7 +26,6 @@ const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
 const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
-const { createNativeBrowserBudget } = require('./nativeBrowserBudget.cjs');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
@@ -126,29 +124,22 @@ let appIconMode = 'system';
 /** @type {{ appSessionId: string, expiresAt: number } | null } */
 let pendingNotificationOpen = null;
 const PENDING_NOTIFICATION_OPEN_MS = 30_000;
-// Keep hidden browser sessions warm by default so authenticated pages and
-// compositor state survive while the Browser pane is closed.
-const HIDDEN_BROWSER_IDLE_MS = Number(process.env.DROID_NATIVE_BROWSER_IDLE_MS ?? 0);
-const nativeBrowserBudget = createNativeBrowserBudget({
-  maxLive: process.env.DROID_NATIVE_BROWSER_MAX_LIVE,
-  idleMs: HIDDEN_BROWSER_IDLE_MS,
-});
 const nativeBrowserManager = createNativeBrowserManager({
   app,
   appName: APP_NAME,
-  BrowserWindow,
-  WebContentsView,
   session,
   dialog,
   safeStorage,
-  budget: nativeBrowserBudget,
   getMainWindow: () => mainWindow,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
   getHostAppUrl: () => process.env.ELECTRON_START_URL || mainWindow?.webContents.getURL(),
   sendToRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
-});
+}); // Binds each <webview> guest to the session main reserved it for, in the same
+// dispatch that creates it.
+app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
+
 const MEMORY_PRESSURE_RSS_BYTES = Number(
   process.env.DROID_MEMORY_PRESSURE_RSS_BYTES ?? 1.5 * 1024 * 1024 * 1024,
 );
@@ -202,7 +193,7 @@ app.whenReady().then(async () => {
     app,
     appName: APP_NAME,
     appUpdater,
-    reload: reloadShell,
+    reload: reloadFromMenu,
     shell,
     logError: (message) => console.error('[menu] %s', message),
   });
@@ -219,7 +210,6 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('power-tier', { ...powerTier.snapshot(), tier });
   });
   powerTier.onMemoryPressure(() => {
-    nativeBrowserManager.evictUnattached();
     terminalManager.trimReplay();
     if (isWindowUsable(mainWindow))
       mainWindow.webContents.send('memory-pressure', { at: Date.now() });
@@ -284,8 +274,16 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Browser pages are <webview> guests; only guests main reserved attach.
+      webviewTag: true,
     },
   });
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) =>
+    nativeBrowserManager.handleWillAttach(event, webPreferences, params, mainWindow.webContents),
+  );
+  mainWindow.webContents.on('did-attach-webview', (_event, contents) =>
+    nativeBrowserManager.handleAttached(contents),
+  );
 
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
@@ -895,25 +893,21 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
-  ipcMain.handle('native-browser-open', (event, { browserSessionId, url, bounds, viewport }) => {
+  ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.open(browserSessionId, url, bounds, viewport);
+    return nativeBrowserManager.reserve(browserSessionId, mainWindow.webContents, savedUrl);
   });
-  ipcMain.handle('native-browser-attach', (event, { browserSessionId, bounds, url }) => {
+  ipcMain.handle('native-browser-release', (event, { browserSessionId }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.attach(browserSessionId, bounds, { restoreUrl: url });
+    return nativeBrowserManager.release(browserSessionId);
   });
-  ipcMain.handle('native-browser-detach', (event, { browserSessionId }) => {
+  ipcMain.handle('native-browser-shown', (event, { browserSessionId, shown }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.detach(browserSessionId);
+    return nativeBrowserManager.setShown(browserSessionId, shown);
   });
-  ipcMain.handle('native-browser-set-bounds', (event, { browserSessionId, bounds }) => {
+  ipcMain.handle('native-browser-open', (event, { browserSessionId, url, viewport }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.setBounds(browserSessionId, bounds);
-  });
-  ipcMain.handle('native-browser-visible', (event, { browserSessionId, visible }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.setVisible(browserSessionId, visible);
+    return nativeBrowserManager.open(browserSessionId, url, viewport);
   });
   ipcMain.handle('native-browser-close', (event, { browserSessionId }) => {
     assertMainRenderer(event);
@@ -1064,8 +1058,15 @@ function setAppIcon(mode) {
   return mode;
 }
 
+// With a browser page focused, Reload from the menu means that page;
+// reloading the shell would destroy every mounted page.
+function reloadFromMenu(ignoreCache) {
+  if (!ignoreCache && nativeBrowserManager.reloadFocused(webContents.getFocusedWebContents()))
+    return;
+  reloadShell(ignoreCache);
+}
+
 function reloadShell(ignoreCache) {
-  nativeBrowserManager.detach();
   if (!isWindowUsable(mainWindow)) return;
   closeRendererOwnedTerminals();
   if (ignoreCache) mainWindow.webContents.reloadIgnoringCache();
