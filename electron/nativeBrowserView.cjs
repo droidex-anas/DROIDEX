@@ -154,8 +154,9 @@ function createNativeBrowserViewFactory({
     contents.on('dom-ready', () => {
       if (current() && entry.state.designMode && entry.shown) applyDesignState(entry);
     });
-    contents.on('did-navigate-in-page', (_event, nextUrl) => {
-      if (!current()) return;
+    // A frame's hash change or pushState is not the page moving.
+    contents.on('did-navigate-in-page', (_event, nextUrl, isMainFrame) => {
+      if (!current() || !isMainFrame) return;
       entry.targetUrl = nextUrl;
       emitLoaded(entry, nextUrl);
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
