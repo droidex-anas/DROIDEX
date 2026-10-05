@@ -5,8 +5,8 @@
 const MAX_WIDTH = 480;
 const MAX_HEIGHT = 960;
 const JPEG_QUALITY = 50;
-// At most four frames and 150 KB a second reach the renderer. A still page
-// sends its one frame at once.
+// At most four frames and 150 KB a second reach the renderer, counted as the
+// base64 text it is sent as. A still page sends its one frame at once.
 const FRAME_MS = 250;
 const BYTES_PER_SECOND = 150_000;
 
@@ -56,7 +56,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
     const show = (last = false) => {
       timer = null;
       if (contents.isDestroyed()) return;
-      const bytes = latest.data.length * 0.75;
+      const bytes = latest.data.length;
       due = Date.now() + Math.max(FRAME_MS, (bytes / BYTES_PER_SECOND) * 1000);
       sendToRenderer('native-browser-frame', {
         browserSessionId,
