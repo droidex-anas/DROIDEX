@@ -5,27 +5,28 @@
 const MAX_WIDTH = 480;
 const MAX_HEIGHT = 960;
 const JPEG_QUALITY = 50;
-// At most four frames and 150 KB a second reach the renderer. The page is
-// asked for its next frame only once the last has had its time, and a frame
-// that still comes early is dropped. A still page sends its one frame at once.
+// At most four frames and 150 KB a second reach the renderer. A still page
+// sends its one frame at once.
 const FRAME_MS = 250;
 const BYTES_PER_SECOND = 150_000;
 
 function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, sendToRenderer }) {
   const watched = new Set(); // browser sessions a card is watching
-  const casts = new WeakMap(); // guest contents -> stop its screencast
+  const casts = new Map(); // browser session -> { contents, stop } of its screencast
 
   // Starts or stops the page's picture to match what the renderer asked for.
-  // Also called when a guest is bound, so a page mounted after its card has one.
+  // Also called when a guest is bound, so a page mounted after its card has one,
+  // and a guest that replaced another stops the old one's picture.
   function sync(browserSessionId) {
     const contents = liveContentsOf(browserSessionId);
-    if (!contents) return;
-    const stop = casts.get(contents);
-    if (watched.has(browserSessionId) && !stop) {
-      casts.set(contents, start(contents, browserSessionId));
-    } else if (!watched.has(browserSessionId) && stop) {
-      casts.delete(contents);
-      stop();
+    const cast = casts.get(browserSessionId);
+    const wanted = watched.has(browserSessionId) && contents;
+    if (cast && cast.contents !== wanted) {
+      casts.delete(browserSessionId);
+      cast.stop();
+    }
+    if (wanted && !casts.has(browserSessionId)) {
+      casts.set(browserSessionId, { contents, stop: start(contents, browserSessionId) });
     }
   }
 
@@ -46,31 +47,35 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       runWithWebContentsDebugger(contents, (attached) =>
         attached.sendCommand(method, params),
       ).catch(() => undefined);
-    const acks = new Set();
-    // When the next frame may be shown.
-    let due = 0;
+    // Frames are acked only when one is shown, so the page encodes no more
+    // than its few in-flight frames between two shown ones.
+    const unacked = [];
+    let latest = null; // the newest frame not shown yet
+    let due = 0; // when the next frame may be shown
+    let timer = null;
+    const show = () => {
+      timer = null;
+      if (contents.isDestroyed()) return;
+      const bytes = latest.data.length * 0.75;
+      due = Date.now() + Math.max(FRAME_MS, (bytes / BYTES_PER_SECOND) * 1000);
+      sendToRenderer('native-browser-frame', {
+        browserSessionId,
+        image: latest.data,
+        // The page's own width in CSS pixels, to place the cursor on the picture.
+        width: latest.metadata.deviceWidth,
+      });
+      latest = null;
+      // Asked for directly: the picture goes on while an action holds the queue.
+      for (const sessionId of unacked.splice(0))
+        dbg.sendCommand('Page.screencastFrameAck', { sessionId }).catch(() => undefined);
+    };
     const onMessage = (_event, method, params) => {
       if (method !== 'Page.screencastFrame') return;
-      const now = Date.now();
-      if (now >= due) {
-        const bytes = params.data.length * 0.75;
-        due = now + Math.max(FRAME_MS, (bytes / BYTES_PER_SECOND) * 1000);
-        sendToRenderer('native-browser-frame', {
-          browserSessionId,
-          image: params.data,
-          // The page's own width in CSS pixels, to place the cursor on the picture.
-          width: params.metadata.deviceWidth,
-        });
-      }
-      // Asked for directly: the picture goes on while an action holds the queue.
-      const ack = setTimeout(() => {
-        acks.delete(ack);
-        if (contents.isDestroyed()) return;
-        dbg
-          .sendCommand('Page.screencastFrameAck', { sessionId: params.sessionId })
-          .catch(() => undefined);
-      }, due - now);
-      acks.add(ack);
+      // A frame that comes early waits for its time, and a newer one replaces
+      // it, so the picture always ends on the page's last state.
+      latest = params;
+      unacked.push(params.sessionId);
+      timer ??= setTimeout(show, Math.max(0, due - Date.now()));
     };
     dbg.on('message', onMessage);
     void command('Page.startScreencast', {
@@ -80,7 +85,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       maxHeight: MAX_HEIGHT,
     });
     return () => {
-      for (const ack of acks) clearTimeout(ack);
+      clearTimeout(timer);
       dbg.off('message', onMessage);
       void command('Page.stopScreencast');
     };

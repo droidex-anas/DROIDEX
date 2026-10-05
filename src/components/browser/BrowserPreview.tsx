@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { useBrowserHost } from '../../lib/browserHost';
 import { watchNativeBrowser, type NativeBrowserFrame } from '../../lib/nativeBrowser';
 import { BrowserAgentCursor } from './BrowserAgentCursor';
@@ -20,8 +21,8 @@ function keep(cardKey: string, frame: NativeBrowserFrame): void {
 /**
  * A small picture of the page at the top of the transcript's Browser card,
  * with the agent's cursor over it. It is live only while the card's turn is
- * running and the card is on screen; otherwise it is the last frame it showed,
- * and a card that never had one has no picture.
+ * running, the card is on screen and the browser is open; otherwise it is the
+ * last frame it showed, and a card that never had one has no picture.
  */
 export function BrowserPreview({
   cardKey,
@@ -29,7 +30,8 @@ export function BrowserPreview({
   live,
 }: {
   cardKey: string;
-  browserSessionId: string;
+  /** The chat's open browser, if it has one. */
+  browserSessionId?: string;
   /** The card's turn is still running. */
   live: boolean;
 }) {
@@ -37,7 +39,9 @@ export function BrowserPreview({
   const [frame, setFrame] = useState(() => lastFrames.get(cardKey) ?? null);
   const [onScreen, setOnScreen] = useState(false);
   const [width, setWidth] = useState(0);
-  const working = browserSessionId in useBrowserHost().working;
+  const visible = useDocumentVisible();
+  const busy = useBrowserHost().working;
+  const working = browserSessionId !== undefined && browserSessionId in busy;
 
   useEffect(() => {
     const box = boxRef.current;
@@ -57,12 +61,12 @@ export function BrowserPreview({
   }, []);
 
   useEffect(() => {
-    if (!live || !onScreen) return;
+    if (!browserSessionId || !live || !onScreen || !visible) return;
     return watchNativeBrowser(browserSessionId, (next) => {
       keep(cardKey, next);
       setFrame(next);
     });
-  }, [browserSessionId, cardKey, live, onScreen]);
+  }, [browserSessionId, cardKey, live, onScreen, visible]);
 
   return (
     // The box is there from the start, so the card is seen arriving on screen;
@@ -72,21 +76,22 @@ export function BrowserPreview({
       className={`relative overflow-hidden bg-droid-elevated ${frame ? 'aspect-[16/10] border-b border-droid-border' : ''}`}
     >
       {frame && (
-        <>
-          <img
-            src={`data:image/jpeg;base64,${frame.image}`}
-            alt=""
-            draggable={false}
-            className="block w-full select-none"
-          />
-          <BrowserAgentCursor
-            browserSessionId={browserSessionId}
-            scale={width / frame.width}
-            shown={live}
-            working={working}
-            size={design.size.min}
-          />
-        </>
+        <img
+          src={`data:image/jpeg;base64,${frame.image}`}
+          alt=""
+          draggable={false}
+          className="block w-full select-none"
+        />
+      )}
+      {/* Mounted before the first frame, so a point that comes first is kept. */}
+      {browserSessionId && (
+        <BrowserAgentCursor
+          browserSessionId={browserSessionId}
+          scale={frame ? width / frame.width : 0}
+          shown={live && frame !== null}
+          working={working}
+          size={design.size.min}
+        />
       )}
     </div>
   );
