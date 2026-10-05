@@ -1,4 +1,5 @@
 import type { TranscriptEvent } from '../types/bridge';
+import { describeLink } from './linkPresentation';
 
 // How DROIDEX's own browser tools read in the transcript: what the agent did on
 // the page, in plain words, and the page that work left the browser on.
@@ -134,4 +135,11 @@ export function browserStepInFlight(events: TranscriptEvent[]): BrowserStep | nu
     }
   }
   return null;
+}
+
+// The step in flight in words, as the Browser card and the full-screen line
+// say it ("Clicking Sign in"); an address reads as its site.
+export function browserStepLabel(events: TranscriptEvent[]): string | null {
+  const step = browserStepInFlight(events);
+  return step && `${step.liveVerb} ${describeLink(step.object)?.host ?? step.object}`.trim();
 }

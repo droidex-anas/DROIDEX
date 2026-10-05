@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Ellipsis, ExternalLink, Link } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { browserPageOf, browserStepInFlight, isWholeUrl } from '../../lib/browserTools';
+import { browserPageOf, browserStepLabel, isWholeUrl } from '../../lib/browserTools';
 import { describeLink } from '../../lib/linkPresentation';
 import { openExternal } from '../../lib/onboarding';
 import { toast } from '../../lib/toast';
@@ -88,14 +88,12 @@ function cardText(events: TranscriptEvent[], working: boolean) {
   const page = browserPageOf(events);
   const link = page ? describeLink(page.url) : null;
   const host = link?.host.replace(/^www\./, '');
-  const step = working ? browserStepInFlight(events) : null;
   return {
     page,
     link,
     title: page?.title ?? host ?? 'Browser page',
     site: host ? `${host} · Browser` : 'Browser',
-    // An address reads as its site while it is being opened.
-    doing: step && `${step.liveVerb} ${describeLink(step.object)?.host ?? step.object}`.trim(),
+    doing: working ? browserStepLabel(events) : null,
   };
 }
 

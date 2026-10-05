@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
@@ -33,11 +33,19 @@ import { useElementSize } from './useElementSize';
 import { isEditTool } from '../../lib/diff';
 import { createLocalDesignTranscriptEvent, newQueueId } from '../../lib/promptQueue';
 
+// In full screen the chat's composer floats over the bottom of the page, with
+// a row of small things just above it; a standard size is fitted into the room
+// left over, while Fit fills the whole area and scrolls under them.
+const OVER_PAGE_ROOM = 'calc(var(--composer-height, 0px) + 44px)';
+
 export default function BrowserWorkspace({
   expanded = false,
+  activity,
   onToggleExpanded,
 }: {
   expanded?: boolean;
+  // Shown over the page, just above the composer, in full screen.
+  activity?: ReactNode;
   onToggleExpanded?: () => void;
 }) {
   const dispatch = useStoreDispatch();
@@ -65,9 +73,11 @@ export default function BrowserWorkspace({
   const sessionLive = useSessionLive(requestedChatId ?? null);
   const nativeBrowser = isDesktop();
   const frameRef = useRef<HTMLDivElement>(null);
+  const roomRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const appOrigin = typeof window === 'undefined' ? undefined : window.location.origin;
   const frameSize = useElementSize(frameRef);
+  const roomSize = useElementSize(roomRef);
   const frameReady = frameSize.width > 8 && frameSize.height > 8;
   const fitViewport = useMemo(() => viewportFromFrame(frameSize, expanded), [expanded, frameSize]);
   const initialUrl = safeBrowserUrl(browser?.url, appOrigin);
@@ -435,6 +445,12 @@ export default function BrowserWorkspace({
       )}
 
       <div ref={frameRef} className="relative flex-1 min-h-0 min-w-0">
+        <div
+          ref={roomRef}
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0"
+          style={{ bottom: expanded ? OVER_PAGE_ROOM : 0 }}
+        />
         {browserKey && frameReady ? (
           <NativeBrowserSurface
             visibleBrowserSessionId={browser?.browserSessionId}
@@ -444,7 +460,7 @@ export default function BrowserWorkspace({
             viewportMode={viewportMode}
             designMode={designMode}
             pencilMode={designMode && pencilMode}
-            frameSize={frameSize}
+            frameSize={viewportMode === 'fit' ? frameSize : roomSize}
             onLoaded={(event) => {
               setLoadFailure(null);
               stopLoading();
@@ -487,8 +503,33 @@ export default function BrowserWorkspace({
           </div>
         )}
 
-        {browser && (
-          <ViewportMenu mode={viewportMode} fitViewport={fitViewport} onSelect={pickViewport} />
+        {expanded ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 z-10 px-3 pb-2"
+            style={{ bottom: 'var(--composer-height, 0px)' }}
+          >
+            <div className="mx-auto flex max-w-4xl items-end gap-2 [&>*]:pointer-events-auto">
+              {activity}
+              {browser && (
+                <ViewportMenu
+                  className="relative ml-auto shrink-0"
+                  menuAlign="end"
+                  mode={viewportMode}
+                  fitViewport={fitViewport}
+                  onSelect={pickViewport}
+                />
+              )}
+            </div>
+          </div>
+        ) : (
+          browser && (
+            <ViewportMenu
+              className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2"
+              mode={viewportMode}
+              fitViewport={fitViewport}
+              onSelect={pickViewport}
+            />
+          )
         )}
       </div>
     </div>

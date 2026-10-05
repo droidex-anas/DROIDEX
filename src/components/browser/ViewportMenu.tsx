@@ -7,20 +7,26 @@ import { VIEWPORT_LABELS, viewportForMode } from './browserViewport';
 const MODES = Object.keys(VIEWPORT_LABELS) as BrowserViewportMode[];
 
 // The page's size, under the page: Fit follows the pane, a standard size lays
-// the page out at that size and draws it scaled to fit.
+// the page out at that size and draws it scaled to fit. The parent places it;
+// at the end of a row its menu opens from its right edge.
 export function ViewportMenu({
   mode,
   fitViewport,
   onSelect,
+  className,
+  menuAlign = 'center',
 }: {
   mode: BrowserViewportMode;
   fitViewport: BrowserViewport;
   onSelect: (mode: BrowserViewportMode) => void;
+  className: string;
+  menuAlign?: 'center' | 'end';
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const menuX = menuAlign === 'end' ? 0 : '-50%';
   const size = (choice: BrowserViewportMode) => {
     const { width, height } = viewportForMode(choice, fitViewport);
     return `${String(width)} × ${String(height)}`;
@@ -49,7 +55,7 @@ export function ViewportMenu({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+    <div ref={rootRef} className={className}>
       <button
         ref={buttonRef}
         type="button"
@@ -82,11 +88,13 @@ export function ViewportMenu({
               const step = e.key === 'ArrowDown' ? 1 : options.length - 1;
               options[(index + step) % options.length]?.focus();
             }}
-            initial={{ opacity: 0, x: '-50%', y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }}
-            exit={{ opacity: 0, x: '-50%', y: 8, scale: 0.98 }}
+            initial={{ opacity: 0, x: menuX, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, x: menuX, y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: menuX, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full left-1/2 z-50 mb-2 w-[220px] overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised p-1.5 shadow-droid"
+            className={`absolute bottom-full z-50 mb-2 w-[220px] overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised p-1.5 shadow-droid ${
+              menuAlign === 'end' ? 'right-0' : 'left-1/2'
+            }`}
           >
             {MODES.map((choice, index) => {
               const selected = choice === mode;
