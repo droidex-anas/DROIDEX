@@ -5,6 +5,7 @@ import type {
   BrowserState,
   BrowserViewport,
   BrowserViewportMode,
+  ClientCommand,
   ConfigurableSessionRole,
   ContextWindowTokens,
   DesignReference,
@@ -461,8 +462,10 @@ export const openBrowser = (input: {
   bridge.send({ type: 'browser.open', ...input });
 };
 
-/** Hands the sidecar the browsers the app kept, keyed by chat, so their panes keep working. */
-export const restoreBrowsers = (browsers: Record<string, BrowserState>) => {
+/** The browsers the app kept, keyed by chat, for the sidecar to take up so their panes keep working. */
+export const restoreBrowsersCommand = (
+  browsers: Record<string, BrowserState>,
+): ClientCommand | null => {
   const kept = Object.entries(browsers).map(([appSessionId, browser]) => ({
     appSessionId,
     browserSessionId: browser.browserSessionId,
@@ -470,7 +473,7 @@ export const restoreBrowsers = (browsers: Record<string, BrowserState>) => {
     viewport: browser.viewport,
     viewportMode: browser.viewportMode,
   }));
-  if (kept.length > 0) bridge.send({ type: 'browser.restore', browsers: kept });
+  return kept.length > 0 ? { type: 'browser.restore', browsers: kept } : null;
 };
 
 export const reloadBrowser = (appSessionId: string) => {
