@@ -71,8 +71,10 @@ function base64Of(image: ImageBlock): string | undefined {
 // fails, or two that race, leave no half file to be taken for the picture.
 function savedImage(image: ImageBlock): string | undefined {
   const data = base64Of(image);
-  if (!data || data.length * 0.75 > MAX_IMAGE_BYTES) return undefined;
+  // Base64 pads to whole groups of four, so the decoded size is what is capped.
+  if (!data || data.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) return undefined;
   const bytes = Buffer.from(data, 'base64');
+  if (bytes.length > MAX_IMAGE_BYTES) return undefined;
   const extension = imageExtension(bytes);
   if (!extension) return undefined;
   const directory = join(providerSessionsDir(), 'images');
