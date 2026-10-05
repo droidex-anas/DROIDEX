@@ -1,0 +1,38 @@
+{
+  "attribution": "Cursor glyph traced from Flaticon's Essential UI pack (icons 8369129, 8369109, 8369108), free licence with attribution.",
+  "viewBoxSize": 512,
+  "hotspot": {
+    "x": 146,
+    "y": 72
+  },
+  "path": "M 160.892 65.449 C 145.180 69.783, 132.238 83.825, 128.785 100.288 C 127.843 104.782, 128.973 133.054, 135.216 261.120 C 142.402 408.521, 142.904 416.797, 144.980 422.282 C 154.510 447.465, 186.776 456.153, 206.451 438.834 C 209.012 436.580, 223.259 418.638, 238.110 398.964 C 271.045 355.333, 276.635 349.574, 293.450 341.950 C 307.320 335.661, 306.643 335.726, 365 335.086 L 418.500 334.500 425.201 331.326 C 433.739 327.281, 440.291 320.724, 444.313 312.201 C 450.470 299.153, 448.157 282.141, 438.778 271.485 C 434.810 266.978, 204.811 76.345, 196.500 70.676 C 187.675 64.656, 172.074 62.366, 160.892 65.449",
+  "strokeWidth": "30",
+  "size": {
+    "min": 24,
+    "default": 36,
+    "max": 64
+  },
+  "styles": {
+    "dark": {
+      "fill": "#111111",
+      "fillOpacity": "1",
+      "stroke": "none",
+      "overlayFilter": "drop-shadow(0 0 1.5px rgba(255,255,255,.9))",
+      "iconFilter": null
+    },
+    "light": {
+      "fill": "none",
+      "fillOpacity": "1",
+      "stroke": "#111111",
+      "overlayFilter": "drop-shadow(0 0 1.5px rgba(255,255,255,.9))",
+      "iconFilter": null
+    },
+    "droidex": {
+      "fill": "#bbccff",
+      "fillOpacity": "1",
+      "stroke": "none",
+      "overlayFilter": "drop-shadow(0 0 5px rgba(80,139,255,.75)) drop-shadow(0 0 12px rgba(80,139,255,.35))",
+      "iconFilter": "drop-shadow(0 0 3px rgba(80, 139, 255, 0.75))"
+    }
+  }
+}

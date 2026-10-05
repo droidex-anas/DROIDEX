@@ -615,7 +615,6 @@ export interface BrowserState {
   scroll: { x: number; y: number };
   canGoBack?: boolean;
   canGoForward?: boolean;
-  agentCursor?: { x: number; y: number };
   error?: string;
 }
 

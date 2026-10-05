@@ -245,6 +245,7 @@ contextBridge.exposeInMainWorld('droidControl', {
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
+  onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),
   onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
   onNativeBrowserShortcut: (handler) => on('native-browser-shortcut', handler),
 });
