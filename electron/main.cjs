@@ -904,9 +904,14 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
-  ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl }) => {
+  ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl, savedMode }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.reserve(browserSessionId, mainWindow.webContents, savedUrl);
+    return nativeBrowserManager.reserve(
+      browserSessionId,
+      mainWindow.webContents,
+      savedUrl,
+      savedMode,
+    );
   });
   ipcMain.handle('native-browser-release', (event, { browserSessionId }) => {
     assertMainRenderer(event);
