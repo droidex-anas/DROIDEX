@@ -1,7 +1,7 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import type { BrowserSessionManager } from './BrowserSessionManager.js';
-import type { BrowserState, DesignReference } from './types.js';
+import type { BrowserState, BrowserViewportMode, DesignReference } from './types.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import {
   browserActs,
@@ -29,6 +29,19 @@ export function createBrowserMcpServer(
     return id;
   };
   const { act, batch } = browserActs(manager);
+
+  // What browser_viewport says once a size is in place.
+  async function useSize(size: BrowserViewportMode): Promise<string> {
+    const { viewport, viewportMode } = await manager.useViewport(appSessionId(), size);
+    if (viewportMode !== size)
+      return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
+    if (size === 'fit')
+      return "The page follows the user's pane; browser_screenshot states its size.";
+    const laidOut = `The page is laid out at ${size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px`;
+    if (size === 'tablet' || size === 'mobile')
+      return `${laidOut}, as a touch device. Reload it if the site picks its version for the device on the server.`;
+    return `${laidOut}.`;
+  }
 
   return createSdkMcpServer({
     name: 'droidex-browser',
@@ -215,17 +228,29 @@ export function createBrowserMcpServer(
         [
           "Lay the page out at a standard size: desktop (1440×900, where a browser you open starts), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit follows the size of the user's pane.",
           'The page reflows to it; the user sees the same page scaled to fit their pane. Use it to check a responsive layout.',
+          "Tablet and mobile also tell the page it is a touch device (touch points, a coarse pointer) with Chrome for Android's user agent; your clicks stay mouse clicks. A scheme asks the page for its light or dark look.",
         ].join(' '),
         {
-          size: viewportModeSchema.describe('The size to lay the page out at.'),
+          size: viewportModeSchema.optional().describe('The size to lay the page out at.'),
+          scheme: z
+            .enum(['light', 'dark', 'auto'])
+            .optional()
+            .describe(
+              "The colour scheme to ask the page for, until the app quits; auto follows the system's setting.",
+            ),
         },
         safeTool(async (input) => {
-          const { viewport, viewportMode } = await manager.useViewport(appSessionId(), input.size);
-          if (viewportMode !== input.size)
-            return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
-          if (input.size === 'fit')
-            return "The page follows the user's pane; browser_screenshot states its size.";
-          return `The page is laid out at ${input.size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px.`;
+          const answers: string[] = [];
+          if (input.size) answers.push(await useSize(input.size));
+          if (input.scheme) {
+            await manager.useColorScheme(appSessionId(), input.scheme);
+            answers.push(
+              input.scheme === 'auto'
+                ? "The page follows the system's light or dark setting."
+                : `The page is asked for its ${input.scheme} scheme.`,
+            );
+          }
+          return answers.join(' ') || 'Pass a size, a scheme, or both.';
         }),
       ),
       tool(

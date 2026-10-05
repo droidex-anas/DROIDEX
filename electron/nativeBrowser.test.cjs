@@ -52,6 +52,11 @@ function createBrowser() {
       getType: () => 'webview',
       isDestroyed: () => false,
       getURL: () => guest.url,
+      navigationHistory: {
+        getActiveIndex: () => 0,
+        canGoBack: () => false,
+        canGoForward: () => false,
+      },
       loadURL: async (url) => {
         loads.push(url);
         guest.url = unreachable.has(url) ? ERROR_PAGE : url;

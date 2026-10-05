@@ -132,14 +132,6 @@ function createNativeBrowserUrlPolicy({ appName, getHostAppUrl }) {
     };
   }
 
-  function normalizeBrowserViewport(viewport) {
-    return {
-      width: Math.max(1, Math.round(Number(viewport?.width) || 1200)),
-      height: Math.max(1, Math.round(Number(viewport?.height) || 800)),
-      deviceScaleFactor: Math.max(0.1, Number(viewport?.deviceScaleFactor) || 2),
-    };
-  }
-
   return {
     normalizeNativeBrowserSessionId,
     nativeBrowserUrlsMatch,
@@ -153,7 +145,6 @@ function createNativeBrowserUrlPolicy({ appName, getHostAppUrl }) {
     httpFallbackUrl,
     validateUrl,
     normalizeBounds,
-    normalizeBrowserViewport,
   };
 }
 

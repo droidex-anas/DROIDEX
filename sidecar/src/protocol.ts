@@ -589,6 +589,9 @@ export interface BrowserViewport {
 }
 
 export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile';
+
+/** The scheme a page is asked for; auto follows the system's setting. */
+export type BrowserColorScheme = 'light' | 'dark' | 'auto';
 type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface BrowserBox {
@@ -668,6 +671,7 @@ type BrowserNativeAction =
   | 'press'
   | 'scroll'
   | 'resize'
+  | 'colorScheme'
   | 'inspect'
   | 'network'
   | 'console'
@@ -686,6 +690,7 @@ export interface BrowserNativeRequest {
   url?: string;
   viewport?: BrowserViewport;
   viewportMode?: BrowserViewportMode;
+  colorScheme?: BrowserColorScheme;
   ref?: string;
   filter?: 'interactive' | 'all';
   maxChars?: number;

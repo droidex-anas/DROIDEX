@@ -1,6 +1,7 @@
 import { isDesktop } from './desktop';
 import type { NativeBrowserChord } from './shortcuts';
 import type {
+  BrowserViewportMode,
   DesignAnchor,
   DesignAnchorDetail,
   DesignSelectionScreenshot,
@@ -52,8 +53,9 @@ export interface NativeBrowserWorking {
 export async function reserveNativeBrowser(
   browserSessionId: string,
   savedUrl?: string,
+  savedMode?: BrowserViewportMode,
 ): Promise<{ src: string; generation: number }> {
-  return window.droidControl!.nativeBrowserReserve(browserSessionId, savedUrl);
+  return window.droidControl!.nativeBrowserReserve(browserSessionId, savedUrl, savedMode);
 }
 
 export async function releaseNativeBrowser(browserSessionId: string): Promise<void> {
