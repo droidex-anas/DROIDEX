@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { readdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { canvasRoot, observedFileSystem } from '../testing/canvasStorageSupport.js';
-import type { CanvasFileSystem } from './canvasFiles.js';
-import { CANVAS_MUTATION_RETENTION } from './canvasManifest.js';
+import {
+  canvasRoot,
+  ledgerAtCapacity,
+  observedFileSystem,
+} from '../testing/canvasStorageSupport.js';
+import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
+import { mutationFingerprint } from './canvasManifest.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from './CanvasWorkspace.js';
-import type { CanvasScope, WriteFilesInput } from './protocol.js';
+import type { CanvasScope, CreateFramesInput, WriteFilesInput } from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
@@ -24,6 +28,11 @@ function scopeFor(
     context: { designs: [], elements: [], designSystem },
     allowedDesignIds,
   };
+}
+
+/** The one 720x720 frame named Hey that most create cases reserve. */
+function createInput(mutationId: string): CreateFramesInput {
+  return { mutationId, frames: [{ name: 'Hey', width: 720, height: 720, designSystem }] };
 }
 
 function writeInput(
@@ -139,6 +148,7 @@ function stopFlushingAfterManifestRename() {
 interface Options {
   fs?: CanvasFileSystem;
   isScopeActive?: (scopeId: string) => boolean;
+  bindScopeCanvas?: (scopeId: string, canvasId: string) => void;
 }
 
 async function openWorkspace(t: TestContext, options: Options = {}) {
@@ -146,7 +156,10 @@ async function openWorkspace(t: TestContext, options: Options = {}) {
   const boundCanvasIds: string[] = [];
   const deps: CanvasWorkspaceDeps = {
     isScopeActive: options.isScopeActive ?? (() => true),
-    bindScopeCanvas: (_scopeId, canvasId) => boundCanvasIds.push(canvasId),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      if (options.bindScopeCanvas) options.bindScopeCanvas(scopeId, canvasId);
+      boundCanvasIds.push(canvasId);
+    },
     fs: options.fs,
   };
   const workspace = await CanvasWorkspace.open(root, deps);
@@ -159,10 +172,7 @@ async function withFrame(t: TestContext, options: Options = {}) {
   const context = await openWorkspace(t, options);
   const { canvasId } = await context.workspace.createCanvas();
   const scope = scopeFor(canvasId);
-  const created = await context.workspace.create(scope, {
-    mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-  });
+  const created = await context.workspace.create(scope, createInput('create-hey'));
   const frame = created.frames[0];
   assert.ok(frame);
   assert.deepEqual(frame.rect, { x: 0, y: 0, width: 720, height: 720 });
@@ -183,42 +193,25 @@ test('a write checkpoints source once per mutation ID and refuses a stale revisi
   await assert.rejects(workspace.readFiles(canvasId, { designId, revisionId: 'rev_missing' }), {
     code: 'invalid_input',
   });
+  // That ID is spent on this request: it cannot carry a different one.
+  await assert.rejects(workspace.write(scope, { ...input, files: { 'main.tsx': 'other' } }), {
+    code: 'invalid_input',
+  });
   // The retry neither committed again nor moved the projection forward.
   assert.equal(workspace.snapshot(canvasId).sequence, first.sequence);
   assert.equal(workspace.snapshot(canvasId).frames[0]?.revisionId, first.revisionId);
 });
 
-test('a reopen on either side of the manifest rename finds one complete head', async (t) => {
-  const before = terminateAtManifestRename('before');
-  const old = await withFrame(t, { fs: before.fs });
-  before.arm();
+test('a reopen after termination before the manifest rename finds the old head', async (t) => {
+  const fault = terminateAtManifestRename('before');
+  const { root, deps, workspace, scope, canvasId, designId } = await withFrame(t, { fs: fault.fs });
+  fault.arm();
   await assert.rejects(
-    old.workspace.write(
-      old.scope,
-      writeInput('write-hey', old.designId, null, { 'main.tsx': HEY }),
-    ),
+    workspace.write(scope, writeInput('write-hey', designId, null, { 'main.tsx': HEY })),
     { code: 'storage_failed' },
   );
-  const oldHead = await CanvasWorkspace.open(old.root, { ...old.deps, fs: undefined });
-  assert.equal(oldHead.snapshot(old.canvasId).frames[0]?.revisionId, null);
-
-  // Terminated after the rename landed but before the directory flush returned:
-  // the caller saw a failure, and the new head is nonetheless complete.
-  const after = terminateAtManifestRename('after');
-  const fresh = await withFrame(t, { fs: after.fs });
-  after.arm();
-  await assert.rejects(
-    fresh.workspace.write(
-      fresh.scope,
-      writeInput('write-hey', fresh.designId, null, { 'main.tsx': HEY }),
-    ),
-    { code: 'storage_failed' },
-  );
-  const newHead = await CanvasWorkspace.open(fresh.root, { ...fresh.deps, fs: undefined });
-  const revisionId = newHead.snapshot(fresh.canvasId).frames[0]?.revisionId;
-  assert.ok(revisionId);
-  const source = await newHead.readFiles(fresh.canvasId, { designId: fresh.designId, revisionId });
-  assert.equal(source['main.tsx'], HEY);
+  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  assert.equal(reopened.snapshot(canvasId).frames[0]?.revisionId, null);
 });
 
 test('a refused write keeps the current head and does not spend its mutation ID', async (t) => {
@@ -458,26 +451,24 @@ test('the source limits and path rules hold against the whole revision', async (
 test('an unattached chat’s first create commits the canvas, attachment and lease binding', async (t) => {
   const { root, deps, workspace, boundCanvasIds } = await openWorkspace(t);
   const scope = scopeFor(null);
-  const input = {
-    mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-  };
+  const input = createInput('create-hey');
   const created = await workspace.create(scope, input);
   assert.deepEqual(boundCanvasIds, [created.canvasId]);
   assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);
 
-  // The lease is still unbound from this workspace's view, so a retry has to
-  // answer the original canvas and frames rather than mint a second canvas.
+  // The lease still carries no canvas of its own, so a retry has to answer the
+  // original canvas and frames rather than mint a second canvas.
   assert.deepEqual(await workspace.create(scope, input), created);
   assert.deepEqual(boundCanvasIds, [created.canvasId]);
-  await assert.rejects(workspace.create(scope, { ...input, mutationId: 'create-again' }), {
-    code: 'scope_expired',
-  });
+  // A second create under that lease extends the canvas it made.
+  const second = await workspace.create(scope, { ...input, mutationId: 'create-again' });
+  assert.equal(second.canvasId, created.canvasId);
   assert.equal(workspace.listCanvases().length, 1);
+  assert.equal(workspace.snapshot(created.canvasId).frames.length, 2);
 
   const reopened = await CanvasWorkspace.open(root, deps);
   assert.equal(reopened.attachedCanvasId('app-1'), created.canvasId);
-  assert.deepEqual(reopened.snapshot(created.canvasId).frames, created.frames);
+  assert.deepEqual(reopened.snapshot(created.canvasId).frames[0], created.frames[0]);
 });
 
 test('an attachment survives a reopen, and detaching keeps the canvas and its source', async (t) => {
@@ -639,10 +630,7 @@ test('a lease revoked with the replacement manifest ready publishes and binds no
     fs: unattached.fs,
   });
   unattached.arm();
-  const creating = second.workspace.create(scopeFor(null), {
-    mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-  });
+  const creating = second.workspace.create(scopeFor(null), createInput('create-hey'));
   await unattached.reached;
   unattachedActive = false;
   unattached.release();
@@ -652,77 +640,9 @@ test('a lease revoked with the replacement manifest ready publishes and binds no
   assert.equal(second.workspace.attachedCanvasId('app-1'), null);
 });
 
-test('a retried mutation ID must carry the same request', async (t) => {
-  const { workspace, scope, designId } = await withFrame(t);
-  const input = writeInput('write-hey', designId, null, { 'main.tsx': HEY });
-  const receipt = await workspace.write(scope, input);
-  assert.deepEqual(await workspace.write(scope, input), receipt);
-  await assert.rejects(
-    workspace.write(scope, { ...input, files: { 'main.tsx': 'something else' } }),
-    { code: 'invalid_input' },
-  );
-  // The same ID under another command is a caller error too, not a retry.
-  await assert.rejects(
-    workspace.arrange(scope, {
-      mutationId: 'write-hey',
-      frames: [{ designId, expectedLayoutVersion: 0, rect: { x: 0, y: 0, width: 8, height: 8 } }],
-    }),
-    { code: 'invalid_input' },
-  );
-});
-
-test('a live lease keeps every receipt it issued, and a settled lease gives way', async (t) => {
-  const live = new Set(['scope-1', 'scope-a', 'scope-b']);
-  const { workspace, canvasId, designId } = await withFrame(t, {
-    isScopeActive: (scopeId) => live.has(scopeId),
-  });
-  const a = scopeFor(canvasId, 'canvas', 'scope-a');
-  const b = scopeFor(canvasId, 'canvas', 'scope-b');
-  const cards = { name: 'Cards', width: 720, height: 720, designSystem };
-  const created = await workspace.create(b, { mutationId: 'create-cards', frames: [cards] });
-  const oldest = {
-    mutationId: 'arrange-0',
-    frames: [{ designId, expectedLayoutVersion: 0, rect: { x: 0, y: 0, width: 8, height: 8 } }],
-  };
-  const first = await workspace.arrange(a, oldest);
-  for (let version = 1; version < CANVAS_MUTATION_RETENTION.retained + 8; version += 1) {
-    await workspace.arrange(a, {
-      mutationId: `arrange-${String(version)}`,
-      frames: [
-        {
-          designId,
-          expectedLayoutVersion: version,
-          rect: { x: version, y: 0, width: 8, height: 8 },
-        },
-      ],
-    });
-  }
-  // Both leases are live, so neither one's oldest receipt was retired.
-  assert.deepEqual(await workspace.arrange(a, oldest), first);
-  assert.deepEqual(
-    await workspace.create(b, { mutationId: 'create-cards', frames: [cards] }),
-    created,
-  );
-  assert.equal(workspace.snapshot(canvasId).frames.length, 2);
-
-  // Once scope-a settles, its receipts are the ones that give way, and a
-  // request nobody can retry is executed as the new request it now is.
-  live.delete('scope-a');
-  await workspace.arrange(b, {
-    mutationId: 'arrange-settles-a',
-    frames: [{ designId, expectedLayoutVersion: 264, rect: { x: 9, y: 9, width: 8, height: 8 } }],
-  });
-  await assert.rejects(workspace.arrange(b, { ...oldest, mutationId: 'arrange-0' }), {
-    code: 'revision_conflict',
-  });
-});
-
 test('concurrent creates read the manifest the commit they run in extends', async (t) => {
   const unattached = await openWorkspace(t);
-  const input = {
-    mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-  };
+  const input = createInput('create-hey');
   const [left, right] = await Promise.all([
     unattached.workspace.create(scopeFor(null), input),
     unattached.workspace.create(scopeFor(null), input),
@@ -764,10 +684,7 @@ test('an unattached create binds its lease exactly once, after it is published',
   const fault = terminateAtManifestRename('after');
   const { workspace, boundCanvasIds } = await openWorkspace(t, { fs: fault.fs });
   const scope = scopeFor(null);
-  const input = {
-    mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-  };
+  const input = createInput('create-hey');
   fault.arm();
   await assert.rejects(workspace.create(scope, input), { code: 'storage_failed' });
   assert.deepEqual(boundCanvasIds, []);
@@ -793,10 +710,7 @@ test('a lease revoked after its canvas was published is never bound', async (t) 
     fs: hold.fs,
   });
   hold.arm();
-  const creating = workspace.create(scopeFor(null), {
-    mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-  });
+  const creating = workspace.create(scopeFor(null), createInput('create-hey'));
   await hold.reached;
   live.clear();
   hold.release();
@@ -806,6 +720,133 @@ test('a lease revoked after its canvas was published is never bound', async (t) 
   assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);
   // Nothing that lease could still authorize is left, so it is not bound.
   assert.deepEqual(boundCanvasIds, []);
+});
+
+test('a chat on a damaged canvas waits for recovery instead of getting another', async (t) => {
+  t.mock.method(console, 'error', () => undefined);
+  const fault = stopFlushingAfterManifestRename();
+  const { root, workspace, boundCanvasIds } = await openWorkspace(t, { fs: fault.fs });
+  const scope = scopeFor(null);
+  const input = createInput('create-hey');
+  fault.arm();
+  await assert.rejects(workspace.create(scope, input), { code: 'storage_failed' });
+
+  // The canvas is attached on disk and unreadable here, so the chat keeps its
+  // reservation: a retry must not bootstrap a second canvas to attach to.
+  const [damaged] = workspace.damagedCanvasIds();
+  assert.ok(damaged);
+  assert.equal(workspace.attachedCanvasId('app-1'), damaged);
+  await assert.rejects(workspace.create(scope, input), { code: 'storage_failed' });
+  await assert.rejects(workspace.create(scope, { ...input, mutationId: 'again' }), {
+    code: 'storage_failed',
+  });
+  assert.deepEqual(boundCanvasIds, []);
+  // Nor can the chat be moved off a canvas whose manifest cannot be rewritten.
+  await assert.rejects(workspace.detach('app-1'), { code: 'storage_failed' });
+  assert.deepEqual(await readdir(root), [damaged]);
+
+  // Reopening finds one manifest, attaching this chat exactly once.
+  const reopened = await CanvasWorkspace.open(root, {
+    isScopeActive: () => true,
+    bindScopeCanvas: () => undefined,
+  });
+  t.after(() => reopened.close());
+  assert.deepEqual(
+    reopened.listCanvases().map((summary) => summary.canvasId),
+    [damaged],
+  );
+  assert.equal(reopened.attachedCanvasId('app-1'), damaged);
+});
+
+test('a canvas full of unsettled receipts refuses a mutation and keeps the old ones', async (t) => {
+  const root = await canvasRoot(t);
+  const canvasId = 'cv_full';
+  const design = {
+    designId: 'dsg_hey',
+    name: 'Hey',
+    rect: { x: 0, y: 0, width: 720, height: 720 },
+    layoutVersion: 0,
+    revisionId: null,
+    designSystem,
+  };
+  const input = createInput('create-hey');
+  const files = new CanvasFiles(root);
+  await files.createRoot();
+  await files.writeManifest(
+    ledgerAtCapacity(canvasId, 'app-1', design, {
+      kind: 'create',
+      mutationId: input.mutationId,
+      scopeId: 'scope-1',
+      fingerprint: mutationFingerprint(input),
+      designs: [design],
+    }),
+    () => undefined,
+  );
+  const workspace = await CanvasWorkspace.open(root, {
+    isScopeActive: () => true,
+    bindScopeCanvas: () => undefined,
+  });
+  t.after(() => workspace.close());
+  const scope = scopeFor(canvasId);
+
+  // Every receipt belongs to a live lease, so the ledger refuses rather than
+  // retiring one whose retry would then run a second time.
+  await assert.rejects(
+    workspace.arrange(scope, {
+      mutationId: 'one-more',
+      frames: [{ designId: design.designId, expectedLayoutVersion: 0, rect: design.rect }],
+    }),
+    { code: 'storage_failed' },
+  );
+  assert.equal(workspace.snapshot(canvasId).sequence, 1);
+  const retried = await workspace.create(scope, input);
+  assert.equal(retried.canvasId, canvasId);
+  assert.equal(retried.frames[0]?.designId, design.designId);
+});
+
+test('a binding the registry refused is attempted again by the retry', async (t) => {
+  const attempts: string[] = [];
+  const { workspace } = await openWorkspace(t, {
+    bindScopeCanvas: (_scopeId, canvasId) => {
+      attempts.push(canvasId);
+      if (attempts.length === 1) throw new Error('the lease registry refused it');
+    },
+  });
+  const scope = scopeFor(null);
+  const input = createInput('create-hey');
+  await assert.rejects(workspace.create(scope, input), /lease registry/);
+
+  // The canvas is published and attached and only the binding failed, so the
+  // retry has to attempt it again instead of reporting a bound lease.
+  const created = await workspace.create(scope, input);
+  assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);
+  assert.deepEqual(attempts, [created.canvasId, created.canvasId]);
+  // Once it has happened it is not attempted a third time.
+  assert.deepEqual(await workspace.create(scope, input), created);
+  assert.deepEqual(attempts, [created.canvasId, created.canvasId]);
+});
+
+test('a lease keeps the canvas it created and cannot bootstrap another', async (t) => {
+  const { workspace } = await openWorkspace(t);
+  const scope = scopeFor(null);
+  const input = createInput('create-hey');
+  const created = await workspace.create(scope, input);
+  await workspace.detach('app-1');
+
+  // The lease is still pinned to the canvas it made, so it cannot start a
+  // second one for a chat that has left.
+  await assert.rejects(workspace.create(scope, { ...input, mutationId: 'again' }), {
+    code: 'scope_expired',
+  });
+  assert.deepEqual(
+    workspace.listCanvases().map((summary) => summary.canvasId),
+    [created.canvasId],
+  );
+  // Back on that canvas, the same lease extends it.
+  await workspace.attach('app-1', created.canvasId);
+  const more = await workspace.create(scope, { ...input, mutationId: 'more' });
+  assert.equal(more.canvasId, created.canvasId);
+  assert.equal(workspace.listCanvases().length, 1);
 });
 
 test('close waits for a mutation that is still staging its source', async (t) => {

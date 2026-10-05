@@ -13,7 +13,8 @@ import {
   type NewRevision,
 } from './canvasFiles.js';
 import { placeFrames, stageFrames } from './canvasFrames.js';
-import { CanvasHeads } from './canvasHeads.js';
+import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
+import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
 import {
   canvasChange,
   canvasSnapshot,
@@ -44,39 +45,28 @@ import type {
 } from './protocol.js';
 import { mergedRevisionViolation } from './schema.js';
 
-export interface CanvasWorkspaceDeps {
-  /** Task 4's lease registry: false once the owning turn settled or was replaced. */
-  isScopeActive(scopeId: string): boolean;
-  /** Fills an unattached chat's lease with the canvas its first create minted. */
-  bindScopeCanvas(scopeId: string, canvasId: string): void;
+export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
   fs?: CanvasFileSystem;
 }
 
-const EXPIRED_TURN = 'That request belongs to a turn that already ended.';
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 const CLOSING = 'The Canvas workspace is closing.';
-const UNREADABLE_CANVAS = 'That canvas could not be read. Reopen DROIDEX to recover it.';
 
 export class CanvasWorkspace {
   private commits: Promise<unknown> = Promise.resolve();
   private readonly running = new Set<Promise<void>>();
-  // Leases whose canvas binding has been filled; the deps side is not assumed
-  // to tolerate a second call.
-  private readonly bound = new Set<string>();
-  // Retention asks whether a lease is still live, so it needs the predicate as
-  // a value rather than a method it would call with the wrong receiver.
-  private readonly isScopeActive = (scopeId: string): boolean => this.deps.isScopeActive(scopeId);
   private closed = false;
 
   private constructor(
     private readonly files: CanvasFiles,
-    private readonly deps: CanvasWorkspaceDeps,
     private readonly heads: CanvasHeads,
+    private readonly leases: CanvasLeases,
   ) {}
 
   static async open(directory: string, deps: CanvasWorkspaceDeps): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
-    return new CanvasWorkspace(files, deps, await CanvasHeads.load(files));
+    const heads = await CanvasHeads.load(files);
+    return new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads));
   }
 
   snapshot(canvasId: string): CanvasSnapshot {
@@ -132,46 +122,53 @@ export class CanvasWorkspace {
       // A lease bound to named designs may change those frames, not add more.
       if (scope.allowedDesignIds !== 'canvas')
         throw canvasError('scope_expired', 'This turn may change only the frames it was given.');
-      this.requireActiveScope(scope);
+      this.leases.requireActive(scope);
       const fingerprint = mutationFingerprint(input);
-      const unattached = scope.canvasId === null;
       // A seeded frame copies a whole revision, so a retry is answered before
       // any of that is staged; the commit checks again for a racing retry.
       const settled = this.recordedCreate(scope, input.mutationId, fingerprint);
       if (settled) return settled;
-      const canvasId = unattached ? randomUUID() : this.requireScopedCanvas(scope).canvasId;
+      // A lease minted without a canvas takes the one its first create made:
+      // a later create under it extends that canvas instead of making another.
+      const target = scope.canvasId ?? this.leases.boundCanvas(scope);
+      const bootstrapping = target === null;
+      const canvasId = target ?? randomUUID();
+      if (!bootstrapping) this.leases.requireCanvas(scope, canvasId);
       const staged = await stageFrames(this.files, canvasId, input);
 
       return this.commit(async () => {
         let next: CanvasManifest;
         let beforeRename: () => void;
-        if (unattached) {
+        if (bootstrapping) {
           const attached = this.attachedCanvasId(scope.appSessionId);
           if (attached !== null) {
             const recorded = recordedCreate(this.canvas(attached), input.mutationId, fingerprint);
             if (recorded) {
-              this.bindScope(scope, attached);
+              this.leases.bind(scope, attached);
               return recorded;
             }
             throw canvasError('scope_expired', ATTACHED_SINCE);
           }
-          this.requireActiveScope(scope);
+          this.leases.requireActive(scope);
           next = emptyCanvasManifest(canvasId, this.nextCanvasName(), Date.now());
           // Spec §6: the canvas, the chat's attachment and the lease's binding
           // are one commit, so a half-attached canvas never exists.
           next.attachedAppSessionIds.push(scope.appSessionId);
           beforeRename = () => {
             this.requireOpen();
-            this.requireActiveScope(scope);
+            this.leases.requireActive(scope);
             if (this.attachedCanvasId(scope.appSessionId) !== null)
               throw canvasError('scope_expired', ATTACHED_SINCE);
           };
         } else {
-          const live = this.requireScopedCanvas(scope);
+          const live = this.leases.requireCanvas(scope, canvasId);
           const recorded = recordedCreate(live, input.mutationId, fingerprint);
           if (recorded) return recorded;
           next = structuredClone(live);
-          beforeRename = this.scopedGate(scope, []);
+          beforeRename = () => {
+            this.requireOpen();
+            this.leases.requireCanvas(scope, canvasId);
+          };
         }
         const designs = placeFrames(staged, next.designs);
         next.designs.push(...designs);
@@ -186,10 +183,10 @@ export class CanvasWorkspace {
             fingerprint,
             designs: structuredClone(designs),
           },
-          this.isScopeActive,
+          this.leases.isActive,
         );
         await this.heads.install(next, beforeRename);
-        if (unattached) this.bindScope(scope, canvasId);
+        if (scope.canvasId === null) this.leases.bind(scope, canvasId);
         return { canvasId, frames: designs.map(toFrame) };
       });
     });
@@ -198,7 +195,7 @@ export class CanvasWorkspace {
   write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
     return this.admit(async () => {
       this.requireOpen();
-      const manifest = this.requireScopedDesigns(scope, [input.designId]);
+      const manifest = this.leases.requireDesigns(scope, [input.designId]);
       const canvasId = manifest.canvasId;
       const fingerprint = mutationFingerprint(input);
       const recorded = recordedWrite(manifest, input.mutationId, fingerprint);
@@ -220,7 +217,7 @@ export class CanvasWorkspace {
       await this.files.publishRevision(canvasId, revision, merged);
 
       return this.commit(async () => {
-        const live = this.requireScopedDesigns(scope, [input.designId]);
+        const live = this.leases.requireDesigns(scope, [input.designId]);
         const again = recordedWrite(live, input.mutationId, fingerprint);
         if (again) return again;
         const next = structuredClone(live);
@@ -244,7 +241,7 @@ export class CanvasWorkspace {
             fingerprint,
             ...receipt,
           },
-          this.isScopeActive,
+          this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, [input.designId]));
         return receipt;
@@ -257,12 +254,12 @@ export class CanvasWorkspace {
       this.requireOpen();
       const designIds = input.frames.map((frame) => frame.designId);
       const fingerprint = mutationFingerprint(input);
-      const manifest = this.requireScopedDesigns(scope, designIds);
+      const manifest = this.leases.requireDesigns(scope, designIds);
       const recorded = recordedArrange(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
 
       return this.commit(async () => {
-        const live = this.requireScopedDesigns(scope, designIds);
+        const live = this.leases.requireDesigns(scope, designIds);
         const again = recordedArrange(live, input.mutationId, fingerprint);
         if (again) return again;
         const next = structuredClone(live);
@@ -292,7 +289,7 @@ export class CanvasWorkspace {
             // fields follow the current head, which the renderer discards as old.
             placements: toPlacements(moved),
           },
-          this.isScopeActive,
+          this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, designIds));
         return canvasChange(next, moved);
@@ -315,6 +312,7 @@ export class CanvasWorkspace {
   async close(): Promise<void> {
     this.closed = true;
     while (this.running.size > 0) await Promise.all([...this.running]);
+    this.leases.forget();
   }
 
   /** Admits one mutation, so close() knows what it still has to wait for. */
@@ -338,6 +336,9 @@ export class CanvasWorkspace {
 
   /** Canvas files are kept: detaching a chat only drops the reference. */
   private async detachFrom(appSessionId: string, keep: string | null): Promise<void> {
+    const attached = this.attachedCanvasId(appSessionId);
+    if (attached !== null && attached !== keep && this.heads.isDamaged(attached))
+      throw canvasError('storage_failed', UNREADABLE_CANVAS);
     for (const manifest of this.heads.all()) {
       if (manifest.canvasId === keep) continue;
       if (!manifest.attachedAppSessionIds.includes(appSessionId)) continue;
@@ -380,23 +381,14 @@ export class CanvasWorkspace {
   ): CreateFramesResult | null {
     const canvasId = scope.canvasId ?? this.attachedCanvasId(scope.appSessionId);
     if (canvasId === null) return null;
+    // The attachment is real even when the head is not readable, so this chat
+    // waits for recovery rather than being handed a second canvas.
+    if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
     const manifest = this.heads.find(canvasId);
     if (!manifest) return null;
     const recorded = recordedCreate(manifest, mutationId, fingerprint);
-    if (recorded && scope.canvasId === null) this.bindScope(scope, canvasId);
+    if (recorded && scope.canvasId === null) this.leases.bind(scope, canvasId);
     return recorded;
-  }
-
-  /**
-   * Fills an unattached lease's canvas binding, once and only while the lease
-   * is live. A revoked lease keeps a complete attached canvas with no binding:
-   * nothing it could still authorize is left to bind for.
-   */
-  private bindScope(scope: CanvasScope, canvasId: string): void {
-    if (this.bound.has(scope.scopeId)) return;
-    if (!this.deps.isScopeActive(scope.scopeId)) return;
-    this.bound.add(scope.scopeId);
-    this.deps.bindScopeCanvas(scope.scopeId, canvasId);
   }
 
   /** The final check a commit with no lease behind it runs before publishing. */
@@ -410,35 +402,8 @@ export class CanvasWorkspace {
   private scopedGate(scope: CanvasScope, designIds: readonly string[]): () => void {
     return () => {
       this.requireOpen();
-      this.requireScopedDesigns(scope, designIds);
+      this.leases.requireDesigns(scope, designIds);
     };
-  }
-
-  private requireActiveScope(scope: CanvasScope): void {
-    if (!this.deps.isScopeActive(scope.scopeId)) throw canvasError('scope_expired', EXPIRED_TURN);
-  }
-
-  /** The canvas a lease authorizes; a lease for a canvas we do not hold is stale. */
-  private requireScopedCanvas(scope: CanvasScope): CanvasManifest {
-    this.requireActiveScope(scope);
-    const canvasId = scope.canvasId;
-    if (canvasId === null)
-      throw canvasError('invalid_input', 'This chat has no canvas yet. Create a frame first.');
-    const manifest = this.heads.find(canvasId);
-    if (manifest) return manifest;
-    if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
-    throw canvasError('scope_expired', 'That request names a canvas this workspace does not hold.');
-  }
-
-  private requireScopedDesigns(scope: CanvasScope, designIds: readonly string[]): CanvasManifest {
-    const manifest = this.requireScopedCanvas(scope);
-    const allowed = scope.allowedDesignIds;
-    if (allowed === 'canvas') return manifest;
-    for (const designId of designIds) {
-      if (!allowed.includes(designId))
-        throw canvasError('scope_expired', 'That frame is outside this turn’s assigned frames.');
-    }
-    return manifest;
   }
 
   private canvas(canvasId: string): CanvasManifest {
