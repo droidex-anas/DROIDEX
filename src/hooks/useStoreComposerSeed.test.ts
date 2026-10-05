@@ -108,4 +108,10 @@ test("a draft's seeds wait in its tile and go to the chat it becomes", () => {
   assert.deepEqual(left.composerSeeds, []);
   const next = reducer(left, { type: 'START_CHAT', cwd: '', executionMode: 'local' });
   assert.deepEqual(draft(next), []);
+
+  // The sent draft's chat arriving late leaves the new draft's seed where it is.
+  const seeded = reducer(next, { type: 'SEED_COMPOSER', text: 'for the new draft' });
+  const late = reducer(seeded, { type: 'SESSION_CREATED', clientRef: 'c1', session });
+  assert.deepEqual(seedsFor(late, 'n'), []);
+  assert.equal(draft(late).length, 1);
 });

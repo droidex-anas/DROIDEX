@@ -1032,18 +1032,28 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
 }
 
 export function reducer(state: AppState, action: Action): AppState {
-  return withoutLeftDraftSeeds(reduceAction(state, action));
+  return withoutLeftDrafts(reduceAction(state, action));
 }
 
-// A draft's seeds wait in its tile. Once the tile closes or shows something
-// else, that draft is gone, and its seeds must not reach a later one.
-function withoutLeftDraftSeeds(state: AppState): AppState {
-  if (!state.composerSeeds.some((seed) => seed.draftTileId !== null)) return state;
+// A draft's seeds and its sent compose wait in its tile. Once the tile closes or
+// shows something else, that draft is gone: its seeds are dropped and its
+// compose forgets the tile, so neither reaches a later draft there.
+function withoutLeftDrafts(state: AppState): AppState {
+  const waiting = [
+    ...state.composerSeeds.map((seed) => seed.draftTileId),
+    ...Object.values(state.pendingCompose).map((compose) => compose?.origin?.tileId),
+    ...Object.values(state.heldComposeOrigins).map((origin) => origin?.tileId),
+  ];
+  if (!waiting.some(Boolean)) return state;
   const drafts = draftTileIds(state);
-  const composerSeeds = state.composerSeeds.filter(
-    (seed) => seed.draftTileId === null || drafts.includes(seed.draftTileId),
-  );
-  return composerSeeds.length === state.composerSeeds.length ? state : { ...state, composerSeeds };
+  const left = new Set(waiting.filter((tileId) => tileId && !drafts.includes(tileId)));
+  if (left.size === 0) return state;
+  let next: AppState = {
+    ...state,
+    composerSeeds: state.composerSeeds.filter((seed) => !left.has(seed.draftTileId)),
+  };
+  for (const tileId of left) if (tileId) next = { ...next, ...withComposeTileClosed(next, tileId) };
+  return next;
 }
 
 function reduceAction(state: AppState, action: Action): AppState {
