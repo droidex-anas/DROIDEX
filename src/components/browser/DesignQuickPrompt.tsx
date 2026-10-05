@@ -113,10 +113,11 @@ export function useDesignQuickPrompt({
         if (strokes && drawingRef.current) sketch.current = { anchorId: id, box };
         else show({ anchorId: id, box });
       } else if (event.type === 'boxes') {
-        // A sketch scrolled while it is drawn opens its box where it now is.
+        // A sketch scrolled while it is drawn opens its box where it now is, and
+        // one the page no longer draws opens none.
         const drawn = sketch.current;
         const drawnBox = drawn && event.boxes.find((mark) => mark.id === drawn.anchorId)?.box;
-        if (drawn && drawnBox) sketch.current = { ...drawn, box: drawnBox };
+        if (drawn) sketch.current = drawnBox ? { ...drawn, box: drawnBox } : null;
         // A mark the page no longer draws, as once it loads again, hides the box.
         setPrompt(
           (current) =>
