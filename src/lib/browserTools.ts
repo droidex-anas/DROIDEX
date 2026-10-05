@@ -79,7 +79,8 @@ export interface BrowserPage {
 
 /** Whether the address is whole: one the tools redacted is not a link to hand out. */
 export function isWholeUrl(url: string): boolean {
-  return !url.includes('%5Bredacted%5D');
+  // A page off the web shows only its scheme, which is no address at all.
+  return !url.includes('%5Bredacted%5D') && !url.endsWith(':[hidden]');
 }
 
 // A browser tool's answer ends with the page it left the browser on, on a line

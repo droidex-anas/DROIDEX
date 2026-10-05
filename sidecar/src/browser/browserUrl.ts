@@ -68,7 +68,8 @@ function redactParameter(key: string, value: string, base: string, depth: number
   // A relative URL (`next=/continue?code=...`) is read against the page's own.
   const relative = value.startsWith('/') || value.startsWith('?');
   if (!relative && !URL.canParse(value)) return value;
-  if (depth >= MAX_URL_DEPTH) return '[redacted]';
+  // One that looks like a URL but will not read as one goes whole.
+  if (depth >= MAX_URL_DEPTH || !URL.canParse(value, base)) return '[redacted]';
   const resolved = new URL(value, base).href;
   const redacted = redactBrowserUrl(resolved, depth + 1);
   return redacted === resolved ? value : redacted;

@@ -1,6 +1,6 @@
 const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
-const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+const { redactBrowserPageUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserWait } = require('./browserWait.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
@@ -25,19 +25,19 @@ function createNativeBrowserPage({
   const reading = createBrowserReading({
     runWithWebContentsDebugger,
     savedSecretsFor: (url) => credentials.savedSecretsFor(url),
-    redactUrl: redactBrowserDiagnosticUrl,
+    redactUrl: redactBrowserPageUrl,
   });
   const screenshots = createBrowserScreenshot({
     reading,
     nativeImage,
-    redactUrl: redactBrowserDiagnosticUrl,
+    redactUrl: redactBrowserPageUrl,
   });
   const actions = createBrowserActions({
     reading,
     runWithWebContentsDebugger,
     credentials,
     unthrottled,
-    redactUrl: redactBrowserDiagnosticUrl,
+    redactUrl: redactBrowserPageUrl,
     onPoint: ({ browserSessionId }, { x, y }) =>
       sendToRenderer('native-browser-agent-point', { browserSessionId, x, y }),
   });
