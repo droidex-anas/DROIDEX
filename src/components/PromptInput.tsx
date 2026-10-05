@@ -4,6 +4,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useCallback,
   type SetStateAction,
@@ -554,7 +555,9 @@ export default function PromptInput({
           ? 'mission-draft'
           : 'chat-draft';
   const visibleTargetKeyRef = useRef(visibleTargetKey);
-  visibleTargetKeyRef.current = visibleTargetKey;
+  useLayoutEffect(() => {
+    visibleTargetKeyRef.current = visibleTargetKey;
+  });
   const stopTurnStarting = useCallback(() => {
     if (turnStartingTimerRef.current) {
       clearTimeout(turnStartingTimerRef.current);
@@ -1171,8 +1174,8 @@ export default function PromptInput({
       path,
       sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
     }));
-    // The generation moves once a target switch commits its effects; the key
-    // already names the new target in the render before that.
+    // The generation moves in a target switch's passive effects; the key moves
+    // in its commit, before an awaited result can see the old target.
     const stillTargeted = () =>
       scheduleGeneration.current === generation &&
       visibleTargetKeyRef.current === scheduledTargetKey;
