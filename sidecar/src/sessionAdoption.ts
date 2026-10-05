@@ -113,9 +113,9 @@ export class SessionAdoption {
         ),
       }),
     );
-    const leaveClosed = new Set(retirableSessions(facts, d.now(), d.sessionRuntimeIdleMs));
     for (const session of identities.sessions) {
-      if (leaveClosed.has(session.appSessionId)) continue;
+      if (retirableSessions(facts, d.now(), d.sessionRuntimeIdleMs).includes(session.appSessionId))
+        continue;
       await this.adoptSession(session);
     }
     for (const child of identities.children) this.markChildInterrupted(child);

@@ -225,6 +225,55 @@ test('boot resumes only the three most recently active settled sessions and an i
   assert.deepEqual(resumed, ['settled-1', 'settled-2', 'settled-3', 'streaming']);
 });
 
+test('boot skips a settled session that reaches its idle deadline while an earlier resume awaits', async (t) => {
+  const { journal } = scratchJournal(t);
+  journal.write({
+    sessions: [
+      runningIdentity('first'),
+      {
+        appSessionId: 'settled',
+        providerSessionId: 'provider-settled',
+        phase: 'completed',
+        streaming: false,
+        lastActiveAt: NOW - SESSION_RUNTIME_IDLE_RETIREMENT_MS + 1,
+      },
+    ],
+    children: [],
+    processes: [],
+  });
+  let finishFirst = (): void => undefined;
+  const firstResume = new Promise<void>((resolve) => {
+    finishFirst = resolve;
+  });
+  let noteStarted = (): void => undefined;
+  const started = new Promise<void>((resolve) => {
+    noteStarted = resolve;
+  });
+  let now = NOW;
+  const resumed: string[] = [];
+  const adoption = createAdoption(journal, {
+    now: () => now,
+    lifecycle: {
+      resume: async (appSessionId) => {
+        resumed.push(appSessionId);
+        if (appSessionId === 'first') {
+          noteStarted();
+          await firstResume;
+        }
+        return true;
+      },
+    },
+  });
+
+  const adopting = adoption.adopt();
+  await started;
+  now += 1;
+  finishFirst();
+  await adopting;
+
+  assert.deepEqual(resumed, ['first']);
+});
+
 test('a session still needed is given its runtime back however long it has been idle', async (t) => {
   const cases: [string, BootCase][] = [
     [
