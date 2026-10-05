@@ -197,6 +197,34 @@ test('a settled session idle past the budget is not given a provider process at 
   assert.deepEqual(journal.read().sessions, []);
 });
 
+test('boot resumes only the three most recently active settled sessions and an in-flight session', async (t) => {
+  const { journal } = scratchJournal(t);
+  const sessions = [5, 1, 4, 2, 3].map(
+    (minutesIdle): LiveSessionIdentity => ({
+      appSessionId: `settled-${minutesIdle}`,
+      providerSessionId: `provider-settled-${minutesIdle}`,
+      phase: 'completed',
+      streaming: false,
+      lastActiveAt: NOW - minutesIdle * 60_000,
+    }),
+  );
+  sessions.push(runningIdentity('streaming'));
+  journal.write({ sessions, children: [], processes: [] });
+  const resumed: string[] = [];
+  const adoption = createAdoption(journal, {
+    lifecycle: {
+      resume: async (appSessionId) => {
+        resumed.push(appSessionId);
+        return true;
+      },
+    },
+  });
+
+  await adoption.adopt();
+
+  assert.deepEqual(resumed, ['settled-1', 'settled-2', 'settled-3', 'streaming']);
+});
+
 test('a session still needed is given its runtime back however long it has been idle', async (t) => {
   const cases: [string, BootCase][] = [
     [

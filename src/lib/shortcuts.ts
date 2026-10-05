@@ -6,6 +6,8 @@
 // `Meta` is the primary modifier: Command on macOS, Control everywhere else.
 // Chords are stored as `Meta+Shift+B` and displayed as `⌘⇧B` on macOS.
 
+import { UTILITY_TOOL_SHORTCUT_KEYS } from './keyboardShortcuts';
+
 const APPLE = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac OS X');
 
 export type ShortcutAction =
@@ -105,6 +107,8 @@ function normalizeKey(key: string): string {
   return key.length === 1 ? key.toUpperCase() : key;
 }
 
+// electron/nativeBrowserShortcuts.cjs reads a press the same way, and
+// shortcuts.test.ts holds the two to the same answers.
 function keyFromEvent(event: Pick<ChordEvent, 'key' | 'code'>): string {
   const code = event.code;
   if (/^Key[A-Z]$/.test(code)) return code.slice(3);
@@ -177,25 +181,75 @@ export function formatChord(chord: string): string {
   return [...names, parsed.key].join('+');
 }
 
+/** The Command and Control keys a chord needs held on this platform. */
+function heldModifiers(chord: Chord): { meta: boolean; control: boolean } {
+  return { meta: APPLE && chord.meta, control: APPLE ? chord.ctrl : chord.ctrl || chord.meta };
+}
+
 export function matchesChord(event: ChordEvent, chord: string): boolean {
   const parsed = parseChord(chord);
   if (!parsed) return false;
-  const wantMeta = APPLE && parsed.meta;
-  const wantCtrl = APPLE ? parsed.ctrl : parsed.ctrl || parsed.meta;
+  const held = heldModifiers(parsed);
   return (
-    event.metaKey === wantMeta &&
-    event.ctrlKey === wantCtrl &&
+    event.metaKey === held.meta &&
+    event.ctrlKey === held.control &&
     event.altKey === parsed.alt &&
     event.shiftKey === parsed.shift &&
     keyFromEvent(event) === parsed.key
   );
 }
 
+const TAB_NUMBER_CHORDS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+  (digit) => `Meta+${digit}`,
+);
+
 /** The fixed browser chords that pick a tab by position: 1 to 9, or null. */
 export function tabNumberFromEvent(event: ChordEvent): number | null {
-  const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
-  if (!digit || !matchesChord(event, `Meta+${digit}`)) return null;
-  return Number(digit);
+  const key = keyFromEvent(event);
+  if (!/^[1-9]$/.test(key) || !matchesChord(event, `Meta+${key}`)) return null;
+  return Number(key);
+}
+
+/**
+ * A chord in the terms the desktop host compares with a key press in the
+ * native browser. `key` is named as keyFromEvent names a press, or is the
+ * character typed when `typed` is set.
+ */
+export interface NativeBrowserChord {
+  meta: boolean;
+  control: boolean;
+  alt: boolean;
+  shift: boolean;
+  key: string;
+  typed: boolean;
+}
+
+// App.tsx's fixed tool chords, which read the character typed: Ctrl+` and
+// Cmd or Ctrl with Shift and a utility tool's letter.
+const TYPED_TOOL_CHORDS: NativeBrowserChord[] = [
+  { meta: false, control: true, alt: false, shift: false, key: '`', typed: true },
+  ...UTILITY_TOOL_SHORTCUT_KEYS.flatMap((key) => [
+    { meta: true, control: false, alt: false, shift: true, key, typed: true },
+    { meta: false, control: true, alt: false, shift: true, key, typed: true },
+  ]),
+];
+
+/** Every chord this window acts on, for the desktop host to take from a focused browser page. */
+export function nativeBrowserChords(bindings: ShortcutBindings): NativeBrowserChord[] {
+  const bound = [...Object.values(bindings), ...TAB_NUMBER_CHORDS].flatMap((chord) => {
+    const parsed = parseChord(chord);
+    if (!parsed) return [];
+    return [
+      {
+        ...heldModifiers(parsed),
+        alt: parsed.alt,
+        shift: parsed.shift,
+        key: parsed.key,
+        typed: false,
+      },
+    ];
+  });
+  return [...bound, ...TYPED_TOOL_CHORDS];
 }
 
 /** Browser convention: a primary-modifier click or a middle click opens a new tab. */

@@ -29,6 +29,7 @@ function sidebarState(sessions: SessionSummary[]): SidebarState {
     projects: [],
     pendingPermissions: {},
     pendingQuestions: {},
+    mainView: 'session',
     activeAppSessionId: null,
     sessionLastSeen: {},
     tabStrip: initialTabStrip(),

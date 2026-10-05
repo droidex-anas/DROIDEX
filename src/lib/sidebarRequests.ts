@@ -41,6 +41,7 @@ type SidebarState = Pick<
   | 'pendingPermissions'
   | 'pendingQuestions'
   | 'activeAppSessionId'
+  | 'mainView'
   | 'sessionLastSeen'
   | 'tabStrip'
 >;

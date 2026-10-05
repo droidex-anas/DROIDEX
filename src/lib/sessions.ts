@@ -67,14 +67,14 @@ export function sessionIsUnread(
 }
 
 // The cwds of sessions that genuinely occupy a directory right now: the open
-// draft, every chat on screen (its runtime stays up while shown), any session
+// draft, every selected chat (its runtime stays up while shown), any session
 // with a live turn, and any session with a still-running child (children run in
 // the parent session's cwd, so they pin it even when the primary session is
 // idle). Historical/idle chats are excluded so cleaning up their old worktrees
 // stays possible.
 export function activeSessionCwds(opts: {
   sessions: SessionSummary[];
-  onScreenAppSessionIds: readonly string[];
+  selectedAppSessionIds: readonly string[];
   draftCwd?: string | null;
   childSessions?: Record<string, Record<string, Pick<ChildSessionSummary, 'status'>>>;
   childRuntime?: Record<string, Record<string, { available: boolean }>>;
@@ -92,7 +92,7 @@ export function activeSessionCwds(opts: {
         childSessionIsLive(childSession, opts.childRuntime?.[m.appSessionId]?.[childSessionId]),
     );
     if (
-      opts.onScreenAppSessionIds.includes(m.appSessionId) ||
+      opts.selectedAppSessionIds.includes(m.appSessionId) ||
       sessionIsLive(m) ||
       hasRunningChildSession
     ) {

@@ -12,13 +12,13 @@ export interface TileChrome {
   atLeft: boolean;
 }
 
-export function CloseTileButton({ tileId }: { tileId: string }) {
+export function CloseTileButton({ tileId, title }: { tileId: string; title: string }) {
   const dispatch = useStoreDispatch();
   const chord = useStoreSelector((state) => state.shortcutBindings.closeTile);
   return (
     <button
       type="button"
-      aria-label="Close tile"
+      aria-label={`Close ${title}`}
       title={`Close tile (${formatChord(chord)})`}
       onClick={() => {
         dispatch({ type: 'CLOSE_TILE', tileId });
