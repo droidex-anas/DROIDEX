@@ -123,8 +123,8 @@ export class BrowserSessionManager {
   // The references each chat's prompts went with, newest last, so the agent can
   // still read one the prompt names once its mark is gone or its browser closed.
   private readonly sent = new Map<string, Map<string, DesignReference>>();
-  // Counts final cleanups, so a prompt still being written keeps nothing after one.
-  private cleanups = 0;
+  // Set when the final cleanup begins, so a prompt still being written keeps nothing.
+  private shutDown = false;
 
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
@@ -415,7 +415,6 @@ export class BrowserSessionManager {
     // unless the prompt has the crop it is still saving. One that has not
     // arrived yet, was taken away since, or was lost with a restart comes with
     // the prompt, which keeps its own copy.
-    const cleanup = this.cleanups;
     const references: DesignReference[] = [];
     for (const reference of input.references) {
       const live = session?.references.get(reference.id);
@@ -433,7 +432,7 @@ export class BrowserSessionManager {
     });
     // Each reference carries its own page, so a browser closed or replaced
     // while the pack was written does not stop the prompt the user sent.
-    if (cleanup === this.cleanups) this.keepSent(input.appSessionId, references);
+    this.keepSent(input.appSessionId, references);
     return {
       path,
       prompt: formatDesignPrompt(path, input.frame?.(instruction) ?? instruction, references),
@@ -491,10 +490,10 @@ export class BrowserSessionManager {
 
   /** The final cleanup: every browser closes and no sent reference is kept. */
   async closeAll(): Promise<void> {
+    this.shutDown = true;
     const closing = [...this.sessions.values()];
     this.sessions.clear();
     this.sent.clear();
-    this.cleanups += 1;
     await Promise.all(closing.map((session) => session.runtime.close().catch(() => {})));
   }
 
@@ -596,6 +595,7 @@ export class BrowserSessionManager {
   }
 
   private keepSent(appSessionId: string, references: DesignReference[]): void {
+    if (this.shutDown) return;
     const kept = this.sent.get(appSessionId) ?? new Map<string, DesignReference>();
     for (const reference of references) {
       kept.delete(reference.id);
