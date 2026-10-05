@@ -29,8 +29,10 @@ const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
 const HARD_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
 const CLIENT_CLOSE_DRAIN_MS = 250;
-// Commands a client may send before it is caught up and let in.
+// Commands a client may send before it is caught up and let in, by count and
+// by size.
 const MAX_EARLY_COMMANDS = 256;
+const MAX_EARLY_BYTES = 8 * 1024 * 1024;
 
 export interface BridgeServer {
   readonly port: number;
@@ -160,6 +162,7 @@ export function startBridgeServer(options: {
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
     let inside = false;
+    let earlyBytes = 0;
     ws.on('message', (raw) => {
       if (inside) {
         void handleMessage(ws, raw, pageId);
@@ -168,8 +171,11 @@ export function startBridgeServer(options: {
       if (!early) return;
       // A client that keeps sending while it is not yet in is cut off; it
       // reconnects and sends its first commands again.
-      if (early.length >= MAX_EARLY_COMMANDS) ws.close(1008, 'too many commands before ready');
-      else early.push(raw);
+      earlyBytes += rawSize(raw);
+      if (early.length >= MAX_EARLY_COMMANDS || earlyBytes > MAX_EARLY_BYTES) {
+        early = null;
+        ws.close(1008, 'too many commands before ready');
+      } else early.push(raw);
     });
     const admitted = await resumeClient(ws, url);
     if (!admitted || ws.readyState !== ws.OPEN) {
@@ -484,4 +490,9 @@ function nonNegativeInteger(value: string | null): number | null {
   if (value === null || value.trim() === '') return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function rawSize(raw: RawData): number {
+  if (Array.isArray(raw)) return raw.reduce((total, chunk) => total + chunk.length, 0);
+  return raw instanceof ArrayBuffer ? raw.byteLength : raw.length;
 }
