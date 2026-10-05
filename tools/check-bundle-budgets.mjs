@@ -114,8 +114,14 @@ import { join } from 'node:path';
 // tile chrome, drop zones) are ~3.9KB, too little to be worth a skeleton in the
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
+//
+// Raised from 1_434_000 to 1_459_000 for the rewritten Browser on top of tabs
+// and tiles. The browser host mounts every chat's <webview> page from the app
+// frame, the composer carries design marks, and the transcript draws the
+// Browser card. Main at b1a4f45c measures 1_431_242, the rewrite alone 1_404_693 on
+// its older base, and the two together 1_449_988, leaving ~9KB of headroom.
 const BUDGETS = {
-  initialRendererJsBytes: 1_434_000,
+  initialRendererJsBytes: 1_459_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
