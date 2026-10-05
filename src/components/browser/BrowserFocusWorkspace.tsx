@@ -1,18 +1,10 @@
-import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, ChevronUp } from '@droidex/icons';
+import { useRef } from 'react';
 import { useStoreSelector } from '../../hooks/useStore';
-import { useSessionLive } from '../../hooks/useSessionLive';
-import type { TranscriptEvent } from '../../types/bridge';
+import { ComposerHeight } from '../composer/ComposerHeight';
 import PromptInput from '../PromptInput';
 import { RunningProcessesMenu } from '../RunningProcessesMenu';
+import { BrowserActivityLine } from './BrowserActivityLine';
 import BrowserWorkspace from './BrowserWorkspace';
-
-const RECENT_ACTIVITY_LIMIT = 3;
-
-function sameEvents(left: readonly TranscriptEvent[], right: readonly TranscriptEvent[]): boolean {
-  return left.length === right.length && left.every((event, index) => event === right[index]);
-}
 
 export function BrowserFocusWorkspace({
   expanded,
@@ -21,141 +13,32 @@ export function BrowserFocusWorkspace({
 }: {
   expanded: boolean;
   // Mission Control keeps a composer of its own here while its view is hidden;
-  // a normal chat's composer is laid over the reserved space by App instead.
+  // a normal chat's composer is laid over the page by App instead.
   ownComposer?: boolean;
   onToggleExpanded: () => void;
 }) {
-  const [activityOpen, setActivityOpen] = useState(false);
-  const activeSession = useStoreSelector((state) =>
-    state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null,
-  );
-  const live = useSessionLive(activeSession?.appSessionId ?? null);
-  const recent = useStoreSelector((state) => {
-    if (!activeSession) return [];
-    const transcript = state.transcripts[activeSession.appSessionId] ?? [];
-    return transcript
-      .filter(
-        (event) =>
-          event.role === 'primary' || (event.author === 'user' && event.sourceSessionId === 'user'),
-      )
-      .slice(-RECENT_ACTIVITY_LIMIT);
-  }, sameEvents);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const appSessionId = useStoreSelector((state) => state.activeAppSessionId);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-droid-bg">
-      <div className="min-h-0 flex-1">
-        <BrowserWorkspace expanded={expanded} onToggleExpanded={onToggleExpanded} />
-      </div>
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.section
-            key="browser-focus-controls"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 shrink-0 overflow-hidden bg-gradient-to-t from-droid-bg via-droid-bg/98 to-droid-bg/92 pt-2"
-          >
-            <div className="px-3">
-              <div className="mx-auto flex max-w-4xl items-center gap-2">
-                {activeSession && (
-                  <RunningProcessesMenu appSessionId={activeSession.appSessionId} />
-                )}
-                <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-droid-border bg-droid-raised/95 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur">
-                  <button
-                    type="button"
-                    aria-expanded={activityOpen}
-                    onClick={() => {
-                      setActivityOpen((open) => !open);
-                    }}
-                    className="flex h-9 w-full items-center gap-2 px-3 text-[11px] font-medium text-droid-text-muted transition-colors hover:bg-droid-surface/40 hover:text-droid-text"
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-droid-green' : 'bg-droid-text-muted/40'}`}
-                    />
-                    <span className="flex-1 text-left">Recent activity</span>
-                    <span className="text-[11px] font-normal tabular-nums text-droid-text-muted/60">
-                      {live ? 'Working' : `${String(recent.length)} recent`}
-                    </span>
-                    {activityOpen ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  <AnimatePresence initial={false}>
-                    {activityOpen && (
-                      <motion.div
-                        key="recent-activity"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                        className="overflow-hidden"
-                      >
-                        <div className="border-t border-droid-border/70 px-2 py-1">
-                          {recent.length > 0 ? (
-                            recent.map((event) => {
-                              const text = activityText(event);
-                              return (
-                                <div
-                                  key={event.id}
-                                  className="flex h-7 min-w-0 items-center gap-2 rounded-lg px-2 text-[11px] hover:bg-droid-surface/35"
-                                >
-                                  <span className="w-12 shrink-0 text-[11px] font-medium text-droid-text-muted/60">
-                                    {activityAuthor(event)}
-                                  </span>
-                                  <span title={text} className="truncate text-droid-text-muted">
-                                    {text}
-                                  </span>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div className="flex h-7 items-center px-2 text-[11px] text-droid-text-muted/60">
-                              Activity will appear here while Droid works.
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
+    <div ref={rootRef} className="relative h-full min-h-0 bg-droid-bg">
+      <BrowserWorkspace
+        expanded={expanded}
+        onToggleExpanded={onToggleExpanded}
+        activity={
+          expanded && appSessionId ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <RunningProcessesMenu appSessionId={appSessionId} overPage />
+              <BrowserActivityLine appSessionId={appSessionId} />
             </div>
-            {ownComposer && (
-              <PromptInput appSessionId={activeSession?.appSessionId ?? null} compact />
-            )}
-          </motion.section>
-        )}
-      </AnimatePresence>
-      {/* The chat's own composer is laid over this space by App, so the draft is
-          never lost when the pane expands or docks. Outside the entrance
-          animation, so the page never slides under the composer. */}
-      {expanded && !ownComposer && (
-        <div aria-hidden className="h-[var(--composer-height,0px)] shrink-0" />
+          ) : null
+        }
+      />
+      {expanded && ownComposer && (
+        <ComposerHeight target={rootRef} className="absolute inset-x-0 bottom-0 z-20">
+          <PromptInput appSessionId={appSessionId} compact />
+        </ComposerHeight>
       )}
     </div>
   );
-}
-
-function activityAuthor(event: TranscriptEvent): string {
-  if (event.author === 'user') return 'You';
-  if (event.kind === 'thinking') return 'Thought';
-  if (event.kind === 'tool_call' || event.kind === 'tool_result') return 'Tool';
-  if (event.kind === 'error') return 'Error';
-  return 'Droid';
-}
-
-function activityText(event: TranscriptEvent): string {
-  const text = event.text?.replace(/\s+/g, ' ').trim();
-  if (text) return text;
-  if (event.toolName) {
-    return event.kind === 'tool_result'
-      ? `${event.toolName} finished`
-      : `Running ${event.toolName}`;
-  }
-  if (event.kind === 'thinking') return 'Thinking through the next step';
-  if (event.kind === 'status') return 'Session status updated';
-  return 'Activity updated';
 }

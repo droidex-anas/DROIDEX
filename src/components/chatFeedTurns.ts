@@ -7,7 +7,7 @@ import {
   collectTurnFiles,
   isCancellationArtifact,
   isCompactionCompleteStatus,
-  isSettingsStatus,
+  startsTurn,
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
@@ -15,10 +15,7 @@ import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
 function isTurnBoundary(item: FeedItem): boolean {
-  return (
-    (item.type === 'message' && item.event.author === 'user') ||
-    (item.type === 'status' && isSettingsStatus(item.event))
-  );
+  return (item.type === 'message' || item.type === 'status') && startsTurn(item.event);
 }
 
 // Short preview of a message for the conversation timeline tooltip: whitespace

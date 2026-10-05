@@ -6,7 +6,12 @@ import { correlateResults, splitAutomationProposals, UserBubble } from './chat';
 import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
 import { conversationAnchors, groupTurns } from './chatFeedTurns';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
-import { browserPageOf, browserStepInFlight, isWholeUrl } from '../lib/browserTools';
+import {
+  browserPageOf,
+  browserStepInFlight,
+  browserStepLabel,
+  isWholeUrl,
+} from '../lib/browserTools';
 import { describeToolCall, hasTodoPayload } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import { isRenderedTranscriptEvent } from './MissionControl';
@@ -310,6 +315,15 @@ test('a turn that used the browser gets one Browser card outside the Worked fold
     url: 'https://example.com/pricing',
   });
   assert.equal(browserStepInFlight(cards[0].events)?.liveVerb, 'Clicking');
+  // An address being opened reads as its site; a search for one reads as typed.
+  assert.equal(browserStepLabel([open]), 'Opening example.com');
+  const find = ev({
+    kind: 'tool_call',
+    toolName: 'mcp__droidex-browser__browser_find',
+    toolArgs: { query: 'https://example.com/pricing?plan=pro' },
+    toolUseId: 'b9',
+  });
+  assert.equal(browserStepLabel([find]), 'Looking for https://example.com/pricing?plan=pro');
 
   const clicked = ev({
     kind: 'tool_result',

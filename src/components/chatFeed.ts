@@ -25,6 +25,11 @@ export function isSettingsStatus(event: TranscriptEvent): boolean {
   return event.modelSwitch !== undefined;
 }
 
+// A prompt or a settings change opens a new turn of the chat.
+export function startsTurn(event: TranscriptEvent): boolean {
+  return event.author === 'user' || isSettingsStatus(event);
+}
+
 // Whether `next` is the tool_result produced by the `call` event. Result events
 // carry no usable `toolName` (the live SDK emits "" and history reads the empty
 // result name), so classification cannot identify them; correlate by toolUseId
@@ -259,7 +264,7 @@ export function buildFeed(
   let browserTurn: BrowserTurn | null = null;
   let previous: TranscriptEvent | undefined;
   for (const e of events) {
-    if (e.author === 'user' || isSettingsStatus(e)) {
+    if (startsTurn(e)) {
       if (browserTurn) browserTurn.ended = true;
       browserTurn = null;
     } else if (e.kind === 'tool_call' && browserToolOf(e.toolName)) {
