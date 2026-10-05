@@ -125,13 +125,18 @@ function applyState(state) {
   const holds = (list, id) => list.some((mark) => mark.id === id);
   if (sketch && !activeStroke && holds(appMarks, sketch.id) && !holds(next, sketch.id))
     sketch = null;
+  // Only a change of mode ends a stroke or drag in progress; the app's
+  // answers to earlier picks arrive in the middle of later ones, so a pick
+  // or sketch it has not answered yet keeps its mark.
+  const modeChanged = designMode !== wasDesigning || drawing !== wasDrawing;
+  const unanswered = modeChanged
+    ? []
+    : marks.filter((mark) => !holds(appMarks, mark.id) && !holds(next, mark.id));
   appMarks = next;
-  marks = next;
+  marks = [...next, ...unanswered];
   // Drawing again starts a new sketch.
   if (!drawing) sketch = null;
-  // Only a change of mode ends a stroke or drag in progress; the app's
-  // answers to earlier picks arrive in the middle of later ones.
-  if (designMode !== wasDesigning || drawing !== wasDrawing) {
+  if (modeChanged) {
     activeStroke = null;
     press = null;
     showArea(null);
