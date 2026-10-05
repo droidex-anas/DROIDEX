@@ -20,7 +20,7 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
       'browser_fill',
       'browser_type',
       'browser_press',
-      'browser_resize',
+      'browser_viewport',
       'browser_scroll',
       'browser_wait',
       'browser_batch',
@@ -55,15 +55,16 @@ test('browser MCP handlers return visible tool errors', async () => {
   assert.match(JSON.stringify(result), /Browser session is not open yet/);
 });
 
-test('browser_open keeps high-detail viewport scale by default, and goes back, forward and reloads', async () => {
-  let openedViewport: { width: number; height: number; deviceScaleFactor?: number } | undefined;
+test('a browser the agent opens starts at desktop size, and browser_open goes back, forward and reloads', async () => {
+  const modes: unknown[] = [];
   const calls: string[] = [];
+  let open = false;
   const outcome = (title: string, url: string) => ({ state: {}, text: `[${title} · ${url}]` });
   const manager = {
-    async open(input: {
-      viewport?: { width: number; height: number; deviceScaleFactor?: number };
-    }) {
-      openedViewport = input.viewport;
+    hasSession: () => open,
+    async open(input: { viewportMode?: string }) {
+      modes.push(input.viewportMode);
+      open = true;
       return outcome('Example', 'https://example.com/');
     },
     async goBack() {
@@ -83,12 +84,9 @@ test('browser_open keeps high-detail viewport scale by default, and goes back, f
     (tool) => tool.name === 'browser_open',
   );
 
-  const opened = await browserOpen?.handler({
-    url: 'https://example.com',
-    viewport: { width: 1000, height: 700 },
-    viewportMode: 'custom',
-  });
-  assert.equal(openedViewport?.deviceScaleFactor, 2);
+  const opened = await browserOpen?.handler({ url: 'https://example.com' });
+  await browserOpen?.handler({ url: 'https://example.org' });
+  assert.deepEqual(modes, ['desktop', undefined]);
   assert.match(JSON.stringify(opened), /Opened the page.*\[Example · https:\/\/example.com\/\]/);
 
   for (const action of ['back', 'forward', 'reload']) await browserOpen?.handler({ action });

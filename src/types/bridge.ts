@@ -540,7 +540,7 @@ export interface BrowserViewport {
   deviceScaleFactor: number;
 }
 
-export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
+export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile';
 
 export interface BrowserBox {
   x: number;
@@ -865,6 +865,8 @@ export type ClientCommand =
       appSessionId: string;
       viewport: BrowserViewport;
       viewportMode: BrowserViewportMode;
+      /** The pane's size for Fit, taken only while the page is on Fit. */
+      follow?: boolean;
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {

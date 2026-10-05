@@ -28,6 +28,7 @@ const ACTIONS = new Set([
   'close',
   'fillCredentials',
   'wait',
+  'awaitViewport',
 ]);
 // Reading the logs or recording the viewport never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
@@ -41,6 +42,7 @@ const TURN_ACTIONS = new Set([
   'goForward',
   'fillCredentials',
   'wait',
+  'awaitViewport',
 ]);
 const LATE = 'The browser page did not finish in time.';
 const CLOSED = 'The browser was closed.';

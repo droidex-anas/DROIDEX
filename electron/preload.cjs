@@ -233,8 +233,8 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
   nativeBrowserGoForward: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-go-forward', { browserSessionId }),
-  nativeBrowserSetDesignMode: (browserSessionId, active) =>
-    ipcRenderer.invoke('native-browser-set-design-mode', { browserSessionId, active }),
+  nativeBrowserSetDesignMode: (browserSessionId, active, scale) =>
+    ipcRenderer.invoke('native-browser-set-design-mode', { browserSessionId, active, scale }),
   nativeBrowserSetPencilMode: (browserSessionId, active) =>
     ipcRenderer.invoke('native-browser-set-pencil-mode', { browserSessionId, active }),
   nativeBrowserSetShortcuts: (chords) =>

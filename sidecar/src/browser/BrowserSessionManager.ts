@@ -14,7 +14,6 @@ import type {
   BrowserReadOptions,
   BrowserScreenshot,
   BrowserScreenshotOptions,
-  BrowserSnapshot,
   BrowserState,
   BrowserTarget,
   BrowserViewport,
@@ -65,6 +64,7 @@ export interface BrowserRuntime {
   ): Promise<BrowserActionResult>;
   inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
   wait(condition: BrowserWaitCondition): Promise<BrowserActionResult>;
+  awaitViewport(viewport: BrowserViewport): Promise<BrowserActionResult>;
   network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
   console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
   fillCredentials?(): Promise<BrowserActionResult>;
@@ -77,6 +77,8 @@ interface ManagedBrowserSession {
   runtime: BrowserRuntime;
   state: BrowserState;
   references: Map<string, DesignReference>;
+  /** The size change in progress; the next one starts after it. */
+  sizing: Promise<unknown>;
 }
 
 /** The browser's state after an action, and what the agent reads about it. */
@@ -85,11 +87,15 @@ export interface BrowserOutcome {
   text: string;
 }
 
-const DEFAULT_BROWSER_VIEWPORT: BrowserViewport = {
-  width: 1200,
-  height: 800,
-  deviceScaleFactor: 2,
+// The standard sizes an agent picks from; the renderer has the same ones for
+// the user. Fit follows the user's pane.
+const STANDARD_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserViewport> = {
+  desktop: { width: 1440, height: 900, deviceScaleFactor: 2 },
+  laptop: { width: 1280, height: 800, deviceScaleFactor: 2 },
+  tablet: { width: 820, height: 1180, deviceScaleFactor: 2 },
+  mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
 };
+const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
@@ -135,14 +141,32 @@ export class BrowserSessionManager {
     return this.applied(session, await session.runtime.goForward());
   }
 
-  async resizeViewport(input: {
+  resizeViewport(input: {
     appSessionId: string;
     viewport: BrowserViewport;
     viewportMode: BrowserViewportMode;
+    follow?: boolean;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
+    // One size change at a time, so a Fit report never lands between a
+    // pick's change to the page and its state.
+    const change = session.sizing.then(() => this.resize(session, input));
+    session.sizing = change.catch(() => undefined);
+    return change;
+  }
+
+  private async resize(
+    session: ManagedBrowserSession,
+    input: { viewport: BrowserViewport; viewportMode: BrowserViewportMode; follow?: boolean },
+  ): Promise<BrowserState> {
+    // A change queued behind a close never reaches the closed browser.
+    this.assertCurrent(session);
+    // The pane's size for Fit never undoes a size picked in the meantime.
+    const stale = () => input.follow && session.state.viewportMode !== 'fit';
+    if (stale()) return session.state;
     await session.runtime.setViewport(input.viewport);
     this.assertCurrent(session);
+    if (stale()) return session.state;
     session.state = {
       ...session.state,
       viewport: input.viewport,
@@ -150,6 +174,30 @@ export class BrowserSessionManager {
     };
     this.emitUpdated(session.state);
     return session.state;
+  }
+
+  /** A standard size, or Fit, which keeps the size until the pane sets it. */
+  // A standard size answers once the page has taken it; the pane applies it a
+  // frame or two after the state goes out.
+  async useViewport(appSessionId: string, mode: BrowserViewportMode): Promise<BrowserState> {
+    const session = this.requireSession(appSessionId);
+    if (mode === 'fit')
+      return this.resizeViewport({
+        appSessionId,
+        viewport: session.state.viewport,
+        viewportMode: mode,
+      });
+    const viewport = STANDARD_VIEWPORTS[mode];
+    await this.resizeViewport({ appSessionId, viewport, viewportMode: mode });
+    try {
+      return this.applied(session, await session.runtime.awaitViewport(viewport)).state;
+    } catch (error) {
+      // The user picked another size meanwhile, on this same browser; the
+      // answer says so.
+      if (this.resolveSession(appSessionId) === session && session.state.viewportMode !== mode)
+        return session.state;
+      throw error;
+    }
   }
 
   async click(
@@ -351,7 +399,7 @@ export class BrowserSessionManager {
     const session = this.resolveSession(appSessionId);
     if (!session) return;
     // Gone before it shuts down, so nothing it answers meanwhile is shown.
-    this.sessions.delete(keyFor(appSessionId));
+    this.sessions.delete(appSessionId);
     await session.runtime.close();
   }
 
@@ -366,7 +414,7 @@ export class BrowserSessionManager {
     viewport?: BrowserViewport,
     viewportMode?: BrowserViewportMode,
   ): ManagedBrowserSession {
-    const key = keyFor(appSessionId);
+    const key = appSessionId;
     const existing = this.sessions.get(key);
     if (existing) {
       existing.state = {
@@ -376,8 +424,12 @@ export class BrowserSessionManager {
       };
       return existing;
     }
-    const initialViewport = viewport ?? DEFAULT_BROWSER_VIEWPORT;
     const initialViewportMode = viewportMode ?? 'fit';
+    const initialViewport =
+      viewport ??
+      (initialViewportMode === 'fit'
+        ? DEFAULT_BROWSER_VIEWPORT
+        : STANDARD_VIEWPORTS[initialViewportMode]);
     const id = `browser-${appSessionId}-${Date.now().toString(36)}`;
     const runtime = this.options.runtimeFactory?.(id, initialViewport, appSessionId);
     if (!runtime) {
@@ -388,6 +440,7 @@ export class BrowserSessionManager {
       appSessionId,
       runtime,
       references: new Map(),
+      sizing: Promise.resolve(),
       state: {
         browserSessionId: id,
         appSessionId,
@@ -408,24 +461,14 @@ export class BrowserSessionManager {
   }
 
   private resolveSession(appSessionId: string): ManagedBrowserSession | undefined {
-    return this.sessions.get(keyFor(appSessionId));
-  }
-
-  private stateFromSnapshot(
-    session: ManagedBrowserSession,
-    snapshot: BrowserSnapshot,
-  ): BrowserState {
-    return {
-      ...session.state,
-      ...snapshot,
-    };
+    return this.sessions.get(appSessionId);
   }
 
   // An answer for a browser that was closed, or replaced, while it ran is
   // never shown: it would bring back the closed one's state.
   private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
     this.assertCurrent(session);
-    session.state = this.stateFromSnapshot(session, result.snapshot);
+    session.state = { ...session.state, ...result.snapshot };
     this.emitUpdated(session.state);
     return { state: session.state, text: result.text };
   }
@@ -465,10 +508,6 @@ export class BrowserSessionManager {
     session.state = { ...session.state, agentCursor: point };
     this.emitUpdated(session.state);
   }
-}
-
-function keyFor(appSessionId: string): string {
-  return appSessionId;
 }
 
 function targetFrom(input: { ref?: string; x?: number; y?: number }): BrowserTarget {

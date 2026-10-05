@@ -931,9 +931,9 @@ function registerIpc() {
     assertMainRenderer(event);
     return nativeBrowserManager.goForward(browserSessionId);
   });
-  ipcMain.handle('native-browser-set-design-mode', (event, { browserSessionId, active }) => {
+  ipcMain.handle('native-browser-set-design-mode', (event, { browserSessionId, active, scale }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.setDesignMode(browserSessionId, active);
+    return nativeBrowserManager.setDesignMode(browserSessionId, active, scale);
   });
   ipcMain.handle('native-browser-set-pencil-mode', (event, { browserSessionId, active }) => {
     assertMainRenderer(event);

@@ -82,12 +82,14 @@ export async function goForwardNativeBrowser(browserSessionId: string): Promise<
   return window.droidControl!.nativeBrowserGoForward(browserSessionId);
 }
 
+/** `scale` is how large the pane draws the page, so design labels keep their size. */
 export async function setNativeBrowserDesignMode(
   browserSessionId: string,
   active: boolean,
+  scale = 1,
 ): Promise<void> {
   if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserSetDesignMode(browserSessionId, active);
+  await window.droidControl!.nativeBrowserSetDesignMode(browserSessionId, active, scale);
 }
 
 export async function setNativeBrowserPencilMode(
