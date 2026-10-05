@@ -40,6 +40,7 @@ export interface SessionCompactionExecutionDependencies {
     | 'steer'
     | 'streamTurn'
     | 'observeNotification'
+    | 'interruptTurn'
     | 'stopTurn'
   >;
   agentProcesses: Pick<AgentProcessMonitor, 'track' | 'untrack' | 'adoptDescendantsAsRoots'>;

@@ -48,6 +48,7 @@ function droidOn(modelId: string) {
       options: { includePartialMessages: true },
     ) => session.stream(prompt, options),
     observeNotification: () => undefined,
+    interruptTurn: (session: FactorySession) => session.interrupt(),
     stopTurn: () => undefined,
   };
   return { cli, session: new DroidProviderSession('app-1', droid, runtime) };

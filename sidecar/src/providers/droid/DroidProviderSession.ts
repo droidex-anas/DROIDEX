@@ -27,6 +27,7 @@ type DroidProcessRuntime = Pick<
   | 'steer'
   | 'streamTurn'
   | 'observeNotification'
+  | 'interruptTurn'
   | 'stopTurn'
 >;
 
@@ -210,9 +211,8 @@ export class DroidProviderSession implements ProviderSession {
     await this.droid.updateSettings({ interactionMode: mapInteractionMode(mode) });
   }
 
-  async interrupt(): Promise<void> {
-    this.runtime.stopTurn(this.droid);
-    await this.droid.interrupt();
+  interrupt(): Promise<void> {
+    return this.runtime.interruptTurn(this.droid);
   }
 
   steer(text: string): Promise<boolean> {

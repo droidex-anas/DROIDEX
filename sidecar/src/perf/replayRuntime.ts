@@ -178,6 +178,10 @@ export class ReplayFactoryRuntime implements FactoryRuntime {
     // Scripted iterators settle through their session interrupt/close.
   }
 
+  interruptTurn(session: FactorySession): Promise<void> {
+    return session.interrupt();
+  }
+
   factoryApiKey(): undefined {
     return undefined;
   }

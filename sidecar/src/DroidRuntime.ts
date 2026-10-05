@@ -135,6 +135,7 @@ export interface FactoryRuntime {
     options: MessageOptions & { includePartialMessages: true },
   ): AsyncGenerator<DroidStreamEvent, void, undefined>;
   observeNotification(session: FactorySession, notification: Record<string, unknown>): void;
+  interruptTurn(session: FactorySession): Promise<void>;
   stopTurn(session: FactorySession): void;
 }
 
@@ -160,6 +161,11 @@ export class DroidRuntime implements FactoryRuntime {
     this.turns.get(session)?.stop();
   }
 
+  interruptTurn(session: FactorySession): Promise<void> {
+    const turn = this.turns.get(session);
+    return turn ? turn.interrupt(() => session.interrupt()) : session.interrupt();
+  }
+
   async *streamTurn(
     session: FactorySession,
     prompt: string,
@@ -171,6 +177,7 @@ export class DroidRuntime implements FactoryRuntime {
     let result: DroidStreamEvent | undefined;
     try {
       for await (const event of session.stream(prompt, options)) {
+        turn.observeMainEvent(event);
         if (event.type === 'result') result = event;
         else yield event;
       }

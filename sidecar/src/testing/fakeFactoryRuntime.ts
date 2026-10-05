@@ -461,6 +461,10 @@ export class FakeFactoryRuntime implements FactoryRuntime {
     // Scripted iterators settle through their session interrupt/close.
   }
 
+  interruptTurn(session: FactorySession): Promise<void> {
+    return session.interrupt();
+  }
+
   readContextBreakdown(session: FactorySession): Promise<unknown> {
     const error = this.contextBreakdownErrors.get(session.sessionId);
     if (error) return Promise.reject(error);
@@ -615,6 +619,7 @@ export function fakeProviderSession(
     steer: () => Promise.resolve(false),
     streamTurn: (droid, prompt, options) => droid.stream(prompt, options),
     observeNotification: () => undefined,
+    interruptTurn: (droid) => droid.interrupt(),
     stopTurn: () => undefined,
   });
 }

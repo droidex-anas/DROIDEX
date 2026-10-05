@@ -15,6 +15,7 @@ export function createCompactionTestLiveSession(
     | 'steer'
     | 'streamTurn'
     | 'observeNotification'
+    | 'interruptTurn'
     | 'stopTurn'
   >,
 ): LiveSession {
