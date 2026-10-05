@@ -16,8 +16,8 @@ interface QuickPrompt {
   appSessionId: string;
   browserSessionId: string;
   anchorId: string;
-  /** The mark's box in the page, as the page last reported it. */
-  box: BrowserBox;
+  /** The mark's box in the page, as the page last reported it; null while it is not shown. */
+  box: BrowserBox | null;
   text: string;
 }
 
@@ -51,6 +51,8 @@ export function useDesignQuickPrompt({
   const [prompt, setPrompt] = useState<QuickPrompt | null>(null);
   const promptRef = useRef(prompt);
   promptRef.current = prompt;
+  const drawingRef = useRef(drawing);
+  drawingRef.current = drawing;
   // The sketch being drawn gets the box once drawing stops, not on every stroke.
   const sketch = useRef<Target | null>(null);
 
@@ -107,7 +109,8 @@ export function useDesignQuickPrompt({
       if (event.browserSessionId !== browserSessionId) return;
       if (event.type === 'select') {
         const { id, box, strokes } = event.selection.anchor;
-        if (strokes) sketch.current = { anchorId: id, box };
+        // A sketch still being drawn gets the box once drawing stops.
+        if (strokes && drawingRef.current) sketch.current = { anchorId: id, box };
         else show({ anchorId: id, box });
       } else if (event.type === 'boxes') {
         // A sketch scrolled while it is drawn opens its box where it now is.
@@ -115,8 +118,8 @@ export function useDesignQuickPrompt({
         const drawnBox = drawn && event.boxes.find((mark) => mark.id === drawn.anchorId)?.box;
         if (drawn && drawnBox) sketch.current = { ...drawn, box: drawnBox };
         setPrompt((current) => {
-          const moved = current && event.boxes.find((mark) => mark.id === current.anchorId)?.box;
-          return current && moved ? { ...current, box: moved } : current;
+          const moved = current && event.boxes.find((mark) => mark.id === current.anchorId);
+          return current && moved ? { ...current, box: moved.box } : current;
         });
       }
     });
@@ -214,13 +217,23 @@ function QuickPromptBox({
   }, [close]);
 
   const scale = page.scale ?? 1;
+  const box = prompt.box ?? { x: 0, y: 0, width: 0, height: 0 };
   const mark = {
-    left: page.left + prompt.box.x * scale,
-    top: page.top + prompt.box.y * scale,
-    bottom: page.top + (prompt.box.y + prompt.box.height) * scale,
+    left: page.left + box.x * scale,
+    right: page.left + (box.x + box.width) * scale,
+    top: page.top + box.y * scale,
+    bottom: page.top + (box.y + box.height) * scale,
   };
+  const pageBottom = Math.min(page.top + page.height, floor);
+  // While its mark is scrolled out of sight the box hides, keeping its text.
+  const shown =
+    prompt.box !== null &&
+    mark.bottom > page.top &&
+    mark.top < pageBottom &&
+    mark.right > page.left &&
+    mark.left < page.left + page.width;
   const width = Math.min(WIDTH, page.width - EDGE * 2);
-  const lowest = Math.min(page.top + page.height, floor) - EDGE - height;
+  const lowest = pageBottom - EDGE - height;
   const below = mark.bottom + GAP;
   const top = Math.max(
     page.top + EDGE,
@@ -239,7 +252,8 @@ function QuickPromptBox({
       exit={{ opacity: 0, transition: { duration: 0.1 } }}
       transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
       className="absolute z-20 flex items-end gap-1.5 rounded-[14px] border border-droid-border bg-droid-raised py-1 pl-3 pr-1 shadow-droid"
-      style={{ left, top, width }}
+      style={{ left, top, width, visibility: shown ? 'visible' : 'hidden' }}
+      inert={!shown}
       onSubmit={(event) => {
         event.preventDefault();
         quick.send();
