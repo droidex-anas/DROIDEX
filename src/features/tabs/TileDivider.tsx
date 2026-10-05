@@ -48,6 +48,8 @@ export function TileDivider({
       }`}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
+        // Cancelling the press also cancels its focus, which arrow keys need.
+        event.currentTarget.focus();
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
         dragging.current = true;
