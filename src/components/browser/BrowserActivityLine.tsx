@@ -123,7 +123,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="group flex h-8 max-w-full items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 pl-2.5 pr-2 shadow-lg backdrop-blur transition-colors hover:border-droid-border-hover"
+        className="group flex h-8 max-w-full items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 pl-2.5 pr-2 shadow-droid-sm backdrop-blur transition-colors hover:border-droid-border-hover"
       >
         <ActivityStatusGlyph status={status} decorative />
         <span className="min-w-0 truncate">

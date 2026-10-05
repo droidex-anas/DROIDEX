@@ -80,7 +80,7 @@ export function RunningProcessesMenu({
         title={label}
         className={`flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
           overPage
-            ? `h-8 rounded-md border bg-droid-bg/90 shadow-lg hover:border-droid-border-hover hover:text-droid-text-secondary ${
+            ? `h-8 rounded-md border bg-droid-bg/90 shadow-droid-sm hover:border-droid-border-hover hover:text-droid-text-secondary ${
                 open
                   ? 'border-droid-border-hover text-droid-text-secondary'
                   : 'border-droid-border text-droid-text-muted'

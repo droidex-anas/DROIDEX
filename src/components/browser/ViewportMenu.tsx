@@ -65,7 +65,7 @@ export function ViewportMenu({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex h-8 items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 px-2.5 text-[11px] text-droid-text-muted shadow-lg transition-colors hover:text-droid-text-secondary"
+        className="flex h-8 items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 px-2.5 text-[11px] text-droid-text-muted shadow-droid-sm transition-colors hover:text-droid-text-secondary"
       >
         <span className="tabular-nums text-droid-text-secondary">{size(mode)}</span>
         <span>{VIEWPORT_LABELS[mode]}</span>
