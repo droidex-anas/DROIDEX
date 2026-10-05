@@ -69,34 +69,43 @@ export function useQueuedPromptDelivery({
         // head can be sent, and a failed send leaves it intact.
         const head = (store.getState().promptQueue[appSessionId] ?? []).at(0);
         if (!head) return;
+        const transcript = store.getState().transcripts[appSessionId] ?? [];
+        // Rows queued as mentions kept their place in the chip list for the
+        // preview; the text they are sent with must still leave them out.
+        const mentioned = new Set(head.mentions?.map((mention) => mention.name));
+        const text = promptWithSideChatReplies(
+          composePrompt(
+            head.text,
+            head.skills.filter((name) => !mentioned.has(name)),
+            head.files,
+          ),
+          head.sideChatReplies ?? [],
+        );
+        const responseFormat = responseFormatForPrompt(
+          head.text,
+          hasAppContextForTranscript(transcript, null),
+        );
+        // A design prompt goes with its own snapshots of its marks, which hold
+        // all it needs even once the browser they were picked in has closed.
         if (head.design) {
-          sendDesignPrompt(head.design.browserKey, head.text, head.design.referenceIds);
+          sendDesignPrompt(
+            head.design.browserKey,
+            text,
+            head.design.references,
+            responseFormat,
+            head.mentions,
+          );
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: createLocalDesignTranscriptEvent(
               appSessionId,
               head.text,
               browserTranscriptReferencesFromDesignReferences(head.design.references),
+              { skills: head.skills, files: head.files, sideChatReplies: head.sideChatReplies },
             ),
           });
         } else {
-          const transcript = store.getState().transcripts[appSessionId] ?? [];
-          // Rows queued as mentions kept their place in the chip list for the
-          // preview; the text they are sent with must still leave them out.
-          const mentioned = new Set(head.mentions?.map((mention) => mention.name));
-          sendToSession(
-            appSessionId,
-            promptWithSideChatReplies(
-              composePrompt(
-                head.text,
-                head.skills.filter((name) => !mentioned.has(name)),
-                head.files,
-              ),
-              head.sideChatReplies ?? [],
-            ),
-            responseFormatForPrompt(head.text, hasAppContextForTranscript(transcript, null)),
-            head.mentions,
-          );
+          sendToSession(appSessionId, text, responseFormat, head.mentions);
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: {

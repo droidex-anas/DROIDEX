@@ -21,6 +21,7 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
   sendToChild,
+  sendDesignPrompt,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -56,7 +57,17 @@ import {
   prepareChatWorkingDirectory,
   type ChatWorkingDirectoryResult,
 } from '../lib/chatWorkspace';
-import { newQueueId } from '../lib/promptQueue';
+import { createLocalDesignTranscriptEvent, newQueueId } from '../lib/promptQueue';
+import { browserTranscriptReferencesFromDesignReferences } from './browser/browserTranscriptReferences';
+import {
+  designMarks as stagedDesignMarks,
+  removeDesignMark,
+  restartDesignMarkNumbers,
+  setDesignMarks,
+  useDesignMarks,
+  withDesignShots,
+} from './browser/designMarks';
+import { DesignMarkChip } from './composer/DesignMarkChip';
 import {
   composePrompt,
   hasAppContextForTranscript,
@@ -392,7 +403,10 @@ export default function PromptInput({
     attachedFiles.length > 0 ||
     imageAttachments.images.length > 0 ||
     fileAttachments.files.length > 0;
-  const hasChips = hasSelection || hasAttachmentChips;
+  // Marks picked in this chat's browser, which go out with the next prompt.
+  // Their chips lead the row, so Backspace takes them last.
+  const designMarks = useDesignMarks(state.activeSession?.appSessionId);
+  const hasChips = hasSelection || hasAttachmentChips || designMarks.length > 0;
 
   const removeLastChip = () => {
     if (sideChatReplies.length > 0) {
@@ -408,7 +422,12 @@ export default function PromptInput({
       skillFilePaths: activeSkills.map((skill) => skill.filePath),
       documentPaths: documents,
     });
-    if (removal === null) return;
+    if (removal === null) {
+      const last = designMarks.at(-1);
+      if (last && state.activeSession)
+        removeDesignMark(state.activeSession.appSessionId, last.anchor.id);
+      return;
+    }
     switch (removal.chip) {
       case 'attachment':
         attachedFileSeqRef.current.delete(removal.path);
@@ -736,6 +755,15 @@ export default function PromptInput({
     setHistoryIndex(null);
   };
   const draftEditing = useDraftEditing({ input, editDraft, editorRef });
+
+  // Writes @N at the caret, so the prompt can say which mark it means.
+  const insertMarkReference = (number: number | undefined) => {
+    const editor = editorRef.current;
+    if (number === undefined || !editor) return;
+    const before = input.slice(0, editor.selection().start);
+    editor.insert(`${before && !/\s$/.test(before) ? ' ' : ''}@${String(number)} `);
+  };
+
   const { applyFormat } = draftEditing;
 
   const trigger = useMemo(() => composerTrigger(input, caret), [input, caret]);
@@ -1224,7 +1252,17 @@ export default function PromptInput({
     const intakeCutoff = nextIntakeSeqRef.current;
     const readyImagesPromise = imageAttachments.whenReady(intakeCutoff);
     const readyFilesPromise = fileAttachments.whenReady(intakeCutoff);
-    const [readyImages, readyFiles] = await Promise.all([readyImagesPromise, readyFilesPromise]);
+    // The chat's marks make this a design prompt, taken now as its text is: one
+    // picked while it settles is the next prompt's. Crops still being taken of
+    // them are waited for with the attachments.
+    const marksPromise = withDesignShots(
+      activeSession && !targetChildSessionId ? stagedDesignMarks(activeSession.appSessionId) : [],
+    );
+    const [readyImages, readyFiles, marks] = await Promise.all([
+      readyImagesPromise,
+      readyFilesPromise,
+      marksPromise,
+    ]);
     if (updateInterruptedSubmit()) return;
     const allFiles = pathsInSequence([
       ...attachedFiles.map((path, index) => ({
@@ -1489,6 +1527,84 @@ export default function PromptInput({
       return;
     }
 
+    // A design prompt goes with its marks' reference pack, built by the sidecar
+    // from their own snapshots, so it goes the same way once their browser has
+    // closed. It waits for a running turn like a queued prompt, whichever way
+    // it was sent.
+    const appSessionId = activeSession.appSessionId;
+    if (marks.length > 0) {
+      const design = { browserKey: appSessionId, references: marks };
+      // Only the marks this prompt carries go; one picked while it settles stays.
+      const sent = new Set(marks.map((mark) => mark.id));
+      const clearDesign = () => {
+        clearAfterSubmit();
+        setDesignMarks(
+          appSessionId,
+          stagedDesignMarks(appSessionId).filter((mark) => !sent.has(mark.id)),
+        );
+        dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
+      };
+      if (isLive) {
+        dispatch({
+          type: 'QUEUE_PROMPT',
+          appSessionId,
+          prompt: {
+            id: newQueueId(),
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+            design,
+          },
+        });
+        if (sideChatReplies.length > 0) detachSideChatReplies();
+        clearDesign();
+        return;
+      }
+      startTurnStarting();
+      const committed = await commitPrimaryPromptAfterBaseline({
+        waitForBaseline: () =>
+          workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
+        canCommit: () => !updateInterruptedSubmit(),
+        appendTranscript: () => {
+          dispatch({
+            type: 'SESSION_TRANSCRIPT',
+            event: createLocalDesignTranscriptEvent(
+              appSessionId,
+              displayText,
+              browserTranscriptReferencesFromDesignReferences(design.references),
+              { skills: skillNames, files: allFiles, sideChatReplies },
+            ),
+          });
+          if (sideChatReplies.length > 0) detachSideChatReplies();
+        },
+        resetComposer: () => {
+          const draftKept = composerRevisionRef.current !== composerRevision;
+          clearDesign();
+          // Numbering starts again once nothing can still say @N: no queued
+          // prompt, and no draft the user went on writing while this one settled.
+          if (
+            !draftKept &&
+            !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design)
+          )
+            restartDesignMarkNumbers(appSessionId);
+        },
+        sendCommand: () => {
+          try {
+            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            armTurnStartingTimeout();
+          } catch (err) {
+            stopTurnStarting();
+            console.error('[PromptInput] sendDesignPrompt failed:', err);
+          }
+        },
+      });
+      if (!committed) stopTurnStarting();
+      return;
+    }
+
     // Model is working and the user chose to queue: stage the prompt locally.
     // It is held client-side and delivered automatically when the turn finishes.
     if (isLive && mode === 'queue' && !targetChildSessionId) {
@@ -1620,6 +1736,8 @@ export default function PromptInput({
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);
+    // A design prompt's marks come back as chips; anything staged since goes.
+    setDesignMarks(activeSession.appSessionId, p.design?.references ?? []);
     for (const reply of p.sideChatReplies ?? []) {
       dispatch({
         type: 'ATTACH_SIDE_CHAT_REPLY',
@@ -2082,8 +2200,20 @@ export default function PromptInput({
               : undefined
           }
         >
-          {hasAttachmentChips && (
+          {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+              {designMarks.map((mark) => (
+                <DesignMarkChip
+                  key={mark.id}
+                  mark={mark}
+                  onInsert={() => {
+                    insertMarkReference(mark.anchor.mark);
+                  }}
+                  onRemove={() => {
+                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
+                  }}
+                />
+              ))}
               {imageAttachments.images.map((img) => (
                 <ImageChip
                   key={img.id}

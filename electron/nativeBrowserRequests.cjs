@@ -24,7 +24,6 @@ const ACTIONS = new Set([
   'inspect',
   'network',
   'console',
-  'capture',
   'screenshot',
   'close',
   'fillCredentials',
@@ -219,10 +218,6 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
           : await manager.goForward(browserSessionId, stillWanted);
       const url = moved ? (await loaded)?.url : undefined;
       return result(request, true, await snapshotAfter(request, url));
-    }
-    if (request.action === 'capture') {
-      const image = await manager.capture(browserSessionId, request.box);
-      return result(request, true, { image });
     }
     return performAction(request);
   }

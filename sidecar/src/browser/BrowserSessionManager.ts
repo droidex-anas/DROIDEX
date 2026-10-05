@@ -7,7 +7,6 @@ import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.j
 import type { BrowserColorScheme, ClientCommand } from '../protocol.js';
 import type {
   BrowserActionResult,
-  BrowserBox,
   BrowserClickOptions,
   BrowserConsoleEvent,
   BrowserElementInspection,
@@ -50,7 +49,6 @@ export interface BrowserRuntime {
   setViewport(viewport: BrowserViewport, mode: BrowserViewportMode): Promise<void>;
   setColorScheme(colorScheme: BrowserColorScheme): Promise<void>;
   screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
-  capture(box?: BrowserBox): Promise<string>;
   readPage(options?: BrowserReadOptions): Promise<string>;
   readText(maxChars?: number): Promise<string>;
   find(query: string): Promise<{ text: string; matches: number }>;
@@ -74,12 +72,25 @@ export interface BrowserRuntime {
   close(): Promise<void>;
 }
 
+/** A pick as the app sends it, with the page it was made on when known. */
+interface ReferenceInput {
+  id?: string;
+  anchor: DesignAnchor;
+  detail?: DesignAnchorDetail;
+  url?: string;
+  title?: string;
+  viewport?: BrowserViewport;
+  scroll?: { x: number; y: number };
+}
+
 interface ManagedBrowserSession {
   id: string;
   appSessionId: string;
   runtime: BrowserRuntime;
   state: BrowserState;
   references: Map<string, DesignReference>;
+  /** Marks taken away, so a pick still being saved when it went is not brought back. */
+  removed: Set<string>;
   /** The size change in progress; the next one starts after it. */
   sizing: Promise<unknown>;
 }
@@ -99,12 +110,17 @@ const STANDARD_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserVie
   mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
 };
 const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
+// How many sent references each chat keeps for design_reference.
+const SENT_REFERENCES_KEPT = 50;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
   // Browsers closed in this run, by browser session id. A restore sent before
   // the app heard of the close must not bring one back over its closing page.
   private readonly closed = new Set<string>();
+  // The references each chat's prompts went with, newest last, so the agent can
+  // still read one the prompt names once its mark is gone or its browser closed.
+  private readonly sent = new Map<string, Map<string, DesignReference>>();
 
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
@@ -348,58 +364,73 @@ export class BrowserSessionManager {
 
   async addReference(
     appSessionId: string,
-    input: { anchor: DesignAnchor; detail?: DesignAnchorDetail; id?: string },
+    input: ReferenceInput,
     screenshot?: DesignSelectionScreenshot,
   ): Promise<DesignReference> {
     const session = this.requireSession(appSessionId);
-    const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
-    const anchor: DesignAnchor = { ...input.anchor, id };
-    const detail = input.detail ? { ...input.detail, id } : undefined;
-    if (!anchor.screenshotPath) {
-      const crop = await this.captureAnchorImage(session, anchor.box).catch(() => undefined);
-      if (crop) anchor.screenshotPath = crop;
-    }
-    const next: DesignReference = {
-      id,
-      anchor,
-      detail,
-      url: session.state.url,
-      title: session.state.title,
-      viewport: session.state.viewport,
-      scroll: session.state.scroll,
-      screenshot,
-      createdAt: new Date().toISOString(),
-    };
-    session.references.set(id, next);
-    return next;
+    const reference = await this.snapshot(appSessionId, session, input, screenshot);
+    if (!session.removed.has(reference.id)) session.references.set(reference.id, reference);
+    return reference;
   }
 
+  /** Forgets marks the user took away or picked again; a closed browser has none. */
+  removeReferences(appSessionId: string, ids: string[]): void {
+    const session = this.resolveSession(appSessionId);
+    for (const id of ids) {
+      session?.references.delete(id);
+      session?.removed.add(id);
+    }
+  }
+
+  /** A live mark, or one a prompt of the chat went with. */
   referenceDetail(appSessionId: string, id: string): DesignReference | undefined {
-    return this.resolveSession(appSessionId)?.references.get(id);
+    return (
+      this.resolveSession(appSessionId)?.references.get(id) ?? this.sent.get(appSessionId)?.get(id)
+    );
   }
 
   async designPrompt(input: {
     appSessionId: string;
     instruction: string;
-    referenceIds: string[];
+    references: Extract<ClientCommand, { type: 'browser.design.sendPrompt' }>['references'];
+    /** Frames the instruction as its chat sends text; the pack itself keeps it plain. */
+    frame?: (instruction: string) => string;
   }): Promise<{ path: string; prompt: string }> {
-    const session = this.requireSession(input.appSessionId);
+    // A prompt queued before its browser closed still goes, from its own
+    // snapshots; a browser open now must still be the same one once it is ready.
+    const session = this.resolveSession(input.appSessionId);
     const instruction = input.instruction.trim();
     if (!instruction) throw new Error('Browser prompt cannot be empty.');
-    const references = input.referenceIds
-      .map((id) => session.references.get(id))
-      .filter((ref): ref is DesignReference => Boolean(ref));
-    if (references.length === 0)
+    if (input.references.length === 0)
       throw new Error(
         'Select or sketch at least one browser reference before sending a Design Mode prompt.',
       );
+    // Every pick has its own id, so one already here is the same snapshot,
+    // unless the prompt has the crop it is still saving. One that has not
+    // arrived yet, was taken away since, or was lost with a restart comes with
+    // the prompt, which keeps its own copy.
+    const references: DesignReference[] = [];
+    for (const reference of input.references) {
+      const live = session?.references.get(reference.id);
+      references.push(
+        live && (live.screenshot || !reference.screenshot)
+          ? live
+          : await this.snapshot(input.appSessionId, session, reference, reference.screenshot),
+      );
+    }
     const { path } = await (this.options.writePack ?? writeDesignPromptPack)({
       appSessionId: input.appSessionId,
-      browserSessionId: session.id,
+      browserSessionId: session?.id,
       instruction,
       references,
     });
-    return { path, prompt: formatDesignPrompt(path, instruction, references) };
+    // Each reference carries its own page, so a browser closed or replaced
+    // while the pack was written does not stop the prompt the user sent.
+    this.keepSent(input.appSessionId, references);
+    return {
+      path,
+      prompt: formatDesignPrompt(path, input.frame?.(instruction) ?? instruction, references),
+    };
   }
 
   state(appSessionId: string): BrowserState | undefined {
@@ -489,6 +520,7 @@ export class BrowserSessionManager {
       appSessionId,
       runtime,
       references: new Map(),
+      removed: new Set(),
       sizing: Promise.resolve(),
       state: {
         browserSessionId: id,
@@ -522,23 +554,56 @@ export class BrowserSessionManager {
     return { state: session.state, text: result.text };
   }
 
+  // A pick as the agent reads it: on the page, title and scroll it was made
+  // on, with the crop the app took, sensitive fields painted over, saved
+  // under a name of its own. A pick the app could not crop safely has none.
+  private async snapshot(
+    appSessionId: string,
+    session: ManagedBrowserSession | undefined,
+    input: ReferenceInput,
+    screenshot?: DesignSelectionScreenshot,
+  ): Promise<DesignReference> {
+    const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
+    const anchor: DesignAnchor = { ...input.anchor, id };
+    if (screenshot && !anchor.screenshotPath) {
+      anchor.screenshotPath = await this.persistImage(
+        appSessionId,
+        `anchor-${randomUUID()}.png`,
+        screenshot.base64,
+      ).catch(() => undefined);
+    }
+    if (session) this.assertCurrent(session);
+    return {
+      id,
+      anchor,
+      detail: input.detail ? { ...input.detail, id } : undefined,
+      url: input.url ?? session?.state.url ?? 'about:blank',
+      title: input.title ?? session?.state.title,
+      viewport: input.viewport ?? session?.state.viewport ?? DEFAULT_BROWSER_VIEWPORT,
+      scroll: input.scroll ?? session?.state.scroll ?? { x: 0, y: 0 },
+      screenshot,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  private keepSent(appSessionId: string, references: DesignReference[]): void {
+    const kept = this.sent.get(appSessionId) ?? new Map<string, DesignReference>();
+    for (const reference of references) {
+      kept.delete(reference.id);
+      kept.set(reference.id, reference);
+    }
+    // The prompt just sent keeps all of its own, however many it has.
+    const limit = Math.max(SENT_REFERENCES_KEPT, references.length);
+    for (const id of kept.keys()) {
+      if (kept.size <= limit) break;
+      kept.delete(id);
+    }
+    this.sent.set(appSessionId, kept);
+  }
+
   private assertCurrent(session: ManagedBrowserSession): void {
     if (this.resolveSession(session.appSessionId) !== session)
       throw new Error('The browser was closed while the action ran.');
-  }
-
-  private async captureAnchorImage(
-    session: ManagedBrowserSession,
-    box?: BrowserBox,
-  ): Promise<string | undefined> {
-    const base64 = await session.runtime.capture(box);
-    if (!base64) return undefined;
-    const tag = box ? `${box.x}-${box.y}-${box.width}-${box.height}` : 'view';
-    return this.persistImage(
-      session.appSessionId,
-      `anchor-${tag}-${Date.now().toString(36)}.png`,
-      base64,
-    );
   }
 
   private async persistImage(appSessionId: string, name: string, base64: string): Promise<string> {

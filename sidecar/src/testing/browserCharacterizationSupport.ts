@@ -68,6 +68,8 @@ export class FakeBrowserSessionManager implements SessionBrowserDependencies {
   readonly addReference: SessionBrowserDependencies['addReference'] = () =>
     unsupportedBrowserMethod('addReference');
 
+  readonly removeReferences: SessionBrowserDependencies['removeReferences'] = () => undefined;
+
   readonly designPrompt: SessionBrowserDependencies['designPrompt'] = () =>
     unsupportedBrowserMethod('designPrompt');
 

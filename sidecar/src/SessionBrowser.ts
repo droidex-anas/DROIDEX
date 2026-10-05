@@ -1,4 +1,10 @@
-import type { BrowserNativeRequest, ClientCommand, ServerEvent } from './protocol.js';
+import type {
+  BrowserNativeRequest,
+  ClientCommand,
+  ProviderMention,
+  ResponseFormat,
+  ServerEvent,
+} from './protocol.js';
 import { errMsg } from './errors.js';
 import { NativeBrowserRuntime } from './browser/NativeBrowserRuntime.js';
 import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
@@ -18,13 +24,16 @@ export type SessionBrowsers = Pick<
   | 'reload'
   | 'resizeViewport'
   | 'addReference'
+  | 'removeReferences'
   | 'designPrompt'
 >;
 
 export interface SessionBrowserDependencies {
   browsers: SessionBrowsers;
   emit: Emit;
-  sendPrompt: (appSessionId: string, prompt: string) => Promise<void>;
+  /** Frames a prompt's text for its chat: an App request or a side-chat question. */
+  framePrompt: (appSessionId: string, text: string, responseFormat?: ResponseFormat) => string;
+  sendPrompt: (appSessionId: string, prompt: string, mentions?: ProviderMention[]) => Promise<void>;
   /** Runs a request in the desktop app, which owns the pages. */
   requestBrowser: RequestBrowser;
 }
@@ -100,11 +109,7 @@ export class SessionBrowser {
     await this.handleBrowser(cmd.appSessionId, async () => {
       await this.d.browsers.addReference(
         this.requireBrowserAppSessionId(cmd.appSessionId),
-        {
-          anchor: cmd.reference.anchor,
-          detail: cmd.reference.detail,
-          id: cmd.reference.id,
-        },
+        cmd.reference,
         cmd.reference.screenshot,
       );
     });
@@ -115,8 +120,14 @@ export class SessionBrowser {
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
-      const { prompt } = await this.d.browsers.designPrompt({ ...cmd, appSessionId });
-      await this.d.sendPrompt(appSessionId, prompt);
+      // Only the instruction is framed, so the pack stays first and the turn
+      // is still known as a design turn.
+      const { prompt } = await this.d.browsers.designPrompt({
+        ...cmd,
+        appSessionId,
+        frame: (instruction) => this.d.framePrompt(appSessionId, instruction, cmd.responseFormat),
+      });
+      await this.d.sendPrompt(appSessionId, prompt, cmd.mentions);
     });
   }
 

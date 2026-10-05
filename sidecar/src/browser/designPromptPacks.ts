@@ -5,7 +5,8 @@ import type { DesignPromptPack, DesignReference } from './types.js';
 
 export interface WriteDesignPromptPackOptions {
   appSessionId: string;
-  browserSessionId: string;
+  /** The browser the marks were picked in, while it is open. */
+  browserSessionId?: string;
   instruction: string;
   references: DesignReference[];
   baseDir?: string;
@@ -50,7 +51,7 @@ export function formatDesignPrompt(
     `- URL: ${sanitizeInline(first?.url ?? 'about:blank')}`,
     `- References JSON: ${packPath}`,
     '',
-    'Anchored references:',
+    'Anchored references (the user writes a numbered one as @1, @2):',
     ...references.map(formatReferenceLine),
     '',
     'Call the design_reference tool with an @id for full attributes, computed styles, ancestors, and outerHTML.',
@@ -84,8 +85,9 @@ function sanitizeInline(value: string, max = 500): string {
 
 function formatReferenceLine(reference: DesignReference): string {
   const anchor = reference.anchor;
+  const mark = Number.isInteger(anchor.mark) ? `@${String(anchor.mark)}: ` : '';
   const parts = [
-    `- ${sanitizeInline(reference.id)} (${sanitizeInline(anchor.kind)}) ${sanitizeInline(anchor.label)}`,
+    `- ${mark}${sanitizeInline(reference.id)} (${sanitizeInline(anchor.kind)}) ${sanitizeInline(anchor.label)}`,
   ];
   if (reference.detail?.selector) {
     parts.push(
