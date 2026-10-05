@@ -3,17 +3,13 @@
 // entry and perf harness both use this exact transport path.
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { pipeline } from 'node:stream/promises';
 
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
-import { resolveBrowserAssetPath } from './browser/browserPaths.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeResetMessage,
@@ -38,14 +34,12 @@ export interface BridgeServer {
   readonly port: number;
   readonly ready: Promise<void>;
   broadcast(event: ServerEvent): void;
-  browserAssetUrl(filePath: string): string;
   close(): Promise<void>;
 }
 
 export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
-  assetToken: string;
   onCommand: (command: ClientCommand) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
 }): BridgeServer {
@@ -66,7 +60,6 @@ export function startBridgeServer(options: {
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
-    if (serveBrowserAsset(req, res, options.assetToken)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
     res.writeHead(404).end('not found');
@@ -345,13 +338,6 @@ export function startBridgeServer(options: {
     return Buffer.concat(raw).toString('utf8');
   }
 
-  function browserAssetUrl(filePath: string): string {
-    const url = new URL(`http://${HOST}:${String(boundPort)}/browser-assets`);
-    url.searchParams.set('path', filePath);
-    url.searchParams.set('token', options.assetToken);
-    return url.toString();
-  }
-
   function serveHealth(req: IncomingMessage, res: ServerResponse, token: string): boolean {
     const url = new URL(req.url ?? '/', `http://${HOST}:${String(boundPort)}`);
     if (url.pathname !== '/health') return false;
@@ -397,56 +383,6 @@ export function startBridgeServer(options: {
     return true;
   }
 
-  function serveBrowserAsset(
-    req: IncomingMessage,
-    res: ServerResponse,
-    assetToken: string,
-  ): boolean {
-    const url = new URL(req.url ?? '/', `http://${HOST}:${String(boundPort)}`);
-    if (url.pathname !== '/browser-assets') return false;
-    if (url.searchParams.get('token') !== assetToken) {
-      res.writeHead(401).end('unauthorized');
-      return true;
-    }
-    const filePath = url.searchParams.get('path');
-    if (!filePath) {
-      res.writeHead(403).end('forbidden');
-      return true;
-    }
-    void resolveBrowserAssetPath(filePath)
-      .then(async (resolvedPath) => {
-        if (!resolvedPath) {
-          res.writeHead(403).end('forbidden');
-          return;
-        }
-        const info = await stat(resolvedPath);
-        if (!info.isFile()) {
-          res.writeHead(404).end('not found');
-          return;
-        }
-        res.writeHead(200, {
-          'content-type': contentType(resolvedPath),
-          'cache-control': 'no-store',
-        });
-        await pipeline(createReadStream(resolvedPath), res);
-      })
-      .catch(() => {
-        if (res.headersSent) {
-          res.destroy();
-          return;
-        }
-        res.writeHead(404).end('not found');
-      });
-    return true;
-  }
-
-  function contentType(filePath: string): string {
-    if (filePath.endsWith('.png')) return 'image/png';
-    if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
-    if (filePath.endsWith('.json')) return 'application/json';
-    return 'application/octet-stream';
-  }
-
   function close(): Promise<void> {
     if (closePromise) return closePromise;
     closed = true;
@@ -483,7 +419,6 @@ export function startBridgeServer(options: {
     },
     ready,
     broadcast,
-    browserAssetUrl,
     close,
   };
 }

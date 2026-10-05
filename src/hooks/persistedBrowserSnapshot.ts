@@ -26,8 +26,6 @@ export function persistBrowsers(
       {
         ...browser,
         agentCursor: undefined,
-        screenshotPath: undefined,
-        screenshotUrl: undefined,
       },
     ]),
   );

@@ -17,7 +17,6 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
-const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
@@ -26,7 +25,6 @@ let projects: ProjectService | undefined;
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
-  assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
@@ -51,7 +49,6 @@ const manager = new SessionManager(
     server.broadcast(event);
   },
   {
-    assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     requestBrowser: createDesktopBrowserChannel(),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);
@@ -184,7 +181,7 @@ async function shutdown(): Promise<void> {
   process.exit();
 }
 
-function requiredSecret(name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN'): string {
+function requiredSecret(name: 'BRIDGE_TOKEN'): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

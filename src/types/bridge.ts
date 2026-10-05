@@ -610,8 +610,6 @@ export interface BrowserState {
   title?: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
-  screenshotPath?: string;
-  screenshotUrl?: string;
   scroll: { x: number; y: number };
   canGoBack?: boolean;
   canGoForward?: boolean;
@@ -945,12 +943,6 @@ export type ClientCommand =
       pixels?: number;
       ref?: string;
       source?: 'agent' | 'user';
-    }
-  | {
-      type: 'browser.screenshot';
-      appSessionId: string;
-      fullPage?: boolean;
-      deviceScaleFactor?: number;
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {

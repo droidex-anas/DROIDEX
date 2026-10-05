@@ -10,6 +10,7 @@ import type {
   BrowserElementInspection,
   BrowserNetworkEvent,
   BrowserReadOptions,
+  BrowserScreenshot,
   BrowserScreenshotOptions,
   BrowserSnapshot,
   BrowserState,
@@ -34,7 +35,6 @@ export interface BrowserSessionManagerOptions {
     viewport: BrowserViewport,
     appSessionId: string,
   ) => BrowserRuntime;
-  assetUrlFor?: (path: string) => string;
   writePack?: typeof writeDesignPromptPack;
   browserDataDir?: string;
 }
@@ -45,10 +45,11 @@ export interface BrowserRuntime {
   goBack(): Promise<BrowserSnapshot>;
   goForward(): Promise<BrowserSnapshot>;
   setViewport(viewport: BrowserViewport): Promise<void>;
-  screenshot(options?: BrowserScreenshotOptions): Promise<string>;
-  capture(box?: BrowserBox, options?: BrowserScreenshotOptions): Promise<string>;
+  screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
+  capture(box?: BrowserBox): Promise<string>;
   snapshot(): Promise<BrowserSnapshot>;
   readPage(options?: BrowserReadOptions): Promise<string>;
+  readText(maxChars?: number): Promise<string>;
   find(query: string): Promise<{ text: string; matches: number }>;
   click(target: BrowserTarget): Promise<BrowserSnapshot>;
   hover(target: BrowserTarget): Promise<BrowserSnapshot>;
@@ -203,6 +204,10 @@ export class BrowserSessionManager {
     return this.requireSession(appSessionId).runtime.readPage(options);
   }
 
+  async readText(appSessionId: string, maxChars?: number): Promise<string> {
+    return this.requireSession(appSessionId).runtime.readText(maxChars);
+  }
+
   async find(appSessionId: string, query: string): Promise<string> {
     return (await this.requireSession(appSessionId).runtime.find(query)).text;
   }
@@ -310,21 +315,19 @@ export class BrowserSessionManager {
     return session.state;
   }
 
-  async screenshot(appSessionId: string, options: BrowserScreenshotOptions = {}): Promise<string> {
-    const session = this.requireSession(appSessionId);
-    const base64 = await session.runtime.screenshot(options);
-    const screenshotPath = await this.persistImage(
+  /** The screenshot, also saved for harnesses that drop images. */
+  async screenshot(
+    appSessionId: string,
+    options: BrowserScreenshotOptions = {},
+  ): Promise<BrowserScreenshot & { path: string }> {
+    const shot = await this.requireSession(appSessionId).runtime.screenshot(options);
+    const extension = shot.mimeType === 'image/png' ? 'png' : 'jpg';
+    const path = await this.persistImage(
       appSessionId,
-      `screenshot-${Date.now().toString(36)}.png`,
-      base64,
+      `screenshot-${Date.now().toString(36)}.${extension}`,
+      shot.image,
     );
-    session.state = {
-      ...session.state,
-      screenshotPath,
-      screenshotUrl: this.options.assetUrlFor?.(screenshotPath),
-    };
-    this.emitUpdated(session.state);
-    return screenshotPath;
+    return { ...shot, path };
   }
 
   async addReference(

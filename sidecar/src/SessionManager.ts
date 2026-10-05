@@ -204,7 +204,6 @@ export interface SessionManagerDependencies {
 
 export interface SessionManagerOptions {
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
-  assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
   dependencies?: SessionManagerDependencies;
@@ -411,7 +410,6 @@ export class SessionManager {
         },
       });
       const browsers = new BrowserSessionManager({
-        assetUrlFor: options.assetUrlFor,
         emit: (event) => {
           this.emit(event);
         },
@@ -1203,9 +1201,6 @@ export class SessionManager {
         return;
       case 'browser.scroll':
         await this.sessionBrowser.scroll(cmd);
-        return;
-      case 'browser.screenshot':
-        await this.sessionBrowser.screenshot(cmd);
         return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);

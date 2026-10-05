@@ -289,7 +289,6 @@ async function smokePackagedRuntime(architecture) {
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_PORT: '0',
       BRIDGE_TOKEN: bridgeToken,
-      BROWSER_ASSET_TOKEN: 'release-verifier-asset-token',
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     },
     stdio: ['pipe', 'pipe', 'pipe'],

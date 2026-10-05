@@ -75,9 +75,17 @@ class FakeRuntime implements BrowserRuntime {
     this.viewport = viewport;
   }
 
-  async screenshot(options: BrowserScreenshotOptions = {}): Promise<string> {
+  async screenshot(options: BrowserScreenshotOptions = {}) {
     this.screenshots.push(options);
-    return Buffer.from('full-screenshot').toString('base64');
+    return {
+      image: Buffer.from('screenshot').toString('base64'),
+      mimeType: 'image/jpeg' as const,
+      text: 'Screenshot of the viewport',
+    };
+  }
+
+  async readText() {
+    return '# Page';
   }
 
   async capture(box?: BrowserBox): Promise<string> {
@@ -304,13 +312,13 @@ test('designPrompt needs a reference and writes the selected ones with a trimmed
   assert.match(result.prompt, /Make the button clearer/);
 });
 
-test('screenshots are taken only on request, with the requested detail', async () => {
+test('screenshots are taken only on request, with the requested crop', async () => {
   const { manager, runtime } = await opened({}, 'https://example.com');
   await manager.refresh('m1');
   assert.equal(runtime.screenshots.length, 0);
 
-  await manager.screenshot('m1', { fullPage: true, deviceScaleFactor: 3 });
-  assert.deepEqual(runtime.screenshots, [{ fullPage: true, deviceScaleFactor: 3 }]);
+  await manager.screenshot('m1', { ref: 'e3', format: 'png' });
+  assert.deepEqual(runtime.screenshots, [{ ref: 'e3', format: 'png' }]);
 });
 
 test('open normalizes bare domains and resizes an existing runtime only when given a viewport', async () => {
