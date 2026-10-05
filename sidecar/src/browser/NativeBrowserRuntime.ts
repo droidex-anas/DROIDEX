@@ -128,14 +128,14 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     return result.inspection;
   }
 
-  async network(clear = false): Promise<BrowserNetworkEvent[]> {
-    const result = await this.send({ action: 'network', clearNetworkLog: clear });
+  async network(): Promise<BrowserNetworkEvent[]> {
+    const result = await this.send({ action: 'network' });
     if (!result.ok) throw new Error(result.error ?? 'Native browser network inspection failed.');
     return result.networkEvents ?? [];
   }
 
-  async console(clear = false): Promise<BrowserConsoleEvent[]> {
-    const result = await this.send({ action: 'console', clearConsoleLog: clear });
+  async console(): Promise<BrowserConsoleEvent[]> {
+    const result = await this.send({ action: 'console' });
     if (!result.ok) throw new Error(result.error ?? 'Native browser console inspection failed.');
     return result.consoleEvents ?? [];
   }

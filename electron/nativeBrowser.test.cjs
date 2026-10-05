@@ -19,7 +19,7 @@ function createBrowser() {
         setDevicePermissionHandler: (handler) => (ses.device = handler),
         setPermissionCheckHandler: (handler) => (ses.check = handler),
         setPermissionRequestHandler: (handler) => (ses.request = handler),
-        webRequest: { onCompleted() {}, onErrorOccurred() {} },
+        webRequest: { onSendHeaders() {}, onCompleted() {}, onErrorOccurred() {} },
       };
       sessions.set(partition, ses);
       return ses;

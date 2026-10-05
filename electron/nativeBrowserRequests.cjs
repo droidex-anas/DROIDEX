@@ -247,6 +247,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         requestId: `${request.requestId}:snapshot`,
         browserSessionId: request.browserSessionId,
         action: 'snapshot',
+        // New console errors count from when the request came.
+        receivedAt: request.receivedAt,
       })
       .catch(() => undefined);
     return outcome?.ok && outcome.snapshot
@@ -308,8 +310,6 @@ function agentAction(request) {
     viewport: request.viewport,
     viewportMode: request.viewportMode,
     colorScheme: request.colorScheme,
-    clearNetworkLog: request.clearNetworkLog,
-    clearConsoleLog: request.clearConsoleLog,
   };
 }
 

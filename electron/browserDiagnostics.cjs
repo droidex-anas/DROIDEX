@@ -1,3 +1,18 @@
+// Redaction for what the browser's debug tools hand to an agent: request URLs
+// and console text.
+//
+// What it covers. A URL on its own (a request's, a console message's source)
+// loses its user and password, its fragment, and the values of parameters named
+// like secrets. Console text is free text a page wrote, so it gets the shapes a
+// secret usually has there: a well-formed URL (no spaces in it), and a value
+// that follows a name like `token=` or `password:`, quoted or not, or an
+// authentication scheme such as `Bearer`.
+//
+// What it does not cover. It is not a secret detector. A page that prints a
+// secret with no name beside it, or inside a URL that is not well formed (a
+// space in its password, an encoded parameter name with a quoted value), is
+// outside it. Console text is the page's own words; the tool says so.
+
 const SENSITIVE_KEY_PARTS = [
   'token',
   'key',
@@ -38,11 +53,26 @@ function redactBrowserDiagnosticUrl(value, baseUrl) {
   }
 }
 
+// Where a URL starts in text, whatever its scheme: https, wss, ftp.
+const URL_START = String.raw`\b[a-z][a-z0-9+.-]*:\/\/`;
+const URL_CREDENTIALS = new RegExp(`(${URL_START})[^\\s/?#]*@`, 'gi');
+const URL_CUT_IN_HOST = new RegExp(`${URL_START}[^\\s/?#]*$`, 'i');
+const URL_IN_TEXT = new RegExp(`${URL_START}[^\\s"'<>]+`, 'gi');
+
 function redactBrowserDiagnosticText(value) {
-  const bounded = String(value || '').slice(0, 4000);
-  return redactUnquotedAssignments(
-    redactQuotedAssignments(redactAuthenticationSchemes(bounded)),
-  ).slice(0, 1000);
+  // A URL's user and password go first and on their own, whatever characters
+  // they hold: a URL cut short at one of them would not parse, and would be
+  // left as it was.
+  const text = String(value || '');
+  const stripped = text.slice(0, 4000).replace(URL_CREDENTIALS, '$1');
+  // A URL the length limit cut before its host ended may have lost the "@"
+  // after its user and password, so what is left of it goes.
+  const bounded = text.length > 4000 ? stripped.replace(URL_CUT_IN_HOST, '') : stripped;
+  // Then values named like secrets, a quoted one whole; then what is left of
+  // each URL, like any other URL.
+  return redactUnquotedAssignments(redactQuotedAssignments(redactAuthenticationSchemes(bounded)))
+    .replace(URL_IN_TEXT, (url) => redactBrowserDiagnosticUrl(url))
+    .slice(0, 1000);
 }
 
 function redactAuthenticationSchemes(value) {
@@ -208,8 +238,10 @@ function isAuthenticationTokenChar(value) {
   );
 }
 
+const CONSOLE_LEVELS = { debug: 0, info: 1, warning: 2, error: 3 };
+
 function normalizeBrowserConsoleMessage(details) {
-  const level = { debug: 0, info: 1, warning: 2, error: 3 }[details?.level] ?? 0;
+  const level = CONSOLE_LEVELS[details?.level] ?? 0;
   return {
     level,
     message: redactBrowserDiagnosticText(details?.message),
@@ -219,6 +251,7 @@ function normalizeBrowserConsoleMessage(details) {
 }
 
 module.exports = {
+  CONSOLE_LEVELS,
   isSensitiveBrowserKey,
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticText,
