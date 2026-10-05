@@ -18,7 +18,6 @@ const MAX_REPEAT = 50;
 const SCROLL_SETTLE_MS = 1_000;
 const SCROLL_START_MS = 300;
 const SCROLL_POLL_MS = 40;
-const CONSOLE_ERROR = 3;
 function createBrowserActions({
   reading,
   runWithWebContentsDebugger,
@@ -29,7 +28,9 @@ function createBrowserActions({
   const { refuseCovered } = createBrowserCover({ reading });
 
   async function act(contents, entry, request) {
-    if (request.action === 'snapshot') return result(request, contents, entry, Date.now());
+    // After a navigation or a wait, errors count from when the request came.
+    if (request.action === 'snapshot')
+      return result(request, contents, entry, request.receivedAt ?? Date.now());
     if (request.action === 'inspect') return inspect(contents, entry, request);
     const since = Date.now();
     const urlBefore = contents.getURL();
@@ -337,9 +338,7 @@ function createBrowserActions({
     const snapshot = await pageSnapshot(contents);
     const notes = [];
     if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
-    const errors = entry.consoleEvents.filter(
-      (event) => event.level === CONSOLE_ERROR && event.timestamp >= since,
-    ).length;
+    const errors = entry.errorTimes.filter((at) => at >= since).length;
     if (errors)
       notes.push(
         `${errors} new console error${errors === 1 ? '' : 's'}; browser_console has them.`,

@@ -539,6 +539,7 @@ function inspectElement(selector) {
     name: name && name !== '[redacted]' ? name : undefined,
     text: text || undefined,
     attributes: attrsFor(el),
+    styles: stylesFor(el),
     box: boxFor(rect),
     html: sanitizedOuterHtml(shown),
     iframe,
@@ -861,7 +862,7 @@ function isSensitiveAttribute(name, el) {
   if (['value', 'aria-valuenow', 'aria-valuetext'].includes(name) || name.startsWith('on'))
     return true;
   if (
-    /(token|secret|password|passcode|credential|authorization|api[-_]?key|private[-_]?key|cookie|session|csrf|otp)/i.test(
+    /(token|secret|password|passcode|credential|authori[sz]|auth(?!or)|signature|api[-_]?key|private[-_]?key|cookie|session|csrf|otp)/i.test(
       name,
     )
   )
