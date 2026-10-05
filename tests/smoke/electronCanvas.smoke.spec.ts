@@ -7,10 +7,10 @@ import {
   framePid,
   mountFrame,
   processAlive,
-  previewDocument,
   terminateFrame,
   withCanvasHost,
 } from './canvasSmoke';
+import { mountWebview } from './canvasWebview';
 
 const ESCAPE_SCRIPT = `
   const results = {};
@@ -109,139 +109,150 @@ test('[C1] opaque preview isolates CPU and refuses escapes', async () => {
   });
 });
 
-test('[C2] an isolated preview host contains a 200000-message burst', async () => {
-  await withCanvasHost(async (app, page) => {
-    const document = previewDocument(
-      '<p>Flood probe</p>',
-      `
-      addEventListener('message', () => {
-        const startedAt = performance.now();
-        for (let sent = 0; sent < 200000; sent += 1) top.postMessage({ bad: true }, '*');
-        console.log('ISOLATED_SENT ' + (performance.now() - startedAt));
-      }, { once: true });
-    `,
-    );
-    await app.evaluate(async ({ BrowserWindow, WebContentsView }, html) => {
-      const mainWindow = BrowserWindow.getAllWindows()[0];
-      const preview = new WebContentsView({
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          backgroundThrottling: false,
-        },
-      });
-      mainWindow.contentView.addChildView(preview);
-      preview.setBounds({ x: 20, y: 20, width: 320, height: 120 });
-      const evidence = {
-        sent: 0,
-        received: 0,
-        sendMs: 0,
-        killMs: 0,
-        rateMs: 0,
-        hostGone: [] as unknown[],
-      };
-      const appContents = mainWindow.webContents;
-      appContents.on('render-process-gone', (_event, details) => evidence.hostGone.push(details));
-      preview.webContents.on('console-message', (event) => {
-        if (event.message.startsWith('ISOLATED_SENT ')) {
-          evidence.sent = 200000;
-          evidence.sendMs = Number(event.message.slice(14));
-        }
-        if (!event.message.startsWith('ISOLATED_RATE ')) return;
-        const report = JSON.parse(event.message.slice(14));
-        evidence.received = report.received;
-        evidence.rateMs = report.elapsedMs;
-        if (report.received < 10000) return;
-        const at = performance.now();
-        preview.webContents.forcefullyCrashRenderer();
-        evidence.killMs = performance.now() - at;
-      });
-      Object.assign(globalThis, { __isolated: { preview, evidence } });
-      await preview.webContents.loadURL('data:text/html,<body>Isolated preview host</body>');
-
-      if (preview.webContents.mainFrame.osProcessId === appContents.mainFrame.osProcessId)
-        throw new Error('Preview host shares DROIDEX process');
-      await preview.webContents.executeJavaScript(`
-        let received = 0;
-        let startedAt = 0;
+test('[C2] a webview guest contains ancestor flooding and releases its processes', async () => {
+  for (const recovery of ['remove', 'crash'] as const) {
+    await withCanvasHost(async (app) => {
+      const { page, pids } = await mountWebview(
+        app,
+        `
         addEventListener('message', () => {
-          received += 1;
-          if (received === 10000) console.log('ISOLATED_RATE ' + JSON.stringify({
-            received, elapsedMs: performance.now() - startedAt,
-          }));
-        });
-        const frame = document.createElement('iframe');
-        frame.sandbox = 'allow-scripts';
-        frame.srcdoc = ${JSON.stringify(html)};
-        frame.onload = () => {
-          startedAt = performance.now();
-          frame.contentWindow.postMessage('flood', '*');
-        };
-        document.body.append(frame);
-      `);
-    }, document);
-    const latencies: number[] = [];
-    const mainLatencies: number[] = [];
-    await expect
-      .poll(
-        async () => {
-          const at = performance.now();
-          assert.equal(
-            await bounded(
-              page.evaluate(() => 2),
-              'DROIDEX host during isolated flood',
-            ),
-            2,
-          );
-          latencies.push(performance.now() - at);
-          const mainAt = performance.now();
-          const received = await bounded(
-            app.evaluate(() => Reflect.get(globalThis, '__isolated').evidence.received),
-            'main during isolated flood',
-          );
-          mainLatencies.push(performance.now() - mainAt);
-          return received;
-        },
-        { timeout: 30000, intervals: [100] },
-      )
-      .toBe(10000);
-    const afterAt = performance.now();
-    assert.equal(
+          const startedAt = performance.now();
+          for (let sequence = 0; sequence < 200000; sequence++)
+            top.postMessage({ probe: 'flood', sequence }, '*');
+          console.log('WEBVIEW_SENT ' + (performance.now() - startedAt));
+        }, { once: true });
+      `,
+      );
+      assert.equal(new Set([pids.chat, pids.guest, pids.generated]).size, 3);
+      assert.deepEqual(pids.safety, {
+        preload: null,
+        nodeIntegration: false,
+        nodeIntegrationInSubFrames: false,
+        contextIsolation: true,
+        sandbox: true,
+        webSecurity: true,
+        webviewTag: false,
+      });
       await bounded(
-        page.evaluate(() => 2),
-        'DROIDEX host after isolated termination',
-      ),
-      2,
-    );
-    const afterMs = performance.now() - afterAt;
-    const evidence = await app.evaluate(({ BrowserWindow }) => {
-      const state = Reflect.get(globalThis, '__isolated');
-      const out = { ...state.evidence, previewCrashed: state.preview.webContents.isCrashed() };
-      BrowserWindow.getAllWindows()[0].contentView.removeChildView(state.preview);
-      state.preview.webContents.close();
-      return out;
+        page.evaluate(() => {
+          const guest = document.querySelector<Electron.WebviewTag>('#canvas-webview');
+          if (!guest) throw new Error('Missing webview');
+          return guest.executeJavaScript('window.start()');
+        }),
+        'start ancestor flood',
+      );
+      const chatLatencies: number[] = [];
+      const mainLatencies: number[] = [];
+      const startedAt = performance.now();
+      await expect
+        .poll(
+          async () => {
+            const chatAskedAt = performance.now();
+            const chatPing = bounded(
+              page.evaluate(() => 2),
+              'chat during guest flood',
+            ).then((value) => {
+              assert.equal(value, 2);
+              chatLatencies.push(performance.now() - chatAskedAt);
+            });
+            const mainAskedAt = performance.now();
+            const mainPing = bounded(
+              app.evaluate(() => globalThis.__canvasGuest.evidence.sent),
+              'main during guest flood',
+            ).then((sent) => {
+              mainLatencies.push(performance.now() - mainAskedAt);
+              return sent;
+            });
+            const [, sent] = await Promise.all([chatPing, mainPing]);
+            return sent === 200000 && performance.now() - startedAt >= 10000;
+          },
+          { timeout: 30000, intervals: [50] },
+        )
+        .toBe(true);
+      const evidence = await bounded(
+        app.evaluate(() => globalThis.__canvasGuest.evidence),
+        'guest evidence',
+      );
+      const direct = await bounded(
+        page.evaluate(() => window.__canvasDirect),
+        'chat message count',
+      );
+      assert.equal(direct, 0);
+      assert.ok(evidence.received > 0);
+      assert.deepEqual(evidence.chatGone, []);
+      const recoveryAt = performance.now();
+      if (recovery === 'remove') {
+        await bounded(
+          page.evaluate(() => document.getElementById('canvas-webview')?.remove()),
+          'remove guest',
+        );
+      } else {
+        await bounded(
+          app.evaluate(() => {
+            const guest = globalThis.__canvasGuest.guest;
+            if (!guest) throw new Error('Guest not attached');
+            guest.forcefullyCrashRenderer();
+          }),
+          'main crash guest',
+        );
+      }
+      const callMs = performance.now() - recoveryAt;
+      await expect
+        .poll(() => [pids.guest, pids.generated].filter(processAlive), {
+          timeout: 10000,
+          intervals: [10],
+        })
+        .toEqual([]);
+      const goneMs = performance.now() - recoveryAt;
+      const afterAt = performance.now();
+      assert.equal(
+        await bounded(
+          page.evaluate(() => 2),
+          'chat after guest recovery',
+        ),
+        2,
+      );
+      const afterMs = performance.now() - afterAt;
+      const settled = await bounded(
+        app.evaluate(() => {
+          const { window, guest, evidence } = globalThis.__canvasGuest;
+          if (!guest) throw new Error('Guest not attached');
+          return {
+            chatPid: window.webContents.mainFrame.osProcessId,
+            chatGone: evidence.chatGone,
+            guestGone: evidence.guestGone,
+            guestDestroyed: guest.isDestroyed(),
+            guestCrashed: !guest.isDestroyed() && guest.isCrashed(),
+          };
+        }),
+        'settled guest',
+      );
+      assert.equal(settled.chatPid, pids.chat);
+      assert.deepEqual(settled.chatGone, []);
+      assert.equal(recovery === 'remove' ? settled.guestDestroyed : settled.guestCrashed, true);
+      const p95 = (values: number[]) =>
+        [...values].sort((left, right) => left - right)[Math.ceil(values.length * 0.95) - 1];
+      console.log(
+        JSON.stringify({
+          webview: {
+            recovery,
+            pids,
+            ...evidence,
+            ...settled,
+            direct,
+            samples: chatLatencies.length,
+            chatMaxMs: Math.max(...chatLatencies),
+            chatP95Ms: p95(chatLatencies),
+            mainMaxMs: Math.max(...mainLatencies),
+            mainP95Ms: p95(mainLatencies),
+            callMs,
+            goneMs,
+            afterMs,
+          },
+        }),
+      );
     });
-    assert.equal(evidence.sent, 200_000);
-    assert.deepEqual(evidence.hostGone, []);
-    assert.equal(evidence.previewCrashed, true);
-    const p95 = (values: number[]) =>
-      [...values].sort((left, right) => left - right)[Math.ceil(values.length * 0.95) - 1];
-    console.log(
-      JSON.stringify({
-        isolatedPreviewHost: {
-          ...evidence,
-          latencies,
-          chatMaxMs: Math.max(...latencies),
-          chatP95Ms: p95(latencies),
-          mainLatencies,
-          mainMaxMs: Math.max(...mainLatencies),
-          mainP95Ms: p95(mainLatencies),
-          afterMs,
-        },
-      }),
-    );
-  });
+  }
 });
 
 test('[C3] frame memory exhaustion preserves the host', async () => {
