@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
@@ -516,8 +524,12 @@ export default function BrowserWorkspace({
                   : undefined,
             }}
           >
-            {/* The activity line's opened steps span this row, the composer's width. */}
-            <div className="relative mx-auto flex max-w-4xl items-center gap-2 [&>*]:pointer-events-auto">
+            {/* The activity line's opened steps span this row, the composer's
+                width, and stay within the room above it. */}
+            <div
+              className="relative mx-auto flex max-w-4xl items-center gap-2 [&>*]:pointer-events-auto"
+              style={{ '--page-room': `${String(roomSize.height)}px` } as CSSProperties}
+            >
               {activity}
               {browser && (
                 <ViewportMenu

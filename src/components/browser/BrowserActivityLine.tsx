@@ -129,7 +129,9 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
               const list = event.currentTarget;
               atBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 8;
             }}
-            className="absolute inset-x-0 bottom-full mb-2 max-h-[min(50vh,420px)] overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid outline-none"
+            // The room above the composer, which a tall draft shrinks.
+            style={{ maxHeight: 'min(420px, calc(var(--page-room, 420px) - 16px))' }}
+            className="absolute inset-x-0 bottom-full mb-2 overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid outline-none"
           >
             {earlier && (
               <p className="mb-2.5 text-[12px] text-droid-text-muted">
