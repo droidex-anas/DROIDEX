@@ -25,7 +25,7 @@ const SOURCE_PATH_MESSAGE =
 const RESERVED_PATH_MESSAGE =
   'A source path cannot use the segment __proto__, constructor or prototype.';
 const PATH_COLLISION_MESSAGE =
-  'Source paths must not repeat, ignoring case and Unicode normalization.';
+  'Source paths and their folders must be distinct, ignoring case and Unicode normalization, and one name cannot be both a file and a folder.';
 const DELETED_AND_WRITTEN_MESSAGE = 'A deleted path cannot also be written in the same change.';
 const FILE_COUNT_MESSAGE = `A design holds at most ${String(CANVAS_LIMITS.maxSourceFilesPerDesign)} source files.`;
 const FILE_BYTES_MESSAGE = `Each source file must stay under ${String(CANVAS_LIMITS.maxFileBytes / 1024)} KiB.`;
@@ -249,8 +249,27 @@ function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
 
+// Folders collide the same way files do: `ui/A.tsx` and `UI/B.tsx` are two
+// paths for one directory on the filesystems Canvas storage sits on, and a name
+// cannot be both a file and a folder. Each folded key must name one entry.
 function hasPathCollision(paths: readonly string[]): boolean {
-  return hasDuplicate(paths.map(collisionKey));
+  if (hasDuplicate(paths.map(collisionKey))) return true;
+  const entries = new Map<string, string>();
+  for (const path of paths) {
+    const segments = path.split('/');
+    let key = '';
+    let entry = '';
+    for (const [index, segment] of segments.entries()) {
+      key = key === '' ? collisionKey(segment) : `${key}/${collisionKey(segment)}`;
+      entry = entry === '' ? segment : `${entry}/${segment}`;
+      const kind = index === segments.length - 1 ? 'file' : 'folder';
+      const named = `${kind} ${entry}`;
+      const existing = entries.get(key);
+      if (existing !== undefined && existing !== named) return true;
+      entries.set(key, named);
+    }
+  }
+  return false;
 }
 
 // Canvas storage sits on a filesystem that compares names without case and

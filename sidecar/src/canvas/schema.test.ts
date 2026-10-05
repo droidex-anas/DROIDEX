@@ -298,6 +298,12 @@ test('write rejects escaping, absolute, backslash and case-colliding paths', () 
     rejection(writeFilesInputSchema, writeWith({ files: { 'main.tsx': 'x', 'MAIN.tsx': 'y' } })),
     /ignoring case/,
   );
+  // Two spellings of one folder address one directory on disk, so the write
+  // has to be refused here rather than failing halfway through the revision.
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'ui/A.tsx': 'x', 'UI/B.tsx': 'y' } })),
+    /folders must be distinct/,
+  );
   assert.match(
     rejection(
       writeFilesInputSchema,
