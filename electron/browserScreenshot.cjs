@@ -27,7 +27,12 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
   // Undefined when the page moved, navigated or changed its fields between
   // the mask and the capture.
   async function attemptShot(dbg, contents, entry, options) {
-    const box = options.ref ? await reading.refBox(dbg, entry, options.ref) : undefined;
+    // A ref is scrolled into view only while the caller still waits.
+    const notLate = () => {
+      if (Date.now() >= options.startBy)
+        throw new Error('The browser page did not finish in time.');
+    };
+    const box = options.ref ? await reading.refBox(dbg, entry, options.ref, notLate) : undefined;
     // CDP redraws the top frame before it copies; a cross-site frame the ref
     // was just scrolled inside has to paint on its own first.
     if (box?.sessionId && !(await framePainted(dbg, box.sessionId)))
