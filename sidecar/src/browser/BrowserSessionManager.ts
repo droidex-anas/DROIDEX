@@ -329,13 +329,17 @@ export class BrowserSessionManager {
     appSessionId: string,
     options: BrowserScreenshotOptions = {},
   ): Promise<BrowserScreenshot & { path: string }> {
-    const shot = await this.requireSession(appSessionId).runtime.screenshot(options);
+    const session = this.requireSession(appSessionId);
+    const shot = await session.runtime.screenshot(options);
+    // A picture of a browser closed or replaced while it was taken is not the page's.
+    this.assertCurrent(session);
     const extension = shot.mimeType === 'image/png' ? 'png' : 'jpg';
     const path = await this.persistImage(
       appSessionId,
       `screenshot-${Date.now().toString(36)}.${extension}`,
       shot.image,
     );
+    this.assertCurrent(session);
     return { ...shot, path };
   }
 
