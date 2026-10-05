@@ -1,19 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { composerSeedFor } from '../lib/composerReset';
-import { initialState, reducer } from './useStore';
+import { initialState, reducer, type AppState } from './useStore';
 
-test('a composer seed records its replace intent and clears once consumed', () => {
+const seedsFor = (state: AppState, appSessionId: string | null) =>
+  state.composerSeeds.filter((seed) => seed.appSessionId === appSessionId).map((s) => s.text);
+
+test('a composer seed records its intent and clears once consumed', () => {
   const seeded = reducer(initialState, { type: 'SEED_COMPOSER', text: 'Build a dashboard' });
-  assert.equal(seeded.composerSeed?.text, 'Build a dashboard');
-  assert.equal(seeded.composerSeed?.replace, false);
+  const seed = seeded.composerSeeds[0];
+  assert.ok(seed);
+  assert.equal(seed.text, 'Build a dashboard');
+  assert.equal(seed.replace, false);
+  assert.equal(seed.focus, true);
 
-  const consumed = reducer(seeded, { type: 'CLEAR_COMPOSER_SEED' });
-  assert.equal(consumed.composerSeed, null);
+  const consumed = reducer(seeded, { type: 'CONSUME_COMPOSER_SEED', id: seed.id });
+  assert.deepEqual(consumed.composerSeeds, []);
 
-  // Clearing with nothing pending is a no-op, so repeat consumption is safe.
-  const again = reducer(consumed, { type: 'CLEAR_COMPOSER_SEED' });
-  assert.equal(again.composerSeed, null);
+  // Consuming it again is a no-op, so repeat consumption is safe.
+  assert.equal(reducer(consumed, { type: 'CONSUME_COMPOSER_SEED', id: seed.id }), consumed);
 
   // A fresh-chat seed records replacement intent.
   const replacing = reducer(initialState, {
@@ -21,7 +25,7 @@ test('a composer seed records its replace intent and clears once consumed', () =
     text: '/review Pull request #129',
     replace: true,
   });
-  assert.equal(replacing.composerSeed?.replace, true);
+  assert.equal(replacing.composerSeeds[0]?.replace, true);
 
   // The browser's prompt box sends its seed at once and leaves the focus alone.
   const sending = reducer(initialState, {
@@ -30,30 +34,41 @@ test('a composer seed records its replace intent and clears once consumed', () =
     send: true,
     focus: false,
   });
-  assert.equal(sending.composerSeed?.send, true);
-  assert.equal(sending.composerSeed?.focus, false);
-  assert.equal(seeded.composerSeed?.focus, true);
+  assert.equal(sending.composerSeeds[0]?.send, true);
+  assert.equal(sending.composerSeeds[0]?.focus, false);
 });
 
-test('a seed for a chat reaches only that chat, and a send leaves its child', () => {
-  const state = {
-    ...initialState,
-    activeAppSessionId: 'other',
-    selectedChild: { parentAppSessionId: 'owner', childSessionId: 'child' },
-  };
-  const sent = reducer(state, {
+test('each seed is bound to its chat as it arrives and waits there in order', () => {
+  let state: AppState = { ...initialState, activeAppSessionId: 'a' };
+  state = reducer(state, { type: 'SEED_COMPOSER', text: 'first note' });
+  state = reducer(state, { type: 'SEED_COMPOSER', text: 'second note' });
+  state = reducer(state, { type: 'SEED_COMPOSER', appSessionId: 'owner', text: 'kept prompt' });
+  // Focusing another chat does not move the notes already bound to 'a'.
+  state = { ...state, activeAppSessionId: 'b' };
+  state = reducer(state, { type: 'SEED_COMPOSER', text: 'note for b' });
+
+  assert.deepEqual(seedsFor(state, 'a'), ['first note', 'second note']);
+  assert.deepEqual(seedsFor(state, 'owner'), ['kept prompt']);
+  assert.deepEqual(seedsFor(state, 'b'), ['note for b']);
+});
+
+test('a sent seed goes to its chat, leaving a child picked while it waited', () => {
+  let state: AppState = { ...initialState, activeAppSessionId: 'other' };
+  state = reducer(state, {
     type: 'SEED_COMPOSER',
     appSessionId: 'owner',
     text: 'make this bolder',
     send: true,
   });
-  assert.equal(composerSeedFor(sent.composerSeed, 'owner', 'other'), sent.composerSeed);
-  assert.equal(composerSeedFor(sent.composerSeed, 'other', 'other'), null);
+  state = { ...state, selectedChild: { parentAppSessionId: 'owner', childSessionId: 'child' } };
+  const sent = reducer(state, {
+    type: 'CONSUME_COMPOSER_SEED',
+    id: state.composerSeeds[0]?.id ?? -1,
+  });
   assert.equal(sent.selectedChild, null);
 
-  // An unscoped seed still goes to the focused tile.
-  const note = reducer(state, { type: 'SEED_COMPOSER', text: 'a note' });
-  assert.equal(composerSeedFor(note.composerSeed, 'other', 'other'), note.composerSeed);
-  assert.equal(composerSeedFor(note.composerSeed, 'owner', 'other'), null);
-  assert.equal(note.selectedChild, state.selectedChild);
+  // A note leaves the child where it is.
+  let noted = reducer(state, { type: 'SEED_COMPOSER', appSessionId: 'owner', text: 'a note' });
+  noted = reducer(noted, { type: 'CONSUME_COMPOSER_SEED', id: noted.composerSeeds[1]?.id ?? -1 });
+  assert.equal(noted.selectedChild, state.selectedChild);
 });

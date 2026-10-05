@@ -3,30 +3,22 @@
 // than a timestamp.
 let seedSequence = 0;
 
-// A seed from the browser's prompt box belongs to the chat that owns the
-// browser, leaves the focus where it is, and one it sends goes out as that
-// composer's own prompt.
+export type ComposerSeed = ReturnType<typeof createComposerSeed>;
+
+// A seed goes to the composer of its chat (null for the new-chat draft). One
+// from the browser's prompt box leaves the focus where it is, and one it sends
+// goes out as that composer's own prompt.
 export function createComposerSeed(
   text: string,
   replace = false,
   {
-    appSessionId,
+    appSessionId = null,
     send = false,
     focus = true,
-  }: { appSessionId?: string; send?: boolean; focus?: boolean } = {},
+  }: { appSessionId?: string | null; send?: boolean; focus?: boolean } = {},
 ) {
   seedSequence += 1;
   return { text, id: seedSequence, replace, appSessionId, send, focus };
-}
-
-// A seed for one chat goes to that chat's composer; any other seed goes to the
-// focused tile's.
-export function composerSeedFor<Seed extends { appSessionId?: string }>(
-  seed: Seed | null,
-  appSessionId: string | null,
-  activeAppSessionId: string | null,
-): Seed | null {
-  return seed && (seed.appSessionId ?? activeAppSessionId) === appSessionId ? seed : null;
 }
 
 /**

@@ -151,7 +151,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { createSnapshotScheduler, loadSessionSnapshot } from '../lib/sessionSnapshot';
-import { createComposerSeed } from '../lib/composerReset';
+import { createComposerSeed, type ComposerSeed } from '../lib/composerReset';
 import { toast } from '../lib/toast';
 import { type DiffScope } from '../types/vcs';
 import {
@@ -395,9 +395,10 @@ export interface AppState {
   pendingAutonomy: Record<string, Autonomy>;
   // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
-  // One-shot text seeded into the composer (welcome-screen suggestion cards,
-  // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
-  composerSeed: ReturnType<typeof createComposerSeed> | null;
+  // One-shot text seeded into a composer (welcome-screen suggestion cards,
+  // saved-note clicks, the browser's prompt box), in arrival order. Each seed
+  // belongs to one chat and waits until that chat's composer takes it.
+  composerSeeds: ComposerSeed[];
   workspaceCwds: string[];
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
@@ -726,7 +727,7 @@ export type Action =
       send?: boolean;
       focus?: boolean;
     }
-  | { type: 'CLEAR_COMPOSER_SEED' }
+  | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
   | { type: 'SESSION_NOTE_MARK_USED'; appSessionId: string; noteId: string }
   | { type: 'SESSION_NOTE_REMOVE'; appSessionId: string; noteId: string }
@@ -886,7 +887,7 @@ export const initialState: AppState = {
   draftContextWindowTokens: null,
   pendingAutonomy: {},
   pendingModelUpdates: {},
-  composerSeed: null,
+  composerSeeds: [],
   workspaceCwds: loadWorkspaceCwds(),
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
@@ -2344,26 +2345,28 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
+    // A seed belongs to its chat from the moment it arrives: the one named, or
+    // else the chat focused now.
     case 'SEED_COMPOSER': {
-      const composerSeed = createComposerSeed(action.text, action.replace, {
-        appSessionId: action.appSessionId,
+      const seed = createComposerSeed(action.text, action.replace, {
+        appSessionId: action.appSessionId ?? state.activeAppSessionId,
         send: action.send,
         focus: action.focus,
       });
-      // A prompt sent with a chat's marks goes to that chat, never to a child
-      // open in it, which would get the text without the marks.
-      const next =
-        action.send &&
-        action.appSessionId &&
-        state.selectedChild?.parentAppSessionId === action.appSessionId
-          ? reduceSelectChild(state, { selection: null })
-          : state;
-      return { ...next, composerSeed };
+      return { ...state, composerSeeds: [...state.composerSeeds, seed] };
     }
-    // The composer consumes the seed once; it must not linger, or remounting
+    // The composer consumes each seed once; it must not linger, or remounting
     // the composer (e.g. toggling Mission Control) would re-apply stale text.
-    case 'CLEAR_COMPOSER_SEED':
-      return { ...state, composerSeed: null };
+    case 'CONSUME_COMPOSER_SEED': {
+      const seed = state.composerSeeds.find((pending) => pending.id === action.id);
+      if (!seed) return state;
+      const next = { ...state, composerSeeds: state.composerSeeds.filter((s) => s !== seed) };
+      // A prompt sent with a chat's marks goes out as it is consumed, to that
+      // chat and never to a child open in it, which would get it without them.
+      return seed.send && state.selectedChild?.parentAppSessionId === seed.appSessionId
+        ? reduceSelectChild(next, { selection: null })
+        : next;
+    }
 
     case 'SESSION_NOTE_ADD': {
       const sessionNotes = addSessionNote(state.sessionNotes, action.appSessionId, action.text);
