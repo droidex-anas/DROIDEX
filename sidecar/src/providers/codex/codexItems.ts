@@ -4,6 +4,7 @@
 import { objectValue } from '../../values.js';
 import { reasoningValue } from '../../modelCatalog.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
+import { toolResultParts, type ToolResultParts } from '../../toolResultImages.js';
 import { generatedImage, type GeneratedImage } from './codexImages.js';
 
 // The tool name the transcript renders as an image card. Shared with the
@@ -44,7 +45,7 @@ export type ThreadItem =
       tool: string;
       status: string;
       arguments: unknown;
-      contentItems: { type: string; text?: string }[] | null;
+      contentItems: { type: string; text?: string; imageUrl?: string }[] | null;
       success: boolean | null;
     }
   | ({ type: 'imageGeneration'; status: string; revisedPrompt?: string | null } & GeneratedImage)
@@ -99,7 +100,9 @@ function isDynamicToolCall(item: Extract<ThreadItem, { type: 'dynamicToolCall' }
     (item.contentItems === null ||
       (Array.isArray(item.contentItems) &&
         item.contentItems.every(
-          (content) => content.type === 'inputText' && typeof content.text === 'string',
+          (content) =>
+            (content.type === 'inputText' && typeof content.text === 'string') ||
+            (content.type === 'inputImage' && typeof content.imageUrl === 'string'),
         ))) &&
     (item.success === null || typeof item.success === 'boolean')
   );
@@ -238,7 +241,20 @@ function describeCall(item: ThreadItem): Omit<ToolCall, 'interrupted'> | undefin
   return undefined;
 }
 
-export function toolOutput(item: ThreadItem, streamed: string, appSessionId: string): string {
+// What a finished tool shows: its text, and the pictures an MCP or app tool
+// answered with.
+export function toolOutput(
+  item: ThreadItem,
+  streamed: string,
+  appSessionId: string,
+): ToolResultParts {
+  if (item.type === 'mcpToolCall')
+    return item.error ? { text: item.error.message } : toolResultParts(item.result?.content ?? []);
+  if (item.type === 'dynamicToolCall') return toolResultParts(item.contentItems ?? []);
+  return { text: toolText(item, streamed, appSessionId) };
+}
+
+function toolText(item: ThreadItem, streamed: string, appSessionId: string): string {
   if (item.type === 'commandExecution') return item.aggregatedOutput ?? streamed;
   // The path of the saved image, which is what the card renders; anything else
   // is the line shown in its place.
@@ -248,9 +264,6 @@ export function toolOutput(item: ThreadItem, streamed: string, appSessionId: str
     if (item.status === 'failed') return 'Subagent spawn failed.';
     return item.status === 'interrupted' ? 'The turn was stopped before the agent started.' : '';
   }
-  if (item.type === 'mcpToolCall')
-    return item.error ? item.error.message : mcpContent(item.result?.content ?? []);
-  if (item.type === 'dynamicToolCall') return mcpContent(item.contentItems ?? []);
   return streamed;
 }
 
@@ -270,15 +283,6 @@ export function changesDiff(changes: FileUpdateChange[]): string {
       const count = String(lines.length);
       const hunk = added ? `@@ -0,0 +1,${count} @@` : `@@ -1,${count} +0,0 @@`;
       return [hunk, ...lines.map((line) => (added ? '+' : '-') + line)].join('\n');
-    })
-    .join('\n');
-}
-
-function mcpContent(content: unknown[]): string {
-  return content
-    .map((block) => {
-      const text = (block as { text?: string }).text;
-      return typeof text === 'string' ? text : JSON.stringify(block);
     })
     .join('\n');
 }
