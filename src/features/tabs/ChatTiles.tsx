@@ -148,8 +148,8 @@ export function ChatTiles({
   const areaRef = useRef<HTMLDivElement>(null);
   const [resize, setResize] = useState<Resize | null>(null);
   const live = liveGrid(source.grid, source.activeAppSessionId);
-  // A tile closing or a tab switch mid-drag unmounts the divider before the
-  // release that would commit or clear its preview.
+  // A drag belongs to one layout: a tile closing or a tab switch mid-drag
+  // drops the preview and remounts the dividers, so the release commits nothing.
   const layout = layoutKey(source.tabId, live);
   const [resizeLayout, setResizeLayout] = useState(layout);
   if (layout !== resizeLayout) {
@@ -276,6 +276,7 @@ export function ChatTiles({
       })}
       {grid.columns.length > 1 && (
         <TileDivider
+          key={layout}
           orientation="vertical"
           split={grid.columnSplit}
           label="Resize columns"
@@ -300,7 +301,7 @@ export function ChatTiles({
           const { columnIndex } = box;
           return (
             <TileDivider
-              key={box.tile.id}
+              key={`${layout}/${box.tile.id}`}
               orientation="horizontal"
               split={grid.columns[columnIndex].rowSplit}
               label="Resize tiles"
