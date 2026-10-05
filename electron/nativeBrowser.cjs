@@ -199,7 +199,8 @@ function createNativeBrowserManager(options) {
     contents.reload();
   }
 
-  async function navigateNativeBrowserHistory(browserSessionId, direction) {
+  // `before` runs right before the page moves.
+  async function navigateNativeBrowserHistory(browserSessionId, direction, before) {
     const entry = await requireLoadedGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
@@ -207,9 +208,11 @@ function createNativeBrowserManager(options) {
     if (!history) return false;
     if (direction === 'back') {
       if (!history.canGoBack()) return false;
+      before?.();
       history.goBack();
     } else {
       if (!history.canGoForward()) return false;
+      before?.();
       history.goForward();
     }
     return true;
@@ -336,8 +339,10 @@ function createNativeBrowserManager(options) {
     reloadFocused: reloadFocusedNativeBrowser,
     waitForPage: waitForGuest,
     nextLoad: nextNativeBrowserLoad,
-    goBack: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'back'),
-    goForward: (browserSessionId) => navigateNativeBrowserHistory(browserSessionId, 'forward'),
+    goBack: (browserSessionId, before) =>
+      navigateNativeBrowserHistory(browserSessionId, 'back', before),
+    goForward: (browserSessionId, before) =>
+      navigateNativeBrowserHistory(browserSessionId, 'forward', before),
     setDesignMode: page.setDesignMode,
     setPencilMode: page.setPencilMode,
     runAgentAction: page.runAgentAction,

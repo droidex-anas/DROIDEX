@@ -19,6 +19,7 @@ import type {
   BrowserTarget,
   BrowserViewport,
   BrowserViewportMode,
+  BrowserWaitCondition,
   DesignAnchor,
   DesignAnchorDetail,
   DesignReference,
@@ -49,7 +50,6 @@ export interface BrowserRuntime {
   setViewport(viewport: BrowserViewport): Promise<void>;
   screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
   capture(box?: BrowserBox): Promise<string>;
-  snapshot(): Promise<BrowserSnapshot>;
   readPage(options?: BrowserReadOptions): Promise<string>;
   readText(maxChars?: number): Promise<string>;
   find(query: string): Promise<{ text: string; matches: number }>;
@@ -64,6 +64,7 @@ export interface BrowserRuntime {
     target: BrowserTarget,
   ): Promise<BrowserActionResult>;
   inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
+  wait(condition: BrowserWaitCondition): Promise<BrowserActionResult>;
   network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
   console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
   fillCredentials?(): Promise<BrowserActionResult>;
@@ -190,46 +191,11 @@ export class BrowserSessionManager {
     return (await this.requireSession(appSessionId).runtime.find(query)).text;
   }
 
-  async wait(
-    appSessionId: string,
-    input: { text?: string; ref?: string; urlIncludes?: string; timeoutMs?: number },
-  ): Promise<BrowserState> {
-    const timeoutMs = Math.min(15_000, Math.max(0, input.timeoutMs ?? 5_000));
-    const deadline = Date.now() + timeoutMs;
+  // Checked in the desktop app, where the page is, until it holds or the
+  // wait runs out.
+  async wait(appSessionId: string, condition: BrowserWaitCondition): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    // The wait belongs to the browser it started on; once that one closes,
-    // nothing it reads is reported or shown.
-    const stillOpen = () => {
-      if (this.resolveSession(appSessionId) !== session)
-        throw new Error('The browser was closed while waiting.');
-    };
-    const refresh = async () => {
-      stillOpen();
-      const state = await this.captureState(session);
-      stillOpen();
-      session.state = state;
-      this.emitUpdated(state);
-      return state;
-    };
-    if (!input.text && !input.ref && !input.urlIncludes) {
-      await delay(timeoutMs);
-      return refresh();
-    }
-    const matches = async () => {
-      const state = await refresh();
-      if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
-      if (input.text && (await session.runtime.find(input.text)).matches === 0) return false;
-      stillOpen();
-      if (input.ref && !(await refIsOnPage(session.runtime, input.ref))) return false;
-      stillOpen();
-      return true;
-    };
-    while (!(await matches())) {
-      if (Date.now() >= deadline) throw new Error('Timed out waiting for the browser condition.');
-      await delay(Math.min(200, Math.max(0, deadline - Date.now())));
-    }
-    stillOpen();
-    return session.state;
+    return this.applied(session, await session.runtime.wait(condition));
   }
 
   async type(
@@ -455,14 +421,6 @@ export class BrowserSessionManager {
     };
   }
 
-  private async captureState(session: ManagedBrowserSession): Promise<BrowserState> {
-    const snapshot = await session.runtime.snapshot();
-    return {
-      ...session.state,
-      ...snapshot,
-    };
-  }
-
   // An answer for a browser that was closed, or replaced, while it ran is
   // never shown: it would bring back the closed one's state.
   private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
@@ -518,15 +476,4 @@ function targetFrom(input: { ref?: string; x?: number; y?: number }): BrowserTar
   if (input.x === undefined || input.y === undefined)
     throw new Error('Browser interaction requires either a ref or x/y coordinates.');
   return { x: input.x, y: input.y };
-}
-
-async function refIsOnPage(runtime: BrowserRuntime, ref: string): Promise<boolean> {
-  return runtime.readPage({ ref, maxChars: 500 }).then(
-    () => true,
-    () => false,
-  );
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

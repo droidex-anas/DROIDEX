@@ -5,19 +5,11 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const {
-  send,
-  frameHolds,
-  focusedFrame,
-  frameStep,
-  documentFrames,
-} = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
-const { refFor } = require('./browserRefs.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
 const { observeNavigation, isNavigationError } = require('./browserNavigation.cjs');
-const { labelOf } = require('./browserText.cjs');
-const { isField } = require('./browserMasking.cjs');
+const { createBrowserCover } = require('./browserCover.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const NAVIGATION_GRACE_MS = 150;
@@ -34,6 +26,8 @@ function createBrowserActions({
   unthrottled,
   redactUrl,
 }) {
+  const { refuseCovered } = createBrowserCover({ reading });
+
   async function act(contents, entry, request) {
     if (request.action === 'snapshot') return result(request, contents, entry, Date.now());
     if (request.action === 'inspect') return inspect(contents, entry, request);
@@ -42,7 +36,7 @@ function createBrowserActions({
     const navigation = observeNavigation(contents);
     try {
       return await unthrottled(contents, async () => {
-        const step = { navigation, sent: false };
+        const step = { navigation, sent: false, startBy: request.startBy };
         // The action's own input ends before it reports, even when a navigation
         // settles first, so nothing of it lands under the next one.
         let failure;
@@ -79,19 +73,24 @@ function createBrowserActions({
         return press(contents, request, step);
       case 'fill':
         if (!request.ref) throw new Error('Filling a field needs its ref from browser_read_page.');
-        return reading.callOnRef(contents, entry, request.ref, [request.value], FILL, () =>
-          startInput(step),
+        return reading.callOnRef(
+          contents,
+          entry,
+          request.ref,
+          [request.value, step.startBy],
+          FILL,
+          () => startInput(step),
         );
       case 'fillCredentials':
         startInput(step);
-        return credentials.fillForAgent(contents);
+        return credentials.fillForAgent(contents, step.startBy);
       default:
         throw new Error(`Unsupported browser action: ${request.action}`);
     }
   }
 
   async function pointer(contents, entry, request, step) {
-    const target = await targetOf(contents, entry, request);
+    const target = await targetOf(contents, entry, request, step);
     const { x, y } = target;
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
@@ -104,7 +103,7 @@ function createBrowserActions({
       // is the last.
       if (clickCount > 1 && step.navigation.started()) return;
       if (request.ref) {
-        const now = await reading.pointForRef(contents, entry, request.ref);
+        const now = await reading.pointForRef(contents, entry, request.ref, () => notLate(step));
         if (Math.abs(now.x - x) > 1 || Math.abs(now.y - y) > 1)
           throw new Error(`${request.ref} moved when the pointer reached it; try again.`);
         await refuseCovered(contents, entry, request.ref, now);
@@ -121,14 +120,13 @@ function createBrowserActions({
   // given point; a ref with no direction is only brought into view.
   async function scroll(contents, entry, request, step) {
     if (request.ref && !request.direction) {
-      startInput(step);
-      await reading.pointForRef(contents, entry, request.ref);
+      await reading.pointForRef(contents, entry, request.ref, () => startInput(step));
       return;
     }
     // No cover check: the wheel scrolls whatever is under the point.
     const target = request.ref
-      ? await reading.pointForRef(contents, entry, request.ref)
-      : await targetOf(contents, entry, request);
+      ? await reading.pointForRef(contents, entry, request.ref, () => notLate(step))
+      : await targetOf(contents, entry, request, step);
     const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
     const sign = request.direction === 'up' || request.direction === 'left' ? -1 : 1;
     const horizontal = request.direction === 'left' || request.direction === 'right';
@@ -185,10 +183,12 @@ function createBrowserActions({
         ({ document } = target);
         refNode = target.backendNodeId;
         sessionId = target.frame.sessionId;
+        // Only the deadline: nothing counts as typed until text or Enter goes out.
+        notLate(step);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
         ({ takesText } = await keepsFocus(dbg, sessionId, document));
-        if (!(await reading.hasFocus(dbg, sessionId, target.backendNodeId)))
+        if (!(await hasFocus(dbg, sessionId, target.backendNodeId)))
           throw new Error(`${request.ref} did not keep the focus; read the page again.`);
       } else {
         ({ sessionId, document, takesText } = await focusedFrame(dbg));
@@ -200,14 +200,14 @@ function createBrowserActions({
             ? `${request.ref} does not take typed text; use browser_fill or browser_click.`
             : 'Nothing that takes typed text has the focus; pass the ref of a field.',
         );
-      const stillOn = holdsKey(dbg, step, sessionId, document);
+      const stillOn = onSamePage(dbg, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, sessionId, document);
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
       if (request.submit) {
         await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
-        if (request.ref && !(await reading.hasFocus(dbg, sessionId, refNode)))
+        if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
         // The page check comes last, right before the key.
         await inputReady(dbg, step, sessionId, document);
@@ -221,7 +221,7 @@ function createBrowserActions({
     const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(request.repeat) || 1)));
     await runWithWebContentsDebugger(contents, async (dbg) => {
       const { sessionId, document } = await focusedFrame(dbg);
-      const stillOn = holdsKey(dbg, step, sessionId, document);
+      const stillOn = onSamePage(dbg, sessionId, document);
       for (let i = 0; i < repeat; i++) {
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
@@ -233,124 +233,62 @@ function createBrowserActions({
 
   // A ref becomes the point at its middle, scrolled into view, and is refused
   // when something else would receive input there.
-  async function targetOf(contents, entry, request) {
+  async function targetOf(contents, entry, request, step) {
     if (!request.ref) {
       const x = Math.round(Number(request.x));
       const y = Math.round(Number(request.y));
       if (!Number.isFinite(x) || !Number.isFinite(y))
         throw new Error('Pass a ref from browser_read_page, or viewport x and y.');
-      return { x, y };
+      // A point is on the top document, which its input then has to stay on.
+      const document = await reading.withPage(
+        contents,
+        async (dbg) => (await dbg.sendCommand('Page.getFrameTree')).frameTree.frame.loaderId,
+      );
+      return { x, y, document };
     }
-    const target = await reading.pointForRef(contents, entry, request.ref);
+    const target = await reading.pointForRef(contents, entry, request.ref, () => notLate(step));
     await refuseCovered(contents, entry, request.ref, target);
     return target;
-  }
-
-  async function refuseCovered(contents, entry, ref, point) {
-    const cover = await coverOf(contents, entry, ref, point);
-    if (cover) throw new Error(`${ref} is covered by ${cover} there; deal with it first.`);
-  }
-
-  // What would receive input at a ref's point instead of the ref's element,
-  // described with a ref of its own; nothing when the ref would. The point is
-  // checked in the ref's own frame, then, for a ref in a cross-site frame, in
-  // each frame outside it, where the iframe it sits in must take the input.
-  function coverOf(contents, entry, ref, point) {
-    return reading.withPage(contents, async (dbg) => {
-      const target = await reading.lookupRef(dbg, entry, ref);
-      let { sessionId } = target.frame;
-      let at = [point.local.x, point.local.y];
-      const hit = await hitAt(dbg, sessionId, at);
-      if (
-        hit &&
-        !(
-          hit.frameId === target.frame.id &&
-          (await holds(dbg, sessionId, target.backendNodeId, hit))
-        )
-      )
-        return describeCover(dbg, sessionId, entry, hit);
-      while (sessionId) {
-        const { parent, owner, toParent } = await frameStep(dbg, sessionId);
-        at = toParent(at);
-        const outer = await hitAt(dbg, parent, at);
-        if (outer && outer.backendNodeId !== owner) return describeCover(dbg, parent, entry, outer);
-        sessionId = parent;
-      }
-      return undefined;
-    });
-  }
-
-  // The node that takes input at [x, y] in a frame's own viewport; the hit
-  // test takes that frame's page coordinates.
-  async function hitAt(dbg, sessionId, [x, y]) {
-    const { cssLayoutViewport: view } = await send(dbg, sessionId, 'Page.getLayoutMetrics');
-    return send(dbg, sessionId, 'DOM.getNodeForLocation', {
-      x: Math.round(x + view.pageX),
-      y: Math.round(y + view.pageY),
-      includeUserAgentShadowDOM: false,
-    }).catch((error) => {
-      // Nothing is drawn there; any other failure leaves the point unchecked.
-      if (/no node found/i.test(String(error?.message))) return undefined;
-      throw error;
-    });
-  }
-
-  async function holds(dbg, sessionId, backendNodeId, hit) {
-    const [{ object: ref }, { object: other }] = await Promise.all([
-      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId }),
-      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }),
-    ]);
-    try {
-      const { result: held } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: ref.objectId,
-        functionDeclaration: CONTAINS,
-        arguments: [{ objectId: other.objectId }],
-        returnByValue: true,
-      });
-      return held.value === true;
-    } finally {
-      for (const { objectId } of [ref, other])
-        await send(dbg, sessionId, 'Runtime.releaseObject', { objectId }).catch(() => undefined);
-    }
-  }
-
-  async function describeCover(dbg, sessionId, entry, hit) {
-    const { nodes } = await send(dbg, sessionId, 'Accessibility.getPartialAXTree', {
-      backendNodeId: hit.backendNodeId,
-      fetchRelatives: false,
-    }).catch(() => ({ nodes: [] }));
-    const node = nodes.find((candidate) => !candidate.ignored);
-    // Only a label the page gave it, and never a field's: a name built from
-    // content, or a field's own, can hold what a masked field holds.
-    const name = node && !isField(node) ? labelOf(node).slice(0, 80) : '';
-    // An element the accessibility tree ignores is named by its tag.
-    const role =
-      node?.role?.value && (name || !['none', 'generic'].includes(node.role.value))
-        ? node.role.value
-        : `<${(await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId: hit.backendNodeId })).node.localName}>`;
-    const frame = (await documentFrames(dbg)).find((candidate) => candidate.id === hit.frameId);
-    const ref = frame ? ` (${refFor(entry, frame.loaderId, hit.backendNodeId)})` : '';
-    return `${role}${name ? ` "${name}"` : ''}${ref}`;
   }
 
   // Before each event, inside the debugger queue, a new page or a replaced
   // ref document stops the gesture.
   function dispatchMouse(contents, step, target, events) {
     return runWithWebContentsDebugger(contents, async (dbg) => {
+      const stillOn = onSamePage(dbg, target.sessionId, target.document);
       for (const event of events) {
+        // A press that went out is always released, on the page that took it.
+        if (event.type === 'mouseReleased') {
+          if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
+          continue;
+        }
         await inputReady(dbg, step, target.sessionId, target.document);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
     });
   }
 
-  // A key is released only on the page that took it.
-  function holdsKey(dbg, step, sessionId, document) {
-    return async () => {
-      if (document && !(await frameHolds(dbg, sessionId, document))) return false;
-      // Asked after the await: a navigation can start while it is pending.
-      return !step.navigation.started();
-    };
+  // Whether the page that took a press is still there, so the press can be
+  // released: its document, which a navigation that aborts leaves in place.
+  function onSamePage(dbg, sessionId, document) {
+    return async () => !document || (await frameHolds(dbg, sessionId, document));
+  }
+
+  // Whether a node is what its own document or shadow root has focused.
+  async function hasFocus(dbg, sessionId, backendNodeId) {
+    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
+    try {
+      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+        objectId: object.objectId,
+        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
+        returnByValue: true,
+      });
+      return result?.value === true;
+    } finally {
+      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
+        () => undefined,
+      );
+    }
   }
 
   // Keys go on only while the frame they were aimed at still has the focus.
@@ -430,22 +368,37 @@ function createBrowserActions({
   return { act, pageSnapshot };
 }
 
-// Called right before an action changes the page.
+// Called right before an action changes the page. No input goes out once
+// its caller has given up.
 function startInput(step) {
   if (step.navigation.started()) throw new Error(PAGE_CHANGED);
+  notLate(step);
   step.sent = true;
+}
+
+// Nothing more is done to the page once the caller has given up.
+function notLate(step) {
+  if (Date.now() >= step.startBy) throw new Error('The browser page did not finish in time.');
 }
 
 // Run on the ref's own element. A value goes through the element's own
 // setter and the input and change events, so frameworks that track it (React
 // and others) see the change; a checkbox or radio is clicked when it needs to
 // change. Nothing is read back, so a masked field stays unread.
-const FILL = `function (value) {
-  // A focus handler can swap the field for another; nothing is written then.
+const FILL = `function (value, startBy) {
+  // The page can run this late, and its focus handlers can take their time;
+  // nothing changes once the caller has given up, or once a focus handler has
+  // swapped the field for another.
+  const inTime = () => {
+    if (startBy && Date.now() >= startBy) throw new Error('The browser page did not finish in time.');
+  };
   const focus = () => {
+    inTime();
     this.focus();
+    inTime();
     if (!this.isConnected) throw new Error('the field was replaced when it took the focus; read the page again');
   };
+  inTime();
   if (this instanceof HTMLSelectElement) {
     const wanted = String(value);
     const options = [...this.options];
@@ -482,13 +435,6 @@ const SCROLLED = `(x, y) => {
   for (let node = document.elementFromPoint(x, y); node; node = node.parentElement)
     offsets.push(node.scrollLeft, node.scrollTop);
   return offsets.join();
-}`;
-
-// Run on a ref's element: whether a hit node is that element or inside it,
-// shadow roots included.
-const CONTAINS = `function (other) {
-  for (let node = other; node; node = node.parentNode || node.host) if (node === this) return true;
-  return false;
 }`;
 
 module.exports = { createBrowserActions };
