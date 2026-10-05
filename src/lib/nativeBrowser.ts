@@ -47,6 +47,7 @@ export interface DesignOverlayTheme {
   text: string;
   muted: string;
   border: string;
+  shadow: string;
   font: string;
 }
 

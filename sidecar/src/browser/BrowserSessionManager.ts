@@ -7,7 +7,6 @@ import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.j
 import type { BrowserColorScheme, ClientCommand } from '../protocol.js';
 import type {
   BrowserActionResult,
-  BrowserBox,
   BrowserClickOptions,
   BrowserConsoleEvent,
   BrowserElementInspection,
@@ -50,7 +49,6 @@ export interface BrowserRuntime {
   setViewport(viewport: BrowserViewport, mode: BrowserViewportMode): Promise<void>;
   setColorScheme(colorScheme: BrowserColorScheme): Promise<void>;
   screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
-  capture(box?: BrowserBox): Promise<string>;
   readPage(options?: BrowserReadOptions): Promise<string>;
   readText(maxChars?: number): Promise<string>;
   find(query: string): Promise<{ text: string; matches: number }>;
@@ -355,9 +353,14 @@ export class BrowserSessionManager {
     const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
     const anchor: DesignAnchor = { ...input.anchor, id };
     const detail = input.detail ? { ...input.detail, id } : undefined;
-    if (!anchor.screenshotPath) {
-      const crop = await this.captureAnchorImage(session, anchor.box).catch(() => undefined);
-      if (crop) anchor.screenshotPath = crop;
+    // The crop the app took, with sensitive fields painted over, is the one
+    // saved; a pick the app could not crop safely has none.
+    if (screenshot && !anchor.screenshotPath) {
+      anchor.screenshotPath = await this.persistImage(
+        appSessionId,
+        `anchor-${Date.now().toString(36)}.png`,
+        screenshot.base64,
+      ).catch(() => undefined);
     }
     const next: DesignReference = {
       id,
@@ -381,18 +384,25 @@ export class BrowserSessionManager {
   async designPrompt(input: {
     appSessionId: string;
     instruction: string;
-    referenceIds: string[];
+    references: Extract<ClientCommand, { type: 'browser.design.sendPrompt' }>['references'];
   }): Promise<{ path: string; prompt: string }> {
     const session = this.requireSession(input.appSessionId);
     const instruction = input.instruction.trim();
     if (!instruction) throw new Error('Browser prompt cannot be empty.');
-    const references = input.referenceIds
-      .map((id) => session.references.get(id))
-      .filter((ref): ref is DesignReference => Boolean(ref));
-    if (references.length === 0)
+    if (input.references.length === 0)
       throw new Error(
         'Select or sketch at least one browser reference before sending a Design Mode prompt.',
       );
+    // Every pick has its own id, so one already here is the same snapshot. One
+    // that has not arrived yet, or was lost with a restart, comes with the
+    // prompt and is added from it.
+    const references: DesignReference[] = [];
+    for (const reference of input.references)
+      references.push(
+        session.references.get(reference.id) ??
+          (await this.addReference(input.appSessionId, reference, reference.screenshot)),
+      );
+    this.assertCurrent(session);
     const { path } = await (this.options.writePack ?? writeDesignPromptPack)({
       appSessionId: input.appSessionId,
       browserSessionId: session.id,
@@ -525,20 +535,6 @@ export class BrowserSessionManager {
   private assertCurrent(session: ManagedBrowserSession): void {
     if (this.resolveSession(session.appSessionId) !== session)
       throw new Error('The browser was closed while the action ran.');
-  }
-
-  private async captureAnchorImage(
-    session: ManagedBrowserSession,
-    box?: BrowserBox,
-  ): Promise<string | undefined> {
-    const base64 = await session.runtime.capture(box);
-    if (!base64) return undefined;
-    const tag = box ? `${box.x}-${box.y}-${box.width}-${box.height}` : 'view';
-    return this.persistImage(
-      session.appSessionId,
-      `anchor-${tag}-${Date.now().toString(36)}.png`,
-      base64,
-    );
   }
 
   private async persistImage(appSessionId: string, name: string, base64: string): Promise<string> {

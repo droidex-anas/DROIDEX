@@ -420,7 +420,6 @@ function createNativeBrowserManager(options) {
       const contents = liveContents(entry);
       if (contents) page.abandonOperations(contents);
     },
-    capture: page.capture,
     watch: (browserSessionId, watching) =>
       preview.watch(urls.normalizeNativeBrowserSessionId(browserSessionId), Boolean(watching)),
     forgetWatchers: preview.forget,

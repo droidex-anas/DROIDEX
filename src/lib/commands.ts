@@ -494,16 +494,22 @@ export const addDesignReference = (appSessionId: string, reference: DesignRefere
   bridge.send({ type: 'browser.design.addReference', appSessionId, reference });
 };
 
+/** Sends a prompt with its marks, as sendToSession sends any other. */
 export const sendDesignPrompt = (
   appSessionId: string,
   instruction: string,
-  referenceIds: string[],
+  references: DesignReference[],
+  responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
+  requireAgentWorkAvailable();
   bridge.send({
     type: 'browser.design.sendPrompt',
     appSessionId,
     instruction,
-    referenceIds,
+    references,
+    ...(mentions?.length ? { mentions } : {}),
+    ...(responseFormat ? { responseFormat } : {}),
   });
 };
 

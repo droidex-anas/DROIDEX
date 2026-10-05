@@ -62,6 +62,7 @@ import { browserTranscriptReferencesFromDesignReferences } from './browser/brows
 import {
   designMarks as stagedDesignMarks,
   removeDesignMark,
+  restartDesignMarkNumbers,
   setDesignMarks,
   useDesignMarks,
 } from './browser/designMarks';
@@ -1509,17 +1510,17 @@ export default function PromptInput({
       return;
     }
 
-    // Marks picked in the browser make this a design prompt: the sidecar sends
-    // it with their reference pack. It waits for a running turn like a queued
-    // prompt, whichever way it was sent.
-    const marks = stagedDesignMarks(activeSession.appSessionId);
-    if (marks.length > 0 && !targetChildSessionId) {
-      const appSessionId = activeSession.appSessionId;
-      const design = {
-        browserKey: appSessionId,
-        references: [...marks],
-        referenceIds: marks.map((mark) => mark.id),
-      };
+    // Marks picked in the chat's open browser make this a design prompt: the
+    // sidecar sends it with their reference pack, and otherwise as any prompt
+    // is sent. It waits for a running turn like a queued prompt, whichever way
+    // it was sent.
+    const appSessionId = activeSession.appSessionId;
+    const marks =
+      appSessionId in store.getState().browsers && !targetChildSessionId
+        ? stagedDesignMarks(appSessionId)
+        : [];
+    if (marks.length > 0) {
+      const design = { browserKey: appSessionId, references: [...marks] };
       const clearDesign = () => {
         clearAfterSubmit();
         setDesignMarks(appSessionId, []);
@@ -1534,10 +1535,13 @@ export default function PromptInput({
             text: displayText,
             skills: skillNames,
             files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
             ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
             design,
           },
         });
+        if (sideChatReplies.length > 0) detachSideChatReplies();
         clearDesign();
         return;
       }
@@ -1555,13 +1559,22 @@ export default function PromptInput({
               browserTranscriptReferencesFromDesignReferences(design.references),
             ),
           });
+          if (sideChatReplies.length > 0) detachSideChatReplies();
         },
-        resetComposer: clearDesign,
+        resetComposer: () => {
+          clearDesign();
+          // Numbering starts again once no queued prompt can still say @N.
+          if (!(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design))
+            restartDesignMarkNumbers(appSessionId);
+        },
         sendCommand: () => {
-          sendDesignPrompt(appSessionId, composePrompt(displayText, skillNames, allFiles), [
-            ...design.referenceIds,
-          ]);
-          armTurnStartingTimeout();
+          try {
+            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            armTurnStartingTimeout();
+          } catch (err) {
+            stopTurnStarting();
+            console.error('[PromptInput] sendDesignPrompt failed:', err);
+          }
         },
       });
       if (!committed) stopTurnStarting();
@@ -2173,7 +2186,7 @@ export default function PromptInput({
                     insertMarkReference(mark.anchor.mark);
                   }}
                   onRemove={() => {
-                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.id);
+                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
                   }}
                 />
               ))}

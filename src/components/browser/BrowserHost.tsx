@@ -11,9 +11,17 @@ import {
   type BrowserHostState,
   type BrowserPage,
 } from '../../lib/browserHost';
+import { addDesignReference } from '../../lib/commands';
+import {
+  addDesignMark,
+  designReferenceFor,
+  keepDesignMarksFor,
+  removeDesignMark,
+} from './designMarks';
 import {
   listWorkingNativeBrowsers,
   onNativeBrowserClosed,
+  onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
   onNativeBrowserWorking,
@@ -45,8 +53,14 @@ export function BrowserHost() {
     return bySession;
   }, [browsers]);
 
+  // A chat whose browser has closed has nothing its marks could be sent with.
+  useEffect(() => {
+    keepDesignMarksFor((appSessionId) => appSessionId in browsers);
+  }, [browsers]);
+
   // Pages work, navigate and crash while the pane is closed too, so all of it
-  // is followed here rather than by the pane.
+  // is followed here rather than by the pane. A pick is the chat's whose page
+  // it came from, even once another chat is shown.
   useEffect(() => {
     const appSessionIdFor = (browserSessionId: string) =>
       Object.keys(browsersRef.current).find(
@@ -65,6 +79,16 @@ export function BrowserHost() {
       }),
       onNativeBrowserClosed(({ browserSessionId }) => {
         closeBrowserPage(browserSessionId);
+      }),
+      onNativeBrowserDesignEvent((event) => {
+        const appSessionId = event.browserSessionId && appSessionIdFor(event.browserSessionId);
+        if (!appSessionId) return;
+        if (event.type === 'select')
+          addDesignReference(
+            appSessionId,
+            addDesignMark(appSessionId, designReferenceFor(event.selection)),
+          );
+        else if (event.type === 'unselect') removeDesignMark(appSessionId, event.id);
       }),
       onNativeBrowserLoadFailed((failure) => {
         if (failure.crashed && failure.browserSessionId)

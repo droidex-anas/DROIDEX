@@ -9,10 +9,12 @@ let drawing = false;
 let uiScale = 1;
 // Everything this page has picked, by id ({ id, selection, and an element,
 // an area in page coordinates, or sketch strokes }), and the marks the app
-// holds now ({ id, number }). A mark the app drops can come back, so what was
-// picked is kept.
+// holds now ({ id, number }): marks as drawn, with picks the app has not
+// answered yet, and appMarks as the app last sent them. A mark the app drops
+// can come back, so what was picked is kept.
 const picked = new Map();
 let marks = [];
+let appMarks = [];
 // The element the hover outline is on. Walking with the arrow keys keeps it
 // while the pointer stays inside it; walkedFrom is the way back down.
 let hoverTarget = null;
@@ -83,7 +85,9 @@ function nextChange(ms) {
 document.addEventListener('submit', onFormSubmit, true);
 
 // Design mode's listeners are on the page only while it is on. The page never
-// sees a press, click or menu while it is.
+// sees a press, click or menu while it is. Only the user's own input counts:
+// events the page's scripts dispatch are left alone, so a page can neither
+// make marks nor drive design mode.
 const DESIGN_LISTENERS = [
   ['pointermove', onPointerMove],
   ['pointerdown', onPointerDown],
@@ -97,7 +101,7 @@ const DESIGN_LISTENERS = [
   ['keydown', onKeyDown],
   ['scroll', queueRender],
   ['resize', queueRender],
-];
+].map(([type, handler]) => [type, (event) => event.isTrusted && handler(event)]);
 let listening = false;
 
 function listen(on) {
@@ -110,15 +114,28 @@ function listen(on) {
 }
 
 function applyState(state) {
+  const wasDesigning = designMode;
+  const wasDrawing = drawing;
   uiScale = 1 / (Number(state && state.scale) || 1);
   designMode = Boolean(state && state.designMode);
   drawing = designMode && Boolean(state && state.pencilMode);
-  marks = Array.isArray(state && state.marks) ? state.marks : [];
+  const next = Array.isArray(state && state.marks) ? state.marks : [];
+  // A sketch whose chip the app took away is done: the next stroke starts a
+  // new one rather than sending the removed strokes again.
+  const holds = (list, id) => list.some((mark) => mark.id === id);
+  if (sketch && !activeStroke && holds(appMarks, sketch.id) && !holds(next, sketch.id))
+    sketch = null;
+  appMarks = next;
+  marks = next;
   // Drawing again starts a new sketch.
   if (!drawing) sketch = null;
-  activeStroke = null;
-  press = null;
-  showArea(null);
+  // Only a change of mode ends a stroke or drag in progress; the app's
+  // answers to earlier picks arrive in the middle of later ones.
+  if (designMode !== wasDesigning || drawing !== wasDrawing) {
+    activeStroke = null;
+    press = null;
+    showArea(null);
+  }
   listen(designMode);
   overlay.setTheme(state && state.theme, uiScale);
   overlay.setShown(designMode);
@@ -231,7 +248,9 @@ function finishStroke() {
 
 // A click marks what it lands on; Shift+click marks it or takes its mark away.
 function pick(entry, toggle) {
-  const marked = marks.some((mark) => mark.id === entry.id);
+  // A mark the app kept across a reload is not picked on this page yet;
+  // picking it again brings its outline back and refreshes it.
+  const marked = picked.has(entry.id) && marks.some((mark) => mark.id === entry.id);
   if (marked) {
     if (!toggle) return;
     marks = marks.filter((mark) => mark.id !== entry.id);
@@ -661,15 +680,18 @@ function elementSelection(el) {
   };
 }
 
+// A pick reads its element as inspectElement does: without what its fields
+// hold, so typed or sensitive content never reaches the agent.
 function buildAnchor(el, selector, source) {
   const rect = el.getBoundingClientRect();
   const tag = el.tagName.toLowerCase();
-  const text = safeElementText(el, 80);
+  const shown = withoutTypedContent(el);
+  const text = safeElementText(shown, 80);
   const name = cleanText(
     el.getAttribute('aria-label') ||
       el.getAttribute('title') ||
       el.getAttribute('placeholder') ||
-      directText(el) ||
+      directText(shown) ||
       text,
     80,
   );
@@ -694,7 +716,7 @@ function buildDetail(el, selector, verified) {
     attributes: attrsFor(el),
     styles: stylesFor(el),
     ancestors: ancestorsFor(el),
-    html: cleanText(sanitizedOuterHtml(el), 400) || undefined,
+    html: cleanText(sanitizedOuterHtml(withoutTypedContent(el)), 400) || undefined,
   };
 }
 

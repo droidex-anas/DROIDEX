@@ -4,8 +4,8 @@
 // lives in a closed shadow root, so the page's styles never reach it and the
 // page cannot see it. The page script decides what to draw; this only draws.
 //
-// Colours and the font come from the app (setTheme), since the page cannot
-// read the app's CSS. `ui` is how much larger than the page the overlay is
+// Colours, the shadow and the font come from the app (setTheme), since the
+// page cannot read the app's CSS. `ui` is how much larger than the page the overlay is
 // drawn: the pane can show a page scaled down, and lines and labels keep their
 // size on screen.
 
@@ -27,19 +27,19 @@ const STYLE = `
   border: 1px solid var(--border); border-radius: 6px;
   background: var(--surface); color: var(--muted);
   font: 11px/16px var(--font); white-space: nowrap;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow);
   transform-origin: 0 0;
   transition: transform 120ms var(--ease);
 }
 .label b { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-.label .swatch { width: 9px; height: 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.45); }
+.label .swatch { width: 9px; height: 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--border); }
 .instant, .instant + .label { transition: none !important; }
 .mark { border: calc(1.5px * var(--ui)) solid var(--accent); border-radius: calc(1px * var(--ui)); }
 .badge {
   min-width: 16px; height: 16px; padding: 0 4px;
   border-radius: 8px; background: var(--accent); color: var(--on-accent);
   font: 600 10px/16px var(--font); text-align: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow);
   transform-origin: 0 0;
 }
 .area { border: calc(1.5px * var(--ui)) dashed var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }

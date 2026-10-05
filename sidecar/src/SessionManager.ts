@@ -807,7 +807,12 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      sendPrompt: (appSessionId, prompt) => this.lifecycle.send(appSessionId, prompt),
+      sendPrompt: (appSessionId, prompt, responseFormat, mentions) =>
+        this.lifecycle.send(
+          appSessionId,
+          this.sessionPrompt(appSessionId, prompt, responseFormat),
+          mentions,
+        ),
       requestBrowser:
         options.requestBrowser ??
         (() =>

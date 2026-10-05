@@ -631,7 +631,6 @@ type BrowserNativeAction =
   | 'inspect'
   | 'network'
   | 'console'
-  | 'capture'
   | 'screenshot'
   | 'close'
   | 'fillCredentials'
@@ -671,7 +670,6 @@ export interface BrowserNativeRequest {
   modifiers?: string[];
   direction?: BrowserScrollDirection;
   pixels?: number;
-  box?: BrowserBox;
   region?: BrowserBox;
   fullPage?: boolean;
   format?: 'jpeg' | 'png';
@@ -1017,7 +1015,10 @@ export type ClientCommand =
       type: 'browser.design.sendPrompt';
       appSessionId: string;
       instruction: string;
-      referenceIds: string[];
+      /** The prompt's own snapshots of its marks, each under an id no other pick has. */
+      references: DesignReference[];
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
     }
   | { type: 'sidebar.result'; result: SidebarResult };
 

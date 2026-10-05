@@ -11,13 +11,8 @@ import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import {
-  addDesignReference,
-  openBrowser,
-  reloadBrowser,
-  resizeBrowserViewport,
-} from '../../lib/commands';
-import type { BrowserViewportMode, DesignReference } from '../../types/bridge';
+import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
+import type { BrowserViewportMode } from '../../types/bridge';
 import { normalizeUrl, sameViewport, viewportForMode, viewportFromFrame } from './browserViewport';
 import { NativeBrowserSurface } from './NativeBrowserSurface';
 import { ViewportMenu } from './ViewportMenu';
@@ -25,13 +20,11 @@ import { isDesktop } from '../../lib/desktop';
 import {
   goBackNativeBrowser,
   goForwardNativeBrowser,
-  type NativeBrowserDesignEvent,
   type NativeBrowserLoadFailed,
-  type NativeBrowserSelection,
 } from '../../lib/nativeBrowser';
 import { BrowserToolbar } from './BrowserToolbar';
 import { DesignModePill } from './DesignModePill';
-import { addDesignMark, removeDesignMark, useDesignMarks } from './designMarks';
+import { useDesignMarks } from './designMarks';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
 import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
 import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
@@ -325,23 +318,14 @@ export default function BrowserWorkspace({
     else dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
   }, [browserKey, dispatch, pencilMode]);
 
-  // A pick becomes the chat's next mark (or updates the sketch it adds to),
-  // and the sidecar keeps it for the prompt the composer sends.
-  const handleDesignEvent = useCallback(
-    (event: NativeBrowserDesignEvent) => {
-      if (!browserKey) return;
-      if (event.type === 'select') {
-        const mark = addDesignMark(browserKey, referenceFromNativeSelection(event.selection));
-        addDesignReference(browserKey, mark);
-      } else if (event.type === 'unselect') {
-        removeDesignMark(browserKey, event.id);
-      } else if (event.key === 'draw') {
-        setPencilMode((drawing) => !drawing);
-      } else {
-        stepBackFromDesign();
-      }
+  // D and Esc pressed while the page has the focus. Picks become marks in the
+  // Browser host, which follows every chat's page.
+  const handleDesignKey = useCallback(
+    (key: 'draw' | 'escape') => {
+      if (key === 'draw') setPencilMode((drawing) => !drawing);
+      else stepBackFromDesign();
     },
-    [browserKey, stepBackFromDesign],
+    [stepBackFromDesign],
   );
 
   // The same keys while the app has the focus, unless it is in a text field.
@@ -477,7 +461,7 @@ export default function BrowserWorkspace({
                 });
               }
             }}
-            onDesignEvent={handleDesignEvent}
+            onDesignKey={handleDesignKey}
             onLoadFailed={(failure) => {
               stopLoading();
               // Crashes are tracked by the Browser host, pane open or not.
@@ -554,21 +538,6 @@ export default function BrowserWorkspace({
       </div>
     </div>
   );
-}
-
-function referenceFromNativeSelection(selection: NativeBrowserSelection): DesignReference {
-  return {
-    id: selection.anchor.id,
-    anchor: {
-      ...selection.anchor,
-      strokes: selection.anchor.strokes ?? selection.strokes,
-    },
-    detail: selection.detail,
-    url: selection.url,
-    title: selection.title,
-    scroll: selection.scroll,
-    screenshot: selection.screenshot,
-  };
 }
 
 function isTextEntry(target: EventTarget | null): boolean {

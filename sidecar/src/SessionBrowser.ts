@@ -1,4 +1,10 @@
-import type { BrowserNativeRequest, ClientCommand, ServerEvent } from './protocol.js';
+import type {
+  BrowserNativeRequest,
+  ClientCommand,
+  ProviderMention,
+  ResponseFormat,
+  ServerEvent,
+} from './protocol.js';
 import { errMsg } from './errors.js';
 import { NativeBrowserRuntime } from './browser/NativeBrowserRuntime.js';
 import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
@@ -24,7 +30,12 @@ export type SessionBrowsers = Pick<
 export interface SessionBrowserDependencies {
   browsers: SessionBrowsers;
   emit: Emit;
-  sendPrompt: (appSessionId: string, prompt: string) => Promise<void>;
+  sendPrompt: (
+    appSessionId: string,
+    prompt: string,
+    responseFormat?: ResponseFormat,
+    mentions?: ProviderMention[],
+  ) => Promise<void>;
   /** Runs a request in the desktop app, which owns the pages. */
   requestBrowser: RequestBrowser;
 }
@@ -116,7 +127,7 @@ export class SessionBrowser {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
       const { prompt } = await this.d.browsers.designPrompt({ ...cmd, appSessionId });
-      await this.d.sendPrompt(appSessionId, prompt);
+      await this.d.sendPrompt(appSessionId, prompt, cmd.responseFormat, cmd.mentions);
     });
   }
 

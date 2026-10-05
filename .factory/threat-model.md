@@ -979,7 +979,7 @@ Gaining higher privileges than intended. In this system, the critical escalation
 **Attack Vector:**
 
 1. Agent navigates to an attacker-controlled web page (or a legitimate page with a compromised ad/script)
-2. The page's JavaScript reaches preload code. The preload exposes nothing to the page's world: main calls its functions (design state, inspect, saved-login fill) in the preload's isolated world (`electron/browserPageScript.cjs`), and agent input goes through CDP, so the remaining surface is the preload's own DOM listeners
+2. The page's JavaScript reaches preload code. The preload exposes nothing to the page's world: main calls its functions (design state, inspect, saved-login fill) in the preload's isolated world (`electron/browserPageScript.cjs`), and agent input goes through CDP, so the remaining surface is the preload's own DOM listeners. Design mode's listeners act only on trusted input, so the page's scripts cannot make marks or drive design mode, and a mark's crop is masked in main as agent screenshots are
 3. A bug in the preload's DOM processing (snapshot extraction, hover/click resolution, credential capture) allows prototype pollution or similar
 4. The preload runs with full Node access (`sandbox: false`), so the attacker gains `require('child_process')`, `require('fs')`, etc.
 5. Attacker executes arbitrary commands on the host

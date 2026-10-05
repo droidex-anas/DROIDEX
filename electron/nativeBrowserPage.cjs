@@ -217,36 +217,6 @@ function createNativeBrowserPage({
     throw new Error('The page did not take the new size in time.');
   }
 
-  // A design-mode crop, as PNG; agent screenshots go through browserScreenshot.
-  async function capture(browserSessionId, box) {
-    const entry = await restoreForAction(browserSessionId);
-    const contents = liveContents(entry);
-    if (!contents) throw new Error(`${appName} browser is not open.`);
-    return unthrottled(contents, async () => {
-      // A box crop is always already on-screen (the user just selected/sketched
-      // it). Capture the composited frame directly: capturePage never re-renders
-      // the page off-screen the way CDP's captureBeyondViewport does, so the live
-      // pane no longer flickers on every selection or sketch.
-      if (box) {
-        const rect = normalizeCaptureRect(entry, box);
-        if (!rect) throw new Error('Requested capture region is empty or out of bounds.');
-        const cropped = await contents.capturePage(rect).catch(() => undefined);
-        if (cropped && !cropped.isEmpty()) return cropped.toPNG().toString('base64');
-      }
-      const data = await captureViaCdp(contents, { scale: 2, box }).catch((err) => {
-        console.error(`cdp capture failed, falling back to viewport: ${err.message}`);
-        return undefined;
-      });
-      if (data) return data;
-      const rect = normalizeCaptureRect(entry, box);
-      // A supplied box that normalizes away is an empty/out-of-bounds crop; fail
-      // rather than silently returning the full viewport (unintended content).
-      if (box && !rect) throw new Error('Requested capture region is empty or out of bounds.');
-      const image = rect ? await contents.capturePage(rect) : await contents.capturePage();
-      return image.isEmpty() ? undefined : image.toPNG().toString('base64');
-    });
-  }
-
   // A page that has just woken drops input until it paints again, so input
   // waits for two frames first (bounded, in case the page cannot paint).
   async function waitForPaint(browserSessionId, timeoutMs = 1_000) {
@@ -310,36 +280,6 @@ function createNativeBrowserPage({
     }
   }
 
-  async function captureViaCdp(contents, { scale, box }) {
-    return runWithWebContentsDebugger(contents, async (dbg) => {
-      const params = { format: 'png', captureBeyondViewport: Boolean(box) };
-      const metrics = await dbg.sendCommand('Page.getLayoutMetrics');
-      const viewport = metrics.cssVisualViewport || metrics.visualViewport;
-      const content = metrics.cssContentSize || metrics.contentSize;
-      if (box) {
-        // Selection boxes are viewport CSS coordinates; clips beyond the
-        // viewport are in page coordinates, so offset by the current scroll.
-        const x = (viewport.pageX || 0) + Math.max(0, box.x);
-        const y = (viewport.pageY || 0) + Math.max(0, box.y);
-        const width = Math.min(box.width, content.width - x);
-        const height = Math.min(box.height, content.height - y);
-        if (width <= 0 || height <= 0)
-          throw new Error('Requested capture region is empty or out of bounds.');
-        params.clip = { x, y, width, height, scale };
-      } else if (viewport.clientWidth > 0 && viewport.clientHeight > 0) {
-        params.clip = {
-          x: 0,
-          y: 0,
-          width: viewport.clientWidth,
-          height: viewport.clientHeight,
-          scale,
-        };
-      }
-      const result = await dbg.sendCommand('Page.captureScreenshot', params);
-      return result?.data || undefined;
-    });
-  }
-
   const DESIGN_CAPTURE_PADDING = 32;
   // A mark's crop is its chip's picture and the agent's view of it; a whole
   // section of a page needs no more than this many pixels across.
@@ -365,53 +305,37 @@ function createNativeBrowserPage({
   }
 
   // Capture a picked region with some of what surrounds it, its mark drawn in.
+  // It is taken as agent screenshots are, with sensitive fields painted over,
+  // and only while the page is the one and at the scroll the user picked on;
+  // otherwise the pick goes on without a picture.
   async function captureSelectionRegion(senderContents, selection) {
     const box = selection?.anchor?.box;
     if (!box || !(box.width > 0) || !(box.height > 0)) return undefined;
     const entry = findEntryForContents(senderContents);
     const contents = liveContents(entry);
     if (!contents) return undefined;
-    const padded = {
-      x: Math.max(0, box.x - DESIGN_CAPTURE_PADDING),
-      y: Math.max(0, box.y - DESIGN_CAPTURE_PADDING),
+    const region = {
+      x: box.x - DESIGN_CAPTURE_PADDING,
+      y: box.y - DESIGN_CAPTURE_PADDING,
       width: box.width + DESIGN_CAPTURE_PADDING * 2,
       height: box.height + DESIGN_CAPTURE_PADDING * 2,
     };
-    // Crop the on-screen composited frame (the marks are visible DOM overlays)
-    // instead of a CDP captureBeyondViewport screenshot, which re-rasters the
-    // page off-screen and flickers the pane on every pick.
-    const rect = normalizeCaptureRect(entry, padded);
-    if (rect) {
-      const image = await contents.capturePage(rect).catch(() => undefined);
-      if (image && !image.isEmpty()) {
-        const fitted =
-          image.getSize().width > DESIGN_CAPTURE_MAX_WIDTH
-            ? image.resize({ width: DESIGN_CAPTURE_MAX_WIDTH, quality: 'good' })
-            : image;
-        return { base64: fitted.toPNG().toString('base64'), box: padded };
-      }
-    }
-    const base64 = await captureViaCdp(contents, { scale: 2, box: padded }).catch(() => undefined);
-    return base64 ? { base64, box: padded } : undefined;
-  }
-
-  // Boxes are in the page's CSS pixels, which for a guest are also its view
-  // pixels; capturePage clips anything past the page's edge.
-  function normalizeCaptureRect(_entry, box) {
-    if (!box) return undefined;
-    const x = Math.max(0, Math.round(box.x));
-    const y = Math.max(0, Math.round(box.y));
-    const width = Math.round(box.width);
-    const height = Math.round(box.height);
-    if (width <= 0 || height <= 0) return undefined;
-    return { x, y, width, height };
+    const shot = await screenshots.take(contents, entry, {
+      region,
+      format: 'png',
+      at: { url: selection.url, scroll: selection.scroll },
+    });
+    const image = nativeImage.createFromBuffer(Buffer.from(shot.image, 'base64'));
+    if (image.getSize().width <= DESIGN_CAPTURE_MAX_WIDTH)
+      return { base64: shot.image, box: region };
+    const fitted = image.resize({ width: DESIGN_CAPTURE_MAX_WIDTH, quality: 'good' });
+    return { base64: fitted.toPNG().toString('base64'), box: region };
   }
 
   return {
     setDesignState,
     applyDesignState,
     runAgentAction,
-    capture,
     captureDesignSelection,
     abandonOperations,
     waitForPaint,

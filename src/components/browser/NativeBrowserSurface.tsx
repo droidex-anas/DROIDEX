@@ -8,7 +8,6 @@ import {
   onNativeBrowserLoaded,
   setNativeBrowserDesignState,
   type DesignOverlayTheme,
-  type NativeBrowserDesignEvent,
   type NativeBrowserLoadFailed,
   type NativeBrowserLoaded,
 } from '../../lib/nativeBrowser';
@@ -27,7 +26,8 @@ interface NativeBrowserSurfaceProps {
   expanded?: boolean;
   frameSize: Size;
   onLoaded: (event: NativeBrowserLoaded) => void;
-  onDesignEvent: (event: NativeBrowserDesignEvent) => void;
+  /** A key meant for the app, pressed while the page has the focus. */
+  onDesignKey: (key: 'draw' | 'escape') => void;
   onLoadFailed?: (failure: NativeBrowserLoadFailed) => void;
 }
 
@@ -44,12 +44,12 @@ export function NativeBrowserSurface({
   expanded = false,
   frameSize,
   onLoaded,
-  onDesignEvent,
+  onDesignKey,
   onLoadFailed,
 }: NativeBrowserSurfaceProps) {
   const surfaceReady = frameSize.width > 8 && frameSize.height > 8;
   const onLoadedRef = useRef(onLoaded);
-  const onDesignEventRef = useRef(onDesignEvent);
+  const onDesignKeyRef = useRef(onDesignKey);
   const onLoadFailedRef = useRef(onLoadFailed);
   const native = isDesktop();
   // While the pane animates out, the page must not linger over what replaces it.
@@ -68,9 +68,9 @@ export function NativeBrowserSurface({
 
   useEffect(() => {
     onLoadedRef.current = onLoaded;
-    onDesignEventRef.current = onDesignEvent;
+    onDesignKeyRef.current = onDesignKey;
     onLoadFailedRef.current = onLoadFailed;
-  }, [onDesignEvent, onLoadFailed, onLoaded]);
+  }, [onDesignKey, onLoadFailed, onLoaded]);
 
   useEffect(() => {
     if (!visibleBrowserSessionId) return;
@@ -78,16 +78,17 @@ export function NativeBrowserSurface({
       designMode,
       pencilMode: designMode && pencilMode,
       scale: surface.scale ?? 1,
-      marks: designMarks.map((mark) => ({ id: mark.id, number: mark.anchor.mark ?? 0 })),
+      marks: designMarks.map((mark) => ({ id: mark.anchor.id, number: mark.anchor.mark ?? 0 })),
       theme: designOverlayTheme(),
     }).catch(() => {});
   }, [designMarks, designMode, pencilMode, surface.scale, visibleBrowserSessionId]);
 
   useEffect(() => {
     const unsubscribes = [
+      // Picks go to their chat through the Browser host.
       onNativeBrowserDesignEvent((event) => {
-        if (event.browserSessionId && event.browserSessionId !== visibleBrowserSessionId) return;
-        onDesignEventRef.current(event);
+        if (event.type === 'key' && event.browserSessionId === visibleBrowserSessionId)
+          onDesignKeyRef.current(event.key);
       }),
       onNativeBrowserLoaded((event) => {
         if (event.browserSessionId && event.browserSessionId !== visibleBrowserSessionId) return;
@@ -140,7 +141,8 @@ function designOverlayTheme(): DesignOverlayTheme {
     surface: token('--droid-raised'),
     text: token('--droid-text'),
     muted: token('--droid-text-secondary'),
-    border: token('--droid-border-hover'),
+    border: token('--droid-border'),
+    shadow: token('--droid-shadow-sm'),
     font: token('--ui-font-family'),
   };
 }

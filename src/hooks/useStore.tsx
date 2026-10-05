@@ -199,7 +199,6 @@ export type { ImagePasteQuality } from '../lib/images';
 interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
-  referenceIds: string[];
 }
 
 export interface QueuedPrompt {

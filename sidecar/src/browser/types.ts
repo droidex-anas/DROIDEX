@@ -8,7 +8,6 @@ import type {
 } from '../protocol.js';
 
 export type {
-  BrowserBox,
   BrowserConsoleEvent,
   BrowserElementInspection,
   BrowserNetworkEvent,
