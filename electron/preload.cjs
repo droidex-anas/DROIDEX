@@ -229,6 +229,8 @@ contextBridge.exposeInMainWorld('droidControl', {
   nativeBrowserWorkingSessions: () => ipcRenderer.invoke('native-browser-working-sessions'),
   nativeBrowserShown: (browserSessionId, shown) =>
     ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
+  nativeBrowserWatch: (browserSessionId, watching) =>
+    ipcRenderer.invoke('native-browser-watch', { browserSessionId, watching }),
   nativeBrowserGoBack: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
   nativeBrowserGoForward: (browserSessionId) =>
@@ -244,5 +246,6 @@ contextBridge.exposeInMainWorld('droidControl', {
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
   onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),
+  onNativeBrowserFrame: (handler) => on('native-browser-frame', handler),
   onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
 });

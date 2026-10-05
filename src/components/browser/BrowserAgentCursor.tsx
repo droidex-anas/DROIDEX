@@ -4,7 +4,6 @@ import { onNativeBrowserAgentPoint } from '../../lib/nativeBrowser';
 import design from './browserAgentCursorDesign.json';
 
 const ARTWORK = design.styles.droidex;
-const SIZE = design.size.default;
 // The glyph's tip, where the agent points, as a share of the artwork's box.
 const TIP = {
   x: design.hotspot.x / design.viewBoxSize,
@@ -21,7 +20,8 @@ interface Cursor {
 }
 
 /**
- * The agent's cursor over a page in the pane. It glides to where the agent
+ * The agent's cursor over a page, in the pane or on the picture in the
+ * transcript's Browser card. It glides to where the agent
  * points and, while the agent works, rests there rocking about its tip. The
  * app draws it above the page, so it is never part of the page or of the
  * agent's screenshots, and input never waits for it. It follows the page's
@@ -32,12 +32,15 @@ export function BrowserAgentCursor({
   scale,
   shown,
   working,
+  size = design.size.default,
 }: {
   browserSessionId: string;
-  /** How large the pane draws the page. */
+  /** How large the page is drawn. */
   scale: number;
   shown: boolean;
   working: boolean;
+  /** The glyph's size; smaller on a small picture of the page. */
+  size?: number;
 }) {
   const [cursor, setCursor] = useState<Cursor | null>(null);
 
@@ -70,10 +73,10 @@ export function BrowserAgentCursor({
       className="agent-cursor pointer-events-none absolute left-0 top-0"
       style={
         {
-          width: SIZE,
-          height: SIZE,
+          width: size,
+          height: size,
           opacity: working ? 1 : 0,
-          transform: `translate(${String(cursor.x * scale - TIP.x * SIZE)}px, ${String(cursor.y * scale - TIP.y * SIZE)}px)`,
+          transform: `translate(${String(cursor.x * scale - TIP.x * size)}px, ${String(cursor.y * scale - TIP.y * size)}px)`,
           '--glide': `${String(cursor.glideMs)}ms`,
         } as CSSProperties
       }

@@ -925,6 +925,10 @@ function registerIpc() {
     assertMainRenderer(event);
     return nativeBrowserManager.setShown(browserSessionId, shown);
   });
+  ipcMain.handle('native-browser-watch', (event, { browserSessionId, watching }) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.watch(browserSessionId, watching);
+  });
   ipcMain.handle('native-browser-go-back', (event, { browserSessionId }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.goBack(browserSessionId);
@@ -1079,6 +1083,7 @@ function installMainRendererLifecycle(contents) {
     cleanedForNavigation = true;
     githubVcs.cancelSetup();
     closeRendererOwnedTerminals();
+    nativeBrowserManager.forgetWatchers();
   };
 
   contents.on('did-finish-load', () => {

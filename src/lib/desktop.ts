@@ -4,6 +4,7 @@ import type {
   NativeBrowserLoaded,
   NativeBrowserSelection,
   NativeBrowserAgentPoint,
+  NativeBrowserFrame,
   NativeBrowserWorking,
 } from './nativeBrowser';
 import type { BrowserViewportMode } from '../types/bridge';
@@ -303,6 +304,7 @@ interface DroidControlApi {
   nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
   nativeBrowserWorkingSessions: () => Promise<string[]>;
   nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
+  nativeBrowserWatch: (browserSessionId: string, watching: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserSetDesignMode: (
@@ -317,6 +319,7 @@ interface DroidControlApi {
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
   onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
+  onNativeBrowserFrame: (handler: (event: NativeBrowserFrame) => void) => () => void;
   onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
 
