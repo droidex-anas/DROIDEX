@@ -16,6 +16,7 @@ const {
 const { createBrowserCover } = require('./browserCover.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
+const LATE = 'The browser page did not finish in time.';
 const MAX_CLICKS = 3;
 const MAX_REPEAT = 50;
 const SCROLL_SETTLE_MS = 1_000;
@@ -181,7 +182,7 @@ function createBrowserActions({
   // frame only takes keys sent to its own session); a ref is focused first.
   async function type(contents, entry, request, step) {
     const text = String(request.text ?? '');
-    await runWithWebContentsDebugger(contents, async (dbg) => {
+    await runWithWebContentsDebugger(contents, async (dbg, holding) => {
       let sessionId;
       let document;
       let refNode;
@@ -193,6 +194,7 @@ function createBrowserActions({
         sessionId = target.frame.sessionId;
         // Only the deadline: nothing counts as typed until text or Enter goes out.
         notLate(step);
+        if (!holding()) throw new Error(LATE);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
         ({ takesText } = await keepsFocus(dbg, sessionId, document));
@@ -208,9 +210,9 @@ function createBrowserActions({
             ? `${request.ref} does not take typed text; use browser_fill or browser_click.`
             : 'Nothing that takes typed text has the focus; pass the ref of a field.',
         );
-      const stillOn = onSamePage(dbg, sessionId, document);
+      const stillOn = onSamePage(dbg, holding, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
-      await inputReady(dbg, step, sessionId, document);
+      await inputReady(dbg, step, holding, sessionId, document);
       if (text) await send(dbg, sessionId, 'Input.insertText', { text });
       if (request.submit) {
         await keepsFocus(dbg, sessionId, document);
@@ -218,7 +220,7 @@ function createBrowserActions({
         if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
         // The page check comes last, right before the key.
-        await inputReady(dbg, step, sessionId, document);
+        await inputReady(dbg, step, holding, sessionId, document);
         await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
       }
     });
@@ -227,13 +229,13 @@ function createBrowserActions({
   async function press(contents, request, step) {
     const key = keyOf(request.key);
     const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(request.repeat) || 1)));
-    await runWithWebContentsDebugger(contents, async (dbg) => {
+    await runWithWebContentsDebugger(contents, async (dbg, holding) => {
       const { sessionId, document } = await focusedFrame(dbg);
-      const stillOn = onSamePage(dbg, sessionId, document);
+      const stillOn = onSamePage(dbg, holding, sessionId, document);
       for (let i = 0; i < repeat; i++) {
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
-        await inputReady(dbg, step, sessionId, document);
+        await inputReady(dbg, step, holding, sessionId, document);
         await pressOn(dbg, sessionId, key, stillOn);
       }
     });
@@ -262,15 +264,15 @@ function createBrowserActions({
   // Before each event, inside the debugger queue, a new page or a replaced
   // ref document stops the gesture.
   function dispatchMouse(contents, step, target, events) {
-    return runWithWebContentsDebugger(contents, async (dbg) => {
-      const stillOn = onSamePage(dbg, target.sessionId, target.document);
+    return runWithWebContentsDebugger(contents, async (dbg, holding) => {
+      const stillOn = onSamePage(dbg, holding, target.sessionId, target.document);
       for (const event of events) {
         // A press that went out is always released, on the page that took it.
         if (event.type === 'mouseReleased') {
           if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
           continue;
         }
-        await inputReady(dbg, step, target.sessionId, target.document);
+        await inputReady(dbg, step, holding, target.sessionId, target.document);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
     });
@@ -278,8 +280,9 @@ function createBrowserActions({
 
   // Whether the page that took a press is still there, so the press can be
   // released: its document, which a navigation that aborts leaves in place.
-  function onSamePage(dbg, sessionId, document) {
-    return async () => !document || (await frameHolds(dbg, sessionId, document));
+  // Once the debugger queue has moved on, nothing is released either.
+  function onSamePage(dbg, holding, sessionId, document) {
+    return async () => (!document || (await frameHolds(dbg, sessionId, document))) && holding();
   }
 
   // Whether a node is what its own document or shadow root has focused.
@@ -307,9 +310,11 @@ function createBrowserActions({
     return focused;
   }
 
-  // Input goes out only while the document it was aimed at is still there.
-  async function inputReady(dbg, step, sessionId, document) {
+  // Input goes out only while the document it was aimed at is still there,
+  // and while its operation still holds the debugger.
+  async function inputReady(dbg, step, holding, sessionId, document) {
     if (document && !(await frameHolds(dbg, sessionId, document))) throw new Error(PAGE_CHANGED);
+    if (!holding()) throw new Error(LATE);
     startInput(step);
   }
 
@@ -384,7 +389,7 @@ function startInput(step) {
 
 // Nothing more is done to the page once the caller has given up.
 function notLate(step) {
-  if (Date.now() >= step.startBy) throw new Error('The browser page did not finish in time.');
+  if (Date.now() >= step.startBy) throw new Error(LATE);
 }
 
 // Run on the ref's own element. A value goes through the element's own

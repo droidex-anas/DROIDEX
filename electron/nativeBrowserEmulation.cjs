@@ -4,16 +4,20 @@ const debuggerOperations = new WeakMap();
 // never blocks the page for good.
 const MAX_HOLD_MS = 15_000;
 
-// One operation on a page's debugger at a time, in the order they came.
+// One operation on a page's debugger at a time, in the order they came. An
+// operation is also given `holding()`, false once the queue has moved on
+// without it: one that sends input checks it first, so a command that answers
+// late cannot let its gesture land among the next operation's.
 function runWithWebContentsDebugger(contents, operation) {
   if (!contents || contents.isDestroyed()) return Promise.resolve(undefined);
   const previous = debuggerOperations.get(contents) ?? Promise.resolve();
+  let released = false;
   const current = previous.then(async () => {
     if (contents.isDestroyed()) return undefined;
     const dbg = contents.debugger;
     if (!dbg) throw new Error('Chromium debugger is unavailable.');
     if (!dbg.isAttached()) dbg.attach('1.3');
-    return operation(dbg);
+    return operation(dbg, () => !released);
   });
   let timer;
   const held = previous
@@ -21,7 +25,10 @@ function runWithWebContentsDebugger(contents, operation) {
       Promise.race([
         current.catch(() => undefined),
         new Promise((resolve) => {
-          timer = setTimeout(resolve, MAX_HOLD_MS);
+          timer = setTimeout(() => {
+            released = true;
+            resolve();
+          }, MAX_HOLD_MS);
         }),
       ]),
     )
