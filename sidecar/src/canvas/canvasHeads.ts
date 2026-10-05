@@ -9,31 +9,6 @@ import type { CanvasManifest } from './canvasManifest.js';
 /** What every caller says about a head it holds but will not serve. */
 export const UNREADABLE_CANVAS = 'That canvas could not be read. Reopen DROIDEX to recover it.';
 
-/**
- * One canvas's head, or why it will not be served. Nothing on disk is changed
- * by a refusal: a recovery action owns damaged storage, and one unreadable
- * board must not keep the others closed.
- */
-async function loadHead(
-  files: CanvasFiles,
-  canvasId: string,
-): Promise<CanvasManifest | 'missing' | 'damaged'> {
-  const load = await files.loadManifest(canvasId);
-  if (load.state === 'missing') return 'missing';
-  if (load.state === 'damaged') {
-    console.error(`Canvas ${canvasId} was not opened because ${load.reason}.`);
-    return 'damaged';
-  }
-  try {
-    await files.removeTemporaries(canvasId);
-  } catch {
-    // The cause is already logged where it was raised.
-    console.error(`Canvas ${canvasId} was not opened because its storage could not be cleaned.`);
-    return 'damaged';
-  }
-  return load.manifest;
-}
-
 export class CanvasHeads {
   private readonly heads = new Map<string, CanvasManifest>();
   private readonly damaged = new Set<string>();
@@ -44,14 +19,36 @@ export class CanvasHeads {
 
   private constructor(private readonly files: CanvasFiles) {}
 
+  /**
+   * Opens every canvas under the root. A head that cannot be read or cleaned is
+   * left untouched on disk and not served: repairing it here would be a guess,
+   * and one unreadable board must not keep the others closed.
+   */
   static async load(files: CanvasFiles): Promise<CanvasHeads> {
     await files.createRoot();
     const canvasHeads = new CanvasHeads(files);
     for (const canvasId of await files.listCanvasIds()) {
-      const head = await loadHead(files, canvasId);
-      if (head === 'missing') continue;
-      if (head === 'damaged') canvasHeads.damaged.add(canvasId);
-      else canvasHeads.publish(head);
+      const load = await files.loadManifest(canvasId);
+      if (load.state === 'missing') continue;
+      if (load.state === 'damaged') {
+        console.error(`Canvas ${canvasId} was not opened because ${load.reason}.`);
+        canvasHeads.damaged.add(canvasId);
+        continue;
+      }
+      // The attachments are known the moment the manifest validates, and they
+      // hold whether or not what follows can serve the head.
+      canvasHeads.reserve(load.manifest);
+      try {
+        await files.removeTemporaries(canvasId);
+      } catch {
+        // The cause is already logged where it was raised.
+        console.error(
+          `Canvas ${canvasId} was not opened because its storage could not be cleaned.`,
+        );
+        canvasHeads.damaged.add(canvasId);
+        continue;
+      }
+      canvasHeads.publish(load.manifest);
     }
     return canvasHeads;
   }
@@ -113,6 +110,11 @@ export class CanvasHeads {
     for (const [appSessionId, canvasId] of [...this.attachments]) {
       if (canvasId === manifest.canvasId) this.attachments.delete(appSessionId);
     }
+    this.reserve(manifest);
+  }
+
+  /** Holds a head's attachments, whether or not the head itself is served. */
+  private reserve(manifest: CanvasManifest): void {
     for (const appSessionId of manifest.attachedAppSessionIds)
       this.attachments.set(appSessionId, manifest.canvasId);
   }
@@ -149,9 +151,6 @@ export class CanvasHeads {
     }
     this.heads.delete(canvasId);
     this.damaged.add(canvasId);
-    if (onDisk) {
-      for (const appSessionId of attempted.attachedAppSessionIds)
-        this.attachments.set(appSessionId, canvasId);
-    }
+    if (onDisk) this.reserve(attempted);
   }
 }
