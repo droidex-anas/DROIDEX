@@ -1,7 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
-import { MousePointer2, PenLine } from 'lucide-react';
 import { MessageThread } from '@droidex/icons';
-import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
 import { FileChip } from '../composer/FileChip';
@@ -9,37 +8,13 @@ import { isImagePath } from '../../lib/localImage';
 import { isTempStoreAttachment } from '../../lib/fileKind';
 import { promptDisplayParts } from '../../lib/composePrompt';
 import { userMessageAttachments } from '../../lib/promptMentions';
+import { BrowserReferenceChip } from '../browser/BrowserReferenceChip';
 import { SkillIcon } from '../icons/SkillIcon';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Markdown } from '../Markdown';
 import { SpokenMark } from './primitives';
 import { PromptActions } from './ResponseActions';
 import { ClampedBlock } from './ClampedBlock';
-
-function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptReference }) {
-  const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
-  return (
-    <span
-      title={
-        reference.selector
-          ? `${reference.selector}\n${reference.url ?? ''}`
-          : (reference.url ?? `Design reference: ${reference.label}`)
-      }
-      className="flex min-w-0 items-center gap-1.5 rounded-lg bg-droid-accent/15 px-2 py-1 text-[11px] font-medium text-droid-text ring-1 ring-inset ring-droid-accent/30"
-    >
-      {reference.imageDataUrl ? (
-        <img
-          src={reference.imageDataUrl}
-          alt={reference.label}
-          className="h-5 max-w-12 rounded-sm object-cover"
-        />
-      ) : (
-        <Icon className="h-3 w-3 shrink-0 text-droid-accent" />
-      )}
-      <span className="max-w-40 truncate">@{reference.label}</span>
-    </span>
-  );
-}
 
 function PromptChip({
   icon: Icon,
