@@ -110,8 +110,10 @@ const STANDARD_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserVie
   mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
 };
 const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
-// How many sent references each chat keeps for design_reference.
+// How many sent references each chat keeps for design_reference, and how
+// many all chats keep together, the chat that sent least recently going first.
 const SENT_REFERENCES_KEPT = 50;
+const SENT_REFERENCES_KEPT_IN_ALL = 200;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
@@ -484,9 +486,11 @@ export class BrowserSessionManager {
     await session.runtime.close();
   }
 
+  /** The final cleanup: every browser closes and no sent reference is kept. */
   async closeAll(): Promise<void> {
     const closing = [...this.sessions.values()];
     this.sessions.clear();
+    this.sent.clear();
     await Promise.all(closing.map((session) => session.runtime.close().catch(() => {})));
   }
 
@@ -599,7 +603,16 @@ export class BrowserSessionManager {
       if (kept.size <= limit) break;
       kept.delete(id);
     }
+    // Set again so the chats stay in the order they last sent in.
+    this.sent.delete(appSessionId);
     this.sent.set(appSessionId, kept);
+    let total = 0;
+    for (const references of this.sent.values()) total += references.size;
+    for (const [chat, references] of this.sent) {
+      if (total <= SENT_REFERENCES_KEPT_IN_ALL || chat === appSessionId) break;
+      this.sent.delete(chat);
+      total -= references.size;
+    }
   }
 
   private assertCurrent(session: ManagedBrowserSession): void {
