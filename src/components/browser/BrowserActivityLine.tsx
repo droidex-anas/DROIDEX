@@ -239,11 +239,15 @@ function latestSteps(feed: FeedItem[]): { steps: FeedItem[]; trimmed: boolean } 
 
 // The turn's last events, starting clear of a result whose call was cut off,
 // which would otherwise draw as a bare result.
+// The newest events, without a result whose call was cut off with the older
+// ones, so no step shows detached from its call.
 function recentEvents(events: TranscriptEvent[], limit: number): TranscriptEvent[] {
   if (events.length <= limit) return events;
-  let start = events.length - limit;
-  while (start < events.length && events[start].kind === 'tool_result') start += 1;
-  return events.slice(start);
+  const kept = events.slice(events.length - limit);
+  const calls = new Set(kept.filter((event) => event.kind === 'tool_call').map((e) => e.toolUseId));
+  return kept.filter(
+    (event) => event.kind !== 'tool_result' || !event.toolUseId || calls.has(event.toolUseId),
+  );
 }
 
 function workedFor(events: TranscriptEvent[], startTs: number): number {
