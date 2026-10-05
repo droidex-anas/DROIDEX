@@ -25,7 +25,7 @@ const VALUE_ROLES = new Set([
 ]);
 // A field holding one of these never shows its value to an agent.
 const SENSITIVE_FIELD =
-  /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|auth(?!or)|authoriz|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
+  /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|auth(?!or)|authori[sz]|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
 
 function createBrowserMasking({ savedSecretsFor }) {
   // Field lines from browser_read_page show their value or the mask. What is
@@ -97,18 +97,12 @@ function createBrowserMasking({ savedSecretsFor }) {
     const boxes = [];
     const mappings = new Map(); // sessionId -> its frame's mapping to the viewport
     for (const { sessionId, backendNodeId, editable } of nodes.values()) {
-      const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }).catch(
-        (error) => {
-          // Not rendered means nothing to paint over; anything else fails.
-          if (/could not compute content quads/i.test(String(error?.message))) return undefined;
-          throw error;
-        },
-      );
-      if (!shape?.quads?.length) continue;
+      const painted = await contentQuads(dbg, sessionId, backendNodeId);
+      if (!painted.length) continue;
       // Text in an editable region can paint past its box.
       const quads = editable
-        ? [...shape.quads, ...(await textQuads(dbg, sessionId, backendNodeId))]
-        : shape.quads;
+        ? [...painted, ...(await textQuads(dbg, sessionId, backendNodeId))]
+        : painted;
       if (!mappings.has(sessionId)) mappings.set(sessionId, await viewportMapping(dbg, sessionId));
       for (const quad of quads) boxes.push(boundsOf(mappings.get(sessionId)(quad)));
     }
@@ -242,13 +236,20 @@ async function textQuads(dbg, sessionId, backendNodeId) {
   if (texts.length > MAX_TEXT_NODES)
     throw new Error('A sensitive field on this page holds too much text to mask.');
   const quads = [];
-  for (const text of texts) {
-    const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId: text }).catch(
-      () => undefined,
-    );
-    quads.push(...(shape?.quads ?? []));
-  }
+  for (const text of texts) quads.push(...(await contentQuads(dbg, sessionId, text)));
   return quads;
+}
+
+// Where a node is painted. One that is not rendered has nothing to paint
+// over; any other failure fails the capture.
+async function contentQuads(dbg, sessionId, backendNodeId) {
+  const shape = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId }).catch(
+    (error) => {
+      if (/could not compute content quads/i.test(String(error?.message))) return undefined;
+      throw error;
+    },
+  );
+  return shape?.quads ?? [];
 }
 
 // Every input, textarea and select in a session's documents, shadow roots
@@ -297,9 +298,8 @@ function attributeOf(node, name) {
 function isSensitiveField(attributes) {
   for (let i = 0; i < attributes.length; i += 2) {
     const [name, value] = [attributes[i].toLowerCase(), String(attributes[i + 1] ?? '')];
-    if (name === 'type' && value.toLowerCase() === 'password') return true;
     if (
-      ['autocomplete', 'name', 'id', 'aria-label', 'placeholder'].includes(name) &&
+      ['type', 'autocomplete', 'name', 'id', 'aria-label', 'placeholder'].includes(name) &&
       SENSITIVE_FIELD.test(value)
     )
       return true;
