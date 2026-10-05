@@ -11,6 +11,7 @@ import type {
   CanvasSummary,
   CanvasTurnContext,
   CreateFramesInput,
+  CreateFramesResult,
   DesignRef,
   DesignSystemRef,
   ElementRef,
@@ -29,6 +30,7 @@ import {
 // type identity instead.
 type SidecarWire = {
   create: CreateFramesInput;
+  createResult: CreateFramesResult;
   write: WriteFilesInput;
   arrange: ArrangeFramesInput;
   snapshot: CanvasSnapshot;
@@ -44,6 +46,7 @@ type SidecarWire = {
 
 type RendererWire = {
   create: Renderer.CreateFramesInput;
+  createResult: Renderer.CreateFramesResult;
   write: Renderer.WriteFilesInput;
   arrange: Renderer.ArrangeFramesInput;
   snapshot: Renderer.CanvasSnapshot;
@@ -81,6 +84,20 @@ const wire: SidecarWire = {
           canvasId: 'cv_01',
           revision: { designId: 'dsg_hey', revisionId: 'rev_01' },
         },
+      },
+    ],
+  },
+  createResult: {
+    canvasId: 'cv_01',
+    frames: [
+      {
+        designId: 'dsg_hey',
+        name: 'Hey',
+        rect: { x: 0, y: 0, width: 720, height: 720 },
+        layoutVersion: 0,
+        revisionId: null,
+        designSystem,
+        build: { status: 'pending' },
       },
     ],
   },
@@ -188,6 +205,7 @@ const wire: SidecarWire = {
 test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
   const exact: ExactMirror = {
     create: true,
+    createResult: true,
     write: true,
     arrange: true,
     snapshot: true,
