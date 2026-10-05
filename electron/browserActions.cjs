@@ -38,7 +38,12 @@ function createBrowserActions({
     const navigation = observeNavigation(contents);
     try {
       return await unthrottled(contents, async () => {
-        const step = { navigation, sent: false, startBy: request.startBy };
+        const step = {
+          navigation,
+          sent: false,
+          startBy: request.startBy,
+          runEnded: request.runEnded,
+        };
         // The action's own input ends before it reports, even when a navigation
         // settles first, so nothing of it lands under the next one.
         let failure;
@@ -400,9 +405,10 @@ function startInput(step) {
   step.sent = true;
 }
 
-// Nothing more is done to the page once the caller has given up.
+// Nothing more is done to the page once the caller has given up, or once the
+// sidecar run that asked has ended.
 function notLate(step) {
-  if (Date.now() >= step.startBy) throw new Error(LATE);
+  if (Date.now() >= step.startBy || step.runEnded()) throw new Error(LATE);
 }
 
 // Run on the ref's own element. A value goes through the element's own

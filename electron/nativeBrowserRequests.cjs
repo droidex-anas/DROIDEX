@@ -63,9 +63,12 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
 
   // A message from the sidecar; only a well-formed browser request is answered.
-  async function handle(message, reply) {
+  // `runEnded` says whether the sidecar run that sent it has exited or been
+  // stopped: its work then never navigates or sends input, so a page restored
+  // for a later run is left alone.
+  async function handle(message, reply, runEnded) {
     const request = browserRequestFrom(message);
-    if (!request) return;
+    if (!request || runEnded()) return;
     const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
     const receivedAt = Date.now();
     // Nothing starts once the caller has given up, by its own expiry when it
@@ -77,7 +80,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     reply({
       type: 'browser.result',
       id: request.requestId,
-      result: await perform({ ...request, receivedAt, startBy }, timeoutMs),
+      result: await perform({ ...request, receivedAt, startBy, runEnded }, timeoutMs),
     });
   }
 
@@ -195,7 +198,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     const { browserSessionId } = request;
     // A navigation goes out only while its caller still waits for it.
     const stillWanted = () => {
-      if (Date.now() >= request.startBy) throw new Error(LATE);
+      if (Date.now() >= request.startBy || request.runEnded()) throw new Error(LATE);
     };
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
@@ -295,6 +298,7 @@ function agentAction(request) {
     waitMs: request.waitMs,
     receivedAt: request.receivedAt,
     startBy: request.startBy,
+    runEnded: request.runEnded,
     value: request.value,
     submit: request.submit,
     key: request.key,
