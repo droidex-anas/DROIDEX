@@ -243,7 +243,10 @@ function latestSteps(feed: FeedItem[]): { steps: FeedItem[]; trimmed: boolean } 
 // ones, so no step shows detached from its call.
 function recentEvents(events: TranscriptEvent[], limit: number): TranscriptEvent[] {
   if (events.length <= limit) return events;
-  const kept = events.slice(events.length - limit);
+  let start = events.length - limit;
+  // A result with no id answers the call before it, which was cut off.
+  while (start < events.length && events[start].kind === 'tool_result') start += 1;
+  const kept = events.slice(start);
   const calls = new Set(kept.filter((event) => event.kind === 'tool_call').map((e) => e.toolUseId));
   return kept.filter(
     (event) => event.kind !== 'tool_result' || !event.toolUseId || calls.has(event.toolUseId),
