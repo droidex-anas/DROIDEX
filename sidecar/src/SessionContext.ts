@@ -209,9 +209,20 @@ export class SessionContext {
     focusedAppSessionId: string | null,
     visibleAppSessionIds: readonly string[],
   ): void {
+    const onScreen = this.onScreenAppSessionIds;
+    const nextOnScreen = new Set(visibleAppSessionIds);
+    if (
+      this.backgroundWorkTier === tier &&
+      this.focusedAppSessionId === focusedAppSessionId &&
+      onScreen !== null &&
+      onScreen.size === nextOnScreen.size &&
+      visibleAppSessionIds.every((id) => onScreen.has(id))
+    )
+      return;
+
     this.backgroundWorkTier = tier;
     this.focusedAppSessionId = focusedAppSessionId;
-    this.onScreenAppSessionIds = new Set(visibleAppSessionIds);
+    this.onScreenAppSessionIds = nextOnScreen;
     this.pollers.reschedule();
   }
 
