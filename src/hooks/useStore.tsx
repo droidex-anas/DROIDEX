@@ -15,7 +15,9 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  activeDraftTileId,
   composeOrigin,
+  draftTileIds,
   enteredPlaceNavigation,
   placeCreatedChat,
   showChat,
@@ -395,7 +397,8 @@ export interface AppState {
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
   // One-shot text seeded into a composer (welcome-screen suggestion cards,
   // saved-note clicks, the browser's prompt box), in arrival order. Each seed
-  // belongs to one chat and waits until that chat's composer takes it.
+  // belongs to one chat, or one new-chat draft, and waits until its composer
+  // takes it.
   composerSeeds: ComposerSeed[];
   workspaceCwds: string[];
   // Per-session browser-pane open state, keyed by browser key (the chat/session
@@ -1029,6 +1032,21 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
 }
 
 export function reducer(state: AppState, action: Action): AppState {
+  return withoutLeftDraftSeeds(reduceAction(state, action));
+}
+
+// A draft's seeds wait in its tile. Once the tile closes or shows something
+// else, that draft is gone, and its seeds must not reach a later one.
+function withoutLeftDraftSeeds(state: AppState): AppState {
+  if (!state.composerSeeds.some((seed) => seed.draftTileId !== null)) return state;
+  const drafts = draftTileIds(state);
+  const composerSeeds = state.composerSeeds.filter(
+    (seed) => seed.draftTileId === null || drafts.includes(seed.draftTileId),
+  );
+  return composerSeeds.length === state.composerSeeds.length ? state : { ...state, composerSeeds };
+}
+
+function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
@@ -1106,6 +1124,15 @@ export function reducer(state: AppState, action: Action): AppState {
       }
 
       const pendingCompose = withoutKey(state.pendingCompose, action.clientRef);
+      // Seeds that arrived for the draft while it was sent go to the chat it became.
+      const draftTileId = ownsCreate ? pending.origin?.tileId : undefined;
+      const composerSeeds = draftTileId
+        ? state.composerSeeds.map((pendingSeed) =>
+            pendingSeed.draftTileId === draftTileId
+              ? { ...pendingSeed, appSessionId: action.session.appSessionId, draftTileId: null }
+              : pendingSeed,
+          )
+        : state.composerSeeds;
 
       const next: AppState = {
         ...childReset,
@@ -1131,6 +1158,7 @@ export function reducer(state: AppState, action: Action): AppState {
         childAccess,
         childRuntime,
         pendingCompose,
+        composerSeeds,
         pendingForks: withoutKey(state.pendingForks, action.clientRef),
         sideChats:
           state.pendingForks[action.clientRef]?.kind === 'side'
@@ -2333,10 +2361,14 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     // A seed belongs to its chat from the moment it arrives: the one named, or
-    // else the chat focused now.
+    // else the chat focused now, or else the draft in the focused tab.
     case 'SEED_COMPOSER': {
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
+      const draftTileId = appSessionId ? null : activeDraftTileId(state);
+      if (!appSessionId && !draftTileId) return state;
       const seed = createComposerSeed(action.text, action.replace, {
-        appSessionId: action.appSessionId ?? state.activeAppSessionId,
+        appSessionId,
+        draftTileId,
         send: action.send,
         focus: action.focus,
       });
