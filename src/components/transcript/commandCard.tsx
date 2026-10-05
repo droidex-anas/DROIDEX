@@ -58,7 +58,7 @@ export function ToolCallCard({
         {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
         {interrupted && <InterruptedTag />}
         {images.length > 0 && (
-          <div className="mt-2 border-t border-droid-border/60 pt-1">
+          <div className="mt-2 border-t border-droid-border/60 pt-1 first:mt-0 first:border-t-0 first:pt-0">
             {images.map((image, index) => (
               // One result can carry the same picture twice.
               <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
@@ -67,7 +67,7 @@ export function ToolCallCard({
         )}
         {out && (
           <pre
-            className="mt-2 pt-2 border-t border-droid-border/60 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
+            className="mt-2 pt-2 border-t border-droid-border/60 first:mt-0 first:border-t-0 first:pt-0 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
             style={error ? { color: RED } : undefined}
           >
             {error ? out : linkify(out)}
