@@ -48,18 +48,18 @@ export function factoryRefusalLimit(meters: readonly ReportedMeter[], now: numbe
   for (const meter of meters) {
     if (meter.usedPercent < 100 || (meter.resetsAt ?? 0) <= now) continue;
     const latest = recoveries.get(meter.model);
-    if (!latest || (meter.resetsAt ?? 0) > (latest.resetsAt ?? 0)) recoveries.set(meter.model, meter);
+    if (!latest || (meter.resetsAt ?? 0) > (latest.resetsAt ?? 0))
+      recoveries.set(meter.model, meter);
   }
-  const first = [...recoveries.values()].sort(
-    (left, right) => (left.resetsAt ?? 0) - (right.resetsAt ?? 0),
-  )[0];
+  const first = [...recoveries.values()]
+    .sort((left, right) => (left.resetsAt ?? 0) - (right.resetsAt ?? 0))
+    .at(0);
   if (first?.resetsAt === undefined) return {};
   const limit: UsageLimit = {
     ...(first.window ? { window: first.window } : {}),
     resetsAt: first.resetsAt,
   };
-  const otherHasRoom =
-    recoveries.size === 1 && meters.some((meter) => meter.model !== first.model);
+  const otherHasRoom = recoveries.size === 1 && meters.some((meter) => meter.model !== first.model);
   return otherHasRoom ? { ...limit, model: first.model ?? STANDARD_POOL } : limit;
 }
 

@@ -145,7 +145,7 @@ test('bridge refreshes sidecar identity before reconnecting', async () => {
   await bridge.start();
   const first = FakeWebSocket.instances.at(-1);
   assert.ok(first);
-  assert.equal(withoutPageId(first.url), 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=8');
+  assert.equal(withoutPageId(first.url), 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=9');
   assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), false);
   assert.deepEqual(first.sent, []);
   first.close();
@@ -158,7 +158,7 @@ test('bridge refreshes sidecar identity before reconnecting', async () => {
   assert.ok(second);
   assert.equal(
     withoutPageId(second.url),
-    'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=8',
+    'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=9',
   );
   second.open();
   assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
@@ -219,7 +219,7 @@ test('[R1] Renderer command round trip', async () => {
     socket.message(batch('test-generation', seq, seq, [event]));
   };
 
-  assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=8');
+  assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=9');
   assert.deepEqual(socket.sent, []);
   socket.open();
   assert.equal(socket.sent.length, 6);
