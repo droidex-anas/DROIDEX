@@ -99,10 +99,6 @@ function normalizeBareIpv6Loopback(value: string): string | null {
   return `http://[::1]${port}${path}`;
 }
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 function pixels(value: number): number {
   return Math.max(1, Math.round(value));
 }
