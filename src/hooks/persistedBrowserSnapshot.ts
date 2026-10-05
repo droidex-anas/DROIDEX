@@ -17,18 +17,6 @@ export function loadPersistedBrowsers(value: unknown): Record<string, BrowserSta
   return Object.fromEntries(entries);
 }
 
-export function loadPersistedBrowserOpenKeys(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  // Preserve both true (open) and false (explicitly hidden) so the "hidden"
-  // decision survives a restart; a dropped `false` would let later updates
-  // re-open a pane the user deliberately hid.
-  const entries = Object.entries(value as Record<string, unknown>).filter(
-    (entry): entry is [string, boolean] =>
-      typeof entry[0] === 'string' && entry[0].length > 0 && typeof entry[1] === 'boolean',
-  );
-  return Object.fromEntries(entries);
-}
-
 export function persistBrowsers(
   browsers: Record<string, BrowserState>,
 ): Record<string, BrowserState> {

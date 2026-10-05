@@ -16,7 +16,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 
 1. **React Renderer** (`src/`) - The user-facing UI rendered in the Electron BrowserWindow. Contains the conversation view, mission management, onboarding, and the mission-scoped utility pane (Review/Browser/Files/Terminal tabs). Communicates with the main process exclusively through the preload bridge and with the sidecar over a loopback WebSocket.
 
-2. **Electron Main Process** (`electron/main.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation via `WebContentsView`, credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
+2. **Electron Main Process** (`electron/main.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation of the `<webview>` pages the renderer mounts (each bound to a chat by a one-time token main issues), credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
 
 3. **Electron Preload Scripts** (`electron/preload.cjs`, `electron/nativeBrowserPreload.cjs`) - Narrow `contextBridge` boundaries. The main preload exposes `window.droidControl` with ~50 IPC-backed methods. The native browser preload runs inside arbitrary untrusted web pages loaded in the browser pane and exposes three functions for agent actions, credential fill, and design-state application.
 
@@ -29,7 +29,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 | Component | Purpose | Security Criticality | Attack Surface |
 | --- | --- | --- | --- |
 | React Renderer | UI, state, utility pane tabs | HIGH | Markdown/SVG rendering, URL bar input, mission IDs, free-text prompts |
-| Electron Main (`main.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `WebContentsView` navigation, `executeJavaScript`, child process spawn |
+| Electron Main (`main.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `<webview>` guest binding and navigation, `executeJavaScript`, child process spawn |
 | Main Preload (`preload.cjs`) | contextBridge API for renderer | MEDIUM | ~50 exposed methods, IPC message construction |
 | Native Browser Preload (`nativeBrowserPreload.cjs`) | Agent bridge inside untrusted pages | HIGH | Runs in arbitrary web page context with full Node access (sandbox:false) |
 | Files Module (`electron/files.cjs`) | Root-confined file preview/open/reveal | HIGH | Path traversal, symlink escape, TOCTOU, binary parsing |
@@ -44,7 +44,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 
 ### Data Flow
 
-When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the WebSocket back to the Electron main process, which drives a `WebContentsView` with `executeJavaScript` calls into the native browser preload. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model injects values via `executeJavaScript` and returns only `{ filled: true }`.
+When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the WebSocket back to the Electron main process, which drives that chat's `<webview>` guest with `executeJavaScript` calls into the native browser preload. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model injects values via `executeJavaScript` and returns only `{ filled: true }`.
 
 ---
 
@@ -57,7 +57,8 @@ The system has **5 trust zones**:
 1. **Untrusted Web Zone** - Arbitrary web pages loaded in the native browser pane
 
    - Assumes: Fully malicious content, XSS payloads, prompt-injection embedded in page DOM
-   - Entry Points: `nativeBrowserOpen(url)`, `nativeBrowserAttach`, agent `browser.open` tool, user-typed URL bar
+   - Entry Points: `nativeBrowserOpen(url)`, agent `browser.open` tool, user-typed URL bar
+   - Guest binding: the renderer can only mount a `<webview>` carrying a one-time token from `nativeBrowserReserve`; `will-attach-webview` rejects unknown, used or wrong-host tokens and replaces the guest's `webPreferences` and parameters wholesale, and main navigates the guest itself
    - Validated by: `validateUrl` (scheme allowlist: http/https/file/about), `rejectHostAppUrl` (self-origin block), `setWindowOpenHandler` (popup deny)
    - Risk: The `nativeBrowserPreload.cjs` runs in this zone with `sandbox: false` and full Node access
 
@@ -117,7 +118,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 ### External Interfaces
 
-#### Native Browser Pane (WebContentsView)
+#### Native Browser Pane (`<webview>` guests)
 
 - **URL navigation** - User-typed or agent-specified URLs loaded into a shared `persist:droid-control-browser` partition
   - **Input:** URL strings (http, https, file, about schemes)

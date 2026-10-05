@@ -118,7 +118,6 @@ const TilePane = memo(function TilePane({
   besidePane,
   underBrowser,
   composerHost,
-  onComposerOverlayChange,
 }: {
   appSessionId: string | null;
   // Null while the tab is not split.
@@ -131,7 +130,6 @@ const TilePane = memo(function TilePane({
   besidePane: boolean;
   underBrowser: boolean;
   composerHost: RefObject<HTMLElement | null> | null;
-  onComposerOverlayChange?: (open: boolean) => void;
 }) {
   // App loads the focused chat's history; the other tiles load their own.
   useSessionHistory(focused || isEmbedded() ? null : appSessionId);
@@ -157,7 +155,6 @@ const TilePane = memo(function TilePane({
           appSessionId={appSessionId}
           rightInset={rightInset && !underBrowser}
           compact={underBrowser}
-          {...(onComposerOverlayChange ? { onOverlayChange: onComposerOverlayChange } : {})}
         />
       </ComposerHeight>
     </>
@@ -170,7 +167,6 @@ export function ChatTiles({
   besidePane,
   underBrowser,
   composerHost,
-  onComposerOverlayChange,
 }: {
   rightInset: boolean;
   isObscured: boolean;
@@ -180,7 +176,6 @@ export function ChatTiles({
   underBrowser: boolean;
   // Where the focused composer publishes its height for the browser to keep clear.
   composerHost: RefObject<HTMLElement | null>;
-  onComposerOverlayChange: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
   const source = useStoreSelector(selectTileSource, shallowEqual);
@@ -304,7 +299,6 @@ export function ChatTiles({
               besidePane={besidePane || !box.atRight}
               underBrowser={underBrowser && focused}
               composerHost={focused ? composerHost : null}
-              {...(focused ? { onComposerOverlayChange } : {})}
             />
             {drag && !isObscured && (
               <TileDropTarget
