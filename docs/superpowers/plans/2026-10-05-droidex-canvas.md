@@ -267,7 +267,7 @@ export default defineConfig({
 
 - [x] `canvas/02a-canvas-contracts`: Define limited Zod contracts in sidecar Canvas `protocol.ts`/`schema.ts` and mirror `src/features/canvas/protocol.ts`.
   Done: One serialized-fixture test passes against both boundaries, including rejected invalid inputs.
-- [ ] `canvas/02b-canvas-workspace`: Implement `CanvasWorkspace.ts` and `canvasFiles.ts` with atomic commits, CAS and persisted mutation IDs.
+- [x] `canvas/02b-canvas-workspace`: Implement `CanvasWorkspace.ts` and `canvasFiles.ts` with atomic commits, CAS and persisted mutation IDs.
   Done: Fault-injection and reopen tests preserve complete heads and reject stale or revoked writes.
 - [ ] `canvas/02c-canvas-bridge-commands`: Wire `canvas.*` commands/events through sidecar protocol, bridgeServer, droidexPaths and `src/types/bridge.ts`, including attachments and renderer sequence handling.
   Done: Correlated commands persist attachments; duplicate events are ignored and gaps request a snapshot.
@@ -701,6 +701,9 @@ Run `npm run docs:generate` before `docs:check` when script/environment document
 Noted during execution; not in any task's scope. Each needs its own change and review.
 
 - `tests/smoke/*.ts` and `tests/integration/*.ts` are outside the typed ESLint file set (`eslint.config.js`) and every `tsconfig`. This predates Canvas and covers the existing Electron smokes too. Add a focused test tsconfig and lint coverage for `tests/` as a repository-wide change.
+- Canvas storage leaves an empty canvas directory or a stray `.tmp` behind when a bootstrap crashes between `mkdir` and the first manifest rename. Nothing serves or reads it, but `CanvasWorkspace.open` only cleans staging under canvases that have a manifest. Sweep manifest-less canvas directories at open (02b review, accepted as a follow-up).
+- The 4096 unsettled-receipt ceiling in `canvasManifest.ts` is enforced and documented but exercised only through a fixture-built ledger, never through real commits. Acceptable while no lease can realistically issue that many mutations; revisit if Task 5 board interactions mint long-lived UI leases.
+- `sidecar/src/canvas/CanvasWorkspace.test.ts` sits at 798 effective lines against the 800 cap. The next behavior that needs a workspace-level test must first move an existing contract to its module's owner suite (`canvasHeads`, `canvasLeases`, `canvasFrames`, `canvasManifest`) rather than grow this one.
 
 ## Plan self-review and handoff checklist
 
