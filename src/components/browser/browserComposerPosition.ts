@@ -6,7 +6,7 @@ import type {
   DesignReference,
 } from '../../types/bridge';
 import type { Size } from './browserGeometry';
-import { clamp } from './browserViewport';
+import { clamp, pageLayout } from './browserViewport';
 
 export function composerStyleForReferences(
   references: DesignReference[],
@@ -14,7 +14,7 @@ export function composerStyleForReferences(
   viewport: BrowserViewport,
   mode: BrowserViewportMode,
 ): CSSProperties {
-  const surface = surfaceLayout(frame, viewport, mode);
+  const surface = pageLayout(frame, viewport, mode);
   const box = unionBoxes(
     references.map(boxForReference).filter((item): item is BrowserBox => Boolean(item)),
   ) ?? {
@@ -25,31 +25,15 @@ export function composerStyleForReferences(
   };
   const composerWidth = Math.min(420, Math.max(280, frame.width - 24));
   const composerHeight = 112;
-  const left = surface.left + box.x;
-  const belowTop = surface.top + box.y + box.height + 10;
-  const aboveTop = surface.top + box.y - composerHeight - 10;
+  // Boxes are in the page's CSS pixels; a standard size is drawn scaled.
+  const scale = surface.scale ?? 1;
+  const left = surface.left + box.x * scale;
+  const belowTop = surface.top + (box.y + box.height) * scale + 10;
+  const aboveTop = surface.top + box.y * scale - composerHeight - 10;
   const top = belowTop + composerHeight <= frame.height - 12 ? belowTop : aboveTop;
   return {
     left: clamp(left, 12, Math.max(12, frame.width - composerWidth - 12)),
     top: clamp(top, 12, Math.max(12, frame.height - composerHeight - 12)),
-  };
-}
-
-function surfaceLayout(
-  frame: Size,
-  viewport: BrowserViewport,
-  mode: BrowserViewportMode,
-): Size & { left: number; top: number } {
-  const padding = 18;
-  const availableWidth = Math.max(1, frame.width - padding * 2);
-  const availableHeight = Math.max(1, frame.height - padding * 2);
-  const width = mode === 'fit' ? availableWidth : Math.min(viewport.width, availableWidth);
-  const height = mode === 'fit' ? availableHeight : Math.min(viewport.height, availableHeight);
-  return {
-    width: Math.round(width),
-    height: Math.round(height),
-    left: Math.round((frame.width - width) / 2),
-    top: Math.round((frame.height - height) / 2),
   };
 }
 

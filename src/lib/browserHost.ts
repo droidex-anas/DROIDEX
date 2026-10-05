@@ -27,6 +27,8 @@ interface BrowserSlot {
   /** CSS anchor name of the pane's slot element. */
   anchor: string;
   rounded: boolean;
+  /** A standard-size page drawn at this scale; Fit pages fill the slot. */
+  scale?: number;
 }
 
 export interface BrowserHostState {
@@ -206,24 +208,31 @@ function setSlot(slot: BrowserSlot | null): void {
  */
 export function useBrowserSlot(
   browserSessionId: string | undefined,
-  { hidden, rounded, url }: { hidden: boolean; rounded: boolean; url: string },
+  {
+    hidden,
+    rounded,
+    scale,
+    url,
+  }: { hidden: boolean; rounded: boolean; scale?: number; url: string },
 ): string {
   const anchor = `--browser-slot-${useId().replace(/[^\w-]/g, '')}`;
-  const latest = useRef({ rounded, url });
-  latest.current = { rounded, url };
+  const latest = useRef({ rounded, scale, url });
+  latest.current = { rounded, scale, url };
   useLayoutEffect(() => {
     if (!browserSessionId || hidden) return;
     void ensureBrowserPage(browserSessionId, latest.current.url).catch(() => undefined);
-    setSlot({ browserSessionId, anchor, rounded: latest.current.rounded });
+    const { rounded: corners, scale: drawnAt } = latest.current;
+    setSlot({ browserSessionId, anchor, rounded: corners, scale: drawnAt });
     return () => {
       if (state.slot?.anchor === anchor) setSlot(null);
     };
   }, [anchor, browserSessionId, hidden]);
-  // Corners follow the pane in place; withdrawing the slot would put the page
-  // to sleep for a frame.
+  // Corners and scale follow the pane in place; withdrawing the slot would put
+  // the page to sleep for a frame.
   useLayoutEffect(() => {
-    if (state.slot?.anchor === anchor && state.slot.rounded !== rounded)
-      update({ slot: { ...state.slot, rounded } });
-  }, [anchor, rounded]);
+    const slot = state.slot;
+    if (slot?.anchor === anchor && (slot.rounded !== rounded || slot.scale !== scale))
+      update({ slot: { ...slot, rounded, scale } });
+  }, [anchor, rounded, scale]);
   return anchor;
 }

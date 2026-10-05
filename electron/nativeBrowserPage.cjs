@@ -5,6 +5,8 @@ const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserWait } = require('./browserWait.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 
+const VIEWPORT_WAIT_MS = 2_000;
+
 function createNativeBrowserPage({
   appName,
   ensureEntry,
@@ -36,11 +38,16 @@ function createNativeBrowserPage({
   });
   const waits = createBrowserWait({ reading });
 
-  function setDesignMode(browserSessionId, active) {
+  // `scale` is how large the pane draws the page; the page script keeps its
+  // design labels and composer readable at it.
+  function setDesignMode(browserSessionId, active, scale) {
     const entry = ensureEntry(browserSessionId);
     const next = Boolean(active);
-    if (entry.state.designMode === next) return;
+    // Any real scale down to fit; anything else counts as drawn at full size.
+    const shownAt = Number(scale) > 0 && Number(scale) <= 1 ? Number(scale) : 1;
+    if (entry.state.designMode === next && entry.state.scale === shownAt) return;
     entry.state.designMode = next;
+    entry.state.scale = shownAt;
     if (!entry.state.designMode) entry.state.pencilMode = false;
     return applyDesignState(entry);
   }
@@ -95,6 +102,11 @@ function createNativeBrowserPage({
       const shot = await unthrottled(contents, () => screenshots.take(contents, entry, request));
       return { requestId: request.requestId, ok: true, ...shot };
     }
+    if (request.action === 'awaitViewport') {
+      // The page takes its new size at full speed, shown or not.
+      await unthrottled(contents, () => laidOutAt(contents, request.viewport));
+      return actions.act(contents, entry, { ...request, action: 'snapshot' });
+    }
     if (request.action === 'wait') {
       // The page runs at full speed while the agent waits on it.
       await unthrottled(contents, () => waits.wait(contents, entry, request));
@@ -121,6 +133,24 @@ function createNativeBrowserPage({
     const consoleEvents = entry.consoleEvents.slice();
     if (request.clearConsoleLog) entry.consoleEvents.length = 0;
     return { requestId: request.requestId, ok: true, consoleEvents };
+  }
+
+  // The pane resizes the page a frame or two after the sidecar sets a size; the
+  // page has taken it once it reports it.
+  async function laidOutAt(contents, { width, height }) {
+    const until = Date.now() + VIEWPORT_WAIT_MS;
+    while (Date.now() < until) {
+      const size = await runWithWebContentsDebugger(contents, (dbg) =>
+        dbg.sendCommand('Runtime.evaluate', {
+          expression: '[innerWidth, innerHeight]',
+          returnByValue: true,
+        }),
+      );
+      const [w, h] = size?.result?.value ?? [];
+      if (w === width && h === height) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('The page did not take the new size in time.');
   }
 
   // A design-mode crop, as PNG; agent screenshots go through browserScreenshot.
