@@ -3,9 +3,15 @@
 // than a timestamp.
 let seedSequence = 0;
 
-export function createComposerSeed(text: string, replace = false) {
+// A seed from the browser's prompt box leaves the focus where it is, and one
+// it sends goes out as the composer's own prompt.
+export function createComposerSeed(
+  text: string,
+  replace = false,
+  { send = false, focus = true }: { send?: boolean; focus?: boolean } = {},
+) {
   seedSequence += 1;
-  return { text, id: seedSequence, replace };
+  return { text, id: seedSequence, replace, send, focus };
 }
 
 /**

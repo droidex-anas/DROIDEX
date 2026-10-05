@@ -397,7 +397,7 @@ export interface AppState {
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
   // One-shot text seeded into the composer (welcome-screen suggestion cards,
   // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
-  composerSeed: { text: string; id: number; replace: boolean } | null;
+  composerSeed: ReturnType<typeof createComposerSeed> | null;
   workspaceCwds: string[];
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
@@ -718,7 +718,7 @@ export type Action =
       branch?: string;
       project?: true;
     }
-  | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
+  | { type: 'SEED_COMPOSER'; text: string; replace?: boolean; send?: boolean; focus?: boolean }
   | { type: 'CLEAR_COMPOSER_SEED' }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
   | { type: 'SESSION_NOTE_MARK_USED'; appSessionId: string; noteId: string }
@@ -2338,7 +2338,13 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'SEED_COMPOSER':
-      return { ...state, composerSeed: createComposerSeed(action.text, action.replace) };
+      return {
+        ...state,
+        composerSeed: createComposerSeed(action.text, action.replace, {
+          send: action.send,
+          focus: action.focus,
+        }),
+      };
     // The composer consumes the seed once; it must not linger, or remounting
     // the composer (e.g. toggling Mission Control) would re-apply stale text.
     case 'CLEAR_COMPOSER_SEED':

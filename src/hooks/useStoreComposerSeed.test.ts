@@ -21,4 +21,15 @@ test('a composer seed records its replace intent and clears once consumed', () =
     replace: true,
   });
   assert.equal(replacing.composerSeed?.replace, true);
+
+  // The browser's prompt box sends its seed at once and leaves the focus alone.
+  const sending = reducer(initialState, {
+    type: 'SEED_COMPOSER',
+    text: 'make this bolder',
+    send: true,
+    focus: false,
+  });
+  assert.equal(sending.composerSeed?.send, true);
+  assert.equal(sending.composerSeed?.focus, false);
+  assert.equal(seeded.composerSeed?.focus, true);
 });

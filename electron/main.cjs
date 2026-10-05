@@ -950,14 +950,15 @@ function registerIpc() {
     nativeBrowserShortcuts.setChords(chords);
   });
 
-  // A page in design mode reports what the user picked and the keys meant for
-  // the app, passed on at once. A pick's crop, taken while its mark shows,
-  // follows as a shot for that pick, so Escape and an unselect never wait on a
-  // capture.
+  // A page in design mode reports what the user picked, where its marks are
+  // as it scrolls, and the keys meant for the app, passed on at once. A pick's
+  // crop, taken while its mark shows, follows as a shot for that pick, so
+  // Escape and an unselect never wait on a capture.
   let designPicks = 0;
   ipcMain.on('native-browser-design-event', (event, payload) => {
     const browserSessionId = nativeBrowserManager.sessionIdForWebContents(event.sender);
-    if (!browserSessionId || !['select', 'unselect', 'key'].includes(payload?.type)) return;
+    const types = ['select', 'unselect', 'boxes', 'key'];
+    if (!browserSessionId || !types.includes(payload?.type)) return;
     const send = (next) =>
       mainWindow?.webContents.send('native-browser-design-event', { ...next, browserSessionId });
     if (payload.type !== 'select') {
