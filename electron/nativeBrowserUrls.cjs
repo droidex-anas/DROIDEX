@@ -123,15 +123,6 @@ function createNativeBrowserUrlPolicy({ appName, getHostAppUrl }) {
     }
   }
 
-  function normalizeBounds(bounds) {
-    return {
-      x: Math.round(bounds?.x ?? 0),
-      y: Math.round(bounds?.y ?? 0),
-      width: Math.max(1, Math.round(bounds?.width ?? 1)),
-      height: Math.max(1, Math.round(bounds?.height ?? 1)),
-    };
-  }
-
   return {
     normalizeNativeBrowserSessionId,
     nativeBrowserUrlsMatch,
@@ -144,7 +135,6 @@ function createNativeBrowserUrlPolicy({ appName, getHostAppUrl }) {
     isHostAppUrl,
     httpFallbackUrl,
     validateUrl,
-    normalizeBounds,
   };
 }
 
