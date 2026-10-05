@@ -253,10 +253,13 @@ test('opting out while the SDK is loading never starts a view', async () => {
   });
   // The round trip that stores the preference is slower than the SDK load, so
   // the opt-out has to count from the click, not from the bridge's answer.
+  let answerOptOut = (): void => undefined;
   Reflect.set(globalThis, 'window', {
     droidControl: {
       setUsageAnalytics: () =>
-        new Promise((resolve) => setTimeout(() => resolve({ enabled: false }), 20)),
+        new Promise((resolve) => {
+          answerOptOut = () => resolve({ enabled: false });
+        }),
     },
   });
   try {
@@ -270,6 +273,7 @@ test('opting out while the SDK is loading never starts a view', async () => {
     const optOut = setUsageAnalyticsPreference(false);
     finishLoading();
     assert.equal(await launch, 'disabled');
+    answerOptOut();
     await optOut;
   } finally {
     Reflect.deleteProperty(globalThis, 'window');

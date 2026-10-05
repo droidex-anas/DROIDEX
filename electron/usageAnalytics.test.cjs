@@ -199,16 +199,22 @@ test('unreadable state never throws at startup', async () => {
 test('opting out while the id is being written leaves nothing behind', async () => {
   const fs = memoryFs();
   const rename = fs.rename;
-  // Holds the installation write open long enough for the opt-out to overlap it.
+  // Holds the installation write open until the opt-out overlaps it.
+  let releaseWrite = () => undefined;
+  const writeHeld = new Promise((resolve) => {
+    releaseWrite = resolve;
+  });
   fs.rename = async (from, to) => {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await writeHeld;
     return rename(from, to);
   };
   const analytics = createUsageAnalytics(options({ fs }));
 
   const launch = analytics.bootstrap();
   for (let tick = 0; tick < 3; tick += 1) await new Promise(setImmediate);
-  await analytics.setEnabled(false);
+  const optingOut = analytics.setEnabled(false);
+  releaseWrite();
+  await optingOut;
 
   assert.equal(fs.files.has(installationPath), false);
   assert.deepEqual(await launch, { enabled: false });
