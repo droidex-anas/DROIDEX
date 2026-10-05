@@ -8,6 +8,7 @@ const { mountDevice } = require('./browserDevice.cjs');
 const { createNativeBrowserUrlPolicy } = require('./nativeBrowserUrls.cjs');
 const { createNativeBrowserCredentials } = require('./nativeBrowserCredentials.cjs');
 const { createBrowserDevTools } = require('./browserDevTools.cjs');
+const { createBrowserPreview } = require('./browserPreview.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 const { createNativeBrowserViewFactory } = require('./nativeBrowserView.cjs');
 
@@ -76,6 +77,12 @@ function createNativeBrowserManager(options) {
     nativeImage: options.nativeImage,
   });
 
+  const preview = createBrowserPreview({
+    liveContentsOf: (browserSessionId) => liveContents(nativeBrowsers.get(browserSessionId)),
+    runWithWebContentsDebugger,
+    sendToRenderer: options.sendToRenderer,
+  });
+
   function ensureNativeBrowserEntry(browserSessionId) {
     browserSessionId = urls.normalizeNativeBrowserSessionId(browserSessionId);
     let entry = nativeBrowsers.get(browserSessionId);
@@ -117,6 +124,7 @@ function createNativeBrowserManager(options) {
     if (!entry) return;
     guests.release(entry.browserSessionId);
     entry.contents = null;
+    preview.sync(entry.browserSessionId);
     entry.shown = false;
     forgetLoad(entry);
     forgetLoadWaiters(entry);
@@ -128,6 +136,7 @@ function createNativeBrowserManager(options) {
     forgetLoadWaiters(entry);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
     views.bindGuest(entry, contents);
+    preview.sync(entry.browserSessionId);
     // The device first, so a site sees it from its first request and script.
     // Until the guest has it the entry counts as loading, an open waits for it
     // and takes the saved page's place, and the blank page a touch device is
@@ -226,6 +235,7 @@ function createNativeBrowserManager(options) {
     if (!entry) return;
     // A restore still waiting on the guest's setup never runs.
     forgetLoad(entry);
+    preview.watch(entry.browserSessionId, false);
     guests.release(entry.browserSessionId);
     nativeBrowsers.delete(entry.browserSessionId);
   }
@@ -372,6 +382,7 @@ function createNativeBrowserManager(options) {
   }
 
   function closeAllNativeBrowsers() {
+    preview.forget();
     for (const entry of nativeBrowsers.values()) {
       forgetLoad(entry);
       guests.release(entry.browserSessionId);
@@ -410,6 +421,9 @@ function createNativeBrowserManager(options) {
       if (contents) page.abandonOperations(contents);
     },
     capture: page.capture,
+    watch: (browserSessionId, watching) =>
+      preview.watch(urls.normalizeNativeBrowserSessionId(browserSessionId), Boolean(watching)),
+    forgetWatchers: preview.forget,
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,
     sessionIdForWebContents: guests.sessionIdFor,
