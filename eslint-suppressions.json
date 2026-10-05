@@ -1,7 +1,7 @@
 {
   "electron/nativeBrowserPreload.cjs": {
     "no-undef": {
-      "count": 98
+      "count": 72
     }
   },
   "sidecar/src/ChildSessions.test.ts": {
@@ -24,9 +24,6 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     },
     "@typescript-eslint/restrict-template-expressions": {
@@ -263,7 +260,7 @@
   },
   "src/hooks/useStore.tsx": {
     "@typescript-eslint/no-dynamic-delete": {
-      "count": 7
+      "count": 6
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 23
