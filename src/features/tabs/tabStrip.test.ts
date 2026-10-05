@@ -541,6 +541,9 @@ test('stored tabs load with the live page and without invalid or duplicate entri
           { id: 't2', page: { kind: 'chat', appSessionId: 'a' }, tileId: 'u2' },
           { id: 't3', page: { kind: 'unknown' } as never, tileId: 'u3' },
           { id: 't4', page: { kind: 'projects' }, tileId: 'u4' },
+          { id: 't5', page: { kind: 'automations' }, tileId: 'u5' },
+          { id: 't6', page: { kind: 'automations' }, tileId: 'u6' },
+          { id: 't1', page: { kind: 'chat', appSessionId: 'b' }, tileId: 'u7' },
         ],
         activeTabId: 't4',
         closedTabs: [{ page: { kind: 'projects' }, index: 0 }],
@@ -552,6 +555,7 @@ test('stored tabs load with the live page and without invalid or duplicate entri
       [
         { id: 't1', page: { kind: 'chat', appSessionId: 'a' } },
         { id: 't4', page: { kind: 'new-chat', draft } },
+        { id: 't5', page: { kind: 'automations' } },
       ],
     );
     assert.equal(loaded.activeTabId, 't4');
