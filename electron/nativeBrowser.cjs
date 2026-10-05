@@ -256,6 +256,7 @@ function createNativeBrowserManager(options) {
     const contents = nativeBrowsers.get(entry.browserSessionId) === entry && liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
     before?.();
+    entry.crashed = false;
     const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
     const retryUrl = entry.failedRestoreUrl ?? pendingUrl;
     if (retryUrl) {
@@ -263,7 +264,6 @@ function createNativeBrowserManager(options) {
       forgetLoad(entry);
       return loadNativeBrowserUrl(entry, retryUrl, { force: true });
     }
-    entry.crashed = false;
     if (contents.getURL()) entry.targetUrl = contents.getURL();
     contents.reload();
   }
