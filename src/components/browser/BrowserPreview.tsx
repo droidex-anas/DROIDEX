@@ -92,9 +92,11 @@ export function BrowserPreview({
           />
         )}
         {/* Mounted before the first frame of a live card, so a point that
-            comes first is kept. */}
+            comes first is kept. Keyed by browser, so a new one never starts
+            at the last one's point. */}
         {browserSessionId && (live || frame) && (
           <BrowserAgentCursor
+            key={browserSessionId}
             browserSessionId={browserSessionId}
             scale={fit}
             shown={live && frame !== null}
