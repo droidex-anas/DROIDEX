@@ -24,6 +24,10 @@ const NO_EVENTS: TranscriptEvent[] = [];
 const PANEL_ROWS = 40;
 const PANEL_TOOL_EVENTS = 120;
 const CUE_EVENTS = 100;
+// Opened, the panel groups this many of the newest events, reaching back to
+// where a run of tool calls begins so each group keeps its first event and key.
+const PANEL_EVENTS = 600;
+const PANEL_REACH = 2000;
 
 // One line over the full-screen page saying what the agent is doing now, the
 // way the transcript's live tail says it. It opens into the current turn's
@@ -56,11 +60,12 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
     if (session?.interruptReason) return 'interrupted';
     return 'ready';
   });
-  // Opened, the whole turn is grouped, so a group keeps its key, and with it
-  // its opened details, as new steps arrive.
+  // Opened, the newest events are grouped from the start of their first run of
+  // tools, so a group keeps its key, and with it its opened details, as new
+  // steps arrive.
   const feed = useMemo(
     () =>
-      buildFeed(open ? turn.events : recentEvents(turn.events, CUE_EVENTS))
+      buildFeed(open ? panelEvents(turn.events) : recentEvents(turn.events, CUE_EVENTS))
         // The page shows the browser's work itself, so its card stays in the transcript.
         .filter((item) => item.type !== 'browser'),
     [turn.events, open],
@@ -239,6 +244,15 @@ function latestSteps(feed: FeedItem[]): { steps: FeedItem[]; trimmed: boolean } 
 
 // The turn's last events, starting clear of a result whose call was cut off,
 // which would otherwise draw as a bare result.
+function panelEvents(events: TranscriptEvent[]): TranscriptEvent[] {
+  let start = Math.max(0, events.length - PANEL_EVENTS);
+  const floor = Math.max(0, start - PANEL_REACH);
+  const isTool = (event: TranscriptEvent) =>
+    event.kind === 'tool_call' || event.kind === 'tool_result';
+  while (start > floor && isTool(events[start]) && isTool(events[start - 1])) start -= 1;
+  return start === 0 ? events : recentEvents(events, events.length - start);
+}
+
 // The newest events, without a result whose call was cut off with the older
 // ones, so no step shows detached from its call.
 function recentEvents(events: TranscriptEvent[], limit: number): TranscriptEvent[] {
