@@ -100,32 +100,35 @@ async function mountDevice(contents, entry) {
 }
 
 // A command the guest never answers is given up on, so it cannot hold the
-// guest's later changes for good.
+// guest's later changes for good. A change given up on sends nothing more: by
+// the time its command returns, a later change may own the guest.
 async function emulate(contents, { userAgent, scheme }, { touch, media }) {
   if (!touch && !media) return;
+  let givenUp = false;
   const sent = runWithWebContentsDebugger(contents, async (dbg) => {
+    const send = (method, params) => (givenUp ? undefined : dbg.sendCommand(method, params));
     if (touch) {
       // The client hints say the same device as the user agent does.
-      await dbg.sendCommand(
+      await send(
         'Emulation.setUserAgentOverride',
         userAgent ? { userAgent, userAgentMetadata: clientHints(userAgent) } : { userAgent: '' },
       );
-      await dbg.sendCommand(
+      await send(
         'Emulation.setTouchEmulationEnabled',
         userAgent ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
       );
     }
     if (media)
-      await dbg.sendCommand('Emulation.setEmulatedMedia', {
+      await send('Emulation.setEmulatedMedia', {
         features: scheme ? [{ name: 'prefers-color-scheme', value: scheme }] : [],
       });
   });
   let timer;
   const late = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error('The browser page did not take its device in time.')),
-      EMULATE_MS,
-    );
+    timer = setTimeout(() => {
+      givenUp = true;
+      reject(new Error('The browser page did not take its device in time.'));
+    }, EMULATE_MS);
   });
   await Promise.race([sent, late]).finally(() => clearTimeout(timer));
 }
