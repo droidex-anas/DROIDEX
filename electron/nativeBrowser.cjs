@@ -224,9 +224,11 @@ function createNativeBrowserManager(options) {
     await loadNativeBrowserUrl(entry, url, { force: true });
   }
 
+  // Only an open browser is shown or hidden: the renderer hides a page it
+  // closes after main has already forgotten it.
   function setNativeBrowserShown(browserSessionId, shown) {
-    const entry = ensureNativeBrowserEntry(browserSessionId);
-    if (entry.shown === Boolean(shown)) return;
+    const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
+    if (!entry || entry.shown === Boolean(shown)) return;
     entry.shown = Boolean(shown);
     if (entry.state.designMode) void page.applyDesignState(entry);
   }
