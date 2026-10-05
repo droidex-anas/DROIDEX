@@ -120,10 +120,17 @@ export async function withCanvasHost(
         } catch (error) {
           console.log(String(error));
         } finally {
+          const terminationErrors: unknown[] = [];
           for (const childPid of childPids.reverse()) {
-            if (processAlive(childPid)) process.kill(childPid, 'SIGKILL');
+            try {
+              process.kill(childPid, 'SIGKILL');
+            } catch (error) {
+              if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH'))
+                terminationErrors.push(error);
+            }
           }
           await expect.poll(() => childPids.filter(processAlive), { timeout: 10_000 }).toEqual([]);
+          assert.deepEqual(terminationErrors, [], 'failed to terminate owned child processes');
         }
       }
       assert.equal(

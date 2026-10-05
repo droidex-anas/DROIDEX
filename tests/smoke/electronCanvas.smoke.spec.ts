@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { Socket } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { expect, test } from '@playwright/test';
 import {
@@ -12,7 +15,8 @@ import {
 } from './canvasSmoke';
 import { mountWebview } from './canvasWebview';
 
-const ESCAPE_SCRIPT = `
+function escapeScript(networkUrl: string): string {
+  return `
   const results = {};
   const done = () => parent.postMessage({ probe: 'escape', results }, '*');
   const settle = (name, promise) => promise.then(
@@ -34,10 +38,10 @@ const ESCAPE_SCRIPT = `
   results.topNavigation = (() => { try { top.location.href = 'https://example.invalid/'; return 'assigned'; } catch (error) { return 'blocked: ' + error.name; } })();
   const probes = [
     settle('worker', workerOutcome),
-    settle('fetch', fetch('https://example.invalid/').then(() => 'allowed')),
+    settle('fetch', fetch(${JSON.stringify(networkUrl + '/fetch')}).then(() => 'allowed')),
     settle('websocket', new Promise((resolve) => {
       try {
-        const socket = new WebSocket('wss://example.invalid/');
+        const socket = new WebSocket(${JSON.stringify(networkUrl.replace('http:', 'ws:') + '/socket')});
         socket.onerror = () => resolve('errored');
         socket.onopen = () => resolve('opened');
       } catch (error) { resolve('blocked: ' + error.name); }
@@ -45,68 +49,143 @@ const ESCAPE_SCRIPT = `
   ];
   Promise.all(probes).then(done);
 `;
+}
 
 test('[C1] opaque preview isolates CPU and refuses escapes', async () => {
-  await withCanvasHost(async (app, page) => {
-    await app.evaluate(({ BrowserWindow }) => {
-      Object.assign(globalThis, { __spinEntered: false });
-      BrowserWindow.getAllWindows()[0].webContents.on('console-message', (event) => {
-        if (event.message === 'CANVAS_SPIN_ENTERED') Reflect.set(globalThis, '__spinEntered', true);
-      });
-    });
-    await mountFrame(
-      page,
-      "addEventListener('message',()=>{console.log('CANVAS_SPIN_ENTERED');while(true){}},{once:true});",
-    );
-    await expect.poll(() => framePid(app)).toBeGreaterThan(0);
-    const pid = await framePid(app);
-    await bounded(
-      page.evaluate(() => {
-        document
-          .querySelector<HTMLIFrameElement>('#canvas-probe')
-          ?.contentWindow?.postMessage('spin', '*');
-      }),
-      'start spin',
-    );
-    await expect
-      .poll(() => app.evaluate(() => Reflect.get(globalThis, '__spinEntered')))
-      .toBe(true);
-    assert.equal(
-      await bounded(
-        page.evaluate(() => 2),
-        'host while spinning',
-      ),
-      2,
-    );
-    await terminateFrame(app, pid);
-    await expect.poll(() => processAlive(pid)).toBe(false);
-    await page.evaluate(() => document.getElementById('canvas-probe')?.remove());
-    await page.evaluate(() => {
-      Object.assign(window, { __escape: null });
-      addEventListener('message', (event) => {
-        if (event.data?.probe === 'escape') Object.assign(window, { __escape: event.data.results });
-      });
-    });
-    const hostUrl = page.url();
-    await mountFrame(page, ESCAPE_SCRIPT);
-    await expect
-      .poll(() =>
-        bounded(
-          page.evaluate(() => Reflect.get(window, '__escape')),
-          'escape collector',
-        ),
-      )
-      .not.toBeNull();
-    const results = await page.evaluate(() => Reflect.get(window, '__escape'));
-    for (const name of ['parentDocument', 'cookie', 'localStorage', 'topNavigation'])
-      assert.match(results[name], /^blocked/);
-    assert.match(results.fetch, /^rejected/);
-    assert.equal(results.websocket, 'errored');
-    assert.equal(results.popup, 'null');
-    assert.notEqual(results.worker, 'ran');
-    assert.equal(page.url(), hostUrl);
-    console.log(JSON.stringify({ escapes: results }));
+  const sockets = new Set<Socket>();
+  const attempts = { connections: 0, requests: 0, upgrades: 0 };
+  const server = createServer((_request, response) => {
+    attempts.requests += 1;
+    response.writeHead(200, { 'Access-Control-Allow-Origin': '*', Connection: 'close' });
+    response.end('reachable');
   });
+  server.on('connection', (socket) => {
+    attempts.connections += 1;
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  server.on('upgrade', (request, socket) => {
+    attempts.upgrades += 1;
+    const key = request.headers['sec-websocket-key'];
+    assert.equal(typeof key, 'string');
+    const accept = createHash('sha1')
+      .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
+      .digest('base64');
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    socket.on('data', () => socket.destroy());
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const networkUrl = `http://127.0.0.1:${address.port}`;
+    await withCanvasHost(async (app, page) => {
+      await app.evaluate(({ BrowserWindow }) => {
+        Object.assign(globalThis, { __spinEntered: false });
+        BrowserWindow.getAllWindows()[0].webContents.on('console-message', (event) => {
+          if (event.message === 'CANVAS_SPIN_ENTERED')
+            Reflect.set(globalThis, '__spinEntered', true);
+        });
+      });
+      await mountFrame(
+        page,
+        "addEventListener('message',()=>{console.log('CANVAS_SPIN_ENTERED');while(true){}},{once:true});",
+      );
+      await expect.poll(() => framePid(app)).toBeGreaterThan(0);
+      const pid = await framePid(app);
+      await bounded(
+        page.evaluate(() => {
+          document
+            .querySelector<HTMLIFrameElement>('#canvas-probe')
+            ?.contentWindow?.postMessage('spin', '*');
+        }),
+        'start spin',
+      );
+      await expect
+        .poll(() => app.evaluate(() => Reflect.get(globalThis, '__spinEntered')))
+        .toBe(true);
+      assert.equal(
+        await bounded(
+          page.evaluate(() => 2),
+          'host while spinning',
+        ),
+        2,
+      );
+      await terminateFrame(app, pid);
+      await expect.poll(() => processAlive(pid)).toBe(false);
+      await page.evaluate(() => document.getElementById('canvas-probe')?.remove());
+      await page.evaluate(() => {
+        Object.assign(window, { __escape: null });
+        addEventListener('message', (event) => {
+          if (event.data?.probe === 'escape')
+            Object.assign(window, { __escape: event.data.results });
+        });
+      });
+      const hostUrl = page.url();
+      const positiveControl = await bounded(
+        page.evaluate(async (url) => {
+          const response = await fetch(url + '/fetch');
+          const body = await response.text();
+          await new Promise<void>((resolve, reject) => {
+            const socket = new WebSocket(url.replace('http:', 'ws:') + '/socket');
+            socket.onerror = () => reject(new Error('Host WebSocket could not reach listener'));
+            socket.onopen = () => {
+              socket.close();
+              resolve();
+            };
+          });
+          return body;
+        }, networkUrl),
+        'host network positive control',
+      );
+      assert.equal(positiveControl, 'reachable');
+      assert.equal(attempts.requests, 1);
+      assert.equal(attempts.upgrades, 1);
+      assert.ok(attempts.connections >= 2);
+      await expect.poll(() => sockets.size).toBe(0);
+      const hostAttempts = { ...attempts };
+      await mountFrame(page, escapeScript(networkUrl));
+      await expect
+        .poll(() =>
+          bounded(
+            page.evaluate(() => Reflect.get(window, '__escape')),
+            'escape collector',
+          ),
+        )
+        .not.toBeNull();
+      assert.deepEqual(attempts, hostAttempts, 'generated frame reached the network listener');
+      const results = await page.evaluate(() => Reflect.get(window, '__escape'));
+      for (const name of ['parentDocument', 'cookie', 'localStorage', 'topNavigation'])
+        assert.match(results[name], /^blocked/);
+      assert.match(results.fetch, /^rejected/);
+      assert.equal(results.websocket, 'errored');
+      assert.equal(results.popup, 'null');
+      assert.notEqual(results.worker, 'ran');
+      assert.equal(page.url(), hostUrl);
+      console.log(
+        JSON.stringify({
+          escapes: results,
+          hostAttempts,
+          generatedAttempts: {
+            connections: attempts.connections - hostAttempts.connections,
+            requests: attempts.requests - hostAttempts.requests,
+            upgrades: attempts.upgrades - hostAttempts.upgrades,
+          },
+        }),
+      );
+    });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 });
 
 test('[C2] a webview guest contains ancestor flooding and releases its processes', async () => {
