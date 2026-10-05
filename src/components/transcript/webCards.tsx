@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { TranscriptEvent } from '../../types/bridge';
 import { ProseFileLinks } from './ProseFileLink';
 import { Markdown } from '../Markdown';
+import { TranscriptImage } from '../media/TranscriptImage';
 import {
   stripAnsi,
   parseWebSearch,
@@ -125,10 +126,13 @@ export function WebSearchCard({
   error = false,
   interrupted = false,
   running = false,
+  images = [],
   forceOpen = false,
 }: {
   event: TranscriptEvent;
   output?: string;
+  /** The pictures the tool answered with, as saved files, shown in its body. */
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -185,7 +189,22 @@ export function WebSearchCard({
         {query ? <span className="min-w-0 truncate text-droid-text-muted">{query}</span> : null}
         {trailing}
       </button>
-      <Expand open={expanded}>{body}</Expand>
+      <Expand open={expanded}>
+        {body}
+        <WebResultImages images={images} />
+      </Expand>
+    </div>
+  );
+}
+
+function WebResultImages({ images }: { images: string[] }) {
+  if (images.length === 0) return null;
+  return (
+    <div className="mt-2">
+      {images.map((image, index) => (
+        // One result can carry the same picture twice.
+        <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
+      ))}
     </div>
   );
 }
@@ -285,10 +304,13 @@ export function WebFetchCard({
   error = false,
   interrupted = false,
   running = false,
+  images = [],
   forceOpen = false,
 }: {
   event: TranscriptEvent;
   output?: string;
+  /** The pictures the tool answered with, as saved files, shown in its body. */
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -342,6 +364,7 @@ export function WebFetchCard({
           title={displayTitle}
           snippet={snippet}
         />
+        <WebResultImages images={images} />
       </Expand>
     </div>
   );

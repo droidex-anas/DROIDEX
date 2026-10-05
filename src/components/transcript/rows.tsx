@@ -501,6 +501,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -514,6 +515,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -573,8 +575,8 @@ export function renderToolEvents(
     // plan result) must not also render as raw activity.
     if (e.kind === 'tool_result' && consumed.has(e)) continue;
     // A result whose call is out of view still shows the pictures it carried.
-    for (const image of e.images ?? [])
-      nodes.push(<TranscriptImage key={`${e.id}-${image}`} reference={image} />);
+    for (const [index, image] of (e.images ?? []).entries())
+      nodes.push(<TranscriptImage key={`${e.id}-${String(index)}-${image}`} reference={image} />);
     const body = stripAnsi(e.text ?? safeJson(e.toolArgs)).trimEnd();
     if (!body) continue;
     // A failed result with no call to fold into (e.g. a failed edit that broke
