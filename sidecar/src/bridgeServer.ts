@@ -28,6 +28,8 @@ const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
 const HARD_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
 const CLIENT_CLOSE_DRAIN_MS = 250;
+// Commands a client may send before it is caught up and let in.
+const MAX_EARLY_COMMANDS = 256;
 
 export interface BridgeServer {
   readonly port: number;
@@ -145,25 +147,38 @@ export function startBridgeServer(options: {
 
   async function admitClient(ws: WebSocket, url: URL): Promise<void> {
     const pageId = url.searchParams.get('pageId');
+    // Commands sent while the client is caught up (the app sends its first ones
+    // the moment the socket opens) wait here and run in order once it is in.
+    let early: RawData[] | null = [];
     const disconnect = () => {
+      early = null;
       clients.delete(ws);
       voiceOwners.disconnected(ws);
     };
     ws.on('close', disconnect);
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
-    // Commands sent while the client is caught up (the app sends its first ones
-    // the moment the socket opens) wait here and run in order once it is in.
-    let early: RawData[] | null = [];
+    let inside = false;
     ws.on('message', (raw) => {
-      if (early) early.push(raw);
-      else void handleMessage(ws, raw, pageId);
+      if (inside) {
+        void handleMessage(ws, raw, pageId);
+        return;
+      }
+      if (!early) return;
+      // A client that keeps sending while it is not yet in is cut off; it
+      // reconnects and sends its first commands again.
+      if (early.length >= MAX_EARLY_COMMANDS) ws.close(1008, 'too many commands before ready');
+      else early.push(raw);
     });
     const admitted = await resumeClient(ws, url);
-    if (!admitted || ws.readyState !== ws.OPEN) return;
+    if (!admitted || ws.readyState !== ws.OPEN) {
+      early = null;
+      return;
+    }
     clients.add(ws);
     const waiting = early;
     early = null;
+    inside = true;
     for (const raw of waiting) void handleMessage(ws, raw, pageId);
   }
 
