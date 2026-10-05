@@ -4,7 +4,7 @@
 // something covers is refused, naming the cover with a ref of its own.
 
 const { send, frameStep, documentFrames } = require('./browserFrames.cjs');
-const { refFor } = require('./browserRefs.cjs');
+const { refFor, forgetRefs } = require('./browserRefs.cjs');
 const { labelOf } = require('./browserText.cjs');
 const { isField } = require('./browserMasking.cjs');
 
@@ -58,21 +58,25 @@ function createBrowserCover({ reading }) {
     });
   }
 
+  // Each node is resolved inside the `try`, so one that fails still lets the
+  // other go.
   async function holds(dbg, sessionId, backendNodeId, hit) {
-    const [{ object: ref }, { object: other }] = await Promise.all([
-      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId }),
-      send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }),
-    ]);
+    const objectIds = [];
     try {
+      for (const id of [backendNodeId, hit.backendNodeId]) {
+        const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId: id });
+        objectIds.push(object.objectId);
+      }
+      const [ref, other] = objectIds;
       const { result: held } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: ref.objectId,
+        objectId: ref,
         functionDeclaration: CONTAINS,
-        arguments: [{ objectId: other.objectId }],
+        arguments: [{ objectId: other }],
         returnByValue: true,
       });
       return held.value === true;
     } finally {
-      for (const { objectId } of [ref, other])
+      for (const objectId of objectIds)
         await send(dbg, sessionId, 'Runtime.releaseObject', { objectId }).catch(() => undefined);
     }
   }
@@ -93,6 +97,8 @@ function createBrowserCover({ reading }) {
         : `<${(await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId: hit.backendNodeId })).node.localName}>`;
     const frame = (await documentFrames(dbg)).find((candidate) => candidate.id === hit.frameId);
     const ref = frame ? ` (${refFor(entry, frame.loaderId, hit.backendNodeId)})` : '';
+    // The new ref was issued last, so it outlives the ones forgotten.
+    forgetRefs(entry);
     return `${role}${name ? ` "${name}"` : ''}${ref}`;
   }
 
