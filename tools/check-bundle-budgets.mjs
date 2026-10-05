@@ -121,8 +121,14 @@ import { join } from 'node:path';
 // left must paint with the chat: the limit a chat is held on gates its queue,
 // the model-switch divider renders in the transcript, and the composer shows
 // the effort a fallback model actually runs. The headroom is again ~8.5KB.
+//
+// Raised from 1_443_000 to 1_459_000 for the rewritten Browser on top of tabs
+// and tiles. The browser host mounts every chat's <webview> page from the app
+// frame, the composer carries design marks, and the transcript draws the
+// Browser card. Main at b1a4f45c measures 1_431_242, the rewrite alone 1_404_693 on
+// its older base, and the two together 1_449_988, leaving ~9KB of headroom.
 const BUDGETS = {
-  initialRendererJsBytes: 1_443_000,
+  initialRendererJsBytes: 1_459_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
