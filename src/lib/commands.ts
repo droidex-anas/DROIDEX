@@ -2,6 +2,7 @@ import { bridge } from './bridge';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
+  BrowserState,
   BrowserViewport,
   BrowserViewportMode,
   ConfigurableSessionRole,
@@ -458,6 +459,18 @@ export const openBrowser = (input: {
   viewportMode?: BrowserViewportMode;
 }) => {
   bridge.send({ type: 'browser.open', ...input });
+};
+
+/** Hands the sidecar the browsers the app kept, keyed by chat, so their panes keep working. */
+export const restoreBrowsers = (browsers: Record<string, BrowserState>) => {
+  const kept = Object.entries(browsers).map(([appSessionId, browser]) => ({
+    appSessionId,
+    browserSessionId: browser.browserSessionId,
+    url: browser.url,
+    viewport: browser.viewport,
+    viewportMode: browser.viewportMode,
+  }));
+  if (kept.length > 0) bridge.send({ type: 'browser.restore', browsers: kept });
 };
 
 export const reloadBrowser = (appSessionId: string) => {

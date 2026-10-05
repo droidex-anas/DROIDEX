@@ -56,7 +56,7 @@ import {
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
-import { listProjects } from './lib/commands';
+import { listProjects, restoreBrowsers } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
@@ -465,8 +465,12 @@ export default function App() {
   // depending on one call at one moment to ever be made.
   const connection = useStoreSelector((current) => current.connection);
   useEffect(() => {
-    if (connection === 'connected') listProjects();
-  }, [connection]);
+    if (connection !== 'connected') return;
+    listProjects();
+    // A sidecar that just started has none of the browsers the app kept, so
+    // every pane action would fail until the agent opened a page again.
+    restoreBrowsers(store.getState().browsers);
+  }, [connection, store]);
 
   // App update discovery must never wait on CLI/env probing: that work can be
   // slow or unavailable, while the verified appcast is independent.

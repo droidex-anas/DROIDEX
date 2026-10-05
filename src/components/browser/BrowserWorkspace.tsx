@@ -48,6 +48,7 @@ export default function BrowserWorkspace({
         ? current.sessions[current.activeAppSessionId]
         : undefined,
       browserErrors: current.browserErrors,
+      connected: current.connection === 'connected',
       browserGlobalError: current.browserGlobalError,
       browsers: current.browsers,
       designModes: current.designModes,
@@ -217,9 +218,10 @@ export default function BrowserWorkspace({
   // takes it only while the page is still on Fit there, so it never undoes a
   // size an agent has just picked. A pane on its way out, however it was closed,
   // is still mounted while it animates away; it is not followed, so the page
-  // keeps the size it had for the agent to work at.
+  // keeps the size it had for the agent to work at. It waits for the sidecar
+  // to be connected, and so to have taken up the browsers the app kept.
   const leaving = !useIsPresent();
-  const followsPane = browser?.viewportMode === 'fit' && !leaving;
+  const followsPane = browser?.viewportMode === 'fit' && !leaving && state.connected;
   const currentViewport = browser?.viewport;
   useEffect(() => {
     if (!browserKey || !currentViewport || !followsPane) return;

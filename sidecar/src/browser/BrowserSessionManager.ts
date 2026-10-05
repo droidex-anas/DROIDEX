@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { browserDesignReferenceDir } from './browserPaths.js';
 import { normalizeBrowserUrl } from './browserUrl.js';
 import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.js';
-import type { BrowserColorScheme } from '../protocol.js';
+import type { BrowserColorScheme, ClientCommand } from '../protocol.js';
 import type {
   BrowserActionResult,
   BrowserBox,
@@ -411,6 +411,23 @@ export class BrowserSessionManager {
     };
   }
 
+  /**
+   * Takes up the browsers the app kept from its last run, each under its own
+   * id and page, so the user's page is neither reloaded nor replaced. A chat
+   * that already has a browser keeps it.
+   */
+  restore(browsers: Extract<ClientCommand, { type: 'browser.restore' }>['browsers']): void {
+    for (const browser of browsers) {
+      const { appSessionId, browserSessionId, url } = browser;
+      if (!nonEmpty(appSessionId) || !nonEmpty(browserSessionId) || !nonEmpty(url)) continue;
+      if (this.hasSession(appSessionId)) continue;
+      this.sessionFor(appSessionId, browser.viewport, browser.viewportMode, {
+        browserSessionId,
+        url,
+      });
+    }
+  }
+
   hasSession(appSessionId: string): boolean {
     return this.resolveSession(appSessionId) !== undefined;
   }
@@ -433,6 +450,7 @@ export class BrowserSessionManager {
     appSessionId: string,
     viewport?: BrowserViewport,
     viewportMode?: BrowserViewportMode,
+    restored?: { browserSessionId: string; url: string },
   ): ManagedBrowserSession {
     const key = appSessionId;
     const existing = this.sessions.get(key);
@@ -450,7 +468,7 @@ export class BrowserSessionManager {
       (initialViewportMode === 'fit'
         ? DEFAULT_BROWSER_VIEWPORT
         : STANDARD_VIEWPORTS[initialViewportMode]);
-    const id = `browser-${appSessionId}-${Date.now().toString(36)}`;
+    const id = restored?.browserSessionId ?? `browser-${appSessionId}-${Date.now().toString(36)}`;
     const runtime = this.options.runtimeFactory?.(id, initialViewport, appSessionId);
     if (!runtime) {
       throw new Error('Browser runtime is not configured.');
@@ -464,7 +482,7 @@ export class BrowserSessionManager {
       state: {
         browserSessionId: id,
         appSessionId,
-        url: 'about:blank',
+        url: restored?.url ?? 'about:blank',
         viewport: initialViewport,
         viewportMode: initialViewportMode,
         scroll: { x: 0, y: 0 },
@@ -523,6 +541,10 @@ export class BrowserSessionManager {
   private emitUpdated(state: BrowserState): void {
     this.options.emit?.({ type: 'browser.updated', state });
   }
+}
+
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
 function targetFrom(input: { ref?: string; x?: number; y?: number }): BrowserTarget {

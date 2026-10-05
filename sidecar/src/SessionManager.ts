@@ -1152,6 +1152,9 @@ export class SessionManager {
         // Closing the last resource a session was holding can make it retirable.
         this.runtimeRetirement.arm();
         return;
+      case 'browser.restore':
+        await this.sessionBrowser.restore(cmd);
+        return;
       case 'browser.reload':
         await this.sessionBrowser.reload(cmd);
         return;
