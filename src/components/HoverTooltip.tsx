@@ -52,6 +52,16 @@ export function HoverTooltip({
 
   useEffect(() => cancelTimer, [cancelTimer]);
 
+  // The wrapped control takes focus, so it carries the description, not the wrapper.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const described = anchorRef.current?.firstElementChild;
+    described?.setAttribute('aria-describedby', id);
+    return () => {
+      described?.removeAttribute('aria-describedby');
+    };
+  }, [open, id]);
+
   useLayoutEffect(() => {
     if (!open) return;
 
@@ -89,7 +99,6 @@ export function HoverTooltip({
       <span
         ref={anchorRef}
         className={`inline-flex ${className}`}
-        aria-describedby={open ? id : undefined}
         onMouseEnter={showSoon}
         onMouseLeave={hide}
         onPointerDownCapture={hide}
