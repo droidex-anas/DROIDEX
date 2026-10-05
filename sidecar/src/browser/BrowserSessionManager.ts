@@ -88,6 +88,8 @@ interface ManagedBrowserSession {
   runtime: BrowserRuntime;
   state: BrowserState;
   references: Map<string, DesignReference>;
+  /** Marks taken away, so a pick still being saved when it went is not brought back. */
+  removed: Set<string>;
   /** The size change in progress; the next one starts after it. */
   sizing: Promise<unknown>;
 }
@@ -107,12 +109,17 @@ const STANDARD_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserVie
   mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
 };
 const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
+// How many sent references each chat keeps for design_reference.
+const SENT_REFERENCES_KEPT = 50;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
   // Browsers closed in this run, by browser session id. A restore sent before
   // the app heard of the close must not bring one back over its closing page.
   private readonly closed = new Set<string>();
+  // The references each chat's prompts went with, newest last, so the agent can
+  // still read one the prompt names once its mark is gone or its browser closed.
+  private readonly sent = new Map<string, Map<string, DesignReference>>();
 
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
@@ -361,18 +368,24 @@ export class BrowserSessionManager {
   ): Promise<DesignReference> {
     const session = this.requireSession(appSessionId);
     const reference = await this.snapshot(appSessionId, session, input, screenshot);
-    session.references.set(reference.id, reference);
+    if (!session.removed.has(reference.id)) session.references.set(reference.id, reference);
     return reference;
   }
 
   /** Forgets marks the user took away or picked again; a closed browser has none. */
   removeReferences(appSessionId: string, ids: string[]): void {
     const session = this.resolveSession(appSessionId);
-    for (const id of ids) session?.references.delete(id);
+    for (const id of ids) {
+      session?.references.delete(id);
+      session?.removed.add(id);
+    }
   }
 
+  /** A live mark, or one a prompt of the chat went with. */
   referenceDetail(appSessionId: string, id: string): DesignReference | undefined {
-    return this.resolveSession(appSessionId)?.references.get(id);
+    return (
+      this.resolveSession(appSessionId)?.references.get(id) ?? this.sent.get(appSessionId)?.get(id)
+    );
   }
 
   async designPrompt(input: {
@@ -408,6 +421,7 @@ export class BrowserSessionManager {
     });
     // A browser closed or replaced meanwhile is not the one the marks are on.
     if (session) this.assertCurrent(session);
+    this.keepSent(input.appSessionId, references);
     return {
       path,
       prompt: formatDesignPrompt(path, input.frame?.(instruction) ?? instruction, references),
@@ -501,6 +515,7 @@ export class BrowserSessionManager {
       appSessionId,
       runtime,
       references: new Map(),
+      removed: new Set(),
       sizing: Promise.resolve(),
       state: {
         browserSessionId: id,
@@ -564,6 +579,19 @@ export class BrowserSessionManager {
       screenshot,
       createdAt: new Date().toISOString(),
     };
+  }
+
+  private keepSent(appSessionId: string, references: DesignReference[]): void {
+    const kept = this.sent.get(appSessionId) ?? new Map<string, DesignReference>();
+    for (const reference of references) {
+      kept.delete(reference.id);
+      kept.set(reference.id, reference);
+    }
+    for (const id of kept.keys()) {
+      if (kept.size <= SENT_REFERENCES_KEPT) break;
+      kept.delete(id);
+    }
+    this.sent.set(appSessionId, kept);
   }
 
   private assertCurrent(session: ManagedBrowserSession): void {

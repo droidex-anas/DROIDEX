@@ -290,7 +290,7 @@ test('designPrompt needs a reference and writes the selected ones with a trimmed
   );
 
   // A pick that reaches the sidecar only with its prompt goes from the prompt's
-  // own copy, without becoming a live mark.
+  // own copy, without becoming a live mark, and stays readable by its id.
   const result = await manager.designPrompt({
     appSessionId: 'm1',
     instruction: '  Make the button clearer  ',
@@ -301,7 +301,8 @@ test('designPrompt needs a reference and writes the selected ones with a trimmed
   assert.equal(writtenReferenceCount, 1);
   assert.match(result.prompt, /Make the button clearer/);
   assert.match(result.prompt, /pick-1/);
-  assert.equal(manager.referenceDetail('m1', 'pick-1'), undefined);
+  assert.deepEqual(manager.designContext('m1').references, []);
+  assert.equal(manager.referenceDetail('m1', 'pick-1')?.url, 'http://127.0.0.1:1420/');
 });
 
 test('screenshots are taken only on request, with the requested crop', async () => {
