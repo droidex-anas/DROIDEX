@@ -24,8 +24,6 @@ import {
   type NativeBrowserSelection,
 } from '../../lib/nativeBrowser';
 import { BrowserToolbar } from './BrowserToolbar';
-import { DesignModeComposer } from './DesignModeComposer';
-import { composerStyleForReferences } from './browserComposerPosition';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
 import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
 import { browserTranscriptReferencesFromDesignReferences } from './browserTranscriptReferences';
@@ -78,8 +76,6 @@ export default function BrowserWorkspace({
   // menu never disagrees with the page.
   const viewportMode: BrowserViewportMode = browser?.viewportMode ?? 'fit';
   const [pencilMode, setPencilMode] = useState(false);
-  const [instruction, setInstruction] = useState('');
-  const [references, setReferences] = useState<DesignReference[]>([]);
   const [loadFailure, setLoadFailure] = useState<NativeBrowserLoadFailed | null>(null);
   const [loading, setLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(browser?.canGoBack ?? false);
@@ -207,8 +203,6 @@ export default function BrowserWorkspace({
   ]);
 
   useEffect(() => {
-    setReferences([]);
-    setInstruction('');
     setPencilMode(false);
     setLoadFailure(null);
   }, [browser?.browserSessionId, browser?.url, browserKey]);
@@ -218,17 +212,6 @@ export default function BrowserWorkspace({
   }, [designMode]);
 
   const requestedViewport = viewportForMode(viewportMode, fitViewport);
-  const selectedIds = references.map((ref) => ref.id).filter((id): id is string => Boolean(id));
-  const canSend = Boolean(browserKey && selectedIds.length > 0 && instruction.trim());
-  const disabledReason = !browserKey
-    ? 'Select or create a Droid session'
-    : selectedIds.length === 0
-      ? 'Select a reference'
-      : 'Enter a prompt';
-  const composerStyle = useMemo(
-    () => composerStyleForReferences(references, frameSize, requestedViewport, viewportMode),
-    [frameSize, references, requestedViewport, viewportMode],
-  );
 
   // On Fit the page follows the pane: its size goes to the sidecar, which
   // takes it only while the page is still on Fit there, so it never undoes a
@@ -346,27 +329,9 @@ export default function BrowserWorkspace({
     [browserKey, dispatch, requestedChatId],
   );
 
-  const sendPrompt = () => {
-    if (!browserKey || !canSend) return;
-    const text = instruction.trim();
-    if (sessionLive) {
-      queueDesignPrompt(text, references, selectedIds);
-    } else {
-      sendDesignPrompt(browserKey, text, selectedIds);
-      emitDesignTranscript(text, references);
-    }
-    setReferences([]);
-    setInstruction('');
-    // Re-arm like Cursor: disarm after sending so the user clicks Design Mode
-    // again to start a new selection instead of staying live.
-    dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
-  };
-
   const handleSelection = useCallback(
     (selection: NativeBrowserSelection) => {
-      const reference = referenceFromNativeSelection(selection);
-      setReferences([reference]);
-      if (browserKey) addDesignReference(browserKey, reference);
+      if (browserKey) addDesignReference(browserKey, referenceFromNativeSelection(selection));
     },
     [browserKey],
   );
@@ -392,7 +357,6 @@ export default function BrowserWorkspace({
         }, 0);
         emitDesignTranscript(text, [reference]);
       }
-      setReferences([]);
       dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
     },
     [browserKey, dispatch, emitDesignTranscript, sessionLive, queueDesignPrompt],
@@ -519,21 +483,6 @@ export default function BrowserWorkspace({
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-droid-bg px-6 text-sm text-droid-text-muted">
             Open a URL to start this chat&apos;s browser.
           </div>
-        )}
-
-        {!nativeBrowser && designMode && references.length > 0 && (
-          <DesignModeComposer
-            references={references}
-            instruction={instruction}
-            canSend={canSend}
-            disabledReason={disabledReason}
-            style={composerStyle}
-            onInstructionChange={setInstruction}
-            onRemoveReference={(id) => {
-              setReferences((prev) => prev.filter((item) => item.id !== id));
-            }}
-            onSend={sendPrompt}
-          />
         )}
 
         {browser && (
