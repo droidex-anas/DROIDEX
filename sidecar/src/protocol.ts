@@ -253,8 +253,8 @@ export interface TranscriptEvent {
   errorKind?: 'usage_limit';
   resetsAt?: number;
   // A 'status' row that only says what the app is doing right now (booting a
-  // CLI, stopping a turn to send now, releasing an idle runtime). It is shown live and never
-  // stored, so reopening the session does not replay stale progress.
+  // CLI, stopping a turn to send now). It is shown live and never stored, so
+  // reopening the session does not replay stale progress.
   transient?: true;
 }
 
@@ -898,7 +898,9 @@ export type ClientCommand =
   | {
       type: 'app.backgroundWork';
       tier: 'interactive' | 'hidden' | 'low-power';
-      focusedAppSessionId?: string | null;
+      // The chat the user is working in, and every chat on screen including it.
+      focusedAppSessionId: string | null;
+      visibleAppSessionIds: string[];
     }
   | {
       type: 'child.open';

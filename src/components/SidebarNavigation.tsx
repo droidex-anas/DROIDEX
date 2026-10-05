@@ -3,7 +3,7 @@ import { shallowEqual, useStoreDispatch, useStoreSelector, type Action } from '.
 import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
 import { isEmbedded } from '../lib/embed';
 import { opensInNewTab } from '../lib/shortcuts';
-import type { TabPage } from '../features/tabs/tabStrip';
+import type { ViewPage } from '../features/tabs/tabStrip';
 import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { GitPullRequestIcon } from './environment/GithubIcons';
 import { Clock } from '@droidex/icons';
@@ -48,7 +48,7 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
 
   // A primary-modifier or middle click gives the view its own tab, then shows
   // it there. Other auxiliary buttons (right click) do nothing.
-  const navigate = (event: MouseEvent, page: TabPage, navigation: Action) => {
+  const navigate = (event: MouseEvent, page: ViewPage, navigation: Action) => {
     const newTab = opensInNewTab(event);
     if (event.button !== 0 && !newTab) return;
     if (newTab) dispatch({ type: 'OPEN_TAB', page });

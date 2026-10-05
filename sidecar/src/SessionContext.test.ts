@@ -739,7 +739,7 @@ test('hidden background work pauses context pollers and still refreshes on deman
   assert.equal(injected.pollerCounts().active, 1);
   assert.equal([...timers.values()][0]?.ms, 2_500);
 
-  injected.setBackgroundWork('hidden', 'app-1');
+  injected.setBackgroundWork('hidden', 'app-1', ['app-1']);
   assert.equal(injected.pollerCounts().active, 0);
   assert.equal(timers.size, 0);
 
@@ -751,7 +751,7 @@ test('hidden background work pauses context pollers and still refreshes on deman
   await injected.refresh(target);
   assert.equal(session.contextStatsCalls, before + 1);
 
-  injected.setBackgroundWork('interactive', 'app-1');
+  injected.setBackgroundWork('interactive', 'app-1', ['app-1']);
   await Promise.resolve();
   assert.equal(injected.pollerCounts().active, 1);
   assert.ok(session.contextStatsCalls > before);

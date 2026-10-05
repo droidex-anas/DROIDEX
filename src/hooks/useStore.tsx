@@ -15,17 +15,28 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
-  activeTabDraft,
-  focusTabShowing,
+  composeOrigin,
+  enteredPlaceNavigation,
+  placeCreatedChat,
+  showChat,
+  showNewChat,
+  showView,
+  withComposeTileClosed,
+  type ComposeOrigin,
+} from '../features/tabs/tabNavigation';
+import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
+import {
+  chatsBesideFocus,
+  isChatInView,
+  isMission,
   livePage,
-  loadTabStrip,
-  pageNavigation,
   reduceTabStrip,
   withoutChats,
-  withTabShowing,
+  withoutOtherTabsShowing,
   type TabAction,
   type TabStrip,
 } from '../features/tabs/tabStrip';
+import { focusedTile } from '../features/tabs/tileGrid';
 import {
   reduceVoice,
   withoutVoiceSession,
@@ -340,8 +351,8 @@ export interface AppState {
   modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
-  // Header tabs. The active tab's page is the live one above (mainView,
-  // activeAppSessionId, draftChat); see features/tabs/tabStrip.
+  // Header tabs. The active tab's page, or its focused tile, is the live one
+  // above (mainView, activeAppSessionId, draftChat); see features/tabs/tabStrip.
   tabStrip: TabStrip;
   automationEditorRequest: AutomationEditorRequest | null;
   prWorkspaceCwd: string | null;
@@ -445,10 +456,17 @@ export interface AppState {
   skillsProviderSessionId?: string | null;
 
   // Attachments for the first message of a not-yet-created session, keyed by clientRef.
-  // `tabId` is the tab the compose was sent from; its chat opens there.
+  // `origin` is the place the compose was sent from; its chat opens there. It
+  // is null once that tile has closed.
   pendingCompose: Partial<
-    Record<string, { text: string; skills: string[]; files: string[]; tabId: string }>
+    Record<
+      string,
+      { text: string; skills: string[]; files: string[]; origin: ComposeOrigin | null }
+    >
   >;
+  // Where each send was made from while it prepares, before it has a pending
+  // compose, keyed by hold id. Null once that tile has closed.
+  heldComposeOrigins: Partial<Record<string, ComposeOrigin | null>>;
   // Bounded settlement identity for the latest successful foreground create.
   // PromptInput uses it to distinguish that activation from a failure followed
   // by the user selecting an unrelated existing session.
@@ -495,8 +513,13 @@ export type Action =
       text: string;
       skills: string[];
       files: string[];
-      tabId: string;
+      // The hold whose place the compose takes, read here rather than by the
+      // caller so a tile closed in the meantime is already forgotten.
+      originHoldId: string;
     }
+  // A send holds the place it was made from until its pending compose takes it.
+  | { type: 'HOLD_COMPOSE_ORIGIN'; holdId: string }
+  | { type: 'RELEASE_COMPOSE_ORIGIN'; holdId: string }
   | { type: 'SESSION_UPDATED'; session: SessionSummary }
   | { type: 'SESSION_CLOSED'; appSessionId: string }
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
@@ -682,6 +705,9 @@ export type Action =
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
   | TabAction
+  // A chat dropped on a tile's center shows in that tile; a null tile is the
+  // whole page of a tab that is not split.
+  | { type: 'DROP_CHAT'; tileId: string | null; appSessionId: string }
   | VoiceAction
   | {
       type: 'START_CHAT';
@@ -878,6 +904,7 @@ export const initialState: AppState = {
   harnessModels: loadHarnessModels(),
   agentConfig: loadAgentConfig(),
   pendingCompose: {},
+  heldComposeOrigins: {},
   lastCreatedSessionRequest: null,
   pendingForks: {},
   sideChats: {},
@@ -984,14 +1011,35 @@ function withoutKey<T>(
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
 }
 
-// An archived or deleted chat leaves every tab, and cannot be reopened. The
-// tab showing it closes, as a browser tab does when its page goes away.
-function withoutChatTabs(state: AppState, appSessionId: string): AppState {
+// The action that closes the live chat's place, when that is `appSessionId`.
+function closeLiveChat(state: AppState, appSessionId: string): TabAction | null {
   const live = livePage(state);
-  const shown = live.kind === 'chat' && live.appSessionId === appSessionId;
-  const closed = shown
-    ? reducer(state, { type: 'CLOSE_TAB', tabId: state.tabStrip.activeTabId })
-    : state;
+  if (live.kind === 'chat' && live.appSessionId === appSessionId) {
+    return { type: 'CLOSE_TAB', tabId: state.tabStrip.activeTabId };
+  }
+  if (live.kind !== 'tiles') return null;
+  const tile = focusedTile(live.grid);
+  const shown = tile.page.kind === 'chat' && tile.page.appSessionId === appSessionId;
+  return shown ? { type: 'CLOSE_TILE', tileId: tile.id } : null;
+}
+
+// The tiles beside the focused one are on screen too, so showing them reads them.
+function withTilesSeen(state: AppState, seenAt: number): AppState {
+  const seen = chatsBesideFocus(state.tabStrip).filter(
+    (appSessionId) =>
+      Object.hasOwn(state.sessions, appSessionId) && state.sessionLastSeen[appSessionId] !== seenAt,
+  );
+  if (seen.length === 0) return state;
+  const sessionLastSeen = { ...state.sessionLastSeen };
+  for (const appSessionId of seen) sessionLastSeen[appSessionId] = seenAt;
+  return { ...state, sessionLastSeen };
+}
+
+// An archived or deleted chat leaves every tab, and cannot be reopened. The
+// tab or tile showing it closes, as a browser tab does when its page goes away.
+function withoutChatTabs(state: AppState, appSessionId: string): AppState {
+  const close = closeLiveChat(state, appSessionId);
+  const closed = close ? reducer(state, close) : state;
   const tabStrip = withoutChats(closed.tabStrip, (id) => id === appSessionId);
   return tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
 }
@@ -1033,16 +1081,14 @@ export function reducer(state: AppState, action: Action): AppState {
       // Only a create matching this renderer's pending compose may take focus;
       // background resumes must never replace the chat the user selected. A
       // side chat opens beside its source, never in its place. A create sent
-      // from a tab the user has since left opens in that tab instead.
+      // from a tab or tile the user has since left opens there instead.
       const ownsCreate = pending !== undefined && action.session.lineage?.kind !== 'side';
-      const shouldActivate = ownsCreate && pending.tabId === state.tabStrip.activeTabId;
-      const tabStrip =
-        ownsCreate && !shouldActivate
-          ? withTabShowing(state.tabStrip, pending.tabId, {
-              kind: 'chat',
-              appSessionId: action.session.appSessionId,
-            })
-          : state.tabStrip;
+      const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
+      const placed = ownsCreate
+        ? placeCreatedChat({ ...state, sessions }, pending.origin, action.session.appSessionId)
+        : null;
+      const shouldActivate = placed?.focus === true;
+      const tabStrip = placed?.tabStrip ?? state.tabStrip;
       const targetIsActive = state.activeAppSessionId === action.session.appSessionId;
       const childReset =
         shouldActivate || targetIsActive ? invalidateSelectedChildOpening(state) : state;
@@ -1079,10 +1125,7 @@ export function reducer(state: AppState, action: Action): AppState {
 
       const next: AppState = {
         ...childReset,
-        sessions: {
-          ...state.sessions,
-          [action.session.appSessionId]: action.session,
-        },
+        sessions,
         sessionOrder: order,
         tabStrip,
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
@@ -1282,9 +1325,22 @@ export function reducer(state: AppState, action: Action): AppState {
             text: action.text,
             skills: action.skills,
             files: action.files,
-            tabId: action.tabId,
+            origin: state.heldComposeOrigins[action.originHoldId] ?? null,
           },
         },
+      };
+    case 'HOLD_COMPOSE_ORIGIN':
+      return {
+        ...state,
+        heldComposeOrigins: {
+          ...state.heldComposeOrigins,
+          [action.holdId]: composeOrigin(state.tabStrip),
+        },
+      };
+    case 'RELEASE_COMPOSE_ORIGIN':
+      return {
+        ...state,
+        heldComposeOrigins: withoutKey(state.heldComposeOrigins, action.holdId),
       };
 
     case 'SESSION_UPDATED': {
@@ -1332,18 +1388,27 @@ export function reducer(state: AppState, action: Action): AppState {
             Object.entries(state.pendingAutonomy).filter(([id]) => id !== m.appSessionId),
           )
         : state.pendingAutonomy;
+      const inView = isChatInView(state, m.appSessionId);
+      // The active chat is never unread; a tile beside it is read as it changes.
+      const seenInTile =
+        inView &&
+        m.appSessionId !== state.activeAppSessionId &&
+        m.updatedAt > (state.sessionLastSeen[m.appSessionId] ?? 0);
       const next = {
         ...state,
         sessions: { ...state.sessions, [m.appSessionId]: m },
         contextStats,
         pendingAutonomy,
+        sessionLastSeen: seenInTile
+          ? { ...state.sessionLastSeen, [m.appSessionId]: m.updatedAt }
+          : state.sessionLastSeen,
       };
       if (
         !previous ||
         !sessionIsLive(previous) ||
         sessionIsLive(m) ||
         m.updatedAt <= previous.updatedAt ||
-        state.activeAppSessionId === m.appSessionId ||
+        inView ||
         state.transcriptViewportPinned[m.appSessionId] === false
       )
         return next;
@@ -1572,7 +1637,7 @@ export function reducer(state: AppState, action: Action): AppState {
 
     /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
     case 'TRANSCRIPT_RELEASE_VIEWPORT': {
-      if (state.activeAppSessionId !== action.appSessionId) return state;
+      if (!isChatInView(state, action.appSessionId)) return state;
       if (state.transcriptViewportPinned[action.appSessionId] === false) return state;
       const session = state.sessions[action.appSessionId];
       if (!session || sessionIsLive(session)) return state;
@@ -1728,10 +1793,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // longer reports (deleted outside the app, or pruned from a hydrated
       // snapshot). Rows added locally this run are not confirmed yet and
       // survive.
-      const confirmed = state.listConfirmedSessionIds;
+      const confirmed = new Set(state.listConfirmedSessionIds);
+      const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
       const map: Record<string, SessionSummary> = {};
       for (const [id, summary] of Object.entries(state.sessions)) {
-        if (confirmed?.includes(id) && !incoming.has(id)) continue;
+        if (isConfirmedGone(id)) continue;
         map[id] = summary;
       }
       for (const m of action.sessions) {
@@ -1769,16 +1835,14 @@ export function reducer(state: AppState, action: Action): AppState {
       // localStorage does not accumulate orphans. Metadata for rows added
       // locally this run (not yet list-confirmed) survives.
       let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(
-        (id) => confirmed?.includes(id) && !incoming.has(id),
-      );
+      const orphaned = Object.keys(chatMetadata).filter(isConfirmedGone);
       if (orphaned.length > 0) {
         const drop = new Set(orphaned);
         chatMetadata = Object.fromEntries(
           Object.entries(chatMetadata).filter(([id]) => !drop.has(id)),
         );
       }
-      return {
+      const listed: AppState = {
         ...retainedState,
         sessions: map,
         sessionOrder: order,
@@ -1787,8 +1851,17 @@ export function reducer(state: AppState, action: Action): AppState {
         listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
         earlierSessionsByCwd: action.earlierSessionsByCwd,
         activeAppSessionId,
+        // The list covers every folder in the sidebar, so a restored tab whose
+        // chat neither it nor the snapshot knows has nothing to show.
         tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
       };
+      // A focused tile whose chat is gone closes like any other, so the tile
+      // beside it comes forward instead of a second new chat.
+      const goneTile =
+        state.activeAppSessionId !== null && activeAppSessionId === null
+          ? closeLiveChat(state, state.activeAppSessionId)
+          : null;
+      return goneTile?.type === 'CLOSE_TILE' ? reducer(listed, goneTile) : listed;
     }
 
     case 'SESSION_HISTORY_LOADING_OLDER':
@@ -1865,6 +1938,7 @@ export function reducer(state: AppState, action: Action): AppState {
         sessionLastSeen[state.activeAppSessionId] = now;
       }
       if (action.id) sessionLastSeen[action.id] = now;
+      const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state);
       let next = invalidateSelectedChildOpening(releaseInactiveSelectedChild(state));
       const outgoingAppSessionId = state.activeAppSessionId;
       const outgoingSession = outgoingAppSessionId
@@ -1872,10 +1946,14 @@ export function reducer(state: AppState, action: Action): AppState {
         : undefined;
       if (
         outgoingAppSessionId &&
-        outgoingAppSessionId !== action.id &&
         outgoingSession &&
         !sessionIsLive(outgoingSession) &&
-        state.transcriptViewportPinned[outgoingAppSessionId] !== false
+        state.transcriptViewportPinned[outgoingAppSessionId] !== false &&
+        // A chat left for another tile stays on screen.
+        !isChatInView(
+          { mainView: 'session', activeAppSessionId: action.id, tabStrip },
+          outgoingAppSessionId,
+        )
       ) {
         next = releaseSessionTranscriptWindow(
           next,
@@ -1883,29 +1961,27 @@ export function reducer(state: AppState, action: Action): AppState {
           INACTIVE_TRANSCRIPT_POLICY,
         );
       }
-      return {
-        ...next,
-        activeAppSessionId: action.id,
-        sessionLastSeen,
-        draftChat: null,
-        draftAutonomy: null,
-        draftFastMode: false,
-        draftContextWindowTokens: null,
-        selectedChild: null,
-        // A pending review-focus request belongs to the session that issued
-        // it; never let it fire in another session's panel after a switch.
-        reviewFocusPath: action.id === state.activeAppSessionId ? state.reviewFocusPath : null,
-        reviewFocusChange: action.id === state.activeAppSessionId ? state.reviewFocusChange : null,
-        mainView: 'session',
-        automationEditorRequest: null,
-        tabStrip: action.id
-          ? focusTabShowing(
-              state.tabStrip,
-              { kind: 'chat', appSessionId: action.id },
-              livePage(state),
-            )
-          : state.tabStrip,
-      };
+      return withTilesSeen(
+        {
+          ...next,
+          activeAppSessionId: action.id,
+          sessionLastSeen,
+          draftChat: null,
+          draftAutonomy: null,
+          draftFastMode: false,
+          draftContextWindowTokens: null,
+          selectedChild: null,
+          // A pending review-focus request belongs to the session that issued
+          // it; never let it fire in another session's panel after a switch.
+          reviewFocusPath: action.id === state.activeAppSessionId ? state.reviewFocusPath : null,
+          reviewFocusChange:
+            action.id === state.activeAppSessionId ? state.reviewFocusChange : null,
+          mainView: 'session',
+          automationEditorRequest: null,
+          tabStrip,
+        },
+        now,
+      );
     }
 
     case 'MARK_ALL_SESSIONS_READ': {
@@ -2165,7 +2241,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...reducePrInbox(state, action),
         automationEditorRequest: null,
-        tabStrip: focusTabShowing(state.tabStrip, { kind: 'pull-requests' }, livePage(state)),
+        tabStrip: showView(state, { kind: 'pull-requests' }),
       };
     case 'CLOSE_PULL_REQUESTS':
     case 'MOVE_PR_TO_BACKLOG':
@@ -2182,7 +2258,7 @@ export function reducer(state: AppState, action: Action): AppState {
         mainView: 'projects',
         automationEditorRequest: null,
         rightPanelOpen: false,
-        tabStrip: focusTabShowing(state.tabStrip, { kind: 'projects' }, livePage(state)),
+        tabStrip: showView(state, { kind: 'projects' }),
       };
     case 'CLOSE_PROJECTS':
       return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
@@ -2194,7 +2270,7 @@ export function reducer(state: AppState, action: Action): AppState {
           ? createAutomationEditorRequest(action.automationId)
           : null,
         rightPanelOpen: false,
-        tabStrip: focusTabShowing(state.tabStrip, { kind: 'automations' }, livePage(state)),
+        tabStrip: showView(state, { kind: 'automations' }),
       };
 
     case 'OPEN_TAB':
@@ -2202,15 +2278,37 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'ACTIVATE_TAB':
     case 'CLOSE_TAB':
     case 'REOPEN_CLOSED_TAB':
-    case 'REORDER_TABS': {
+    case 'REORDER_TABS':
+    case 'SPLIT_TILE':
+    case 'MOVE_TILE':
+    case 'FOCUS_TILE':
+    case 'CLOSE_TILE':
+    case 'RESIZE_TILE_COLUMNS':
+    case 'RESIZE_TILE_ROWS': {
       const tabStrip = reduceTabStrip(state, action);
       if (tabStrip === state.tabStrip) return state;
-      if (tabStrip.activeTabId === state.tabStrip.activeTabId) return { ...state, tabStrip };
-      // The strip already names the tab being entered, so the navigation
-      // below finds no other tab to focus and simply shows that tab's page.
-      const entered = tabStrip.tabs.find((tab) => tab.id === tabStrip.activeTabId);
-      if (!entered) return { ...state, tabStrip };
-      return reducer({ ...state, tabStrip }, pageNavigation(entered.page));
+      // The navigation brings the live page to the place the new strip
+      // focuses. It runs against the new strip so it sees which chats stay on
+      // screen; the strip it computes for itself is replaced.
+      const navigation = enteredPlaceNavigation(state, tabStrip);
+      const composes =
+        action.type === 'CLOSE_TILE' ? withComposeTileClosed(state, action.tileId) : null;
+      const entered: AppState = { ...state, ...composes, tabStrip };
+      const navigated = navigation ? reducer(entered, navigation) : entered;
+      return withTilesSeen({ ...navigated, tabStrip }, Date.now());
+    }
+
+    // The chat leaves any other tab first, so showing it lands here instead
+    // of switching to that tab. A mission keeps a tab of its own.
+    case 'DROP_CHAT': {
+      const tabStrip = isMission(state, action.appSessionId)
+        ? state.tabStrip
+        : withoutOtherTabsShowing(state.tabStrip, action.appSessionId);
+      const moved: AppState = { ...state, tabStrip };
+      const target = action.tileId
+        ? reducer(moved, { type: 'FOCUS_TILE', tileId: action.tileId })
+        : moved;
+      return reducer(target, { type: 'SET_ACTIVE_SESSION', id: action.appSessionId });
     }
 
     case 'CLOSE_AUTOMATIONS':
@@ -2251,6 +2349,7 @@ export function reducer(state: AppState, action: Action): AppState {
         sessionLastSeen,
         mainView: 'session',
         automationEditorRequest: null,
+        tabStrip: showNewChat(state),
       };
     }
 

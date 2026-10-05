@@ -4,6 +4,8 @@ import { GitFork, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
 import { opensInNewTab } from '../lib/shortcuts';
+import { isEmbedded } from '../lib/embed';
+import { endPlaceDrag, startPlaceDrag } from '../features/tabs/tileDrag';
 import { reasoningEffortLabel } from '../lib/reasoningEffort';
 import { SESSION_MENU_WIDTH } from './SessionContextMenu';
 import type { SessionSummary } from '../types/bridge';
@@ -307,6 +309,13 @@ export const SessionRow = memo(function SessionRow({
         data-app-session-id={session.appSessionId}
         title={`${title} · ${ACTIVITY_LABELS[activityStatus]}`}
         aria-current={active ? 'true' : undefined}
+        // Dropped on the chat area, a chat splits a tile or takes its place.
+        // Mission Control fills the whole area, so a mission never tiles.
+        draggable={!isEmbedded() && session.sessionPurpose !== 'mission-control'}
+        onDragStart={(e) => {
+          startPlaceDrag(e, { kind: 'chat', appSessionId: session.appSessionId });
+        }}
+        onDragEnd={endPlaceDrag}
         onClick={(e) => {
           if (opensInNewTab(e)) onOpenInTab(session.appSessionId);
           else onSelect(session.appSessionId);

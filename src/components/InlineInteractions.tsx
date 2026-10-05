@@ -16,34 +16,35 @@ const AskUserInline = lazy(() => import('./AskUserInline'));
  * screen shows the approvals and questions.
  */
 export default function InlineInteractions({
+  appSessionId,
   plans = false,
   asks = false,
 }: {
+  appSessionId: string | null;
   plans?: boolean;
   asks?: boolean;
 }) {
   const pending = useStoreSelector((current) => {
-    const id = current.activeAppSessionId;
-    if (!id) return false;
+    if (!appSessionId) return false;
     return (
-      Boolean(current.pendingPermissions[id]?.length) ||
-      Boolean(current.pendingQuestions[id]?.length)
+      Boolean(current.pendingPermissions[appSessionId]?.length) ||
+      Boolean(current.pendingQuestions[appSessionId]?.length)
     );
   });
-  const [asked, setAsked] = useState(pending);
+  const [askedSessionId, setAskedSessionId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (pending) setAsked(true);
-  }, [pending]);
+    if (pending) setAskedSessionId(appSessionId);
+  }, [pending, appSessionId]);
 
-  if (!asked) return null;
+  if (!appSessionId || (!pending && askedSessionId !== appSessionId)) return null;
   return (
     <Suspense fallback={null}>
-      {plans && <PlanApprovalInline />}
+      {plans && <PlanApprovalInline appSessionId={appSessionId} />}
       {asks && (
         <>
-          <PermissionInline />
-          <AskUserInline />
+          <PermissionInline appSessionId={appSessionId} />
+          <AskUserInline appSessionId={appSessionId} />
         </>
       )}
     </Suspense>
