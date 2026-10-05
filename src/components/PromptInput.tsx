@@ -91,11 +91,7 @@ import {
   offersContextWindow,
 } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
-import {
-  composerSeedFor,
-  composerTextAfterSeed,
-  resetComposerAfterSubmit,
-} from '../lib/composerReset';
+import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
   chipNamedBy,
@@ -297,9 +293,10 @@ export default function PromptInput({
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
-      // A split tab mounts a composer per tile. A seed for a chat goes to its
-      // own composer, and any other seed to the focused tile's.
-      composerSeed: composerSeedFor(current.composerSeed, appSessionId, current.activeAppSessionId),
+      // A split tab mounts a composer per tile, and each takes its own chat's
+      // seeds, oldest first.
+      composerSeed:
+        current.composerSeeds.find((seed) => seed.appSessionId === appSessionId) ?? null,
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -476,8 +473,9 @@ export default function PromptInput({
   const consumedComposerSeedId = useRef<number | null>(null);
   // The draft a seed that goes out at once makes, sent once it is the draft.
   const seedToSend = useRef<string | null>(null);
-  // A seed that came while a submit was going out waits for it to settle, so
-  // it is not added to that prompt's text. The count moves as it settles.
+  // A seed that came while a submit was going out, or a seed was about to be
+  // sent, waits for it to settle, so it is not added to that prompt's text.
+  // The count moves as it settles.
   const seedWaiting = useRef(false);
   const [submitSettled, setSubmitSettled] = useState(0);
 
@@ -966,7 +964,7 @@ export default function PromptInput({
   const composerSeed = state.composerSeed;
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
-    if (submittingRef.current) {
+    if (submittingRef.current || seedToSend.current !== null) {
       seedWaiting.current = true;
       return;
     }
@@ -982,7 +980,7 @@ export default function PromptInput({
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
     // and guard by seed id so a double-invoked effect cannot duplicate the text.
-    dispatch({ type: 'CLEAR_COMPOSER_SEED' });
+    dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
   }, [composerSeed, input, dispatch, setVisualizeSelected, submitSettled]);
 
   // Restore the caret after a programmatic replacement. The editor syncs the
@@ -1178,8 +1176,10 @@ export default function PromptInput({
   };
 
   // The browser's prompt box sends through here, as the composer's own prompt.
+  // Consuming its seed left any child of this chat, so it waits for the render
+  // that shows the chat itself as the target.
   useEffect(() => {
-    if (seedToSend.current !== input) return;
+    if (seedToSend.current !== input || targetChildSessionId) return;
     seedToSend.current = null;
     void handleSubmit();
   });
