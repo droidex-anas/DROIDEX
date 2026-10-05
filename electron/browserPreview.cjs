@@ -53,7 +53,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
     let latest = null; // the newest frame not shown yet
     let due = 0; // when the next frame may be shown
     let timer = null;
-    const show = () => {
+    const show = (last = false) => {
       timer = null;
       if (contents.isDestroyed()) return;
       const bytes = latest.data.length * 0.75;
@@ -63,6 +63,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
         image: latest.data,
         // The page's own width in CSS pixels, to place the cursor on the picture.
         width: latest.metadata.deviceWidth,
+        last,
       });
       latest = null;
       // Asked for directly: the picture goes on while an action holds the queue.
@@ -75,7 +76,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       // it, so the picture always ends on the page's last state.
       latest = params;
       unacked.push(params.sessionId);
-      timer ??= setTimeout(show, Math.max(0, due - Date.now()));
+      timer ??= setTimeout(() => show(), Math.max(0, due - Date.now()));
     };
     dbg.on('message', onMessage);
     void command('Page.startScreencast', {
@@ -88,7 +89,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       // A frame still waiting for its time is the page's last state: it is
       // sent now, so a card that stops watching keeps the picture it ended on.
       clearTimeout(timer);
-      if (latest) show();
+      if (latest) show(true);
       dbg.off('message', onMessage);
       void command('Page.stopScreencast');
     };

@@ -51,6 +51,8 @@ export interface NativeBrowserFrame {
   image: string;
   /** The page's own width in CSS pixels. */
   width: number;
+  /** The frame the page ended on, sent as its picture stops. */
+  last?: boolean;
 }
 
 /** Main is running agent work on the session's page, or has finished it. */
@@ -152,6 +154,8 @@ export function onNativeBrowserAgentPoint(
 // How many cards are watching each page: main is told when the first one
 // starts and when the last one stops.
 const watchers = new Map<string, number>();
+// The card that stopped watching a page last, still waiting for its final frame.
+const awaitingLast = new Map<string, () => void>();
 
 /** Receives a page's live picture until the returned function is called. */
 export function watchNativeBrowser(
@@ -160,6 +164,8 @@ export function watchNativeBrowser(
 ): () => void {
   const api = window.droidControl;
   if (!api) return () => undefined;
+  // A new watch is a new picture: the card before it takes nothing more.
+  awaitingLast.get(browserSessionId)?.();
   const count = watchers.get(browserSessionId) ?? 0;
   watchers.set(browserSessionId, count + 1);
   if (count === 0) void api.nativeBrowserWatch(browserSessionId, true);
@@ -167,14 +173,27 @@ export function watchNativeBrowser(
     if (frame.browserSessionId === browserSessionId) handler(frame);
   });
   return () => {
-    // Main sends the page's last frame as it stops; it is still taken.
-    setTimeout(unsubscribe, 1000);
+    unsubscribe();
     const left = (watchers.get(browserSessionId) ?? 1) - 1;
-    if (left > 0) watchers.set(browserSessionId, left);
-    else {
-      watchers.delete(browserSessionId);
-      void api.nativeBrowserWatch(browserSessionId, false);
+    if (left > 0) {
+      watchers.set(browserSessionId, left);
+      return;
     }
+    watchers.delete(browserSessionId);
+    // Main sends the frame the page ended on as it stops; that one is still taken.
+    const stop = () => {
+      clearTimeout(timer);
+      unsubscribeLast();
+      if (awaitingLast.get(browserSessionId) === stop) awaitingLast.delete(browserSessionId);
+    };
+    const unsubscribeLast = api.onNativeBrowserFrame((frame) => {
+      if (frame.browserSessionId !== browserSessionId || !frame.last) return;
+      stop();
+      handler(frame);
+    });
+    const timer = setTimeout(stop, 1000);
+    awaitingLast.set(browserSessionId, stop);
+    void api.nativeBrowserWatch(browserSessionId, false);
   };
 }
 
