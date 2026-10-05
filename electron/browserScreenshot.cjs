@@ -135,9 +135,11 @@ async function viewOf(dbg) {
   };
 }
 
-// The view's document has the URL (CDP leaves out the fragment) and scroll.
-function viewedAt(view, { url, scroll }) {
+// The view is of the picked document (onPickedPage, read once the view is),
+// at its URL (CDP leaves out the fragment) and scroll.
+function viewedAt(view, { url, scroll, onPickedPage }) {
   return (
+    onPickedPage() &&
     view.url === String(url).split('#')[0] &&
     Math.round(view.pageX) === scroll?.x &&
     Math.round(view.pageY) === scroll?.y

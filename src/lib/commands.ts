@@ -494,6 +494,10 @@ export const addDesignReference = (appSessionId: string, reference: DesignRefere
   bridge.send({ type: 'browser.design.addReference', appSessionId, reference });
 };
 
+export const removeDesignReferences = (appSessionId: string, ids: string[]) => {
+  bridge.send({ type: 'browser.design.removeReferences', appSessionId, ids });
+};
+
 /** Sends a prompt with its marks, as sendToSession sends any other. */
 export const sendDesignPrompt = (
   appSessionId: string,

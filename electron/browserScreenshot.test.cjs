@@ -41,7 +41,7 @@ const pixelAt = (base64, x, y) => Buffer.from(base64, 'base64')[(y * 20 + x) * 4
 test('a design pick is cropped with its sensitive fields painted over', async () => {
   const shot = await setup().take({
     region: { x: 0, y: 0, width: 20, height: 20 },
-    at: { url: 'https://example.test/page#top', scroll: { x: 0, y: 40 } },
+    at: { url: 'https://example.test/page#top', scroll: { x: 0, y: 40 }, onPickedPage: () => true },
   });
   assert.equal(pixelAt(shot.image, 5, 5), 0x80);
   assert.equal(pixelAt(shot.image, 15, 15), 0);
@@ -51,7 +51,17 @@ test('a design pick made at another scroll is not cropped', async () => {
   await assert.rejects(
     setup().take({
       region: { x: 0, y: 0, width: 20, height: 20 },
-      at: { url: 'https://example.test/page', scroll: { x: 0, y: 0 } },
+      at: { url: 'https://example.test/page', scroll: { x: 0, y: 0 }, onPickedPage: () => true },
+    }),
+    /moved before the pick was captured/,
+  );
+});
+
+test('a design pick is not cropped from a reload of its page', async () => {
+  await assert.rejects(
+    setup().take({
+      region: { x: 0, y: 0, width: 20, height: 20 },
+      at: { url: 'https://example.test/page', scroll: { x: 0, y: 40 }, onPickedPage: () => false },
     }),
     /moved before the pick was captured/,
   );

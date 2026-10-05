@@ -402,7 +402,10 @@ export default function PromptInput({
     attachedFiles.length > 0 ||
     imageAttachments.images.length > 0 ||
     fileAttachments.files.length > 0;
-  const hasChips = hasSelection || hasAttachmentChips;
+  // Marks picked in this chat's browser, which go out with the next prompt.
+  // Their chips lead the row, so Backspace takes them last.
+  const designMarks = useDesignMarks(state.activeSession?.appSessionId);
+  const hasChips = hasSelection || hasAttachmentChips || designMarks.length > 0;
 
   const removeLastChip = () => {
     if (sideChatReplies.length > 0) {
@@ -418,7 +421,12 @@ export default function PromptInput({
       skillFilePaths: activeSkills.map((skill) => skill.filePath),
       documentPaths: documents,
     });
-    if (removal === null) return;
+    if (removal === null) {
+      const last = designMarks.at(-1);
+      if (last && state.activeSession)
+        removeDesignMark(state.activeSession.appSessionId, last.anchor.id);
+      return;
+    }
     switch (removal.chip) {
       case 'attachment':
         attachedFileSeqRef.current.delete(removal.path);
@@ -453,8 +461,6 @@ export default function PromptInput({
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(state.activeAppSessionId);
-  // Marks picked in this chat's browser, which go out with the next prompt.
-  const designMarks = useDesignMarks(activeSession?.appSessionId);
 
   // The user's own prompts in this conversation, oldest to newest, for ArrowUp
   // recall (reuse a previous prompt). Consecutive duplicates are collapsed.
@@ -1521,9 +1527,14 @@ export default function PromptInput({
         : [];
     if (marks.length > 0) {
       const design = { browserKey: appSessionId, references: [...marks] };
+      // Only the marks this prompt carries go; one picked while it settles stays.
+      const sent = new Set(marks.map((mark) => mark.id));
       const clearDesign = () => {
         clearAfterSubmit();
-        setDesignMarks(appSessionId, []);
+        setDesignMarks(
+          appSessionId,
+          stagedDesignMarks(appSessionId).filter((mark) => !sent.has(mark.id)),
+        );
         dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
       };
       if (isLive) {
@@ -1557,14 +1568,20 @@ export default function PromptInput({
               appSessionId,
               displayText,
               browserTranscriptReferencesFromDesignReferences(design.references),
+              { skills: skillNames, files: allFiles, sideChatReplies },
             ),
           });
           if (sideChatReplies.length > 0) detachSideChatReplies();
         },
         resetComposer: () => {
+          const draftKept = composerRevisionRef.current !== composerRevision;
           clearDesign();
-          // Numbering starts again once no queued prompt can still say @N.
-          if (!(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design))
+          // Numbering starts again once nothing can still say @N: no queued
+          // prompt, and no draft the user went on writing while this one settled.
+          if (
+            !draftKept &&
+            !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design)
+          )
             restartDesignMarkNumbers(appSessionId);
         },
         sendCommand: () => {

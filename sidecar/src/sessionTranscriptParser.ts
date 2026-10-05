@@ -181,7 +181,8 @@ export function userPromptDisplay(storedText: string) {
   // A branch prompt carries a whole copied conversation after its request; it
   // is cut back to the request before the cap could cut the request off.
   const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
-  const designDisplay = designPromptDisplayFromText(rawText);
+  // Design prompts once went out inside the App frame; both frames come off.
+  const designDisplay = designPromptDisplayFromText(appPromptDisplayFromText(rawText) ?? rawText);
   const text =
     designDisplay?.text ??
     appPromptDisplayFromText(rawText) ??

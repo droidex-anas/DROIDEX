@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIsPresent } from 'framer-motion';
 import { isDesktop } from '../../lib/desktop';
 import { useBrowserSlot } from '../../lib/browserHost';
@@ -72,6 +72,26 @@ export function NativeBrowserSurface({
     onLoadFailedRef.current = onLoadFailed;
   }, [onDesignKey, onLoadFailed, onLoaded]);
 
+  // The overlay follows the app's theme, which changes by its root's style and
+  // class, as AppBlockFrame's Apps do.
+  const [theme, setTheme] = useState(designOverlayTheme);
+  useEffect(() => {
+    if (!designMode) return;
+    const sync = () => {
+      const next = designOverlayTheme();
+      setTheme((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+    return () => {
+      observer.disconnect();
+    };
+  }, [designMode]);
+
   useEffect(() => {
     if (!visibleBrowserSessionId) return;
     setNativeBrowserDesignState(visibleBrowserSessionId, {
@@ -79,9 +99,9 @@ export function NativeBrowserSurface({
       pencilMode: designMode && pencilMode,
       scale: surface.scale ?? 1,
       marks: designMarks.map((mark) => ({ id: mark.anchor.id, number: mark.anchor.mark ?? 0 })),
-      theme: designOverlayTheme(),
+      theme,
     }).catch(() => {});
-  }, [designMarks, designMode, pencilMode, surface.scale, visibleBrowserSessionId]);
+  }, [designMarks, designMode, pencilMode, surface.scale, theme, visibleBrowserSessionId]);
 
   useEffect(() => {
     const unsubscribes = [

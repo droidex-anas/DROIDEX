@@ -943,24 +943,25 @@ function registerIpc() {
   });
 
   // A page in design mode reports what the user picked and the keys meant for
-  // the app. A pick goes on with a crop of it, taken while its mark shows; one
-  // at a time, so a sketch's later strokes never arrive before its earlier ones.
-  let designEvents = Promise.resolve();
+  // the app, passed on at once. A pick's crop, taken while its mark shows,
+  // follows as a shot for that pick, so Escape and an unselect never wait on a
+  // capture.
+  let designPicks = 0;
   ipcMain.on('native-browser-design-event', (event, payload) => {
     const browserSessionId = nativeBrowserManager.sessionIdForWebContents(event.sender);
-    if (!browserSessionId || !payload) return;
-    designEvents = designEvents
-      .then(async () => {
-        let next = { ...payload, browserSessionId };
-        if (payload.type === 'select') {
-          const screenshot = await nativeBrowserManager
-            .captureDesignSelection(event.sender, payload.selection)
-            .catch(() => undefined);
-          if (screenshot) next = { ...next, selection: { ...payload.selection, screenshot } };
-        }
-        mainWindow?.webContents.send('native-browser-design-event', next);
-      })
-      .catch(() => undefined);
+    if (!browserSessionId || !['select', 'unselect', 'key'].includes(payload?.type)) return;
+    const send = (next) =>
+      mainWindow?.webContents.send('native-browser-design-event', { ...next, browserSessionId });
+    if (payload.type !== 'select') {
+      send(payload);
+      return;
+    }
+    const pick = ++designPicks;
+    send({ ...payload, pick });
+    void nativeBrowserManager
+      .captureDesignSelection(event.sender, payload.selection)
+      .catch(() => undefined)
+      .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
     void nativeBrowserManager.handleCredentialCapture(event.sender, payload);

@@ -5,7 +5,8 @@ import type { DesignPromptPack, DesignReference } from './types.js';
 
 export interface WriteDesignPromptPackOptions {
   appSessionId: string;
-  browserSessionId: string;
+  /** The browser the marks were picked in, while it is open. */
+  browserSessionId?: string;
   instruction: string;
   references: DesignReference[];
   baseDir?: string;

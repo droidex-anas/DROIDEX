@@ -883,6 +883,8 @@ export type ClientCommand =
       follow?: boolean;
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
+  /** Marks the user took away or picked again, so design-mode reads only live ones. */
+  | { type: 'browser.design.removeReferences'; appSessionId: string; ids: string[] }
   | {
       type: 'browser.design.sendPrompt';
       appSessionId: string;
@@ -1121,7 +1123,12 @@ export type ServerEvent =
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
   | { type: 'sidebar.request'; request: SidebarRequest }
-  | { type: 'browser.closed'; appSessionId: string }
+  | {
+      type: 'browser.closed';
+      appSessionId: string;
+      /** Closed with the chat's runtime, not by the user: the pane stays open for a new page. */
+      keepPane?: boolean;
+    }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
 export const BRIDGE_PROTOCOL_VERSION = 9 as const;

@@ -32,9 +32,13 @@ export interface NativeBrowserLoadFailed {
   crashed?: boolean;
 }
 
-/** What a page in design mode reports: a pick, a mark taken away, or a key for the app. */
+/**
+ * What a page in design mode reports: a pick, its crop once taken (none when
+ * it could not be taken safely), a mark taken away, or a key for the app.
+ */
 export type NativeBrowserDesignEvent = { browserSessionId?: string } & (
-  | { type: 'select'; selection: NativeBrowserSelection }
+  | { type: 'select'; selection: NativeBrowserSelection; pick: number }
+  | { type: 'shot'; pick: number; screenshot?: DesignSelectionScreenshot }
   | { type: 'unselect'; id: string }
   | { type: 'key'; key: 'draw' | 'escape' }
 );

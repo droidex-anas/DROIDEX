@@ -100,7 +100,7 @@ export interface DesignReference {
 
 export interface DesignPromptPack {
   appSessionId: string;
-  browserSessionId: string;
+  browserSessionId?: string;
   createdAt: string;
   instruction: string;
   references: DesignReference[];

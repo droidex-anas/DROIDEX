@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
+import { removeDesignReferences } from '../../lib/commands';
 import type { NativeBrowserSelection } from '../../lib/nativeBrowser';
-import type { DesignReference } from '../../types/bridge';
+import type { DesignReference, DesignSelectionScreenshot } from '../../types/bridge';
 
 // The marks a chat has picked in its browser page and not sent yet: each one a
 // design reference whose anchor carries its number. They show as chips in the
@@ -26,8 +27,16 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+// The sidecar holds the chat's live marks for the agent to read; one the user
+// took away or picked again is forgotten there too. A prompt sends its own
+// snapshots, so nothing sent depends on them staying.
 function set(appSessionId: string, marks: readonly DesignReference[]): void {
+  const kept = new Set(marks.map((mark) => mark.id));
+  const gone = designMarks(appSessionId)
+    .filter((mark) => !kept.has(mark.id))
+    .map((mark) => mark.id);
   marksByChat = { ...marksByChat, [appSessionId]: marks.length > 0 ? marks : undefined };
+  if (gone.length > 0) removeDesignReferences(appSessionId, gone);
   for (const listener of listeners) listener();
 }
 
@@ -68,6 +77,23 @@ export function addDesignMark(appSessionId: string, pick: DesignReference): Desi
     existing ? marks.map((mark) => (mark === existing ? numbered : mark)) : [...marks, numbered],
   );
   return numbered;
+}
+
+/** Gives a pick its crop, if it is still a mark; returns the mark with it. */
+export function attachDesignShot(
+  appSessionId: string,
+  id: string,
+  screenshot: DesignSelectionScreenshot,
+): DesignReference | undefined {
+  const marks = designMarks(appSessionId);
+  const mark = marks.find((candidate) => candidate.id === id);
+  if (!mark) return undefined;
+  const shot = { ...mark, screenshot };
+  set(
+    appSessionId,
+    marks.map((candidate) => (candidate === mark ? shot : candidate)),
+  );
+  return shot;
 }
 
 /** Takes away the mark with this anchor id. */

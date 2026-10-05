@@ -333,18 +333,15 @@ export default function BrowserWorkspace({
     if (!designMode) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isTextEntry(event.target)) return;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        stepBackFromDesign();
-      } else if (
-        event.key.toLowerCase() === 'd' &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        setPencilMode((drawing) => !drawing);
-      }
+      const escape = event.key === 'Escape';
+      const draw =
+        event.key.toLowerCase() === 'd' && !event.metaKey && !event.ctrlKey && !event.altKey;
+      if (!escape && !draw) return;
+      event.preventDefault();
+      // Holding a key steps back or toggles drawing once, not on every repeat.
+      if (event.repeat) return;
+      if (escape) stepBackFromDesign();
+      else setPencilMode((drawing) => !drawing);
     };
     window.addEventListener('keydown', onKey);
     return () => {

@@ -72,6 +72,16 @@ export interface BrowserRuntime {
   close(): Promise<void>;
 }
 
+/** A pick as the app sends it, with the page it was made on when known. */
+interface ReferenceInput {
+  id?: string;
+  anchor: DesignAnchor;
+  detail?: DesignAnchorDetail;
+  url?: string;
+  title?: string;
+  scroll?: { x: number; y: number };
+}
+
 interface ManagedBrowserSession {
   id: string;
   appSessionId: string;
@@ -346,35 +356,19 @@ export class BrowserSessionManager {
 
   async addReference(
     appSessionId: string,
-    input: { anchor: DesignAnchor; detail?: DesignAnchorDetail; id?: string },
+    input: ReferenceInput,
     screenshot?: DesignSelectionScreenshot,
   ): Promise<DesignReference> {
     const session = this.requireSession(appSessionId);
-    const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
-    const anchor: DesignAnchor = { ...input.anchor, id };
-    const detail = input.detail ? { ...input.detail, id } : undefined;
-    // The crop the app took, with sensitive fields painted over, is the one
-    // saved; a pick the app could not crop safely has none.
-    if (screenshot && !anchor.screenshotPath) {
-      anchor.screenshotPath = await this.persistImage(
-        appSessionId,
-        `anchor-${Date.now().toString(36)}.png`,
-        screenshot.base64,
-      ).catch(() => undefined);
-    }
-    const next: DesignReference = {
-      id,
-      anchor,
-      detail,
-      url: session.state.url,
-      title: session.state.title,
-      viewport: session.state.viewport,
-      scroll: session.state.scroll,
-      screenshot,
-      createdAt: new Date().toISOString(),
-    };
-    session.references.set(id, next);
-    return next;
+    const reference = await this.snapshot(appSessionId, session, input, screenshot);
+    session.references.set(reference.id, reference);
+    return reference;
+  }
+
+  /** Forgets marks the user took away or picked again; a closed browser has none. */
+  removeReferences(appSessionId: string, ids: string[]): void {
+    const session = this.resolveSession(appSessionId);
+    for (const id of ids) session?.references.delete(id);
   }
 
   referenceDetail(appSessionId: string, id: string): DesignReference | undefined {
@@ -385,8 +379,12 @@ export class BrowserSessionManager {
     appSessionId: string;
     instruction: string;
     references: Extract<ClientCommand, { type: 'browser.design.sendPrompt' }>['references'];
+    /** Frames the instruction as its chat sends text; the pack itself keeps it plain. */
+    frame?: (instruction: string) => string;
   }): Promise<{ path: string; prompt: string }> {
-    const session = this.requireSession(input.appSessionId);
+    // A prompt queued before its browser closed still goes, from its own
+    // snapshots; a browser open now must still be the same one once it is ready.
+    const session = this.resolveSession(input.appSessionId);
     const instruction = input.instruction.trim();
     if (!instruction) throw new Error('Browser prompt cannot be empty.');
     if (input.references.length === 0)
@@ -394,22 +392,26 @@ export class BrowserSessionManager {
         'Select or sketch at least one browser reference before sending a Design Mode prompt.',
       );
     // Every pick has its own id, so one already here is the same snapshot. One
-    // that has not arrived yet, or was lost with a restart, comes with the
-    // prompt and is added from it.
+    // that has not arrived yet, was taken away since, or was lost with a
+    // restart comes with the prompt, which keeps its own copy.
     const references: DesignReference[] = [];
     for (const reference of input.references)
       references.push(
-        session.references.get(reference.id) ??
-          (await this.addReference(input.appSessionId, reference, reference.screenshot)),
+        session?.references.get(reference.id) ??
+          (await this.snapshot(input.appSessionId, session, reference, reference.screenshot)),
       );
-    this.assertCurrent(session);
     const { path } = await (this.options.writePack ?? writeDesignPromptPack)({
       appSessionId: input.appSessionId,
-      browserSessionId: session.id,
+      browserSessionId: session?.id,
       instruction,
       references,
     });
-    return { path, prompt: formatDesignPrompt(path, instruction, references) };
+    // A browser closed or replaced meanwhile is not the one the marks are on.
+    if (session) this.assertCurrent(session);
+    return {
+      path,
+      prompt: formatDesignPrompt(path, input.frame?.(instruction) ?? instruction, references),
+    };
   }
 
   state(appSessionId: string): BrowserState | undefined {
@@ -530,6 +532,38 @@ export class BrowserSessionManager {
     session.state = { ...session.state, ...result.snapshot };
     this.emitUpdated(session.state);
     return { state: session.state, text: result.text };
+  }
+
+  // A pick as the agent reads it: on the page, title and scroll it was made
+  // on, with the crop the app took, sensitive fields painted over, saved
+  // under a name of its own. A pick the app could not crop safely has none.
+  private async snapshot(
+    appSessionId: string,
+    session: ManagedBrowserSession | undefined,
+    input: ReferenceInput,
+    screenshot?: DesignSelectionScreenshot,
+  ): Promise<DesignReference> {
+    const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
+    const anchor: DesignAnchor = { ...input.anchor, id };
+    if (screenshot && !anchor.screenshotPath) {
+      anchor.screenshotPath = await this.persistImage(
+        appSessionId,
+        `anchor-${randomUUID()}.png`,
+        screenshot.base64,
+      ).catch(() => undefined);
+    }
+    if (session) this.assertCurrent(session);
+    return {
+      id,
+      anchor,
+      detail: input.detail ? { ...input.detail, id } : undefined,
+      url: input.url ?? session?.state.url ?? 'about:blank',
+      title: input.title ?? session?.state.title,
+      viewport: session?.state.viewport ?? DEFAULT_BROWSER_VIEWPORT,
+      scroll: input.scroll ?? session?.state.scroll ?? { x: 0, y: 0 },
+      screenshot,
+      createdAt: new Date().toISOString(),
+    };
   }
 
   private assertCurrent(session: ManagedBrowserSession): void {

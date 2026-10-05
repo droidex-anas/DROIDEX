@@ -44,7 +44,7 @@ const STYLE = `
 }
 .area { border: calc(1.5px * var(--ui)) dashed var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 svg { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; overflow: visible; pointer-events: none; }
-path { fill: none; stroke: var(--accent); stroke-width: calc(3px * var(--ui)); stroke-linecap: round; stroke-linejoin: round; }
+polyline { fill: none; stroke: var(--accent); stroke-width: calc(3px * var(--ui)); stroke-linecap: round; stroke-linejoin: round; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .hover, .label { transition: none; } }
 `;
@@ -86,8 +86,10 @@ function createDesignOverlay(window) {
   hideHover();
 
   let ui = 1;
-  // Each mark's outline, badge and strokes, by mark id.
+  // Each mark's outline, badge and strokes, by mark id, and the stroke each
+  // line draws.
   const drawn = new Map();
+  const drawnStroke = new WeakMap();
 
   function div(className) {
     const node = document.createElement('div');
@@ -214,12 +216,23 @@ function createDesignOverlay(window) {
     return item;
   }
 
+  // A stroke only grows while it is drawn, so each render adds just its new
+  // points and finished strokes are left as they are.
   function drawStrokes(item, list) {
-    const paths = item.group.children;
-    while (paths.length > list.length) paths[paths.length - 1].remove();
+    const lines = item.group.children;
+    while (lines.length > list.length) lines[lines.length - 1].remove();
     list.forEach((stroke, index) => {
-      const path = paths[index] ?? item.group.appendChild(document.createElementNS(SVG_NS, 'path'));
-      path.setAttribute('d', strokePath(stroke));
+      const line =
+        lines[index] ?? item.group.appendChild(document.createElementNS(SVG_NS, 'polyline'));
+      const points = line.points;
+      if (drawnStroke.get(line) !== stroke || points.numberOfItems > stroke.length) points.clear();
+      drawnStroke.set(line, stroke);
+      for (let at = points.numberOfItems; at < stroke.length; at++) {
+        const point = strokes.createSVGPoint();
+        point.x = Math.round(stroke[at].x);
+        point.y = Math.round(stroke[at].y);
+        points.appendItem(point);
+      }
     });
   }
 
@@ -232,12 +245,6 @@ function createDesignOverlay(window) {
   }
 
   return { setTheme, setShown, showHover, followHover, hideHover, drawMarks, showArea };
-}
-
-function strokePath(stroke) {
-  return stroke
-    .map((pt, index) => `${index === 0 ? 'M' : 'L'}${Math.round(pt.x)} ${Math.round(pt.y)}`)
-    .join(' ');
 }
 
 function px(value) {

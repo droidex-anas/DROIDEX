@@ -14,6 +14,7 @@ import {
 import { addDesignReference } from '../../lib/commands';
 import {
   addDesignMark,
+  attachDesignShot,
   designReferenceFor,
   keepDesignMarksFor,
   removeDesignMark,
@@ -72,6 +73,8 @@ export function BrowserHost() {
       setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
     };
     const heard = new Set<string>();
+    // Picks waiting on their crop, by main's number for the pick.
+    const awaitingShot = new Map<number, { appSessionId: string; id: string }>();
     const subscriptions = [
       onNativeBrowserWorking(({ browserSessionId, working }) => {
         heard.add(browserSessionId);
@@ -81,14 +84,24 @@ export function BrowserHost() {
         closeBrowserPage(browserSessionId);
       }),
       onNativeBrowserDesignEvent((event) => {
+        if (event.type === 'shot') {
+          // A crop that comes after its mark was taken away or picked again is dropped.
+          const waiting = awaitingShot.get(event.pick);
+          awaitingShot.delete(event.pick);
+          const shot =
+            waiting &&
+            event.screenshot &&
+            attachDesignShot(waiting.appSessionId, waiting.id, event.screenshot);
+          if (waiting && shot) addDesignReference(waiting.appSessionId, shot);
+          return;
+        }
         const appSessionId = event.browserSessionId && appSessionIdFor(event.browserSessionId);
         if (!appSessionId) return;
-        if (event.type === 'select')
-          addDesignReference(
-            appSessionId,
-            addDesignMark(appSessionId, designReferenceFor(event.selection)),
-          );
-        else if (event.type === 'unselect') removeDesignMark(appSessionId, event.id);
+        if (event.type === 'select') {
+          const mark = addDesignMark(appSessionId, designReferenceFor(event.selection));
+          addDesignReference(appSessionId, mark);
+          awaitingShot.set(event.pick, { appSessionId, id: mark.id });
+        } else if (event.type === 'unselect') removeDesignMark(appSessionId, event.id);
       }),
       onNativeBrowserLoadFailed((failure) => {
         if (failure.crashed && failure.browserSessionId)

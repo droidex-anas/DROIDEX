@@ -16,10 +16,7 @@ export function DesignModePill({
 }) {
   const still = useReducedMotion();
   return (
-    <div
-      className="pointer-events-none absolute left-1/2 z-10 -translate-x-1/2"
-      style={{ bottom }}
-    >
+    <div className="pointer-events-none absolute left-1/2 z-10 -translate-x-1/2" style={{ bottom }}>
       <AnimatePresence>
         {open && (
           <motion.div

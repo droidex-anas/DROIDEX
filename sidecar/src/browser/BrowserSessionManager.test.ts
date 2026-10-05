@@ -289,7 +289,8 @@ test('designPrompt needs a reference and writes the selected ones with a trimmed
     /Select or sketch at least one browser reference/,
   );
 
-  // A pick that reaches the sidecar only with its prompt is added from it.
+  // A pick that reaches the sidecar only with its prompt goes from the prompt's
+  // own copy, without becoming a live mark.
   const result = await manager.designPrompt({
     appSessionId: 'm1',
     instruction: '  Make the button clearer  ',
@@ -299,7 +300,8 @@ test('designPrompt needs a reference and writes the selected ones with a trimmed
   assert.equal(writtenInstruction, 'Make the button clearer');
   assert.equal(writtenReferenceCount, 1);
   assert.match(result.prompt, /Make the button clearer/);
-  assert.equal(manager.referenceDetail('m1', 'pick-1')?.anchor.id, 'pick-1');
+  assert.match(result.prompt, /pick-1/);
+  assert.equal(manager.referenceDetail('m1', 'pick-1'), undefined);
 });
 
 test('screenshots are taken only on request, with the requested crop', async () => {

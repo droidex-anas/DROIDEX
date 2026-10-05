@@ -85,9 +85,9 @@ export function useQueuedPromptDelivery({
           head.text,
           hasAppContextForTranscript(transcript, null),
         );
-        // A design prompt goes with its own snapshots of its marks, while the
-        // chat still has the browser they were picked in.
-        if (head.design && appSessionId in store.getState().browsers) {
+        // A design prompt goes with its own snapshots of its marks, which hold
+        // all it needs even once the browser they were picked in has closed.
+        if (head.design) {
           sendDesignPrompt(
             head.design.browserKey,
             text,
@@ -101,6 +101,7 @@ export function useQueuedPromptDelivery({
               appSessionId,
               head.text,
               browserTranscriptReferencesFromDesignReferences(head.design.references),
+              { skills: head.skills, files: head.files, sideChatReplies: head.sideChatReplies },
             ),
           });
         } else {

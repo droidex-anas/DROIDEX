@@ -276,6 +276,8 @@ function onKeyDown(event) {
   const key = event.key;
   if (key === 'Escape') {
     swallow(event);
+    // Holding a key steps back or toggles drawing once, not on every repeat.
+    if (event.repeat) return;
     // A stroke or drag in progress goes first; the app takes it from there.
     if (activeStroke || press) {
       if (activeStroke) {
@@ -292,7 +294,7 @@ function onKeyDown(event) {
   if ((key === 'd' || key === 'D') && !event.metaKey && !event.ctrlKey && !event.altKey) {
     if (isEditable(event.target)) return;
     swallow(event);
-    sendDesignEvent({ type: 'key', key: 'draw' });
+    if (!event.repeat) sendDesignEvent({ type: 'key', key: 'draw' });
     return;
   }
   if ((key === 'ArrowUp' || key === 'ArrowDown') && hoverTarget && !drawing) {
@@ -421,16 +423,19 @@ const NAMED_BY_TEXT = new Set([
 ]);
 
 // The component's name, else the element's accessible name, else its tag.
+// Its words are read as a pick reads them, so a field's content never shows.
 function hoverName(el) {
   const source = resolveSource(el);
   if (source.component) return source.component;
-  const name =
+  const name = cleanText(
     el.getAttribute('aria-label') ||
-    el.getAttribute('alt') ||
-    el.getAttribute('title') ||
-    el.getAttribute('placeholder') ||
-    (NAMED_BY_TEXT.has(el.tagName) ? safeElementText(el, 40) : '');
-  return cleanText(name, 40) || el.tagName.toLowerCase();
+      el.getAttribute('alt') ||
+      el.getAttribute('title') ||
+      el.getAttribute('placeholder') ||
+      (NAMED_BY_TEXT.has(el.tagName) ? safeElementText(withoutTypedContent(el), 40) : ''),
+    40,
+  );
+  return name && name !== '[redacted]' ? name : el.tagName.toLowerCase();
 }
 
 function contains(el, x, y) {

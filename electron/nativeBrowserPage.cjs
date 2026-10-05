@@ -290,11 +290,25 @@ function createNativeBrowserPage({
   // Pages with a capture still in flight, which may never return; later
   // picks from such a page go on without a picture rather than start another.
   const capturing = new WeakSet();
+  // Crops are taken one at a time, in the order they were picked.
+  let designCaptures = Promise.resolve();
 
-  async function captureDesignSelection(senderContents, selection) {
+  function captureDesignSelection(senderContents, selection) {
+    const entry = findEntryForContents(senderContents);
+    // The document the pick was made on, read as it arrives.
+    const pickedOn = entry?.documents;
+    const onPickedPage = () => entry.documents === pickedOn;
+    const capture = designCaptures.then(() =>
+      captureInTime(senderContents, entry, selection, onPickedPage),
+    );
+    designCaptures = capture.catch(() => undefined);
+    return capture;
+  }
+
+  async function captureInTime(senderContents, entry, selection, onPickedPage) {
     if (capturing.has(senderContents)) return undefined;
     capturing.add(senderContents);
-    const capture = captureSelectionRegion(senderContents, selection).finally(() =>
+    const capture = captureSelectionRegion(entry, selection, onPickedPage).finally(() =>
       capturing.delete(senderContents),
     );
     let timer;
@@ -308,10 +322,9 @@ function createNativeBrowserPage({
   // It is taken as agent screenshots are, with sensitive fields painted over,
   // and only while the page is the one and at the scroll the user picked on;
   // otherwise the pick goes on without a picture.
-  async function captureSelectionRegion(senderContents, selection) {
+  async function captureSelectionRegion(entry, selection, onPickedPage) {
     const box = selection?.anchor?.box;
     if (!box || !(box.width > 0) || !(box.height > 0)) return undefined;
-    const entry = findEntryForContents(senderContents);
     const contents = liveContents(entry);
     if (!contents) return undefined;
     const region = {
@@ -323,7 +336,7 @@ function createNativeBrowserPage({
     const shot = await screenshots.take(contents, entry, {
       region,
       format: 'png',
-      at: { url: selection.url, scroll: selection.scroll },
+      at: { url: selection.url, scroll: selection.scroll, onPickedPage },
     });
     const image = nativeImage.createFromBuffer(Buffer.from(shot.image, 'base64'));
     if (image.getSize().width <= DESIGN_CAPTURE_MAX_WIDTH)
