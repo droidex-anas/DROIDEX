@@ -3,8 +3,8 @@
 // this file carries no validation: the sidecar owns the boundary, and
 // sidecar/src/canvas/schema.test.ts stops compiling when the two drift.
 //
-// The turn lease (CanvasTurnContext, CanvasScope) is sidecar-only and is
-// deliberately absent here.
+// CanvasScope is the sidecar's turn lease and is deliberately absent here; the
+// renderer only ever sends the pinned CanvasTurnContext beside its prompt.
 
 export interface DesignSystemRef {
   id: string;
@@ -33,6 +33,15 @@ export interface ElementRef {
   revisionId: string;
   elementId: string;
   instancePath: string;
+}
+
+// The references a request pins when it is composed. They travel with the
+// prompt through queue, steer and send-now, so a later selection change cannot
+// retarget an earlier request.
+export interface CanvasTurnContext {
+  designs: DesignRef[];
+  elements: ElementRef[];
+  designSystem: DesignSystemRef;
 }
 
 export interface FrameRect {

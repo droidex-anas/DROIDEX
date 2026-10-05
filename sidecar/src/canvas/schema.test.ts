@@ -9,6 +9,7 @@ import type {
   CanvasError,
   CanvasSnapshot,
   CanvasSummary,
+  CanvasTurnContext,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
@@ -23,8 +24,9 @@ import {
   writeFilesInputSchema,
 } from './schema.js';
 
-// Every DTO the renderer mirrors, gathered so the mirror test can check both
-// directions of assignability in one place.
+// Every DTO the renderer mirrors. Assignability is too weak to catch a mirror
+// that gained an optional field, so ExactMirror below compares each pair for
+// type identity instead.
 type SidecarWire = {
   create: CreateFramesInput;
   write: WriteFilesInput;
@@ -33,6 +35,7 @@ type SidecarWire = {
   change: CanvasChange;
   summary: CanvasSummary;
   receipt: WriteReceipt;
+  turnContext: CanvasTurnContext;
   designRef: DesignRef;
   elementRef: ElementRef;
   element: SourceElement;
@@ -47,11 +50,19 @@ type RendererWire = {
   change: Renderer.CanvasChange;
   summary: Renderer.CanvasSummary;
   receipt: Renderer.WriteReceipt;
+  turnContext: Renderer.CanvasTurnContext;
   designRef: Renderer.DesignRef;
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
   error: Renderer.CanvasError;
 };
+
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+// One entry per mirrored DTO. A drifted mirror types its entry as `false`, and
+// the compile error names the property that drifted.
+type ExactMirror = { [Key in keyof SidecarWire]: Equals<SidecarWire[Key], RendererWire[Key]> };
 
 const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' };
 
@@ -149,6 +160,13 @@ const wire: SidecarWire = {
   },
   summary: { canvasId: 'cv_01', name: 'Components', updatedAt: 1_767_225_600_000, designCount: 2 },
   receipt: { designId: 'dsg_hey', revisionId: 'rev_03', sequence: 8 },
+  turnContext: {
+    designs: [{ designId: 'dsg_hey', revisionId: 'rev_02' }],
+    elements: [
+      { designId: 'dsg_hey', revisionId: 'rev_02', elementId: 'el_17', instancePath: '0/2/1' },
+    ],
+    designSystem,
+  },
   designRef: { designId: 'dsg_hey', revisionId: 'rev_02' },
   elementRef: {
     designId: 'dsg_hey',
@@ -167,10 +185,23 @@ const wire: SidecarWire = {
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
 };
 
-test('every mirrored DTO survives JSON and stays assignable in both directions', () => {
-  const mirrored: RendererWire = wire;
-  const roundTripped: SidecarWire = mirrored;
-  assert.deepEqual(JSON.parse(JSON.stringify(roundTripped)), wire);
+test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
+  const exact: ExactMirror = {
+    create: true,
+    write: true,
+    arrange: true,
+    snapshot: true,
+    change: true,
+    summary: true,
+    receipt: true,
+    turnContext: true,
+    designRef: true,
+    elementRef: true,
+    element: true,
+    error: true,
+  };
+  assert.ok(Object.values(exact).every((isExact) => isExact));
+  assert.deepEqual(JSON.parse(JSON.stringify(wire)), wire);
 });
 
 test('the create, write and arrange fixtures parse, and the parsed value fits the mirror', () => {
@@ -206,6 +237,13 @@ test('create and arrange reject an identifier that is too long and a NaN coordin
       frames: [{ ...frame, rect: { ...frame.rect, x: Number.NaN } }],
     }),
     /finite numbers/,
+  );
+  assert.match(
+    rejection(createFramesInputSchema, {
+      ...wire.create,
+      frames: [{ ...wire.create.frames[0], name: 'Hey\u0085' }],
+    }),
+    /without control characters/,
   );
 });
 
@@ -248,6 +286,44 @@ test('write rejects escaping, absolute, backslash and case-colliding paths', () 
       writeWith({ files: { 'main.tsx': 'x' }, deletedPaths: ['main.tsx'] }),
     ),
     /cannot also be written/,
+  );
+});
+
+test('write rejects a path an object-keyed source tree would lose', () => {
+  // Only a parsed payload can carry an own `__proto__` key; Zod's record drops
+  // it, so without this rule an accepted write silently loses that file.
+  const payload: unknown = JSON.parse(
+    '{"mutationId":"write-hey","designId":"dsg_hey","expectedRevisionId":null,' +
+      '"files":{"__proto__":"source"},"deletedPaths":[]}',
+  );
+  assert.match(rejection(writeFilesInputSchema, payload), /__proto__, constructor or prototype/);
+});
+
+test('write rejects paths the filesystem would merge by Unicode form or surrogate', () => {
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'café.tsx': 'x', 'café.tsx': 'y' } })),
+    /Unicode normalization/,
+  );
+  assert.match(
+    rejection(
+      writeFilesInputSchema,
+      writeWith({ files: { 'café.tsx': 'x' }, deletedPaths: ['Café.tsx'] }),
+    ),
+    /cannot also be written/,
+  );
+  // Both lone surrogates encode to the same UTF-8 bytes, so both are refused.
+  assert.match(
+    rejection(
+      writeFilesInputSchema,
+      writeWith({ files: { '\ud800.tsx': 'x', '\ud801.tsx': 'y' } }),
+    ),
+    /relative/,
+  );
+  // U+0085 is a C1 control character: invisible, and legal in neither a path
+  // nor a frame name.
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'a\u0085.tsx': 'x' } })),
+    /relative/,
   );
 });
 
