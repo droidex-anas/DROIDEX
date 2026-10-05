@@ -44,7 +44,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 
 ### Data Flow
 
-When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the private IPC channel the main process spawned it with, and the Electron main process drives that chat's `<webview>` guest: agent input goes through CDP (the guest's debugger), and the native browser preload's helpers run through `executeJavaScriptInIsolatedWorld` (`electron/browserPageScript.cjs`), out of reach of the page's own scripts. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model passes values to the preload's fill helper through `executeJavaScriptInIsolatedWorld` and returns only `{ filled: true }`.
+When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the private IPC channel the main process spawned it with, and the Electron main process drives that chat's `<webview>` guest: agent input goes through CDP (the guest's debugger), and the native browser preload's helpers run through `executeJavaScriptInIsolatedWorld` (`electron/browserPageScript.cjs`), out of reach of the page's own scripts. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model passes values to the preload's fill helper through `executeJavaScriptInIsolatedWorld`, and the agent gets back only the page's usual outcome, never the credential.
 
 ---
 
@@ -107,7 +107,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - `safeStorage` encryption for FACTORY_API_KEY and browser credentials (OS keychain)
 - Multi-layer path confinement in `files.cjs` (lexical + realpath + symlink-walk + TOCTOU + token gate)
 - Array-form `execFile`/`spawn` everywhere (no shell-form `exec`)
-- Agent-blind credential model (values injected via `executeJavaScript`, only `{ filled: true }` returned)
+- Agent-blind credential model (values injected in the preload's isolated world; the agent gets only the page's usual outcome)
 - `setDevicePermissionHandler(() => false)` blocks WebHID/WebUSB
 - `validateUrl` blocks `javascript:`, `data:`, `chrome-extension:` schemes in browser pane
 - `openExternal` validates `http(s)` only
@@ -190,7 +190,7 @@ The system accepts untrusted input from:
 - **BRIDGE_TOKEN** - Per-session WebSocket auth token (16 random bytes hex)
   - **Protection:** Generated in-process via `crypto.randomBytes(16)`, not persisted. Passed to sidecar via env. Re-exposed to renderer via `bridgeInfo()` for WebSocket URL construction. Appears in URL query strings (logs, process listings).
 - **Browser credentials** - Saved login username/password pairs for autofill
-  - **Protection:** Encrypted via `safeStorage` at `userData/browser-credentials.enc` with mode 0o600. Consent-gated (explicit user opt-in). Agent-blind: values injected via `executeJavaScript`, only `{ filled: true }` returned. Never sent to the sidecar.
+  - **Protection:** Encrypted via `safeStorage` at `userData/browser-credentials.enc` with mode 0o600. Consent-gated (explicit user opt-in). Agent-blind: values injected in the preload's isolated world; the agent gets only the page's usual outcome, never the credential. Never sent to the sidecar.
 - **Files root access tokens** - 32-byte random tokens per authorized directory root
   - **Protection:** Generated via `crypto.randomBytes(32).toString('base64url')`. Required for all `files-*` operations. Not persisted; lost on app restart.
 - **Droid auth state** - `~/.factory/auth.v2.file` (OAuth token from `droid login`)
