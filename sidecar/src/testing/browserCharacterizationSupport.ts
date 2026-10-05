@@ -1,5 +1,6 @@
 import type { BrowserSnapshot, BrowserState } from '../browser/types.js';
 import type { SessionManagerDependencies } from '../SessionManager.js';
+import type { BrowserOutcome } from '../browser/BrowserSessionManager.js';
 import type {
   BrowserNativeRequest,
   BrowserNativeResult,
@@ -34,7 +35,7 @@ export class FakeBrowserSessionManager implements SessionBrowserDependencies {
     private readonly emit?: BrowserEventEmitter,
   ) {}
 
-  open(input: Parameters<SessionBrowserDependencies['open']>[0]): Promise<BrowserState> {
+  open(input: Parameters<SessionBrowserDependencies['open']>[0]): Promise<BrowserOutcome> {
     const existing = this.states.get(input.appSessionId);
     const state = browserState(
       input.appSessionId,
@@ -45,34 +46,22 @@ export class FakeBrowserSessionManager implements SessionBrowserDependencies {
     this.states.set(input.appSessionId, state);
     this.recordCall('browser', 'open', [input]);
     this.emit?.({ type: 'browser.updated', state });
-    return Promise.resolve(state);
+    return Promise.resolve({ state, text: '' });
   }
 
   hasSession(appSessionId: string): boolean {
     return this.states.has(appSessionId);
   }
 
-  reload(appSessionId: string): Promise<BrowserState> {
+  reload(appSessionId: string): Promise<BrowserOutcome> {
     const state = this.requireOpenSession(appSessionId);
     this.recordCall('browser', 'reload', [appSessionId]);
     this.emit?.({ type: 'browser.updated', state });
-    return Promise.resolve(state);
+    return Promise.resolve({ state, text: '' });
   }
-
-  readonly refresh: SessionBrowserDependencies['refresh'] = () =>
-    unsupportedBrowserMethod('refresh');
 
   readonly resizeViewport: SessionBrowserDependencies['resizeViewport'] = () =>
     unsupportedBrowserMethod('resizeViewport');
-
-  readonly click: SessionBrowserDependencies['click'] = () => unsupportedBrowserMethod('click');
-
-  readonly type: SessionBrowserDependencies['type'] = () => unsupportedBrowserMethod('type');
-
-  readonly keypress: SessionBrowserDependencies['keypress'] = () =>
-    unsupportedBrowserMethod('keypress');
-
-  readonly scroll: SessionBrowserDependencies['scroll'] = () => unsupportedBrowserMethod('scroll');
 
   readonly addReference: SessionBrowserDependencies['addReference'] = () =>
     unsupportedBrowserMethod('addReference');

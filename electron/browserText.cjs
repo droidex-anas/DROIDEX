@@ -196,4 +196,4 @@ function matcher(query) {
   };
 }
 
-module.exports = { markdownOf, cleanText, matcher, TEXT_ROLES };
+module.exports = { markdownOf, cleanText, labelOf, matcher, TEXT_ROLES };

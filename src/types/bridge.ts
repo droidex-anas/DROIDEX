@@ -541,7 +541,6 @@ export interface BrowserViewport {
 }
 
 export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
-type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface BrowserBox {
   x: number;
@@ -859,30 +858,11 @@ export type ClientCommand =
     }
   | { type: 'browser.close'; appSessionId: string }
   | { type: 'browser.reload'; appSessionId: string }
-  | { type: 'browser.refresh'; appSessionId: string }
   | {
       type: 'browser.resizeViewport';
       appSessionId: string;
       viewport: BrowserViewport;
       viewportMode: BrowserViewportMode;
-    }
-  | {
-      type: 'browser.click';
-      appSessionId: string;
-      ref?: string;
-      x?: number;
-      y?: number;
-      source?: 'agent' | 'user';
-    }
-  | { type: 'browser.type'; appSessionId: string; text: string }
-  | { type: 'browser.keypress'; appSessionId: string; key: string }
-  | {
-      type: 'browser.scroll';
-      appSessionId: string;
-      direction: BrowserScrollDirection;
-      pixels?: number;
-      ref?: string;
-      source?: 'agent' | 'user';
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {

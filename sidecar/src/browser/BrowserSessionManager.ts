@@ -5,7 +5,9 @@ import { browserDesignReferenceDir } from './browserPaths.js';
 import { normalizeBrowserUrl } from './browserUrl.js';
 import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.js';
 import type {
+  BrowserActionResult,
   BrowserBox,
+  BrowserClickOptions,
   BrowserConsoleEvent,
   BrowserElementInspection,
   BrowserNetworkEvent,
@@ -40,10 +42,10 @@ export interface BrowserSessionManagerOptions {
 }
 
 export interface BrowserRuntime {
-  open(url: string): Promise<BrowserSnapshot>;
-  reload(): Promise<BrowserSnapshot>;
-  goBack(): Promise<BrowserSnapshot>;
-  goForward(): Promise<BrowserSnapshot>;
+  open(url: string): Promise<BrowserActionResult>;
+  reload(): Promise<BrowserActionResult>;
+  goBack(): Promise<BrowserActionResult>;
+  goForward(): Promise<BrowserActionResult>;
   setViewport(viewport: BrowserViewport): Promise<void>;
   screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
   capture(box?: BrowserBox): Promise<string>;
@@ -51,20 +53,20 @@ export interface BrowserRuntime {
   readPage(options?: BrowserReadOptions): Promise<string>;
   readText(maxChars?: number): Promise<string>;
   find(query: string): Promise<{ text: string; matches: number }>;
-  click(target: BrowserTarget): Promise<BrowserSnapshot>;
-  hover(target: BrowserTarget): Promise<BrowserSnapshot>;
-  selectOption(ref: string, value: string): Promise<BrowserSnapshot>;
-  type(text: string): Promise<BrowserSnapshot>;
-  keypress(key: string): Promise<BrowserSnapshot>;
+  click(target: BrowserTarget, options?: BrowserClickOptions): Promise<BrowserActionResult>;
+  hover(target: BrowserTarget): Promise<BrowserActionResult>;
+  fill(ref: string, value: string): Promise<BrowserActionResult>;
+  type(text: string, options?: { ref?: string; submit?: boolean }): Promise<BrowserActionResult>;
+  press(key: string, repeat?: number): Promise<BrowserActionResult>;
   scroll(
-    direction: ScrollDirection,
+    direction: ScrollDirection | undefined,
     pixels: number | undefined,
     target: BrowserTarget,
-  ): Promise<BrowserSnapshot>;
+  ): Promise<BrowserActionResult>;
   inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
   network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
   console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
-  fillCredentials?(): Promise<BrowserSnapshot>;
+  fillCredentials?(): Promise<BrowserActionResult>;
   close(): Promise<void>;
 }
 
@@ -76,7 +78,11 @@ interface ManagedBrowserSession {
   references: Map<string, DesignReference>;
 }
 
-type BrowserInputSource = 'agent' | 'user';
+/** The browser's state after an action, and what the agent reads about it. */
+export interface BrowserOutcome {
+  state: BrowserState;
+  text: string;
+}
 
 const DEFAULT_BROWSER_VIEWPORT: BrowserViewport = {
   width: 1200,
@@ -94,11 +100,12 @@ export class BrowserSessionManager {
     url: string;
     viewport?: BrowserViewport;
     viewportMode?: BrowserViewportMode;
-  }): Promise<BrowserState> {
+  }): Promise<BrowserOutcome> {
     const session = this.sessionFor(input.appSessionId, input.viewport, input.viewportMode);
     const url = normalizeBrowserUrl(input.url);
     if (input.viewport) {
       await session.runtime.setViewport(input.viewport);
+      this.assertCurrent(session);
     }
     session.state = {
       ...session.state,
@@ -109,45 +116,22 @@ export class BrowserSessionManager {
       viewportMode: input.viewportMode ?? session.state.viewportMode,
     };
     this.emitUpdated(session.state);
-    const snapshot = await session.runtime.open(url);
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.open(url));
   }
 
-  async reload(appSessionId: string): Promise<BrowserState> {
+  async reload(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.reload();
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.reload());
   }
 
-  async goBack(appSessionId: string): Promise<BrowserState> {
-    return this.navigateHistory(appSessionId, 'back');
-  }
-
-  async goForward(appSessionId: string): Promise<BrowserState> {
-    return this.navigateHistory(appSessionId, 'forward');
-  }
-
-  async refresh(appSessionId: string): Promise<BrowserState> {
+  async goBack(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    session.state = await this.captureState(session);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.goBack());
   }
 
-  private async navigateHistory(
-    appSessionId: string,
-    direction: 'back' | 'forward',
-  ): Promise<BrowserState> {
+  async goForward(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot =
-      direction === 'back' ? await session.runtime.goBack() : await session.runtime.goForward();
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.goForward());
   }
 
   async resizeViewport(input: {
@@ -156,29 +140,25 @@ export class BrowserSessionManager {
     viewportMode: BrowserViewportMode;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
-    const nextState = {
+    await session.runtime.setViewport(input.viewport);
+    this.assertCurrent(session);
+    session.state = {
       ...session.state,
       viewport: input.viewport,
       viewportMode: input.viewportMode,
     };
-    await session.runtime.setViewport(input.viewport);
-    session.state = nextState;
     this.emitUpdated(session.state);
     return session.state;
   }
 
-  async click(input: {
-    appSessionId: string;
-    ref?: string;
-    x?: number;
-    y?: number;
-    source?: BrowserInputSource;
-  }): Promise<BrowserState> {
+  async click(
+    input: { appSessionId: string; ref?: string; x?: number; y?: number } & BrowserClickOptions,
+  ): Promise<BrowserOutcome> {
     const session = this.requireSession(input.appSessionId);
     const target = targetFrom(input);
-    if (!('ref' in target)) this.showAgentCursor(session, target, input.source);
-    const snapshot = await session.runtime.click(target);
-    return this.updateFromSnapshot(session, snapshot);
+    if (!('ref' in target)) this.showAgentCursor(session, target);
+    const { button, count, modifiers } = input;
+    return this.applied(session, await session.runtime.click(target, { button, count, modifiers }));
   }
 
   async hover(input: {
@@ -186,18 +166,16 @@ export class BrowserSessionManager {
     ref?: string;
     x?: number;
     y?: number;
-  }): Promise<BrowserState> {
+  }): Promise<BrowserOutcome> {
     const session = this.requireSession(input.appSessionId);
     const target = targetFrom(input);
-    if (!('ref' in target)) this.showAgentCursor(session, target, 'agent');
-    const snapshot = await session.runtime.hover(target);
-    return this.updateFromSnapshot(session, snapshot);
+    if (!('ref' in target)) this.showAgentCursor(session, target);
+    return this.applied(session, await session.runtime.hover(target));
   }
 
-  async selectOption(appSessionId: string, ref: string, value: string): Promise<BrowserState> {
+  async fill(appSessionId: string, ref: string, value: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.selectOption(ref, value);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(session, await session.runtime.fill(ref, value));
   }
 
   readPage(appSessionId: string, options: BrowserReadOptions = {}): Promise<string> {
@@ -254,35 +232,39 @@ export class BrowserSessionManager {
     return session.state;
   }
 
-  async type(appSessionId: string, text: string): Promise<BrowserState> {
+  async type(
+    appSessionId: string,
+    text: string,
+    options: { ref?: string; submit?: boolean } = {},
+  ): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.type(text);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(session, await session.runtime.type(text, options));
   }
 
-  async keypress(appSessionId: string, key: string): Promise<BrowserState> {
+  async press(appSessionId: string, key: string, repeat?: number): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.keypress(key);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(session, await session.runtime.press(key, repeat));
   }
 
+  // A direction scrolls the page (at its middle) or the ref; a ref with no
+  // direction is only brought into view.
   async scroll(
     appSessionId: string,
-    direction: ScrollDirection,
-    pixels?: number,
-    source?: BrowserInputSource,
-    ref?: string,
-  ): Promise<BrowserState> {
+    input: { direction?: ScrollDirection; pixels?: number; ref?: string },
+  ): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const target: BrowserTarget = ref
-      ? { ref }
+    if (!input.ref && !input.direction) throw new Error('Pass a direction, a ref, or both.');
+    const target: BrowserTarget = input.ref
+      ? { ref: input.ref }
       : {
           x: Math.round(session.state.viewport.width / 2),
           y: Math.round(session.state.viewport.height / 2),
         };
-    if (!('ref' in target)) this.showAgentCursor(session, target, source);
-    const snapshot = await session.runtime.scroll(direction, pixels, target);
-    return this.updateFromSnapshot(session, snapshot);
+    if (!('ref' in target)) this.showAgentCursor(session, target);
+    return this.applied(
+      session,
+      await session.runtime.scroll(input.direction, input.pixels, target),
+    );
   }
 
   async inspect(
@@ -304,15 +286,12 @@ export class BrowserSessionManager {
     return this.requireSession(appSessionId).runtime.console(clear);
   }
 
-  async fillCredentials(appSessionId: string): Promise<BrowserState> {
+  async fillCredentials(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
     if (!session.runtime.fillCredentials) {
       throw new Error('Credential autofill is only available in the live DROIDEX browser.');
     }
-    const snapshot = await session.runtime.fillCredentials();
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.fillCredentials());
   }
 
   /** The screenshot, also saved for harnesses that drop images. */
@@ -405,15 +384,15 @@ export class BrowserSessionManager {
   async close(appSessionId: string): Promise<void> {
     const session = this.resolveSession(appSessionId);
     if (!session) return;
-    await session.runtime.close();
+    // Gone before it shuts down, so nothing it answers meanwhile is shown.
     this.sessions.delete(keyFor(appSessionId));
+    await session.runtime.close();
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all(
-      [...this.sessions.values()].map((session) => session.runtime.close().catch(() => {})),
-    );
+    const closing = [...this.sessions.values()];
     this.sessions.clear();
+    await Promise.all(closing.map((session) => session.runtime.close().catch(() => {})));
   }
 
   private sessionFor(
@@ -484,13 +463,18 @@ export class BrowserSessionManager {
     };
   }
 
-  private updateFromSnapshot(
-    session: ManagedBrowserSession,
-    snapshot: BrowserSnapshot,
-  ): BrowserState {
-    session.state = this.stateFromSnapshot(session, snapshot);
+  // An answer for a browser that was closed, or replaced, while it ran is
+  // never shown: it would bring back the closed one's state.
+  private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
+    this.assertCurrent(session);
+    session.state = this.stateFromSnapshot(session, result.snapshot);
     this.emitUpdated(session.state);
-    return session.state;
+    return { state: session.state, text: result.text };
+  }
+
+  private assertCurrent(session: ManagedBrowserSession): void {
+    if (this.resolveSession(session.appSessionId) !== session)
+      throw new Error('The browser was closed while the action ran.');
   }
 
   private async captureAnchorImage(
@@ -519,12 +503,7 @@ export class BrowserSessionManager {
     this.options.emit?.({ type: 'browser.updated', state });
   }
 
-  private showAgentCursor(
-    session: ManagedBrowserSession,
-    point: { x: number; y: number },
-    source: BrowserInputSource = 'agent',
-  ): void {
-    if (source === 'user') return;
+  private showAgentCursor(session: ManagedBrowserSession, point: { x: number; y: number }): void {
     session.state = { ...session.state, agentCursor: point };
     this.emitUpdated(session.state);
   }

@@ -26,28 +26,31 @@ test('NativeBrowserRuntime sends live requests with application and browser sess
     },
   });
 
-  const snapshot = await runtime.open('https://example.com/');
+  const { snapshot } = await runtime.open('https://example.com/');
   await runtime.reload();
   await runtime.goBack();
   await runtime.goForward();
   await runtime.click({ x: 12, y: 34 });
   await runtime.hover({ ref: 'e7' });
-  await runtime.selectOption('e9', 'Canada');
+  await runtime.fill('e9', 'Canada');
 
   assert.equal(snapshot.url, 'https://example.com/');
   assert.deepEqual(
     requests.map((request) => request.action),
-    ['open', 'reload', 'goBack', 'goForward', 'click', 'hover', 'selectOption'],
+    ['open', 'reload', 'goBack', 'goForward', 'click', 'hover', 'fill'],
   );
   assert.equal(requests[0].appSessionId, 'app-session-one');
   assert.equal(requests[0].browserSessionId, 'browser-one');
   assert.deepEqual(requests[0].viewport, { width: 900, height: 700, deviceScaleFactor: 2 });
   assert.deepEqual({ x: requests[4].x, y: requests[4].y }, { x: 12, y: 34 });
   assert.equal(requests[5].ref, 'e7');
-  assert.deepEqual({ ref: requests[6].ref, text: requests[6].text }, { ref: 'e9', text: 'Canada' });
+  assert.deepEqual(
+    { ref: requests[6].ref, value: requests[6].value },
+    { ref: 'e9', value: 'Canada' },
+  );
 });
 
-type NativeSnapshot = Awaited<ReturnType<NativeBrowserRuntime['open']>>;
+type NativeSnapshot = Awaited<ReturnType<NativeBrowserRuntime['open']>>['snapshot'];
 
 /** A runtime whose native side answers each request with the given page snapshot. */
 function runtimeAnswering(
@@ -81,7 +84,7 @@ test('an open answered without a DOM snapshot stays usable and drops the previou
   );
 
   await runtime.open('https://example.com/first');
-  const snapshot = await runtime.open('https://example.com/second');
+  const { snapshot } = await runtime.open('https://example.com/second');
 
   assert.deepEqual(snapshot, {
     url: 'https://example.com/second',
@@ -107,10 +110,10 @@ test('reload, history and snapshot actions never reuse a stale page snapshot', a
     () => runtime.goBack(),
     () => runtime.goForward(),
   ]) {
-    await assert.rejects(navigate(), /navigation completed without a fresh page snapshot/);
+    await assert.rejects(navigate(), /without a fresh page snapshot/);
   }
-  await assert.rejects(runtime.snapshot(), /action completed without a fresh page snapshot/);
-  await assert.rejects(runtime.fillCredentials(), /action completed without a fresh page snapshot/);
+  await assert.rejects(runtime.snapshot(), /without a fresh page snapshot/);
+  await assert.rejects(runtime.fillCredentials(), /without a fresh page snapshot/);
 });
 
 test('resize and diagnostic requests use dedicated native actions', async () => {
