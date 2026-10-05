@@ -71,7 +71,6 @@ type CanvasSeed =
   | { kind: 'library'; itemId: string };
 type ElementRef = { designId: string; revisionId: string; elementId: string; instancePath: string };
 type CanvasTurnContext = {
-  canvasId: string;
   designs: DesignRef[];
   elements: ElementRef[];
   designSystem: DesignSystemRef;
@@ -80,6 +79,7 @@ type CanvasScope = {
   scopeId: string;
   appSessionId: string;
   generation: number;
+  canvasId: string | null; // null for an unattached chat's lease (spec §6)
   context: CanvasTurnContext;
   allowedDesignIds: string[] | 'canvas';
 };
@@ -134,6 +134,14 @@ type CanvasChange = { canvasId: string; sequence: number; frames: CanvasFrame[];
 ```
 
 `revisionId: null` means a reserved frame with no source; `RevisionRef` requires actual source. Omitted `WriteFilesInput.designSystem` preserves the revision's system; an explicit value pins the new revision to that system. Add the explicit `assetId`/file selector types in their owning tasks. IDs are opaque strings validated at input; no path concatenation from unchecked IDs. All numeric coordinates must be finite; dimensions are positive and capped at 8192 CSS pixels. A change sequence orders renderer projections; it is not the source CAS token.
+
+Settled by 02a (landed in `sidecar/src/canvas/{protocol.ts,schema.ts}`):
+
+- The canvas identity lives on `CanvasScope`, not `CanvasTurnContext`; the renderer mirrors `CanvasTurnContext` (it travels with queue/steer/send) and never sees `CanvasScope`. `beginCanvasTurn` reads the session's attachment when the turn starts; Task 4 owns what happens when the attachment changed between queueing and execution.
+- One identifier charset for canvas/design/revision/mutation IDs: 1–128 chars of `[A-Za-z0-9_-]`. Source paths reject `.`/`..`/empty segments, backslashes, C0/C1 controls, unpaired surrogates and the segments `__proto__`/`constructor`/`prototype`; collisions compare NFC-normalized, case-folded keys across `files` and `deletedPaths`. `canvas_arrange` accepts at most 256 frames and no duplicate `designId`.
+- The schema bounds one write (64 files, 1 MiB total, 256 KiB per file). 02b enforces the same count and byte limits against the complete resulting revision, unchanged files included, and refuses to follow or create symlinks under a revision directory. Source trees are `Map`s or null-prototype objects.
+- Versions: `layoutVersion` is 0 on create and increments on each accepted arrange; `sequence` is 0 for a new canvas and increments on each committed change; `DesignSystemRef.version` is 1-based, the first saved kit is version 1.
+- Invalid arguments map to `invalid_input` or `invalid_source_path` at the dispatch boundary (02c) as spec §8 describes; the workspace itself throws `CanvasError` and never a raw validation error.
 
 ## Task 1: Prove the preview host and packaged compiler
 
@@ -257,7 +265,7 @@ export default defineConfig({
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/02a-canvas-contracts`: Define limited Zod contracts in sidecar Canvas `protocol.ts`/`schema.ts` and mirror `src/features/canvas/protocol.ts`.
+- [x] `canvas/02a-canvas-contracts`: Define limited Zod contracts in sidecar Canvas `protocol.ts`/`schema.ts` and mirror `src/features/canvas/protocol.ts`.
   Done: One serialized-fixture test passes against both boundaries, including rejected invalid inputs.
 - [ ] `canvas/02b-canvas-workspace`: Implement `CanvasWorkspace.ts` and `canvasFiles.ts` with atomic commits, CAS and persisted mutation IDs.
   Done: Fault-injection and reopen tests preserve complete heads and reject stale or revoked writes.
@@ -285,7 +293,7 @@ const input = {
 const first = await workspace.write(scope, input);
 assert.deepEqual(await workspace.write(scope, input), first);
 await assert.rejects(workspace.write(scope, { ...input, mutationId: 'stale-write' }), { code: 'revision_conflict' });
-assert.equal((await workspace.readFiles(scope.context.canvasId, first))['main.tsx'], input.files['main.tsx']);
+assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.files['main.tsx']);
 ```
 
 - [ ] Add the Review Focus failure cases: reopen after process termination on either side of the manifest rename; write/rename failure leaves the last head intact; rejected writes do not poison mutation IDs; two concurrent writers accept only one source head; layout updates do not conflict with source writes; revoke a scope during an awaited file write and reject publication. Use controlled promises/filesystem fault injection at the real persistence boundary, not sleeps or source-text assertions.
