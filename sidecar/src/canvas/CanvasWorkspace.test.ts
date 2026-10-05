@@ -449,7 +449,7 @@ test('the source limits and path rules hold against the whole revision', async (
 });
 
 test('an unattached chat’s first create commits the canvas, attachment and lease binding', async (t) => {
-  const { root, deps, workspace, boundCanvasIds } = await openWorkspace(t);
+  const { workspace, boundCanvasIds } = await openWorkspace(t);
   const scope = scopeFor(null);
   const input = createInput('create-hey');
   const created = await workspace.create(scope, input);
@@ -463,12 +463,7 @@ test('an unattached chat’s first create commits the canvas, attachment and lea
   // A second create under that lease extends the canvas it made.
   const second = await workspace.create(scope, { ...input, mutationId: 'create-again' });
   assert.equal(second.canvasId, created.canvasId);
-  assert.equal(workspace.listCanvases().length, 1);
   assert.equal(workspace.snapshot(created.canvasId).frames.length, 2);
-
-  const reopened = await CanvasWorkspace.open(root, deps);
-  assert.equal(reopened.attachedCanvasId('app-1'), created.canvasId);
-  assert.deepEqual(reopened.snapshot(created.canvasId).frames[0], created.frames[0]);
 });
 
 test('an attachment survives a reopen, and detaching keeps the canvas and its source', async (t) => {
@@ -847,6 +842,43 @@ test('a lease keeps the canvas it created and cannot bootstrap another', async (
   const more = await workspace.create(scope, { ...input, mutationId: 'more' });
   assert.equal(more.canvasId, created.canvasId);
   assert.equal(workspace.listCanvases().length, 1);
+});
+
+test('a lease acts only where its chat still is, and keeps one canvas', async (t) => {
+  const { workspace, boundCanvasIds } = await openWorkspace(t);
+  const scope = scopeFor(null);
+  const mine = await workspace.create(scope, createInput('create-hey'));
+  const receipt = await workspace.write(
+    scopeFor(mine.canvasId),
+    writeInput('write-hey', mine.frames[0]?.designId ?? '', null, { 'main.tsx': HEY }),
+  );
+  const other = await workspace.createCanvas();
+
+  // The chat moves while a seeded create is copying its source, so the commit
+  // has nowhere to land: the lease is pinned to the canvas it made.
+  const staging = workspace.create(scope, {
+    mutationId: 'create-copy',
+    frames: [
+      {
+        name: 'Copy',
+        width: 720,
+        height: 720,
+        designSystem,
+        seed: { kind: 'revision' as const, canvasId: mine.canvasId, revision: receipt },
+      },
+    ],
+  });
+  await workspace.attach('app-1', other.canvasId);
+  await assert.rejects(staging, { code: 'scope_expired' });
+  assert.equal(workspace.snapshot(mine.canvasId).frames.length, 1);
+
+  // The chat's current canvas holds a receipt for the same request. The lease
+  // must neither replay it nor be bound a second time.
+  await workspace.create(scopeFor(other.canvasId, 'canvas', 'scope-b'), createInput('elsewhere'));
+  await assert.rejects(workspace.create(scope, createInput('elsewhere')), {
+    code: 'scope_expired',
+  });
+  assert.deepEqual(boundCanvasIds, [mine.canvasId]);
 });
 
 test('close waits for a mutation that is still staging its source', async (t) => {

@@ -65,16 +65,28 @@ export class CanvasLeases {
   }
 
   /**
-   * The canvas an unattached lease already bootstrapped, if it did. Its chat
-   * has to still be on that canvas: a lease neither follows the chat elsewhere
-   * nor bootstraps a replacement for a canvas the chat has left.
+   * The one canvas a lease works on: its own, else the one it bootstrapped,
+   * else its chat's current attachment. A lease that bootstrapped a canvas
+   * keeps it, so a chat that moves makes the lease stale rather than
+   * retargeting it at whichever canvas the chat is on now.
    */
-  boundCanvas(scope: CanvasScope): string | null {
-    const canvasId = this.bound.get(scope.scopeId);
-    if (canvasId === undefined) return null;
+  pinnedCanvas(scope: CanvasScope): string | null {
+    return (
+      scope.canvasId ??
+      this.bound.get(scope.scopeId) ??
+      this.heads.attachedCanvasId(scope.appSessionId)
+    );
+  }
+
+  /**
+   * A lease with no canvas of its own may only act where its chat still is.
+   * Checked again inside the commit, because a chat can move while a seeded
+   * create is copying its source.
+   */
+  requireAttachment(scope: CanvasScope, canvasId: string): void {
+    if (scope.canvasId !== null) return;
     if (this.heads.attachedCanvasId(scope.appSessionId) !== canvasId)
       throw canvasError('scope_expired', 'That chat has left the canvas this turn created.');
-    return canvasId;
   }
 
   /**
@@ -83,10 +95,15 @@ export class CanvasLeases {
    * nothing it could still authorize is left to bind for.
    */
   bind(scope: CanvasScope, canvasId: string): void {
+    const pinned = this.bound.get(scope.scopeId);
+    if (pinned === canvasId) return;
+    // A lease has one canvas. A second, different one is a bug on this side,
+    // not a request to retarget the lease, so the registry never hears it.
+    if (pinned !== undefined)
+      throw canvasError('scope_expired', 'That turn is already working on another canvas.');
     for (const scopeId of [...this.bound.keys()]) {
       if (!this.registry.isScopeActive(scopeId)) this.bound.delete(scopeId);
     }
-    if (this.bound.get(scope.scopeId) === canvasId) return;
     if (!this.registry.isScopeActive(scope.scopeId)) return;
     // Recorded only once the callback returned: a binding that threw has not
     // happened, and the retry that answers that receipt attempts it again.

@@ -130,10 +130,13 @@ export class CanvasWorkspace {
       if (settled) return settled;
       // A lease minted without a canvas takes the one its first create made:
       // a later create under it extends that canvas instead of making another.
-      const target = scope.canvasId ?? this.leases.boundCanvas(scope);
+      const target = this.leases.pinnedCanvas(scope);
       const bootstrapping = target === null;
       const canvasId = target ?? randomUUID();
-      if (!bootstrapping) this.leases.requireCanvas(scope, canvasId);
+      if (!bootstrapping) {
+        this.leases.requireAttachment(scope, canvasId);
+        this.leases.requireCanvas(scope, canvasId);
+      }
       const staged = await stageFrames(this.files, canvasId, input);
 
       return this.commit(async () => {
@@ -161,12 +164,14 @@ export class CanvasWorkspace {
               throw canvasError('scope_expired', ATTACHED_SINCE);
           };
         } else {
+          this.leases.requireAttachment(scope, canvasId);
           const live = this.leases.requireCanvas(scope, canvasId);
           const recorded = recordedCreate(live, input.mutationId, fingerprint);
           if (recorded) return recorded;
           next = structuredClone(live);
           beforeRename = () => {
             this.requireOpen();
+            this.leases.requireAttachment(scope, canvasId);
             this.leases.requireCanvas(scope, canvasId);
           };
         }
@@ -379,7 +384,8 @@ export class CanvasWorkspace {
     mutationId: string,
     fingerprint: string,
   ): CreateFramesResult | null {
-    const canvasId = scope.canvasId ?? this.attachedCanvasId(scope.appSessionId);
+    // The lease's own canvas, never whichever one happens to hold the ID.
+    const canvasId = this.leases.pinnedCanvas(scope);
     if (canvasId === null) return null;
     // The attachment is real even when the head is not readable, so this chat
     // waits for recovery rather than being handed a second canvas.
