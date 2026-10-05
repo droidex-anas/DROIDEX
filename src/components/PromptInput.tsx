@@ -1140,11 +1140,12 @@ export default function PromptInput({
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
-    const originHoldId = holdComposeOrigin();
+    // Only a send without a chat creates one, so only it needs a place held.
+    const originHoldId = activeSession ? null : holdComposeOrigin();
     try {
       await runSubmit(originHoldId, mode, autonomyOverride);
     } finally {
-      dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
+      if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
       submittingRef.current = false;
     }
   };
@@ -1241,7 +1242,11 @@ export default function PromptInput({
     }
   };
 
-  const runSubmit = async (originHoldId: string, mode: SubmitMode, autonomyOverride?: Autonomy) => {
+  const runSubmit = async (
+    originHoldId: string | null,
+    mode: SubmitMode,
+    autonomyOverride?: Autonomy,
+  ) => {
     const updateInterruptedSubmit = () => {
       if (isAppUpdateInstalling()) {
         toast.info('DROIDEX is installing an update. New turns will resume after restart.');

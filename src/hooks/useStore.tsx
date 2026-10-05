@@ -515,7 +515,7 @@ export type Action =
       files: string[];
       // The hold whose place the compose takes, read here rather than by the
       // caller so a tile closed in the meantime is already forgotten.
-      originHoldId: string;
+      originHoldId: string | null;
     }
   // A send holds the place it was made from until its pending compose takes it.
   | { type: 'HOLD_COMPOSE_ORIGIN'; holdId: string }
@@ -1325,7 +1325,10 @@ export function reducer(state: AppState, action: Action): AppState {
             text: action.text,
             skills: action.skills,
             files: action.files,
-            origin: state.heldComposeOrigins[action.originHoldId] ?? null,
+            origin:
+              action.originHoldId === null
+                ? null
+                : (state.heldComposeOrigins[action.originHoldId] ?? null),
           },
         },
       };
