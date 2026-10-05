@@ -1,7 +1,7 @@
 {
   "electron/nativeBrowserPreload.cjs": {
     "no-undef": {
-      "count": 72
+      "count": 42
     }
   },
   "sidecar/src/ChildSessions.test.ts": {

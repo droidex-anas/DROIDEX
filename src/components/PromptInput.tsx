@@ -21,6 +21,7 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
   sendToChild,
+  sendDesignPrompt,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -56,7 +57,15 @@ import {
   prepareChatWorkingDirectory,
   type ChatWorkingDirectoryResult,
 } from '../lib/chatWorkspace';
-import { newQueueId } from '../lib/promptQueue';
+import { createLocalDesignTranscriptEvent, newQueueId } from '../lib/promptQueue';
+import { browserTranscriptReferencesFromDesignReferences } from './browser/browserTranscriptReferences';
+import {
+  designMarks as stagedDesignMarks,
+  removeDesignMark,
+  setDesignMarks,
+  useDesignMarks,
+} from './browser/designMarks';
+import { DesignMarkChip } from './composer/DesignMarkChip';
 import {
   composePrompt,
   hasAppContextForTranscript,
@@ -443,6 +452,8 @@ export default function PromptInput({
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(state.activeAppSessionId);
+  // Marks picked in this chat's browser, which go out with the next prompt.
+  const designMarks = useDesignMarks(activeSession?.appSessionId);
 
   // The user's own prompts in this conversation, oldest to newest, for ArrowUp
   // recall (reuse a previous prompt). Consecutive duplicates are collapsed.
@@ -736,6 +747,15 @@ export default function PromptInput({
     setHistoryIndex(null);
   };
   const draftEditing = useDraftEditing({ input, editDraft, editorRef });
+
+  // Writes @N at the caret, so the prompt can say which mark it means.
+  const insertMarkReference = (number: number | undefined) => {
+    const editor = editorRef.current;
+    if (number === undefined || !editor) return;
+    const before = input.slice(0, editor.selection().start);
+    editor.insert(`${before && !/\s$/.test(before) ? ' ' : ''}@${String(number)} `);
+  };
+
   const { applyFormat } = draftEditing;
 
   const trigger = useMemo(() => composerTrigger(input, caret), [input, caret]);
@@ -1489,6 +1509,65 @@ export default function PromptInput({
       return;
     }
 
+    // Marks picked in the browser make this a design prompt: the sidecar sends
+    // it with their reference pack. It waits for a running turn like a queued
+    // prompt, whichever way it was sent.
+    const marks = stagedDesignMarks(activeSession.appSessionId);
+    if (marks.length > 0 && !targetChildSessionId) {
+      const appSessionId = activeSession.appSessionId;
+      const design = {
+        browserKey: appSessionId,
+        references: [...marks],
+        referenceIds: marks.map((mark) => mark.id),
+      };
+      const clearDesign = () => {
+        clearAfterSubmit();
+        setDesignMarks(appSessionId, []);
+        dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
+      };
+      if (isLive) {
+        dispatch({
+          type: 'QUEUE_PROMPT',
+          appSessionId,
+          prompt: {
+            id: newQueueId(),
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            design,
+          },
+        });
+        clearDesign();
+        return;
+      }
+      startTurnStarting();
+      const committed = await commitPrimaryPromptAfterBaseline({
+        waitForBaseline: () =>
+          workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
+        canCommit: () => !updateInterruptedSubmit(),
+        appendTranscript: () => {
+          dispatch({
+            type: 'SESSION_TRANSCRIPT',
+            event: createLocalDesignTranscriptEvent(
+              appSessionId,
+              displayText,
+              browserTranscriptReferencesFromDesignReferences(design.references),
+            ),
+          });
+        },
+        resetComposer: clearDesign,
+        sendCommand: () => {
+          sendDesignPrompt(appSessionId, composePrompt(displayText, skillNames, allFiles), [
+            ...design.referenceIds,
+          ]);
+          armTurnStartingTimeout();
+        },
+      });
+      if (!committed) stopTurnStarting();
+      return;
+    }
+
     // Model is working and the user chose to queue: stage the prompt locally.
     // It is held client-side and delivered automatically when the turn finishes.
     if (isLive && mode === 'queue' && !targetChildSessionId) {
@@ -1620,6 +1699,8 @@ export default function PromptInput({
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);
+    // A design prompt's marks come back as chips; anything staged since goes.
+    setDesignMarks(activeSession.appSessionId, p.design?.references ?? []);
     for (const reply of p.sideChatReplies ?? []) {
       dispatch({
         type: 'ATTACH_SIDE_CHAT_REPLY',
@@ -2082,8 +2163,20 @@ export default function PromptInput({
               : undefined
           }
         >
-          {hasAttachmentChips && (
+          {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+              {designMarks.map((mark) => (
+                <DesignMarkChip
+                  key={mark.id}
+                  mark={mark}
+                  onInsert={() => {
+                    insertMarkReference(mark.anchor.mark);
+                  }}
+                  onRemove={() => {
+                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.id);
+                  }}
+                />
+              ))}
               {imageAttachments.images.map((img) => (
                 <ImageChip
                   key={img.id}

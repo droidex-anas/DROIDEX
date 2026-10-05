@@ -235,13 +235,10 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
   nativeBrowserGoForward: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-go-forward', { browserSessionId }),
-  nativeBrowserSetDesignMode: (browserSessionId, active, scale) =>
-    ipcRenderer.invoke('native-browser-set-design-mode', { browserSessionId, active, scale }),
-  nativeBrowserSetPencilMode: (browserSessionId, active) =>
-    ipcRenderer.invoke('native-browser-set-pencil-mode', { browserSessionId, active }),
+  nativeBrowserSetDesignState: (browserSessionId, state) =>
+    ipcRenderer.invoke('native-browser-set-design-state', { browserSessionId, state }),
 
-  onNativeBrowserSelection: (handler) => on('native-browser-selection', handler),
-  onNativeBrowserDesignPrompt: (handler) => on('native-browser-design-prompt', handler),
+  onNativeBrowserDesignEvent: (handler) => on('native-browser-design-event', handler),
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserWorking: (handler) => on('native-browser-working', handler),

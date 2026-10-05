@@ -1,37 +1,34 @@
 const { ipcRenderer } = require('electron');
 const { isSensitiveBrowserKey, redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+const { createDesignOverlay, INTERNAL_ATTR } = require('./browserDesignOverlay.cjs');
 
+// Design mode as the app last set it.
 let designMode = false;
-let pencilMode = false;
-let altHeld = false;
-let promptBox = null;
-// How much larger than the page the design labels are drawn: 1 / the pane's scale.
+let drawing = false;
+// How much larger than the page the overlay is drawn: 1 / the pane's scale.
 let uiScale = 1;
-let promptInput = null;
-let promptTag = null;
-let promptSend = null;
-let promptSelection = null;
-let annotations = [];
-let repositionQueued = false;
-let hoverFrame = 0;
-let pendingHover = null;
+// Everything this page has picked, by id ({ id, selection, and an element,
+// an area in page coordinates, or sketch strokes }), and the marks the app
+// holds now ({ id, number }). A mark the app drops can come back, so what was
+// picked is kept.
+const picked = new Map();
+let marks = [];
+// The element the hover outline is on. Walking with the arrow keys keeps it
+// while the pointer stays inside it; walkedFrom is the way back down.
 let hoverTarget = null;
-let strokes = [];
-let strokePaths = [];
+let walked = false;
+let walkedFrom = [];
+let pendingHover = null;
+let hoverFrame = 0;
+let renderQueued = false;
+// A press that is not yet a click or a drag, and the area a drag marks out.
+let press = null;
+let areaBox = null;
+// The sketch this drawing session adds to, and the stroke being drawn.
+let sketch = null;
 let activeStroke = null;
-let activePath = null;
-let textDragStart = null;
-let textRange = null;
-let clearTimer = null;
-// True between submitting a design prompt and the main process acking that it
-// has captured the annotated region. While set, all design interactions are
-// frozen so the user cannot move/redraw/scroll mid-capture and produce a
-// screenshot that no longer matches the reference. The id makes the ack
-// request-scoped so a late ack from a superseded capture cannot clear a newer
-// pending capture.
-let capturePending = false;
-let pendingCaptureId = null;
-let captureSeq = 0;
+
+const overlay = createDesignOverlay(window);
 
 const redactedTextTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
 const urlAttributes = new Set([
@@ -52,76 +49,6 @@ const urlAttributes = new Set([
   'xlink:href',
 ]);
 const redactedUrlAttributes = new Set(['ping', 'srcdoc', 'srcset', 'style']);
-const INTERNAL_ATTR = 'data-droid-design';
-const PENCIL_COLOR = '#ff8a2a';
-const designHost = document.createElement('div');
-designHost.setAttribute(INTERNAL_ATTR, '1');
-designHost.style.cssText = [
-  'all:initial!important',
-  'position:fixed!important',
-  'left:0!important',
-  'top:0!important',
-  'width:0!important',
-  'height:0!important',
-  'display:block!important',
-  'overflow:visible!important',
-  'pointer-events:none!important',
-  'z-index:2147483647!important',
-].join(';');
-const designRoot = designHost.attachShadow({ mode: 'closed' });
-
-const overlay = element('div', [
-  'position:fixed',
-  'z-index:2147483646',
-  'left:0',
-  'top:0',
-  'width:0',
-  'height:0',
-  'pointer-events:none',
-  'border:2px solid #2997ff',
-  'box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 0 99999px rgba(0,0,0,.08)',
-  'border-radius:4px',
-  'display:none',
-]);
-const label = element('div', [
-  'position:fixed',
-  'z-index:2147483646',
-  'pointer-events:none',
-  'max-width:360px',
-  'padding:6px 8px',
-  'border-radius:7px',
-  'background:#1f8fff',
-  'color:white',
-  'font:12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
-  'box-shadow:0 10px 28px rgba(0,0,0,.28)',
-  'display:none',
-]);
-const textHighlights = element('div', [
-  'position:fixed',
-  'z-index:2147483645',
-  'left:0',
-  'top:0',
-  'pointer-events:none',
-  'display:none',
-]);
-const penSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-penSvg.setAttribute('width', '100%');
-penSvg.setAttribute('height', '100%');
-penSvg.style.cssText = [
-  'position:fixed',
-  'z-index:2147483646',
-  'left:0',
-  'top:0',
-  'width:100vw',
-  'height:100vh',
-  'pointer-events:none',
-  'display:none',
-  'overflow:visible',
-].join(';');
-overlay.setAttribute(INTERNAL_ATTR, '1');
-label.setAttribute(INTERNAL_ATTR, '1');
-textHighlights.setAttribute(INTERNAL_ATTR, '1');
-penSvg.setAttribute(INTERNAL_ATTR, '1');
 
 // Main calls these here, in the preload's isolated world (browserPageScript.cjs),
 // where the page's own scripts can neither see nor call them. A saved login
@@ -153,251 +80,371 @@ function nextChange(ms) {
   });
 }
 
-ipcRenderer.on('native-browser-design-prompt-sent', (_event, payload) => {
-  // Ignore acks that do not match the capture currently in flight: a stale ack
-  // from a superseded prompt must not clear a newer pending capture.
-  if (pendingCaptureId === null || !payload || payload.captureId !== pendingCaptureId) return;
-  finishCapture();
-});
-
-function finishCapture() {
-  if (clearTimer) {
-    clearTimeout(clearTimer);
-    clearTimer = null;
-  }
-  capturePending = false;
-  pendingCaptureId = null;
-  clearAnnotations();
-}
-
 document.addEventListener('submit', onFormSubmit, true);
-document.addEventListener('mousemove', onMouseMove, true);
-document.addEventListener('mousedown', onMouseDown, true);
-document.addEventListener('mouseup', onMouseUp, true);
-document.addEventListener('click', onClick, true);
-document.addEventListener('contextmenu', onContextMenu, true);
-document.addEventListener('keydown', onKey, true);
-document.addEventListener('keyup', onKey, true);
-window.addEventListener('scroll', queueReposition, true);
-window.addEventListener('resize', queueReposition, true);
-// An open composer fits itself to the page again.
-window.addEventListener('resize', () => {
-  if (!promptVisible()) return;
-  refreshPromptBox();
-  positionPrompt(promptSelection.anchor.box);
-});
-// passive:false so we can cancel wheel scrolling while a capture is pending.
-window.addEventListener('wheel', onWheel, { capture: true, passive: false });
-window.addEventListener('touchmove', onWheel, { capture: true, passive: false });
 
-function element(tag, styles) {
-  const node = document.createElement(tag);
-  node.style.cssText = styles.join(';');
-  return node;
-}
+// Design mode's listeners are on the page only while it is on. The page never
+// sees a press, click or menu while it is.
+const DESIGN_LISTENERS = [
+  ['pointermove', onPointerMove],
+  ['pointerdown', onPointerDown],
+  ['pointerup', onPointerUp],
+  ['mousedown', swallow],
+  ['mouseup', swallow],
+  ['click', swallow],
+  ['dblclick', swallow],
+  ['auxclick', swallow],
+  ['contextmenu', swallow],
+  ['keydown', onKeyDown],
+  ['scroll', queueRender],
+  ['resize', queueRender],
+];
+let listening = false;
 
-function mount() {
-  const root = document.documentElement;
-  if (!root) return;
-  if (!designHost.isConnected) root.appendChild(designHost);
-  if (!overlay.isConnected) designRoot.appendChild(overlay);
-  if (!label.isConnected) designRoot.appendChild(label);
-  if (!textHighlights.isConnected) designRoot.appendChild(textHighlights);
-  if (!penSvg.isConnected) designRoot.appendChild(penSvg);
+function listen(on) {
+  if (on === listening) return;
+  listening = on;
+  for (const [type, handler] of DESIGN_LISTENERS) {
+    if (on) window.addEventListener(type, handler, true);
+    else window.removeEventListener(type, handler, true);
+  }
 }
 
 function applyState(state) {
   uiScale = 1 / (Number(state && state.scale) || 1);
   designMode = Boolean(state && state.designMode);
-  pencilMode = designMode && Boolean(state && state.pencilMode);
-  hoverTarget = null;
+  drawing = designMode && Boolean(state && state.pencilMode);
+  marks = Array.isArray(state && state.marks) ? state.marks : [];
+  // Drawing again starts a new sketch.
+  if (!drawing) sketch = null;
   activeStroke = null;
-  textDragStart = null;
-  if (!designMode) {
-    capturePending = false;
-    pendingCaptureId = null;
-    if (clearTimer) {
-      clearTimeout(clearTimer);
-      clearTimer = null;
-    }
-    hideBox();
-    hidePrompt();
-    clearAnnotations();
-    return;
-  }
-  mount();
-  hideBox();
-  repositionAnnotations();
-  if (promptVisible()) positionPrompt(promptSelection.anchor.box);
+  press = null;
+  showArea(null);
+  listen(designMode);
+  overlay.setTheme(state && state.theme, uiScale);
+  overlay.setShown(designMode);
+  if (!designMode || drawing) hideHover();
+  render();
 }
 
-function onWheel(event) {
-  if (!designMode || !capturePending) return;
-  swallow(event);
+function sendDesignEvent(event) {
+  ipcRenderer.send('native-browser-design-event', event);
 }
 
-function onKey(event) {
-  if (!designMode) return;
-  // Freeze keyboard scrolling (space, arrows, page keys) during capture so the
-  // viewport cannot shift out from under the region being captured.
-  if (capturePending) {
-    if (event.type === 'keydown') swallow(event);
-    return;
-  }
-  altHeld = Boolean(event.altKey);
-  if (event.type === 'keydown' && event.key === 'Escape') {
-    // Escape must cancel reliably even when focus is not inside the composer
-    // (the composer's own handler only fires when it holds focus).
-    if (promptVisible()) cancelDesign();
-    else clearAnnotations();
-  }
-}
-
-function onMouseMove(event) {
-  if (!designMode) return;
-  if (isInternalEvent(event)) return;
-  if (capturePending) {
-    swallow(event);
-    return;
-  }
-  altHeld = Boolean(event.altKey);
+function onPointerMove(event) {
   if (activeStroke) {
-    activeStroke.push(point(event));
-    extendActiveStroke();
+    activeStroke.push(pagePoint(event));
+    render();
     swallow(event);
     return;
   }
-  if (textDragStart) {
-    updateTextRange(textDragStart, point(event));
+  if (press) {
+    const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
+    if (areaBox || moved >= 6) {
+      hideHover();
+      showArea(boxBetween(press, point(event)));
+    }
     swallow(event);
     return;
   }
-  // While the prompt composer is open the selection is locked in, so the
-  // cursor can travel to the prompt without re-triggering hover/marker.
-  if (pencilMode || promptVisible()) return;
-  pendingHover = { x: event.clientX, y: event.clientY, alt: altHeld };
-  if (hoverFrame) return;
-  hoverFrame = requestAnimationFrame(processHover);
+  if (drawing) return;
+  pendingHover = point(event);
+  if (!hoverFrame) hoverFrame = requestAnimationFrame(processHover);
 }
 
 function processHover() {
   hoverFrame = 0;
-  if (
-    !designMode ||
-    !pendingHover ||
-    pencilMode ||
-    activeStroke ||
-    textDragStart ||
-    promptVisible()
-  )
-    return;
-  const { x, y, alt } = pendingHover;
-  const target = pickTarget(x, y, alt);
-  if (!target) {
-    hoverTarget = null;
-    hideBox();
-    return;
-  }
-  if (target === hoverTarget) {
-    overlay.style.display = 'block';
-    positionBox(overlay, target.getBoundingClientRect());
-    return;
-  }
+  if (!designMode || drawing || press || !pendingHover) return;
+  const { x, y } = pendingHover;
+  if (walked && hoverTarget && contains(hoverTarget, x, y)) return;
+  walked = false;
+  walkedFrom = [];
+  const target = pickTarget(x, y);
+  if (target === hoverTarget) return;
   hoverTarget = target;
-  showBox(target.getBoundingClientRect(), labelFor(target));
+  if (target) showHover(target);
+  else overlay.hideHover();
 }
 
-function onMouseDown(event) {
-  if (!designMode || event.button !== 0) return;
-  if (isInternalEvent(event)) return;
-  if (capturePending) {
-    swallow(event);
-    return;
-  }
-  // Swallow so the underlying page cannot react to the press while the
-  // composer is open; clicks elsewhere are also intercepted in onClick.
-  if (promptVisible()) {
-    swallow(event);
-    return;
-  }
-  if (pencilMode) {
-    activeStroke = [point(event)];
-    strokes.push(activeStroke);
-    activePath = appendStrokePath(activeStroke);
-    hideBox();
-    swallow(event);
-    return;
-  }
-  if (event.shiftKey) {
-    textDragStart = point(event);
-    hideBox();
-    swallow(event);
-  }
+function showHover(el) {
+  const rect = el.getBoundingClientRect();
+  overlay.showHover(rect, hoverInfo(el, rect));
 }
 
-function onMouseUp(event) {
-  if (!designMode) return;
-  if (capturePending) {
-    swallow(event);
+function hideHover() {
+  hoverTarget = null;
+  walked = false;
+  walkedFrom = [];
+  overlay.hideHover();
+}
+
+function onPointerDown(event) {
+  swallow(event);
+  if (event.button !== 0) return;
+  if (!drawing) {
+    press = { x: event.clientX, y: event.clientY, shift: event.shiftKey };
     return;
   }
+  if (!sketch) {
+    sketch = { id: `@sketch-${Date.now().toString(36)}`, strokes: [] };
+    picked.set(sketch.id, sketch);
+  }
+  activeStroke = [pagePoint(event)];
+  sketch.strokes.push(activeStroke);
+  showMark(sketch.id);
+  render();
+}
+
+function onPointerUp(event) {
+  swallow(event);
   if (activeStroke) {
-    const finished = strokes[strokes.length - 1];
-    activeStroke = null;
-    activePath = null;
-    if (strokeLength(finished) < 6) {
-      strokes.pop();
-      const stalePath = strokePaths.pop();
-      if (stalePath) stalePath.remove();
-      if (strokes.length === 0) penSvg.style.display = 'none';
-    } else {
-      const selection = sketchSelection();
-      if (selection) {
-        sendSelection(selection);
-        showPrompt(selection);
+    finishStroke();
+    return;
+  }
+  const start = press;
+  press = null;
+  if (!start) return;
+  if (areaBox) {
+    const box = areaBox;
+    showArea(null);
+    if (box.width >= 8 && box.height >= 8) pick(areaPick(box), false);
+    return;
+  }
+  const target = clickTarget(event.clientX, event.clientY);
+  if (target) pick(elementPick(target), start.shift);
+}
+
+// A stroke too short to mean anything is dropped; the sketch goes to the app
+// again with every stroke it has, keeping its id and number.
+function finishStroke() {
+  const stroke = activeStroke;
+  activeStroke = null;
+  if (strokeLength(stroke) < 6) sketch.strokes.pop();
+  if (sketch.strokes.length > 0) {
+    sendDesignEvent({ type: 'select', selection: sketchSelection(sketch) });
+  } else {
+    marks = marks.filter((mark) => mark.id !== sketch.id);
+    picked.delete(sketch.id);
+    sketch = null;
+  }
+  render();
+}
+
+// A click marks what it lands on; Shift+click marks it or takes its mark away.
+function pick(entry, toggle) {
+  const marked = marks.some((mark) => mark.id === entry.id);
+  if (marked) {
+    if (!toggle) return;
+    marks = marks.filter((mark) => mark.id !== entry.id);
+    sendDesignEvent({ type: 'unselect', id: entry.id });
+  } else {
+    picked.set(entry.id, entry);
+    showMark(entry.id);
+    sendDesignEvent({ type: 'select', selection: entry.selection });
+  }
+  // The mark takes the outline's place until the pointer moves to something else.
+  overlay.hideHover();
+  render();
+}
+
+// Drawn at once with the next number; the app's list, which follows, decides.
+function showMark(id) {
+  if (marks.some((mark) => mark.id === id)) return;
+  const number = marks.reduce((top, mark) => Math.max(top, mark.number), 0) + 1;
+  marks = [...marks, { id, number }];
+}
+
+function onKeyDown(event) {
+  const key = event.key;
+  if (key === 'Escape') {
+    swallow(event);
+    // A stroke or drag in progress goes first; the app takes it from there.
+    if (activeStroke || press) {
+      if (activeStroke) {
+        activeStroke.length = 0;
+        finishStroke();
       }
+      press = null;
+      showArea(null);
+      return;
     }
-    swallow(event);
+    sendDesignEvent({ type: 'key', key: 'escape' });
     return;
   }
-  if (textDragStart) {
-    const start = textDragStart;
-    textDragStart = null;
-    updateTextRange(start, point(event));
-    const selection = textSelection();
-    if (selection) {
-      sendSelection(selection);
-      showPrompt(selection);
-    } else {
-      clearTextHighlights();
-    }
+  if ((key === 'd' || key === 'D') && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if (isEditable(event.target)) return;
     swallow(event);
+    sendDesignEvent({ type: 'key', key: 'draw' });
+    return;
+  }
+  if ((key === 'ArrowUp' || key === 'ArrowDown') && hoverTarget && !drawing) {
+    swallow(event);
+    walk(key === 'ArrowUp');
   }
 }
 
-function onContextMenu(event) {
+// Up goes to the parent, Down back to where Up came from, else the first child.
+function walk(up) {
+  const next = up ? hoverTarget.parentElement : walkedFrom.pop() || hoverTarget.firstElementChild;
+  if (!next || next === document.body || next === document.documentElement) return;
+  if (up) walkedFrom.push(hoverTarget);
+  walked = true;
+  hoverTarget = next;
+  showHover(next);
+}
+
+function clickTarget(x, y) {
+  if (walked && hoverTarget && contains(hoverTarget, x, y)) return hoverTarget;
+  return pickTarget(x, y);
+}
+
+function queueRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
+function render() {
   if (!designMode) return;
-  swallow(event);
+  const drawn = [];
+  for (const { id, number } of marks) {
+    const entry = picked.get(id);
+    if (entry) drawn.push({ id, number, box: markBox(entry), strokes: entry.strokes });
+  }
+  overlay.drawMarks(drawn, scrollPoint());
+  if (hoverTarget) overlay.followHover(hoverTarget.getBoundingClientRect());
 }
 
-function onClick(event) {
-  if (!designMode || pencilMode || event.shiftKey) return;
-  if (isInternalEvent(event)) return;
-  if (capturePending) {
-    swallow(event);
-    return;
+// Where a mark is in the viewport now, or null when it is not on the page.
+function markBox(entry) {
+  if (entry.el) {
+    if (!entry.el.isConnected) return null;
+    const rect = entry.el.getBoundingClientRect();
+    return rect.width > 0 || rect.height > 0 ? boxFor(rect) : null;
   }
-  if (promptVisible()) {
-    swallow(event);
-    return;
-  }
-  const target = pickTarget(event.clientX, event.clientY, Boolean(event.altKey));
-  if (!target) return;
-  const selection = elementSelection(target);
-  addAnnotation(selection.anchor, target);
-  sendSelection(selection);
-  showPrompt(selection);
-  swallow(event);
+  const box = entry.strokes ? strokesBounds(entry.strokes) : entry.pageBox;
+  if (!box) return null;
+  const scroll = scrollPoint();
+  return { ...box, x: box.x - scroll.x, y: box.y - scroll.y };
+}
+
+function showArea(box) {
+  areaBox = box;
+  overlay.showArea(box);
+}
+
+function elementPick(el) {
+  const selection = elementSelection(el);
+  return { id: selection.anchor.id, el, selection };
+}
+
+function areaPick(box) {
+  const scroll = scrollPoint();
+  const id = `@area-${Date.now().toString(36)}`;
+  return {
+    id,
+    pageBox: { ...box, x: box.x + scroll.x, y: box.y + scroll.y },
+    selection: pageSelection({
+      id,
+      kind: 'region',
+      label: `area ${box.width} × ${box.height}`,
+      box,
+    }),
+  };
+}
+
+function sketchSelection(entry) {
+  const scroll = scrollPoint();
+  const strokes = entry.strokes.map((stroke) =>
+    stroke.map((pt) => ({ x: Math.round(pt.x - scroll.x), y: Math.round(pt.y - scroll.y) })),
+  );
+  return pageSelection({
+    id: entry.id,
+    kind: 'region',
+    label: `sketch (${strokes.length} stroke${strokes.length === 1 ? '' : 's'})`,
+    box: markBox(entry),
+    strokes,
+  });
+}
+
+function pageSelection(anchor) {
+  return { anchor, url: location.href, title: document.title, scroll: scrollPoint() };
+}
+
+// What the hover label says: a name, the size, the font and its colour.
+function hoverInfo(el, rect) {
+  const style = getComputedStyle(el);
+  const family = style.fontFamily.split(',')[0].replace(/["']/g, '').trim();
+  return {
+    name: hoverName(el),
+    size: `${Math.round(rect.width)} × ${Math.round(rect.height)}`,
+    font: `${family} ${Math.round(parseFloat(style.fontSize) * 10) / 10}px`,
+    color: style.color,
+  };
+}
+
+// Elements whose own words are their name.
+const NAMED_BY_TEXT = new Set([
+  'A',
+  'BUTTON',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'LABEL',
+  'LEGEND',
+  'OPTION',
+  'SUMMARY',
+]);
+
+// The component's name, else the element's accessible name, else its tag.
+function hoverName(el) {
+  const source = resolveSource(el);
+  if (source.component) return source.component;
+  const name =
+    el.getAttribute('aria-label') ||
+    el.getAttribute('alt') ||
+    el.getAttribute('title') ||
+    el.getAttribute('placeholder') ||
+    (NAMED_BY_TEXT.has(el.tagName) ? safeElementText(el, 40) : '');
+  return cleanText(name, 40) || el.tagName.toLowerCase();
+}
+
+function contains(el, x, y) {
+  const rect = el.getBoundingClientRect();
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function isEditable(node) {
+  return Boolean(
+    node && (node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)),
+  );
+}
+
+function boxBetween(a, b) {
+  return {
+    x: Math.round(Math.min(a.x, b.x)),
+    y: Math.round(Math.min(a.y, b.y)),
+    width: Math.round(Math.abs(a.x - b.x)),
+    height: Math.round(Math.abs(a.y - b.y)),
+  };
+}
+
+function point(event) {
+  return { x: event.clientX, y: event.clientY };
+}
+
+// A point in page coordinates, which stay put as the page scrolls.
+function pagePoint(event) {
+  return { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
+}
+
+function scrollPoint() {
+  return { x: Math.round(window.scrollX), y: Math.round(window.scrollY) };
 }
 
 function swallow(event) {
@@ -614,121 +661,6 @@ function elementSelection(el) {
   };
 }
 
-function sketchSelection() {
-  const box = strokesBounds();
-  if (!box) return null;
-  return {
-    anchor: {
-      id: `@sketch-${Date.now().toString(36)}`,
-      kind: 'region',
-      label: `sketch (${strokes.length} stroke${strokes.length === 1 ? '' : 's'})`,
-      box,
-      strokes: strokes.map((stroke) =>
-        stroke.map((pt) => ({ x: Math.round(pt.x), y: Math.round(pt.y) })),
-      ),
-    },
-    url: location.href,
-    title: document.title,
-    scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
-  };
-}
-
-function updateTextRange(start, end) {
-  const from = caretAt(start.x, start.y);
-  const to = caretAt(end.x, end.y);
-  if (!from || !to) return;
-  const range = document.createRange();
-  try {
-    range.setStart(from.node, from.offset);
-    range.setEnd(to.node, to.offset);
-    if (range.collapsed) {
-      range.setStart(to.node, to.offset);
-      range.setEnd(from.node, from.offset);
-    }
-  } catch {
-    return;
-  }
-  if (range.collapsed) return;
-  textRange = range;
-  drawTextHighlights(range);
-}
-
-function caretAt(x, y) {
-  if (document.caretPositionFromPoint) {
-    const pos = document.caretPositionFromPoint(x, y);
-    return pos ? { node: pos.offsetNode, offset: pos.offset } : null;
-  }
-  if (document.caretRangeFromPoint) {
-    const range = document.caretRangeFromPoint(x, y);
-    return range ? { node: range.startContainer, offset: range.startOffset } : null;
-  }
-  return null;
-}
-
-function textSelection() {
-  if (!textRange || textRange.collapsed) return null;
-  const text = cleanText(textRange.toString(), 400);
-  if (!text) return null;
-  const rect = textRange.getBoundingClientRect();
-  if (rect.width < 2 || rect.height < 2) return null;
-  const container = textRange.commonAncestorContainer;
-  const el = container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement;
-  const selector = el ? selectorFor(el) : '';
-  const source = el ? resolveSource(el) : undefined;
-  return {
-    anchor: {
-      id: `@text-${stableHash(`${selector}:${text}`)}`,
-      kind: 'text',
-      label: `text "${cleanText(text, 40)}"`,
-      tag: el ? el.tagName.toLowerCase() : undefined,
-      text,
-      box: boxFor(rect),
-      source,
-    },
-    detail: el
-      ? {
-          id: `@text-${stableHash(`${selector}:${text}`)}`,
-          selector,
-          selectorVerified: verifySelector(el, selector),
-          attributes: attrsFor(el),
-          styles: stylesFor(el),
-          ancestors: ancestorsFor(el),
-          html: cleanText(sanitizedOuterHtml(el), 400) || undefined,
-        }
-      : undefined,
-    url: location.href,
-    title: document.title,
-    scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
-  };
-}
-
-function drawTextHighlights(range) {
-  mount();
-  textHighlights.textContent = '';
-  for (const rect of range.getClientRects()) {
-    if (rect.width < 1 || rect.height < 1) continue;
-    const piece = element('div', [
-      'position:fixed',
-      'pointer-events:none',
-      'background:rgba(41,151,255,.3)',
-      'border-radius:2px',
-      `left:${Math.round(rect.x)}px`,
-      `top:${Math.round(rect.y)}px`,
-      `width:${Math.round(rect.width)}px`,
-      `height:${Math.round(rect.height)}px`,
-    ]);
-    piece.setAttribute(INTERNAL_ATTR, '1');
-    textHighlights.appendChild(piece);
-  }
-  textHighlights.style.display = 'block';
-}
-
-function clearTextHighlights() {
-  textRange = null;
-  textHighlights.textContent = '';
-  textHighlights.style.display = 'none';
-}
-
 function buildAnchor(el, selector, source) {
   const rect = el.getBoundingClientRect();
   const tag = el.tagName.toLowerCase();
@@ -772,14 +704,10 @@ function labelText(tag, source, text) {
   return `${component}<${tag}>${quoted}`;
 }
 
-function pickTarget(x, y, climb) {
+function pickTarget(x, y) {
   let node = document.elementFromPoint(x, y);
   while (node && node.getAttribute && node.getAttribute(INTERNAL_ATTR)) node = node.parentElement;
   if (!node || node === document.documentElement) return null;
-  if (climb) {
-    const parent = node.parentElement;
-    if (parent && parent !== document.body && parent !== document.documentElement) return parent;
-  }
   return node;
 }
 
@@ -1081,142 +1009,7 @@ function numberOr(value) {
   return Number.isFinite(num) ? num : undefined;
 }
 
-function addAnnotation(anchor, el) {
-  clearAnnotations();
-  const outline = element('div', [
-    'position:fixed',
-    'z-index:2147483645',
-    'pointer-events:none',
-    'border:2px solid #ff8a2a',
-    'border-radius:4px',
-    'box-shadow:0 0 0 1px rgba(0,0,0,.35)',
-    'display:block',
-  ]);
-  const pin = element('div', [
-    'position:fixed',
-    'z-index:2147483645',
-    'pointer-events:none',
-    'min-width:18px',
-    'height:18px',
-    'padding:0 5px',
-    'border-radius:9px',
-    'background:#ff8a2a',
-    'color:#111',
-    'font:11px ui-monospace,SFMono-Regular,Menlo,monospace',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'box-shadow:0 4px 12px rgba(0,0,0,.4)',
-  ]);
-  outline.setAttribute(INTERNAL_ATTR, '1');
-  pin.setAttribute(INTERNAL_ATTR, '1');
-  pin.textContent = '1';
-  mount();
-  designRoot.append(outline, pin);
-  annotations.push({ anchor, el, outline, pin });
-  repositionAnnotations();
-}
-
-function clearAnnotations() {
-  for (const item of annotations) {
-    item.outline.remove();
-    item.pin.remove();
-  }
-  annotations = [];
-  clearStrokes();
-  clearTextHighlights();
-}
-
-function queueReposition() {
-  if (repositionQueued) return;
-  repositionQueued = true;
-  requestAnimationFrame(() => {
-    repositionQueued = false;
-    repositionAnnotations();
-  });
-}
-
-function repositionAnnotations() {
-  for (const item of annotations) {
-    const rect = item.el ? item.el.getBoundingClientRect() : item.anchor.box;
-    const box = item.el
-      ? rect
-      : {
-          x: item.anchor.box.x,
-          y: item.anchor.box.y,
-          width: item.anchor.box.width,
-          height: item.anchor.box.height,
-        };
-    const visible = designMode && box.width > 0 && box.height > 0;
-    item.outline.style.display = visible ? 'block' : 'none';
-    item.pin.style.display = visible ? 'flex' : 'none';
-    if (!visible) continue;
-    positionBox(item.outline, box);
-    item.pin.style.left = `${Math.round(box.x)}px`;
-    item.pin.style.top = `${Math.round(Math.max(2, box.y - 20))}px`;
-  }
-}
-
-function positionBox(node, box) {
-  node.style.left = `${Math.round(box.x)}px`;
-  node.style.top = `${Math.round(box.y)}px`;
-  node.style.width = `${Math.round(box.width)}px`;
-  node.style.height = `${Math.round(box.height)}px`;
-}
-
-function showBox(rect, text) {
-  mount();
-  overlay.style.display = 'block';
-  positionBox(overlay, rect);
-  label.style.display = 'block';
-  label.textContent = text;
-  undoPaneScale(label);
-  // Kept inside the page at the size it is drawn, wrapping where it is narrow;
-  // its own 16px of padding comes off the width it may take.
-  label.style.maxWidth = `${Math.min(360, Math.floor((window.innerWidth - 16) / uiScale) - 16)}px`;
-  // Measured from the page's edge: where it last sat can squeeze its width.
-  label.style.left = '0px';
-  const { width, height } = label.getBoundingClientRect();
-  // One line sits where it always did; a wrapped label takes the room it needs.
-  const tall = Math.max(height, 30 * uiScale);
-  label.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, rect.x)))}px`;
-  label.style.top = `${Math.round(Math.max(8, Math.min(window.innerHeight - tall - 6 * uiScale, rect.y - tall - 8 * uiScale)))}px`;
-}
-
-function hideBox() {
-  overlay.style.display = 'none';
-  label.style.display = 'none';
-}
-
-// Append one <path> per stroke and only mutate the active path's `d` as the
-// pointer moves. Rebuilding the whole SVG each frame made the pane flicker.
-function appendStrokePath(stroke) {
-  mount();
-  penSvg.style.display = 'block';
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', PENCIL_COLOR);
-  path.setAttribute('stroke-width', '3');
-  path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
-  path.setAttribute('d', strokePathData(stroke));
-  penSvg.appendChild(path);
-  strokePaths.push(path);
-  return path;
-}
-
-function extendActiveStroke() {
-  if (activePath && activeStroke) activePath.setAttribute('d', strokePathData(activeStroke));
-}
-
-function strokePathData(stroke) {
-  return stroke
-    .map((pt, index) => `${index === 0 ? 'M' : 'L'}${Math.round(pt.x)} ${Math.round(pt.y)}`)
-    .join(' ');
-}
-
 function strokeLength(stroke) {
-  if (!stroke || stroke.length < 2) return 0;
   let total = 0;
   for (let index = 1; index < stroke.length; index += 1) {
     total += Math.hypot(
@@ -1227,67 +1020,19 @@ function strokeLength(stroke) {
   return total;
 }
 
-function strokesBounds() {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const stroke of strokes) {
-    for (const pt of stroke) {
-      minX = Math.min(minX, pt.x);
-      minY = Math.min(minY, pt.y);
-      maxX = Math.max(maxX, pt.x);
-      maxY = Math.max(maxY, pt.y);
-    }
-  }
-  if (!Number.isFinite(minX) || maxX - minX < 4 || maxY - minY < 4) return null;
+function strokesBounds(strokes) {
+  const points = strokes.flat();
+  if (points.length === 0) return null;
+  const xs = points.map((pt) => pt.x);
+  const ys = points.map((pt) => pt.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
   return {
-    x: Math.round(minX),
-    y: Math.round(minY),
-    width: Math.round(maxX - minX),
-    height: Math.round(maxY - minY),
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.max(1, Math.round(Math.max(...xs) - x)),
+    height: Math.max(1, Math.round(Math.max(...ys) - y)),
   };
-}
-
-function clearStrokes() {
-  strokes = [];
-  strokePaths = [];
-  activeStroke = null;
-  activePath = null;
-  penSvg.textContent = '';
-  penSvg.style.display = 'none';
-}
-
-function labelFor(el) {
-  const tag = el.tagName.toLowerCase();
-  const source = resolveSource(el);
-  const text = cleanText(
-    el.getAttribute('aria-label') ||
-      el.getAttribute('title') ||
-      el.getAttribute('placeholder') ||
-      directText(el) ||
-      el.id ||
-      safeElementText(el) ||
-      '',
-    40,
-  );
-  const head = labelText(tag, source, text);
-  if (source && source.file) {
-    return `${head}  ${source.file}${source.line ? `:${source.line}` : ''}`;
-  }
-  return `${head}${altHeld ? '' : '  (alt: parent, shift-drag: text)'}`;
-}
-
-function sendSelection(payload) {
-  ipcRenderer.send('native-browser-selection', payload);
-}
-
-function sendDesignPrompt(payload) {
-  ipcRenderer.send('native-browser-design-prompt', payload);
-}
-
-function point(event) {
-  return { x: event.clientX, y: event.clientY };
 }
 
 function boxFor(rect) {
@@ -1336,12 +1081,6 @@ function cleanText(value, max = 180) {
     .slice(0, max);
 }
 
-function cleanPrompt(value) {
-  return String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function cssEscape(value) {
   return window.CSS && CSS.escape ? CSS.escape(value) : String(value).replace(/["\\]/g, '\\$&');
 }
@@ -1353,213 +1092,4 @@ function stableHash(value) {
     hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
   return hash.toString(36);
-}
-
-// The element or text the composer was opened on, where the page has it now;
-// a sketch keeps the region it was drawn on.
-function refreshPromptBox() {
-  const { anchor } = promptSelection;
-  const held = annotations.find((item) => item.anchor === anchor && item.el);
-  if (held) anchor.box = boxFor(held.el.getBoundingClientRect());
-  if (anchor.kind !== 'text' || !textRange) return;
-  anchor.box = boxFor(textRange.getBoundingClientRect());
-  drawTextHighlights(textRange);
-}
-
-function promptVisible() {
-  return Boolean(promptBox && promptBox.style.display === 'block');
-}
-
-function showPrompt(selection) {
-  promptSelection = selection;
-  mountPrompt();
-  hideBox();
-  if (promptTag) promptTag.textContent = selection.anchor.label || selection.anchor.id;
-  promptInput.value = '';
-  syncPromptSend();
-  positionPrompt(selection.anchor.box);
-  promptBox.style.display = 'block';
-  window.setTimeout(() => promptInput.focus({ preventScroll: true }), 0);
-}
-
-function hidePrompt() {
-  promptSelection = null;
-  if (promptBox) promptBox.style.display = 'none';
-}
-
-// Cancel fully resets the design turn: close the composer AND wipe the
-// pending selection box plus any sketch strokes / text highlights, leaving the
-// pane armed for a fresh selection. Hiding the composer alone left the
-// annotations on screen, which looked like the cancel button did nothing.
-function cancelDesign() {
-  if (clearTimer) {
-    clearTimeout(clearTimer);
-    clearTimer = null;
-  }
-  capturePending = false;
-  pendingCaptureId = null;
-  hidePrompt();
-  hideBox();
-  clearAnnotations();
-}
-
-function mountPrompt() {
-  if (!promptBox) {
-    promptBox = element('form', [
-      'position:fixed',
-      'z-index:2147483647',
-      'display:none',
-      'width:min(440px,calc(100vw - 24px))',
-      'background:rgba(18,18,18,.96)',
-      'color:#f4f4f5',
-      'border:1px solid rgba(255,255,255,.16)',
-      'border-radius:12px',
-      'box-shadow:0 20px 60px rgba(0,0,0,.42)',
-      'font:13px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
-      'padding:8px',
-      'box-sizing:border-box',
-      'pointer-events:auto',
-    ]);
-    promptBox.setAttribute(INTERNAL_ATTR, '1');
-    const row = element('div', ['display:flex', 'align-items:center', 'gap:8px']);
-    promptTag = element('div', [
-      // A narrow composer still leaves the text field its room.
-      'max-width:min(160px,35%)',
-      'overflow:hidden',
-      'text-overflow:ellipsis',
-      'white-space:nowrap',
-      'color:#9ca3af',
-      'font:11px ui-monospace,SFMono-Regular,Menlo,monospace',
-    ]);
-    promptTag.textContent = '@ref';
-    promptInput = element('input', [
-      'flex:1',
-      'min-width:64px',
-      'height:32px',
-      'border:0',
-      'outline:0',
-      'background:transparent',
-      'color:#f4f4f5',
-      'font:13px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
-    ]);
-    promptInput.placeholder = 'Describe the change';
-    promptInput.addEventListener('input', syncPromptSend);
-    promptSend = element('button', [
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'width:30px',
-      'height:30px',
-      'border:0',
-      'border-radius:999px',
-      'background:#f4f4f5',
-      'color:#111',
-      'cursor:pointer',
-      'flex:0 0 auto',
-      'transition:opacity .15s ease,background .15s ease',
-    ]);
-    promptSend.type = 'submit';
-    promptSend.title = 'Send to Droid';
-    promptSend.innerHTML = sendIconSvg();
-    const close = element('button', [
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'width:28px',
-      'height:28px',
-      'border:0',
-      'border-radius:7px',
-      'background:transparent',
-      'color:#9ca3af',
-      'cursor:pointer',
-      'flex:0 0 auto',
-    ]);
-    close.type = 'button';
-    close.title = 'Cancel';
-    close.innerHTML = closeIconSvg();
-    row.append(promptTag, promptInput, promptSend, close);
-    promptBox.append(row);
-    promptBox.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const instruction = cleanPrompt(promptInput.value);
-      if (!instruction || !promptSelection) return;
-      // Hide the composer but keep strokes/highlights visible: the main
-      // process captures the annotated region before acking, then the
-      // 'native-browser-design-prompt-sent' handler clears everything.
-      captureSeq += 1;
-      const captureId = captureSeq;
-      pendingCaptureId = captureId;
-      capturePending = true;
-      // Captured where the element is now, however the page moved it.
-      refreshPromptBox();
-      sendDesignPrompt({ selection: promptSelection, instruction, captureId });
-      hidePrompt();
-      if (clearTimer) clearTimeout(clearTimer);
-      clearTimer = setTimeout(() => {
-        if (pendingCaptureId === captureId) finishCapture();
-      }, 4000);
-    });
-    promptBox.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        cancelDesign();
-      }
-    });
-    close.addEventListener('click', cancelDesign);
-    for (const type of ['mousedown', 'mouseup', 'click', 'mousemove', 'wheel']) {
-      promptBox.addEventListener(type, (event) => event.stopPropagation(), true);
-    }
-  }
-  mount();
-  if (!promptBox.isConnected) designRoot.appendChild(promptBox);
-}
-
-function syncPromptSend() {
-  if (!promptSend || !promptInput) return;
-  const ready = Boolean(cleanPrompt(promptInput.value));
-  promptSend.disabled = !ready;
-  promptSend.style.opacity = ready ? '1' : '0.35';
-  promptSend.style.cursor = ready ? 'pointer' : 'not-allowed';
-}
-
-function sendIconSvg() {
-  return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
-}
-
-function closeIconSvg() {
-  return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-}
-
-function positionPrompt(box) {
-  // Sizes in the composer's own pixels, drawn `ui` page pixels each: its own
-  // size back, or smaller on a page shown too narrow for it to fit.
-  const edge = 12 * uiScale;
-  const width = Math.min(440, Math.max(240, window.innerWidth / uiScale - 24));
-  const ui = Math.min(uiScale, (window.innerWidth - 2 * edge) / width);
-  const [shownWidth, shownHeight, gap] = [width, 50, 10].map((size) => size * ui);
-  const left = clamp(box.x, edge, Math.max(edge, window.innerWidth - shownWidth - edge));
-  const below = box.y + box.height + gap;
-  const above = box.y - shownHeight - gap;
-  const top = below + shownHeight <= window.innerHeight - edge ? below : above;
-  undoPaneScale(promptBox, ui);
-  promptBox.style.width = `${Math.round(width)}px`;
-  promptBox.style.left = `${Math.round(left)}px`;
-  promptBox.style.top = `${Math.round(clamp(top, edge, Math.max(edge, window.innerHeight - shownHeight - edge)))}px`;
-}
-
-// The pane can draw the page scaled down (a standard size in a smaller pane);
-// the design labels and composer are drawn back up to their own size.
-function undoPaneScale(node, scale = uiScale) {
-  node.style.transformOrigin = '0 0';
-  node.style.transform = scale === 1 ? '' : `scale(${scale})`;
-}
-
-function isInternalEvent(event) {
-  return Boolean(
-    event.target && event.target.closest && event.target.closest(`[${INTERNAL_ATTR}]`),
-  );
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }

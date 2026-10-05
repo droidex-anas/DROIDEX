@@ -43,25 +43,21 @@ function createNativeBrowserPage({
   });
   const waits = createBrowserWait({ reading });
 
-  // `scale` is how large the pane draws the page; the page script keeps its
-  // design labels and composer readable at it.
-  function setDesignMode(browserSessionId, active, scale) {
+  // Design mode as the app shows it: on or off, drawing or not, the scale the
+  // pane draws the page at (so the overlay keeps its size on screen), the
+  // numbered marks and the app's colours.
+  function setDesignState(browserSessionId, state) {
     const entry = ensureEntry(browserSessionId);
-    const next = Boolean(active);
+    const designMode = Boolean(state?.designMode);
     // Any real scale down to fit; anything else counts as drawn at full size.
-    const shownAt = Number(scale) > 0 && Number(scale) <= 1 ? Number(scale) : 1;
-    if (entry.state.designMode === next && entry.state.scale === shownAt) return;
-    entry.state.designMode = next;
-    entry.state.scale = shownAt;
-    if (!entry.state.designMode) entry.state.pencilMode = false;
-    return applyDesignState(entry);
-  }
-
-  function setPencilMode(browserSessionId, active) {
-    const entry = ensureEntry(browserSessionId);
-    const next = entry.state.designMode && Boolean(active);
-    if (entry.state.pencilMode === next) return;
-    entry.state.pencilMode = next;
+    const scale = Number(state?.scale) > 0 && Number(state?.scale) <= 1 ? Number(state.scale) : 1;
+    entry.state = {
+      designMode,
+      pencilMode: designMode && Boolean(state?.pencilMode),
+      scale,
+      marks: Array.isArray(state?.marks) ? state.marks.slice(0, 100) : [],
+      theme: state?.theme ?? {},
+    };
     return applyDesignState(entry);
   }
 
@@ -345,11 +341,14 @@ function createNativeBrowserPage({
   }
 
   const DESIGN_CAPTURE_PADDING = 32;
+  // A mark's crop is its chip's picture and the agent's view of it; a whole
+  // section of a page needs no more than this many pixels across.
+  const DESIGN_CAPTURE_MAX_WIDTH = 960;
   // A page draws nothing while the screen is asleep or locked, and the capture
-  // then never returns; the prompt goes on without its picture.
+  // then never returns; the pick goes on without its picture.
   const DESIGN_CAPTURE_MS = 6_000;
   // Pages with a capture still in flight, which may never return; later
-  // prompts from such a page go on without a picture rather than start another.
+  // picks from such a page go on without a picture rather than start another.
   const capturing = new WeakSet();
 
   async function captureDesignSelection(senderContents, selection) {
@@ -365,8 +364,7 @@ function createNativeBrowserPage({
     return Promise.race([capture, late]).finally(() => clearTimeout(timer));
   }
 
-  // Capture the prompt's selection region with surrounding context while the
-  // in-page annotations are still visible.
+  // Capture a picked region with some of what surrounds it, its mark drawn in.
   async function captureSelectionRegion(senderContents, selection) {
     const box = selection?.anchor?.box;
     if (!box || !(box.width > 0) || !(box.height > 0)) return undefined;
@@ -379,14 +377,19 @@ function createNativeBrowserPage({
       width: box.width + DESIGN_CAPTURE_PADDING * 2,
       height: box.height + DESIGN_CAPTURE_PADDING * 2,
     };
-    // Crop the on-screen composited frame (annotations are visible DOM overlays)
+    // Crop the on-screen composited frame (the marks are visible DOM overlays)
     // instead of a CDP captureBeyondViewport screenshot, which re-rasters the
-    // page off-screen and flickers the pane on every send.
+    // page off-screen and flickers the pane on every pick.
     const rect = normalizeCaptureRect(entry, padded);
     if (rect) {
       const image = await contents.capturePage(rect).catch(() => undefined);
-      if (image && !image.isEmpty())
-        return { base64: image.toPNG().toString('base64'), box: padded };
+      if (image && !image.isEmpty()) {
+        const fitted =
+          image.getSize().width > DESIGN_CAPTURE_MAX_WIDTH
+            ? image.resize({ width: DESIGN_CAPTURE_MAX_WIDTH, quality: 'good' })
+            : image;
+        return { base64: fitted.toPNG().toString('base64'), box: padded };
+      }
     }
     const base64 = await captureViaCdp(contents, { scale: 2, box: padded }).catch(() => undefined);
     return base64 ? { base64, box: padded } : undefined;
@@ -405,8 +408,7 @@ function createNativeBrowserPage({
   }
 
   return {
-    setDesignMode,
-    setPencilMode,
+    setDesignState,
     applyDesignState,
     runAgentAction,
     capture,

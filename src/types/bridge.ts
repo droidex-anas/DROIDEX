@@ -603,6 +603,8 @@ export interface DesignAnchor {
   source?: ElementSource;
   screenshotPath?: string;
   strokes?: DesignStrokePoint[][];
+  /** The mark's number in the composer, which the user writes as @1, @2. */
+  mark?: number;
 }
 
 export interface DesignAnchorDetail {

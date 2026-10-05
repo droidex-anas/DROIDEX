@@ -395,10 +395,6 @@ function createNativeBrowserManager(options) {
     nativeBrowsers.clear();
   }
 
-  function withNativeBrowserSession(event, payload) {
-    return { ...payload, browserSessionId: guests.sessionIdFor(event.sender) };
-  }
-
   return {
     reserve: reserveNativeBrowser,
     release: releaseNativeBrowser,
@@ -416,8 +412,7 @@ function createNativeBrowserManager(options) {
       navigateNativeBrowserHistory(browserSessionId, 'back', before),
     goForward: (browserSessionId, before) =>
       navigateNativeBrowserHistory(browserSessionId, 'forward', before),
-    setDesignMode: page.setDesignMode,
-    setPencilMode: page.setPencilMode,
+    setDesignState: page.setDesignState,
     runAgentAction: page.runAgentAction,
     waitForPaint: page.waitForPaint,
     abandonWork: (browserSessionId) => {
@@ -432,7 +427,6 @@ function createNativeBrowserManager(options) {
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,
     sessionIdForWebContents: guests.sessionIdFor,
-    withSession: withNativeBrowserSession,
     closeAll: closeAllNativeBrowsers,
     resourceCounts: () => {
       const live = [...nativeBrowsers.values()].filter((entry) => liveContents(entry)).length;

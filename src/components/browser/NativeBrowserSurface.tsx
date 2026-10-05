@@ -3,18 +3,16 @@ import { useIsPresent } from 'framer-motion';
 import { isDesktop } from '../../lib/desktop';
 import { useBrowserSlot } from '../../lib/browserHost';
 import {
-  onNativeBrowserDesignPrompt,
+  onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
-  onNativeBrowserSelection,
-  setNativeBrowserDesignMode,
-  setNativeBrowserPencilMode,
-  type NativeBrowserDesignPrompt,
+  setNativeBrowserDesignState,
+  type DesignOverlayTheme,
+  type NativeBrowserDesignEvent,
   type NativeBrowserLoadFailed,
   type NativeBrowserLoaded,
-  type NativeBrowserSelection,
 } from '../../lib/nativeBrowser';
-import type { BrowserViewport, BrowserViewportMode } from '../../types/bridge';
+import type { BrowserViewport, BrowserViewportMode, DesignReference } from '../../types/bridge';
 import type { Size } from './browserGeometry';
 import { pageLayout } from './browserViewport';
 
@@ -25,11 +23,11 @@ interface NativeBrowserSurfaceProps {
   viewportMode: BrowserViewportMode;
   designMode: boolean;
   pencilMode: boolean;
+  designMarks: readonly DesignReference[];
   expanded?: boolean;
   frameSize: Size;
   onLoaded: (event: NativeBrowserLoaded) => void;
-  onSelection: (selection: NativeBrowserSelection) => void;
-  onPrompt: (prompt: NativeBrowserDesignPrompt) => void;
+  onDesignEvent: (event: NativeBrowserDesignEvent) => void;
   onLoadFailed?: (failure: NativeBrowserLoadFailed) => void;
 }
 
@@ -42,17 +40,16 @@ export function NativeBrowserSurface({
   viewportMode,
   designMode,
   pencilMode,
+  designMarks,
   expanded = false,
   frameSize,
   onLoaded,
-  onSelection,
-  onPrompt,
+  onDesignEvent,
   onLoadFailed,
 }: NativeBrowserSurfaceProps) {
   const surfaceReady = frameSize.width > 8 && frameSize.height > 8;
   const onLoadedRef = useRef(onLoaded);
-  const onSelectionRef = useRef(onSelection);
-  const onPromptRef = useRef(onPrompt);
+  const onDesignEventRef = useRef(onDesignEvent);
   const onLoadFailedRef = useRef(onLoadFailed);
   const native = isDesktop();
   // While the pane animates out, the page must not linger over what replaces it.
@@ -71,33 +68,26 @@ export function NativeBrowserSurface({
 
   useEffect(() => {
     onLoadedRef.current = onLoaded;
-    onSelectionRef.current = onSelection;
-    onPromptRef.current = onPrompt;
+    onDesignEventRef.current = onDesignEvent;
     onLoadFailedRef.current = onLoadFailed;
-  }, [onLoadFailed, onLoaded, onPrompt, onSelection]);
+  }, [onDesignEvent, onLoadFailed, onLoaded]);
 
   useEffect(() => {
     if (!visibleBrowserSessionId) return;
-    Promise.all([
-      setNativeBrowserDesignMode(visibleBrowserSessionId, designMode, surface.scale),
-      setNativeBrowserPencilMode(visibleBrowserSessionId, designMode && pencilMode),
-    ]).catch(() => {});
-  }, [designMode, pencilMode, surface.scale, visibleBrowserSessionId]);
+    setNativeBrowserDesignState(visibleBrowserSessionId, {
+      designMode,
+      pencilMode: designMode && pencilMode,
+      scale: surface.scale ?? 1,
+      marks: designMarks.map((mark) => ({ id: mark.id, number: mark.anchor.mark ?? 0 })),
+      theme: designOverlayTheme(),
+    }).catch(() => {});
+  }, [designMarks, designMode, pencilMode, surface.scale, visibleBrowserSessionId]);
 
   useEffect(() => {
     const unsubscribes = [
-      onNativeBrowserSelection((selection) => {
-        if (selection.browserSessionId && selection.browserSessionId !== visibleBrowserSessionId)
-          return;
-        onSelectionRef.current(selection);
-      }),
-      onNativeBrowserDesignPrompt((prompt) => {
-        if (
-          prompt.selection.browserSessionId &&
-          prompt.selection.browserSessionId !== visibleBrowserSessionId
-        )
-          return;
-        onPromptRef.current(prompt);
+      onNativeBrowserDesignEvent((event) => {
+        if (event.browserSessionId && event.browserSessionId !== visibleBrowserSessionId) return;
+        onDesignEventRef.current(event);
       }),
       onNativeBrowserLoaded((event) => {
         if (event.browserSessionId && event.browserSessionId !== visibleBrowserSessionId) return;
@@ -135,4 +125,30 @@ export function NativeBrowserSurface({
       )}
     </div>
   );
+}
+
+// The page cannot read the app's CSS, so its design overlay gets the token
+// values. A neutral accent (near-white on dark, near-black on light) would
+// vanish on most pages; the overlay then takes the link colour, as links do.
+function designOverlayTheme(): DesignOverlayTheme {
+  const css = getComputedStyle(document.documentElement);
+  const token = (name: string) => css.getPropertyValue(name).trim();
+  const accent = token('--droid-accent');
+  return {
+    accent: isNeutral(accent) ? token('--droid-link') : accent,
+    onAccent: token('--droid-bg'),
+    surface: token('--droid-raised'),
+    text: token('--droid-text'),
+    muted: token('--droid-text-secondary'),
+    border: token('--droid-border-hover'),
+    font: token('--ui-font-family'),
+  };
+}
+
+function isNeutral(color: string): boolean {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
+  if (!hex) return false;
+  const full = hex.length === 3 ? hex.replace(/./g, '$&$&') : hex;
+  const channels = [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16));
+  return Math.max(...channels) - Math.min(...channels) < 24;
 }

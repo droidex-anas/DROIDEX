@@ -70,7 +70,11 @@ export function useQueuedPromptDelivery({
         const head = (store.getState().promptQueue[appSessionId] ?? []).at(0);
         if (!head) return;
         if (head.design) {
-          sendDesignPrompt(head.design.browserKey, head.text, head.design.referenceIds);
+          sendDesignPrompt(
+            head.design.browserKey,
+            composePrompt(head.text, head.skills, head.files),
+            head.design.referenceIds,
+          );
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: createLocalDesignTranscriptEvent(

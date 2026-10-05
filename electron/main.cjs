@@ -937,35 +937,30 @@ function registerIpc() {
     assertMainRenderer(event);
     return nativeBrowserManager.goForward(browserSessionId);
   });
-  ipcMain.handle('native-browser-set-design-mode', (event, { browserSessionId, active, scale }) => {
+  ipcMain.handle('native-browser-set-design-state', (event, { browserSessionId, state }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.setDesignMode(browserSessionId, active, scale);
-  });
-  ipcMain.handle('native-browser-set-pencil-mode', (event, { browserSessionId, active }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.setPencilMode(browserSessionId, active);
+    return nativeBrowserManager.setDesignState(browserSessionId, state);
   });
 
-  ipcMain.on('native-browser-selection', (event, selection) => {
-    mainWindow?.webContents.send(
-      'native-browser-selection',
-      nativeBrowserManager.withSession(event, selection),
-    );
-  });
-  ipcMain.on('native-browser-design-prompt', async (event, payload) => {
+  // A page in design mode reports what the user picked and the keys meant for
+  // the app. A pick goes on with a crop of it, taken while its mark shows; one
+  // at a time, so a sketch's later strokes never arrive before its earlier ones.
+  let designEvents = Promise.resolve();
+  ipcMain.on('native-browser-design-event', (event, payload) => {
     const browserSessionId = nativeBrowserManager.sessionIdForWebContents(event.sender);
-    let selection = { ...payload.selection, browserSessionId };
-    // Capture the annotated region (pencil strokes, highlights) while it is
-    // still on screen so the agent receives the marked screenshot, not a
-    // clean page that lost the user's annotations.
-    const screenshot = await nativeBrowserManager
-      .captureDesignSelection(event.sender, selection)
+    if (!browserSessionId || !payload) return;
+    designEvents = designEvents
+      .then(async () => {
+        let next = { ...payload, browserSessionId };
+        if (payload.type === 'select') {
+          const screenshot = await nativeBrowserManager
+            .captureDesignSelection(event.sender, payload.selection)
+            .catch(() => undefined);
+          if (screenshot) next = { ...next, selection: { ...payload.selection, screenshot } };
+        }
+        mainWindow?.webContents.send('native-browser-design-event', next);
+      })
       .catch(() => undefined);
-    if (screenshot) selection = { ...selection, screenshot };
-    mainWindow?.webContents.send('native-browser-design-prompt', { ...payload, selection });
-    // Echo the capture id so the preload only clears the matching pending
-    // capture and ignores acks from superseded prompts.
-    event.sender.send('native-browser-design-prompt-sent', { captureId: payload.captureId });
   });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
     void nativeBrowserManager.handleCredentialCapture(event.sender, payload);
