@@ -17,11 +17,14 @@ export interface CanvasLeaseRegistry {
 const EXPIRED_TURN = 'That request belongs to a turn that already ended.';
 
 export class CanvasLeases {
-  // The canvas each unattached lease bootstrapped, recorded only once the
-  // registry callback returned. A lease keeps the canvas it created: it may not
-  // bootstrap a second one, and the registry is not assumed to tolerate a
-  // second call.
-  private readonly bound = new Map<string, string>();
+  // The canvas each unattached lease bootstrapped, recorded as soon as the
+  // commit made it real. A lease keeps the canvas it created and may not
+  // bootstrap a second one.
+  private readonly pinned = new Map<string, string>();
+  // Which of those the registry has been told about. Separate from the pin
+  // because a refused notification has to stay retryable without letting the
+  // lease drift to another canvas in the meantime.
+  private readonly notified = new Set<string>();
 
   constructor(
     private readonly registry: CanvasLeaseRegistry,
@@ -73,7 +76,7 @@ export class CanvasLeases {
   pinnedCanvas(scope: CanvasScope): string | null {
     return (
       scope.canvasId ??
-      this.bound.get(scope.scopeId) ??
+      this.pinned.get(scope.scopeId) ??
       this.heads.attachedCanvasId(scope.appSessionId)
     );
   }
@@ -90,29 +93,44 @@ export class CanvasLeases {
   }
 
   /**
-   * Fills an unattached lease's canvas binding, once and only while the lease
-   * is live. A revoked lease keeps a complete attached canvas with no binding:
-   * nothing it could still authorize is left to bind for.
+   * Records the canvas an unattached lease's commit made real. This happens
+   * before the registry hears about it, so a refused notification leaves the
+   * lease pinned: its retry answers for that canvas instead of following the
+   * chat to whichever canvas it is on by then.
    */
-  bind(scope: CanvasScope, canvasId: string): void {
-    const pinned = this.bound.get(scope.scopeId);
+  pin(scope: CanvasScope, canvasId: string): void {
+    const pinned = this.pinned.get(scope.scopeId);
     if (pinned === canvasId) return;
     // A lease has one canvas. A second, different one is a bug on this side,
-    // not a request to retarget the lease, so the registry never hears it.
+    // not a request to retarget the lease.
     if (pinned !== undefined)
       throw canvasError('scope_expired', 'That turn is already working on another canvas.');
-    for (const scopeId of [...this.bound.keys()]) {
-      if (!this.registry.isScopeActive(scopeId)) this.bound.delete(scopeId);
+    for (const scopeId of [...this.pinned.keys()]) {
+      if (this.registry.isScopeActive(scopeId)) continue;
+      this.pinned.delete(scopeId);
+      this.notified.delete(scopeId);
     }
+    this.pinned.set(scope.scopeId, canvasId);
+  }
+
+  /**
+   * Pins that canvas and tells the registry about it, once. A revoked lease is
+   * pinned but never announced: it keeps a complete attached canvas with no
+   * binding, because nothing it could still authorize is left.
+   */
+  claim(scope: CanvasScope, canvasId: string): void {
+    this.pin(scope, canvasId);
+    if (this.notified.has(scope.scopeId)) return;
     if (!this.registry.isScopeActive(scope.scopeId)) return;
-    // Recorded only once the callback returned: a binding that threw has not
-    // happened, and the retry that answers that receipt attempts it again.
+    // Marked done only once the callback returned: a notification that threw
+    // has not happened, and the next retry attempts it again.
     this.registry.bindScopeCanvas(scope.scopeId, canvasId);
-    this.bound.set(scope.scopeId, canvasId);
+    this.notified.add(scope.scopeId);
   }
 
   /** Nothing can retry under a lease once the workspace has closed. */
   forget(): void {
-    this.bound.clear();
+    this.pinned.clear();
+    this.notified.clear();
   }
 }

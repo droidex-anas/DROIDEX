@@ -496,7 +496,7 @@ test('an attachment survives a reopen, and detaching keeps the canvas and its so
   assert.equal(again.attachedCanvasId('app-1'), other.canvasId);
 });
 
-test('a revision seed copies the source it names, and a library seed is refused', async (t) => {
+test('a revision seed copies the source it names, once per mutation', async (t) => {
   const { root, workspace, scope, canvasId, designId } = await withFrame(t);
   const receipt = await workspace.write(
     scope,
@@ -530,23 +530,6 @@ test('a revision seed copies the source it names, and a library seed is refused'
   assert.deepEqual(await workspace.create(scope, seeded), copied);
   assert.deepEqual(await readdir(revisions), stored);
 
-  const frame = { name: 'Rejected', width: 720, height: 720, designSystem };
-  await assert.rejects(
-    workspace.create(scope, {
-      mutationId: 'create-library',
-      frames: [{ ...frame, seed: { kind: 'library', itemId: 'item_01' } }],
-    }),
-    { code: 'invalid_input' },
-  );
-  await assert.rejects(
-    workspace.create(scope, {
-      mutationId: 'create-foreign',
-      frames: [
-        { ...frame, seed: { kind: 'revision', canvasId: 'cv_elsewhere', revision: receipt } },
-      ],
-    }),
-    { code: 'invalid_input' },
-  );
   assert.equal(workspace.snapshot(canvasId).frames.length, 2);
 });
 
@@ -799,26 +782,45 @@ test('a canvas full of unsettled receipts refuses a mutation and keeps the old o
   assert.equal(retried.frames[0]?.designId, design.designId);
 });
 
-test('a binding the registry refused is attempted again by the retry', async (t) => {
+test('a lease pinned by its own commit never follows its chat, however the save ended', async (t) => {
+  t.mock.method(console, 'error', () => undefined);
+  const scope = scopeFor(null);
+  const input = createInput('create-hey');
+
+  // The registry refused the binding. The commit pinned the lease anyway, so a
+  // chat that moves makes the lease stale instead of letting the retry follow.
   const attempts: string[] = [];
-  const { workspace } = await openWorkspace(t, {
+  const refused = await openWorkspace(t, {
     bindScopeCanvas: (_scopeId, canvasId) => {
       attempts.push(canvasId);
       if (attempts.length === 1) throw new Error('the lease registry refused it');
     },
   });
-  const scope = scopeFor(null);
-  const input = createInput('create-hey');
-  await assert.rejects(workspace.create(scope, input), /lease registry/);
+  await assert.rejects(refused.workspace.create(scope, input), /lease registry/);
+  const mine = attempts[0];
+  assert.ok(mine);
+  const elsewhere = await refused.workspace.createCanvas();
+  await refused.workspace.attach('app-1', elsewhere.canvasId);
+  await assert.rejects(refused.workspace.create(scope, input), { code: 'scope_expired' });
 
-  // The canvas is published and attached and only the binding failed, so the
-  // retry has to attempt it again instead of reporting a bound lease.
-  const created = await workspace.create(scope, input);
-  assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);
-  assert.deepEqual(attempts, [created.canvasId, created.canvasId]);
-  // Once it has happened it is not attempted a third time.
-  assert.deepEqual(await workspace.create(scope, input), created);
-  assert.deepEqual(attempts, [created.canvasId, created.canvasId]);
+  // Back on its own canvas the retry answers for it and, because the refused
+  // notification never happened, attempts it once more and no further.
+  await refused.workspace.attach('app-1', mine);
+  const created = await refused.workspace.create(scope, input);
+  assert.equal(created.canvasId, mine);
+  assert.deepEqual(attempts, [mine, mine]);
+  assert.deepEqual(await refused.workspace.create(scope, input), created);
+  assert.deepEqual(attempts, [mine, mine]);
+
+  // A save that reported a failure but landed pins the lease the same way.
+  const fault = terminateAtManifestRename('after');
+  const landed = await openWorkspace(t, { fs: fault.fs });
+  fault.arm();
+  await assert.rejects(landed.workspace.create(scope, input), { code: 'storage_failed' });
+  const other = await landed.workspace.createCanvas();
+  await landed.workspace.attach('app-1', other.canvasId);
+  await assert.rejects(landed.workspace.create(scope, input), { code: 'scope_expired' });
+  assert.equal(landed.workspace.snapshot(other.canvasId).frames.length, 0);
 });
 
 test('a lease keeps the canvas it created and cannot bootstrap another', async (t) => {

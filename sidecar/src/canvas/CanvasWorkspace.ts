@@ -147,7 +147,7 @@ export class CanvasWorkspace {
           if (attached !== null) {
             const recorded = recordedCreate(this.canvas(attached), input.mutationId, fingerprint);
             if (recorded) {
-              this.leases.bind(scope, attached);
+              this.leases.claim(scope, attached);
               return recorded;
             }
             throw canvasError('scope_expired', ATTACHED_SINCE);
@@ -190,8 +190,16 @@ export class CanvasWorkspace {
           },
           this.leases.isActive,
         );
-        await this.heads.install(next, beforeRename);
-        if (scope.canvasId === null) this.leases.bind(scope, canvasId);
+        try {
+          await this.heads.install(next, beforeRename);
+        } catch (error) {
+          // A save that landed anyway made this canvas the lease's, which the
+          // attachment index records whether or not the save finished.
+          if (scope.canvasId === null && this.attachedCanvasId(scope.appSessionId) === canvasId)
+            this.leases.pin(scope, canvasId);
+          throw error;
+        }
+        if (scope.canvasId === null) this.leases.claim(scope, canvasId);
         return { canvasId, frames: designs.map(toFrame) };
       });
     });
@@ -390,10 +398,12 @@ export class CanvasWorkspace {
     // The attachment is real even when the head is not readable, so this chat
     // waits for recovery rather than being handed a second canvas.
     if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
+    // A receipt for a canvas this chat has left answers nothing it can act on.
+    this.leases.requireAttachment(scope, canvasId);
     const manifest = this.heads.find(canvasId);
     if (!manifest) return null;
     const recorded = recordedCreate(manifest, mutationId, fingerprint);
-    if (recorded && scope.canvasId === null) this.leases.bind(scope, canvasId);
+    if (recorded && scope.canvasId === null) this.leases.claim(scope, canvasId);
     return recorded;
   }
 
