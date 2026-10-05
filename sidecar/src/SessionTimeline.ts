@@ -512,7 +512,7 @@ export class SessionTimeline {
   }
 
   // A status row that is only true right now — a CLI booting, a turn stopping
-  // to send now, an idle runtime released. Shown live, never stored.
+  // to send now. Shown live, never stored.
   appendProgress(appSessionId: string, text: string): void {
     const ts = this.clock();
     this.append({

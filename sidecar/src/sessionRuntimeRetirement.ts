@@ -20,9 +20,6 @@ import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 // one the user has walked away from should wait.
 export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
 
-const SESSION_RUNTIME_RETIRED_STATUS =
-  'Session runtime released after 30 minutes idle to free memory. Sending a message restores it.';
-
 // `streaming` is the authority on whether a turn is in flight: nothing moves a
 // settled session out of 'running' or 'planning'. These phases mean the session
 // is holding an unanswered provider request instead.
@@ -151,9 +148,6 @@ export interface SessionRuntimeRetirementDependencies {
   hasAgentProcesses: (appSessionId: string) => boolean;
   hasLiveVoice: (appSessionId: string) => boolean;
   retire: (appSessionId: string) => Promise<void>;
-  // The released line is only true until the next prompt restores the
-  // runtime, so it is a live progress row rather than stored history.
-  appendProgress: (appSessionId: string, text: string) => void;
   emitError: (appSessionId: string, message: string) => void;
   idleMs: number;
   now: () => number;
@@ -206,8 +200,9 @@ export class SessionRuntimeRetirement {
   }
 
   // Release the provider process behind every session settled and untouched
-  // past the idle budget. The transcript, history, and sidebar entry survive;
-  // the next prompt reloads the provider session.
+  // past the idle budget. The transcript, history, and sidebar entry survive,
+  // and the release writes nothing to the chat: selecting it warms the runtime
+  // again before a send.
   sweep(): Promise<void> {
     if (this.sweeping) return this.sweeping;
     this.sweeping = this.sweepOnce().finally(() => {
@@ -224,7 +219,6 @@ export class SessionRuntimeRetirement {
       // this queue during that window, so the decision is taken again here.
       const current = this.factsFor(appSessionId);
       if (!current || !isDueForRetirement(current, d.now(), d.idleMs)) continue;
-      d.appendProgress(appSessionId, SESSION_RUNTIME_RETIRED_STATUS);
       try {
         await d.retire(appSessionId);
       } catch (error) {
