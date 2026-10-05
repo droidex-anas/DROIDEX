@@ -76,7 +76,7 @@ export function BrowserCard({
             Open
           </button>
         )}
-        {page && isWholeUrl(page.url) && <PageMenu url={page.url} />}
+        {page && !page.pending && isWholeUrl(page.url) && <PageMenu url={page.url} />}
       </div>
     </div>
   );
