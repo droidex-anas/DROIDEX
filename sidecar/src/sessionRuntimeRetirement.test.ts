@@ -91,7 +91,6 @@ test('a session on screen, with work, unsaved intent, or a resource in use is ne
 interface OwnerHarness {
   owner: SessionRuntimeRetirement;
   retired: string[];
-  statuses: { appSessionId: string; text: string }[];
   errors: { appSessionId: string; message: string }[];
   live: Map<string, LiveSession>;
   clock: { now: number };
@@ -118,7 +117,6 @@ function liveSession(appSessionId: string, updatedAt: number): LiveSession {
 
 function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> = {}): OwnerHarness {
   const retired: string[] = [];
-  const statuses: { appSessionId: string; text: string }[] = [];
   const errors: { appSessionId: string; message: string }[] = [];
   const live = new Map<string, LiveSession>();
   let onScreen: ReadonlySet<string> | null = null;
@@ -136,7 +134,6 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
       live.delete(appSessionId);
       return Promise.resolve();
     },
-    appendProgress: (appSessionId, text) => statuses.push({ appSessionId, text }),
     emitError: (appSessionId, message) => errors.push({ appSessionId, message }),
     idleMs: IDLE_MS,
     now: () => clock.now,
@@ -145,7 +142,6 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
   return {
     owner,
     retired,
-    statuses,
     errors,
     live,
     clock,
@@ -176,12 +172,6 @@ test('only three settled off-screen runtimes stay warm, longest idle released fi
     assert.equal(h.owner.armedFor(), h.clock.now, 'exceeding the cap arms an immediate sweep');
     await h.owner.sweep();
     assert.deepEqual(h.retired, ['oldest']);
-    assert.deepEqual(h.statuses, [
-      {
-        appSessionId: 'oldest',
-        text: 'Session runtime released to free memory. Sending a message restores it.',
-      },
-    ]);
 
     h.clock.now = 2_000 + IDLE_MS - 1;
     await h.owner.sweep();
@@ -224,7 +214,6 @@ test('a failed release waits five minutes before counting toward the cap again',
     await h.owner.sweep();
     assert.deepEqual(h.retired, []);
     assert.equal(h.errors.length, 1, 'a sweep during cooldown must not retry the release');
-    assert.equal(h.statuses.length, 1);
 
     failRelease = false;
     h.clock.now = retryAt + 1;
@@ -247,10 +236,6 @@ test('nothing is retirable until the renderer has reported what is on screen', a
   h.show('other');
   await h.owner.sweep();
   assert.deepEqual(h.retired, ['background']);
-  assert.deepEqual(
-    h.statuses.map(({ appSessionId }) => appSessionId),
-    ['background'],
-  );
 });
 
 test('a session stays warm for a full budget after the user switches away, until it closes', async () => {
@@ -322,18 +307,14 @@ test('a prompt that arrives during an earlier release saves the session behind i
   releaseSecond();
   await sweeping;
 
-  assert.deepEqual(retired, ['first']);
-  assert.deepEqual(
-    h.statuses.map(({ appSessionId }) => appSessionId),
-    ['first'],
-    'a session that started a turn must not be told its runtime went away',
-  );
+  assert.deepEqual(retired, ['first'], 'a session that started a turn keeps its runtime');
 });
 
 test('overlapping retirement sweeps wait for the same pending close', async () => {
   let finishClose = (): void => undefined;
   const h = ownerHarness({
     retire: (id) => {
+      h.retired.push(id);
       h.live.delete(id);
       return new Promise<void>((resolve) => {
         finishClose = resolve;
@@ -354,7 +335,7 @@ test('overlapping retirement sweeps wait for the same pending close', async () =
     finishClose();
     await Promise.all([first, second]);
     assert.equal(finished, true);
-    assert.equal(h.statuses.length, 1);
+    assert.deepEqual(h.retired, ['pending-close']);
   } finally {
     finishClose();
     h.owner.stop();
@@ -365,6 +346,7 @@ test('a failed release is reported and does not stop the rest of the sweep', asy
   const h = ownerHarness({
     retire: (appSessionId) => {
       if (appSessionId === 'broken') return Promise.reject(new Error('flush failed'));
+      h.retired.push(appSessionId);
       return Promise.resolve();
     },
   });
@@ -380,10 +362,7 @@ test('a failed release is reported and does not stop the rest of the sweep', asy
       message: "Could not release this session's idle runtime: flush failed",
     },
   ]);
-  assert.equal(
-    h.statuses.some(({ appSessionId }) => appSessionId === 'fine'),
-    true,
-  );
+  assert.deepEqual(h.retired, ['fine']);
 });
 
 test('the timer is armed only while a session is actually retirable', () => {

@@ -11,9 +11,6 @@ const SESSION_RUNTIME_IDLE_LIMIT = 3;
 // A failed close must not retry and emit diagnostics every turn of the event loop.
 const SESSION_RUNTIME_RELEASE_RETRY_MS = 5 * 60_000;
 
-const SESSION_RUNTIME_RETIRED_STATUS =
-  'Session runtime released to free memory. Sending a message restores it.';
-
 // `streaming` is the authority on whether a turn is in flight: nothing moves a
 // settled session out of 'running' or 'planning'. These phases mean the session
 // is holding an unanswered provider request instead.
@@ -146,9 +143,6 @@ export interface SessionRuntimeRetirementDependencies {
   hasAgentProcesses: (appSessionId: string) => boolean;
   hasLiveVoice: (appSessionId: string) => boolean;
   retire: (appSessionId: string) => Promise<void>;
-  // The released line is only true until the next prompt restores the
-  // runtime, so it is a live progress row rather than stored history.
-  appendProgress: (appSessionId: string, text: string) => void;
   emitError: (appSessionId: string, message: string) => void;
   idleMs: number;
   now: () => number;
@@ -204,7 +198,8 @@ export class SessionRuntimeRetirement {
   }
 
   // Release settled off-screen runtimes over the cap or past the idle budget.
-  // The transcript, history, and sidebar entry survive.
+  // The transcript, history, and sidebar entry survive, and the release writes
+  // nothing to the chat: selecting it warms the runtime again before a send.
   sweep(): Promise<void> {
     if (this.sweeping) return this.sweeping;
     this.sweeping = this.sweepOnce().finally(() => {
@@ -222,7 +217,6 @@ export class SessionRuntimeRetirement {
       // this queue during that window, so the decision is taken again here.
       const now = d.now();
       if (!retirableSessions(this.facts(now), now, d.idleMs).includes(appSessionId)) continue;
-      d.appendProgress(appSessionId, SESSION_RUNTIME_RETIRED_STATUS);
       try {
         await d.retire(appSessionId);
       } catch (error) {
