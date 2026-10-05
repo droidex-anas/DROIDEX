@@ -7,20 +7,15 @@ import {
   collectTurnFiles,
   isCancellationArtifact,
   isCompactionCompleteStatus,
-  isSettingsStatus,
+  startsTurn,
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
-// A switch the harness made by itself can land mid-reply, so only the user's
-// own switch opens a turn.
 function isTurnBoundary(item: FeedItem): boolean {
-  return (
-    (item.type === 'message' && item.event.author === 'user') ||
-    (item.type === 'status' && isSettingsStatus(item.event) && !isHarnessModelSwitch(item))
-  );
+  return (item.type === 'message' || item.type === 'status') && startsTurn(item.event);
 }
 
 function isHarnessModelSwitch(item: FeedItem): boolean {
