@@ -8,7 +8,7 @@ import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from './p
 import { DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { errMsg } from './errors.js';
 import type { SessionLifecycle } from './SessionLifecycle.js';
-import { adoptedSessionFacts, isDueForRetirement } from './sessionRuntimeRetirement.js';
+import { adoptedSessionFacts, retirableSessions } from './sessionRuntimeRetirement.js';
 
 const TURN_INTERRUPTED =
   'The agent runtime restarted and this turn did not continue. Send a message to resume.';
@@ -93,43 +93,34 @@ export class SessionAdoption {
   }
 
   private async adoptOnce(): Promise<SessionAdoptionResult> {
-    const identities = this.dependencies.journal.read();
+    const d = this.dependencies;
+    const identities = d.journal.read();
     // Before anything is resurrected: a session that comes back must not
     // inherit a dev server from the run that died holding the port.
-    await this.dependencies.reapProcesses(identities.processes);
+    await d.reapProcesses(identities.processes);
+    // Retirement owns the idle budget and count cap, so boot never spawns
+    // runtimes the first sweep would immediately release.
+    const facts = identities.sessions.map((session) =>
+      adoptedSessionFacts({
+        appSessionId: session.appSessionId,
+        phase: session.phase,
+        streaming: session.streaming,
+        lastActiveAt: session.lastActiveAt,
+        hasUnsettledChildren: identities.children.some(
+          (child) =>
+            child.parentAppSessionId === session.appSessionId &&
+            (child.status === 'running' || child.status === 'pending'),
+        ),
+      }),
+    );
+    const leaveClosed = new Set(retirableSessions(facts, d.now(), d.sessionRuntimeIdleMs));
     for (const session of identities.sessions) {
-      if (!this.shouldResurrect(session, identities.children)) continue;
+      if (leaveClosed.has(session.appSessionId)) continue;
       await this.adoptSession(session);
     }
     for (const child of identities.children) this.markChildInterrupted(child);
     this.persistLiveSet();
     return { interrupted: [...this.interrupted] };
-  }
-
-  // Resurrecting a session already past the idle budget would spawn a provider
-  // process for the first sweep to release moments later, so a restart would
-  // pay a process and its memory per session to reclaim them seconds after.
-  // Leaving it closed costs the user nothing the restart had not already cost:
-  // the transcript is served from history and the session reopens on its next
-  // prompt exactly as a retired one does. The retirement rules take this
-  // decision so there is one owner of it rather than an adoption-shaped copy.
-  private shouldResurrect(
-    identity: LiveSessionIdentity,
-    children: readonly LiveChildIdentity[],
-  ): boolean {
-    const facts = adoptedSessionFacts({
-      appSessionId: identity.appSessionId,
-      phase: identity.phase,
-      streaming: identity.streaming,
-      lastActiveAt: identity.lastActiveAt,
-      hasUnsettledChildren: children.some(
-        (child) =>
-          child.parentAppSessionId === identity.appSessionId &&
-          (child.status === 'running' || child.status === 'pending'),
-      ),
-    });
-    const { now, sessionRuntimeIdleMs } = this.dependencies;
-    return !isDueForRetirement(facts, now(), sessionRuntimeIdleMs);
   }
 
   private async adoptSession(identity: LiveSessionIdentity): Promise<void> {

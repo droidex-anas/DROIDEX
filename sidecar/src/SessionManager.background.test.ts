@@ -583,7 +583,7 @@ test('a session whose agent left a dev server running is never retired', async (
   }
 });
 
-test('a settled background session past the budget is released, says why, and reopens on the next prompt', async () => {
+test('a settled background session past the budget is released quietly and reopens on the next prompt', async () => {
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
     const session = await openIdleSession(h, 'reopened');
@@ -591,6 +591,7 @@ test('a settled background session past the budget is released, says why, and re
       writeExternalSession(h.home, session, h.home, 'the earlier answer'),
     ]);
     await focusElsewhere(h);
+    const textsBeforeRelease = appendedTexts(h, session).length;
     await h.retireIdleSessionRuntimes();
     assert.deepEqual(providerCloses(h), [session]);
     assert.equal(
@@ -598,9 +599,10 @@ test('a settled background session past the budget is released, says why, and re
       true,
       'the client must learn the runtime is gone',
     );
-    assert.ok(
-      appendedTexts(h, session).some((text) => /released after 30 minutes idle/.test(text)),
-      'a retired session must leave a visible reason in its transcript',
+    assert.deepEqual(
+      appendedTexts(h, session).slice(textsBeforeRelease),
+      [],
+      'releasing a runtime must not write a row into the chat',
     );
 
     await h.handle({ type: 'session.loadHistory', appSessionId: session });

@@ -5,11 +5,13 @@ import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useSt
 import { useSessionLive } from '../../hooks/useSessionLive';
 import {
   activeTodoIndex,
+  hasTodoPayload,
+  isTodoTool,
   latestTodoSnapshot,
   type TodoItem,
   type TodoStatus,
 } from '../../lib/tools';
-import { scopeTranscriptToAgent } from '../../lib/transcript';
+import { createIncrementalTranscriptFilter } from '../../lib/incrementalTranscriptFilter';
 import { visibleSessionTarget } from '../../lib/childSessions';
 import type { TranscriptEvent } from '../../types/bridge';
 
@@ -23,6 +25,46 @@ function sameTodoItems(left: readonly TodoItem[], right: readonly TodoItem[]): b
       (item, index) => item.text === right[index]?.text && item.status === right[index]?.status,
     )
   );
+}
+
+export function createPlanStepsSelector(
+  appSessionId: string | null,
+  childSessionId: string | null,
+): (state: Pick<AppState, 'transcripts' | 'transcriptMutations'>) => TodoItem[] {
+  const filterTranscript = createIncrementalTranscriptFilter();
+  let previousTranscript = EMPTY_TRANSCRIPT;
+  let previousTodoEvents = EMPTY_TRANSCRIPT;
+  let previousSteps: TodoItem[] = [];
+  const includes = (event: TranscriptEvent): boolean => {
+    const matchesSource = childSessionId
+      ? event.sourceSessionId === childSessionId
+      : event.role === 'primary';
+    return (
+      matchesSource &&
+      event.kind === 'tool_call' &&
+      isTodoTool(event.toolName) &&
+      hasTodoPayload(event.toolArgs)
+    );
+  };
+  return (state) => {
+    const transcript = appSessionId
+      ? (state.transcripts[appSessionId] ?? EMPTY_TRANSCRIPT)
+      : EMPTY_TRANSCRIPT;
+    if (transcript === previousTranscript) return previousSteps;
+    previousTranscript = transcript;
+    const mutation = appSessionId ? state.transcriptMutations[appSessionId] : undefined;
+    const todoEvents = filterTranscript({
+      conversationKey: appSessionId ?? '',
+      source: transcript,
+      mutation,
+      includes,
+    });
+    if (todoEvents === previousTodoEvents) return previousSteps;
+    previousTodoEvents = todoEvents;
+    const nextSteps = latestTodoSnapshot(todoEvents).todos;
+    if (!sameTodoItems(previousSteps, nextSteps)) previousSteps = nextSteps;
+    return previousSteps;
+  };
 }
 
 function stepTone(item: TodoItem, isActive: boolean): string {
@@ -85,21 +127,10 @@ export default function PlanSteps({
   }, shallowEqual);
   const isLive = useSessionLive(appSessionId);
 
-  const selectSteps = useMemo(() => {
-    let previousTranscript: readonly TranscriptEvent[] | null = null;
-    let previousSteps: TodoItem[] = [];
-    return (state: AppState): TodoItem[] => {
-      const transcript =
-        appSessionId && !isMissionControl
-          ? (state.transcripts[appSessionId] ?? EMPTY_TRANSCRIPT)
-          : EMPTY_TRANSCRIPT;
-      if (transcript === previousTranscript) return previousSteps;
-      previousTranscript = transcript;
-      const nextSteps = latestTodoSnapshot(scopeTranscriptToAgent(transcript, selectedAgent)).todos;
-      if (!sameTodoItems(previousSteps, nextSteps)) previousSteps = nextSteps;
-      return previousSteps;
-    };
-  }, [appSessionId, isMissionControl, selectedAgent]);
+  const selectSteps = useMemo(
+    () => createPlanStepsSelector(isMissionControl ? null : appSessionId, selectedAgent),
+    [appSessionId, isMissionControl, selectedAgent],
+  );
   const steps = useStoreSelector(selectSteps);
 
   return (

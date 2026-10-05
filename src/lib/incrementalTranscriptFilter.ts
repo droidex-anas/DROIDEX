@@ -97,10 +97,15 @@ function projectAppendedFilter(
     input.source.length,
     input.includes,
   );
+  // Text-only suffix changes must not invalidate consumers of tool evidence.
+  let filtered = previous.filtered;
+  if (filteredPrefixLength !== filtered.length || suffix.length > 0) {
+    filtered = replaceChunkedSequenceSuffix(filtered, filteredPrefixLength, suffix);
+  }
   return {
     conversationKey: input.conversationKey,
     source: input.source,
-    filtered: replaceChunkedSequenceSuffix(previous.filtered, filteredPrefixLength, suffix),
+    filtered,
     revision,
     includes: input.includes,
   };

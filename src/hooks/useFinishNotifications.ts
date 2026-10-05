@@ -14,7 +14,7 @@ import {
   latestAssistantSnippet,
   loadFinishNotificationSettings,
 } from '../lib/finishNotifications';
-import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './useStore';
+import { useStoreApi, useStoreDispatch, type AppState } from './useStore';
 import { isChatInView } from '../features/tabs/tabStrip';
 
 // Desktop finish banners: working→idle sessions raise a short OS notification.
@@ -23,25 +23,15 @@ import { isChatInView } from '../features/tabs/tabStrip';
 export function useFinishNotifications(enabled: boolean): void {
   const dispatch = useStoreDispatch();
   const store = useStoreApi();
-  const { sessions, settingsOpen } = useStoreSelector(
-    (state) => ({
-      sessions: state.sessions,
-      settingsOpen: state.settingsOpen,
-    }),
-    shallowEqual,
-  );
   const previouslyWorking = useRef<Set<string>>(new Set());
   const seeded = useRef(false);
-  const settingsOpenRef = useRef(settingsOpen);
-  settingsOpenRef.current = settingsOpen;
-  const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
   const lastOpenedRef = useRef<{ id: string; at: number } | null>(null);
 
   const openSessionFromNotification = useCallback(
     (appSessionId: string) => {
       if (!appSessionId) return;
-      if (!(appSessionId in sessionsRef.current)) {
+      const state = store.getState();
+      if (!(appSessionId in state.sessions)) {
         void ackNotificationActivate(appSessionId);
         return;
       }
@@ -53,10 +43,10 @@ export function useFinishNotifications(enabled: boolean): void {
       lastOpenedRef.current = { id: appSessionId, at: now };
       dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
       dispatch({ type: 'SELECT_CHILD', selection: null });
-      if (settingsOpenRef.current) dispatch({ type: 'TOGGLE_SETTINGS' });
+      if (state.settingsOpen) dispatch({ type: 'TOGGLE_SETTINGS' });
       void ackNotificationActivate(appSessionId);
     },
-    [dispatch],
+    [dispatch, store],
   );
 
   useEffect(() => {
@@ -89,51 +79,61 @@ export function useFinishNotifications(enabled: boolean): void {
     };
   }, [enabled, openSessionFromNotification]);
 
-  // Only re-run on session summary changes (streaming/phase), not transcript tokens.
   useEffect(() => {
     if (!enabled || !isDesktop()) return;
 
-    const { finished, stillWorking } = collectFinishedSessions({
-      sessions,
-      previouslyWorking: previouslyWorking.current,
-    });
+    const review = (sessions: AppState['sessions']) => {
+      const { finished, stillWorking } = collectFinishedSessions({
+        sessions,
+        previouslyWorking: previouslyWorking.current,
+      });
 
-    if (!seeded.current) {
+      if (!seeded.current) {
+        previouslyWorking.current = stillWorking;
+        seeded.current = true;
+        return;
+      }
+
       previouslyWorking.current = stillWorking;
-      seeded.current = true;
-      return;
-    }
+      if (finished.length === 0) return;
 
-    previouslyWorking.current = stillWorking;
-    if (finished.length === 0) return;
+      const settings = loadFinishNotificationSettings();
+      if (!settings.enabled) return;
+      const appInForeground = isAppInForeground();
+      if (settings.suppressWhenFocused && appInForeground) return;
 
-    const settings = loadFinishNotificationSettings();
-    if (!settings.enabled) return;
-    const appInForeground = isAppInForeground();
-    if (settings.suppressWhenFocused && appInForeground) return;
+      for (const session of finished) {
+        // Build snippet only when we may actually notify this session.
+        const isActive = isChatInView(store.getState(), session.appSessionId);
+        if (!settings.notifyActiveSession && isActive) continue;
 
-    for (const session of finished) {
-      // Build snippet only when we may actually notify this session.
-      const isActive = isChatInView(store.getState(), session.appSessionId);
-      if (!settings.notifyActiveSession && isActive) continue;
+        const decision = decideFinishNotification({
+          settings,
+          session,
+          isActiveSession: isActive,
+          assistantSnippet: latestAssistantSnippet(
+            store.getState().transcripts[session.appSessionId],
+          ),
+          appInForeground,
+        });
+        if (decision.kind !== 'notify') continue;
 
-      const decision = decideFinishNotification({
-        settings,
-        session,
-        isActiveSession: isActive,
-        assistantSnippet: latestAssistantSnippet(
-          store.getState().transcripts[session.appSessionId],
-        ),
-        appInForeground,
-      });
-      if (decision.kind !== 'notify') continue;
+        void notify(decision.title, decision.body, {
+          silent: decision.silent,
+          appSessionId: session.appSessionId,
+        }).catch(() => {
+          /* permission denied or non-desktop — stay quiet */
+        });
+      }
+    };
 
-      void notify(decision.title, decision.body, {
-        silent: decision.silent,
-        appSessionId: session.appSessionId,
-      }).catch(() => {
-        /* permission denied or non-desktop — stay quiet */
-      });
-    }
-  }, [enabled, sessions, store]);
+    let sessions = store.getState().sessions;
+    review(sessions);
+    return store.subscribe(() => {
+      const nextSessions = store.getState().sessions;
+      if (nextSessions === sessions) return;
+      sessions = nextSessions;
+      review(sessions);
+    });
+  }, [enabled, store]);
 }

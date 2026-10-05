@@ -370,8 +370,18 @@ export function forwardNativeBrowserShortcuts(
 ): () => void {
   const desktop = window.droidControl;
   if (!desktop) return () => undefined;
-  void desktop.nativeBrowserSetShortcuts(chords);
-  return desktop.onNativeBrowserShortcut(onPress);
+  const setHostChords = (next: NativeBrowserChord[]) => {
+    desktop.nativeBrowserSetShortcuts(next).catch((error: unknown) => {
+      console.error('[nativeBrowser] the host did not take the browser shortcuts:', error);
+    });
+  };
+  setHostChords(chords);
+  const stopListening = desktop.onNativeBrowserShortcut(onPress);
+  return () => {
+    stopListening();
+    // Otherwise the host keeps taking these presses from the page with no one to hand them to.
+    setHostChords([]);
+  };
 }
 
 export async function waitForNextNativeBrowserLoad(

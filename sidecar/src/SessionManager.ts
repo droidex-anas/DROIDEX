@@ -740,9 +740,6 @@ export class SessionManager {
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
-      appendProgress: (id, text) => {
-        this.timeline.appendProgress(id, text);
-      },
       emitError: (appSessionId, message) => {
         this.emitError({ appSessionId, message });
       },
