@@ -30,7 +30,6 @@ import {
 type NewChatDraft = NonNullable<AppState['draftChat']>;
 
 const TAB_STRIP_STORAGE_KEY = 'droid-tab-strip';
-const MAX_STORED_TABS = 50;
 
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;
@@ -130,7 +129,7 @@ export function loadTabStrip(): TabStrip {
     if (!raw) return initialTabStrip();
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || !Array.isArray(parsed.tabs)) return initialTabStrip();
-    const stored: unknown[] = parsed.tabs.slice(0, MAX_STORED_TABS);
+    const stored: unknown[] = parsed.tabs;
     const tabs: Tab[] = [];
     const isOpen = (appSessionId: string) =>
       tabs.some((tab) => pageShowsChat(tab.page, appSessionId));

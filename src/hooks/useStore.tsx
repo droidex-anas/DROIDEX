@@ -1793,10 +1793,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // longer reports (deleted outside the app, or pruned from a hydrated
       // snapshot). Rows added locally this run are not confirmed yet and
       // survive.
-      const confirmed = state.listConfirmedSessionIds;
+      const confirmed = new Set(state.listConfirmedSessionIds);
+      const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
       const map: Record<string, SessionSummary> = {};
       for (const [id, summary] of Object.entries(state.sessions)) {
-        if (confirmed?.includes(id) && !incoming.has(id)) continue;
+        if (isConfirmedGone(id)) continue;
         map[id] = summary;
       }
       for (const m of action.sessions) {
@@ -1834,9 +1835,7 @@ export function reducer(state: AppState, action: Action): AppState {
       // localStorage does not accumulate orphans. Metadata for rows added
       // locally this run (not yet list-confirmed) survives.
       let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(
-        (id) => confirmed?.includes(id) && !incoming.has(id),
-      );
+      const orphaned = Object.keys(chatMetadata).filter(isConfirmedGone);
       if (orphaned.length > 0) {
         const drop = new Set(orphaned);
         chatMetadata = Object.fromEntries(
@@ -1852,7 +1851,9 @@ export function reducer(state: AppState, action: Action): AppState {
         listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
         earlierSessionsByCwd: action.earlierSessionsByCwd,
         activeAppSessionId,
-        tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
+        // A restored tab can name a chat older than the snapshot or filtered out
+        // of this list; only a chat the list stopped reporting is gone.
+        tabStrip: withoutChats(state.tabStrip, isConfirmedGone),
       };
       // A focused tile whose chat is gone closes like any other, so the tile
       // beside it comes forward instead of a second new chat.
