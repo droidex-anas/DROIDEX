@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { designPromptDisplayFromText } from './designPromptDisplay.js';
 import { browserDesignReferenceDir } from './browserPaths.js';
+import { formatAppPrompt } from '../appPrompt.js';
 
 test('designPromptDisplayFromText extracts instruction and browser chips from a pack', () => {
   const dir = join(tmpdir(), `droid-display-${Date.now()}`);
@@ -72,6 +73,7 @@ test('designPromptDisplayFromText extracts instruction and browser chips from a 
           imageDataUrl: undefined,
         },
       ],
+      sideChatReplies: undefined,
     },
   );
 });
@@ -110,8 +112,24 @@ test('designPromptDisplayFromText ignores packs outside browser data and prompts
     {
       text: 'What font is this?',
       browserRefs: undefined,
+      sideChatReplies: undefined,
     },
   );
   // A prompt that is not a design pack is left alone.
   assert.equal(designPromptDisplayFromText('hello'), null);
+});
+
+test('designPromptDisplayFromText takes side-chat replies out of a framed instruction', () => {
+  const instruction = [
+    'Match @1',
+    '',
+    '<side_chat_replies>\nThe user attached these answers from a side chat about this conversation.',
+    '<reply>\nUse the brand blue\n</reply>',
+    '</side_chat_replies>',
+  ].join('\n');
+  const shown = designPromptDisplayFromText(
+    `Design Mode reference pack:\n\nUser instruction:\n${formatAppPrompt(instruction, 'create')}`,
+  );
+  assert.equal(shown?.text, 'Match @1');
+  assert.deepEqual(shown?.sideChatReplies, ['Use the brand blue']);
 });

@@ -191,7 +191,7 @@ export function userPromptDisplay(storedText: string) {
   return {
     text,
     browserRefs: designDisplay?.browserRefs,
-    sideChatReplies: withReplies?.sideChatReplies,
+    sideChatReplies: withReplies?.sideChatReplies ?? designDisplay?.sideChatReplies,
   };
 }
 
