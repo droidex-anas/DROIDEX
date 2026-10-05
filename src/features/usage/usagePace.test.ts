@@ -14,6 +14,7 @@ function fiveHour(usedPercent: number, elapsedHours: number): UsageMeter {
     usedPercent,
     durationMs: 5 * HOUR,
     resetsAt: NOW + (5 - elapsedHours) * HOUR,
+    updatedAt: NOW,
   };
 }
 
@@ -23,6 +24,9 @@ test('pace projects the average rate since the window opened to its reset', () =
   // 60% in 2h runs at 30%/h: the last 40% is gone in 80 minutes, before the reset.
   const fast = usagePace(fiveHour(60, 2), NOW);
   assert.equal(fast?.kind === 'runs_out' && Math.round(fast.inMs / 60_000), 80);
+  // Half an hour after that reading, it runs out half an hour sooner.
+  const later = usagePace(fiveHour(60, 2), NOW + HOUR / 2);
+  assert.equal(later?.kind === 'runs_out' && Math.round(later.inMs / 60_000), 50);
   assert.deepEqual(usagePace(fiveHour(100, 2), NOW), { kind: 'reached' });
   // A burst in the window's first minute is too small a sample to read a pace from.
   assert.equal(usagePace(fiveHour(10, 1 / 60), NOW), undefined);
@@ -38,6 +42,7 @@ test('the warning names the window that runs out first, however little of it is 
     usedPercent: 90,
     durationMs: 168 * HOUR,
     resetsAt: NOW + 84 * HOUR,
+    updatedAt: NOW,
   };
   // The weekly runs out in about 9h; the 5-hour one in 80 minutes.
   assert.equal(paceWarning([weekly, fiveHour(60, 2)], NOW)?.meter.id, 'five_hour');

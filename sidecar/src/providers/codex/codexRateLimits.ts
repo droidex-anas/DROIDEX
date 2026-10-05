@@ -80,19 +80,15 @@ export class CodexRateLimits {
 
   // `account/rateLimits/updated` carries one bucket, and a field it leaves
   // null keeps the value that bucket already had. Before any read has
-  // answered, an update for the account's main bucket stands on its own.
+  // answered, an update stands on its own.
   // Only the windows it carries are passed on.
   update(params: unknown): void {
     const update = snapshotOf(objectValue(params)?.rateLimits);
     if (!update) return;
+    // An update naming no bucket is the main one's.
+    if (update.limitId !== undefined && update.limitId !== MAIN_BUCKET) return;
     const current = this.snapshot;
-    if (current) {
-      if (update.limitId !== current.limitId) return;
-      this.snapshot = merged(current, update);
-    } else {
-      if (update.limitId !== undefined && update.limitId !== MAIN_BUCKET) return;
-      this.snapshot = update;
-    }
+    this.snapshot = current ? merged(current, update) : update;
     for (const inFlight of this.reads)
       inFlight.updates = inFlight.updates ? merged(inFlight.updates, update) : update;
     this.onMeters?.(windowMeters(update));

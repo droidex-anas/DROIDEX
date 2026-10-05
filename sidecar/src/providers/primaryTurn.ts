@@ -167,12 +167,12 @@ function settleTurnFailure(
   d.updateSummary(appSessionId, failedTurnSummary(error));
 }
 
-// The limit is set only by a refusal, so a later failure of any other kind
-// never reads as the limit.
+// The limit is set only by a refusal. A failure of any other kind says nothing
+// about it, so a hold already set stays until a turn gets an answer.
 export function failedTurnSummary(error: unknown): Pick<SessionSummary, 'phase' | 'usageLimit'> {
   return {
     phase: 'failed',
-    usageLimit: error instanceof UsageLimitError ? error.limit : undefined,
+    ...(error instanceof UsageLimitError ? { usageLimit: error.limit } : {}),
   };
 }
 

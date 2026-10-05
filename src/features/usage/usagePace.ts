@@ -9,9 +9,9 @@ export type UsagePace =
   | { kind: 'lasts' }
   | { kind: 'runs_out'; inMs: number };
 
-// Where the window ends up if it keeps the average rate it has had since it
-// opened: elapsed = length - time to reset. Unknown without a reset time and a
-// length, and in the window's first moments.
+// Where the window ends up if it keeps the average rate it had since it opened,
+// measured when the figure was read: elapsed = length - time to reset then.
+// Unknown without a reset time and a length, and in the window's first moments.
 export function usagePace(meter: UsageMeter, now: number): UsagePace | undefined {
   const { resetsAt, durationMs } = meter;
   // A window past its reset has emptied; its figure waits for the next read.
@@ -19,11 +19,14 @@ export function usagePace(meter: UsageMeter, now: number): UsagePace | undefined
   if (meter.usedPercent >= 100) return { kind: 'reached' };
   if (resetsAt === undefined || durationMs === undefined) return undefined;
   if (meter.usedPercent <= 0) return { kind: 'lasts' };
-  const leftMs = resetsAt - now;
-  const elapsedMs = durationMs - leftMs;
+  const elapsedMs = durationMs - (resetsAt - meter.updatedAt);
   if (elapsedMs < durationMs * MIN_ELAPSED_SHARE) return undefined;
-  const inMs = ((100 - meter.usedPercent) / meter.usedPercent) * elapsedMs;
-  return inMs < leftMs ? { kind: 'runs_out', inMs } : { kind: 'lasts' };
+  const sinceReadMs = now - meter.updatedAt;
+  const inMs = Math.max(
+    0,
+    ((100 - meter.usedPercent) / meter.usedPercent) * elapsedMs - sinceReadMs,
+  );
+  return inMs < resetsAt - now ? { kind: 'runs_out', inMs } : { kind: 'lasts' };
 }
 
 export interface PaceWarning {

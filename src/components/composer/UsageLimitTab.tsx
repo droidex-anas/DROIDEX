@@ -11,7 +11,7 @@ import { ComposerTab } from './ComposerTab';
 // StartInBar's pill. Each action adds its color: the one that can unblock the
 // chat reads brightest.
 export const ACTION_CLASS =
-  'group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60';
+  'group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/60';
 
 // The tab above the composer while the chat is held on a usage limit, in
 // StartInBar's slot and shape. It never blocks the composer: a message sent now
@@ -85,8 +85,6 @@ export function UsageWarningTab({
     <ComposerTab>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 overflow-hidden">
         <div
-          role="status"
-          aria-live="polite"
           title={[headline, ...details].join(' · ')}
           className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-[11px]"
         >
@@ -96,7 +94,10 @@ export function UsageWarningTab({
           {/* Flows as text: on a narrow composer it wraps between details, so
               neither the headline nor a time is ever cut short. */}
           <span className="min-w-0 tabular-nums">
-            <span className="text-droid-text-secondary">{headline}</span>
+            {/* Only the headline is announced: the countdown beside it ticks. */}
+            <span role="status" className="text-droid-text-secondary">
+              {headline}
+            </span>
             {details.map((detail) => (
               <Fragment key={detail}>
                 {' '}

@@ -206,13 +206,18 @@ export class SessionModelSettings {
       ),
     };
     this.d.registry.updateSummary(appSessionId, this.summaryPatch('primary', settings, provider));
-    if (provider !== DEFAULT_PROVIDER) writeProviderSessionSettings(appSessionId, settings);
-    void this.d.onPrimaryModelChanged(live.summary, { from, to, cause }).catch((error: unknown) => {
+    // The divider is recorded and the context limit re-armed for the new model
+    // before the settings file is written, which can throw.
+    void Promise.all([
+      this.d.onPrimaryModelChanged(live.summary, { from, to, cause }),
+      this.d.refreshPrimary(live, true),
+    ]).catch((error: unknown) => {
       this.d.emitError({
         appSessionId,
-        message: `Could not record the model switch: ${errMsg(error)}`,
+        message: `Could not apply the model switch: ${errMsg(error)}`,
       });
     });
+    if (provider !== DEFAULT_PROVIDER) writeProviderSessionSettings(appSessionId, settings);
   }
 
   applyPending(requestedId: string): Promise<boolean> {

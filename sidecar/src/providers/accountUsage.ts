@@ -91,10 +91,17 @@ export class AccountUsage {
       const known = current.meters.find((entry) => entry.id === meter.id);
       return known?.usedPercent !== meter.usedPercent || known.resetsAt !== meter.resetsAt;
     });
-    const usage = { ...current, meters: mergeMeters(current.meters, stamped(meters, now)) };
+    // A push is fresh word from the harness, so a failed read no longer stands.
+    const recovered = current.stale === true || current.unavailable !== undefined;
+    const usage: ProviderUsage = {
+      provider,
+      meters: mergeMeters(current.meters, stamped(meters, now)),
+      ...(current.extra ? { extra: current.extra } : {}),
+    };
     account.usage = usage;
     for (const meter of meters) account.pushedDuringRead.add(meter.id);
-    if (changed || now - account.emittedAt >= MIN_READ_GAP_MS) this.publish(account, usage);
+    if (changed || recovered || now - account.emittedAt >= MIN_READ_GAP_MS)
+      this.publish(account, usage);
   }
 
   // Another Factory key was set: nothing read with the last one, pending or

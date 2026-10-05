@@ -32,6 +32,9 @@ export class DroidProviderSession implements ProviderSession {
   private modelWritesInFlight = 0;
   // Droid's own switch, held until it says why or a turn reaches its result.
   private pendingSwitch: HarnessModelSwitch | undefined;
+  // The refusal Droid gave this turn, if any.
+  private limitDetail: string | undefined;
+  private readonly stopListening: () => void;
 
   constructor(
     // Primary-session events are stamped with DROIDEX's identity, not the
@@ -42,23 +45,9 @@ export class DroidProviderSession implements ProviderSession {
     private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
   ) {
     this.modelId = droid.initResult.settings.modelId;
-  }
-
-  get providerSessionId(): string {
-    return this.droid.sessionId;
-  }
-
-  get process(): { pid: number; isAlive(): boolean } | undefined {
-    const pid = this.runtime.processIdOf(this.droid);
-    if (pid === undefined) return undefined;
-    return { pid, isAlive: () => this.runtime.isProcessAlive(this.droid) };
-  }
-
-  async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
-    // The raw listener hears each notification before the stream yields it. A
-    // switch waits until Droid says the usage limit caused it, or the turn ends.
-    let limitDetail: string | undefined;
-    const stopListening = this.droid.onNotification((note) => {
+    // Listened to for the session's life: a switch Droid reports between turns
+    // is still the model the next turn runs on.
+    this.stopListening = droid.onNotification((note) => {
       const notice = droidSessionNotice(extractNotification(note));
       switch (notice?.kind) {
         case 'model': {
@@ -73,9 +62,26 @@ export class DroidProviderSession implements ProviderSession {
           if (this.pendingSwitch) this.pendingSwitch.cause = 'usage_limit';
           return;
         case 'usage_limit':
-          limitDetail = notice.detail;
+          this.limitDetail = notice.detail;
       }
     });
+  }
+
+  get providerSessionId(): string {
+    return this.droid.sessionId;
+  }
+
+  get process(): { pid: number; isAlive(): boolean } | undefined {
+    const pid = this.runtime.processIdOf(this.droid);
+    if (pid === undefined) return undefined;
+    return { pid, isAlive: () => this.runtime.isProcessAlive(this.droid) };
+  }
+
+  async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+    // The raw listener hears each notification before the stream yields it. A
+    // switch waits until Droid says the usage limit caused it, or a turn reaches
+    // its result; one not yet reported when a turn fails goes with the next.
+    this.limitDetail = undefined;
     try {
       for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
         const pending = this.pendingSwitch;
@@ -86,7 +92,7 @@ export class DroidProviderSession implements ProviderSession {
         // Droid can stream the refusal as an error and still end the turn
         // with a result.
         if (event.type === 'error' && droidErrorDetails(event.message).errorKind)
-          limitDetail ??= event.message;
+          this.limitDetail ??= event.message;
         const normalizeStartedAt = performance.now();
         const normalized = normalizeStreamEvent(
           this.appSessionId,
@@ -100,15 +106,11 @@ export class DroidProviderSession implements ProviderSession {
     } catch (error) {
       const message = errMsg(error);
       if (!droidErrorDetails(message).errorKind) throw error;
-      limitDetail = message;
-    } finally {
-      // A switch not yet reported, because the turn failed or ended before its
-      // result, stays pending: the next turn reports it.
-      stopListening();
+      this.limitDetail = message;
     }
     // A turn refused on the limit can still end in a successful result; only
     // the notice or the streamed error says it was refused.
-    if (limitDetail !== undefined) throw await this.usageLimitError(limitDetail);
+    if (this.limitDetail !== undefined) throw await this.usageLimitError(this.limitDetail);
   }
 
   // Droid's refusal names no reset. With a Factory key, one billing read says
@@ -200,6 +202,7 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async close(): Promise<void> {
+    this.stopListening();
     await this.droid.close();
   }
 }
