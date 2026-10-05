@@ -13,7 +13,13 @@ import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
 import type { BrowserViewportMode } from '../../types/bridge';
-import { normalizeUrl, sameViewport, viewportForMode, viewportFromFrame } from './browserViewport';
+import {
+  normalizeUrl,
+  pageLayout,
+  sameViewport,
+  viewportForMode,
+  viewportFromFrame,
+} from './browserViewport';
 import { NativeBrowserSurface } from './NativeBrowserSurface';
 import { ViewportMenu } from './ViewportMenu';
 import { isDesktop } from '../../lib/desktop';
@@ -24,6 +30,7 @@ import {
 } from '../../lib/nativeBrowser';
 import { BrowserToolbar } from './BrowserToolbar';
 import { DesignModePill } from './DesignModePill';
+import { DesignQuickPrompt, useDesignQuickPrompt } from './DesignQuickPrompt';
 import { useDesignMarks } from './designMarks';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
 import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
@@ -222,6 +229,16 @@ export default function BrowserWorkspace({
   }, [designMode]);
 
   const requestedViewport = viewportForMode(viewportMode, fitViewport);
+  // Laid out from the size the page has, as the Browser host draws it.
+  const shownViewport = browser?.viewport ?? requestedViewport;
+  const pageFrame = viewportMode === 'fit' ? frameSize : roomSize;
+  const quickPrompt = useDesignQuickPrompt({
+    appSessionId: browserKey,
+    browserSessionId: browser?.browserSessionId,
+    designMode,
+    drawing: designMode && pencilMode,
+    marks: designMarks,
+  });
 
   // On Fit the page follows the pane: its size goes to the sidecar, which
   // takes it only while the page is still on Fit there, so it never undoes a
@@ -311,12 +328,14 @@ export default function BrowserWorkspace({
     setLoadFailure(failure);
   }, []);
 
-  // Esc steps back one level: out of drawing first, then out of design mode.
+  // Esc steps back one level: the prompt box first, then drawing, then design mode.
+  const closeQuickPrompt = quickPrompt.prompt ? quickPrompt.close : undefined;
   const stepBackFromDesign = useCallback(() => {
     if (!browserKey) return;
-    if (pencilMode) setPencilMode(false);
+    if (closeQuickPrompt) closeQuickPrompt();
+    else if (pencilMode) setPencilMode(false);
     else dispatch({ type: 'SET_DESIGN_MODE', appSessionId: browserKey, open: false });
-  }, [browserKey, dispatch, pencilMode]);
+  }, [browserKey, closeQuickPrompt, dispatch, pencilMode]);
 
   // D and Esc pressed while the page has the focus. Picks become marks in the
   // Browser host, which follows every chat's page.
@@ -434,13 +453,12 @@ export default function BrowserWorkspace({
           <NativeBrowserSurface
             visibleBrowserSessionId={browser?.browserSessionId}
             url={activeUrl}
-            // Laid out from the size the page has, as the Browser host draws it.
-            viewport={browser?.viewport ?? requestedViewport}
+            viewport={shownViewport}
             viewportMode={viewportMode}
             designMode={designMode}
             pencilMode={designMode && pencilMode}
             designMarks={designMarks}
-            frameSize={viewportMode === 'fit' ? frameSize : roomSize}
+            frameSize={pageFrame}
             onLoaded={(event) => {
               setLoadFailure(null);
               stopLoading();
@@ -525,6 +543,12 @@ export default function BrowserWorkspace({
             />
           )
         )}
+        <DesignQuickPrompt
+          quick={quickPrompt}
+          page={pageLayout(pageFrame, shownViewport, viewportMode, expanded)}
+          // In full screen the composer floats over the page's foot.
+          floor={expanded ? roomSize.height : frameSize.height}
+        />
         <DesignModePill
           open={Boolean(browser) && designMode}
           drawing={pencilMode}

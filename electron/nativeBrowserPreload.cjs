@@ -146,6 +146,9 @@ function applyState(state) {
   overlay.setShown(designMode);
   if (!designMode || drawing) hideHover();
   render();
+  // Design mode starting, as on every new document, tells the app which marks
+  // this page draws: none it picked before loading again.
+  if (designMode && !wasDesigning) queueRender();
 }
 
 function sendDesignEvent(event) {
@@ -328,12 +331,14 @@ function queueRender() {
   renderQueued = true;
   requestAnimationFrame(() => {
     renderQueued = false;
-    render();
+    const drawn = render();
+    // The app's prompt box stays by its mark as the page scrolls.
+    if (drawn) sendDesignEvent({ type: 'boxes', boxes: drawn.map(({ id, box }) => ({ id, box })) });
   });
 }
 
 function render() {
-  if (!designMode) return;
+  if (!designMode) return null;
   const drawn = [];
   for (const { id, number } of marks) {
     const entry = picked.get(id);
@@ -341,6 +346,7 @@ function render() {
   }
   overlay.drawMarks(drawn, scrollPoint());
   if (hoverTarget) overlay.followHover(hoverTarget.getBoundingClientRect());
+  return drawn;
 }
 
 // Where a mark is in the viewport now, or null when it is not on the page.

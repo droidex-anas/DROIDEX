@@ -53,6 +53,7 @@ import { QueuedPrompts } from './composer/QueuedPrompts';
 import { markGitTurnStart } from '../lib/git';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { canRunAgents } from '../lib/runtimeHealth';
+import { activeDraftTileId } from '../features/tabs/tabNavigation';
 import {
   chatWorktreeName,
   prepareChatWorkingDirectory,
@@ -280,8 +281,6 @@ export default function PromptInput({
   const state = useStoreSelector(
     (current) => ({
       activeSession: appSessionId ? current.sessions[appSessionId] : null,
-      // A split tab mounts a composer per tile; the focused one shows the live chat.
-      isFocused: appSessionId === current.activeAppSessionId,
       attachedReplies: appSessionId
         ? sideChatPanel(current.sideChats, appSessionId).attachedReplies
         : undefined,
@@ -295,7 +294,14 @@ export default function PromptInput({
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
-      composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
+      // A split tab mounts a composer per tile, and each takes its own chat's
+      // seeds, oldest first. The draft's composer takes those of its tile.
+      composerSeed:
+        current.composerSeeds.find((seed) =>
+          appSessionId
+            ? seed.appSessionId === appSessionId
+            : seed.draftTileId !== null && seed.draftTileId === activeDraftTileId(current),
+        ) ?? null,
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -470,6 +476,13 @@ export default function PromptInput({
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
+  // The draft a seed that goes out at once makes, sent once it is the draft.
+  const seedToSend = useRef<string | null>(null);
+  // A seed that came while a submit was going out, or a seed was about to be
+  // sent, waits for it to settle, so it is not added to that prompt's text.
+  // The count moves as it settles.
+  const seedWaiting = useRef(false);
+  const [submitSettled, setSubmitSettled] = useState(0);
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
@@ -953,23 +966,27 @@ export default function PromptInput({
   // Welcome-screen suggestion cards and saved notes seed the composer through
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
-  // Only the focused tile's composer takes the seed.
-  const composerSeed = state.isFocused ? state.composerSeed : null;
+  const composerSeed = state.composerSeed;
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
+    if (submittingRef.current || seedToSend.current !== null) {
+      seedWaiting.current = true;
+      return;
+    }
     consumedComposerSeedId.current = composerSeed.id;
     setHistoryIndex(null);
     // Notes and suggestion cards append to an in-progress draft. A surface
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
     setInput(text);
-    pendingCaret.current = text.length;
+    if (composerSeed.focus) pendingCaret.current = text.length;
+    seedToSend.current = composerSeed.send ? text : null;
     setVisualizeSelected(false);
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
     // and guard by seed id so a double-invoked effect cannot duplicate the text.
-    dispatch({ type: 'CLEAR_COMPOSER_SEED' });
-  }, [composerSeed, input, dispatch, setVisualizeSelected]);
+    dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
+  }, [composerSeed, input, dispatch, setVisualizeSelected, submitSettled]);
 
   // Restore the caret after a programmatic replacement. The editor syncs the
   // new text in its own effect (child effects run first), so by the time this
@@ -1141,6 +1158,13 @@ export default function PromptInput({
     return result;
   };
 
+  const settleSubmit = () => {
+    submittingRef.current = false;
+    if (!seedWaiting.current) return;
+    seedWaiting.current = false;
+    setSubmitSettled((count) => count + 1);
+  };
+
   // Re-entry guard: submit still awaits in-flight image encodes before the
   // input is cleared, so a second Enter during that window would resend.
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
@@ -1152,9 +1176,18 @@ export default function PromptInput({
       await runSubmit(originHoldId, mode, autonomyOverride);
     } finally {
       if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
+
+  // The browser's prompt box sends through here, as the composer's own prompt.
+  // Consuming its seed left any child of this chat, so it waits for the render
+  // that shows the chat itself as the target.
+  useEffect(() => {
+    if (seedToSend.current !== input || targetChildSessionId) return;
+    seedToSend.current = null;
+    void handleSubmit();
+  });
 
   // The chat a send creates opens in the place it was sent from, even if the
   // user switches tabs while attachments settle or the folder is prepared. The
@@ -1244,7 +1277,7 @@ export default function PromptInput({
       }
       toast.success('Prompt scheduled.');
     } finally {
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
 

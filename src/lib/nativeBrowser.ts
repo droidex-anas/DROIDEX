@@ -1,6 +1,7 @@
 import { isDesktop } from './desktop';
 import type { NativeBrowserChord } from './shortcuts';
 import type {
+  BrowserBox,
   BrowserViewportMode,
   DesignAnchor,
   DesignAnchorDetail,
@@ -35,12 +36,14 @@ export interface NativeBrowserLoadFailed {
 
 /**
  * What a page in design mode reports: a pick, its crop once taken (none when
- * it could not be taken safely), a mark taken away, or a key for the app.
+ * it could not be taken safely), a mark taken away, where its marks are after
+ * a scroll (none for one off the page), or a key for the app.
  */
 export type NativeBrowserDesignEvent = { browserSessionId?: string } & (
   | { type: 'select'; selection: NativeBrowserSelection; pick: number }
   | { type: 'shot'; pick: number; screenshot?: DesignSelectionScreenshot }
   | { type: 'unselect'; id: string }
+  | { type: 'boxes'; boxes: { id: string; box: BrowserBox | null }[] }
   | { type: 'key'; key: 'draw' | 'escape' }
 );
 
