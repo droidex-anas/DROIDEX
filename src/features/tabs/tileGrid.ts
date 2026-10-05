@@ -86,9 +86,10 @@ export function focusTile(grid: TileGrid, tileId: string): TileGrid {
 
 // Left and right add a column; top and bottom add a row to the target's column.
 export function canSplit(grid: TileGrid, targetTileId: string, edge: TileEdge): boolean {
-  if (edge === 'left' || edge === 'right') return grid.columns.length < MAX_COLUMNS;
   const index = columnIndexOf(grid, targetTileId);
-  return index !== -1 && grid.columns[index].tiles.length < MAX_TILES_PER_COLUMN;
+  if (index === -1) return false;
+  if (edge === 'left' || edge === 'right') return grid.columns.length < MAX_COLUMNS;
+  return grid.columns[index].tiles.length < MAX_TILES_PER_COLUMN;
 }
 
 export function splitTile(
@@ -133,6 +134,7 @@ export function removeTile(grid: TileGrid, tileId: string): TileGrid {
 }
 
 // The center swaps two tiles; an edge moves the tile beside the target.
+// Moves keep splits where the column or row count is unchanged.
 export function moveTile(
   grid: TileGrid,
   tileId: string,
@@ -151,7 +153,20 @@ export function moveTile(
   }
   const without = removeTile(grid, tileId);
   if (!canSplit(without, targetTileId, edge)) return grid;
-  return { ...splitTile(without, targetTileId, edge, moving), focusedTileId: grid.focusedTileId };
+  const moved = splitTile(without, targetTileId, edge, moving);
+  const columns = moved.columns.map((column) => {
+    // A tile that stayed identifies its column even when columns change sides.
+    const anchor = column.tiles.find((tile) => tile.id !== tileId) ?? moving;
+    const previousColumn = grid.columns[columnIndexOf(grid, anchor.id)];
+    if (column.tiles.length !== previousColumn.tiles.length) return column;
+    return { ...column, rowSplit: previousColumn.rowSplit };
+  });
+  return {
+    ...moved,
+    columns,
+    columnSplit: columns.length === grid.columns.length ? grid.columnSplit : EVEN_SPLIT,
+    focusedTileId: grid.focusedTileId,
+  };
 }
 
 export function withColumnSplit(grid: TileGrid, split: number): TileGrid {

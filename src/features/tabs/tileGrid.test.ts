@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { moveTile, nextSplit, splitTile, type Tile, type TileGrid } from './tileGrid';
+import { canSplit, moveTile, nextSplit, splitTile, type Tile, type TileGrid } from './tileGrid';
 
 function tile(appSessionId: string): Tile {
   return { id: appSessionId, page: { kind: 'chat', appSessionId } };
@@ -53,4 +53,87 @@ test('a tile dropped on an edge moves beside the target, and on the center swaps
   // Moving a column's only tile closes that column.
   assert.deepEqual(layout(moveTile(grid(['a'], ['b']), 'a', 'b', 'bottom')), [['b', 'a']]);
   assert.deepEqual(layout(moveTile(grid(['a', 'b']), 'b', 'a', 'right')), [['a'], ['b']]);
+});
+
+test('a split with a missing target leaves the grid alone on every edge', () => {
+  const value = grid(['a']);
+  for (const edge of ['left', 'right', 'top', 'bottom'] as const) {
+    assert.equal(canSplit(value, 'missing', edge), false);
+    assert.equal(splitTile(value, 'missing', edge, tile('b')), value);
+  }
+});
+
+test('moving a tile between two single-tile columns keeps the column split', () => {
+  const value = grid(['a'], ['b']);
+  value.columnSplit = 0.3;
+
+  const moved = moveTile(value, 'a', 'b', 'right');
+  assert.deepEqual(layout(moved), [['b'], ['a']]);
+  assert.equal(moved.columnSplit, 0.3);
+  assert.equal(moved.focusedTileId, 'a');
+});
+
+test('reordering rows keeps both the moved and untouched columns resized', () => {
+  const value = grid(['a', 'c'], ['d', 'b']);
+  value.columnSplit = 0.3;
+  value.columns[0].rowSplit = 0.4;
+  value.columns[1].rowSplit = 0.7;
+
+  const moved = moveTile(value, 'c', 'a', 'top');
+  assert.deepEqual(layout(moved), [
+    ['c', 'a'],
+    ['d', 'b'],
+  ]);
+  assert.equal(moved.columnSplit, 0.3);
+  assert.deepEqual(
+    moved.columns.map((column) => column.rowSplit),
+    [0.4, 0.7],
+  );
+});
+
+test('an untouched column keeps its row split when it moves to the other side', () => {
+  const value = grid(['a'], ['b', 'c']);
+  value.columnSplit = 0.3;
+  value.columns[1].rowSplit = 0.7;
+
+  const moved = moveTile(value, 'a', 'c', 'right');
+  assert.deepEqual(layout(moved), [['b', 'c'], ['a']]);
+  assert.equal(moved.columns[0].rowSplit, 0.7);
+  assert.equal(moved.columnSplit, 0.3);
+});
+
+test('moving between columns rebalances their rows while keeping the column split', () => {
+  const value = grid(['a', 'c'], ['b']);
+  value.columnSplit = 0.3;
+  value.columns[0].rowSplit = 0.4;
+  value.columns[1].rowSplit = 0.7;
+
+  const moved = moveTile(value, 'c', 'b', 'top');
+  assert.deepEqual(layout(moved), [['a'], ['c', 'b']]);
+  assert.equal(moved.columnSplit, 0.3);
+  assert.deepEqual(
+    moved.columns.map((column) => column.rowSplit),
+    [0.5, 0.5],
+  );
+});
+
+test('moving between one and two columns rebalances the created and removed splits', () => {
+  const value = grid(['a'], ['b']);
+  value.columnSplit = 0.3;
+  value.columns[1].rowSplit = 0.7;
+
+  const stacked = moveTile(value, 'a', 'b', 'bottom');
+  assert.deepEqual(layout(stacked), [['b', 'a']]);
+  assert.equal(stacked.columnSplit, 0.5);
+  assert.equal(stacked.columns[0].rowSplit, 0.5);
+
+  stacked.columnSplit = 0.3;
+  stacked.columns[0].rowSplit = 0.7;
+  const sideBySide = moveTile(stacked, 'a', 'b', 'right');
+  assert.deepEqual(layout(sideBySide), [['b'], ['a']]);
+  assert.equal(sideBySide.columnSplit, 0.5);
+  assert.deepEqual(
+    sideBySide.columns.map((column) => column.rowSplit),
+    [0.5, 0.5],
+  );
 });
