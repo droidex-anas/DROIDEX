@@ -52,6 +52,7 @@ import { buildRuntimeSnapshot } from './runtimeSnapshot.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
+import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import { SidebarRequests } from './sidebar/sidebarRequests.js';
 import { SidebarSessions } from './sidebar/SidebarSessions.js';
 import { requireProjectService } from './projects/service.js';
@@ -212,6 +213,8 @@ export interface SessionManagerOptions {
   // writing under $HOME long after the answer arrives. A test that pins $HOME
   // to a temp directory must pass its own probes — usually none at all.
   providerProbes?: ProviderProbeMap;
+  /** The desktop app's browser channel; without one, browser actions fail. */
+  requestBrowser?: RequestBrowser;
 }
 
 const MAX_OPEN_CHILD_SESSIONS = boundedInt(
@@ -829,6 +832,10 @@ export class SessionManager {
         this.emit(event);
       },
       sendPrompt: (appSessionId, prompt) => this.lifecycle.send(appSessionId, prompt),
+      requestBrowser:
+        options.requestBrowser ??
+        (() =>
+          Promise.reject(new Error('The browser is only available in the DROIDEX desktop app.'))),
     });
   }
 
@@ -1208,9 +1215,6 @@ export class SessionManager {
         return;
       case 'browser.design.sendPrompt':
         await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
-      case 'browser.native.result':
-        this.sessionBrowser.resolveNativeBrowserRequest(cmd.result);
         return;
       case 'sidebar.result':
         this.sidebarRequests.answer(cmd.result);

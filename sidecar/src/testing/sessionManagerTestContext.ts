@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { RequestBrowser } from '../browser/desktopBrowserChannel.js';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -376,7 +377,9 @@ export function notifyDaemonCompaction(
   });
 }
 
-export function createNativeBrowserTestContext(): NativeBrowserTestContext {
+export function createNativeBrowserTestContext(
+  requestBrowser: RequestBrowser,
+): NativeBrowserTestContext {
   const events: Protocol.ServerEvent[] = [];
   const recordEvent = (event: Protocol.ServerEvent): void => {
     events.push(event);
@@ -398,6 +401,7 @@ export function createNativeBrowserTestContext(): NativeBrowserTestContext {
     manager = new SessionManager(recordEvent, {
       initialModels: INITIAL_MODELS,
       providerProbes: NO_PROVIDER_PROBES,
+      requestBrowser,
     });
   } catch (error) {
     unpinTestHome();

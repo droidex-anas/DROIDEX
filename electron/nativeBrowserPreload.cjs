@@ -503,11 +503,11 @@ async function runAgentAction(request) {
   try {
     const action = request && request.action;
     if (action === 'inspect') {
-      return sendAgent({
+      return {
         requestId: request.requestId,
         ok: true,
         inspection: inspectElement(request.selector),
-      });
+      };
     }
     if (action === 'click') clickAt(Number(request.x), Number(request.y));
     else if (action === 'selectOption') selectOption(request.selector, request.text || '');
@@ -517,14 +517,14 @@ async function runAgentAction(request) {
       scrollPage(request.direction || 'down', Number(request.pixels || 500));
     else if (action !== 'snapshot') throw new Error(`Unsupported browser action: ${action}`);
     await settle();
-    return sendAgent({ requestId: request.requestId, ok: true, snapshot: pageSnapshot() });
+    return { requestId: request.requestId, ok: true, snapshot: pageSnapshot() };
   } catch (err) {
-    return sendAgent({
+    return {
       requestId: request && request.requestId,
       ok: false,
       error: err instanceof Error ? err.message : String(err),
       snapshot: safeSnapshot(),
-    });
+    };
   }
 }
 
@@ -1413,11 +1413,6 @@ function sendSelection(payload) {
 
 function sendDesignPrompt(payload) {
   ipcRenderer.send('native-browser-design-prompt', payload);
-}
-
-function sendAgent(payload) {
-  ipcRenderer.send('native-browser-agent-result', payload);
-  return payload;
 }
 
 function settle() {

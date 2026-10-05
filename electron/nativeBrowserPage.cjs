@@ -8,6 +8,8 @@ function createNativeBrowserPage({
   runWithWebContentsDebugger,
   findEntryForContents,
 }) {
+  const operationsOn = new WeakMap(); // guest contents -> { count, generation }
+
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
     const next = Boolean(active);
@@ -48,7 +50,7 @@ function createNativeBrowserPage({
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
     const navigation = observeAgentNavigation(contents);
-    contents.setBackgroundThrottling(false);
+    const operation = liftBackgroundThrottling(contents);
     try {
       if (request.action === 'fillCredentials') {
         return withNativeBrowserHistory(
@@ -76,7 +78,7 @@ function createNativeBrowserPage({
       return withNativeBrowserHistory(contents, outcome.result);
     } finally {
       navigation.dispose();
-      restoreBackgroundThrottling(contents);
+      restoreBackgroundThrottling(contents, operation);
     }
   }
 
@@ -267,7 +269,7 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
-    contents.setBackgroundThrottling(false);
+    const operation = liftBackgroundThrottling(contents);
     try {
       const fullPage = Boolean(options?.fullPage);
       const scale =
@@ -296,14 +298,72 @@ function createNativeBrowserPage({
       const image = rect ? await contents.capturePage(rect) : await contents.capturePage();
       return image.isEmpty() ? undefined : image.toPNG().toString('base64');
     } finally {
-      restoreBackgroundThrottling(contents);
+      restoreBackgroundThrottling(contents, operation);
     }
   }
 
-  // Restored as soon as the work ends, shown or not: re-enabling throttling on a
-  // guest that is already hidden does not take effect, so a flag left lifted
-  // would keep the page running after the pane closes.
-  function restoreBackgroundThrottling(contents) {
+  // A page that has just woken drops input until it paints again, so input
+  // waits for two frames first (bounded, in case the page cannot paint).
+  async function waitForPaint(browserSessionId, timeoutMs = 1_000) {
+    const entry = await restoreForAction(browserSessionId);
+    const contents = liveContents(entry);
+    if (!contents) return;
+    const operation = liftBackgroundThrottling(contents);
+    let timer;
+    try {
+      await Promise.race([
+        contents
+          .executeJavaScript(
+            `new Promise((painted) => {
+              setTimeout(painted, ${timeoutMs});
+              requestAnimationFrame(() => requestAnimationFrame(painted));
+            })`,
+            true,
+          )
+          .catch(() => undefined),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      restoreBackgroundThrottling(contents, operation);
+    }
+  }
+
+  // A page runs unthrottled while any operation on it is in flight. Restored as
+  // soon as the last one ends, shown or not: re-enabling throttling on a guest
+  // that is already hidden does not take effect, so a flag left lifted would
+  // keep the page running after the pane closes.
+  function liftBackgroundThrottling(contents) {
+    const operations = operationsOn.get(contents) ?? { count: 0, generation: 0 };
+    operations.count += 1;
+    operationsOn.set(contents, operations);
+    contents.setBackgroundThrottling(false);
+    return operations.generation;
+  }
+
+  function restoreBackgroundThrottling(contents, generation) {
+    const operations = operationsOn.get(contents);
+    // Abandoned operations were already accounted for.
+    if (!operations || operations.generation !== generation) return;
+    operations.count -= 1;
+    if (operations.count > 0) return;
+    throttle(contents);
+  }
+
+  // Main gave up on the work in flight on this page: it stops keeping the page
+  // unthrottled, and whatever it does afterwards is not counted.
+  function abandonOperations(contents) {
+    const operations = operationsOn.get(contents);
+    if (operations) {
+      operations.generation += 1;
+      operations.count = 0;
+    }
+    throttle(contents);
+  }
+
+  function throttle(contents) {
     try {
       if (!contents.isDestroyed()) contents.setBackgroundThrottling(true);
     } catch {
@@ -393,6 +453,8 @@ function createNativeBrowserPage({
     runAgentAction,
     capture,
     captureDesignSelection,
+    abandonOperations,
+    waitForPaint,
   };
 }
 

@@ -30,7 +30,6 @@ const PR_WORKSPACE_OPERATIONS = {
 const BROWSER_PANE_CHANNELS = [
   'native-browser-selection',
   'native-browser-design-prompt',
-  'native-browser-agent-result',
   'native-browser-credential-capture',
 ];
 

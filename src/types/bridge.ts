@@ -594,7 +594,7 @@ export interface BrowserViewport {
 }
 
 export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
-export type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
+type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface BrowserBox {
   x: number;
@@ -630,102 +630,6 @@ export interface BrowserState {
   canGoBack?: boolean;
   canGoForward?: boolean;
   agentCursor?: { x: number; y: number };
-  error?: string;
-}
-
-export interface BrowserNativeSnapshot {
-  url: string;
-  title?: string;
-  scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
-  canGoBack?: boolean;
-  canGoForward?: boolean;
-}
-
-export interface BrowserElementInspection {
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes: Record<string, string>;
-  box: BrowserBox;
-  html: string;
-  iframe?: {
-    src?: string;
-    accessible: boolean;
-  };
-}
-
-export interface BrowserNetworkEvent {
-  timestamp: number;
-  method: string;
-  url: string;
-  resourceType?: string;
-  status?: number;
-  error?: string;
-}
-
-export interface BrowserConsoleEvent {
-  timestamp: number;
-  level: number;
-  message: string;
-  line?: number;
-  source?: string;
-}
-
-export type BrowserNativeAction =
-  | 'open'
-  | 'reload'
-  | 'goBack'
-  | 'goForward'
-  | 'snapshot'
-  | 'click'
-  | 'hover'
-  | 'selectOption'
-  | 'type'
-  | 'keypress'
-  | 'scroll'
-  | 'resize'
-  | 'inspect'
-  | 'network'
-  | 'console'
-  | 'capture'
-  | 'close'
-  | 'fillCredentials';
-
-export interface BrowserNativeRequest {
-  requestId: string;
-  appSessionId: string;
-  browserSessionId: string;
-  action: BrowserNativeAction;
-  url?: string;
-  viewport?: BrowserViewport;
-  viewportMode?: BrowserViewportMode;
-  x?: number;
-  y?: number;
-  selector?: string;
-  text?: string;
-  key?: string;
-  direction?: BrowserScrollDirection;
-  pixels?: number;
-  box?: BrowserBox;
-  fullPage?: boolean;
-  deviceScaleFactor?: number;
-  clearNetworkLog?: boolean;
-  clearConsoleLog?: boolean;
-}
-
-export interface BrowserNativeResult {
-  requestId: string;
-  appSessionId: string;
-  browserSessionId: string;
-  ok: boolean;
-  snapshot?: BrowserNativeSnapshot;
-  inspection?: BrowserElementInspection;
-  networkEvents?: BrowserNetworkEvent[];
-  consoleEvents?: BrowserConsoleEvent[];
-  image?: string;
   error?: string;
 }
 
@@ -1070,7 +974,6 @@ export type ClientCommand =
       instruction: string;
       referenceIds: string[];
     }
-  | { type: 'browser.native.result'; result: BrowserNativeResult }
   | { type: 'sidebar.result'; result: SidebarResult };
 
 type ChildUpdatedEvent =
@@ -1300,7 +1203,6 @@ export type ServerEvent =
   | { type: 'history.persistenceRecovered' }
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
-  | { type: 'browser.native.request'; request: BrowserNativeRequest }
   | { type: 'sidebar.request'; request: SidebarRequest }
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };

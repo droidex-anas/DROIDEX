@@ -90,15 +90,10 @@ const invokeContract = [
     { title: 'DROIDEX', body: 'Finished', silent: true, appSessionId: 'app-1' },
   ],
   [
-    'nativeBrowserOpen',
+    'nativeBrowserReserve',
     ['browser-1', 'https://example.test'],
-    'native-browser-open',
-    {
-      browserSessionId: 'browser-1',
-      url: 'https://example.test',
-      bounds: undefined,
-      viewport: undefined,
-    },
+    'native-browser-reserve',
+    { browserSessionId: 'browser-1', savedUrl: 'https://example.test' },
   ],
   [
     'gitMarkTurnStart',

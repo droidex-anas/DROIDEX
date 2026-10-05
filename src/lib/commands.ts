@@ -2,7 +2,6 @@ import { bridge } from './bridge';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
-  BrowserNativeResult,
   BrowserViewport,
   BrowserViewportMode,
   ConfigurableSessionRole,
@@ -494,10 +493,6 @@ export const sendDesignPrompt = (
     instruction,
     referenceIds,
   });
-};
-
-export const sendNativeBrowserResult = (result: BrowserNativeResult) => {
-  bridge.send({ type: 'browser.native.result', result });
 };
 
 export const sendSidebarResult = (result: SidebarResult) => {
