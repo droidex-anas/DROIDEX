@@ -290,9 +290,14 @@ test('a tool with no card keeps its own name instead of borrowing a verb', () =>
 });
 
 test('describeToolCall categorises a namespaced tool by its bare name and keeps its server', () => {
+  // The app's own browser tools say what the agent did on the page.
   const open = describeToolCall('droidex-browser___browser_open', { url: 'https://a.dev' });
-  assert.equal(open.verb, 'Browser open');
+  assert.equal(open.verb, 'Opened');
+  assert.equal(open.object, 'https://a.dev');
   assert.equal(open.source, 'droidex browser');
+  const click = describeToolCall('mcp__droidex-browser__browser_click', { ref: 'e3' });
+  assert.equal(click.liveVerb, 'Clicking');
+  assert.equal(click.object, '');
   const read = describeToolCall('mcp__filesystem__read_file', { path: 'a.ts' });
   assert.equal(read.verb, 'Read');
   assert.equal(read.source, 'filesystem');

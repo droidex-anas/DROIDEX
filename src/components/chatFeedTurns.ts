@@ -130,7 +130,7 @@ export function tailTimestamp(item?: FeedItem): number | undefined {
     const c = item.changes[item.changes.length - 1];
     return c.event.endTs ?? c.event.ts;
   }
-  if (item.type === 'child_sessions') {
+  if (item.type === 'child_sessions' || item.type === 'browser') {
     const e = item.events.at(-1);
     return e?.endTs ?? e?.ts;
   }
@@ -155,7 +155,7 @@ function spanOf(items: FeedItem[]): { start: number; end: number } {
       it.changes.forEach((c) => {
         consider(c.event.ts, c.event.endTs);
       });
-    else if (it.type === 'child_sessions')
+    else if (it.type === 'child_sessions' || it.type === 'browser')
       it.events.forEach((e) => {
         consider(e.ts, e.endTs);
       });
@@ -332,6 +332,9 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
     } else if (isHarnessModelSwitch(it)) {
       // The harness changed the model under the turn, often on a usage limit;
       // the answer after it ran on the new one.
+      survivors.push(it);
+    } else if (it.type === 'browser') {
+      // The page the turn worked on stays in reach; its steps fold as usual.
       survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.
