@@ -184,3 +184,22 @@ export function designMarkLabel(mark: DesignReference): string {
   if (anchor.kind !== 'element') return anchor.strokes ? 'Sketch' : 'Area';
   return anchor.source?.component ?? anchor.name ?? anchor.text ?? anchor.tag ?? anchor.label;
 }
+
+/**
+ * The colour of design marks, on the page and on their chips. A neutral accent
+ * (near-white on dark, near-black on light) would vanish on most pages, so the
+ * marks then take the link colour, as links do.
+ */
+export function designMarkColor(): string {
+  const css = getComputedStyle(document.documentElement);
+  const accent = css.getPropertyValue('--droid-accent').trim();
+  return isNeutral(accent) ? css.getPropertyValue('--droid-link').trim() : accent;
+}
+
+function isNeutral(color: string): boolean {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
+  if (!hex) return false;
+  const full = hex.length === 3 ? hex.replace(/./g, '$&$&') : hex;
+  const channels = [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16));
+  return Math.max(...channels) - Math.min(...channels) < 24;
+}

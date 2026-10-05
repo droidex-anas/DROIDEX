@@ -1,10 +1,10 @@
 import { X } from 'lucide-react';
 import type { DesignReference } from '../../types/bridge';
-import { designMarkLabel } from '../browser/designMarks';
+import { designMarkColor, designMarkLabel } from '../browser/designMarks';
 
 // A mark picked in the browser and staged for the next prompt: its number, a
-// crop of it with the mark drawn in, its name and what it is. Clicking it
-// writes @N into the draft at the caret.
+// crop of it with the mark drawn in, its name and what it is, in the colour of
+// its mark on the page. Clicking it writes @N into the draft at the caret.
 export function DesignMarkChip({
   mark,
   onInsert,
@@ -20,9 +20,16 @@ export function DesignMarkChip({
   const source = anchor.source;
   const where = source?.file ? `${source.file}${source.line ? `:${String(source.line)}` : ''}` : '';
   const crop = mark.screenshot?.base64 ? `data:image/png;base64,${mark.screenshot.base64}` : '';
+  const color = designMarkColor();
 
   return (
-    <span className="group relative flex max-w-56 shrink-0 items-center rounded-xl border border-droid-border bg-droid-bg/60 transition-colors hover:border-droid-border-hover">
+    <span
+      className="group relative flex max-w-56 shrink-0 items-center rounded-xl border transition-colors"
+      style={{
+        borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
+      }}
+    >
       <button
         type="button"
         onClick={onInsert}
@@ -33,14 +40,17 @@ export function DesignMarkChip({
           {crop && (
             <img src={crop} alt="" draggable={false} className="h-full w-full object-cover" />
           )}
-          <span className="absolute left-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-droid-accent px-1 text-[9px] font-semibold leading-none text-droid-bg">
+          <span
+            className="absolute left-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-none text-droid-bg"
+            style={{ backgroundColor: color }}
+          >
             {number}
           </span>
         </span>
         <span className="min-w-0 leading-tight">
           <span className="block truncate text-[12px] font-medium text-droid-text">{label}</span>
           <span className="block truncate text-[11px] text-droid-text-muted">
-            @{number} · {markDetail(anchor)}
+            <span style={{ color }}>@{number}</span> · {markDetail(anchor)}
           </span>
         </span>
       </button>

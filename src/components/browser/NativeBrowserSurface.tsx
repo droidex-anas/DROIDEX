@@ -14,6 +14,7 @@ import {
 import type { BrowserViewport, BrowserViewportMode, DesignReference } from '../../types/bridge';
 import type { Size } from './browserGeometry';
 import { pageLayout } from './browserViewport';
+import { designMarkColor } from './designMarks';
 
 interface NativeBrowserSurfaceProps {
   visibleBrowserSessionId?: string;
@@ -149,14 +150,12 @@ export function NativeBrowserSurface({
 }
 
 // The page cannot read the app's CSS, so its design overlay gets the token
-// values. A neutral accent (near-white on dark, near-black on light) would
-// vanish on most pages; the overlay then takes the link colour, as links do.
+// values, its marks in the same colour as their chips in the composer.
 function designOverlayTheme(): DesignOverlayTheme {
   const css = getComputedStyle(document.documentElement);
   const token = (name: string) => css.getPropertyValue(name).trim();
-  const accent = token('--droid-accent');
   return {
-    accent: isNeutral(accent) ? token('--droid-link') : accent,
+    accent: designMarkColor(),
     onAccent: token('--droid-bg'),
     surface: token('--droid-raised'),
     text: token('--droid-text'),
@@ -165,12 +164,4 @@ function designOverlayTheme(): DesignOverlayTheme {
     shadow: token('--droid-shadow-sm'),
     font: token('--ui-font-family'),
   };
-}
-
-function isNeutral(color: string): boolean {
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
-  if (!hex) return false;
-  const full = hex.length === 3 ? hex.replace(/./g, '$&$&') : hex;
-  const channels = [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16));
-  return Math.max(...channels) - Math.min(...channels) < 24;
 }
