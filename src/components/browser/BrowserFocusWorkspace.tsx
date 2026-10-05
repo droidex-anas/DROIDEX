@@ -28,7 +28,7 @@ export function BrowserFocusWorkspace({
         activity={
           expanded && appSessionId ? (
             <div className="flex min-w-0 items-center gap-2">
-              <RunningProcessesMenu appSessionId={appSessionId} />
+              <RunningProcessesMenu appSessionId={appSessionId} overPage />
               <BrowserActivityLine appSessionId={appSessionId} />
             </div>
           ) : null

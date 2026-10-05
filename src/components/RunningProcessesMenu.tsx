@@ -22,7 +22,14 @@ function elapsed(startedAt: number, now: number): string {
  * the chat title that opens the list. Absent entirely while nothing is
  * running.
  */
-export function RunningProcessesMenu({ appSessionId }: { appSessionId: string }) {
+export function RunningProcessesMenu({
+  appSessionId,
+  overPage = false,
+}: {
+  appSessionId: string;
+  // Over the full-screen page it wears the same dark chip as its neighbours.
+  overPage?: boolean;
+}) {
   const processes = useStoreSelector((state) => state.agentProcesses[appSessionId] ?? NONE);
   const dispatch = useStoreDispatch();
   const [open, setOpen] = useState(false);
@@ -71,10 +78,18 @@ export function RunningProcessesMenu({ appSessionId }: { appSessionId: string })
         aria-expanded={open}
         aria-label={label}
         title={label}
-        className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
-          open
-            ? 'bg-droid-elevated text-droid-text'
-            : 'bg-droid-elevated/60 text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
+        className={`flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
+          overPage
+            ? `h-8 rounded-md border bg-droid-bg/90 shadow-lg hover:border-droid-border-hover hover:text-droid-text-secondary ${
+                open
+                  ? 'border-droid-border-hover text-droid-text-secondary'
+                  : 'border-droid-border text-droid-text-muted'
+              }`
+            : `rounded-lg py-1.5 ${
+                open
+                  ? 'bg-droid-elevated text-droid-text'
+                  : 'bg-droid-elevated/60 text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
+              }`
         }`}
       >
         <Globe className="h-3.5 w-3.5" />

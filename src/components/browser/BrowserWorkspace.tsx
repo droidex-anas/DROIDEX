@@ -504,11 +504,20 @@ export default function BrowserWorkspace({
         )}
 
         {expanded ? (
+          // A fitted page runs under the row and the composer, so it fades into
+          // the app's background behind them; a standard size ends above them.
           <div
-            className="pointer-events-none absolute inset-x-0 z-10 px-3 pb-2"
-            style={{ bottom: 'var(--composer-height, 0px)' }}
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pt-16"
+            style={{
+              paddingBottom: 'calc(var(--composer-height, 0px) + 8px)',
+              background:
+                viewportMode === 'fit'
+                  ? 'linear-gradient(to top, var(--droid-bg) calc(100% - 64px), transparent)'
+                  : undefined,
+            }}
           >
-            <div className="mx-auto flex max-w-4xl items-end gap-2 [&>*]:pointer-events-auto">
+            {/* The activity line's opened steps span this row, the composer's width. */}
+            <div className="relative mx-auto flex max-w-4xl items-center gap-2 [&>*]:pointer-events-auto">
               {activity}
               {browser && (
                 <ViewportMenu

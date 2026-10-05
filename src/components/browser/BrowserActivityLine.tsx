@@ -22,7 +22,8 @@ const NO_EVENTS: TranscriptEvent[] = [];
 // way the transcript's live tail says it. It opens into the current turn's
 // steps, drawn by the transcript's own rows, with any steers still waiting.
 // Idle, it reads "Worked for 12s" quietly, as the finished turn does in the
-// transcript; before the chat's first turn there is nothing to show.
+// transcript; before the chat's first turn there is nothing to show. The steps
+// open over the whole row it sits in, which places them.
 export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -78,14 +79,17 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
   useLayoutEffect(() => {
     const list = stepsRef.current;
     if (open && list) list.scrollTop = list.scrollHeight;
-  }, [open, steps.length, steerCount]);
+  }, [open, turn.events, steerCount]);
 
   if (!turn.prompt) return null;
   const tail = steps.at(-1);
+  const cue = liveCue(tail, turn.prompt);
   const worked = workedFor(turn);
+  // A thinking or status row already shows itself working, as in the transcript.
+  const tailWorks = tail?.type === 'thinking' || tail?.type === 'status';
 
   return (
-    <div ref={rootRef} className="relative min-w-0">
+    <div ref={rootRef} className="min-w-0">
       <AnimatePresence>
         {open && (
           <motion.div
@@ -94,7 +98,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full left-0 mb-2 max-h-[min(50vh,420px)] w-[min(42rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid"
+            className="absolute inset-x-0 bottom-full mb-2 max-h-[min(50vh,420px)] overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid"
           >
             <div className="space-y-2.5">
               {steps.map((item, index) => (
@@ -107,7 +111,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
                   density="compact"
                 />
               ))}
-              {live && steps.length === 0 && <WorkingIndicator startTs={turn.prompt.ts} />}
+              {live && !tailWorks && <WorkingIndicator {...cue} />}
             </div>
             <PendingSteers appSessionId={appSessionId} />
           </motion.div>
@@ -124,7 +128,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
         <ActivityStatusGlyph status={status} decorative />
         <span className="min-w-0 truncate">
           {live ? (
-            <WorkingIndicator {...liveCue(tail, turn.prompt)} />
+            <WorkingIndicator {...cue} />
           ) : (
             <span className="text-[13px] text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
               {worked >= 1000 ? `Worked for ${formatDuration(worked)}` : 'Worked'}
@@ -157,13 +161,15 @@ interface Turn {
 }
 
 // The chat's latest prompt and what the agent has done since, as the chat
-// shows it (the primary transcript, not a subagent's).
+// shows it (the primary transcript, not a subagent's). A steer the model took
+// in is a step of the turn it joined, not a turn of its own.
 function currentTurn(transcript: TranscriptEvent[]): Turn {
   const since: TranscriptEvent[] = [];
   for (let index = transcript.length - 1; index >= 0; index -= 1) {
     const event = transcript[index];
     if (!transcriptEventIsVisible(event, null)) continue;
-    if (event.author === 'user') return { prompt: event, events: since.reverse() };
+    if (event.author === 'user' && !event.steered)
+      return { prompt: event, events: since.reverse() };
     since.push(event);
   }
   return { events: since.reverse() };
