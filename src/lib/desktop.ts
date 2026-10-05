@@ -1,12 +1,9 @@
 import type {
-  NativeBrowserAgentAction,
-  NativeBrowserAgentResult,
-  NativeBrowserBox,
-  NativeBrowserCaptureOptions,
   NativeBrowserDesignPrompt,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
   NativeBrowserSelection,
+  NativeBrowserWorking,
 } from './nativeBrowser';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
@@ -301,31 +298,18 @@ interface DroidControlApi {
     savedUrl?: string,
   ) => Promise<{ src: string; generation: number }>;
   nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
+  nativeBrowserWorkingSessions: () => Promise<string[]>;
   nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
-  nativeBrowserOpen: (
-    browserSessionId: string,
-    url: string,
-    viewport?: { width: number; height: number; deviceScaleFactor: number },
-  ) => Promise<void>;
-  nativeBrowserClose: (browserSessionId: string) => Promise<void>;
-  nativeBrowserReload: (browserSessionId: string) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserSetDesignMode: (browserSessionId: string, active: boolean) => Promise<void>;
   nativeBrowserSetPencilMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserAgentAction: (
-    request: NativeBrowserAgentAction,
-  ) => Promise<NativeBrowserAgentResult | undefined>;
-  nativeBrowserCapture: (
-    browserSessionId: string,
-    box?: NativeBrowserBox,
-    options?: NativeBrowserCaptureOptions,
-  ) => Promise<string | undefined>;
   onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
   onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
-  onNativeBrowserAgentResult: (handler: (result: NativeBrowserAgentResult) => void) => () => void;
+  onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
+  onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
 
 declare global {

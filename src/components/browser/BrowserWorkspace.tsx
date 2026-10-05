@@ -481,7 +481,6 @@ export default function BrowserWorkspace({
       <div ref={frameRef} className="relative flex-1 min-h-0 min-w-0">
         {browserKey && frameReady ? (
           <NativeBrowserSurface
-            browserKey={browserKey}
             visibleBrowserSessionId={browser?.browserSessionId}
             url={activeUrl}
             viewport={requestedViewport}

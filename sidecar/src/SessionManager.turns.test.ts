@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
+import {
+  createDesktopBrowserChannel,
+  type BrowserChannelProcess,
+} from './browser/desktopBrowserChannel.js';
 import type * as Protocol from './protocol.js';
 import {
   nativeSnapshot,
@@ -565,11 +570,34 @@ test('the browser stays bound to the stable session across a provider swap', asy
   }
 });
 
-test('native browser results settle only the request they answer, and late results are ignored', async () => {
+// Stands in for the desktop app's main process on the other end of the channel.
+function fakeDesktopApp() {
+  const channel = new EventEmitter() as EventEmitter & { connected: boolean; sent: unknown[] };
+  channel.connected = true;
+  channel.sent = [];
+  Object.assign(channel, {
+    send: (message: unknown, callback?: (error: Error | null) => void) => {
+      channel.sent.push(message);
+      callback?.(null);
+      return true;
+    },
+  });
+  return {
+    requestBrowser: createDesktopBrowserChannel(channel as unknown as BrowserChannelProcess, 5_000),
+    lastRequest: () =>
+      (channel.sent.at(-1) as { request: Protocol.BrowserNativeRequest } | undefined)?.request,
+    answer: async (id: string, result: Protocol.BrowserNativeResult) => {
+      channel.emit('message', { type: 'browser.result', id, result });
+      await Promise.resolve();
+      await Promise.resolve();
+    },
+  };
+}
+
+test('desktop browser answers settle only the request they answer, and late answers are ignored', async () => {
   const timeouts = observeNativeBrowserTimeouts();
-  const h = createNativeBrowserTestContext();
-  const nativeRequest = () =>
-    h.events.filter((event) => event.type === 'browser.native.request').at(-1)?.request;
+  const app = fakeDesktopApp();
+  const h = createNativeBrowserTestContext(app.requestBrowser);
   const browserError = (message: RegExp) =>
     h.events.some(
       (event) =>
@@ -588,24 +616,16 @@ test('native browser results settle only the request they answer, and late resul
     void open.then(() => {
       opened = true;
     });
-    const request = nativeRequest();
+    const request = app.lastRequest();
     assert.ok(request);
 
-    await h.handle({
-      type: 'browser.native.result',
-      result: {
-        requestId: 'unknown',
-        appSessionId: 'app-b2',
-        browserSessionId: 'browser-b2',
-        ok: true,
-      },
-    });
+    await app.answer('unknown', { ...nativeSuccess(request), requestId: 'unknown' });
     assert.equal(opened, false);
 
-    await h.handle({
-      type: 'browser.native.result',
-      result: nativeSuccess(request, nativeSnapshot('https://example.test')),
-    });
+    await app.answer(
+      request.requestId,
+      nativeSuccess(request, nativeSnapshot('https://example.test')),
+    );
     await open;
     assert.equal(opened, true);
     assert.equal(
@@ -619,23 +639,24 @@ test('native browser results settle only the request they answer, and late resul
     );
 
     const reload = h.handle({ type: 'browser.reload', appSessionId: 'app-b2' });
-    const timedOutRequest = nativeRequest();
+    const timedOutRequest = app.lastRequest();
     assert.ok(timedOutRequest);
     timeouts.fireCurrent();
     await reload;
     assert.equal(browserError(/DROIDEX browser did not respond to reload within \d+ms\./), true);
 
+    // A late answer is dropped; nothing is replayed.
     const eventCountBeforeLateResult = h.events.length;
-    await h.handle({
-      type: 'browser.native.result',
-      result: nativeSuccess(timedOutRequest, nativeSnapshot('https://example.test/reloaded')),
-    });
+    await app.answer(
+      timedOutRequest.requestId,
+      nativeSuccess(timedOutRequest, nativeSnapshot('https://example.test/reloaded')),
+    );
     assert.equal(h.events.length, eventCountBeforeLateResult);
 
     const close = h.handle({ type: 'browser.close', appSessionId: 'app-b2' });
-    const closeRequest = nativeRequest();
+    const closeRequest = app.lastRequest();
     assert.ok(closeRequest);
-    await h.handle({ type: 'browser.native.result', result: nativeSuccess(closeRequest) });
+    await app.answer(closeRequest.requestId, nativeSuccess(closeRequest));
     await close;
   } finally {
     await h.dispose();

@@ -1,12 +1,7 @@
-import type {
-  BrowserNativeRequest,
-  BrowserNativeResult,
-  ClientCommand,
-  ServerEvent,
-} from './protocol.js';
+import type { BrowserNativeRequest, ClientCommand, ServerEvent } from './protocol.js';
 import { errMsg } from './errors.js';
-import { boundedInt } from './values.js';
 import { NativeBrowserRuntime } from './browser/NativeBrowserRuntime.js';
+import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import type { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import type { BrowserViewport } from './browser/types.js';
 
@@ -36,28 +31,15 @@ export interface SessionBrowserDependencies {
   browsers: SessionBrowsers;
   emit: Emit;
   sendPrompt: (appSessionId: string, prompt: string) => Promise<void>;
+  /** Runs a request in the desktop app, which owns the pages. */
+  requestBrowser: RequestBrowser;
 }
-
-const BROWSER_NATIVE_TIMEOUT_MS = boundedInt(
-  process.env.DROID_CONTROL_BROWSER_NATIVE_TIMEOUT_MS,
-  12_000,
-  1_000,
-  60_000,
-);
 
 let nativeBrowserSeq = 0;
 const nextNativeBrowserRequestId = () =>
   `browser-native-${Date.now().toString(36)}-${(nativeBrowserSeq++).toString(36)}`;
 
-interface PendingNativeBrowserRequest {
-  resolve: (result: BrowserNativeResult) => void;
-  reject: (err: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}
-
 export class SessionBrowser {
-  private readonly pendingNativeBrowserRequests = new Map<string, PendingNativeBrowserRequest>();
-
   constructor(private readonly d: SessionBrowserDependencies) {}
 
   createRuntime(
@@ -193,28 +175,10 @@ export class SessionBrowser {
     });
   }
 
-  resolveNativeBrowserRequest(result: BrowserNativeResult): void {
-    const pending = this.pendingNativeBrowserRequests.get(result.requestId);
-    if (!pending) return;
-    clearTimeout(pending.timeout);
-    this.pendingNativeBrowserRequests.delete(result.requestId);
-    if (result.ok) pending.resolve(result);
-    else pending.reject(new Error(result.error ?? 'DROIDEX browser action failed.'));
-  }
-
-  private requestNativeBrowser(request: BrowserNativeRequest): Promise<BrowserNativeResult> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingNativeBrowserRequests.delete(request.requestId);
-        reject(
-          new Error(
-            `DROIDEX browser did not respond to ${request.action} within ${String(BROWSER_NATIVE_TIMEOUT_MS)}ms.`,
-          ),
-        );
-      }, BROWSER_NATIVE_TIMEOUT_MS);
-      this.pendingNativeBrowserRequests.set(request.requestId, { resolve, reject, timeout });
-      this.d.emit({ type: 'browser.native.request', request });
-    });
+  private async requestNativeBrowser(request: BrowserNativeRequest) {
+    const result = await this.d.requestBrowser(request);
+    if (!result.ok) throw new Error(result.error ?? 'DROIDEX browser action failed.');
+    return result;
   }
 
   private async handleBrowser(
