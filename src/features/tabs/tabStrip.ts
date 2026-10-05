@@ -17,7 +17,6 @@ import {
   gridTiles,
   moveTile,
   newChatTile,
-  newTileId,
   removeTile,
   singleTileGrid,
   splitTile,
@@ -94,7 +93,7 @@ export type TabStripSource = LivePageSource & Pick<AppState, 'sessions'>;
 const MAX_CLOSED_TABS = 20;
 
 function newTab(page: TabPage): Tab {
-  return { id: crypto.randomUUID(), page, tileId: newTileId() };
+  return { id: crypto.randomUUID(), page, tileId: crypto.randomUUID() };
 }
 
 export function initialTabStrip(): TabStrip {
@@ -197,14 +196,19 @@ export function chatsBesideFocus(strip: TabStrip): string[] {
   );
 }
 
-/** Every chat the chat area shows: the active chat first, then the tiles beside it. */
-export function chatsOnScreen(state: Pick<AppState, 'activeAppSessionId' | 'tabStrip'>): string[] {
+/** The active chat, then the tiles beside it, even behind a full-content view. */
+export function selectedChats(state: Pick<AppState, 'activeAppSessionId' | 'tabStrip'>): string[] {
   const beside = chatsBesideFocus(state.tabStrip);
   return state.activeAppSessionId ? [state.activeAppSessionId, ...beside] : beside;
 }
 
+/** The chats the session view shows; a full-content view shows none. */
+export function chatsOnScreen(state: Omit<LivePageSource, 'draftChat'>): string[] {
+  return state.mainView === 'session' ? selectedChats(state) : [];
+}
+
 export function isChatInView(
-  state: Pick<AppState, 'activeAppSessionId' | 'tabStrip'>,
+  state: Omit<LivePageSource, 'draftChat'>,
   appSessionId: string,
 ): boolean {
   return chatsOnScreen(state).includes(appSessionId);
@@ -414,7 +418,7 @@ function splitTab(
   if (!canSplit(grid, targetTileId, edge)) return strip;
   if (appSessionId !== null && isMission(state, appSessionId)) return strip;
   const tile: Tile = {
-    id: newTileId(),
+    id: crypto.randomUUID(),
     page: appSessionId === null ? newChatPage(state) : { kind: 'chat', appSessionId },
   };
   const split = { ...splitTile(grid, targetTileId, edge, tile), focusedTileId: tile.id };

@@ -43,13 +43,15 @@ export function hasAppContextForTranscript(
   events: TranscriptEvent[],
   childSessionId: string | null,
 ): boolean {
-  return events.some((event) => {
-    if (event.kind !== 'text' || event.author === 'user') return false;
-    const belongsToTarget = childSessionId
-      ? event.sourceSessionId === childSessionId
-      : event.role === 'primary';
-    return belongsToTarget && hasCompleteAppBlock(event.text ?? '');
-  });
+  return events.some((event) => isAppContextEvent(event, childSessionId));
+}
+
+export function isAppContextEvent(event: TranscriptEvent, childSessionId: string | null): boolean {
+  if (event.kind !== 'text' || event.author === 'user') return false;
+  const belongsToTarget = childSessionId
+    ? event.sourceSessionId === childSessionId
+    : event.role === 'primary';
+  return belongsToTarget && hasCompleteAppBlock(event.text ?? '');
 }
 
 // Builds the prompt text actually sent to a session from the raw user input plus

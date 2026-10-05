@@ -62,7 +62,7 @@ test('activeSessionCwds includes the draft, chats on screen, and live sessions o
   ];
   const cwds = activeSessionCwds({
     sessions,
-    onScreenAppSessionIds: ['active', 'tile'],
+    selectedAppSessionIds: ['active', 'tile'],
     draftCwd: '/repo/draft',
   });
   assert.deepEqual(cwds.sort(), ['/repo/a', '/repo/b', '/repo/d', '/repo/draft']);
@@ -77,7 +77,7 @@ test('activeSessionCwds pins live child workers and embedded terminals, not hist
   ];
   const cwds = activeSessionCwds({
     sessions,
-    onScreenAppSessionIds: [],
+    selectedAppSessionIds: [],
     childSessions: {
       idle: [{ status: 'completed' }, { status: 'running' }],
       done: [{ status: 'completed' }, { status: 'paused' }],
@@ -96,14 +96,14 @@ test('activeSessionCwds pins live child workers and embedded terminals, not hist
   // A historical running status without a live child runtime pins nothing.
   const historical = activeSessionCwds({
     sessions: [session({ appSessionId: 'closed', cwd: '/repo/closed', phase: 'completed' })],
-    onScreenAppSessionIds: [],
+    selectedAppSessionIds: [],
     childSessions: { closed: { child: { status: 'running' } } },
   });
   assert.deepEqual(historical, []);
 
   const terminal = activeSessionCwds({
     sessions: [],
-    onScreenAppSessionIds: [],
+    selectedAppSessionIds: [],
     pinnedCwds: ['/repo/terminal'],
   });
   assert.deepEqual(terminal, ['/repo/terminal']);

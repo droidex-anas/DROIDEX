@@ -8,8 +8,9 @@ import {
 import { getGitWorktrees } from '../lib/git';
 import type { GitWorktree } from '../types/vcs';
 import { useDocumentVisible } from './useDocumentVisible';
-import { useStoreSelector } from './useStore';
+import { useStoreSelector, type AppState } from './useStore';
 import type { TranscriptEvent } from '../types/bridge';
+import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
 
 interface WorktreeSnapshot {
   sessionKey: string;
@@ -21,6 +22,7 @@ interface WorktreeSnapshot {
 
 const EMPTY_DISCOVERY_RETRY_MS = 5_000;
 const EMPTY_TRANSCRIPT: TranscriptEvent[] = [];
+const EMPTY_WORKTREES: GitWorktree[] = [];
 
 function sameTranscriptEvents(left: TranscriptEvent[], right: TranscriptEvent[]): boolean {
   return left.length === right.length && left.every((event, index) => event === right[index]);
@@ -29,21 +31,32 @@ function sameTranscriptEvents(left: TranscriptEvent[], right: TranscriptEvent[])
 export function createWorkingDirectoryTranscriptSelector(
   appSessionId: string,
   sourceSessionId?: string,
-): (state: { transcripts: Record<string, TranscriptEvent[]> }) => TranscriptEvent[] {
+): (state: Pick<AppState, 'transcripts' | 'transcriptMutations'>) => TranscriptEvent[] {
+  const filterTranscript = createIncrementalTranscriptFilter();
   let sourceTranscript = EMPTY_TRANSCRIPT;
+  let filteredTranscript = EMPTY_TRANSCRIPT;
   let selectedTranscript = EMPTY_TRANSCRIPT;
+  const includes = (event: TranscriptEvent): boolean => {
+    const matchesSource = sourceSessionId
+      ? event.sourceSessionId === sourceSessionId
+      : event.role === 'primary';
+    return matchesSource && (event.kind === 'tool_call' || event.kind === 'tool_result');
+  };
   return (state) => {
     const nextSource = appSessionId
       ? (state.transcripts[appSessionId] ?? EMPTY_TRANSCRIPT)
       : EMPTY_TRANSCRIPT;
     if (nextSource === sourceTranscript) return selectedTranscript;
     sourceTranscript = nextSource;
-    const nextSelected = nextSource.filter((event) => {
-      const matchesSource = sourceSessionId
-        ? event.sourceSessionId === sourceSessionId
-        : event.role === 'primary';
-      return matchesSource && (event.kind === 'tool_call' || event.kind === 'tool_result');
+    const mutation = appSessionId ? state.transcriptMutations[appSessionId] : undefined;
+    const nextSelected = filterTranscript({
+      conversationKey: appSessionId,
+      source: nextSource,
+      mutation,
+      includes,
     });
+    if (nextSelected === filteredTranscript) return selectedTranscript;
+    filteredTranscript = nextSelected;
     if (sameTranscriptEvents(selectedTranscript, nextSelected)) return selectedTranscript;
     selectedTranscript = nextSelected;
     return selectedTranscript;
@@ -95,7 +108,7 @@ export function useSessionWorkingDirectory(
     snapshot?.sessionKey === sessionKey &&
     snapshot.cwd === discoveryCwd &&
     snapshot.revision === revision;
-  const worktrees = hasSnapshot ? snapshot.worktrees : [];
+  const worktrees = hasSnapshot ? snapshot.worktrees : EMPTY_WORKTREES;
   // Empty discoveries block re-probing only during their cooldown; after it
   // expires, a visibility or transcript revision change retries the probe.
   const discoveryStable = isWorktreeDiscoveryStable(snapshot, sessionKey, discoveryCwd, revision);

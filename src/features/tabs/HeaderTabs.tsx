@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { memo, useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Reorder } from 'framer-motion';
 import { Clock, Columns, Plus, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
@@ -24,6 +24,37 @@ interface TabItem {
   // A split tab names every tile in its tooltip and shows its tile count.
   title: string;
   tileCount: number;
+}
+
+// The width .scroll-fade-x fades at an edge the strip continues past.
+const EDGE_FADE_PX = 28;
+
+// Only the strip scrolls: scrollIntoView would also move the window's own scrollers.
+function revealActiveTab(strip: HTMLElement, behavior: ScrollBehavior) {
+  const tab = strip.querySelector<HTMLElement>('[aria-selected="true"]');
+  if (!tab) return;
+  const stripRect = strip.getBoundingClientRect();
+  const tabRect = tab.getBoundingClientRect();
+  if (tabRect.left < stripRect.left + EDGE_FADE_PX) {
+    strip.scrollBy({ left: tabRect.left - stripRect.left - EDGE_FADE_PX, behavior });
+  } else if (tabRect.right > stripRect.right - EDGE_FADE_PX) {
+    strip.scrollBy({ left: tabRect.right - stripRect.right + EDGE_FADE_PX, behavior });
+  }
+}
+
+function tabIndexForKey(key: string, index: number, count: number): number | null {
+  switch (key) {
+    case 'ArrowLeft':
+      return (index - 1 + count) % count;
+    case 'ArrowRight':
+      return (index + 1) % count;
+    case 'Home':
+      return 0;
+    case 'End':
+      return count - 1;
+    default:
+      return null;
+  }
 }
 
 const VIEW_LABELS = {
@@ -113,11 +144,59 @@ function TabGlyph({ item }: { item: TabItem }) {
 // it shows, so it starts past the window controls when the sidebar is collapsed
 // and ends with the session's own controls.
 export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: ReactNode }) {
+  return (
+    <div
+      data-electron-drag-region
+      className="flex h-9 shrink-0 items-center gap-1 pr-3"
+      style={{ paddingLeft: leadPx }}
+    >
+      <TabList />
+      <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">{controls}</div>
+    </div>
+  );
+}
+
+const TabList = memo(function TabList() {
   const dispatch = useStoreDispatch();
   const items = useStoreSelector(selectTabItems, equalTabItems);
   const activeTabId = useStoreSelector((state) => state.tabStrip.activeTabId);
   const newTabChord = useStoreSelector((state) => state.shortcutBindings.newTab);
   const closeTabChord = useStoreSelector((state) => state.shortcutBindings.closeTab);
+  const stripRef = useRef<HTMLDivElement>(null);
+  // A press activates its tab and may start a drag, so the strip must not
+  // scroll under the pointer until it is released.
+  const pressingRef = useRef(false);
+
+  useEffect(() => {
+    if (stripRef.current && !pressingRef.current) revealActiveTab(stripRef.current, 'smooth');
+  }, [activeTabId]);
+
+  const holdRevealUntilRelease = () => {
+    pressingRef.current = true;
+    const release = new AbortController();
+    const reveal = () => {
+      release.abort();
+      pressingRef.current = false;
+      if (stripRef.current) revealActiveTab(stripRef.current, 'smooth');
+    };
+    window.addEventListener('pointerup', reveal, { signal: release.signal });
+    window.addEventListener('pointercancel', reveal, { signal: release.signal });
+    // Switching apps mid-press can swallow the release.
+    window.addEventListener('blur', reveal, { signal: release.signal });
+  };
+
+  // Narrowing the window or opening the sidebar shrinks the strip under the active tab.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const observer = new ResizeObserver(() => {
+      revealActiveTab(strip, 'instant');
+    });
+    observer.observe(strip);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const activate = (tabId: string) => {
     dispatch({ type: 'ACTIVATE_TAB', tabId });
@@ -125,15 +204,21 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
   const close = (tabId: string) => {
     dispatch({ type: 'CLOSE_TAB', tabId });
   };
+  const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const target = tabIndexForKey(event.key, index, items.length);
+    if (target === null) return;
+    event.preventDefault();
+    activate(items[target].id);
+    stripRef.current?.querySelectorAll<HTMLElement>('[role="tab"]').item(target).focus();
+  };
 
   return (
-    <div
-      data-electron-drag-region
-      data-testid="header-tabs"
-      className="flex h-9 shrink-0 items-center gap-1 pr-3"
-      style={{ paddingLeft: leadPx }}
-    >
+    <>
       <Reorder.Group
+        ref={stripRef}
+        role="tablist"
+        aria-label="Tabs"
+        onPointerDownCapture={holdRevealUntilRelease}
         as="div"
         axis="x"
         layoutScroll
@@ -141,9 +226,9 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
         onReorder={(tabIds: string[]) => {
           dispatch({ type: 'REORDER_TABS', tabIds });
         }}
-        className="no-drag no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
+        className="no-drag no-scrollbar scroll-fade-x flex min-w-0 items-center gap-1 overflow-x-auto"
       >
-        {items.map((item) => {
+        {items.map((item, index) => {
           const active = item.id === activeTabId;
           return (
             <Reorder.Item
@@ -153,7 +238,7 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className={`group relative flex h-7 w-[200px] min-w-[96px] items-center rounded-lg transition-colors ${
+              className={`group relative flex h-7 w-[200px] min-w-[120px] items-center rounded-lg transition-colors ${
                 active
                   ? 'bg-droid-elevated/60 text-droid-text'
                   : 'text-droid-text-muted hover:bg-droid-elevated/40 hover:text-droid-text'
@@ -162,7 +247,12 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
               <HoverTooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">
                 <button
                   type="button"
-                  aria-current={active ? 'page' : undefined}
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  onKeyDown={(event) => {
+                    moveFocus(event, index);
+                  }}
                   // Browsers switch on press, so a drag that starts on a
                   // background tab carries that tab.
                   onPointerDown={(event) => {
@@ -177,7 +267,11 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
                   onAuxClick={(event) => {
                     if (event.button === 1) close(item.id);
                   }}
-                  className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 pr-7 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+                  // A background tab's label takes the close button's room
+                  // until the button shows.
+                  className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
+                    active ? 'pr-7' : 'pr-2.5 group-focus-within:pr-7 group-hover:pr-7'
+                  }`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                     <TabGlyph item={item} />
@@ -186,12 +280,10 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
                     {item.label}
                   </span>
                   {item.tileCount > 1 && (
-                    <span
-                      aria-label={`${String(item.tileCount)} chats side by side`}
-                      className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted"
-                    >
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted">
                       <Columns className="h-3 w-3" />
-                      {item.tileCount}
+                      <span aria-hidden="true">{item.tileCount}</span>
+                      <span className="sr-only">, {item.tileCount} panes side by side</span>
                     </span>
                   )}
                 </button>
@@ -204,6 +296,7 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
                 <button
                   type="button"
                   aria-label={`Close ${item.label}`}
+                  tabIndex={active ? 0 : -1}
                   onPointerDown={(event) => {
                     // Closing must not first switch to the tab or start a drag.
                     event.stopPropagation();
@@ -234,7 +327,6 @@ export function HeaderTabs({ leadPx, controls }: { leadPx: number; controls: Rea
           <Plus className="h-3.5 w-3.5" />
         </button>
       </HoverTooltip>
-      <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">{controls}</div>
-    </div>
+    </>
   );
-}
+});

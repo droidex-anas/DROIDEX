@@ -177,7 +177,6 @@ export default function App() {
       ? current.sessions[current.activeAppSessionId]
       : null;
     return {
-      activeAppSessionId: current.activeAppSessionId,
       activeSession,
       activeTabSplit: activeGrid(current.tabStrip) !== null,
       childAccess: current.childAccess,
@@ -292,7 +291,19 @@ export default function App() {
   const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
   const [contentRowWidth, setContentRowWidth] = useState(0);
-  const utilityPaneToggleRef = useRef<HTMLButtonElement>(null);
+  // The toggle moves between the tab row and the chat header, so its preload
+  // listeners follow the button itself.
+  const bindUtilityToggleIntent = useCallback((toggle: HTMLButtonElement) => {
+    const cleanups = [
+      bindLazySurfaceIntent('browser', toggle),
+      bindLazySurfaceIntent('files', toggle),
+      bindLazySurfaceIntent('terminal', toggle),
+      bindLazySurfaceIntent('review', toggle),
+    ];
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, []);
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
 
@@ -349,20 +360,6 @@ export default function App() {
     composerStartupResolved.current = true;
     noteComposerNotApplicable();
   }, [isMissionControlView, fullContentRoute]);
-
-  useEffect(() => {
-    const toggle = utilityPaneToggleRef.current;
-    if (!toggle || showUtilityPane) return;
-    const cleanups = [
-      bindLazySurfaceIntent('browser', toggle),
-      bindLazySurfaceIntent('files', toggle),
-      bindLazySurfaceIntent('terminal', toggle),
-      bindLazySurfaceIntent('review', toggle),
-    ];
-    return () => {
-      for (const cleanup of cleanups) cleanup();
-    };
-  }, [showUtilityPane]);
 
   const toggleRightPanel = useCallback(() => {
     const open = !state.rightPanelOpen;
@@ -637,12 +634,15 @@ export default function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    // An embedded copy of the app shows no tabs, so its chords leave them be.
-    const tabAction = (action: () => TabAction | null) => () => {
-      if (embedded) return;
-      const next = action();
-      if (next) dispatch(next);
-    };
+    // An embedded copy of the app shows no tabs, so it leaves their chords to
+    // whatever hosts it instead of swallowing them.
+    const tabAction = (action: () => TabAction | null) =>
+      embedded
+        ? null
+        : () => {
+            const next = action();
+            if (next) dispatch(next);
+          };
     const tabStrip = () => store.getState().tabStrip;
     const splitNewChat = (preferred: TileEdge) =>
       tabAction(() => {
@@ -660,7 +660,7 @@ export default function App() {
         const grid = activeGrid(tabStrip());
         return grid ? { type: 'FOCUS_TILE', tileId: adjacentTileId(grid, offset) } : null;
       });
-    const run: Record<ShortcutAction, () => void> = {
+    const run: Record<ShortcutAction, (() => void) | null> = {
       toggleSidebar: () => {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
       },
@@ -692,22 +692,23 @@ export default function App() {
       // A saved binding wins over the fixed chords below, so rebinding an
       // action onto one of them takes effect instead of being swallowed.
       for (const { action } of SHORTCUT_DEFINITIONS) {
-        if (!matchesChord(e, state.shortcutBindings[action])) continue;
+        const perform = run[action];
+        if (!perform || !matchesChord(e, state.shortcutBindings[action])) continue;
         // A shell owns its Ctrl chords (Ctrl+\ is SIGQUIT); Cmd chords never
         // reach it, so on macOS they still toggle from inside the terminal.
         if (isTerminalInputTarget(e.target) && !e.metaKey) return;
         e.preventDefault();
         // A held key auto-repeats and would toggle straight back.
         if (e.repeat) return;
-        run[action]();
+        perform();
         return;
       }
-      const tabNumber = tabNumberFromEvent(e);
+      const tabNumber = embedded ? null : tabNumberFromEvent(e);
       if (tabNumber !== null) {
         if (isTerminalInputTarget(e.target) && !e.metaKey) return;
         e.preventDefault();
         const tabId = numberedTabId(tabStrip(), tabNumber);
-        if (tabId && !embedded) dispatch({ type: 'ACTIVATE_TAB', tabId });
+        if (tabId) dispatch({ type: 'ACTIVATE_TAB', tabId });
         return;
       }
       if (isTerminalTabShortcut(e)) {
@@ -776,7 +777,7 @@ export default function App() {
           )}
           {!!activeSession && (
             <button
-              ref={utilityPaneToggleRef}
+              ref={bindUtilityToggleIntent}
               onClick={toggleUtilityPane}
               className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
               title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}

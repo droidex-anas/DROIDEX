@@ -48,13 +48,14 @@ export function useQueuedPromptDelivery({
 
   const deliverPrompt = useCallback(async () => {
     if (!appSessionId || isAppUpdateInstalling()) return;
-    const isSessionLive = () => {
+    // A chat that is gone from the store has nothing left to deliver to.
+    const isSessionIdle = () => {
       const sessions: Partial<AppState['sessions']> = store.getState().sessions;
       const session = sessions[appSessionId];
-      return session !== undefined && sessionIsLive(session);
+      return session !== undefined && !sessionIsLive(session);
     };
     if (!(store.getState().promptQueue[appSessionId] ?? []).length) return;
-    if (isSessionLive()) return;
+    if (!isSessionIdle()) return;
     const capturedGeneration = generation.current;
     try {
       await guard.run(async () => {
@@ -63,7 +64,11 @@ export function useQueuedPromptDelivery({
         // user can start a turn while the git baseline is captured, and this
         // prompt must wait for that turn instead of joining it. The generation
         // moves when this composer leaves the session.
-        if (isAppUpdateInstalling() || isSessionLive() || generation.current !== capturedGeneration)
+        if (
+          isAppUpdateInstalling() ||
+          !isSessionIdle() ||
+          generation.current !== capturedGeneration
+        )
           return;
         // Edits and reorders may land during baseline capture. Only the current
         // head can be sent, and a failed send leaves it intact.
