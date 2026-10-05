@@ -44,7 +44,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 
 ### Data Flow
 
-When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the WebSocket back to the Electron main process, which drives that chat's `<webview>` guest with `executeJavaScript` calls into the native browser preload. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model injects values via `executeJavaScript` and returns only `{ filled: true }`.
+When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the private IPC channel the main process spawned it with, and the Electron main process drives that chat's `<webview>` guest: agent input goes through CDP (the guest's debugger), and the native browser preload's helpers run through `executeJavaScriptInIsolatedWorld` (`electron/browserPageScript.cjs`), out of reach of the page's own scripts. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model passes values to the preload's fill helper through `executeJavaScriptInIsolatedWorld` and returns only `{ filled: true }`.
 
 ---
 
@@ -973,7 +973,7 @@ Gaining higher privileges than intended. In this system, the critical escalation
 
 **Vulnerable Components:**
 
-- `electron/nativeBrowserPreload.cjs` (44KB, runs in untrusted page context, `sandbox: false`)
+- `electron/nativeBrowserPreload.cjs` (about 47 KB, runs in untrusted page context, `sandbox: false`)
 - `electron/main.cjs` (line 671: `sandbox: false` on WebContentsView)
 
 **Attack Vector:**
@@ -1021,7 +1021,7 @@ const view = new WebContentsView({
 **Gaps:**
 
 - `sandbox: false` means any isolated-world escape or prototype pollution in the preload grants full Node access
-- The preload is 44KB of DOM-processing code -- a large attack surface
+- The preload is about 47 KB of DOM-processing code -- a large attack surface
 - `sandbox: true` would eliminate this risk but requires refactoring all Node-API usage to IPC
 
 **Severity:** HIGH | **Likelihood:** MEDIUM
