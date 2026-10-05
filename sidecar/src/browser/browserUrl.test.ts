@@ -22,3 +22,14 @@ test('redactBrowserUrl drops credentials, fragments and secret-named parameters'
     'https://example.com/a?api_key=%5Bredacted%5D&page=2',
   );
 });
+
+test('redactBrowserUrl redacts a relative URL passed as a parameter', () => {
+  assert.equal(
+    redactBrowserUrl('https://example.com/login?next=/continue?access_token=secret'),
+    'https://example.com/login?next=https%3A%2F%2Fexample.com%2Fcontinue%3Faccess_token%3D%255Bredacted%255D',
+  );
+});
+
+test('redactBrowserUrl shows only the scheme of a page that is not on the web', () => {
+  assert.equal(redactBrowserUrl('file:///Users/anas/notes.html'), 'file:[hidden]');
+});

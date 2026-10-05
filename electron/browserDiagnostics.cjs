@@ -35,15 +35,19 @@ function isSensitiveBrowserKey(value) {
   return SENSITIVE_KEY_PARTS.some((part) => key.includes(part));
 }
 
-// A parameter whose value is itself a URL (a `next=` or a `redirect_uri=`) is
-// redacted like one, this many levels deep; deeper than that it goes whole.
+// A parameter whose value is itself a URL (a `next=` or a `redirect_uri=`),
+// relative or absolute, is redacted like one, this many levels deep; deeper
+// than that it goes whole.
 const MAX_URL_DEPTH = 3;
 
 function redactBrowserDiagnosticUrl(value, baseUrl, depth = 0) {
   try {
     const url = baseUrl ? new URL(String(value), baseUrl) : new URL(String(value));
     const params = [...url.searchParams];
-    const redacted = params.map(([key, inner]) => [key, redactParameter(key, inner, depth)]);
+    const redacted = params.map(([key, inner]) => [
+      key,
+      redactParameter(key, inner, url.href, depth),
+    ]);
     if (redacted.some(([, inner], index) => inner !== params[index][1]))
       url.search = new URLSearchParams(redacted).toString();
     url.username = '';
@@ -55,13 +59,16 @@ function redactBrowserDiagnosticUrl(value, baseUrl, depth = 0) {
   }
 }
 
-function redactParameter(key, value, depth) {
+function redactParameter(key, value, base, depth) {
   // `sig` alone is the signature of a signed URL.
   if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') return '[redacted]';
-  if (!URL.canParse(value)) return value;
-  return depth < MAX_URL_DEPTH
-    ? redactBrowserDiagnosticUrl(value, undefined, depth + 1)
-    : '[redacted]';
+  // A relative URL (`next=/continue?code=...`) is read against the enclosing one.
+  const relative = value.startsWith('/') || value.startsWith('?');
+  if (!relative && !URL.canParse(value)) return value;
+  if (depth >= MAX_URL_DEPTH) return '[redacted]';
+  const resolved = new URL(value, base).href;
+  const redacted = redactBrowserDiagnosticUrl(resolved, undefined, depth + 1);
+  return redacted === resolved ? value : redacted;
 }
 
 // Where a URL starts in text, whatever its scheme: https, wss, ftp.

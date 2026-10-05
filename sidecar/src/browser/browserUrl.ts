@@ -21,8 +21,9 @@ function normalizeBareIpv6Loopback(value: string): string | null {
 // A page address as an agent reads it, by the policy the desktop app applies
 // to the addresses in browser tool output (electron/browserDiagnostics.cjs):
 // no user, password or fragment, and no value for a parameter named like a
-// secret, in a URL passed as a parameter's value too. The raw address stays
-// with the browser for navigation and matching.
+// secret, in a URL passed as a parameter's value too, relative or absolute.
+// A page that is not on the web (a local file) shows only its scheme. The raw
+// address stays with the browser for navigation and matching.
 const SENSITIVE_KEY_PARTS = [
   'token',
   'key',
@@ -45,10 +46,11 @@ const MAX_URL_DEPTH = 3;
 export function redactBrowserUrl(value: string, depth = 0): string {
   if (!URL.canParse(value)) return value.slice(0, 1000);
   const url = new URL(value);
+  if (depth === 0 && !/^(https?|about):$/.test(url.protocol)) return `${url.protocol}[hidden]`;
   const params = [...url.searchParams];
   const redacted = params.map(([key, inner]): [string, string] => [
     key,
-    redactParameter(key, inner, depth),
+    redactParameter(key, inner, url.href, depth),
   ]);
   if (redacted.some(([, inner], index) => inner !== params[index][1]))
     url.search = new URLSearchParams(redacted).toString();
@@ -58,11 +60,16 @@ export function redactBrowserUrl(value: string, depth = 0): string {
   return url.href;
 }
 
-function redactParameter(key: string, value: string, depth: number): string {
+function redactParameter(key: string, value: string, base: string, depth: number): string {
   const name = key.toLowerCase();
   // `sig` alone is the signature of a signed URL.
   if (name === 'sig' || SENSITIVE_KEY_PARTS.some((part) => name.includes(part)))
     return '[redacted]';
-  if (!URL.canParse(value)) return value;
-  return depth < MAX_URL_DEPTH ? redactBrowserUrl(value, depth + 1) : '[redacted]';
+  // A relative URL (`next=/continue?code=...`) is read against the page's own.
+  const relative = value.startsWith('/') || value.startsWith('?');
+  if (!relative && !URL.canParse(value)) return value;
+  if (depth >= MAX_URL_DEPTH) return '[redacted]';
+  const resolved = new URL(value, base).href;
+  const redacted = redactBrowserUrl(resolved, depth + 1);
+  return redacted === resolved ? value : redacted;
 }
