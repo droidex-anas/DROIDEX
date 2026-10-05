@@ -417,18 +417,25 @@ export class BrowserSessionManager {
   /**
    * Takes up the browsers the app kept from its last run, each under its own
    * id and page, so the user's page is neither reloaded nor replaced. A chat
-   * that already has a browser keeps it, and one closed here stays closed.
+   * that already has a browser keeps it, and one closed here stays closed:
+   * those chats are returned, so the app can close them too.
    */
-  restore(browsers: Extract<ClientCommand, { type: 'browser.restore' }>['browsers']): void {
+  restore(browsers: Extract<ClientCommand, { type: 'browser.restore' }>['browsers']): string[] {
+    const closed: string[] = [];
     for (const browser of browsers) {
       const { appSessionId, browserSessionId, url } = browser;
       if (!nonEmpty(appSessionId) || !nonEmpty(browserSessionId) || !nonEmpty(url)) continue;
-      if (this.hasSession(appSessionId) || this.closed.has(browserSessionId)) continue;
+      if (this.hasSession(appSessionId)) continue;
+      if (this.closed.has(browserSessionId)) {
+        closed.push(appSessionId);
+        continue;
+      }
       this.sessionFor(appSessionId, browser.viewport, browser.viewportMode, {
         browserSessionId,
         url,
       });
     }
+    return closed;
   }
 
   hasSession(appSessionId: string): boolean {
