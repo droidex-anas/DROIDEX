@@ -10,6 +10,8 @@ flowchart LR
   Renderer --> Preload[Electron preload API]
   Preload --> Main[Electron main process]
   Main --> Sidecar[Node sidecar WebSocket bridge]
+  Sidecar -. browser requests over private IPC .-> Main
+  Main --> Pages[Browser pages in webview guests]
   Sidecar --> DroidSDK[Factory Droid SDK]
   Sidecar --> DroidCLI[Droid CLI child processes]
   Sidecar --> HistoryWriter[History persistence worker]
@@ -26,7 +28,7 @@ flowchart LR
 | Area | Path | Responsibility |
 | --- | --- | --- |
 | Renderer | `src/` | React UI, local state, settings, onboarding, session and Mission Control views |
-| Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, native browser lifecycle, downloads, update checks |
+| Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, browser pages and the agent's browser requests (`electron/nativeBrowser*.cjs`), downloads, update checks |
 | Electron preload | `electron/preload.cjs` | Narrow API boundary between renderer and Electron main process |
 | Native browser preload | `electron/nativeBrowserPreload.cjs` | Browser automation bridge for embedded native browser flows |
 | Sidecar | `sidecar/src/` | Local WebSocket bridge, Droid SDK session lifecycle, Mission Control integration, CLI discovery |
@@ -36,6 +38,7 @@ flowchart LR
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
+- Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not.
 - The sidecar owns Droid SDK calls and child process environment shaping. It removes `FACTORY_API_KEY` unless a key is explicitly configured.
 - Live canonical session state stays in the sidecar. A bounded write-behind queue sends lossless event rows and latest-wins summary/child snapshots to the history worker in ordered transactions.
 - Packaged builds require a bridge token. Development builds may allow local no-token access with `BRIDGE_ALLOW_LOCAL_NO_TOKEN=1`.
@@ -221,7 +224,7 @@ non-replaceable event. Approvals, questions, sidebar requests, errors,
 lifecycle boundaries, history responses, and turn settlement flush immediately.
 Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
-Renderers must advertise bridge protocol 8, apply one wire batch as one
+Renderers must advertise bridge protocol 9, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of

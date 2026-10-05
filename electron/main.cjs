@@ -28,6 +28,7 @@ const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
+const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -96,6 +97,7 @@ const sidecarSupervisor = createSidecarSupervisor({
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
+  onMessage: (message, reply) => void nativeBrowserRequests.handle(message, reply),
 });
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
@@ -139,9 +141,16 @@ const nativeBrowserManager = createNativeBrowserManager({
   sendToRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
-}); // Binds each <webview> guest to the session main reserved it for, in the same
-// dispatch that creates it.
+});
+// Claims each <webview> guest for the session main reserved it for, in the
+// same dispatch that creates it.
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
+const nativeBrowserRequests = createNativeBrowserRequests({
+  manager: nativeBrowserManager,
+  notifyRenderer: (channel, payload) => {
+    if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
+  },
+});
 
 const MEMORY_PRESSURE_RSS_BYTES = Number(
   process.env.DROID_MEMORY_PRESSURE_RSS_BYTES ?? 1.5 * 1024 * 1024 * 1024,
@@ -904,21 +913,13 @@ function registerIpc() {
     assertMainRenderer(event);
     return nativeBrowserManager.release(browserSessionId);
   });
+  ipcMain.handle('native-browser-working-sessions', (event) => {
+    assertMainRenderer(event);
+    return nativeBrowserRequests.workingSessions();
+  });
   ipcMain.handle('native-browser-shown', (event, { browserSessionId, shown }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.setShown(browserSessionId, shown);
-  });
-  ipcMain.handle('native-browser-open', (event, { browserSessionId, url, viewport }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.open(browserSessionId, url, viewport);
-  });
-  ipcMain.handle('native-browser-close', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.close(browserSessionId);
-  });
-  ipcMain.handle('native-browser-reload', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.reload(browserSessionId);
   });
   ipcMain.handle('native-browser-go-back', (event, { browserSessionId }) => {
     assertMainRenderer(event);
@@ -935,14 +936,6 @@ function registerIpc() {
   ipcMain.handle('native-browser-set-pencil-mode', (event, { browserSessionId, active }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.setPencilMode(browserSessionId, active);
-  });
-  ipcMain.handle('native-browser-agent-action', (event, { request }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.runAgentAction(request);
-  });
-  ipcMain.handle('native-browser-capture', (event, { browserSessionId, box, options }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.capture(browserSessionId, box, options);
   });
   ipcMain.handle('native-browser-set-shortcuts', (event, { chords }) => {
     assertMainRenderer(event);
@@ -969,9 +962,6 @@ function registerIpc() {
     // Echo the capture id so the preload only clears the matching pending
     // capture and ignores acks from superseded prompts.
     event.sender.send('native-browser-design-prompt-sent', { captureId: payload.captureId });
-  });
-  ipcMain.on('native-browser-agent-result', (_event, result) => {
-    mainWindow?.webContents.send('native-browser-agent-result', result);
   });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
     void nativeBrowserManager.handleCredentialCapture(event.sender, payload);

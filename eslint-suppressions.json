@@ -188,7 +188,7 @@
   },
   "src/components/browser/NativeBrowserSurface.tsx": {
     "@typescript-eslint/no-empty-function": {
-      "count": 3
+      "count": 1
     }
   },
   "src/components/browser/browserComposerPosition.ts": {
@@ -288,77 +288,9 @@
       "count": 2
     }
   },
-  "src/lib/iframeDesignMode.ts": {
-    "@typescript-eslint/consistent-type-definitions": {
-      "count": 1
-    },
-    "@typescript-eslint/no-deprecated": {
-      "count": 1
-    },
-    "@typescript-eslint/no-empty-function": {
-      "count": 2
-    },
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 7
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 12
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 2
-    },
-    "@typescript-eslint/require-await": {
-      "count": 6
-    },
-    "@typescript-eslint/restrict-plus-operands": {
-      "count": 1
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 19
-    }
-  },
   "src/lib/nativeBrowser.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 4
-    },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 17
-    },
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 2
-    },
-    "@typescript-eslint/require-await": {
-      "count": 4
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 1
+      "count": 13
     }
   },
   "src/lib/repoEnvironment.ts": {

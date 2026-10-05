@@ -8,7 +8,6 @@ import {
   connect,
   listFactoryDefaults,
   listModels,
-  sendNativeBrowserResult,
   sendSidebarResult,
   openChild,
   newChildOpenRequestId,
@@ -17,7 +16,6 @@ import {
 import { isEmbedded } from './lib/embed';
 import { getApiKey, isDesktop, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { forwardNativeBrowserShortcuts } from './lib/nativeBrowser';
-import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
 import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
@@ -553,23 +551,6 @@ export default function App() {
         if (result) sendSidebarResult(result);
         return;
       }
-      if (event.type !== 'browser.native.request') return;
-      // The agent works in the chat's page whether or not the pane shows it;
-      // its requests never open or switch the pane.
-      const { browsers } = store.getState();
-      const { appSessionId } = event.request;
-      const savedUrl = appSessionId in browsers ? browsers[appSessionId].url : undefined;
-      void performNativeBrowserRequest(event.request, savedUrl)
-        .then(sendNativeBrowserResult)
-        .catch((err: unknown) => {
-          sendNativeBrowserResult({
-            requestId: event.request.requestId,
-            appSessionId: event.request.appSessionId,
-            browserSessionId: event.request.browserSessionId,
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
     });
     return () => {
       unsub();
