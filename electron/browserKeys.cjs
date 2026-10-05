@@ -71,11 +71,12 @@ function keyOf(spec) {
   }
   // A chord with Control or Meta is a shortcut, not text.
   if (modifiers & (CONTROL | META)) text = undefined;
+  // Only the exact shortcut edits: Meta and the key, or Meta+Shift+Z for redo.
   let commands;
-  if (modifiers & META && process.platform === 'darwin') {
-    const command =
-      name.toLowerCase() === 'z' && modifiers & SHIFT ? 'redo' : MAC_COMMANDS[name.toLowerCase()];
-    if (command) commands = [command];
+  if (process.platform === 'darwin') {
+    const lower = name.toLowerCase();
+    if (modifiers === META && MAC_COMMANDS[lower]) commands = [MAC_COMMANDS[lower]];
+    else if (modifiers === (META | SHIFT) && lower === 'z') commands = ['redo'];
   }
   return { key, code, windowsVirtualKeyCode: keyCode, modifiers, text, commands };
 }
