@@ -98,6 +98,7 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
     el('iframe', { srcdoc: '<script>steal()</script>' }),
     el('input', { name: 'q', value: 'hunter2' }),
     el('meta', { 'http-equiv': 'refresh', content: '0;url=/elsewhere' }),
+    el('div', { 'data-authorization': 'Bearer abc', 'data-author': 'Ada' }),
   ]);
 
   assert.equal(
@@ -108,6 +109,7 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
       '<iframe srcdoc="[redacted]"></iframe>' +
       '<input name="q" value="[redacted]"></input>' +
       '<meta http-equiv="refresh" content="[redacted]"></meta>' +
+      '<div data-authorization="[redacted]" data-author="Ada"></div>' +
       '</form>',
   );
 });

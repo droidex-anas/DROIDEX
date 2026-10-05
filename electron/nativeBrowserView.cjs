@@ -1,6 +1,8 @@
 // Wires a bound <webview> guest into its browser entry: the page listeners that
 // keep the entry's URL, history, console and load state current. The partition
 // handlers stay as they were for views: permissions and devices are denied.
+const { CONSOLE_LEVELS } = require('./browserDiagnostics.cjs');
+
 function createNativeBrowserViewFactory({
   session,
   partition,
@@ -16,6 +18,7 @@ function createNativeBrowserViewFactory({
   listEntries,
 }) {
   let browserSessionConfigured = false;
+  const requestStarts = new Map(); // webRequest id -> when its headers went out
 
   function configureSession() {
     if (browserSessionConfigured) return;
@@ -28,16 +31,21 @@ function createNativeBrowserViewFactory({
     ses.setDevicePermissionHandler(() => false);
     ses.setPermissionCheckHandler(() => false);
     ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-    ses.webRequest.onCompleted({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
-      recordNetworkEvent(details);
+    const pages = { urls: ['http://*/*', 'https://*/*'] };
+    // When each request went out, for how long it took. One that never ends
+    // would stay here, so the lot is dropped once it grows past any real page.
+    ses.webRequest.onSendHeaders(pages, (details) => {
+      if (requestStarts.size >= 500) requestStarts.clear();
+      requestStarts.set(details.id, details.timestamp);
     });
-    ses.webRequest.onErrorOccurred({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
-      recordNetworkEvent(details);
-    });
+    ses.webRequest.onCompleted(pages, recordNetworkEvent);
+    ses.webRequest.onErrorOccurred(pages, recordNetworkEvent);
     browserSessionConfigured = true;
   }
 
   function recordNetworkEvent(details) {
+    const startedAt = requestStarts.get(details.id);
+    requestStarts.delete(details.id);
     const entry = [...listEntries()].find(
       (candidate) => candidate.contents?.id === details.webContentsId,
     );
@@ -48,7 +56,14 @@ function createNativeBrowserViewFactory({
       url: redactBrowserDiagnosticUrl(details.url),
       resourceType: details.resourceType ? String(details.resourceType) : undefined,
       status: Number.isFinite(details.statusCode) ? details.statusCode : undefined,
-      error: details.error ? String(details.error).slice(0, 200) : undefined,
+      // A request that completed carries "net::OK" here.
+      error:
+        details.error && details.error !== 'net::OK'
+          ? String(details.error).slice(0, 200)
+          : undefined,
+      durationMs: startedAt === undefined ? undefined : Math.round(details.timestamp - startedAt),
+      bytes: contentLength(details.responseHeaders),
+      cached: details.fromCache || undefined,
     });
     if (entry.networkEvents.length > 100) {
       entry.networkEvents.splice(0, entry.networkEvents.length - 100);
@@ -69,6 +84,7 @@ function createNativeBrowserViewFactory({
       loadingPromise: null,
       networkEvents: [],
       consoleEvents: [],
+      errorTimes: [],
     };
   }
 
@@ -82,10 +98,15 @@ function createNativeBrowserViewFactory({
       return { action: 'deny' };
     });
     contents.on('console-message', (details) => {
-      entry.consoleEvents.push({
-        timestamp: Date.now(),
-        ...normalizeBrowserConsoleMessage(details),
-      });
+      // Electron's own notices about the guest are not the page's.
+      if (!current() || String(details.sourceId ?? '').startsWith('node:electron/')) return;
+      const message = normalizeBrowserConsoleMessage(details);
+      // When errors came in, kept apart from the log, which a read empties.
+      if (message.level === CONSOLE_LEVELS.error) {
+        entry.errorTimes.push(Date.now());
+        if (entry.errorTimes.length > 100) entry.errorTimes.shift();
+      }
+      entry.consoleEvents.push({ timestamp: Date.now(), ...message });
       if (entry.consoleEvents.length > 100) {
         entry.consoleEvents.splice(0, entry.consoleEvents.length - 100);
       }
@@ -152,6 +173,13 @@ function createNativeBrowserViewFactory({
   }
 
   return { bindGuest, configureSession, createEntry };
+}
+
+// The size the server states for a response; many state none.
+function contentLength(headers) {
+  const name = Object.keys(headers ?? {}).find((key) => key.toLowerCase() === 'content-length');
+  const bytes = name ? Number(headers[name][0]) : NaN;
+  return Number.isFinite(bytes) ? bytes : undefined;
 }
 
 module.exports = { createNativeBrowserViewFactory };
