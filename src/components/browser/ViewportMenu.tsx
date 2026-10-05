@@ -70,10 +70,9 @@ export function ViewportMenu({
             role="menu"
             aria-label="Page size"
             onKeyDown={(e) => {
+              // Tab leaves the menu where it was going; only the menu closes.
               if (e.key === 'Tab') {
-                e.preventDefault();
                 setOpen(false);
-                buttonRef.current?.focus();
                 return;
               }
               if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
