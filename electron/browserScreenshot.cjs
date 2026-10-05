@@ -41,9 +41,10 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
     // Checked when the page's turn comes: a capture queued behind one that
     // then went unanswered must not be sent either.
     if (unanswered.has(contents)) throw new Error(NOT_DRAWN);
-    // A ref is scrolled into view only while the caller still waits.
+    // A ref is scrolled into view only while the caller still waits, and only
+    // for a sidecar run that is still running.
     const notLate = () => {
-      if (Date.now() >= options.startBy)
+      if (Date.now() >= options.startBy || options.runEnded?.())
         throw new Error('The browser page did not finish in time.');
     };
     const box = options.ref ? await reading.refBox(dbg, entry, options.ref, notLate) : undefined;

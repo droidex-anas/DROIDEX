@@ -123,6 +123,8 @@ export class BrowserSessionManager {
   // The references each chat's prompts went with, newest last, so the agent can
   // still read one the prompt names once its mark is gone or its browser closed.
   private readonly sent = new Map<string, Map<string, DesignReference>>();
+  // Counts final cleanups, so a prompt still being written keeps nothing after one.
+  private cleanups = 0;
 
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
@@ -413,6 +415,7 @@ export class BrowserSessionManager {
     // unless the prompt has the crop it is still saving. One that has not
     // arrived yet, was taken away since, or was lost with a restart comes with
     // the prompt, which keeps its own copy.
+    const cleanup = this.cleanups;
     const references: DesignReference[] = [];
     for (const reference of input.references) {
       const live = session?.references.get(reference.id);
@@ -430,7 +433,7 @@ export class BrowserSessionManager {
     });
     // Each reference carries its own page, so a browser closed or replaced
     // while the pack was written does not stop the prompt the user sent.
-    this.keepSent(input.appSessionId, references);
+    if (cleanup === this.cleanups) this.keepSent(input.appSessionId, references);
     return {
       path,
       prompt: formatDesignPrompt(path, input.frame?.(instruction) ?? instruction, references),
@@ -491,6 +494,7 @@ export class BrowserSessionManager {
     const closing = [...this.sessions.values()];
     this.sessions.clear();
     this.sent.clear();
+    this.cleanups += 1;
     await Promise.all(closing.map((session) => session.runtime.close().catch(() => {})));
   }
 
@@ -597,8 +601,11 @@ export class BrowserSessionManager {
       kept.delete(reference.id);
       kept.set(reference.id, reference);
     }
-    // The prompt just sent keeps all of its own, however many it has.
-    const limit = Math.max(SENT_REFERENCES_KEPT, references.length);
+    // The prompt just sent keeps all of its own, up to the cap for every chat.
+    const limit = Math.min(
+      SENT_REFERENCES_KEPT_IN_ALL,
+      Math.max(SENT_REFERENCES_KEPT, references.length),
+    );
     for (const id of kept.keys()) {
       if (kept.size <= limit) break;
       kept.delete(id);
