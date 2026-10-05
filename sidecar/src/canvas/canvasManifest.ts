@@ -24,13 +24,14 @@ export const CANVAS_MANIFEST_VERSION = 1;
 
 /**
  * How many retries one canvas answers. A retry can only be authorized while the
- * lease that issued it lives, so a live lease keeps every receipt it issued and
+ * lease that issued it lives, so an unsettled receipt is never retired and
  * settled leases give way oldest first past `retained`. Once a lease is gone,
  * nothing can retry under it, so a receipt that is no longer found is executed
- * as the new request it now is. `hardCap` is the fail-safe: one lease issuing
- * more mutations than that is outside the supported retry window.
+ * as the new request it now is. `unsettled` is the ceiling on receipts no lease
+ * has released yet: past it the ledger refuses the new mutation, because
+ * retiring one would let its retry run twice.
  */
-export const CANVAS_MUTATION_RETENTION = { retained: 256, hardCap: 4096 } as const;
+export const CANVAS_MUTATION_RETENTION = { retained: 256, unsettled: 4096 } as const;
 
 const timestampSchema = z.number().int().nonnegative();
 const versionSchema = z.number().int().nonnegative();
@@ -109,7 +110,7 @@ export const canvasManifestSchema = z
     // chat's first create commits the canvas and the attachment in one write.
     attachedAppSessionIds: z.array(appSessionIdSchema),
     designs: z.array(persistedDesignSchema),
-    mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.hardCap),
+    mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.unsettled),
   })
   .strict()
   .refine((manifest) => !hasDuplicate(manifest.designs.map((design) => design.designId)), {
@@ -235,25 +236,27 @@ export function mutationFingerprint(input: unknown): string {
   return createHash('sha256').update(canonicalJson(input)).digest('hex');
 }
 
-/** Appends a committed mutation and retires receipts no live lease can retry. */
+/**
+ * Appends a committed mutation and retires receipts no live lease can retry.
+ * Nothing is appended when the unsettled receipts alone fill the ledger: a
+ * retry of one of those would execute a second time, so refusing the new
+ * mutation is the only answer that keeps every accepted change replayable.
+ */
 export function recordMutation(
   manifest: CanvasManifest,
   record: PersistedMutation,
   isScopeActive: (scopeId: string) => boolean,
 ): void {
-  manifest.mutations.push(record);
-  if (manifest.mutations.length <= CANVAS_MUTATION_RETENTION.retained) return;
   const settled = manifest.mutations.filter((entry) => !isScopeActive(entry.scopeId));
+  if (manifest.mutations.length - settled.length >= CANVAS_MUTATION_RETENTION.unsettled)
+    throw canvasError(
+      'storage_failed',
+      'This canvas has too many unsettled mutations. Finish or interrupt the current turns and try again.',
+    );
+  manifest.mutations.push(record);
   const over = manifest.mutations.length - CANVAS_MUTATION_RETENTION.retained;
+  if (over <= 0) return;
   const retired = new Set(settled.slice(0, over));
-  // The fail-safe, when live leases alone fill the ledger.
-  let excess = manifest.mutations.length - retired.size - CANVAS_MUTATION_RETENTION.hardCap;
-  for (const entry of manifest.mutations) {
-    if (excess <= 0) break;
-    if (retired.has(entry)) continue;
-    retired.add(entry);
-    excess -= 1;
-  }
   manifest.mutations = manifest.mutations.filter((entry) => !retired.has(entry));
 }
 

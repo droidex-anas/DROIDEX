@@ -7,6 +7,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
+import {
+  canvasManifestSchema,
+  CANVAS_MUTATION_RETENTION,
+  emptyCanvasManifest,
+  type CanvasManifest,
+  type PersistedDesign,
+  type PersistedMutation,
+} from '../canvas/canvasManifest.js';
 
 /** A real Canvas root directory, removed after the test. */
 export async function canvasRoot(t: TestContext): Promise<string> {
@@ -43,4 +51,37 @@ export function observedFileSystem(
     rename: (from, to) => observe('rename', to, () => nodeCanvasFileSystem.rename(from, to)),
     rm: (path, options) => observe('rm', path, () => nodeCanvasFileSystem.rm(path, options)),
   };
+}
+
+/** The lease the filler receipts in `ledgerAtCapacity` belong to. */
+export const LEDGER_FILLER_SCOPE_ID = 'scope-filler';
+
+/**
+ * A canvas history holding as many unsettled receipts as the ledger allows:
+ * `create` plus filler arranges under one other lease. Parsed through the
+ * loader's own schema, so a test builds a history the workspace accepts rather
+ * than a hand-made object.
+ */
+export function ledgerAtCapacity(
+  canvasId: string,
+  appSessionId: string,
+  design: PersistedDesign,
+  create: PersistedMutation,
+): CanvasManifest {
+  const manifest = emptyCanvasManifest(canvasId, 'Canvas 1', 1_767_225_600_000);
+  manifest.sequence = 1;
+  manifest.designs.push(design);
+  manifest.attachedAppSessionIds.push(appSessionId);
+  manifest.mutations.push(create);
+  while (manifest.mutations.length < CANVAS_MUTATION_RETENTION.unsettled) {
+    manifest.mutations.push({
+      kind: 'arrange',
+      mutationId: `filler-${String(manifest.mutations.length)}`,
+      scopeId: LEDGER_FILLER_SCOPE_ID,
+      fingerprint: 'f'.repeat(64),
+      sequence: 1,
+      placements: [],
+    });
+  }
+  return canvasManifestSchema.parse(manifest);
 }
