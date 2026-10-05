@@ -345,10 +345,23 @@ function createNativeBrowserPage({
   }
 
   const DESIGN_CAPTURE_PADDING = 32;
+  // A page draws nothing while the screen is asleep or locked, and the capture
+  // then never returns; the prompt goes on without its picture.
+  const DESIGN_CAPTURE_MS = 6_000;
+
+  async function captureDesignSelection(senderContents, selection) {
+    let timer;
+    const late = new Promise((resolve) => {
+      timer = setTimeout(resolve, DESIGN_CAPTURE_MS, undefined);
+    });
+    return Promise.race([captureSelectionRegion(senderContents, selection), late]).finally(() =>
+      clearTimeout(timer),
+    );
+  }
 
   // Capture the prompt's selection region with surrounding context while the
   // in-page annotations are still visible.
-  async function captureDesignSelection(senderContents, selection) {
+  async function captureSelectionRegion(senderContents, selection) {
     const box = selection?.anchor?.box;
     if (!box || !(box.width > 0) || !(box.height > 0)) return undefined;
     const entry = findEntryForContents(senderContents);
