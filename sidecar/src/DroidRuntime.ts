@@ -20,6 +20,7 @@ import { childEnv } from './childEnv.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
+import { DroidTurn } from './DroidTurn.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
@@ -127,14 +128,62 @@ export interface FactoryRuntime {
   readContextBreakdown(session: FactorySession): Promise<unknown>;
   processIdOf(session: FactorySession): number | undefined;
   isProcessAlive(session: FactorySession): boolean;
+  steer(session: FactorySession, text: string): Promise<boolean>;
+  streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined>;
+  observeNotification(session: FactorySession, notification: Record<string, unknown>): void;
+  stopTurn(session: FactorySession): void;
 }
 
 export class DroidRuntime implements FactoryRuntime {
   private explicitApiKey = '';
   private readonly processes = new WeakMap<
     object,
-    { pid: number; transport: ConnectableDroidTransport }
+    { pid: number; transport: ConnectableDroidTransport; client: DroidClient }
   >();
+  private readonly turns = new WeakMap<object, DroidTurn>();
+
+  steer(session: FactorySession, text: string): Promise<boolean> {
+    const client = this.processes.get(session)?.client;
+    const turn = this.turns.get(session);
+    return client && turn ? turn.steer(client, text) : Promise.resolve(false);
+  }
+
+  observeNotification(session: FactorySession, notification: Record<string, unknown>): void {
+    this.turns.get(session)?.observe(notification);
+  }
+
+  stopTurn(session: FactorySession): void {
+    this.turns.get(session)?.stop();
+  }
+
+  async *streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined> {
+    if (this.turns.has(session)) throw new Error('Droid already has a running turn.');
+    const turn = new DroidTurn(session.sessionId);
+    this.turns.set(session, turn);
+    let result: DroidStreamEvent | undefined;
+    try {
+      for await (const event of session.stream(prompt, options)) {
+        if (event.type === 'result') result = event;
+        else yield event;
+      }
+      yield* turn.streamTail();
+      // No steer may join after the settlement event becomes visible.
+      this.turns.delete(session);
+      const final = turn.finalResult(result);
+      if (final) yield final;
+    } finally {
+      turn.stop();
+      if (this.turns.get(session) === turn) this.turns.delete(session);
+    }
+  }
 
   connect(apiKey?: string): void {
     if (apiKey) this.explicitApiKey = apiKey;
@@ -198,7 +247,10 @@ export class DroidRuntime implements FactoryRuntime {
       );
       const session = new DroidSession(client, init.sessionId, init);
       const pid = transport.processId;
-      if (pid !== undefined) this.processes.set(session, { pid, transport });
+      if (pid !== undefined) this.processes.set(session, { pid, transport, client });
+      session.addCleanup(() => {
+        this.stopTurn(session);
+      });
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
@@ -218,7 +270,10 @@ export class DroidRuntime implements FactoryRuntime {
       );
       const session = new DroidSession(client, sessionId, init);
       const pid = transport.processId;
-      if (pid !== undefined) this.processes.set(session, { pid, transport });
+      if (pid !== undefined) this.processes.set(session, { pid, transport, client });
+      session.addCleanup(() => {
+        this.stopTurn(session);
+      });
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);

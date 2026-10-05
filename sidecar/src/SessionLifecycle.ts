@@ -703,7 +703,6 @@ export class SessionLifecycle {
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const session = liveSession.session;
     if (
-      !session.steer ||
       !liveSession.streaming ||
       liveSession.compacting ||
       liveSession.autoCompacting ||

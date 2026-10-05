@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { DroidRuntime, createInitializeSessionParams } from './DroidRuntime.js';
 import { HistoryIndex } from './history.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
+import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
+import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 // Answers every request the way Droid answers load_session for a session it
 // will not open.
@@ -21,6 +23,136 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   }) + '\\n');
 });
 `;
+
+// Settings writes release the late loop; interrupts deliberately emit no idle
+// notice, as Droid does when it is already idle with an undelivered command.
+const STEER_DAEMON = `
+const write = (value) => process.stdout.write(JSON.stringify(value) + '\\n');
+const notify = (notification) => write({
+  jsonrpc: '2.0', factoryApiVersion: '1.0.0', type: 'notification',
+  method: 'droid.session_notification', params: { notification },
+});
+const state = (newState) => notify({ type: 'droid_working_state_changed', newState });
+const text = (textDelta) => notify({ type: 'assistant_text_delta', messageId: 'answer', blockIndex: 0, textDelta });
+require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+  const request = JSON.parse(line);
+  const envelope = {
+    jsonrpc: request.jsonrpc, factoryApiVersion: request.factoryApiVersion,
+    type: 'response', id: request.id,
+  };
+  const reply = (result) => write({ ...envelope, result });
+  if (request.method === 'droid.initialize_session') {
+    reply({ sessionId: 'steer-session', session: {}, settings: { modelId: 'test-model', reasoningEffort: 'medium' } });
+  } else if (request.method === 'droid.add_user_message') {
+    const { text: prompt, messageId } = request.params;
+    if (request.params.queuePlacement !== undefined) throw new Error('steer must use default queue placement');
+    if (prompt === 'reject') {
+      state('idle');
+      write({ ...envelope, error: { code: -32603, message: 'steer rejected' } });
+      return;
+    }
+    reply({});
+    if (!messageId) {
+      state('streaming_assistant_message');
+      text('main');
+      return;
+    }
+    state('idle');
+    if (prompt === 'held') return;
+    if (prompt === 'discard') {
+      notify({ type: 'queued_messages_discarded', text: prompt });
+      return;
+    }
+    state('streaming_assistant_message');
+    notify({
+      type: 'create_message',
+      message: {
+        id: messageId, role: 'user', createdAt: 0, updatedAt: 0,
+        content: [{ type: 'text', text: prompt }],
+      },
+    });
+    notify({ type: 'tool_call', toolUse: { type: 'tool_use', id: 'task', name: 'Task', input: {} } });
+    notify({ type: 'tool_result', messageId: 'tool-message', toolUseId: 'task', content: 'done', isError: false });
+    text('tail');
+  } else if (request.method === 'droid.update_session_settings') {
+    state('idle');
+    reply({});
+  } else {
+    reply({});
+  }
+});
+`;
+
+test('a late Droid steer keeps the turn open through its loop and releases on drop, Stop, or close', async (t) => {
+  if (process.platform === 'win32') return t.skip('the fake daemon is a shebang script');
+  const dir = mkdtempSync(join(tmpdir(), 'droid-runtime-steer-'));
+  const previousPath = process.env.DROID_PATH;
+  const daemon = join(dir, 'droid');
+  writeFileSync(daemon, `#!${process.execPath}\n${STEER_DAEMON}`);
+  chmodSync(daemon, 0o755);
+  process.env.DROID_PATH = daemon;
+  const runtime = new DroidRuntime();
+  const droid = await runtime.createSession({ cwd: dir, interactionMode: 'auto' });
+  const provider = new DroidProviderSession('app-session', droid, runtime);
+  const events: DroidStreamEvent[] = [];
+  const start = () => runtime.streamTurn(droid, 'main', { includePartialMessages: true });
+  try {
+    const stream = start();
+    // Reading manually avoids closing the iterator at this controlled boundary.
+    const readText = async (text: string) => {
+      while (true) {
+        const next = await stream.next();
+        assert.equal(next.done, false);
+        if (next.done) return;
+        events.push(next.value);
+        assert.notEqual(next.value.type, 'result');
+        if (next.value.type === 'assistant_text_delta' && next.value.text === text) return;
+      }
+    };
+    await readText('main');
+    assert.equal(await runtime.steer(droid, 'late'), true);
+    await readText('tail');
+    assert.equal(events.filter((event) => event.type === 'user').length, 1);
+    assert.ok(events.some((event) => event.type === 'tool_result' && event.toolName === 'Task'));
+    await droid.updateSettings({ modelId: 'test-model' });
+    for await (const event of stream) events.push(event);
+    assert.equal(events.filter((event) => event.type === 'result').length, 1);
+    assert.equal(events.at(-1)?.type, 'result');
+    assert.equal(await runtime.steer(droid, 'after settlement'), false);
+
+    for (const ending of ['reject', 'discard', 'stop', 'close'] as const) {
+      const waiting = start();
+      let first = await waiting.next();
+      while (first.value?.type !== 'assistant_text_delta') {
+        assert.equal(first.done, false);
+        first = await waiting.next();
+      }
+      assert.equal(await runtime.steer(droid, '  /command'), false);
+      const pending = runtime.steer(
+        droid,
+        ending === 'stop' || ending === 'close' ? 'held' : ending,
+      );
+      if (ending === 'reject') await assert.rejects(pending, /steer rejected/);
+      else if (ending === 'discard') assert.equal(await pending, false);
+      else {
+        // The main idle arrives before this read. The tail has no more notices.
+        assert.equal((await waiting.next()).value?.type, 'working_state_changed');
+        const tail = waiting.next();
+        if (ending === 'stop') await provider.interrupt();
+        else await provider.close();
+        assert.equal(await pending, false);
+        assert.equal((await tail).value?.type, 'result');
+      }
+      for await (const event of waiting)
+        assert.ok(event.type === 'working_state_changed' || event.type === 'result');
+    }
+  } finally {
+    await provider.close();
+    if (previousPath === undefined) delete process.env.DROID_PATH;
+    else process.env.DROID_PATH = previousPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('names the owning organization when Droid refuses a session file it has on disk', async (t) => {
   if (process.platform === 'win32') return t.skip('the fake daemon is a shebang script');

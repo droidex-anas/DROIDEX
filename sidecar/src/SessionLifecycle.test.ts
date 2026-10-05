@@ -1747,6 +1747,7 @@ function claudeResumeProvider(
         providerSessionId: id,
         ...(setInteractionMode ? { setInteractionMode } : {}),
         stream: resumed.stream.bind(resumed),
+        steer: () => Promise.resolve(false),
         setModel: resumed.setModel.bind(resumed),
         setAutonomy: resumed.setAutonomy.bind(resumed),
         interrupt: resumed.interrupt.bind(resumed),

@@ -174,8 +174,8 @@ export interface ProviderSession {
   // Hands a prompt to the running turn, which the harness delivers at its own
   // next step. Resolves true once the model has it, and false when the turn
   // cannot take it or ends without it; the session layer then sends it as an
-  // ordinary message, as it does on a provider without a steer.
-  steer?(text: string, mentions?: ProviderMention[]): Promise<boolean>;
+  // ordinary message.
+  steer(text: string, mentions?: ProviderMention[]): Promise<boolean>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.
   catalogItems?(): Promise<SkillInfo[]>;
   onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;
