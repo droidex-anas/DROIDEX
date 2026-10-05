@@ -187,11 +187,8 @@
     }
   },
   "src/components/browser/NativeBrowserSurface.tsx": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 4
-    },
     "@typescript-eslint/no-empty-function": {
-      "count": 9
+      "count": 3
     }
   },
   "src/components/browser/browserComposerPosition.ts": {
@@ -266,7 +263,7 @@
   },
   "src/hooks/useStore.tsx": {
     "@typescript-eslint/no-dynamic-delete": {
-      "count": 7
+      "count": 6
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 23
@@ -349,7 +346,7 @@
       "count": 4
     },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 18
+      "count": 17
     },
     "@typescript-eslint/prefer-promise-reject-errors": {
       "count": 2

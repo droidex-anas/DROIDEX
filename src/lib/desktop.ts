@@ -1,7 +1,6 @@
 import type {
   NativeBrowserAgentAction,
   NativeBrowserAgentResult,
-  NativeBrowserBounds,
   NativeBrowserBox,
   NativeBrowserCaptureOptions,
   NativeBrowserDesignPrompt,
@@ -299,20 +298,17 @@ interface DroidControlApi {
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
+  nativeBrowserReserve: (
+    browserSessionId: string,
+    savedUrl?: string,
+  ) => Promise<{ src: string; generation: number }>;
+  nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
+  nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
   nativeBrowserOpen: (
     browserSessionId: string,
     url: string,
-    bounds?: NativeBrowserBounds,
     viewport?: { width: number; height: number; deviceScaleFactor: number },
   ) => Promise<void>;
-  nativeBrowserAttach: (
-    browserSessionId: string,
-    bounds: NativeBrowserBounds,
-    url?: string,
-  ) => Promise<void>;
-  nativeBrowserDetach: (browserSessionId?: string) => Promise<void>;
-  nativeBrowserSetBounds: (browserSessionId: string, bounds: NativeBrowserBounds) => Promise<void>;
-  nativeBrowserSetVisible: (browserSessionId: string, visible: boolean) => Promise<void>;
   nativeBrowserClose: (browserSessionId: string) => Promise<void>;
   nativeBrowserReload: (browserSessionId: string) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
@@ -346,15 +342,7 @@ interface DesktopPerformanceMetrics {
   timestamp: number;
   webContentsTotal: number;
   ptys: number;
-  nativeBrowsers?: {
-    total: number;
-    live: number;
-    attached: number;
-    warm: number;
-    serialized: number;
-    maxLive: number;
-    idleMs: number;
-  };
+  nativeBrowsers?: { sessions: number; live: number };
   terminals?: { live: number; retained: number; total: number };
   powerTier?: 'interactive' | 'hidden' | 'low-power';
   memory: { rssBytes: number; heapUsedBytes: number; heapTotalBytes: number };

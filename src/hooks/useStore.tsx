@@ -403,7 +403,6 @@ export interface AppState {
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
   // resumes where it left off after an app restart, unless it was fully closed.
-  browserOpenKeys: Record<string, boolean>;
   browsers: Record<string, BrowserState>;
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
@@ -883,7 +882,6 @@ export const initialState: AppState = {
   pendingModelUpdates: {},
   composerSeed: null,
   workspaceCwds: loadWorkspaceCwds(),
-  browserOpenKeys: persistedUiState.browserOpenKeys ?? {},
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
   browserGlobalError: undefined,
@@ -934,27 +932,6 @@ function activeBrowserKey(state: AppState): string | undefined {
   // (`appSessionId`), matching the backend; the provider session is swapped by
   // compaction and would desync the open state from the backend's updates.
   return state.sessions[state.activeAppSessionId]?.appSessionId ?? state.activeAppSessionId;
-}
-
-// Record an explicit open (true) or hidden (false) decision for a browser key.
-// Storing `false` (rather than deleting) lets data syncs distinguish a pane the
-// user deliberately hid from one that was never opened.
-function withBrowserOpenKey(
-  keys: Record<string, boolean>,
-  key: string,
-  open: boolean,
-): Record<string, boolean> {
-  if (keys[key] === open) return keys;
-  return { ...keys, [key]: open };
-}
-
-// Forget a browser key entirely (full reset, e.g. session closed). A later
-// update then treats the session as never-opened.
-function clearBrowserOpenKey(keys: Record<string, boolean>, key: string): Record<string, boolean> {
-  if (!(key in keys)) return keys;
-  const next = { ...keys };
-  delete next[key];
-  return next;
 }
 
 function closeActiveUtilityPanel(state: AppState): AppState {
@@ -2043,10 +2020,6 @@ export function reducer(state: AppState, action: Action): AppState {
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
         reviewOpenAppSessionId:
           action.tool === 'review' ? appSessionId : state.reviewOpenAppSessionId,
-        browserOpenKeys:
-          action.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, true)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2066,10 +2039,6 @@ export function reducer(state: AppState, action: Action): AppState {
             : state.reviewOpenAppSessionId,
         reviewFocusPath: closing?.tool === 'review' ? null : state.reviewFocusPath,
         reviewFocusChange: closing?.tool === 'review' ? null : state.reviewFocusChange,
-        browserOpenKeys:
-          closing?.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, false)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2428,7 +2397,6 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(current, 'browser', () => `browser:${key}`)
             : setUtilityPanelOpen(current, false),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, opening),
       };
     }
 
@@ -2444,36 +2412,19 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(state.utilityPanels[key], 'browser', () => `browser:${key}`)
             : removeUtilityTool(state.utilityPanels[key], 'browser'),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, action.open),
       };
     }
 
     case 'BROWSER_UPDATED': {
       if (!action.browser.appSessionId) return state;
       const appSessionId = action.browser.appSessionId;
-      // Surface a freshly opened browser, but never re-open a pane the user hid.
-      // Missing keys differ from explicitly hidden panes.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-      const hidden = state.browserOpenKeys[appSessionId] === false;
+      // Only records the page: agent work never opens or switches the pane.
       return {
         ...state,
         browsers: { ...state.browsers, [appSessionId]: action.browser },
         browserErrors: Object.fromEntries(
           Object.entries(state.browserErrors).filter(([id]) => id !== appSessionId),
         ),
-        browserOpenKeys: hidden
-          ? state.browserOpenKeys
-          : withBrowserOpenKey(state.browserOpenKeys, appSessionId, true),
-        utilityPanels: hidden
-          ? state.utilityPanels
-          : {
-              ...state.utilityPanels,
-              [appSessionId]: openUtilityTool(
-                state.utilityPanels[appSessionId],
-                'browser',
-                () => `browser:${appSessionId}`,
-              ),
-            },
       };
     }
 
@@ -2508,7 +2459,6 @@ export function reducer(state: AppState, action: Action): AppState {
           Object.entries(state.browserErrors).filter(([id]) => id !== action.appSessionId),
         ),
         designModes: clearDesignMode(state.designModes, action.appSessionId),
-        browserOpenKeys: clearBrowserOpenKey(state.browserOpenKeys, action.appSessionId),
         utilityPanels: {
           ...state.utilityPanels,
           [action.appSessionId]: removeUtilityTool(
@@ -2523,13 +2473,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         browserErrors: { ...state.browserErrors, [action.appSessionId]: action.message },
-        // Respect an explicit hide; otherwise surface the errored browser.
-        browserOpenKeys:
-          // Missing keys differ from explicitly hidden panes.
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-          state.browserOpenKeys[action.appSessionId] === false
-            ? state.browserOpenKeys
-            : withBrowserOpenKey(state.browserOpenKeys, action.appSessionId, true),
       };
 
     case 'TOGGLE_DESIGN_MODE':
