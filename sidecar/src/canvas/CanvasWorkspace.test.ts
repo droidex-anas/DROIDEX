@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { canvasRoot, observedFileSystem } from '../testing/canvasStorageSupport.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
@@ -14,9 +14,10 @@ const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
 function scopeFor(
   canvasId: string | null,
   allowedDesignIds: string[] | 'canvas' = 'canvas',
+  scopeId = 'scope-1',
 ): CanvasScope {
   return {
-    scopeId: 'scope-1',
+    scopeId,
     appSessionId: 'app-1',
     generation: 1,
     canvasId,
@@ -77,18 +78,29 @@ function terminateAtManifestRename(side: 'before' | 'after') {
 }
 
 /**
- * Holds the next manifest temporary open until the test releases it, which is
- * the window between a prepared replacement and the rename that publishes it.
+ * Holds the next manifest write open until the test releases it: `prepared` is
+ * the window with a durable replacement and nothing published, `published` is
+ * the window after the rename and before its directory entry is flushed.
  */
-function holdManifestTemporary() {
+function holdManifestWrite(stage: 'prepared' | 'published') {
   let armed = false;
+  let renamed = false;
   const reached = deferred();
   const released = deferred();
-  const fs = observedFileSystem(async (operation, path) => {
-    if (!armed || operation !== 'open' || !path.endsWith('.tmp')) return;
+  const hold = async (): Promise<void> => {
     armed = false;
     reached.resolve();
     await released.promise;
+  };
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      renamed = true;
+      return;
+    }
+    if (operation !== 'open') return;
+    if (stage === 'prepared' && path.endsWith('.tmp')) await hold();
+    if (stage === 'published' && renamed) await hold();
   });
   return {
     fs,
@@ -100,9 +112,33 @@ function holdManifestTemporary() {
   };
 }
 
+/**
+ * A filesystem that renames the next manifest into place and then stops
+ * flushing directories, so that save becomes visible but never durable.
+ */
+function stopFlushingAfterManifestRename() {
+  let armed = false;
+  let renamed = false;
+  const fs = observedFileSystem((operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      renamed = true;
+      return;
+    }
+    if (renamed && operation === 'open' && !basename(path).includes('.'))
+      throw new Error('the volume stopped flushing');
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
 interface Options {
   fs?: CanvasFileSystem;
-  isScopeActive?: () => boolean;
+  isScopeActive?: (scopeId: string) => boolean;
 }
 
 async function openWorkspace(t: TestContext, options: Options = {}) {
@@ -353,7 +389,7 @@ test('a mutation needs a live lease that names this canvas and this frame', asyn
   assert.equal(workspace.snapshot(canvasId).frames.length, 1);
 });
 
-test('the source limits hold against the whole revision, not one write', async (t) => {
+test('the source limits and path rules hold against the whole revision', async (t) => {
   const { workspace, scope, canvasId, designId } = await withFrame(t);
   const quarter = 'x'.repeat(256 * 1024);
   const full = await workspace.write(
@@ -401,6 +437,19 @@ test('the source limits hold against the whole revision, not one write', async (
     workspace.write(
       scope,
       writeInput('one-file-more', cards, packed.revisionId, { 'extra.tsx': 'x' }),
+    ),
+    { code: 'invalid_input' },
+  );
+  // A folder the merged revision would address twice is refused here, not left
+  // to fail halfway through writing the tree.
+  const folder = await workspace.write(
+    scope,
+    writeInput('folder', designId, swapped.revisionId, { 'ui/A.tsx': 'a' }),
+  );
+  await assert.rejects(
+    workspace.write(
+      scope,
+      writeInput('other-case', designId, folder.revisionId, { 'UI/B.tsx': 'b' }),
     ),
     { code: 'invalid_input' },
   );
@@ -462,12 +511,12 @@ test('an attachment survives a reopen, and detaching keeps the canvas and its so
 });
 
 test('a revision seed copies the source it names, and a library seed is refused', async (t) => {
-  const { workspace, scope, canvasId, designId } = await withFrame(t);
+  const { root, workspace, scope, canvasId, designId } = await withFrame(t);
   const receipt = await workspace.write(
     scope,
     writeInput('write-hey', designId, null, { 'main.tsx': HEY }),
   );
-  const copied = await workspace.create(scope, {
+  const seeded = {
     mutationId: 'create-variant',
     frames: [
       {
@@ -475,10 +524,11 @@ test('a revision seed copies the source it names, and a library seed is refused'
         width: 720,
         height: 720,
         designSystem,
-        seed: { kind: 'revision', canvasId, revision: receipt },
+        seed: { kind: 'revision' as const, canvasId, revision: receipt },
       },
     ],
-  });
+  };
+  const copied = await workspace.create(scope, seeded);
   const variant = copied.frames[0];
   assert.ok(variant?.revisionId);
   assert.notEqual(variant.revisionId, receipt.revisionId);
@@ -488,6 +538,11 @@ test('a revision seed copies the source it names, and a library seed is refused'
     revisionId: variant.revisionId,
   });
   assert.equal(source['main.tsx'], HEY);
+  // A retry answers the receipt without copying the seed a second time.
+  const revisions = join(root, canvasId, 'revisions');
+  const stored = await readdir(revisions);
+  assert.deepEqual(await workspace.create(scope, seeded), copied);
+  assert.deepEqual(await readdir(revisions), stored);
 
   const frame = { name: 'Rejected', width: 720, height: 720, designSystem };
   await assert.rejects(
@@ -558,7 +613,7 @@ test('a canvas whose head cannot be reread is held damaged until reopen', async 
 
 test('a lease revoked with the replacement manifest ready publishes and binds nothing', async (t) => {
   let active = true;
-  const hold = holdManifestTemporary();
+  const hold = holdManifestWrite('prepared');
   const { root, deps, workspace, scope, canvasId, designId } = await withFrame(t, {
     isScopeActive: () => active,
     fs: hold.fs,
@@ -578,7 +633,7 @@ test('a lease revoked with the replacement manifest ready publishes and binds no
 
   // An unattached create is the same window: no canvas, no attachment, no binding.
   let unattachedActive = true;
-  const unattached = holdManifestTemporary();
+  const unattached = holdManifestWrite('prepared');
   const second = await openWorkspace(t, {
     isScopeActive: () => unattachedActive,
     fs: unattached.fs,
@@ -597,24 +652,41 @@ test('a lease revoked with the replacement manifest ready publishes and binds no
   assert.equal(second.workspace.attachedCanvasId('app-1'), null);
 });
 
-test('a retried mutation ID must carry the same request, and expires out of the window', async (t) => {
-  const { workspace, scope, canvasId, designId } = await withFrame(t);
+test('a retried mutation ID must carry the same request', async (t) => {
+  const { workspace, scope, designId } = await withFrame(t);
   const input = writeInput('write-hey', designId, null, { 'main.tsx': HEY });
   const receipt = await workspace.write(scope, input);
   assert.deepEqual(await workspace.write(scope, input), receipt);
   await assert.rejects(
     workspace.write(scope, { ...input, files: { 'main.tsx': 'something else' } }),
-    {
-      code: 'invalid_input',
-    },
+    { code: 'invalid_input' },
   );
+  // The same ID under another command is a caller error too, not a retry.
+  await assert.rejects(
+    workspace.arrange(scope, {
+      mutationId: 'write-hey',
+      frames: [{ designId, expectedLayoutVersion: 0, rect: { x: 0, y: 0, width: 8, height: 8 } }],
+    }),
+    { code: 'invalid_input' },
+  );
+});
 
+test('a live lease keeps every receipt it issued, and a settled lease gives way', async (t) => {
+  const live = new Set(['scope-1', 'scope-a', 'scope-b']);
+  const { workspace, canvasId, designId } = await withFrame(t, {
+    isScopeActive: (scopeId) => live.has(scopeId),
+  });
+  const a = scopeFor(canvasId, 'canvas', 'scope-a');
+  const b = scopeFor(canvasId, 'canvas', 'scope-b');
   const cards = { name: 'Cards', width: 720, height: 720, designSystem };
-  const created = await workspace.create(scope, { mutationId: 'create-cards', frames: [cards] });
-  // Enough accepted mutations to retire that receipt. Its ID is remembered, so
-  // the retry is refused rather than reserving a second frame.
-  for (let version = 0; version < CANVAS_MUTATION_RETENTION.receipts; version += 1) {
-    await workspace.arrange(scope, {
+  const created = await workspace.create(b, { mutationId: 'create-cards', frames: [cards] });
+  const oldest = {
+    mutationId: 'arrange-0',
+    frames: [{ designId, expectedLayoutVersion: 0, rect: { x: 0, y: 0, width: 8, height: 8 } }],
+  };
+  const first = await workspace.arrange(a, oldest);
+  for (let version = 1; version < CANVAS_MUTATION_RETENTION.retained + 8; version += 1) {
+    await workspace.arrange(a, {
       mutationId: `arrange-${String(version)}`,
       frames: [
         {
@@ -625,13 +697,24 @@ test('a retried mutation ID must carry the same request, and expires out of the 
       ],
     });
   }
-  await assert.rejects(workspace.create(scope, { mutationId: 'create-cards', frames: [cards] }), {
-    code: 'invalid_input',
-  });
+  // Both leases are live, so neither one's oldest receipt was retired.
+  assert.deepEqual(await workspace.arrange(a, oldest), first);
   assert.deepEqual(
-    workspace.snapshot(canvasId).frames.map((frame) => frame.designId),
-    [designId, created.frames[0]?.designId],
+    await workspace.create(b, { mutationId: 'create-cards', frames: [cards] }),
+    created,
   );
+  assert.equal(workspace.snapshot(canvasId).frames.length, 2);
+
+  // Once scope-a settles, its receipts are the ones that give way, and a
+  // request nobody can retry is executed as the new request it now is.
+  live.delete('scope-a');
+  await workspace.arrange(b, {
+    mutationId: 'arrange-settles-a',
+    frames: [{ designId, expectedLayoutVersion: 264, rect: { x: 9, y: 9, width: 8, height: 8 } }],
+  });
+  await assert.rejects(workspace.arrange(b, { ...oldest, mutationId: 'arrange-0' }), {
+    code: 'revision_conflict',
+  });
 });
 
 test('concurrent creates read the manifest the commit they run in extends', async (t) => {
@@ -659,6 +742,70 @@ test('concurrent creates read the manifest the commit they run in extends', asyn
     attached.workspace.snapshot(attached.canvasId).frames.map((frame) => frame.rect.x),
     [0, 800, 1280],
   );
+});
+
+test('a head recovered after a failed flush is not served until it is durable', async (t) => {
+  t.mock.method(console, 'error', () => undefined);
+  const fault = stopFlushingAfterManifestRename();
+  const { workspace, scope, canvasId, designId } = await withFrame(t, { fs: fault.fs });
+  const input = writeInput('write-hey', designId, null, { 'main.tsx': HEY });
+  fault.arm();
+  await assert.rejects(workspace.write(scope, input), { code: 'storage_failed' });
+
+  // Reading the head back only proves it is visible. Its directory entry never
+  // flushed, so the canvas is held back rather than answering the retry as
+  // though the save had completed.
+  assert.deepEqual(workspace.damagedCanvasIds(), [canvasId]);
+  assert.throws(() => workspace.snapshot(canvasId), { code: 'storage_failed' });
+  await assert.rejects(workspace.write(scope, input), { code: 'storage_failed' });
+});
+
+test('an unattached create binds its lease exactly once, after it is published', async (t) => {
+  const fault = terminateAtManifestRename('after');
+  const { workspace, boundCanvasIds } = await openWorkspace(t, { fs: fault.fs });
+  const scope = scopeFor(null);
+  const input = {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  };
+  fault.arm();
+  await assert.rejects(workspace.create(scope, input), { code: 'storage_failed' });
+  assert.deepEqual(boundCanvasIds, []);
+
+  // The canvas landed, so the retry has to answer it and bind the lease that
+  // created it, or every later write under that lease targets nothing.
+  const recovered = await workspace.create(scope, input);
+  assert.deepEqual(boundCanvasIds, [recovered.canvasId]);
+  assert.deepEqual(await workspace.create(scope, input), recovered);
+  assert.deepEqual(boundCanvasIds, [recovered.canvasId]);
+  const written = await workspace.write(
+    scopeFor(recovered.canvasId),
+    writeInput('write-hey', recovered.frames[0]?.designId ?? '', null, { 'main.tsx': HEY }),
+  );
+  assert.equal((await workspace.readFiles(recovered.canvasId, written))['main.tsx'], HEY);
+});
+
+test('a lease revoked after its canvas was published is never bound', async (t) => {
+  const live = new Set(['scope-1']);
+  const hold = holdManifestWrite('published');
+  const { workspace, boundCanvasIds } = await openWorkspace(t, {
+    isScopeActive: (scopeId) => live.has(scopeId),
+    fs: hold.fs,
+  });
+  hold.arm();
+  const creating = workspace.create(scopeFor(null), {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  });
+  await hold.reached;
+  live.clear();
+  hold.release();
+
+  // The commit was already published, so the canvas and its attachment stand.
+  const created = await creating;
+  assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);
+  // Nothing that lease could still authorize is left, so it is not bound.
+  assert.deepEqual(boundCanvasIds, []);
 });
 
 test('close waits for a mutation that is still staging its source', async (t) => {

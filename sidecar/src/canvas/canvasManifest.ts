@@ -23,11 +23,14 @@ import {
 export const CANVAS_MANIFEST_VERSION = 1;
 
 /**
- * How many retries one canvas answers. Dropping a receipt would let a retry
- * execute a second time, so an evicted ID is remembered by name and refused
- * instead: the long tail of IDs costs far less than a duplicate frame.
+ * How many retries one canvas answers. A retry can only be authorized while the
+ * lease that issued it lives, so a live lease keeps every receipt it issued and
+ * settled leases give way oldest first past `retained`. Once a lease is gone,
+ * nothing can retry under it, so a receipt that is no longer found is executed
+ * as the new request it now is. `hardCap` is the fail-safe: one lease issuing
+ * more mutations than that is outside the supported retry window.
  */
-export const CANVAS_MUTATION_RETENTION = { receipts: 256, expiredIds: 4096 } as const;
+export const CANVAS_MUTATION_RETENTION = { retained: 256, hardCap: 4096 } as const;
 
 const timestampSchema = z.number().int().nonnegative();
 const versionSchema = z.number().int().nonnegative();
@@ -48,6 +51,8 @@ const persistedDesignSchema = z
 // Each record holds the value its command returned, so a retry after a lost
 // response answers the original result rather than today's state.
 const fingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
+// A lease ID never reaches a filesystem path, so it is bounded, not charset-checked.
+const scopeIdSchema = z.string().min(1).max(200);
 
 // What one accepted arrange acknowledged, and all it has to retain: the layout
 // an arrange changes is the layout a retry has to answer for.
@@ -64,6 +69,7 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('create'),
       mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
       fingerprint: fingerprintSchema,
       designs: z.array(persistedDesignSchema),
     })
@@ -72,6 +78,7 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('write'),
       mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
       fingerprint: fingerprintSchema,
       designId: canvasIdentifierSchema,
       revisionId: canvasIdentifierSchema,
@@ -82,6 +89,7 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('arrange'),
       mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
       fingerprint: fingerprintSchema,
       sequence: versionSchema,
       placements: z.array(placementSchema),
@@ -101,10 +109,7 @@ export const canvasManifestSchema = z
     // chat's first create commits the canvas and the attachment in one write.
     attachedAppSessionIds: z.array(appSessionIdSchema),
     designs: z.array(persistedDesignSchema),
-    mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.receipts),
-    // Mutation IDs whose receipts aged out. Remembering them is what makes
-    // eviction safe: a retry past the window is refused, never re-executed.
-    expiredMutationIds: z.array(canvasIdentifierSchema).max(CANVAS_MUTATION_RETENTION.expiredIds),
+    mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.hardCap),
   })
   .strict()
   .refine((manifest) => !hasDuplicate(manifest.designs.map((design) => design.designId)), {
@@ -130,7 +135,6 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     attachedAppSessionIds: [],
     designs: [],
     mutations: [],
-    expiredMutationIds: [],
   };
 }
 
@@ -231,16 +235,26 @@ export function mutationFingerprint(input: unknown): string {
   return createHash('sha256').update(canonicalJson(input)).digest('hex');
 }
 
-/** Appends a committed mutation, retiring the oldest receipt past retention. */
-export function recordMutation(manifest: CanvasManifest, record: PersistedMutation): void {
+/** Appends a committed mutation and retires receipts no live lease can retry. */
+export function recordMutation(
+  manifest: CanvasManifest,
+  record: PersistedMutation,
+  isScopeActive: (scopeId: string) => boolean,
+): void {
   manifest.mutations.push(record);
-  while (manifest.mutations.length > CANVAS_MUTATION_RETENTION.receipts) {
-    const retired = manifest.mutations.shift();
-    if (!retired) return;
-    manifest.expiredMutationIds.push(retired.mutationId);
-    while (manifest.expiredMutationIds.length > CANVAS_MUTATION_RETENTION.expiredIds)
-      manifest.expiredMutationIds.shift();
+  if (manifest.mutations.length <= CANVAS_MUTATION_RETENTION.retained) return;
+  const settled = manifest.mutations.filter((entry) => !isScopeActive(entry.scopeId));
+  const over = manifest.mutations.length - CANVAS_MUTATION_RETENTION.retained;
+  const retired = new Set(settled.slice(0, over));
+  // The fail-safe, when live leases alone fill the ledger.
+  let excess = manifest.mutations.length - retired.size - CANVAS_MUTATION_RETENTION.hardCap;
+  for (const entry of manifest.mutations) {
+    if (excess <= 0) break;
+    if (retired.has(entry)) continue;
+    retired.add(entry);
+    excess -= 1;
   }
+  manifest.mutations = manifest.mutations.filter((entry) => !retired.has(entry));
 }
 
 // A reused mutation ID is a programming error on the caller's side, not a
@@ -253,14 +267,7 @@ function findMutation(
   fingerprint: string,
 ): PersistedMutation | undefined {
   const record = manifest.mutations.find((entry) => entry.mutationId === mutationId);
-  if (!record) {
-    if (manifest.expiredMutationIds.includes(mutationId))
-      throw canvasError(
-        'invalid_input',
-        'That mutation ID is past the retry window. Read the current board and send a new change.',
-      );
-    return undefined;
-  }
+  if (!record) return undefined;
   if (record.kind !== kind)
     throw canvasError('invalid_input', 'That mutation ID already belongs to a different change.');
   if (record.fingerprint !== fingerprint)
