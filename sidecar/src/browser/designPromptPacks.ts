@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { browserDesignReferenceDir } from './browserPaths.js';
+import { redactBrowserUrl } from './browserUrl.js';
 import type { DesignPromptPack, DesignReference } from './types.js';
 
 export interface WriteDesignPromptPackOptions {
@@ -22,7 +23,11 @@ export async function writeDesignPromptPack(
     browserSessionId: options.browserSessionId,
     createdAt,
     instruction: options.instruction,
-    references: options.references,
+    // The agent reads the pack, so its pages go by their redacted addresses.
+    references: options.references.map((reference) => ({
+      ...reference,
+      url: redactBrowserUrl(reference.url),
+    })),
   };
   const dir = browserDesignReferenceDir(options.appSessionId, options.baseDir);
   await mkdir(dir, { recursive: true });
@@ -48,7 +53,7 @@ export function formatDesignPrompt(
   const first = references[0];
   return [
     DESIGN_PROMPT_HEADER,
-    `- URL: ${sanitizeInline(first?.url ?? 'about:blank')}`,
+    `- URL: ${sanitizeInline(redactBrowserUrl(first?.url ?? 'about:blank'))}`,
     `- References JSON: ${packPath}`,
     '',
     'Anchored references (the user writes a numbered one as @1, @2):',

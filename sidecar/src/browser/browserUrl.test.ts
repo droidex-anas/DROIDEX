@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeBrowserUrl } from './browserUrl.js';
+import { normalizeBrowserUrl, redactBrowserUrl } from './browserUrl.js';
 
 test('normalizeBrowserUrl keeps explicit URLs and makes bare domains and localhost loadable', () => {
   for (const [input, expected] of [
@@ -14,4 +14,11 @@ test('normalizeBrowserUrl keeps explicit URLs and makes bare domains and localho
   ]) {
     assert.equal(normalizeBrowserUrl(input), expected, input);
   }
+});
+
+test('redactBrowserUrl drops credentials, fragments and secret-named parameters', () => {
+  assert.equal(
+    redactBrowserUrl('https://user:pw@example.com/a?api_key=s3&page=2#tok'),
+    'https://example.com/a?api_key=%5Bredacted%5D&page=2',
+  );
 });
