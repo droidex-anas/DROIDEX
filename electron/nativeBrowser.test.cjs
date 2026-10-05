@@ -129,3 +129,22 @@ test('a crashed page reports the crash and blocks actions until it is reloaded',
     'https://app.test/next',
   ]);
 });
+
+test('a page action still waiting on a load does nothing once the browser closes', async () => {
+  const { manager, mountGuest } = createBrowser();
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://app.test/');
+  let finishLoad;
+  guest.loadURL = () => new Promise((resolve) => (finishLoad = resolve));
+  guest.navigationHistory.canGoBack = () => true;
+  guest.navigationHistory.goBack = () => assert.fail('went back after the browser closed');
+  const opening = manager.open('tab', 'https://app.test/next');
+  await new Promise(setImmediate);
+
+  const back = manager.goBack('tab');
+  await new Promise(setImmediate);
+  manager.close('tab');
+  finishLoad();
+  await assert.rejects(back, /browser is not open/);
+  await opening;
+});

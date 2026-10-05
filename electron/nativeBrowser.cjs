@@ -183,10 +183,12 @@ function createNativeBrowserManager(options) {
 
   // Page actions run against the restored page, not the blank one before it.
   // A failed load can start a retry before it settles, so wait for the
-  // current one until none is left.
+  // current one until none is left. The browser may have been closed meanwhile.
   async function waitForLoadedGuest(browserSessionId) {
     const entry = await waitForGuest(browserSessionId);
     while (entry.loadingPromise) await entry.loadingPromise;
+    if (nativeBrowsers.get(entry.browserSessionId) !== entry)
+      throw new Error(`${options.appName} browser is not open.`);
     return entry;
   }
 
@@ -232,10 +234,12 @@ function createNativeBrowserManager(options) {
   function closeNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
-    // A restore still waiting on the guest's setup never runs.
+    // A restore still waiting on the guest's setup never runs, and an action
+    // still waiting on the page never reaches it.
     forgetLoad(entry);
     preview.watch(entry.browserSessionId, false);
     guests.release(entry.browserSessionId);
+    entry.contents = null;
     nativeBrowsers.delete(entry.browserSessionId);
   }
 
