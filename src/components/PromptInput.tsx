@@ -553,6 +553,8 @@ export default function PromptInput({
         : state.missionControlMode
           ? 'mission-draft'
           : 'chat-draft';
+  const visibleTargetKeyRef = useRef(visibleTargetKey);
+  visibleTargetKeyRef.current = visibleTargetKey;
   const stopTurnStarting = useCallback(() => {
     if (turnStartingTimerRef.current) {
       clearTimeout(turnStartingTimerRef.current);
@@ -1159,6 +1161,7 @@ export default function PromptInput({
     }
     if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
     const scheduledAppSessionId = activeSession.appSessionId;
+    const scheduledTargetKey = visibleTargetKey;
     const generation = scheduleGeneration.current;
     const revision = composerRevisionRef.current;
     const intakeCutoff = nextIntakeSeqRef.current;
@@ -1168,9 +1171,11 @@ export default function PromptInput({
       path,
       sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
     }));
-    // The generation moves whenever this composer's target does.
+    // The generation moves once a target switch commits its effects; the key
+    // already names the new target in the render before that.
     const stillTargeted = () =>
-      scheduleGeneration.current === generation && visibleTargetRef.current.kind === 'primary';
+      scheduleGeneration.current === generation &&
+      visibleTargetKeyRef.current === scheduledTargetKey;
     submittingRef.current = true;
     try {
       const [images, documents, client, schedules] = await Promise.all([
