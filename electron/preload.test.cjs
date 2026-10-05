@@ -91,9 +91,9 @@ const invokeContract = [
   ],
   [
     'nativeBrowserReserve',
-    ['browser-1', 'https://example.test'],
+    ['browser-1', 'https://example.test', 'desktop'],
     'native-browser-reserve',
-    { browserSessionId: 'browser-1', savedUrl: 'https://example.test' },
+    { browserSessionId: 'browser-1', savedUrl: 'https://example.test', savedMode: 'desktop' },
   ],
   [
     'gitMarkTurnStart',
