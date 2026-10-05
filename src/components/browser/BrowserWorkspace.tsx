@@ -374,7 +374,11 @@ export default function BrowserWorkspace({
           if (browserKey) dispatch({ type: 'TOGGLE_DESIGN_MODE', appSessionId: browserKey });
         }}
         onTogglePencilMode={() => {
-          setPencilMode((value) => !value);
+          // The pencil works on its own: it turns design mode on and starts drawing.
+          if (!designMode && browserKey) {
+            dispatch({ type: 'TOGGLE_DESIGN_MODE', appSessionId: browserKey });
+            setPencilMode(true);
+          } else setPencilMode((value) => !value);
         }}
         onToggleExpanded={onToggleExpanded}
       />

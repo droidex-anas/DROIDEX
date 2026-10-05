@@ -135,9 +135,13 @@ export function BrowserToolbar({
           <MousePointer className="h-4 w-4" />
         </IconButton>
         <IconButton
-          title="Annotate: sketch a region or mark up the page for Droid"
+          title={
+            designModeDisabled
+              ? 'Select a chat before sketching'
+              : 'Annotate: sketch a region or mark up the page for Droid'
+          }
           active={designMode && pencilMode}
-          disabled={!designMode}
+          disabled={designModeDisabled}
           onClick={onTogglePencilMode}
         >
           <PenLine className="h-4 w-4" />
