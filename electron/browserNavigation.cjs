@@ -61,15 +61,4 @@ function observeNavigation(contents) {
   };
 }
 
-function isNavigationError(error) {
-  const message = String(error?.message || error).toLowerCase();
-  return [
-    'script execution was interrupted',
-    'execution context was destroyed',
-    'frame was disposed',
-    'object has been destroyed',
-    'cannot find context',
-  ].some((part) => message.includes(part));
-}
-
-module.exports = { observeNavigation, isNavigationError, NAVIGATION_GRACE_MS };
+module.exports = { observeNavigation, NAVIGATION_GRACE_MS };

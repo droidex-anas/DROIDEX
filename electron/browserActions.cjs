@@ -8,11 +8,7 @@
 const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
-const {
-  observeNavigation,
-  isNavigationError,
-  NAVIGATION_GRACE_MS,
-} = require('./browserNavigation.cjs');
+const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { createBrowserCover } = require('./browserCover.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
@@ -50,7 +46,9 @@ function createBrowserActions({
           failure = error;
         });
         if (navigation.started() && !step.sent) throw new Error(PAGE_CHANGED);
-        if (failure && !(navigation.started() && isNavigationError(failure))) throw failure;
+        // Once its input went out, a navigation that started is the answer,
+        // whatever that navigation then cut short.
+        if (failure && !navigation.started()) throw failure;
         // An action that started a navigation reports the page it led to; a
         // click on a link starts one a moment after the input lands.
         const mayNavigate =
@@ -167,15 +165,19 @@ function createBrowserActions({
   }
 
   // Where the page and every box around the element at the point are
-  // scrolled to.
-  async function scrollPosition(contents, { x, y }) {
-    const { result } = await runWithWebContentsDebugger(contents, (dbg) =>
-      dbg.sendCommand('Runtime.evaluate', {
-        expression: `(${SCROLLED})(${x}, ${y})`,
-        returnByValue: true,
-      }),
-    );
-    return result?.value;
+  // scrolled to; for a point in a cross-site frame, inside that frame too.
+  async function scrollPosition(contents, target) {
+    return runWithWebContentsDebugger(contents, async (dbg) => {
+      const scrolled = async (sessionId, { x, y }) => {
+        const { result } = await send(dbg, sessionId, 'Runtime.evaluate', {
+          expression: `(${SCROLLED})(${x}, ${y})`,
+          returnByValue: true,
+        });
+        return result?.value;
+      };
+      const page = await scrolled(undefined, target);
+      return target.sessionId ? `${page};${await scrolled(target.sessionId, target.local)}` : page;
+    });
   }
 
   // Text goes to the session of the frame that holds the focus (a cross-site
@@ -233,6 +235,8 @@ function createBrowserActions({
       const { sessionId, document } = await focusedFrame(dbg);
       const stillOn = onSamePage(dbg, holding, sessionId, document);
       for (let i = 0; i < repeat; i++) {
+        // A key that navigates is the last.
+        if (i > 0 && step.navigation.started()) return;
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
         await inputReady(dbg, step, holding, sessionId, document);
@@ -410,6 +414,7 @@ const FILL = `function (value, startBy) {
     if (!this.isConnected) throw new Error('the field was replaced when it took the focus; read the page again');
   };
   inTime();
+  if (!this.isConnected) throw new Error('the field is not on the page any more; read the page again');
   if (this instanceof HTMLSelectElement) {
     const wanted = String(value);
     const options = [...this.options];
