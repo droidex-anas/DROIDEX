@@ -312,13 +312,16 @@ function ToolLine({
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const call = describeToolCall(event.toolName, event.toolArgs);
+  // A call made with no arguments shows none, not an empty "{}".
+  const argsText = safeJson(event.toolArgs);
+  const args = argsText === '{}' ? '' : argsText;
   const out = output ? stripAnsi(output).trimEnd() : '';
   const [open, setOpen] = useState(false);
   const expanded = open || forceOpen;
   // Only a row with output, text or pictures, can be collapsed again; detailed
   // density still opens every call to its arguments, result or not.
   const collapsible = out.length > 0 || Boolean(images?.length);
-  const hasBody = collapsible || forceOpen;
+  const hasBody = collapsible || (forceOpen && args.length > 0);
   // An MCP tool wears its server's mark instead of spelling its source.
   const mark = useToolSourceMark(call.source);
   const verb = (
@@ -364,9 +367,9 @@ function ToolLine({
           <div className="mt-1.5 pl-[18px]">
             <ToolCallCard
               heading={
-                <pre className="whitespace-pre-wrap break-words text-droid-text">
-                  {safeJson(event.toolArgs)}
-                </pre>
+                args ? (
+                  <pre className="whitespace-pre-wrap break-words text-droid-text">{args}</pre>
+                ) : null
               }
               output={out}
               images={images}
