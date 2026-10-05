@@ -1851,9 +1851,9 @@ export function reducer(state: AppState, action: Action): AppState {
         listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
         earlierSessionsByCwd: action.earlierSessionsByCwd,
         activeAppSessionId,
-        // A restored tab can name a chat older than the snapshot or filtered out
-        // of this list; only a chat the list stopped reporting is gone.
-        tabStrip: withoutChats(state.tabStrip, isConfirmedGone),
+        // The list covers every folder in the sidebar, so a restored tab whose
+        // chat neither it nor the snapshot knows has nothing to show.
+        tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
       };
       // A focused tile whose chat is gone closes like any other, so the tile
       // beside it comes forward instead of a second new chat.

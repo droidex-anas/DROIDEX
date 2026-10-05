@@ -229,12 +229,7 @@ test('a deleted chat leaves the tabs and the reopen list', () => {
   assert.deepEqual(deleted.tabStrip.closedTabs, []);
 });
 
-test('a restored tab outlives a session list that has not reported its chat', () => {
-  const listed = (...ids: string[]): Action => ({
-    type: 'SESSION_LIST',
-    sessions: ids.map((id) => session(id)),
-    earlierSessionsByCwd: {},
-  });
+test('a restored tab closes once neither the snapshot nor the session list knows its chat', () => {
   const launched = withChats('a');
   const restored: AppState = {
     ...launched,
@@ -243,11 +238,16 @@ test('a restored tab outlives a session list that has not reported its chat', ()
       tabs: [
         ...launched.tabStrip.tabs,
         { id: 'older', page: { kind: 'chat', appSessionId: 'old' }, tileId: 'older-tile' },
+        { id: 'unknown', page: { kind: 'chat', appSessionId: 'gone' }, tileId: 'unknown-tile' },
       ],
     },
   };
-  assert.deepEqual(strip(reduce(restored, listed('a'))), ['[a]', 'old']);
-  assert.deepEqual(strip(reduce(restored, listed('a', 'old'), listed('a'))), ['[a]']);
+  const listed = reduce(restored, {
+    type: 'SESSION_LIST',
+    sessions: [session('a'), session('old')],
+    earlierSessionsByCwd: {},
+  });
+  assert.deepEqual(strip(listed), ['[a]', 'old']);
 });
 
 test('splitting a chat into a tab moves it there, focused, beside the chat shown', () => {
