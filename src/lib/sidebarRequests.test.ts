@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { SessionSummary } from '../types/bridge';
 import type { SidebarRequest } from '../types/sidebar';
 import { withLocalStorageMap } from '../test/localStorage';
+import { initialTabStrip } from '../features/tabs/tabStrip';
 import { DEFAULT_SIDEBAR_PREFERENCES } from './sidebarActivity';
 import { answerSidebarRequest } from './sidebarRequests';
 import { sidebarPreferences, updateSidebarPreferences } from './sidebarPreferences';
@@ -28,8 +29,10 @@ function sidebarState(sessions: SessionSummary[]): SidebarState {
     projects: [],
     pendingPermissions: {},
     pendingQuestions: {},
+    mainView: 'session',
     activeAppSessionId: null,
     sessionLastSeen: {},
+    tabStrip: initialTabStrip(),
   };
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useStoreApi, useStoreDispatch } from '../../hooks/useStore';
+import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
 import {
@@ -8,6 +8,7 @@ import {
   responseFormatForPrompt,
 } from '../../lib/composePrompt';
 import { markGitTurnStart } from '../../lib/git';
+import { sessionIsLive } from '../../lib/sessions';
 import { promptWithSideChatReplies } from '../../lib/sideChats';
 import {
   createLocalDesignTranscriptEvent,
@@ -37,8 +38,6 @@ export function useQueuedPromptDelivery({
     live: false,
   });
   const previousInstalling = useRef(appUpdateInstalling);
-  const live = useRef(isLive);
-  live.current = isLive;
 
   useEffect(
     () => () => {
@@ -49,20 +48,26 @@ export function useQueuedPromptDelivery({
 
   const deliverPrompt = useCallback(async () => {
     if (!appSessionId || isAppUpdateInstalling()) return;
+    // A chat that is gone from the store has nothing left to deliver to.
+    const isSessionIdle = () => {
+      const sessions: Partial<AppState['sessions']> = store.getState().sessions;
+      const session = sessions[appSessionId];
+      return session !== undefined && !sessionIsLive(session);
+    };
     if (!(store.getState().promptQueue[appSessionId] ?? []).length) return;
-    if (live.current) return;
+    if (!isSessionIdle()) return;
     const capturedGeneration = generation.current;
     try {
       await guard.run(async () => {
         if (cwd) await markGitTurnStart(cwd, appSessionId);
         // The guard serialises queued deliveries, not interactive sends: the
         // user can start a turn while the git baseline is captured, and this
-        // prompt must wait for that turn instead of joining it.
+        // prompt must wait for that turn instead of joining it. The generation
+        // moves when this composer leaves the session.
         if (
           isAppUpdateInstalling() ||
-          live.current ||
-          generation.current !== capturedGeneration ||
-          store.getState().activeAppSessionId !== appSessionId
+          !isSessionIdle() ||
+          generation.current !== capturedGeneration
         )
           return;
         // Edits and reorders may land during baseline capture. Only the current

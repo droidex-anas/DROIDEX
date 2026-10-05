@@ -1,7 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { Archive, FileText, Folder, Link2, Pencil, CircleCheck, RotateCcw } from 'lucide-react';
+import {
+  AppWindow,
+  Archive,
+  FileText,
+  Folder,
+  Link2,
+  Pencil,
+  CircleCheck,
+  RotateCcw,
+} from 'lucide-react';
 import { Copy, GitFork, Pin, PinOff } from '@droidex/icons';
 import { pushEscapeLayer } from './environment/usePopover';
 import { toast } from '../lib/toast';
@@ -54,6 +63,7 @@ export interface SessionContextMenuProps {
   resumeSessionId?: string;
   // Droid only: the id behind the Factory web link.
   providerSessionId?: string;
+  onOpenInTab: () => void;
   onRename: () => void;
   // Absent when the chat cannot be forked right now (a mission, or a turn in
   // progress); the Fork row hides.
@@ -65,7 +75,7 @@ export interface SessionContextMenuProps {
 }
 
 // Action menu for a sidebar chat row (right-click or the hover "..." button).
-// Organization actions (pin/rename/archive) are app-level; the copy actions
+// Organization actions (open/pin/rename/archive) are app-level; the copy actions
 // expose the harness's own session so the user can continue it in that
 // harness's official CLI, or for Droid in the Factory web app. The portal + click-away
 // backdrop live here; the panel is separate so tests can render it without a
@@ -100,6 +110,7 @@ export function SessionContextMenuPanel({
   provider = 'droid',
   resumeSessionId,
   providerSessionId,
+  onOpenInTab,
   onRename,
   onFork,
   onTogglePin,
@@ -168,7 +179,7 @@ export function SessionContextMenuPanel({
   const viewportWidth = typeof window === 'undefined' ? undefined : window.innerWidth;
   const viewportHeight = typeof window === 'undefined' ? undefined : window.innerHeight;
   const rowCount =
-    4 + (onFork ? 1 : 0) + (onToggleSettled ? 1 : 0) + (cwd ? 1 : 0) + (providerSessionId ? 2 : 0);
+    5 + (onFork ? 1 : 0) + (onToggleSettled ? 1 : 0) + (cwd ? 1 : 0) + (providerSessionId ? 2 : 0);
   const estimatedMenuHeight = MENU_CHROME_PX + rowCount * MENU_ROW_PX;
   const left =
     viewportWidth === undefined
@@ -205,6 +216,18 @@ export function SessionContextMenuPanel({
       style={{ position: 'fixed', left, top, width: SESSION_MENU_WIDTH }}
       className="z-[991] rounded-xl border border-droid-border bg-droid-surface p-1 shadow-droid"
     >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          onOpenInTab();
+          onClose();
+        }}
+        className={itemClass}
+      >
+        <AppWindow className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        Open in new tab
+      </button>
       <button
         type="button"
         role="menuitem"

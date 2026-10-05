@@ -27,8 +27,7 @@ test('a multi-hour-equivalent workload plateaus pollers and child runtimes', () 
       contextPollIntervalMs({
         tier,
         isChild: target.appSessionId.startsWith('child'),
-        focusedAppSessionId: 'app-1',
-        appSessionId: target.appSessionId,
+        isOnScreen: target.appSessionId === 'app-1',
       }),
     poll: (target) => {
       polls.push(target.appSessionId);

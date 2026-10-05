@@ -126,7 +126,11 @@ export function BrowserFocusWorkspace({
                 </div>
               </div>
             </div>
-            <PromptInput compact onOverlayChange={setPromptOverlayOpen} />
+            <PromptInput
+              appSessionId={activeSession?.appSessionId ?? null}
+              compact
+              onOverlayChange={setPromptOverlayOpen}
+            />
           </motion.section>
         )}
       </AnimatePresence>

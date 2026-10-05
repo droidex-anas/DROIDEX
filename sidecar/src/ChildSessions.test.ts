@@ -1642,12 +1642,11 @@ test('a settled child idle past the budget releases its provider session', async
     true,
     'the client must learn the runtime is gone',
   );
-  const status = h.calls.find(
-    (call) => call.target === 'protocol' && call.method === 'timeline.status',
+  assert.equal(
+    h.calls.some((call) => call.target === 'protocol' && call.method === 'timeline.status'),
+    false,
+    'releasing a runtime must not write a row into the Task',
   );
-  assert.ok(status, 'a retired child must leave a visible reason in its transcript');
-  assert.match(String(status.args[1]), /released after 5 minutes idle/);
-  assert.equal(status.args[3], 'child');
 });
 
 test('failed child adoption retains the old provider for retry without closing its replacement', async (t) => {

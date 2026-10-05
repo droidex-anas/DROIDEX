@@ -31,6 +31,8 @@ export interface UseTranscriptReachOptions {
   onLoadOlder: () => void;
   onScrollToRow: (rowId: string) => void;
   enabled: boolean;
+  // Beside other tiles, only the focused one answers the find keys.
+  takesShortcuts: boolean;
   specOutlineOpen?: boolean;
   writeText?: (text: string) => Promise<void>;
 }
@@ -45,6 +47,7 @@ export function useTranscriptReach({
   onLoadOlder,
   onScrollToRow,
   enabled,
+  takesShortcuts,
   specOutlineOpen = false,
   writeText,
 }: UseTranscriptReachOptions) {
@@ -100,6 +103,7 @@ export function useTranscriptReach({
   }, [activeRowId, onScrollToRow, state.activeIndex, state.open]);
 
   useEffect(() => {
+    if (!takesShortcuts) return;
     const onKey = (event: KeyboardEvent) => {
       if (
         shouldOpenTranscriptFind(
@@ -134,7 +138,7 @@ export function useTranscriptReach({
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [enabled, specOutlineOpen, state.open]);
+  }, [enabled, specOutlineOpen, state.open, takesShortcuts]);
 
   const copyRange = useCallback(async () => {
     const keys = orderedRangeKeys(state.rangeStartKey, state.rangeEndKey);

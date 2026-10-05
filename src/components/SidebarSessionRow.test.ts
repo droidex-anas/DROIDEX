@@ -40,6 +40,7 @@ function makeProps(overrides: Partial<SessionRowProps> = {}): SessionRowProps {
     renaming: false,
     now: 5_000,
     onSelect: () => undefined,
+    onOpenInTab: () => undefined,
     onMenu: () => undefined,
     onRenameCommit: () => undefined,
     onRenameCancel: () => undefined,
@@ -52,6 +53,7 @@ const render = (props: SessionRowProps) => renderToStaticMarkup(createElement(Se
 // Stable callbacks shared across prop pairs so only the tested field differs.
 const STABLE = {
   onSelect: () => undefined,
+  onOpenInTab: () => undefined,
   onMenu: () => undefined,
   onRenameCommit: () => undefined,
   onRenameCancel: () => undefined,

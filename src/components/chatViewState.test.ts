@@ -54,8 +54,8 @@ function appendMutation() {
 function visibleStateEqual(change: (previous: AppState) => AppState): boolean {
   const previous = activeState();
   return equalVisibleChatState(
-    selectChatViewState(previous),
-    selectChatViewState(change(previous)),
+    selectChatViewState(previous, 'active', null),
+    selectChatViewState(change(previous), 'active', null),
   );
 }
 
@@ -76,6 +76,21 @@ test('chat selector ignores background streams and telemetry-only summary update
     },
   }));
   assert.equal(telemetry, true);
+});
+
+test('chat selector follows the session its view shows, not the active one', () => {
+  const previous = activeState();
+  const next: AppState = {
+    ...previous,
+    transcripts: { ...previous.transcripts, background: [...previous.transcripts.background] },
+  };
+
+  const shown = selectChatViewState(next, 'background', null);
+  assert.equal(shown.activeSession?.appSessionId, 'background');
+  assert.equal(
+    equalVisibleChatState(selectChatViewState(previous, 'background', null), shown),
+    false,
+  );
 });
 
 test('chat selector observes the visible transcript, its provenance, and visible session fields', () => {
@@ -103,4 +118,18 @@ test('chat selector observes the visible transcript, its provenance, and visible
   for (const [name, change] of Object.entries(changes)) {
     assert.equal(visibleStateEqual(change), false, name);
   }
+});
+
+test('a new chat shows the message sent from its own place while it starts', () => {
+  const [tab] = initialState.tabStrip.tabs;
+  const sentFrom = (tileId: string): AppState => ({
+    ...initialState,
+    pendingCompose: {
+      fromTile: { text: 'hi', skills: [], files: [], origin: { tabId: tab.id, tileId } },
+    },
+  });
+  assert.equal(selectChatViewState(sentFrom('left'), null, 'left').startingCompose?.text, 'hi');
+  assert.equal(selectChatViewState(sentFrom('left'), null, 'right').startingCompose, undefined);
+  assert.equal(selectChatViewState(sentFrom('left'), null, null).startingCompose, undefined);
+  assert.equal(selectChatViewState(sentFrom(tab.tileId), null, null).startingCompose?.text, 'hi');
 });

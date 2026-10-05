@@ -12,6 +12,7 @@ import {
 } from '../lib/git';
 import { detectPullRequest } from '../lib/github';
 import { activeSessionCwds } from '../lib/sessions';
+import { selectedChats } from '../features/tabs/tabStrip';
 import { toast } from '../lib/toast';
 import { utilityTerminalCwds } from '../lib/utilityPanel';
 import { linkedSessionsForWorktree, uniqueWorktreeRepositories } from '../lib/worktreeSettings';
@@ -111,6 +112,7 @@ export function WorktreesSettings() {
       sessions: current.sessions,
       workspaceCwds: current.workspaceCwds,
       activeAppSessionId: current.activeAppSessionId,
+      tabStrip: current.tabStrip,
       draftChat: current.draftChat,
       childSessions: current.childSessions,
       childRuntime: current.childRuntime,
@@ -175,7 +177,7 @@ export function WorktreesSettings() {
 
   const sessionCwds = activeSessionCwds({
     sessions,
-    activeAppSessionId: state.activeAppSessionId,
+    selectedAppSessionIds: selectedChats(state),
     draftCwd: state.draftChat?.cwd,
     childSessions: state.childSessions,
     childRuntime: state.childRuntime,

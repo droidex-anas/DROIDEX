@@ -29,6 +29,7 @@ const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
 const { createNativeBrowserBudget } = require('./nativeBrowserBudget.cjs');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -133,6 +134,7 @@ const nativeBrowserBudget = createNativeBrowserBudget({
   maxLive: process.env.DROID_NATIVE_BROWSER_MAX_LIVE,
   idleMs: HIDDEN_BROWSER_IDLE_MS,
 });
+const nativeBrowserShortcuts = createNativeBrowserShortcuts({ getMainWindow: () => mainWindow });
 const nativeBrowserManager = createNativeBrowserManager({
   app,
   appName: APP_NAME,
@@ -143,6 +145,7 @@ const nativeBrowserManager = createNativeBrowserManager({
   safeStorage,
   budget: nativeBrowserBudget,
   getMainWindow: () => mainWindow,
+  onBrowserInput: nativeBrowserShortcuts.handleInput,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
   getHostAppUrl: () => process.env.ELECTRON_START_URL || mainWindow?.webContents.getURL(),
   sendToRenderer: (channel, payload) => {
@@ -946,6 +949,10 @@ function registerIpc() {
   ipcMain.handle('native-browser-capture', (event, { browserSessionId, box, options }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.capture(browserSessionId, box, options);
+  });
+  ipcMain.handle('native-browser-set-shortcuts', (event, { chords }) => {
+    assertMainRenderer(event);
+    nativeBrowserShortcuts.setChords(chords);
   });
 
   ipcMain.on('native-browser-selection', (event, selection) => {
