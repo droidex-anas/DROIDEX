@@ -116,7 +116,7 @@ test('[C2] an isolated preview host contains a 200000-message burst', async () =
       `
       addEventListener('message', () => {
         const startedAt = performance.now();
-        for (let sent = 0; sent < 200000; sent += 1) parent.postMessage({ bad: true }, '*');
+        for (let sent = 0; sent < 200000; sent += 1) top.postMessage({ bad: true }, '*');
         console.log('ISOLATED_SENT ' + (performance.now() - startedAt));
       }, { once: true });
     `,
@@ -182,6 +182,7 @@ test('[C2] an isolated preview host contains a 200000-message burst', async () =
       `);
     }, document);
     const latencies: number[] = [];
+    const mainLatencies: number[] = [];
     await expect
       .poll(
         async () => {
@@ -194,7 +195,13 @@ test('[C2] an isolated preview host contains a 200000-message burst', async () =
             2,
           );
           latencies.push(performance.now() - at);
-          return app.evaluate(() => Reflect.get(globalThis, '__isolated').evidence.received);
+          const mainAt = performance.now();
+          const received = await bounded(
+            app.evaluate(() => Reflect.get(globalThis, '__isolated').evidence.received),
+            'main during isolated flood',
+          );
+          mainLatencies.push(performance.now() - mainAt);
+          return received;
         },
         { timeout: 30000, intervals: [100] },
       )
@@ -218,7 +225,22 @@ test('[C2] an isolated preview host contains a 200000-message burst', async () =
     assert.equal(evidence.sent, 200_000);
     assert.deepEqual(evidence.hostGone, []);
     assert.equal(evidence.previewCrashed, true);
-    console.log(JSON.stringify({ isolatedPreviewHost: { ...evidence, latencies, afterMs } }));
+    const p95 = (values: number[]) =>
+      [...values].sort((left, right) => left - right)[Math.ceil(values.length * 0.95) - 1];
+    console.log(
+      JSON.stringify({
+        isolatedPreviewHost: {
+          ...evidence,
+          latencies,
+          chatMaxMs: Math.max(...latencies),
+          chatP95Ms: p95(latencies),
+          mainLatencies,
+          mainMaxMs: Math.max(...mainLatencies),
+          mainP95Ms: p95(mainLatencies),
+          afterMs,
+        },
+      }),
+    );
   });
 });
 
