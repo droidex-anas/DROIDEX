@@ -6,25 +6,34 @@
 
 const AUTO_ATTACH = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true };
 const PAINT_WAIT_MS = 500;
-const attachments = new WeakMap(); // guest debugger -> { sessions, pending }
+// guest debugger -> { sessions, pending, failed, autoAttach }
+const attachments = new WeakMap();
 
 function send(dbg, sessionId, method, params = {}) {
   return sessionId ? dbg.sendCommand(method, params, sessionId) : dbg.sendCommand(method, params);
 }
 
 // Events for frames that already exist arrive before setAutoAttach answers,
-// so awaiting the pending calls is enough to know every frame.
+// so awaiting the pending calls is enough to know every frame. A session
+// whose frames could not be attached is kept in `failed` and tried again on
+// the next call: frames inside it may be missing until then.
 async function attachFrames(dbg) {
   let attached = attachments.get(dbg);
   if (!attached) {
-    attached = { sessions: new Map(), pending: new Set() };
-    attachments.set(dbg, attached);
-    const { sessions, pending } = attached;
+    const sessions = new Map();
+    const pending = new Set();
+    const failed = new Set();
     const autoAttach = (sessionId) => {
-      const call = send(dbg, sessionId, 'Target.setAutoAttach', AUTO_ATTACH).catch(() => undefined);
+      failed.delete(sessionId);
+      const call = send(dbg, sessionId, 'Target.setAutoAttach', AUTO_ATTACH).catch(() => {
+        // A frame that closed meanwhile has nothing left to miss.
+        if (!sessionId || sessions.has(sessionId)) failed.add(sessionId);
+      });
       pending.add(call);
       void call.finally(() => pending.delete(call));
     };
+    attached = { sessions, pending, failed, autoAttach };
+    attachments.set(dbg, attached);
     const onMessage = (_event, method, params, sessionId) => {
       if (method === 'Target.attachedToTarget' && params.targetInfo.type === 'iframe') {
         sessions.set(params.sessionId, {
@@ -34,6 +43,7 @@ async function attachFrames(dbg) {
         autoAttach(params.sessionId);
       } else if (method === 'Target.detachedFromTarget') {
         sessions.delete(params.sessionId);
+        failed.delete(params.sessionId);
       }
     };
     dbg.on('message', onMessage);
@@ -42,16 +52,23 @@ async function attachFrames(dbg) {
       attachments.delete(dbg);
     });
     autoAttach(undefined);
+  } else {
+    for (const sessionId of attached.failed) attached.autoAttach(sessionId);
   }
   while (attached.pending.size) await Promise.all(attached.pending);
-  return attached.sessions;
+  return attached;
 }
 
 // Frames in document order within each process, each with the session to ask.
-// A frame that cannot be read is skipped (and reported to `onSkip`), or fails
-// the call when `strict`.
+// A frame that cannot be read, or that may be missing because its frames could
+// not be attached, is skipped (and reported to `onSkip`), or fails the call
+// when `strict`.
 async function documentFrames(dbg, { strict = false, onSkip } = {}) {
-  const sessions = await attachFrames(dbg);
+  const { sessions, failed } = await attachFrames(dbg);
+  if (failed.size) {
+    if (strict) throw new Error('A frame on this page could not be reached.');
+    onSkip?.();
+  }
   const frames = [];
   const visit = async (sessionId) => {
     const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
@@ -122,7 +139,7 @@ async function frameHolds(dbg, sessionId, loaderId) {
 // every iframe that holds it: the session to send keys on (a same-process
 // frame takes them through its parent's session) and that frame's document.
 async function focusedFrame(dbg) {
-  const sessions = await attachFrames(dbg);
+  const { sessions } = await attachFrames(dbg);
   let sessionId;
   let frameId; // the same-process frame in the session that holds the focus
   const held = [];
