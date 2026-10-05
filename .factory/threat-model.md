@@ -972,13 +972,13 @@ Gaining higher privileges than intended. In this system, the critical escalation
 
 **Vulnerable Components:**
 
-- `electron/nativeBrowserPreload.cjs` (49KB, runs in untrusted page context, `sandbox: false`)
+- `electron/nativeBrowserPreload.cjs` (44KB, runs in untrusted page context, `sandbox: false`)
 - `electron/main.cjs` (line 671: `sandbox: false` on WebContentsView)
 
 **Attack Vector:**
 
 1. Agent navigates to an attacker-controlled web page (or a legitimate page with a compromised ad/script)
-2. The page's JavaScript interacts with the exposed `__DROIDMAXX_AGENT_ACTION`, `__DROIDMAXX_APPLY_DESIGN_STATE`, or `__DROIDMAXX_FILL_CREDENTIALS` functions
+2. The page's JavaScript reaches preload code. The preload exposes nothing to the page's world: main calls its functions (design state, inspect, saved-login fill) in the preload's isolated world (`electron/browserPageScript.cjs`), and agent input goes through CDP, so the remaining surface is the preload's own DOM listeners
 3. A bug in the preload's DOM processing (snapshot extraction, hover/click resolution, credential capture) allows prototype pollution or similar
 4. The preload runs with full Node access (`sandbox: false`), so the attacker gains `require('child_process')`, `require('fs')`, etc.
 5. Attacker executes arbitrary commands on the host
@@ -1014,13 +1014,13 @@ const view = new WebContentsView({
 **Existing Mitigations:**
 
 - `contextIsolation: true` isolates preload context from page context (the page cannot directly access preload's globals)
-- Only 3 functions exposed via `contextBridge`
-- `executeJavaScript` calls use `JSON.stringify()` for parameter interpolation
+- The preload exposes nothing to the page: main calls its functions in the preload's isolated world (`executeJavaScriptInIsolatedWorld`, `electron/browserPageScript.cjs`), and agent input is CDP input from main, not page-script events
+- Arguments to those calls are interpolated with `JSON.stringify()`
 
 **Gaps:**
 
-- `sandbox: false` means any contextBridge bypass or prototype pollution in the preload grants full Node access
-- The preload is 49KB of DOM-processing code -- a large attack surface
+- `sandbox: false` means any isolated-world escape or prototype pollution in the preload grants full Node access
+- The preload is 44KB of DOM-processing code -- a large attack surface
 - `sandbox: true` would eliminate this risk but requires refactoring all Node-API usage to IPC
 
 **Severity:** HIGH | **Likelihood:** MEDIUM
