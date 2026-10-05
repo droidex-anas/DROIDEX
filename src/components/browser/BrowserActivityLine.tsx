@@ -18,10 +18,11 @@ import { WorkingIndicator } from '../transcript/primitives';
 import { summarizeTools } from '../transcript/rows';
 
 const NO_EVENTS: TranscriptEvent[] = [];
-// The panel draws the turn's latest steps and leaves the rest to the chat.
-// Closed, only enough of the turn's tail is read to name the step in flight.
+// The panel draws the turn's latest steps and leaves the rest to the chat,
+// with no more tool calls and results than it should mount at once. Closed,
+// only enough of the turn's tail is read to name the step in flight.
 const PANEL_ROWS = 40;
-const PANEL_EVENTS = 600;
+const PANEL_TOOL_EVENTS = 120;
 const CUE_EVENTS = 100;
 
 // One line over the full-screen page saying what the agent is doing now, the
@@ -55,17 +56,17 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
     if (session?.interruptReason) return 'interrupted';
     return 'ready';
   });
-  const recent = useMemo(
-    () => recentEvents(turn.events, open ? PANEL_EVENTS : CUE_EVENTS),
+  // Opened, the whole turn is grouped, so a group keeps its key, and with it
+  // its opened details, as new steps arrive.
+  const feed = useMemo(
+    () =>
+      buildFeed(open ? turn.events : recentEvents(turn.events, CUE_EVENTS))
+        // The page shows the browser's work itself, so its card stays in the transcript.
+        .filter((item) => item.type !== 'browser'),
     [turn.events, open],
   );
-  // The page shows the browser's work itself, so its card stays in the transcript.
-  const feed = useMemo(() => buildFeed(recent).filter((item) => item.type !== 'browser'), [recent]);
-  const steps = feed.slice(-PANEL_ROWS);
-  const earlier =
-    (!turn.start && turn.events.length > 0) ||
-    recent.length < turn.events.length ||
-    feed.length > steps.length;
+  const { steps, trimmed } = useMemo(() => latestSteps(feed), [feed]);
+  const earlier = (!turn.start && turn.events.length > 0) || trimmed;
 
   useEffect(() => {
     if (!open) return;
@@ -104,10 +105,10 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
   useLayoutEffect(() => {
     const list = stepsRef.current;
     if (open && list && atBottomRef.current) list.scrollTop = list.scrollHeight;
-  }, [open, feed, steerCount]);
+  }, [open, steps, steerCount]);
 
   if (!turn.start && turn.events.length === 0 && steerCount === 0) return null;
-  const tail = steps.at(-1);
+  const tail = feed.at(-1);
   const startTs = turn.start?.ts ?? turn.events.at(0)?.ts ?? 0;
   const cue = liveCue(tail, startTs);
   const worked = workedFor(turn.events, startTs);
@@ -215,6 +216,25 @@ function currentTurn(transcript: TranscriptEvent[]): Turn {
     since.push(event);
   }
   return { events: since.reverse() };
+}
+
+// The feed's last rows. A long run of tool calls keeps only its newest, so the
+// panel mounts a bounded number of them however long the turn has run.
+function latestSteps(feed: FeedItem[]): { steps: FeedItem[]; trimmed: boolean } {
+  const steps: FeedItem[] = [];
+  let room = PANEL_TOOL_EVENTS;
+  let index = feed.length - 1;
+  for (; index >= 0 && steps.length < PANEL_ROWS && room > 0; index -= 1) {
+    const item = feed[index];
+    if (item.type !== 'tools') {
+      steps.push(item);
+      continue;
+    }
+    const events = recentEvents(item.events, room);
+    room -= item.events.length;
+    if (events.length > 0) steps.push(events === item.events ? item : { ...item, events });
+  }
+  return { steps: steps.reverse(), trimmed: index >= 0 || room < 0 };
 }
 
 // The turn's last events, starting clear of a result whose call was cut off,
