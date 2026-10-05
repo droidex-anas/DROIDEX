@@ -159,9 +159,16 @@ export function startBridgeServer(options: {
     ws.on('close', disconnect);
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
+    // A renderer sends its queued commands as soon as the socket opens, while
+    // the resume below is still replaying; hold them and run them in order.
+    const early: RawData[] = [];
+    const hold = (raw: RawData) => early.push(raw);
+    ws.on('message', hold);
     const admitted = await resumeClient(ws, url);
+    ws.off('message', hold);
     if (!admitted || ws.readyState !== ws.OPEN) return;
     clients.add(ws);
+    for (const raw of early) void handleMessage(ws, raw, pageId);
     ws.on('message', (raw) => void handleMessage(ws, raw, pageId));
   }
 
