@@ -216,7 +216,6 @@ export class BrowserSessionManager {
   ): Promise<BrowserOutcome> {
     const session = this.requireSession(input.appSessionId);
     const target = targetFrom(input);
-    if (!('ref' in target)) this.showAgentCursor(session, target);
     const { button, count, modifiers } = input;
     return this.applied(session, await session.runtime.click(target, { button, count, modifiers }));
   }
@@ -229,7 +228,6 @@ export class BrowserSessionManager {
   }): Promise<BrowserOutcome> {
     const session = this.requireSession(input.appSessionId);
     const target = targetFrom(input);
-    if (!('ref' in target)) this.showAgentCursor(session, target);
     return this.applied(session, await session.runtime.hover(target));
   }
 
@@ -285,7 +283,6 @@ export class BrowserSessionManager {
           x: Math.round(session.state.viewport.width / 2),
           y: Math.round(session.state.viewport.height / 2),
         };
-    if (!('ref' in target)) this.showAgentCursor(session, target);
     return this.applied(
       session,
       await session.runtime.scroll(input.direction, input.pixels, target),
@@ -521,11 +518,6 @@ export class BrowserSessionManager {
 
   private emitUpdated(state: BrowserState): void {
     this.options.emit?.({ type: 'browser.updated', state });
-  }
-
-  private showAgentCursor(session: ManagedBrowserSession, point: { x: number; y: number }): void {
-    session.state = { ...session.state, agentCursor: point };
-    this.emitUpdated(session.state);
   }
 }
 

@@ -42,7 +42,6 @@ class FakeRuntime implements BrowserRuntime {
   canGoBack = false;
   canGoForward = false;
   omitHistory = false;
-  clickError?: Error;
   viewportError?: Error;
 
   constructor(viewport: BrowserViewport) {
@@ -129,7 +128,6 @@ class FakeRuntime implements BrowserRuntime {
 
   async click(target: BrowserTarget) {
     this.clicks.push(target);
-    if (this.clickError) throw this.clickError;
     return this.result();
   }
 
@@ -250,20 +248,6 @@ test('a failed resize keeps the viewport and emits nothing, and a resize records
   delete runtime.viewportError;
   const state = await manager.resizeViewport(mobile);
   assert.equal(state.viewportMode, 'mobile');
-});
-
-test('agent clicks move the visible agent cursor, even when the click fails', async () => {
-  const updates: BrowserState[] = [];
-  const { manager, runtime } = await opened({ emit: recordUpdates(updates) });
-
-  const { state } = await manager.click({ appSessionId: 'm1', x: 50, y: 35 });
-  assert.deepEqual(state.agentCursor, { x: 50, y: 35 });
-
-  const updateCount = updates.length;
-  runtime.clickError = new Error('click failed');
-  await assert.rejects(manager.click({ appSessionId: 'm1', x: 50, y: 35 }), /click failed/);
-  assert.equal(updates.length, updateCount + 1);
-  assert.deepEqual(updates.at(-1)?.agentCursor, { x: 50, y: 35 });
 });
 
 test('addReference captures an anchor crop and current browser context, readable by id', async () => {

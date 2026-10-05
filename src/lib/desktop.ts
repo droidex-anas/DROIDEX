@@ -4,6 +4,7 @@ import type {
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
   NativeBrowserSelection,
+  NativeBrowserAgentPoint,
   NativeBrowserWorking,
 } from './nativeBrowser';
 import type { NativeBrowserChord } from './shortcuts';
@@ -319,6 +320,7 @@ interface DroidControlApi {
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
+  onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
   onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
 

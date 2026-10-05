@@ -71,6 +71,7 @@ function createNativeBrowserManager(options) {
     credentials,
     devTools,
     runWithWebContentsDebugger,
+    sendToRenderer: options.sendToRenderer,
     findEntryForContents: findNativeBrowserEntryForWebContents,
     nativeImage: options.nativeImage,
   });
