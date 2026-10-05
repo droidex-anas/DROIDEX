@@ -77,12 +77,8 @@ export function createBrowserMcpServer(
           if (input.action === 'reload')
             return said({ done: 'Reloaded the page.', outcome: await manager.reload(id) });
           if (!input.url) throw new Error('Pass a url, or an action: back, forward or reload.');
-          // A browser the agent starts lays pages out at desktop size.
-          const outcome = await manager.open({
-            appSessionId: id,
-            url: input.url,
-            viewportMode: manager.hasSession(id) ? undefined : 'desktop',
-          });
+          // A browser the agent starts is on Fit, so the page takes the pane's size.
+          const outcome = await manager.open({ appSessionId: id, url: input.url });
           return said({ done: 'Opened the page.', outcome });
         }),
       ),
@@ -227,7 +223,7 @@ export function createBrowserMcpServer(
       tool(
         'browser_viewport',
         [
-          "Lay the page out at a standard size: desktop (1440×900, where a browser you open starts), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit follows the size of the user's pane.",
+          "Lay the page out at a standard size: desktop (1440×900), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit, where a browser you open starts, follows the size of the user's pane.",
           'The page reflows to it; the user sees the same page scaled to fit their pane. Use it to check a responsive layout.',
           "Tablet and mobile also tell the page it is a touch device (touch points, a coarse pointer) with Chrome for Android's user agent; your clicks stay mouse clicks. A scheme asks the page for its light or dark look.",
         ].join(' '),
