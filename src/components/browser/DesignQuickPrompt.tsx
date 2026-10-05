@@ -110,6 +110,10 @@ export function useDesignQuickPrompt({
         if (strokes) sketch.current = { anchorId: id, box };
         else show({ anchorId: id, box });
       } else if (event.type === 'boxes') {
+        // A sketch scrolled while it is drawn opens its box where it now is.
+        const drawn = sketch.current;
+        const drawnBox = drawn && event.boxes.find((mark) => mark.id === drawn.anchorId)?.box;
+        if (drawn && drawnBox) sketch.current = { ...drawn, box: drawnBox };
         setPrompt((current) => {
           const moved = current && event.boxes.find((mark) => mark.id === current.anchorId)?.box;
           return current && moved ? { ...current, box: moved } : current;
