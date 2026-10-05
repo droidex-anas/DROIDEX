@@ -73,7 +73,7 @@ export function inspectionText(inspection: BrowserElementInspection): string {
     ),
     line('text', inspection.text),
     iframe
-      ? `frame: ${iframe.src ?? 'no address'}, ${iframe.accessible ? 'same site' : 'cross-site'}`
+      ? `frame: ${iframe.src ?? 'no address'}, ${iframe.accessible ? 'accessible' : 'not accessible'}`
       : undefined,
     `html: ${inspection.html}`,
   ]
