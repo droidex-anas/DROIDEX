@@ -168,7 +168,8 @@ export default defineConfig({
 ```
 
 - [ ] Verify the locked compiler version and its native binary requirements against packaging. Use `sonatype-guide` before selecting/promoting dependencies; its service was unavailable during planning, so no dependency security verdict is implied. Package the compiler worker, correct architecture binary, React/runtime/CSS assets and licensed fonts explicitly. Do not rely on checkout `node_modules` or a CDN.
-- [x] Probe local MCP discovery and the per-session server + turn-lease binding (spec §6) on all three adapters: a delayed call after turn settlement must be refused, a steer during an active call must keep the original lease, and a Droid child calling through the parent's server must land in the parent's scope. Confirm scopes pin without prepending hidden text to a user message or editing global harness settings. For Codex, measure both the existing dynamic-tools bridge and `thread/start`/`thread/resume` `config.mcp_servers.<name>.url` forwarding against the SDK's stateless Streamable HTTP server. Measured: mutation lease refused on all harnesses; Codex dynamic-tools bridge chosen; stale reads unbound on Droid; Droid child unverified. Details in spec §6.
+- [x] Probe local MCP discovery and the per-session server + turn-lease binding (spec §6) on all three adapters for primary sessions: a delayed call after turn settlement must be refused and a steer during an active call must keep the original lease. Confirm scopes pin without prepending hidden text to a user message or editing global harness settings. For Codex, measure both the existing dynamic-tools bridge and `thread/start`/`thread/resume` `config.mcp_servers.<name>.url` forwarding against the SDK's stateless Streamable HTTP server. Measured: mutation lease refused on all harnesses; Codex dynamic-tools bridge chosen; stale reads unbound on Droid. Details in spec §6.
+- [ ] Prove a Droid child calling through the parent's server lands in the parent's scope with a live reopened `child.open` session. A native Droid `Task` subagent did not discover the probe tools; DROIDEX's own child runtime path is unverified. Owned by Task 4d; variants (Task 9) must not depend on it.
 - [x] Measure the compiler two ways in a sidecar worker thread: native `esbuild` (needs `@esbuild/darwin-arm64` and `-x64` packaged unpacked beside `sidecar/dist`, since the sidecar ships as a self-contained bundle in `extraResources`) and `esbuild-wasm` (no native binary, slower cold start). Run Tailwind 3 JIT over the same fixture in the worker and record its cold and warm cost separately. Record cold build time, warm build time, artifact size and packaged size for each; pick one for Task 3 from the numbers.
 - [x] Run `npx playwright test --config=playwright.canvas-smoke.config.ts` against the probe and retain measured evidence for Task 3. Record pass/fail per architecture; unavailable hardware is unverified, not passed. Review the focused diff; commit only if execution authorization covers commits.
 
@@ -666,6 +667,12 @@ Run `npm run docs:generate` before `docs:check` when script/environment document
 - [ ] Record a short product demo using both the narrow utility pane and expanded canvas. Demonstrate actual clicks and persisted designs rather than only generation animation. Use the original recordings as reference; do not redistribute them as DROIDEX marketing assets.
 - [ ] Self-review the final diff for identity mistakes, stale results, duplicate state, dead old paths, wrappers, oversized modules, unusable controls, prompt leakage and undocumented limits. Remove scratch probes/reports and keep only valuable tests. Do not add compatibility code for the old PR. Keep changed-file descriptions factual and small.
 - [ ] Finish with implemented behavior, tests actually exercised, measured performance, provider/platform verification rows and remaining limitations. If a release criterion is unverified or failing, state that explicitly. Commit/push/open PR only when authorized; this plan does not grant that authorization.
+
+## Follow-ups
+
+Noted during execution; not in any task's scope. Each needs its own change and review.
+
+- `tests/smoke/*.ts` and `tests/integration/*.ts` are outside the typed ESLint file set (`eslint.config.js`) and every `tsconfig`. This predates Canvas and covers the existing Electron smokes too. Add a focused test tsconfig and lint coverage for `tests/` as a repository-wide change.
 
 ## Plan self-review and handoff checklist
 
