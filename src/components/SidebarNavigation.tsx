@@ -76,6 +76,7 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         data-testid="pull-requests-nav"
         onClick={openPullRequests}
         onAuxClick={openPullRequests}
+        onMouseDown={preventAutoscroll}
         className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
           state.mainView === 'pull-requests' ? 'bg-droid-active' : ''
         }`}
@@ -97,6 +98,7 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         aria-current={state.mainView === 'projects' ? 'page' : undefined}
         onClick={openProjects}
         onAuxClick={openProjects}
+        onMouseDown={preventAutoscroll}
         className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-droid-active text-droid-text' : 'text-droid-text hover:bg-droid-elevated'}`}
       >
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-droid-text-secondary">
@@ -113,6 +115,7 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         data-testid="automations-nav"
         onClick={openAutomations}
         onAuxClick={openAutomations}
+        onMouseDown={preventAutoscroll}
         aria-current={state.mainView === 'automations' ? 'page' : undefined}
         className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
           state.mainView === 'automations' ? 'bg-droid-active' : ''
@@ -129,6 +132,11 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
       </button>
     </>
   );
+}
+
+// A middle press would otherwise start the browser's autoscroll.
+function preventAutoscroll(event: MouseEvent) {
+  if (event.button === 1) event.preventDefault();
 }
 
 function ProjectsNavBadge({ attention, live }: { attention: number; live: boolean }) {
