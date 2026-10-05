@@ -98,7 +98,8 @@ const sidecarSupervisor = createSidecarSupervisor({
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
-  onMessage: (message, reply) => void nativeBrowserRequests.handle(message, reply),
+  onMessage: (message, reply, runEnded) =>
+    void nativeBrowserRequests.handle(message, reply, runEnded),
 });
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.

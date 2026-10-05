@@ -122,7 +122,7 @@ function createNativeBrowserPage({
           const ran = await devTools
             .evaluate(contents, request.script, () => {
               stillOpen();
-              if (Date.now() >= request.startBy)
+              if (Date.now() >= request.startBy || request.runEnded())
                 throw new Error('The browser page did not finish in time.');
               navigation = observeNavigation(contents);
             })

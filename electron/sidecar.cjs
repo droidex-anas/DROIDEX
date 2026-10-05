@@ -223,12 +223,17 @@ function createSidecarSupervisor(options) {
         const text = String(chunk);
         errorOutput.write(text);
       });
-      // Answers go back to the run that asked, never to a later one.
+      // Answers go back to the run that asked, never to a later one, and work
+      // it asked for stops changing pages once it has exited or been stopped.
       nextChild.on?.('message', (message) => {
-        options.onMessage?.(message, (reply) => {
-          // A sidecar closing as the answer goes out simply never gets it.
-          if (nextChild.connected) nextChild.send(reply, () => undefined);
-        });
+        options.onMessage?.(
+          message,
+          (reply) => {
+            // A sidecar closing as the answer goes out simply never gets it.
+            if (nextChild.connected) nextChild.send(reply, () => undefined);
+          },
+          () => activeRun !== run,
+        );
       });
     });
     const wrappedStart = startPromise.finally(() => {
