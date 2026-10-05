@@ -30,6 +30,7 @@ const ACTIONS = new Set([
   'fillCredentials',
   'wait',
   'awaitViewport',
+  'evaluate',
 ]);
 // Reading the logs or recording the viewport or scheme never needs the page itself.
 const PAGELESS_ACTIONS = new Set(['resize', 'colorScheme', 'network', 'console']);
@@ -44,6 +45,7 @@ const TURN_ACTIONS = new Set([
   'fillCredentials',
   'wait',
   'awaitViewport',
+  'evaluate',
 ]);
 const LATE = 'The browser page did not finish in time.';
 const CLOSED = 'The browser was closed.';
@@ -310,6 +312,7 @@ function agentAction(request) {
     viewport: request.viewport,
     viewportMode: request.viewportMode,
     colorScheme: request.colorScheme,
+    script: request.script,
   };
 }
 

@@ -99,6 +99,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - **Main -> Sidecar:** The token is injected into the sidecar's env via `BRIDGE_TOKEN`. In dev mode, `BRIDGE_ALLOW_LOCAL_NO_TOKEN='1'` bypasses the check entirely.
 - **Files root access:** `createRootAccessRegistry` issues a 32-byte random token per authorized root; all subsequent file operations require this token.
 - **Credential consent:** Browser credential autofill requires explicit user consent (`browser-credentials.consent` state machine: `unset` -> `enabled`/`disabled`).
+- **Developer-tools consent:** The agent tool `browser_evaluate` runs script in a browser page only on an origin the user allowed for it (`browserDevTools.cjs`): the exact origin, asked for by name in a native dialog, kept in memory until the app quits, never the app's own pages. The origin is checked inside the same evaluated step as the script. On an allowed origin script can read what the other browser tools mask, including field values; the dialog says so.
 
 **Critical Security Controls:**
 
