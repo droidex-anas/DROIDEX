@@ -48,6 +48,8 @@ type ContentBlock =
       tool_use_id?: string;
       name?: string;
       content: string;
+      // The saved files of the pictures the result carried.
+      images?: string[];
       is_error?: boolean;
       pollsChildSessionId?: string;
       interrupted?: true;
@@ -404,6 +406,7 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
     ...(event.toolUseId ? { tool_use_id: event.toolUseId } : {}),
     ...(event.toolName ? { name: event.toolName } : {}),
     content: event.text ?? '',
+    ...(event.images ? { images: event.images } : {}),
     ...(event.isError ? { is_error: true } : {}),
     ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
     ...(event.interrupted ? { interrupted: true } : {}),

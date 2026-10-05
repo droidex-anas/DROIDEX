@@ -12,6 +12,7 @@ import type { ModelInfo, SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/clau
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
+import { toolResultParts } from '../../toolResultImages.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { claudeCatalogModelId } from './claudeModels.js';
 import { usageRefusal } from './claudeRateLimits.js';
@@ -284,7 +285,7 @@ export class ClaudeEventMapper {
     return content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
-      const text = toolResultText(block.content);
+      const { text, images } = toolResultParts(block.content);
       // A call the user stopped, with Stop or Send now, is not a failure, and
       // the CLI says so in this one sentence. Reading it here keeps the renderer
       // free of text matching, and the row quiet instead of red.
@@ -293,6 +294,7 @@ export class ClaudeEventMapper {
         ...owner,
         transcript: this.transcript('tool_result', {
           text,
+          ...(images ? { images } : {}),
           isError: block.is_error === true && !interrupted,
           toolUseId: block.tool_use_id,
           ...(interrupted ? { interrupted: true } : {}),
@@ -482,15 +484,4 @@ function parseToolInput(json: string): unknown {
   } catch {
     return {};
   }
-}
-
-function toolResultText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return content === undefined ? '' : JSON.stringify(content);
-  return content
-    .map((block: unknown) => {
-      const text = (block as { text?: string }).text;
-      return typeof text === 'string' ? text : JSON.stringify(block);
-    })
-    .join('\n');
 }
