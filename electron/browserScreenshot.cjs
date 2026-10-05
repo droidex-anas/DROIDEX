@@ -52,6 +52,10 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
     if (box?.sessionId && !(await framePainted(dbg, box.sessionId)))
       throw new Error('The frame did not paint in time; no screenshot was taken.');
     const view = await viewOf(dbg);
+    // A design pick is captured on the page and at the scroll it was made on,
+    // so its picture never shows something else under its box.
+    if (options.at && !viewedAt(view, options.at))
+      throw new Error('The page moved before the pick was captured.');
     const clip = clipFor(view, options, box);
     const masks = await masksFor(dbg, view, options);
     const scale = Math.min(1, MAX_EDGE / Math.max(clip.width, clip.height));
@@ -67,6 +71,8 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
       image: (png ? image.toPNG() : image.toJPEG(JPEG_QUALITY)).toString('base64'),
       mimeType: png ? 'image/png' : 'image/jpeg',
       text: `${geometry(options, clip, scale, view, width, height)}\n${footer(contents)}`,
+      // The rectangle the image shows, in CSS pixels, once cut to the viewport.
+      clip,
     };
   }
 
@@ -126,8 +132,20 @@ async function viewOf(dbg) {
     dpr: metrics.visualViewport.clientWidth / css.clientWidth || 1,
     contentWidth: Math.ceil(metrics.cssContentSize.width),
     contentHeight: Math.ceil(metrics.cssContentSize.height),
+    url: frameTree.frame.url,
     key: `${frameTree.frame.loaderId}:${frameTree.frame.url}:${css.pageX}:${css.pageY}:${css.clientWidth}:${css.clientHeight}`,
   };
+}
+
+// The view is of the picked document (onPickedPage, read once the view is),
+// at its URL (CDP leaves out the fragment) and scroll.
+function viewedAt(view, { url, scroll, onPickedPage }) {
+  return (
+    onPickedPage() &&
+    view.url === String(url).split('#')[0] &&
+    Math.round(view.pageX) === scroll?.x &&
+    Math.round(view.pageY) === scroll?.y
+  );
 }
 
 // The captured rectangle in CSS pixels: the viewport, the page, or a crop of

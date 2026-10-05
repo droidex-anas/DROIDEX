@@ -11,9 +11,20 @@ import {
   type BrowserHostState,
   type BrowserPage,
 } from '../../lib/browserHost';
+import { addDesignReference } from '../../lib/commands';
+import {
+  addDesignMark,
+  attachDesignShot,
+  designReferenceFor,
+  dropDesignMarks,
+  expectDesignShot,
+  removeDesignMark,
+  settleDesignShot,
+} from './designMarks';
 import {
   listWorkingNativeBrowsers,
   onNativeBrowserClosed,
+  onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
   onNativeBrowserWorking,
@@ -45,8 +56,18 @@ export function BrowserHost() {
     return bySession;
   }, [browsers]);
 
+  // Marks picked in a browser go when it closes. Marks a queued prompt brings
+  // back to the composer after that stay: they are its own snapshots.
+  const shownBrowsers = useRef(browsers);
+  useEffect(() => {
+    for (const appSessionId of Object.keys(shownBrowsers.current))
+      if (!(appSessionId in browsers)) dropDesignMarks(appSessionId);
+    shownBrowsers.current = browsers;
+  }, [browsers]);
+
   // Pages work, navigate and crash while the pane is closed too, so all of it
-  // is followed here rather than by the pane.
+  // is followed here rather than by the pane. A pick is the chat's whose page
+  // it came from, even once another chat is shown.
   useEffect(() => {
     const appSessionIdFor = (browserSessionId: string) =>
       Object.keys(browsersRef.current).find(
@@ -58,6 +79,8 @@ export function BrowserHost() {
       setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
     };
     const heard = new Set<string>();
+    // Picks waiting on their crop, by main's number for the pick.
+    const awaitingShot = new Map<number, { appSessionId: string; id: string }>();
     const subscriptions = [
       onNativeBrowserWorking(({ browserSessionId, working }) => {
         heard.add(browserSessionId);
@@ -65,6 +88,29 @@ export function BrowserHost() {
       }),
       onNativeBrowserClosed(({ browserSessionId }) => {
         closeBrowserPage(browserSessionId);
+      }),
+      onNativeBrowserDesignEvent((event) => {
+        if (event.type === 'shot') {
+          // A crop that comes after its mark was taken away or picked again is dropped.
+          const waiting = awaitingShot.get(event.pick);
+          awaitingShot.delete(event.pick);
+          if (waiting) settleDesignShot(waiting.id, event.screenshot);
+          const shot =
+            waiting &&
+            event.screenshot &&
+            attachDesignShot(waiting.appSessionId, waiting.id, event.screenshot);
+          if (waiting && shot) addDesignReference(waiting.appSessionId, shot);
+          return;
+        }
+        const appSessionId = event.browserSessionId && appSessionIdFor(event.browserSessionId);
+        if (!appSessionId) return;
+        if (event.type === 'select') {
+          const viewport = browsersRef.current[appSessionId].viewport;
+          const mark = addDesignMark(appSessionId, designReferenceFor(event.selection, viewport));
+          addDesignReference(appSessionId, mark);
+          awaitingShot.set(event.pick, { appSessionId, id: mark.id });
+          expectDesignShot(mark.id);
+        } else if (event.type === 'unselect') removeDesignMark(appSessionId, event.id);
       }),
       onNativeBrowserLoadFailed((failure) => {
         if (failure.crashed && failure.browserSessionId)

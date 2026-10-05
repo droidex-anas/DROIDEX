@@ -81,6 +81,9 @@ function createNativeBrowserViewFactory({
       setup: null,
       failedRestoreUrl: null,
       state: { designMode: false, pencilMode: false },
+      // Documents the page has loaded, so a design crop is never taken of a
+      // later one, a reload of the same URL included.
+      documents: 0,
       loadingUrl: null,
       loadingPromise: null,
       networkEvents: [],
@@ -120,6 +123,7 @@ function createNativeBrowserViewFactory({
       entry.targetUrl = requestedUrl;
     });
     contents.on('did-navigate', (_event, loadedUrl) => {
+      if (current()) entry.documents += 1;
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;
       if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;

@@ -2,7 +2,6 @@ import type { BrowserColorScheme, BrowserNativeRequest, BrowserNativeResult } fr
 import type { BrowserRuntime } from './BrowserSessionManager.js';
 import type {
   BrowserActionResult,
-  BrowserBox,
   BrowserClickOptions,
   BrowserElementInspection,
   BrowserConsoleEvent,
@@ -65,13 +64,6 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     if (!result.image || !result.mimeType)
       throw new Error('Native browser did not return a screenshot.');
     return { image: result.image, mimeType: result.mimeType, text: result.text ?? '' };
-  }
-
-  async capture(box?: BrowserBox): Promise<string> {
-    const result = await this.send({ action: 'capture', box });
-    if (!result.ok) throw new Error(result.error ?? 'Native browser capture failed.');
-    if (!result.image) throw new Error('Native browser did not return a captured image.');
-    return result.image;
   }
 
   async readPage(options: BrowserReadOptions = {}): Promise<string> {

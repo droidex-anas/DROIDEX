@@ -9,7 +9,6 @@ import {
   type BrowserSessionManagerOptions,
 } from './BrowserSessionManager.js';
 import type {
-  BrowserBox,
   BrowserScreenshotOptions,
   BrowserState,
   BrowserTarget,
@@ -34,7 +33,6 @@ class FakeRuntime implements BrowserRuntime {
   selections: { ref: string; value: string }[] = [];
   inspections: ({ ref: string } | { selector: string })[] = [];
   screenshots: BrowserScreenshotOptions[] = [];
-  captures: (BrowserBox | undefined)[] = [];
   viewport: BrowserViewport;
   openedUrls: string[] = [];
   reloads = 0;
@@ -84,11 +82,6 @@ class FakeRuntime implements BrowserRuntime {
 
   async readText() {
     return '# Page';
-  }
-
-  async capture(box?: BrowserBox): Promise<string> {
-    this.captures.push(box);
-    return Buffer.from('crop').toString('base64');
   }
 
   async wait() {
@@ -250,18 +243,18 @@ test('a failed resize keeps the viewport and emits nothing, and a resize records
   assert.equal(state.viewportMode, 'mobile');
 });
 
-test('addReference captures an anchor crop and current browser context, readable by id', async () => {
-  const { manager, runtime } = await opened();
-  const reference = await manager.addReference('m1', {
-    anchor: buttonAnchor(),
-    detail: buttonDetail(),
-  });
+test('addReference saves the crop the app took and the current browser context, readable by id', async () => {
+  const { manager } = await opened();
+  const reference = await manager.addReference(
+    'm1',
+    { anchor: buttonAnchor(), detail: buttonDetail() },
+    { base64: Buffer.from('crop').toString('base64'), box: buttonAnchor().box! },
+  );
 
   assert.equal(reference.url, 'http://127.0.0.1:1420/');
   assert.equal(reference.viewport.width, 1440);
   assert.equal(reference.anchor.id, reference.id);
-  assert.ok(reference.anchor.screenshotPath, 'expected an auto-captured crop path');
-  assert.deepEqual(runtime.captures.at(-1), buttonAnchor().box);
+  assert.ok(reference.anchor.screenshotPath, 'expected the crop to be saved');
   const fetched = manager.referenceDetail('m1', reference.id);
   assert.equal(fetched?.detail?.selector, 'button');
   assert.equal(fetched?.detail?.id, reference.id);
@@ -291,21 +284,25 @@ test('designPrompt needs a reference and writes the selected ones with a trimmed
       manager.designPrompt({
         appSessionId: 'm1',
         instruction: 'Make this clearer',
-        referenceIds: [],
+        references: [],
       }),
     /Select or sketch at least one browser reference/,
   );
 
-  const reference = await manager.addReference('m1', { anchor: buttonAnchor() });
+  // A pick that reaches the sidecar only with its prompt goes from the prompt's
+  // own copy, without becoming a live mark, and stays readable by its id.
   const result = await manager.designPrompt({
     appSessionId: 'm1',
     instruction: '  Make the button clearer  ',
-    referenceIds: [reference.id],
+    references: [{ id: 'pick-1', anchor: buttonAnchor(), url: 'http://127.0.0.1:1420/' }],
   });
 
   assert.equal(writtenInstruction, 'Make the button clearer');
   assert.equal(writtenReferenceCount, 1);
   assert.match(result.prompt, /Make the button clearer/);
+  assert.match(result.prompt, /pick-1/);
+  assert.deepEqual(manager.designContext('m1').references, []);
+  assert.equal(manager.referenceDetail('m1', 'pick-1')?.url, 'http://127.0.0.1:1420/');
 });
 
 test('screenshots are taken only on request, with the requested crop', async () => {

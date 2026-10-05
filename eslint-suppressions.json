@@ -1,7 +1,7 @@
 {
   "electron/nativeBrowserPreload.cjs": {
     "no-undef": {
-      "count": 72
+      "count": 42
     }
   },
   "sidecar/src/ChildSessions.test.ts": {
@@ -25,9 +25,6 @@
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 4
     }
   },
   "sidecar/src/browser/NativeBrowserRuntime.ts": {
@@ -268,7 +265,7 @@
   },
   "src/lib/nativeBrowser.ts": {
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 13
+      "count": 11
     }
   },
   "src/lib/repoEnvironment.ts": {

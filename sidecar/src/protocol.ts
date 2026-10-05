@@ -631,7 +631,6 @@ type BrowserNativeAction =
   | 'inspect'
   | 'network'
   | 'console'
-  | 'capture'
   | 'screenshot'
   | 'close'
   | 'fillCredentials'
@@ -671,7 +670,6 @@ export interface BrowserNativeRequest {
   modifiers?: string[];
   direction?: BrowserScrollDirection;
   pixels?: number;
-  box?: BrowserBox;
   region?: BrowserBox;
   fullPage?: boolean;
   format?: 'jpeg' | 'png';
@@ -733,6 +731,8 @@ export interface DesignAnchor {
   source?: ElementSource;
   screenshotPath?: string;
   strokes?: DesignStrokePoint[][];
+  /** The mark's number in the composer, which the user writes as @1, @2. */
+  mark?: number;
 }
 
 export interface DesignAnchorDetail {
@@ -1013,11 +1013,16 @@ export type ClientCommand =
       follow?: boolean;
     }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
+  /** Marks the user took away or picked again, so design-mode reads only live ones. */
+  | { type: 'browser.design.removeReferences'; appSessionId: string; ids: string[] }
   | {
       type: 'browser.design.sendPrompt';
       appSessionId: string;
       instruction: string;
-      referenceIds: string[];
+      /** The prompt's own snapshots of its marks, each under an id no other pick has. */
+      references: DesignReference[];
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
     }
   | { type: 'sidebar.result'; result: SidebarResult };
 
@@ -1248,7 +1253,12 @@ export type ServerEvent =
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
   | { type: 'sidebar.request'; request: SidebarRequest }
-  | { type: 'browser.closed'; appSessionId: string }
+  | {
+      type: 'browser.closed';
+      appSessionId: string;
+      /** Closed with the chat's runtime, not by the user: the pane stays open for a new page. */
+      keepPane?: boolean;
+    }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
 export const BRIDGE_PROTOCOL_VERSION = 9 as const;

@@ -85,6 +85,14 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
       if (event.key === 'Escape') close();
       if (rootRef.current?.contains(document.activeElement)) wrapTabFocus(event, rootRef.current);
     };
+    // Escape from inside the panel is marked handled before it reaches the
+    // window, so it closes only the panel and does not also step out of
+    // drawing or design mode.
+    const root = rootRef.current;
+    const onPanelKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') event.preventDefault();
+    };
+    root?.addEventListener('keydown', onPanelKey);
     // A click on the page lands in its own document; here it only shows as
     // the focus leaving for the page. A dialog a step opened, such as a
     // screenshot shown large, is still part of the panel.
@@ -99,6 +107,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
     window.addEventListener('mousedown', onAway);
     window.addEventListener('focusin', onAway);
     return () => {
+      root?.removeEventListener('keydown', onPanelKey);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onAway);
       window.removeEventListener('focusin', onAway);

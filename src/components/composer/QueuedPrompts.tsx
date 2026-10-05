@@ -75,17 +75,15 @@ export function QueuedPrompts({
               )}
             </PendingPromptPreview>
             <div className="flex shrink-0 items-center gap-0.5">
-              {!p.design && (
-                <button
-                  onClick={() => {
-                    onEdit(p);
-                  }}
-                  className="rounded p-1 text-droid-text-muted transition-colors hover:bg-droid-active/70 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-                  title="Edit in composer"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  onEdit(p);
+                }}
+                className="rounded p-1 text-droid-text-muted transition-colors hover:bg-droid-active/70 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                title="Edit in composer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
               <button
                 onClick={() => {
                   onRemove(p.id);

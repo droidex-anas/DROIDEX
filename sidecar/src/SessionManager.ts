@@ -704,7 +704,14 @@ export class SessionManager {
       forgetPendingSettings: (appSessionId) => {
         this.modelSettings.forget(appSessionId);
       },
-      closeBrowserSession: (appSessionId) => this.browsers.close(appSessionId),
+      // A browser closed with its chat's runtime goes from the app too, with
+      // its marks, while its pane stays for a new page. One closed by a
+      // shutdown is kept for the next sidecar to take up.
+      closeBrowserSession: async (appSessionId) => {
+        await this.browsers.close(appSessionId);
+        if (!this.shutdownPromise && !this.browsers.hasSession(appSessionId))
+          this.emit({ type: 'browser.closed', appSessionId, keepPane: true });
+      },
       stopVoiceSession: (appSessionId) => this.sessionVoice.closeSession(appSessionId),
       emit: (event) => {
         this.emit(event);
@@ -804,7 +811,10 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      sendPrompt: (appSessionId, prompt) => this.lifecycle.send(appSessionId, prompt),
+      framePrompt: (appSessionId, text, responseFormat) =>
+        this.sessionPrompt(appSessionId, text, responseFormat),
+      sendPrompt: (appSessionId, prompt, mentions) =>
+        this.lifecycle.send(appSessionId, prompt, mentions),
       requestBrowser:
         options.requestBrowser ??
         (() =>
@@ -1162,6 +1172,9 @@ export class SessionManager {
         return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);
+        return;
+      case 'browser.design.removeReferences':
+        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
         return;
       case 'browser.design.sendPrompt':
         await this.sessionBrowser.sendDesignPrompt(cmd);
