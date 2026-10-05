@@ -114,6 +114,13 @@ export interface CanvasSummary {
   designCount: number;
 }
 
+// `create` answers with the canvas as well as the frames because an unattached
+// chat's first create mints the canvas it is now attached to (spec §6).
+export interface CreateFramesResult {
+  canvasId: string;
+  frames: CanvasFrame[];
+}
+
 export interface WriteReceipt {
   designId: string;
   revisionId: string;
@@ -148,6 +155,7 @@ export interface ArrangeFramesInput {
 // The stable codes from spec §8. Every failure carries a short recovery message
 // and never a stack trace, private path or provider prompt.
 export type CanvasErrorCode =
+  | 'invalid_input'
   | 'revision_conflict'
   | 'invalid_source_path'
   | 'unsupported_import'

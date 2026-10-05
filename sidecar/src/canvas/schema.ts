@@ -25,7 +25,7 @@ const SOURCE_PATH_MESSAGE =
 const RESERVED_PATH_MESSAGE =
   'A source path cannot use the segment __proto__, constructor or prototype.';
 const PATH_COLLISION_MESSAGE =
-  'Source paths must not repeat, ignoring case and Unicode normalization.';
+  'Source paths and their folders must be distinct, ignoring case and Unicode normalization, and one name cannot be both a file and a folder.';
 const DELETED_AND_WRITTEN_MESSAGE = 'A deleted path cannot also be written in the same change.';
 const FILE_COUNT_MESSAGE = `A design holds at most ${String(CANVAS_LIMITS.maxSourceFilesPerDesign)} source files.`;
 const FILE_BYTES_MESSAGE = `Each source file must stay under ${String(CANVAS_LIMITS.maxFileBytes / 1024)} KiB.`;
@@ -103,8 +103,10 @@ export const frameRectSchema = z
   .strict();
 
 // The reserved-segment rule runs on the record's keys, so an unusable path is
-// rejected before Zod builds the output object and loses the file.
-const sourcePathSchema = z
+// rejected before Zod builds the output object and loses the file. Exported
+// because persisted revision metadata maps paths to disk and may never trust a
+// path it did not re-validate.
+export const sourcePathSchema = z
   .string()
   .refine(isSafeSourcePath, { message: SOURCE_PATH_MESSAGE })
   .refine(hasNoReservedSegment, { message: RESERVED_PATH_MESSAGE });
@@ -121,7 +123,7 @@ export const sourceFilesSchema = z
     message: FILE_COUNT_MESSAGE,
   })
   .refine((files) => !hasPathCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
-  .refine((files) => totalSourceBytes(files) <= CANVAS_LIMITS.maxDesignSourceBytes, {
+  .refine((files) => totalSourceBytes(Object.values(files)) <= CANVAS_LIMITS.maxDesignSourceBytes, {
     message: TOTAL_BYTES_MESSAGE,
   });
 
@@ -194,6 +196,16 @@ export const arrangeFramesInputSchema = z
   })
   .strict();
 
+// One write is bounded by the schema above; the revision it produces carries
+// unchanged files too, so the same §5 limits are checked against the merge.
+// Returns the limit's own message, or null when the revision fits.
+export function mergedRevisionViolation(files: ReadonlyMap<string, string>): string | null {
+  if (files.size > CANVAS_LIMITS.maxSourceFilesPerDesign) return FILE_COUNT_MESSAGE;
+  if (hasPathCollision([...files.keys()])) return PATH_COLLISION_MESSAGE;
+  const bytes = totalSourceBytes(files.values());
+  return bytes > CANVAS_LIMITS.maxDesignSourceBytes ? TOTAL_BYTES_MESSAGE : null;
+}
+
 export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
 export type DesignRef = z.infer<typeof designRefSchema>;
 export type RevisionRef = z.infer<typeof revisionRefSchema>;
@@ -237,8 +249,27 @@ function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
 
+// Folders collide the same way files do: `ui/A.tsx` and `UI/B.tsx` are two
+// paths for one directory on the filesystems Canvas storage sits on, and a name
+// cannot be both a file and a folder. Each folded key must name one entry.
 function hasPathCollision(paths: readonly string[]): boolean {
-  return hasDuplicate(paths.map(collisionKey));
+  if (hasDuplicate(paths.map(collisionKey))) return true;
+  const entries = new Map<string, string>();
+  for (const path of paths) {
+    const segments = path.split('/');
+    let key = '';
+    let entry = '';
+    for (const [index, segment] of segments.entries()) {
+      key = key === '' ? collisionKey(segment) : `${key}/${collisionKey(segment)}`;
+      entry = entry === '' ? segment : `${entry}/${segment}`;
+      const kind = index === segments.length - 1 ? 'file' : 'folder';
+      const named = `${kind} ${entry}`;
+      const existing = entries.get(key);
+      if (existing !== undefined && existing !== named) return true;
+      entries.set(key, named);
+    }
+  }
+  return false;
 }
 
 // Canvas storage sits on a filesystem that compares names without case and
@@ -247,8 +278,8 @@ function collisionKey(path: string): string {
   return path.normalize('NFC').toLowerCase();
 }
 
-function totalSourceBytes(files: Record<string, string>): number {
+function totalSourceBytes(contents: Iterable<string>): number {
   let bytes = 0;
-  for (const content of Object.values(files)) bytes += Buffer.byteLength(content, 'utf8');
+  for (const content of contents) bytes += Buffer.byteLength(content, 'utf8');
   return bytes;
 }
