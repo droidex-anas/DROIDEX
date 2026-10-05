@@ -25,7 +25,11 @@ const VISIBLE_ON_MAINS: PowerState = { windowVisible: true, onBattery: false };
 export function useBackgroundWorkTier(): void {
   const documentVisible = useDocumentVisible();
   const activeAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
-  const visibleAppSessionIds = useStoreSelector(chatsOnScreen, sameEntries);
+  // Sorted so that rearranging tiles is not a change in what is on screen.
+  const visibleAppSessionIds = useStoreSelector(
+    (state) => chatsOnScreen(state).sort(),
+    sameEntries,
+  );
   const focusedAppSessionId =
     activeAppSessionId && visibleAppSessionIds.includes(activeAppSessionId)
       ? activeAppSessionId
