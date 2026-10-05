@@ -1,3 +1,8 @@
+const { createBrowserReading } = require('./browserReading.cjs');
+const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
+
+const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
+
 function createNativeBrowserPage({
   appName,
   ensureEntry,
@@ -9,6 +14,11 @@ function createNativeBrowserPage({
   findEntryForContents,
 }) {
   const operationsOn = new WeakMap(); // guest contents -> { count, generation }
+  const reading = createBrowserReading({
+    runWithWebContentsDebugger,
+    savedSecretsFor: (url) => credentials.savedSecretsFor(url),
+    redactUrl: redactBrowserDiagnosticUrl,
+  });
 
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
@@ -49,6 +59,18 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(request.browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
+    if (request.action === 'find') {
+      const found = await reading.find(contents, entry, request.query);
+      return { requestId: request.requestId, ok: true, ...found };
+    }
+    if (request.action === 'readPage') {
+      const text = await reading.readPage(contents, entry, {
+        ref: request.ref,
+        filter: request.filter,
+        maxChars: request.maxChars,
+      });
+      return { requestId: request.requestId, ok: true, text };
+    }
     const navigation = observeAgentNavigation(contents);
     const operation = liftBackgroundThrottling(contents);
     try {
@@ -58,15 +80,28 @@ function createNativeBrowserPage({
           await credentials.fillForAgent(contents, request),
         );
       }
-      const execution = executeAgentAction(contents, request).then(
-        (result) => ({ type: 'result', result }),
-        (error) => ({ type: 'error', error }),
-      );
+      // Once a navigation starts, an action still resolving its target gives
+      // up rather than act on the next page; one that never sent its input
+      // did not run, whatever the page does next.
+      const step = { navigation, sent: false };
+      const execution = withRefTarget(contents, entry, request)
+        .then(async (target) => {
+          if (target.document) await reading.assertDocument(contents, target.document);
+          if (target.action !== 'selectOption') return executeAgentAction(contents, target, step);
+          const value = target.text ?? '';
+          await reading.selectOption(contents, entry, target.ref, value, () => startInput(step));
+          return snapshotOf(contents, target);
+        })
+        .then(
+          (result) => ({ type: 'result', result }),
+          (error) => ({ type: 'error', error }),
+        );
       const outcome = await Promise.race([
         execution,
         navigation.wait().then(() => ({ type: 'navigation' })),
       ]);
       if (outcome.type === 'navigation') {
+        if (!step.sent) throw new Error(PAGE_CHANGED);
         return await snapshotAfterNavigation(contents, request);
       }
       if (outcome.type === 'error') {
@@ -102,7 +137,31 @@ function createNativeBrowserPage({
     return { requestId: request.requestId, ok: true, consoleEvents };
   }
 
-  async function executeAgentAction(contents, request) {
+  // A ref from browser_read_page becomes the point or selector the action needs.
+  async function withRefTarget(contents, entry, request) {
+    if (!request.ref || request.action === 'selectOption') return request;
+    if (request.action === 'inspect')
+      return { ...request, ...(await reading.selectorForRef(contents, entry, request.ref)) };
+    const { x, y, document } = await reading.pointForRef(contents, entry, request.ref);
+    return { ...request, x, y, document, selector: undefined };
+  }
+
+  // Called right before an action changes the page.
+  function startInput(step) {
+    if (step.navigation.started()) throw new Error(PAGE_CHANGED);
+    step.sent = true;
+  }
+
+  // The page's state after an action, as the page script reports it.
+  function snapshotOf(contents, request) {
+    return contents.executeJavaScript(
+      `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({ ...request, action: 'snapshot' })});`,
+      true,
+    );
+  }
+
+  async function executeAgentAction(contents, request, step) {
+    startInput(step);
     if (
       request.action === 'scroll' &&
       Number.isFinite(Number(request.x)) &&
@@ -112,6 +171,7 @@ function createNativeBrowserPage({
       const y = Math.round(Number(request.y));
       const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
       const horizontal = request.direction === 'left' || request.direction === 'right';
+      startInput(step);
       contents.sendInputEvent({
         type: 'mouseWheel',
         x,
@@ -120,67 +180,26 @@ function createNativeBrowserPage({
         deltaY: horizontal ? 0 : request.direction === 'up' ? -pixels : pixels,
         canScroll: true,
       });
-      return contents.executeJavaScript(
-        `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({
-          ...request,
-          action: 'snapshot',
-        })});`,
-        true,
-      );
+      return snapshotOf(contents, request);
     }
     if (request.action === 'click' || request.action === 'hover') {
-      const point = await resolvePointer(contents, request);
-      const x = point.x;
-      const y = point.y;
+      const x = Math.round(Number(request.x));
+      const y = Math.round(Number(request.y));
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         throw new Error('Browser pointer interaction requires finite viewport coordinates.');
       }
+      startInput(step);
       contents.sendInputEvent({ type: 'mouseMove', x, y, movementX: 0, movementY: 0 });
       if (request.action === 'click') {
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
         contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
       }
-      return contents.executeJavaScript(
-        `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify({
-          ...request,
-          action: 'snapshot',
-        })});`,
-        true,
-      );
+      return snapshotOf(contents, request);
     }
     return contents.executeJavaScript(
       `window.__DROIDMAXX_AGENT_ACTION?.(${JSON.stringify(request)});`,
       true,
     );
-  }
-
-  async function resolvePointer(contents, request) {
-    if (typeof request.selector === 'string' && request.selector) {
-      const point = await contents.executeJavaScript(
-        `(() => {
-        const target = document.querySelector(${JSON.stringify(request.selector)});
-        if (!target) return null;
-        target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
-        const box = target.getBoundingClientRect();
-        if (box.width <= 0 || box.height <= 0) return null;
-        return {
-          x: Math.round(box.left + box.width / 2),
-          y: Math.round(box.top + box.height / 2)
-        };
-      })()`,
-        true,
-      );
-      if (!point) {
-        throw new Error(
-          'Browser target is no longer available. Refresh the snapshot and try again.',
-        );
-      }
-      return point;
-    }
-    return {
-      x: Math.round(Number(request.x)),
-      y: Math.round(Number(request.y)),
-    };
   }
 
   async function snapshotAfterNavigation(contents, request) {
@@ -226,8 +245,9 @@ function createNativeBrowserPage({
       settled = true;
       resolveCompletion();
     };
-    const onStart = (_event, _url, _isInPlace, isMainFrame) => {
-      if (!isMainFrame || didStart) return;
+    // Only a new document counts: hash and History changes keep the page.
+    const onStart = (_event, _url, isInPlace, isMainFrame) => {
+      if (!isMainFrame || isInPlace || didStart) return;
       didStart = true;
       timeout = setTimeout(finish, timeoutMs);
     };

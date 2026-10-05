@@ -25,7 +25,6 @@ export function persistBrowsers(
       key,
       {
         ...browser,
-        refs: [],
         agentCursor: undefined,
         screenshotPath: undefined,
         screenshotUrl: undefined,
@@ -50,7 +49,6 @@ function sanitizePersistedBrowser(key: string, value: unknown): BrowserState | u
     viewport,
     viewportMode: sanitizeBrowserViewportMode(browser.viewportMode),
     scroll: sanitizeBrowserScroll(browser.scroll),
-    refs: [],
     ...(browser.canGoBack === true ? { canGoBack: true } : {}),
     ...(browser.canGoForward === true ? { canGoForward: true } : {}),
   };

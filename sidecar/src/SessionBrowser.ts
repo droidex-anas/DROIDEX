@@ -22,7 +22,6 @@ export type SessionBrowsers = Pick<
   | 'keypress'
   | 'scroll'
   | 'screenshot'
-  | 'inspectPoint'
   | 'addReference'
   | 'designPrompt'
 >;
@@ -135,17 +134,6 @@ export class SessionBrowser {
         fullPage: cmd.fullPage,
         deviceScaleFactor: cmd.deviceScaleFactor,
       });
-    });
-  }
-
-  async inspectPoint(cmd: Extract<ClientCommand, { type: 'browser.inspectPoint' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () => {
-      const element = this.d.browsers.inspectPoint(
-        this.requireBrowserAppSessionId(cmd.appSessionId),
-        cmd.x,
-        cmd.y,
-      );
-      if (!element) throw new Error('No browser element found at that point.');
     });
   }
 

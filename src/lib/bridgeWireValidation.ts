@@ -636,8 +636,7 @@ function isBrowserState(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['browserSessionId', 'url', 'viewportMode']) &&
     isRecord(value.viewport) &&
-    isRecord(value.scroll) &&
-    recordArray(value.refs)
+    isRecord(value.scroll)
   );
 }
 

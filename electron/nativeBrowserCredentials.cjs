@@ -203,10 +203,19 @@ function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, get
     return { requestId: request.requestId, ok: true, snapshot: probe?.snapshot };
   }
 
+  // What page reads must never show an agent: the login saved for this site.
+  function savedSecretsFor(url) {
+    if (getCredentialConsent() !== 'enabled') return [];
+    const origin = originFor(url);
+    const credential = origin ? findCredential(origin) : undefined;
+    return credential ? [credential.username, credential.password] : [];
+  }
+
   return {
     handleCapture,
     autofill,
     fillForAgent,
+    savedSecretsFor,
   };
 }
 

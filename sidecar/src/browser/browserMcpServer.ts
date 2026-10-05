@@ -25,7 +25,7 @@ export function createBrowserMcpServer(
   };
 
   return createSdkMcpServer({
-    name: 'droidmaxx-browser',
+    name: 'droidex-browser',
     version: '0.1.0',
     tools: [
       tool(
@@ -59,23 +59,54 @@ export function createBrowserMcpServer(
           });
           return jsonResult({
             message:
-              'Opened the live DROIDEX browser. The response includes current page refs; use them directly with browser_click, browser_type, and browser_scroll.',
+              'Opened the page in the live DROIDEX browser. Call browser_read_page to see it and to get refs for browser_click, browser_select and browser_scroll.',
             ...stateForTool(state),
           });
         }),
       ),
       tool(
-        'browser_snapshot',
-        'Refresh compact DOM refs and visible page state when the page changed or current refs became stale.',
-        {},
-        safeTool(async () => {
-          const state = await manager.refresh(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
+        'browser_read_page',
+        [
+          'Read the page as a compact accessibility tree, one element per line, such as - button "Sign in" [ref=e3].',
+          'Use the refs with browser_click, browser_hover, browser_select, browser_scroll and browser_inspect.',
+          'A ref stays valid while its element is on the page; after a navigation, read the page again.',
+          'Ends with [Title · url]. Sensitive field values are masked.',
+        ].join(' '),
+        {
+          ref: z.string().optional().describe('Read only this element and what is inside it.'),
+          filter: z
+            .enum(['interactive', 'all'])
+            .optional()
+            .describe(
+              'interactive lists only controls; all (default) includes text and structure.',
+            ),
+          max_chars: z
+            .number()
+            .int()
+            .min(500)
+            .max(100_000)
+            .optional()
+            .describe('Longest answer to return. Defaults to 12000 characters.'),
+        },
+        safeTool(async (input) =>
+          manager.readPage(appSessionId(), {
+            ref: input.ref,
+            filter: input.filter,
+            maxChars: input.max_chars,
+          }),
+        ),
+      ),
+      tool(
+        'browser_find',
+        'Find lines of the page tree that contain some text (or match a /regex/), each with the elements around it, up to 20.',
+        {
+          query: z.string().min(1).describe('Text to look for, or a /regex/ with optional flags.'),
+        },
+        safeTool(async (input) => manager.find(appSessionId(), input.query)),
       ),
       tool(
         'browser_reload',
-        'Reload the current live DROIDEX browser page. Use browser_snapshot after reload when fresh refs are needed.',
+        'Reload the current page in the live DROIDEX browser. Call browser_read_page to see it again.',
         {},
         safeTool(async () => {
           const state = await manager.reload(appSessionId());
@@ -84,7 +115,7 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_back',
-        'Go back one page in the live DROIDEX browser history and return fresh page refs.',
+        'Go back one page in the live DROIDEX browser history. Call browser_read_page to see the page.',
         {},
         safeTool(async () => {
           const state = await manager.goBack(appSessionId());
@@ -93,7 +124,7 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_forward',
-        'Go forward one page in the live DROIDEX browser history and return fresh page refs.',
+        'Go forward one page in the live DROIDEX browser history. Call browser_read_page to see the page.',
         {},
         safeTool(async () => {
           const state = await manager.goForward(appSessionId());
@@ -102,7 +133,7 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_screenshot',
-        'Capture the current live DROIDEX browser viewport as a high-detail PNG image for visual inspection. Use browser_snapshot for normal navigation refs.',
+        'Capture the current live DROIDEX browser viewport as a high-detail PNG image for visual inspection. Use browser_read_page to read the page and get refs.',
         {
           fullPage: z
             .boolean()
@@ -127,12 +158,12 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_click',
-        'Move the agent cursor and click in the live DROIDEX browser by ref or viewport coordinates. Prefer refs returned by browser_snapshot.',
+        'Move the agent cursor and click in the live DROIDEX browser by ref or viewport coordinates. Prefer refs from browser_read_page.',
         {
           ref: z
             .string()
             .optional()
-            .describe('Element ref returned by browser_snapshot. Preferred when available.'),
+            .describe('Element ref from browser_read_page. Preferred when available.'),
           x: z.number().optional().describe('Viewport x coordinate when clicking by coordinate.'),
           y: z.number().optional().describe('Viewport y coordinate when clicking by coordinate.'),
         },
@@ -148,9 +179,9 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_hover',
-        'Move the trusted browser pointer over an element by ref or viewport coordinates, then return fresh page refs.',
+        'Move the trusted browser pointer over an element by ref or viewport coordinates.',
         {
-          ref: z.string().optional().describe('Element ref returned by browser_snapshot.'),
+          ref: z.string().optional().describe('Element ref from browser_read_page.'),
           x: z.number().optional().describe('Viewport x coordinate when hovering by coordinate.'),
           y: z.number().optional().describe('Viewport y coordinate when hovering by coordinate.'),
         },
@@ -168,7 +199,7 @@ export function createBrowserMcpServer(
         'browser_select',
         'Choose an option in a native select element by ref. The value may be the option value or visible label.',
         {
-          ref: z.string().describe('Select element ref returned by browser_snapshot.'),
+          ref: z.string().describe('Select element ref from browser_read_page.'),
           value: z.string().describe('Option value or exact visible label to select.'),
         },
         safeTool(async (input) => {
@@ -222,7 +253,7 @@ export function createBrowserMcpServer(
       ),
       tool(
         'browser_scroll',
-        'Scroll the live DROIDEX browser page, then call browser_snapshot to refresh refs.',
+        'Scroll the live DROIDEX browser page, or inside the element a ref names. Call browser_read_page to see what came into view.',
         {
           direction: scrollDirectionSchema.describe('Direction to scroll.'),
           pixels: z.number().positive().max(4000).optional().describe('Scroll amount in pixels.'),
@@ -243,8 +274,11 @@ export function createBrowserMcpServer(
         'browser_wait',
         'Wait for browser text, a ref, or a URL fragment before continuing. With no condition, waits for the requested duration.',
         {
-          text: z.string().optional().describe('Visible ref text or accessible name to wait for.'),
-          ref: z.string().optional().describe('Element ref to wait for.'),
+          text: z
+            .string()
+            .optional()
+            .describe('Text to wait for on the page, matched like browser_find.'),
+          ref: z.string().optional().describe('Element ref that must be on the current page.'),
           urlIncludes: z.string().optional().describe('URL fragment to wait for.'),
           timeoutMs: z
             .number()
@@ -264,11 +298,11 @@ export function createBrowserMcpServer(
         [
           'Inspect one element without enabling Design Mode or taking another full-page snapshot.',
           'Returns bounded HTML, sanitized attributes, geometry, and iframe source/accessibility metadata.',
-          'Use a ref from the latest browser response when possible, or provide a CSS selector.',
+          'Use a ref from browser_read_page when possible, or provide a CSS selector.',
           'Credential values, auth tokens, and sensitive URL parameters are redacted.',
         ].join(' '),
         {
-          ref: z.string().optional().describe('Element ref from the latest browser response.'),
+          ref: z.string().optional().describe('Element ref from browser_read_page.'),
           selector: z.string().optional().describe('CSS selector when no ref is available.'),
         },
         safeTool(async (input) => {
@@ -418,16 +452,6 @@ function stateForTool(
     scroll: state.scroll,
     canGoBack: state.canGoBack ?? false,
     canGoForward: state.canGoForward ?? false,
-    refs: state.refs.map((ref) => ({
-      ref: ref.ref,
-      tagName: ref.tagName,
-      role: ref.role,
-      name: ref.name,
-      text: ref.text,
-      selector: ref.selector,
-      attributes: ref.attributes,
-      box: ref.box,
-    })),
     designReferences: designReferences.map(designReferenceSummary),
   };
 }

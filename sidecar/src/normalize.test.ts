@@ -149,13 +149,13 @@ test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', (
         confirmationType: 'mcp_tool',
         details: {
           type: 'mcp_tool',
-          toolName: 'droidmaxx-browser___design_reference',
+          toolName: 'droidex-browser___design_reference',
           impactLevel: 'low',
         },
         toolUse: {
           type: 'tool_use',
           id: 't1',
-          name: 'droidmaxx-browser___design_reference',
+          name: 'droidex-browser___design_reference',
           input: { url: 'https://skeina.app' },
         },
       },
@@ -164,10 +164,10 @@ test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', (
   assert.equal(confirmationType(mcp), 'mcp_tool');
   const tool = classifyPermission('m1', 'r1', mcp);
   assert.equal(tool.kind, 'mcp');
-  assert.equal(tool.title, 'droidmaxx-browser · design_reference');
+  assert.equal(tool.title, 'droidex-browser · design_reference');
   assert.match(tool.detail, /url: https:\/\/skeina\.app/);
   assert.match(tool.detail, /Impact: low/);
-  assert.equal(permissionSignature(mcp), 'mcp::::droidmaxx-browser___design_reference');
+  assert.equal(permissionSignature(mcp), 'mcp::::droidex-browser___design_reference');
 
   const exec = {
     options: [],

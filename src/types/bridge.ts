@@ -550,19 +550,6 @@ export interface BrowserBox {
   height: number;
 }
 
-export interface BrowserElementRef {
-  ref: string;
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes?: Record<string, string>;
-  className?: string;
-  box: BrowserBox;
-  computedStyles?: Record<string, string>;
-}
-
 export interface BrowserState {
   browserSessionId: string;
   appSessionId?: string;
@@ -573,7 +560,6 @@ export interface BrowserState {
   screenshotPath?: string;
   screenshotUrl?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
   agentCursor?: { x: number; y: number };
@@ -908,7 +894,6 @@ export type ClientCommand =
       fullPage?: boolean;
       deviceScaleFactor?: number;
     }
-  | { type: 'browser.inspectPoint'; appSessionId: string; x: number; y: number }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {
       type: 'browser.design.sendPrompt';

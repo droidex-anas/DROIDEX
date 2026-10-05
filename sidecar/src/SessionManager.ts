@@ -1177,9 +1177,6 @@ export class SessionManager {
       case 'browser.screenshot':
         await this.sessionBrowser.screenshot(cmd);
         return;
-      case 'browser.inspectPoint':
-        await this.sessionBrowser.inspectPoint(cmd);
-        return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);
         return;
