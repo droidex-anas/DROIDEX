@@ -3,7 +3,7 @@
 //
 // What it covers. A URL on its own (a request's, a console message's source)
 // loses its user and password, its fragment, and the values of parameters named
-// like secrets. Console text is free text a page wrote, so it gets the shapes a
+// like secrets, in a URL passed as a parameter's value too. Console text is free text a page wrote, so it gets the shapes a
 // secret usually has there: a well-formed URL (no spaces in it), and a value
 // that follows a name like `token=` or `password:`, quoted or not, or an
 // authentication scheme such as `Bearer`.
@@ -35,15 +35,17 @@ function isSensitiveBrowserKey(value) {
   return SENSITIVE_KEY_PARTS.some((part) => key.includes(part));
 }
 
-function redactBrowserDiagnosticUrl(value, baseUrl) {
+// A parameter whose value is itself a URL (a `next=` or a `redirect_uri=`) is
+// redacted like one, this many levels deep; deeper than that it goes whole.
+const MAX_URL_DEPTH = 3;
+
+function redactBrowserDiagnosticUrl(value, baseUrl, depth = 0) {
   try {
     const url = baseUrl ? new URL(String(value), baseUrl) : new URL(String(value));
-    for (const key of [...url.searchParams.keys()]) {
-      // `sig` alone is the signature of a signed URL.
-      if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') {
-        url.searchParams.set(key, '[redacted]');
-      }
-    }
+    const params = [...url.searchParams];
+    const redacted = params.map(([key, inner]) => [key, redactParameter(key, inner, depth)]);
+    if (redacted.some(([, inner], index) => inner !== params[index][1]))
+      url.search = new URLSearchParams(redacted).toString();
     url.username = '';
     url.password = '';
     url.hash = '';
@@ -51,6 +53,15 @@ function redactBrowserDiagnosticUrl(value, baseUrl) {
   } catch {
     return String(value || '').slice(0, 1000);
   }
+}
+
+function redactParameter(key, value, depth) {
+  // `sig` alone is the signature of a signed URL.
+  if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') return '[redacted]';
+  if (!URL.canParse(value)) return value;
+  return depth < MAX_URL_DEPTH
+    ? redactBrowserDiagnosticUrl(value, undefined, depth + 1)
+    : '[redacted]';
 }
 
 // Where a URL starts in text, whatever its scheme: https, wss, ftp.
