@@ -166,6 +166,9 @@ const TabList = memo(function TabList() {
   // A press activates its tab and may start a drag, so the strip must not
   // scroll under the pointer until it is released.
   const pressingRef = useRef(false);
+  // Closing removes the focused close button, so focus moves on to the tab
+  // that takes over, as it does in a browser.
+  const refocusAfterCloseRef = useRef(false);
 
   useEffect(() => {
     if (stripRef.current && !pressingRef.current) revealActiveTab(stripRef.current, 'smooth');
@@ -184,6 +187,12 @@ const TabList = memo(function TabList() {
     // Switching apps mid-press can swallow the release.
     window.addEventListener('blur', reveal, { signal: release.signal });
   };
+
+  useEffect(() => {
+    if (!refocusAfterCloseRef.current) return;
+    refocusAfterCloseRef.current = false;
+    stripRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+  }, [items]);
 
   // Narrowing the window or opening the sidebar shrinks the strip under the active tab.
   useEffect(() => {
@@ -302,6 +311,8 @@ const TabList = memo(function TabList() {
                     event.stopPropagation();
                   }}
                   onClick={() => {
+                    refocusAfterCloseRef.current =
+                      stripRef.current?.contains(document.activeElement) ?? false;
                     close(item.id);
                   }}
                   className={`flex h-5 w-5 items-center justify-center rounded-md text-droid-text-muted transition-[opacity,color,background-color] hover:bg-droid-active hover:text-droid-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
