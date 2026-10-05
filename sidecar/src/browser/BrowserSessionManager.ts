@@ -424,8 +424,8 @@ export class BrowserSessionManager {
       instruction,
       references,
     });
-    // A browser closed or replaced meanwhile is not the one the marks are on.
-    if (session) this.assertCurrent(session);
+    // Each reference carries its own page, so a browser closed or replaced
+    // while the pack was written does not stop the prompt the user sent.
     this.keepSent(input.appSessionId, references);
     return {
       path,
@@ -592,8 +592,10 @@ export class BrowserSessionManager {
       kept.delete(reference.id);
       kept.set(reference.id, reference);
     }
+    // The prompt just sent keeps all of its own, however many it has.
+    const limit = Math.max(SENT_REFERENCES_KEPT, references.length);
     for (const id of kept.keys()) {
-      if (kept.size <= SENT_REFERENCES_KEPT) break;
+      if (kept.size <= limit) break;
       kept.delete(id);
     }
     this.sent.set(appSessionId, kept);
