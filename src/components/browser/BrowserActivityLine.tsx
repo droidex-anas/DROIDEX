@@ -5,34 +5,40 @@ import { useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { browserStepLabel } from '../../lib/browserTools';
 import { transcriptEventIsVisible } from '../../lib/childSessions';
+import { wrapTabFocus } from '../../lib/focusTrap';
 import { sessionAttention } from '../../lib/sessionAttention';
 import type { SessionActivityStatus } from '../../lib/sidebarActivity';
 import { formatDuration } from '../../lib/tools';
 import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
 import { ActivityStatusGlyph } from '../ActivityStatusGlyph';
 import { FeedItemView } from '../chat';
-import { buildFeed, type FeedItem } from '../chatFeed';
+import { buildFeed, startsTurn, type FeedItem } from '../chatFeed';
 import { PendingSteers } from '../transcript/PendingSteers';
 import { WorkingIndicator } from '../transcript/primitives';
 import { summarizeTools } from '../transcript/rows';
 
 const NO_EVENTS: TranscriptEvent[] = [];
+// The panel draws the turn's latest steps and leaves the rest to the chat.
+// Closed, only enough of the turn's tail is read to name the step in flight.
+const PANEL_ROWS = 40;
+const PANEL_EVENTS = 600;
+const CUE_EVENTS = 100;
 
 // One line over the full-screen page saying what the agent is doing now, the
 // way the transcript's live tail says it. It opens into the current turn's
-// steps, drawn by the transcript's own rows, with any steers still waiting.
-// Idle, it reads "Worked for 12s" quietly, as the finished turn does in the
-// transcript; before the chat's first turn there is nothing to show. The steps
-// open over the whole row it sits in, which places them.
+// latest steps, drawn by the transcript's own rows, with any steers still
+// waiting. Idle, it reads "Worked for 12s" quietly, as the finished turn does
+// in the transcript; before the chat's first turn there is nothing to show.
+// The steps open over the whole row it sits in, which places them.
 export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const atBottomRef = useRef(true);
   const live = useSessionLive(appSessionId);
-  const turn = useStoreSelector(
-    (state) => currentTurn(state.transcripts[appSessionId] ?? NO_EVENTS),
-    sameTurn,
-  );
+  const transcript = useStoreSelector((state) => state.transcripts[appSessionId] ?? NO_EVENTS);
+  const turn = useMemo(() => currentTurn(transcript), [transcript]);
   const steerCount = useStoreSelector(
     (state) => sessionOf(state.sessions, appSessionId)?.pendingSteers?.length ?? 0,
   );
@@ -49,21 +55,39 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
     if (session?.interruptReason) return 'interrupted';
     return 'ready';
   });
-  // The page shows the browser's work itself, so its card stays in the transcript.
-  const steps = useMemo(
-    () => buildFeed(turn.events).filter((item) => item.type !== 'browser'),
-    [turn.events],
+  const recent = useMemo(
+    () => recentEvents(turn.events, open ? PANEL_EVENTS : CUE_EVENTS),
+    [turn.events, open],
   );
+  // The page shows the browser's work itself, so its card stays in the transcript.
+  const feed = useMemo(() => buildFeed(recent).filter((item) => item.type !== 'browser'), [recent]);
+  const steps = feed.slice(-PANEL_ROWS);
+  const earlier =
+    (!turn.start && turn.events.length > 0) ||
+    recent.length < turn.events.length ||
+    feed.length > steps.length;
 
   useEffect(() => {
     if (!open) return;
+    // Opened from the keyboard or not, the steps take focus so Tab walks them.
+    stepsRef.current?.focus();
+    const close = () => {
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') close();
+      if (rootRef.current?.contains(document.activeElement)) wrapTabFocus(event, rootRef.current);
     };
     // A click on the page lands in its own document; here it only shows as
-    // the focus leaving for the page.
+    // the focus leaving for the page. A dialog a step opened, such as a
+    // screenshot shown large, is still part of the panel.
     const onAway = (event: Event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+      const target = event.target;
+      if (!(target instanceof Node) || rootRef.current?.contains(target)) return;
+      const dialog = target instanceof Element ? target.closest('[role="dialog"]') : null;
+      if (dialog && !dialog.contains(rootRef.current)) return;
+      setOpen(false);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onAway);
@@ -75,16 +99,18 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
     };
   }, [open]);
 
-  // Opened, the newest step is in view, and stays there as steps arrive.
+  // Opened, the newest step is in view, and stays there as steps arrive
+  // unless the reader has scrolled up to an earlier one.
   useLayoutEffect(() => {
     const list = stepsRef.current;
-    if (open && list) list.scrollTop = list.scrollHeight;
-  }, [open, turn.events, steerCount]);
+    if (open && list && atBottomRef.current) list.scrollTop = list.scrollHeight;
+  }, [open, feed, steerCount]);
 
-  if (!turn.prompt) return null;
+  if (!turn.start && turn.events.length === 0 && steerCount === 0) return null;
   const tail = steps.at(-1);
-  const cue = liveCue(tail, turn.prompt);
-  const worked = workedFor(turn);
+  const startTs = turn.start?.ts ?? turn.events.at(0)?.ts ?? 0;
+  const cue = liveCue(tail, startTs);
+  const worked = workedFor(turn.events, startTs);
   // A thinking or status row already shows itself working, as in the transcript.
   const tailWorks = tail?.type === 'thinking' || tail?.type === 'status';
 
@@ -94,12 +120,22 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
         {open && (
           <motion.div
             ref={stepsRef}
+            tabIndex={-1}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-x-0 bottom-full mb-2 max-h-[min(50vh,420px)] overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid"
+            onScroll={(event) => {
+              const list = event.currentTarget;
+              atBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 8;
+            }}
+            className="absolute inset-x-0 bottom-full mb-2 max-h-[min(50vh,420px)] overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid outline-none"
           >
+            {earlier && (
+              <p className="mb-2.5 text-[12px] text-droid-text-muted">
+                Earlier steps are in the chat
+              </p>
+            )}
             <div className="space-y-2.5">
               {steps.map((item, index) => (
                 <FeedItemView
@@ -118,9 +154,11 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
         )}
       </AnimatePresence>
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         onClick={() => {
+          atBottomRef.current = true;
           setOpen((value) => !value);
         }}
         className="group flex h-8 max-w-full items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 pl-2.5 pr-2 shadow-droid-sm backdrop-blur transition-colors hover:border-droid-border-hover"
@@ -156,58 +194,57 @@ function sessionOf(
 }
 
 interface Turn {
-  prompt?: TranscriptEvent;
+  // The prompt or settings change that opened the turn, unless the loaded
+  // part of the chat no longer reaches back to it.
+  start?: TranscriptEvent;
   events: TranscriptEvent[];
 }
 
-// The chat's latest prompt and what the agent has done since, as the chat
-// shows it (the primary transcript, not a subagent's). A steer the model took
-// in is a step of the turn it joined, not a turn of its own.
+// The chat's latest turn as the transcript groups it (the primary transcript,
+// not a subagent's). When the turn began before the loaded part of the chat,
+// what is loaded stands for it.
 function currentTurn(transcript: TranscriptEvent[]): Turn {
   const since: TranscriptEvent[] = [];
   for (let index = transcript.length - 1; index >= 0; index -= 1) {
     const event = transcript[index];
     if (!transcriptEventIsVisible(event, null)) continue;
-    if (event.author === 'user' && !event.steered)
-      return { prompt: event, events: since.reverse() };
+    if (startsTurn(event)) return { start: event, events: since.reverse() };
     since.push(event);
   }
   return { events: since.reverse() };
 }
 
-function sameTurn(left: Turn, right: Turn): boolean {
-  return (
-    left.prompt === right.prompt &&
-    left.events.length === right.events.length &&
-    left.events.every((event, index) => event === right.events[index])
-  );
+// The turn's last events, starting clear of a result whose call was cut off,
+// which would otherwise draw as a bare result.
+function recentEvents(events: TranscriptEvent[], limit: number): TranscriptEvent[] {
+  if (events.length <= limit) return events;
+  let start = events.length - limit;
+  while (start < events.length && events[start].kind === 'tool_result') start += 1;
+  return events.slice(start);
 }
 
-function workedFor({ prompt, events }: Turn): number {
+function workedFor(events: TranscriptEvent[], startTs: number): number {
   const last = events.at(-1);
-  if (!prompt || !last) return 0;
-  return Math.max(0, (last.endTs ?? last.ts) - prompt.ts);
+  if (!last) return 0;
+  return Math.max(0, (last.endTs ?? last.ts) - startTs);
 }
 
 // The words and the clock for the step in flight, in the transcript's voice.
-function liveCue(
-  tail: FeedItem | undefined,
-  prompt: TranscriptEvent,
-): { label: string; startTs: number } {
+function liveCue(tail: FeedItem | undefined, turnTs: number): { label: string; startTs: number } {
   switch (tail?.type) {
     case 'thinking':
       return { label: 'Thinking', startTs: tail.event.ts };
     case 'tools':
       return {
         label: browserStepLabel(tail.events) ?? summarizeTools(tail.events, true),
-        startTs: tail.events[0]?.ts ?? prompt.ts,
+        startTs: tail.events[0]?.ts ?? turnTs,
       };
     case 'diff':
     case 'diffs':
-      return { label: 'Updating files', startTs: prompt.ts };
+      return { label: 'Updating files', startTs: turnTs };
     case 'status':
       return { label: tail.event.text ?? 'Working', startTs: tail.event.ts };
     default:
-      return { label: 'Working', startTs: prompt.ts };
+      return { label: 'Working', startTs: turnTs };
   }
 }
