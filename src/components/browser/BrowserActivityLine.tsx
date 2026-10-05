@@ -203,14 +203,15 @@ interface Turn {
 }
 
 // The chat's latest turn as the transcript groups it (the primary transcript,
-// not a subagent's). When the turn began before the loaded part of the chat,
-// what is loaded stands for it.
+// not a subagent's), except that a steer the model took in is a step of the
+// run it joined. When the turn began before the loaded part of the chat, what
+// is loaded stands for it.
 function currentTurn(transcript: TranscriptEvent[]): Turn {
   const since: TranscriptEvent[] = [];
   for (let index = transcript.length - 1; index >= 0; index -= 1) {
     const event = transcript[index];
     if (!transcriptEventIsVisible(event, null)) continue;
-    if (startsTurn(event)) return { start: event, events: since.reverse() };
+    if (startsTurn(event) && !event.steered) return { start: event, events: since.reverse() };
     since.push(event);
   }
   return { events: since.reverse() };
