@@ -117,10 +117,14 @@ export function useDesignQuickPrompt({
         const drawn = sketch.current;
         const drawnBox = drawn && event.boxes.find((mark) => mark.id === drawn.anchorId)?.box;
         if (drawn && drawnBox) sketch.current = { ...drawn, box: drawnBox };
-        setPrompt((current) => {
-          const moved = current && event.boxes.find((mark) => mark.id === current.anchorId);
-          return current && moved ? { ...current, box: moved.box } : current;
-        });
+        // A mark the page no longer draws, as once it loads again, hides the box.
+        setPrompt(
+          (current) =>
+            current && {
+              ...current,
+              box: event.boxes.find((mark) => mark.id === current.anchorId)?.box ?? null,
+            },
+        );
       }
     });
   }, [browserSessionId, designMode, show]);

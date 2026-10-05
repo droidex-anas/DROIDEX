@@ -146,6 +146,9 @@ function applyState(state) {
   overlay.setShown(designMode);
   if (!designMode || drawing) hideHover();
   render();
+  // Design mode starting, as on every new document, tells the app which marks
+  // this page draws: none it picked before loading again.
+  if (designMode && !wasDesigning) queueRender();
 }
 
 function sendDesignEvent(event) {
