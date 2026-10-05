@@ -369,6 +369,8 @@ export class BrowserSessionManager {
   ): Promise<DesignReference> {
     const session = this.requireSession(appSessionId);
     const reference = await this.snapshot(appSessionId, session, input, screenshot);
+    // A pick saved as its browser closed or was replaced is not that browser's.
+    this.assertCurrent(session);
     if (!session.removed.has(reference.id)) session.references.set(reference.id, reference);
     return reference;
   }
@@ -396,8 +398,8 @@ export class BrowserSessionManager {
     /** Frames the instruction as its chat sends text; the pack itself keeps it plain. */
     frame?: (instruction: string) => string;
   }): Promise<{ path: string; prompt: string }> {
-    // A prompt queued before its browser closed still goes, from its own
-    // snapshots; a browser open now must still be the same one once it is ready.
+    // A prompt goes from its own snapshots, so one queued before its browser
+    // closed, or sent as it closes, still goes.
     const session = this.resolveSession(input.appSessionId);
     const instruction = input.instruction.trim();
     if (!instruction) throw new Error('Browser prompt cannot be empty.');
@@ -572,7 +574,6 @@ export class BrowserSessionManager {
         screenshot.base64,
       ).catch(() => undefined);
     }
-    if (session) this.assertCurrent(session);
     return {
       id,
       anchor,
