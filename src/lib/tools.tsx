@@ -305,7 +305,7 @@ export function parseTruncatedTail(text: string): { body: string; truncatedChars
 
 // MCP-style tool names carry a server prefix (`server___tool`, `mcp__server__tool`).
 // Categories and labels come from the bare tool, so a namespaced fetch still
-// routes as a fetch and `droidmaxx-browser___browser_open` is not a "read".
+// routes as a fetch and `droidex-browser___browser_open` is not a "read".
 function splitToolName(name: string): { server?: string; tool: string } {
   const tri = name.lastIndexOf('___');
   if (tri > 0 && tri + 3 < name.length)

@@ -10,6 +10,8 @@ const ACTIONS = new Set([
   'goBack',
   'goForward',
   'snapshot',
+  'readPage',
+  'find',
   'click',
   'hover',
   'selectOption',
@@ -159,6 +161,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       inspection: outcome.inspection,
       networkEvents: outcome.networkEvents,
       consoleEvents: outcome.consoleEvents,
+      text: outcome.text,
+      matches: outcome.matches,
       error: outcome.error,
     });
   }
@@ -173,7 +177,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       .catch(() => undefined);
     return outcome?.ok && outcome.snapshot
       ? outcome.snapshot
-      : { url: fallbackUrl, scroll: { x: 0, y: 0 }, refs: [] };
+      : { url: fallbackUrl, scroll: { x: 0, y: 0 } };
   }
 
   return { handle, workingSessions: () => [...waiting.keys()] };
@@ -202,6 +206,10 @@ function agentAction(request) {
     requestId: request.requestId,
     browserSessionId: request.browserSessionId,
     action: request.action,
+    ref: request.ref,
+    filter: request.filter,
+    maxChars: request.maxChars,
+    query: request.query,
     x: request.x,
     y: request.y,
     selector: request.selector,

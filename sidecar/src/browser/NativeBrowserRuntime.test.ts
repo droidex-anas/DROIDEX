@@ -21,7 +21,6 @@ test('NativeBrowserRuntime sends live requests with application and browser sess
           url: request.url ?? 'https://example.com/',
           title: 'Example',
           scroll: { x: 0, y: 0 },
-          refs: [],
         },
       };
     },
@@ -31,9 +30,9 @@ test('NativeBrowserRuntime sends live requests with application and browser sess
   await runtime.reload();
   await runtime.goBack();
   await runtime.goForward();
-  await runtime.click(12, 34, '#submit');
-  await runtime.hover(56, 78, '#account');
-  await runtime.selectOption('#country', 'Canada');
+  await runtime.click({ x: 12, y: 34 });
+  await runtime.hover({ ref: 'e7' });
+  await runtime.selectOption('e9', 'Canada');
 
   assert.equal(snapshot.url, 'https://example.com/');
   assert.deepEqual(
@@ -43,18 +42,9 @@ test('NativeBrowserRuntime sends live requests with application and browser sess
   assert.equal(requests[0].appSessionId, 'app-session-one');
   assert.equal(requests[0].browserSessionId, 'browser-one');
   assert.deepEqual(requests[0].viewport, { width: 900, height: 700, deviceScaleFactor: 2 });
-  assert.deepEqual(
-    { x: requests[4].x, y: requests[4].y, selector: requests[4].selector },
-    { x: 12, y: 34, selector: '#submit' },
-  );
-  assert.deepEqual(
-    { x: requests[5].x, y: requests[5].y, selector: requests[5].selector },
-    { x: 56, y: 78, selector: '#account' },
-  );
-  assert.deepEqual(
-    { selector: requests[6].selector, text: requests[6].text },
-    { selector: '#country', text: 'Canada' },
-  );
+  assert.deepEqual({ x: requests[4].x, y: requests[4].y }, { x: 12, y: 34 });
+  assert.equal(requests[5].ref, 'e7');
+  assert.deepEqual({ ref: requests[6].ref, text: requests[6].text }, { ref: 'e9', text: 'Canada' });
 });
 
 type NativeSnapshot = Awaited<ReturnType<NativeBrowserRuntime['open']>>;
@@ -84,7 +74,6 @@ test('an open answered without a DOM snapshot stays usable and drops the previou
           url: request.url,
           title: 'First page',
           scroll: { x: 40, y: 80 },
-          refs: [],
           canGoBack: true,
           canGoForward: true,
         }
@@ -97,7 +86,6 @@ test('an open answered without a DOM snapshot stays usable and drops the previou
   assert.deepEqual(snapshot, {
     url: 'https://example.com/second',
     scroll: { x: 0, y: 0 },
-    refs: [],
     canGoBack: false,
     canGoForward: false,
   });
@@ -109,14 +97,6 @@ test('reload, history and snapshot actions never reuse a stale page snapshot', a
       ? {
           url: 'https://example.com/current',
           scroll: { x: 0, y: 0 },
-          refs: [
-            {
-              ref: '@b-current',
-              selector: '#current',
-              tagName: 'main',
-              box: { x: 0, y: 0, width: 100, height: 100 },
-            },
-          ],
         }
       : undefined,
   );
@@ -169,7 +149,7 @@ test('resize and diagnostic requests use dedicated native actions', async () => 
   });
 
   await runtime.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
-  const inspection = await runtime.inspect('#frame');
+  const inspection = await runtime.inspect({ selector: '#frame' });
   const network = await runtime.network(true);
   const consoleEvents = await runtime.console(true);
 

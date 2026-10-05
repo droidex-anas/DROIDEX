@@ -44,7 +44,6 @@ function browser(appSessionId: string) {
     viewport: { width: 1200, height: 800, deviceScaleFactor: 1 },
     viewportMode: 'fit' as const,
     scroll: { x: 0, y: 0 },
-    refs: [],
   };
 }
 

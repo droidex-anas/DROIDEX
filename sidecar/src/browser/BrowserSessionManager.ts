@@ -8,11 +8,12 @@ import type {
   BrowserBox,
   BrowserConsoleEvent,
   BrowserElementInspection,
-  BrowserElementRef,
   BrowserNetworkEvent,
+  BrowserReadOptions,
   BrowserScreenshotOptions,
   BrowserSnapshot,
   BrowserState,
+  BrowserTarget,
   BrowserViewport,
   BrowserViewportMode,
   DesignAnchor,
@@ -47,18 +48,19 @@ export interface BrowserRuntime {
   screenshot(options?: BrowserScreenshotOptions): Promise<string>;
   capture(box?: BrowserBox, options?: BrowserScreenshotOptions): Promise<string>;
   snapshot(): Promise<BrowserSnapshot>;
-  click(x: number, y: number, selector?: string): Promise<BrowserSnapshot>;
-  hover(x: number, y: number, selector?: string): Promise<BrowserSnapshot>;
-  selectOption(selector: string, value: string): Promise<BrowserSnapshot>;
+  readPage(options?: BrowserReadOptions): Promise<string>;
+  find(query: string): Promise<{ text: string; matches: number }>;
+  click(target: BrowserTarget): Promise<BrowserSnapshot>;
+  hover(target: BrowserTarget): Promise<BrowserSnapshot>;
+  selectOption(ref: string, value: string): Promise<BrowserSnapshot>;
   type(text: string): Promise<BrowserSnapshot>;
   keypress(key: string): Promise<BrowserSnapshot>;
   scroll(
     direction: ScrollDirection,
-    pixels?: number,
-    x?: number,
-    y?: number,
+    pixels: number | undefined,
+    target: BrowserTarget,
   ): Promise<BrowserSnapshot>;
-  inspect(selector: string): Promise<BrowserElementInspection>;
+  inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
   network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
   console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
   fillCredentials?(): Promise<BrowserSnapshot>;
@@ -100,7 +102,6 @@ export class BrowserSessionManager {
     session.state = {
       ...session.state,
       url,
-      refs: [],
       canGoBack: false,
       canGoForward: false,
       viewport: input.viewport ?? session.state.viewport,
@@ -158,7 +159,6 @@ export class BrowserSessionManager {
       ...session.state,
       viewport: input.viewport,
       viewportMode: input.viewportMode,
-      refs: [],
     };
     await session.runtime.setViewport(input.viewport);
     session.state = nextState;
@@ -174,10 +174,9 @@ export class BrowserSessionManager {
     source?: BrowserInputSource;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
-    const target = input.ref ? this.requireRef(session, input.ref) : undefined;
-    const point = target ? centerOf(target) : pointFrom(input);
-    this.showAgentCursor(session, point, input.source);
-    const snapshot = await session.runtime.click(point.x, point.y, target?.selector);
+    const target = targetFrom(input);
+    if (!('ref' in target)) this.showAgentCursor(session, target, input.source);
+    const snapshot = await session.runtime.click(target);
     return this.updateFromSnapshot(session, snapshot);
   }
 
@@ -188,18 +187,24 @@ export class BrowserSessionManager {
     y?: number;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
-    const target = input.ref ? this.requireRef(session, input.ref) : undefined;
-    const point = target ? centerOf(target) : pointFrom(input);
-    this.showAgentCursor(session, point, 'agent');
-    const snapshot = await session.runtime.hover(point.x, point.y, target?.selector);
+    const target = targetFrom(input);
+    if (!('ref' in target)) this.showAgentCursor(session, target, 'agent');
+    const snapshot = await session.runtime.hover(target);
     return this.updateFromSnapshot(session, snapshot);
   }
 
   async selectOption(appSessionId: string, ref: string, value: string): Promise<BrowserState> {
     const session = this.requireSession(appSessionId);
-    const target = this.requireRef(session, ref);
-    const snapshot = await session.runtime.selectOption(target.selector, value);
+    const snapshot = await session.runtime.selectOption(ref, value);
     return this.updateFromSnapshot(session, snapshot);
+  }
+
+  readPage(appSessionId: string, options: BrowserReadOptions = {}): Promise<string> {
+    return this.requireSession(appSessionId).runtime.readPage(options);
+  }
+
+  async find(appSessionId: string, query: string): Promise<string> {
+    return (await this.requireSession(appSessionId).runtime.find(query)).text;
   }
 
   async wait(
@@ -207,20 +212,41 @@ export class BrowserSessionManager {
     input: { text?: string; ref?: string; urlIncludes?: string; timeoutMs?: number },
   ): Promise<BrowserState> {
     const timeoutMs = Math.min(15_000, Math.max(0, input.timeoutMs ?? 5_000));
+    const deadline = Date.now() + timeoutMs;
+    const session = this.requireSession(appSessionId);
+    // The wait belongs to the browser it started on; once that one closes,
+    // nothing it reads is reported or shown.
+    const stillOpen = () => {
+      if (this.resolveSession(appSessionId) !== session)
+        throw new Error('The browser was closed while waiting.');
+    };
+    const refresh = async () => {
+      stillOpen();
+      const state = await this.captureState(session);
+      stillOpen();
+      session.state = state;
+      this.emitUpdated(state);
+      return state;
+    };
     if (!input.text && !input.ref && !input.urlIncludes) {
       await delay(timeoutMs);
-      return this.refresh(appSessionId);
+      return refresh();
     }
-    const deadline = Date.now() + timeoutMs;
-    let state = await this.refresh(appSessionId);
-    while (!waitConditionMatches(state, input) && Date.now() < deadline) {
+    const matches = async () => {
+      const state = await refresh();
+      if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
+      if (input.text && (await session.runtime.find(input.text)).matches === 0) return false;
+      stillOpen();
+      if (input.ref && !(await refIsOnPage(session.runtime, input.ref))) return false;
+      stillOpen();
+      return true;
+    };
+    while (!(await matches())) {
+      if (Date.now() >= deadline) throw new Error('Timed out waiting for the browser condition.');
       await delay(Math.min(200, Math.max(0, deadline - Date.now())));
-      state = await this.refresh(appSessionId);
     }
-    if (!waitConditionMatches(state, input)) {
-      throw new Error('Timed out waiting for the browser condition.');
-    }
-    return state;
+    stillOpen();
+    return session.state;
   }
 
   async type(appSessionId: string, text: string): Promise<BrowserState> {
@@ -243,14 +269,14 @@ export class BrowserSessionManager {
     ref?: string,
   ): Promise<BrowserState> {
     const session = this.requireSession(appSessionId);
-    const point = ref
-      ? centerOf(this.requireRef(session, ref))
+    const target: BrowserTarget = ref
+      ? { ref }
       : {
           x: Math.round(session.state.viewport.width / 2),
           y: Math.round(session.state.viewport.height / 2),
         };
-    this.showAgentCursor(session, point, source);
-    const snapshot = await session.runtime.scroll(direction, pixels, point.x, point.y);
+    if (!('ref' in target)) this.showAgentCursor(session, target, source);
+    const snapshot = await session.runtime.scroll(direction, pixels, target);
     return this.updateFromSnapshot(session, snapshot);
   }
 
@@ -259,11 +285,10 @@ export class BrowserSessionManager {
     input: { ref?: string; selector?: string },
   ): Promise<BrowserElementInspection> {
     const session = this.requireSession(appSessionId);
-    const selector = input.ref
-      ? this.requireRef(session, input.ref).selector
-      : input.selector?.trim();
+    if (input.ref) return session.runtime.inspect({ ref: input.ref });
+    const selector = input.selector?.trim();
     if (!selector) throw new Error('Browser inspection requires a ref or selector.');
-    return session.runtime.inspect(selector);
+    return session.runtime.inspect({ selector });
   }
 
   async network(appSessionId: string, clear = false): Promise<BrowserNetworkEvent[]> {
@@ -300,17 +325,6 @@ export class BrowserSessionManager {
     };
     this.emitUpdated(session.state);
     return screenshotPath;
-  }
-
-  inspectPoint(appSessionId: string, x: number, y: number): BrowserElementRef | undefined {
-    const session = this.requireSession(appSessionId);
-    return session.state.refs.find(
-      (ref) =>
-        x >= ref.box.x &&
-        y >= ref.box.y &&
-        x <= ref.box.x + ref.box.width &&
-        y <= ref.box.y + ref.box.height,
-    );
   }
 
   async addReference(
@@ -433,7 +447,6 @@ export class BrowserSessionManager {
         viewport: initialViewport,
         viewportMode: initialViewportMode,
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     };
     this.sessions.set(key, session);
@@ -477,15 +490,6 @@ export class BrowserSessionManager {
     return session.state;
   }
 
-  private requireRef(session: ManagedBrowserSession, refId: string): BrowserElementRef {
-    const ref = session.state.refs.find((item) => item.ref === refId);
-    if (!ref)
-      throw new Error(
-        `Browser ref ${refId} is not available. Refresh the browser snapshot and try again.`,
-      );
-    return ref;
-  }
-
   private async captureAnchorImage(
     session: ManagedBrowserSession,
     box?: BrowserBox,
@@ -527,37 +531,18 @@ function keyFor(appSessionId: string): string {
   return appSessionId;
 }
 
-function centerOf(ref: BrowserElementRef): { x: number; y: number } {
-  return {
-    x: Math.round(ref.box.x + ref.box.width / 2),
-    y: Math.round(ref.box.y + ref.box.height / 2),
-  };
-}
-
-function pointFrom(input: { x?: number; y?: number }): { x: number; y: number } {
+function targetFrom(input: { ref?: string; x?: number; y?: number }): BrowserTarget {
+  if (input.ref) return { ref: input.ref };
   if (input.x === undefined || input.y === undefined)
     throw new Error('Browser interaction requires either a ref or x/y coordinates.');
   return { x: input.x, y: input.y };
 }
 
-function waitConditionMatches(
-  state: BrowserState,
-  input: { text?: string; ref?: string; urlIncludes?: string },
-): boolean {
-  if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
-  if (input.ref && !state.refs.some((item) => item.ref === input.ref)) return false;
-  if (input.text) {
-    const expected = input.text.toLocaleLowerCase();
-    if (
-      !state.refs.some(
-        (item) =>
-          item.text?.toLocaleLowerCase().includes(expected) ||
-          item.name?.toLocaleLowerCase().includes(expected),
-      )
-    )
-      return false;
-  }
-  return true;
+async function refIsOnPage(runtime: BrowserRuntime, ref: string): Promise<boolean> {
+  return runtime.readPage({ ref, maxChars: 500 }).then(
+    () => true,
+    () => false,
+  );
 }
 
 function delay(milliseconds: number): Promise<void> {
