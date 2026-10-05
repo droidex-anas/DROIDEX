@@ -49,7 +49,7 @@ export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** What an action points at: a ref from browser_read_page, or a viewport point. */
 export type BrowserTarget = { ref: string } | { x: number; y: number };
 
-export type BrowserModifier = 'Alt' | 'Control' | 'Meta' | 'Shift';
+type BrowserModifier = 'Alt' | 'Control' | 'Meta' | 'Shift';
 
 export interface BrowserClickOptions {
   button?: 'left' | 'right' | 'middle';
