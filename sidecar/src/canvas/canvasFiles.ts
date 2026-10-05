@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasManifestSchema, type CanvasManifest } from './canvasManifest.js';
@@ -27,6 +27,10 @@ const SOURCE_RECOVERY =
   'Canvas source could not be saved. Retry the change; your source is unchanged.';
 const REVISION_RECOVERY = 'The saved source for that revision could not be read.';
 const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
+
+// The storage root and its parent belong to the user's profile, which may
+// legitimately be a link; everything the writer creates below the root may not.
+const PROFILE_OWNED = false;
 
 // Canvas owns every name under its root, so a link in the way is damage rather
 // than a path to follow: both flag sets refuse one instead of opening through it.
@@ -101,8 +105,25 @@ export class CanvasFiles {
   async createRoot(): Promise<void> {
     try {
       await this.fs.mkdirAll(this.root);
+      // The root's own entry has to survive a crash too, or the first canvas
+      // lands in a directory the profile does not yet record.
+      await this.syncDirectory(dirname(this.root), PROFILE_OWNED);
     } catch (error) {
       throw storageFailure('The Canvas storage directory could not be created.', error);
+    }
+  }
+
+  /**
+   * Reflushes the directory entries a published manifest depends on. A save
+   * whose flush failed is durable only once this succeeds, so a recovered head
+   * is not served until it does.
+   */
+  async flushCanvasEntry(canvasId: string): Promise<void> {
+    try {
+      await this.syncDirectory(this.canvasPath(canvasId));
+      await this.syncDirectory(this.root, PROFILE_OWNED);
+    } catch (error) {
+      throw storageFailure(WRITE_RECOVERY, error);
     }
   }
 
@@ -165,7 +186,7 @@ export class CanvasFiles {
       beforeRename();
       await this.fs.rename(temporary, path);
       await this.syncDirectory(canvas);
-      if (createdCanvas) await this.syncDirectory(this.root);
+      if (createdCanvas) await this.syncDirectory(this.root, PROFILE_OWNED);
     } catch (error) {
       await this.discard(temporary);
       throw storageFailure(WRITE_RECOVERY, error);
@@ -214,7 +235,7 @@ export class CanvasFiles {
       await this.fs.rename(staging, this.revisionPath(canvasId, metadata.revisionId));
       await this.syncDirectory(revisions);
       if (createdRevisions) await this.syncDirectory(canvas);
-      if (createdCanvas) await this.syncDirectory(this.root);
+      if (createdCanvas) await this.syncDirectory(this.root, PROFILE_OWNED);
     } catch (error) {
       await this.discard(staging);
       throw storageFailure(SOURCE_RECOVERY, error);
@@ -255,14 +276,21 @@ export class CanvasFiles {
     }
   }
 
-  /** Removes staging trees and manifest temporaries a terminated run left behind. */
+  /**
+   * Removes staging trees and manifest temporaries a terminated run left
+   * behind. Cleanup deletes recursively, so it refuses a linked ancestor rather
+   * than reaching through one into storage Canvas does not own.
+   */
   async removeTemporaries(canvasId: string): Promise<void> {
     const canvas = this.canvasPath(canvasId);
     const revisions = join(canvas, REVISIONS_DIRECTORY);
+    const checked = new Set<string>();
     try {
+      await this.refuseLinkedPath(canvas, checked);
       for (const name of await this.readdirIfPresent(canvas)) {
         if (name.endsWith(TEMPORARY_SUFFIX)) await this.discard(join(canvas, name));
       }
+      await this.refuseLinkedPath(revisions, checked);
       for (const name of await this.readdirIfPresent(revisions)) {
         if (name.startsWith(STAGING_PREFIX)) await this.discard(join(revisions, name));
       }
@@ -314,9 +342,9 @@ export class CanvasFiles {
     }
   }
 
-  private async syncDirectory(path: string): Promise<void> {
+  private async syncDirectory(path: string, owned = true): Promise<void> {
     if (process.platform === 'win32') return;
-    const directory = await this.fs.open(path, READ_FLAGS);
+    const directory = await this.fs.open(path, owned ? READ_FLAGS : constants.O_RDONLY);
     try {
       await directory.sync();
     } finally {
@@ -329,13 +357,27 @@ export class CanvasFiles {
       throw canvasError('storage_failed', LINKED_STORAGE);
   }
 
+  private async lstatIfPresent(
+    path: string,
+  ): Promise<{ isSymbolicLink(): boolean; isDirectory(): boolean } | null> {
+    try {
+      return await this.fs.lstat(path);
+    } catch (error) {
+      if (isMissingPath(error)) return null;
+      throw error;
+    }
+  }
+
   /** Refuses a path that crosses a link at any component below the root. */
   private async refuseLinkedPath(path: string, checked: Set<string>): Promise<void> {
     let current = this.root;
     for (const segment of relative(this.root, path).split(sep)) {
       current = join(current, segment);
       if (checked.has(current)) continue;
-      await this.refuseLink(current);
+      const stats = await this.lstatIfPresent(current);
+      // Nothing exists below a component that is not there.
+      if (!stats) return;
+      if (stats.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
       checked.add(current);
     }
   }

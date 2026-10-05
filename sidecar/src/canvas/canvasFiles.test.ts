@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import {
   canvasRoot,
@@ -150,7 +150,7 @@ test('every directory a publish creates is flushed, leaves before parents', asyn
   assert.ok(at('open', canvas) < at('open', root));
 });
 
-test('a first manifest flushes the canvas entry it added to the root', async (t) => {
+test('creating the root and a first manifest flush the entries they added', async (t) => {
   const root = await canvasRoot(t);
   const flushed: string[] = [];
   const files = new CanvasFiles(
@@ -159,7 +159,11 @@ test('a first manifest flushes the canvas entry it added to the root', async (t)
       if (operation === 'open' && !basename(path).includes('.')) flushed.push(path);
     }),
   );
+  // The root is an entry in the profile directory, which has to record it.
   await files.createRoot();
+  assert.deepEqual(flushed, [dirname(root)]);
+  flushed.length = 0;
+
   await files.writeManifest(manifest(), keepGoing);
   assert.deepEqual(flushed, [join(root, 'cv_01'), root]);
   // A canvas that already exists adds no entry to the root.
@@ -181,9 +185,14 @@ test('a linked ancestor or metadata file is refused on the write and read paths'
   });
   assert.deepEqual(await readdir(outside), []);
 
+  // A decoy the schema accepts and whose files are all present, so following
+  // the link would succeed and only the open refusing it can fail this.
   await files.publishRevision('cv_02', revision(), source);
   const metadata = join(root, 'cv_02', 'revisions', 'rev_01', 'revision.json');
-  await writeFile(join(outside, 'decoy.json'), JSON.stringify(revision()));
+  await writeFile(
+    join(outside, 'decoy.json'),
+    JSON.stringify({ ...revision(), files: [...source.keys()] }),
+  );
   await rm(metadata);
   await symlink(join(outside, 'decoy.json'), metadata);
   await assert.rejects(files.readRevision('cv_02', { designId: 'dsg_hey', revisionId: 'rev_01' }), {
@@ -212,6 +221,23 @@ test('a link anywhere under a revision is refused instead of followed', async (t
   await assert.rejects(files.readRevision('cv_01', { designId: 'dsg_hey', revisionId: 'rev_02' }), {
     code: 'storage_failed',
   });
+});
+
+test('cleanup refuses a linked ancestor instead of deleting through it', async (t) => {
+  const { root, files } = await openRoot(t);
+  const outside = join(root, '..', 'outside');
+  await mkdir(join(outside, '.staging-someone-elses'), { recursive: true });
+  await writeFile(join(outside, '.staging-someone-elses', 'keep.txt'), 'not ours');
+
+  await mkdir(join(root, 'cv_01'));
+  await symlink(outside, join(root, 'cv_01', 'revisions'));
+  await assert.rejects(files.removeTemporaries('cv_01'), { code: 'storage_failed' });
+  assert.deepEqual(await readdir(join(outside, '.staging-someone-elses')), ['keep.txt']);
+
+  // A linked canvas directory is refused before anything in it is read.
+  await symlink(outside, join(root, 'cv_02'));
+  await assert.rejects(files.removeTemporaries('cv_02'), { code: 'storage_failed' });
+  assert.deepEqual(await readdir(outside), ['.staging-someone-elses']);
 });
 
 test('a published revision is immutable: a second publish cannot replace it', async (t) => {
