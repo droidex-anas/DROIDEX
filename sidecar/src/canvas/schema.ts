@@ -22,7 +22,10 @@ const COORDINATE_MESSAGE = 'Frame coordinates must be finite numbers.';
 const DIMENSION_MESSAGE = `Frame width and height must be between 1 and ${String(CANVAS_LIMITS.maxFrameDimensionPx)} pixels.`;
 const SOURCE_PATH_MESSAGE =
   'A source path must be relative, use forward slashes, and stay inside the design.';
-const PATH_COLLISION_MESSAGE = 'Source paths must not repeat, ignoring case.';
+const RESERVED_PATH_MESSAGE =
+  'A source path cannot use the segment __proto__, constructor or prototype.';
+const PATH_COLLISION_MESSAGE =
+  'Source paths must not repeat, ignoring case and Unicode normalization.';
 const DELETED_AND_WRITTEN_MESSAGE = 'A deleted path cannot also be written in the same change.';
 const FILE_COUNT_MESSAGE = `A design holds at most ${String(CANVAS_LIMITS.maxSourceFilesPerDesign)} source files.`;
 const FILE_BYTES_MESSAGE = `Each source file must stay under ${String(CANVAS_LIMITS.maxFileBytes / 1024)} KiB.`;
@@ -99,7 +102,12 @@ export const frameRectSchema = z
   })
   .strict();
 
-const sourcePathSchema = z.string().refine(isSafeSourcePath, { message: SOURCE_PATH_MESSAGE });
+// The reserved-segment rule runs on the record's keys, so an unusable path is
+// rejected before Zod builds the output object and loses the file.
+const sourcePathSchema = z
+  .string()
+  .refine(isSafeSourcePath, { message: SOURCE_PATH_MESSAGE })
+  .refine(hasNoReservedSegment, { message: RESERVED_PATH_MESSAGE });
 
 const sourceFileSchema = z
   .string()
@@ -112,7 +120,7 @@ export const sourceFilesSchema = z
   .refine((files) => Object.keys(files).length <= CANVAS_LIMITS.maxSourceFilesPerDesign, {
     message: FILE_COUNT_MESSAGE,
   })
-  .refine((files) => !hasCaseCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
+  .refine((files) => !hasPathCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
   .refine((files) => totalSourceBytes(files) <= CANVAS_LIMITS.maxDesignSourceBytes, {
     message: TOTAL_BYTES_MESSAGE,
   });
@@ -120,7 +128,7 @@ export const sourceFilesSchema = z
 const deletedPathsSchema = z
   .array(sourcePathSchema)
   .max(CANVAS_LIMITS.maxSourceFilesPerDesign, FILE_COUNT_MESSAGE)
-  .refine((paths) => !hasCaseCollision(paths), { message: PATH_COLLISION_MESSAGE });
+  .refine((paths) => !hasPathCollision(paths), { message: PATH_COLLISION_MESSAGE });
 
 export const createFramesInputSchema = z
   .object({
@@ -153,9 +161,9 @@ export const writeFilesInputSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
-    const written = new Set(Object.keys(input.files).map((path) => path.toLowerCase()));
+    const written = new Set(Object.keys(input.files).map(collisionKey));
     input.deletedPaths.forEach((path, index) => {
-      if (!written.has(path.toLowerCase())) return;
+      if (!written.has(collisionKey(path))) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['deletedPaths', index],
@@ -196,18 +204,31 @@ export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
 
+// An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
+// other, so two distinct paths would address one file on disk.
+const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+const RESERVED_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
 // A source path addresses one design's virtual project, never the real
 // filesystem, so nothing here may escape a single revision directory.
 function isSafeSourcePath(path: string): boolean {
   if (path.length === 0 || path.length > CANVAS_LIMITS.maxSourcePathLength) return false;
   if (path.includes('\\') || hasControlCharacter(path)) return false;
+  if (UNPAIRED_SURROGATE.test(path)) return false;
   return path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+// An object-keyed source tree silently drops a `__proto__` key and shadows
+// inherited members with the other two, so no segment may be one of them.
+function hasNoReservedSegment(path: string): boolean {
+  return !path.split('/').some((segment) => RESERVED_PATH_SEGMENTS.has(segment));
 }
 
 function hasControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return true;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
   }
   return false;
 }
@@ -216,10 +237,14 @@ function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
 
-// Canvas storage sits on a case-insensitive filesystem, so paths differing only
-// by case would collide inside one revision directory.
-function hasCaseCollision(paths: readonly string[]): boolean {
-  return hasDuplicate(paths.map((path) => path.toLowerCase()));
+function hasPathCollision(paths: readonly string[]): boolean {
+  return hasDuplicate(paths.map(collisionKey));
+}
+
+// Canvas storage sits on a filesystem that compares names without case and
+// without Unicode form, so both are folded away before comparing paths.
+function collisionKey(path: string): string {
+  return path.normalize('NFC').toLowerCase();
 }
 
 function totalSourceBytes(files: Record<string, string>): number {
