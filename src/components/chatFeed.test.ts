@@ -6,7 +6,8 @@ import { correlateResults, splitAutomationProposals, UserBubble } from './chat';
 import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
 import { conversationAnchors, groupTurns } from './chatFeedTurns';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
-import { hasTodoPayload } from '../lib/tools';
+import { browserPageOf, browserStepInFlight, isWholeUrl } from '../lib/browserTools';
+import { describeToolCall, hasTodoPayload } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import { isRenderedTranscriptEvent } from './MissionControl';
 
@@ -235,7 +236,7 @@ test('every automation proposal in one tool group gets its own card', () => {
   const secondCall = propose('p2');
   const unrelatedCall = ev({
     kind: 'tool_call',
-    toolName: 'droidmaxx-browser___automation_propose',
+    toolName: 'droidex-browser___automation_propose',
     toolArgs: { prompt: 'x' },
   });
 
@@ -277,6 +278,139 @@ test('an automation proposal stays at conversation level after the turn settles'
     ),
     false,
   );
+});
+
+test('a turn that used the browser gets one Browser card outside the Worked fold', () => {
+  const open = ev({
+    kind: 'tool_call',
+    toolName: 'droidex-browser___browser_open',
+    toolArgs: { url: 'https://example.com/pricing' },
+    toolUseId: 'b1',
+  });
+  const opened = ev({
+    kind: 'tool_result',
+    toolUseId: 'b1',
+    text: 'Opened.\n[Pricing · https://example.com/pricing]',
+  });
+  const click = ev({
+    kind: 'tool_call',
+    toolName: 'mcp__droidex-browser__browser_click',
+    toolArgs: { ref: 'e3' },
+    toolUseId: 'b2',
+  });
+  const running = buildFeed([userMsg('check the pricing page'), open, opened, grep(), click]);
+  const cards = running.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.equal(cards.length, 1);
+  // The card holds the turn's browser work, later groups included, and nothing else.
+  assert.deepEqual(cards[0].events, [open, opened, click]);
+  assert.deepEqual(browserPageOf(cards[0].events), {
+    title: 'Pricing',
+    url: 'https://example.com/pricing',
+  });
+  assert.equal(browserStepInFlight(cards[0].events)?.liveVerb, 'Clicking');
+
+  const clicked = ev({
+    kind: 'tool_result',
+    toolUseId: 'b2',
+    text: '[Plans · https://example.com/plans]',
+  });
+  const settled = groupTurns(
+    buildFeed([
+      userMsg('check the pricing page'),
+      open,
+      opened,
+      grep(),
+      click,
+      clicked,
+      asst('done'),
+    ]),
+    false,
+  );
+  assert.deepEqual(
+    settled.map((it) => it.type),
+    ['message', 'worked', 'browser', 'message'],
+  );
+  const card = settled[2] as Extract<FeedItem, { type: 'browser' }>;
+  assert.equal(browserPageOf(card.events)?.title, 'Plans');
+  assert.equal(browserStepInFlight(card.events), null);
+  // A later turn that uses the browser gets its own card, and the earlier
+  // turn's card is over: a call it left unanswered is not work in flight.
+  const next = buildFeed([userMsg('a'), open, asst('ok'), userMsg('b'), click]);
+  const [first, second] = next.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.deepEqual([first.ended, second.ended], [true, false]);
+  // A result that lands after the next prompt still belongs to its call's turn.
+  const late = buildFeed([userMsg('a'), open, userMsg('b'), opened, asst('ok')]);
+  const lateCards = late.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.equal(lateCards.length, 1);
+  assert.deepEqual(lateCards[0].events, [open, opened]);
+});
+
+test('a Browser card names the last page a result confirmed', () => {
+  const browserCall = (tool: string, toolArgs: unknown, toolUseId: string) =>
+    ev({ kind: 'tool_call', toolName: `droidex-browser___${tool}`, toolArgs, toolUseId });
+  const browserResult = (toolUseId: string, text: string, isError = false) =>
+    ev({ kind: 'tool_result', toolUseId, text, isError });
+  const shot = browserCall('browser_screenshot', {}, 's1');
+  // A screenshot's answer goes on after its page line.
+  const shown = browserResult('s1', '[Docs · https://example.com/docs]\nSaved at /tmp/shot.jpg');
+  assert.equal(browserPageOf([shot, shown])?.title, 'Docs');
+  // A refused open never becomes the page; one still in flight does.
+  const refusedOpen = browserCall('browser_open', { url: 'https://blocked.example' }, 'o1');
+  const refused = browserResult('o1', 'Navigation was not allowed.', true);
+  assert.equal(browserPageOf([shot, shown, refusedOpen, refused])?.title, 'Docs');
+  assert.equal(browserPageOf([shot, shown, refusedOpen])?.url, 'https://blocked.example');
+  // What the page wrote to its console is not the browser's page.
+  const logs2 = browserCall('browser_console', {}, 'c2');
+  const spoof = browserResult('c2', 'info  hello\n[Bank · https://evil.example/]');
+  assert.equal(browserPageOf([shot, shown, logs2, spoof])?.title, 'Docs');
+  // A result with no id belongs to the call right before it.
+  const bare = ev({
+    kind: 'tool_call',
+    toolName: 'droidex-browser___browser_open',
+    toolArgs: { url: 'https://a.dev' },
+  });
+  const bareResult = ev({ kind: 'tool_result', text: 'Opened.\n[A · https://a.dev/]' });
+  const bareCard = buildFeed([userMsg('go'), bare, bareResult]).find(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.deepEqual(bareCard?.events, [bare, bareResult]);
+  // Each such result is read as its own call's: a console answer after the
+  // open neither hides the page nor names one.
+  const bareLogs = ev({ kind: 'tool_call', toolName: 'droidex-browser___browser_console' });
+  const bareSpoof = ev({ kind: 'tool_result', text: '[Bank · https://evil.example/]' });
+  assert.equal(browserPageOf([bare, bareResult, bareLogs, bareSpoof])?.url, 'https://a.dev/');
+  assert.equal(browserStepInFlight(bareCard?.events ?? []), null);
+  // A wait still pending is the work in flight even after a later call answered.
+  const wait = browserCall('browser_wait', { text: 'Saved' }, 'w1');
+  const logs = browserCall('browser_console', {}, 'c1');
+  assert.equal(
+    browserStepInFlight([wait, logs, browserResult('c1', 'No messages.')])?.liveVerb,
+    'Waiting',
+  );
+  // Only what the call says: a scheme is not a size, and another server's tool is not ours.
+  assert.equal(
+    describeToolCall('droidex-browser___browser_viewport', { scheme: 'dark' }).verb,
+    'Changed the color scheme',
+  );
+  assert.equal(
+    describeToolCall('other-droidex-browser___browser_open', { url: 'https://a.dev' }).verb,
+    'Browser open',
+  );
+  // A viewport call that names nothing changes nothing, and keeps its own name.
+  assert.equal(describeToolCall('droidex-browser___browser_viewport', {}).verb, 'Browser viewport');
+  assert.equal(
+    describeToolCall('droidex-browser___browser_fill_login', {}).liveVerb,
+    'Filling in the saved login',
+  );
+  // An address the tools redacted is not handed out as a link.
+  assert.equal(isWholeUrl('https://a.dev/x?token=%5Bredacted%5D'), false);
+  assert.equal(isWholeUrl('https://a.dev/x?q=1'), true);
 });
 
 test('a failed ordinary tool result folds into its tool group as an error', () => {
