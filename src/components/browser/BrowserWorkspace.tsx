@@ -10,16 +10,10 @@ import {
   resizeBrowserViewport,
   sendDesignPrompt,
 } from '../../lib/commands';
-import type { BrowserViewport, BrowserViewportMode, DesignReference } from '../../types/bridge';
-import type { Size } from './browserGeometry';
-import {
-  CUSTOM_DEFAULT_VIEWPORT,
-  normalizeUrl,
-  sameViewport,
-  viewportForMode,
-  viewportFromFrame,
-} from './browserViewport';
+import type { BrowserViewportMode, DesignReference } from '../../types/bridge';
+import { normalizeUrl, sameViewport, viewportForMode, viewportFromFrame } from './browserViewport';
 import { NativeBrowserSurface } from './NativeBrowserSurface';
+import { ViewportMenu } from './ViewportMenu';
 import { isDesktop } from '../../lib/desktop';
 import {
   goBackNativeBrowser,
@@ -79,11 +73,9 @@ export default function BrowserWorkspace({
   const initialUrl = safeBrowserUrl(browser?.url, appOrigin);
   const [urlInput, setUrlInput] = useState(browserAddressValue(initialUrl));
   const [activeUrl, setActiveUrl] = useState(initialUrl);
-  const [viewportMode, setViewportMode] = useState<BrowserViewportMode>(
-    browser?.viewportMode ?? 'fit',
-  );
-  const [customViewport, setCustomViewport] = useState<BrowserViewport>(CUSTOM_DEFAULT_VIEWPORT);
-  const [actualViewport, setActualViewport] = useState<Size>({ width: 1, height: 1 });
+  // The size the page has; a pick shows once the sidecar has taken it, so the
+  // menu never disagrees with the page.
+  const viewportMode: BrowserViewportMode = browser?.viewportMode ?? 'fit';
   const [pencilMode, setPencilMode] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [references, setReferences] = useState<DesignReference[]>([]);
@@ -177,10 +169,6 @@ export default function BrowserWorkspace({
   }, [activeUrl, appOrigin, browser?.url]);
 
   useEffect(() => {
-    if (browser?.viewportMode) setViewportMode(browser.viewportMode);
-  }, [browser?.viewportMode]);
-
-  useEffect(() => {
     if (typeof browser?.canGoBack === 'boolean') setCanGoBack(browser.canGoBack);
     if (typeof browser?.canGoForward === 'boolean') setCanGoForward(browser.canGoForward);
   }, [browser?.canGoBack, browser?.canGoForward]);
@@ -218,12 +206,6 @@ export default function BrowserWorkspace({
   ]);
 
   useEffect(() => {
-    if (browser?.viewport && browser.viewportMode === 'custom') {
-      setCustomViewport(browser.viewport);
-    }
-  }, [browser?.viewport, browser?.viewportMode]);
-
-  useEffect(() => {
     setReferences([]);
     setInstruction('');
     setPencilMode(false);
@@ -234,7 +216,7 @@ export default function BrowserWorkspace({
     if (!designMode) setPencilMode(false);
   }, [designMode]);
 
-  const requestedViewport = viewportForMode(viewportMode, fitViewport, customViewport);
+  const requestedViewport = viewportForMode(viewportMode, fitViewport);
   const selectedIds = references.map((ref) => ref.id).filter((id): id is string => Boolean(id));
   const canSend = Boolean(browserKey && selectedIds.length > 0 && instruction.trim());
   const disabledReason = !browserKey
@@ -247,31 +229,35 @@ export default function BrowserWorkspace({
     [frameSize, references, requestedViewport, viewportMode],
   );
 
+  // On Fit the page follows the pane: its size goes to the sidecar, which
+  // takes it only while the page is still on Fit there, so it never undoes a
+  // size an agent has just picked.
+  const followsPane = browser?.viewportMode === 'fit';
+  const currentViewport = browser?.viewport;
   useEffect(() => {
-    if (!browserKey || !browser) return;
-    if (browser.viewportMode === viewportMode && sameViewport(browser.viewport, requestedViewport))
-      return;
+    if (!browserKey || !currentViewport || !followsPane) return;
+    if (sameViewport(currentViewport, fitViewport)) return;
     const id = window.setTimeout(() => {
       resizeBrowserViewport({
         appSessionId: browserKey,
-        viewport: requestedViewport,
-        viewportMode,
+        viewport: fitViewport,
+        viewportMode: 'fit',
+        follow: true,
       });
     }, 120);
     return () => {
       window.clearTimeout(id);
     };
-  }, [
-    browser?.viewport.deviceScaleFactor,
-    browser?.viewport.height,
-    browser?.viewport.width,
-    browser?.viewportMode,
-    requestedViewport.deviceScaleFactor,
-    requestedViewport.height,
-    requestedViewport.width,
-    browserKey,
-    viewportMode,
-  ]);
+  }, [browserKey, currentViewport, fitViewport, followsPane]);
+
+  const pickViewport = (mode: BrowserViewportMode) => {
+    if (browserKey)
+      resizeBrowserViewport({
+        appSessionId: browserKey,
+        viewport: viewportForMode(mode, fitViewport),
+        viewportMode: mode,
+      });
+  };
 
   const openCurrentUrl = () => {
     const normalizedUrl = normalizeUrl(urlInput);
@@ -483,7 +469,8 @@ export default function BrowserWorkspace({
           <NativeBrowserSurface
             visibleBrowserSessionId={browser?.browserSessionId}
             url={activeUrl}
-            viewport={requestedViewport}
+            // Laid out from the size the page has, as the Browser host draws it.
+            viewport={browser?.viewport ?? requestedViewport}
             viewportMode={viewportMode}
             designMode={designMode}
             pencilMode={designMode && pencilMode}
@@ -516,7 +503,6 @@ export default function BrowserWorkspace({
               // Crashes are tracked by the Browser host, pane open or not.
               if (!failure.crashed) handleLoadFailed(failure);
             }}
-            onViewportSizeChange={setActualViewport}
             expanded={expanded}
           />
         ) : (
@@ -546,12 +532,9 @@ export default function BrowserWorkspace({
           />
         )}
 
-        <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 px-2.5 py-1.5 text-[11px] text-droid-text-muted shadow-lg">
-          <span className="font-mono text-droid-text-secondary">
-            {actualViewport.width}x{actualViewport.height}
-          </span>
-          <span>{viewportMode}</span>
-        </div>
+        {browser && (
+          <ViewportMenu mode={viewportMode} fitViewport={fitViewport} onSelect={pickViewport} />
+        )}
       </div>
     </div>
   );

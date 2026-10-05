@@ -5,6 +5,8 @@ let designMode = false;
 let pencilMode = false;
 let altHeld = false;
 let promptBox = null;
+// How much larger than the page the design labels are drawn: 1 / the pane's scale.
+let uiScale = 1;
 let promptInput = null;
 let promptTag = null;
 let promptSend = null;
@@ -178,6 +180,12 @@ document.addEventListener('keydown', onKey, true);
 document.addEventListener('keyup', onKey, true);
 window.addEventListener('scroll', queueReposition, true);
 window.addEventListener('resize', queueReposition, true);
+// An open composer fits itself to the page again.
+window.addEventListener('resize', () => {
+  if (!promptVisible()) return;
+  refreshPromptBox();
+  positionPrompt(promptSelection.anchor.box);
+});
 // passive:false so we can cancel wheel scrolling while a capture is pending.
 window.addEventListener('wheel', onWheel, { capture: true, passive: false });
 window.addEventListener('touchmove', onWheel, { capture: true, passive: false });
@@ -199,6 +207,7 @@ function mount() {
 }
 
 function applyState(state) {
+  uiScale = 1 / (Number(state && state.scale) || 1);
   designMode = Boolean(state && state.designMode);
   pencilMode = designMode && Boolean(state && state.pencilMode);
   hoverTarget = null;
@@ -219,6 +228,7 @@ function applyState(state) {
   mount();
   hideBox();
   repositionAnnotations();
+  if (promptVisible()) positionPrompt(promptSelection.anchor.box);
 }
 
 function onWheel(event) {
@@ -1159,8 +1169,17 @@ function showBox(rect, text) {
   positionBox(overlay, rect);
   label.style.display = 'block';
   label.textContent = text;
-  label.style.left = `${Math.min(window.innerWidth - 16, Math.max(8, Math.round(rect.x)))}px`;
-  label.style.top = `${Math.min(window.innerHeight - 36, Math.max(8, Math.round(rect.y - 38)))}px`;
+  undoPaneScale(label);
+  // Kept inside the page at the size it is drawn, wrapping where it is narrow;
+  // its own 16px of padding comes off the width it may take.
+  label.style.maxWidth = `${Math.min(360, Math.floor((window.innerWidth - 16) / uiScale) - 16)}px`;
+  // Measured from the page's edge: where it last sat can squeeze its width.
+  label.style.left = '0px';
+  const { width, height } = label.getBoundingClientRect();
+  // One line sits where it always did; a wrapped label takes the room it needs.
+  const tall = Math.max(height, 30 * uiScale);
+  label.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, rect.x)))}px`;
+  label.style.top = `${Math.round(Math.max(8, Math.min(window.innerHeight - tall - 6 * uiScale, rect.y - tall - 8 * uiScale)))}px`;
 }
 
 function hideBox() {
@@ -1335,6 +1354,17 @@ function stableHash(value) {
   return hash.toString(36);
 }
 
+// The element or text the composer was opened on, where the page has it now;
+// a sketch keeps the region it was drawn on.
+function refreshPromptBox() {
+  const { anchor } = promptSelection;
+  const held = annotations.find((item) => item.anchor === anchor && item.el);
+  if (held) anchor.box = boxFor(held.el.getBoundingClientRect());
+  if (anchor.kind !== 'text' || !textRange) return;
+  anchor.box = boxFor(textRange.getBoundingClientRect());
+  drawTextHighlights(textRange);
+}
+
 function promptVisible() {
   return Boolean(promptBox && promptBox.style.display === 'block');
 }
@@ -1392,7 +1422,8 @@ function mountPrompt() {
     promptBox.setAttribute(INTERNAL_ATTR, '1');
     const row = element('div', ['display:flex', 'align-items:center', 'gap:8px']);
     promptTag = element('div', [
-      'max-width:160px',
+      // A narrow composer still leaves the text field its room.
+      'max-width:min(160px,35%)',
       'overflow:hidden',
       'text-overflow:ellipsis',
       'white-space:nowrap',
@@ -1402,7 +1433,7 @@ function mountPrompt() {
     promptTag.textContent = '@ref';
     promptInput = element('input', [
       'flex:1',
-      'min-width:0',
+      'min-width:64px',
       'height:32px',
       'border:0',
       'outline:0',
@@ -1458,6 +1489,8 @@ function mountPrompt() {
       const captureId = captureSeq;
       pendingCaptureId = captureId;
       capturePending = true;
+      // Captured where the element is now, however the page moved it.
+      refreshPromptBox();
       sendDesignPrompt({ selection: promptSelection, instruction, captureId });
       hidePrompt();
       if (clearTimer) clearTimeout(clearTimer);
@@ -1497,14 +1530,27 @@ function closeIconSvg() {
 }
 
 function positionPrompt(box) {
-  const width = Math.min(440, Math.max(280, window.innerWidth - 24));
-  const height = 50;
-  const left = clamp(box.x, 12, Math.max(12, window.innerWidth - width - 12));
-  const below = box.y + box.height + 10;
-  const above = box.y - height - 10;
-  const top = below + height <= window.innerHeight - 12 ? below : above;
+  // Sizes in the composer's own pixels, drawn `ui` page pixels each: its own
+  // size back, or smaller on a page shown too narrow for it to fit.
+  const edge = 12 * uiScale;
+  const width = Math.min(440, Math.max(240, window.innerWidth / uiScale - 24));
+  const ui = Math.min(uiScale, (window.innerWidth - 2 * edge) / width);
+  const [shownWidth, shownHeight, gap] = [width, 50, 10].map((size) => size * ui);
+  const left = clamp(box.x, edge, Math.max(edge, window.innerWidth - shownWidth - edge));
+  const below = box.y + box.height + gap;
+  const above = box.y - shownHeight - gap;
+  const top = below + shownHeight <= window.innerHeight - edge ? below : above;
+  undoPaneScale(promptBox, ui);
+  promptBox.style.width = `${Math.round(width)}px`;
   promptBox.style.left = `${Math.round(left)}px`;
-  promptBox.style.top = `${Math.round(clamp(top, 12, Math.max(12, window.innerHeight - height - 12)))}px`;
+  promptBox.style.top = `${Math.round(clamp(top, edge, Math.max(edge, window.innerHeight - shownHeight - edge)))}px`;
+}
+
+// The pane can draw the page scaled down (a standard size in a smaller pane);
+// the design labels and composer are drawn back up to their own size.
+function undoPaneScale(node, scale = uiScale) {
+  node.style.transformOrigin = '0 0';
+  node.style.transform = scale === 1 ? '' : `scale(${scale})`;
 }
 
 function isInternalEvent(event) {

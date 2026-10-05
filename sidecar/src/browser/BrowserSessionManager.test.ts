@@ -96,6 +96,10 @@ class FakeRuntime implements BrowserRuntime {
     return this.result();
   }
 
+  async awaitViewport() {
+    return this.result();
+  }
+
   private result(url?: string) {
     return { snapshot: this.stateSnapshot(url), text: '[Droid Control · page]' };
   }
@@ -231,8 +235,8 @@ test('a failed resize keeps the viewport and emits nothing, and a resize records
   await assert.rejects(manager.resizeViewport(mobile), /resize failed/);
   assert.equal(updates.length, updateCount);
   assert.deepEqual(manager.state('m1')?.viewport, {
-    width: 1200,
-    height: 800,
+    width: 1440,
+    height: 900,
     deviceScaleFactor: 2,
   });
 
@@ -263,7 +267,7 @@ test('addReference captures an anchor crop and current browser context, readable
   });
 
   assert.equal(reference.url, 'http://127.0.0.1:1420/');
-  assert.equal(reference.viewport.width, 1200);
+  assert.equal(reference.viewport.width, 1440);
   assert.equal(reference.anchor.id, reference.id);
   assert.ok(reference.anchor.screenshotPath, 'expected an auto-captured crop path');
   assert.deepEqual(runtime.captures.at(-1), buttonAnchor().box);
@@ -339,13 +343,13 @@ test('open normalizes bare domains and resizes an existing runtime only when giv
     appSessionId: 'm1',
     url: 'https://example.com',
     viewport: custom,
-    viewportMode: 'custom',
+    viewportMode: 'tablet',
   });
   // The agent omitting a viewport keeps the one in place.
   const { state } = await manager.open({ appSessionId: 'm1', url: 'https://example.org' });
   assert.deepEqual(runtime.viewport, custom);
   assert.deepEqual(state.viewport, custom);
-  assert.equal(state.viewportMode, 'custom');
+  assert.equal(state.viewportMode, 'tablet');
 });
 
 function buttonAnchor(): DesignAnchor {

@@ -468,6 +468,8 @@ export const resizeBrowserViewport = (input: {
   appSessionId: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
+  /** The pane's size for Fit, taken only while the page is on Fit. */
+  follow?: boolean;
 }) => {
   bridge.send({ type: 'browser.resizeViewport', ...input });
 };
