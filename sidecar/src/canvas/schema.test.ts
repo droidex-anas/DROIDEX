@@ -1,0 +1,338 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { z } from 'zod';
+
+import type * as Renderer from '../../../src/features/canvas/protocol.js';
+import type {
+  ArrangeFramesInput,
+  CanvasChange,
+  CanvasError,
+  CanvasSnapshot,
+  CanvasSummary,
+  CanvasTurnContext,
+  CreateFramesInput,
+  DesignRef,
+  DesignSystemRef,
+  ElementRef,
+  SourceElement,
+  WriteFilesInput,
+  WriteReceipt,
+} from './protocol.js';
+import {
+  arrangeFramesInputSchema,
+  createFramesInputSchema,
+  writeFilesInputSchema,
+} from './schema.js';
+
+// Every DTO the renderer mirrors. Assignability is too weak to catch a mirror
+// that gained an optional field, so ExactMirror below compares each pair for
+// type identity instead.
+type SidecarWire = {
+  create: CreateFramesInput;
+  write: WriteFilesInput;
+  arrange: ArrangeFramesInput;
+  snapshot: CanvasSnapshot;
+  change: CanvasChange;
+  summary: CanvasSummary;
+  receipt: WriteReceipt;
+  turnContext: CanvasTurnContext;
+  designRef: DesignRef;
+  elementRef: ElementRef;
+  element: SourceElement;
+  error: CanvasError;
+};
+
+type RendererWire = {
+  create: Renderer.CreateFramesInput;
+  write: Renderer.WriteFilesInput;
+  arrange: Renderer.ArrangeFramesInput;
+  snapshot: Renderer.CanvasSnapshot;
+  change: Renderer.CanvasChange;
+  summary: Renderer.CanvasSummary;
+  receipt: Renderer.WriteReceipt;
+  turnContext: Renderer.CanvasTurnContext;
+  designRef: Renderer.DesignRef;
+  elementRef: Renderer.ElementRef;
+  element: Renderer.SourceElement;
+  error: Renderer.CanvasError;
+};
+
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+// One entry per mirrored DTO. A drifted mirror types its entry as `false`, and
+// the compile error names the property that drifted.
+type ExactMirror = { [Key in keyof SidecarWire]: Equals<SidecarWire[Key], RendererWire[Key]> };
+
+const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' };
+
+const wire: SidecarWire = {
+  create: {
+    mutationId: 'create-hey',
+    frames: [
+      { name: 'Hey', width: 720, height: 720, designSystem },
+      {
+        name: 'Hey variant',
+        width: 720,
+        height: 720,
+        designSystem,
+        seed: {
+          kind: 'revision',
+          canvasId: 'cv_01',
+          revision: { designId: 'dsg_hey', revisionId: 'rev_01' },
+        },
+      },
+    ],
+  },
+  write: {
+    mutationId: 'write-hey',
+    designId: 'dsg_hey',
+    expectedRevisionId: null,
+    files: {
+      'main.tsx': 'export default function Hey() {\n  return <h1>Hey</h1>;\n}\n',
+      'ui/Cta.tsx': 'export const Cta = () => <button type="button">Get started</button>;\n',
+    },
+    deletedPaths: ['ui/Legacy.tsx'],
+    designSystem,
+  },
+  arrange: {
+    mutationId: 'arrange-hey',
+    frames: [
+      {
+        designId: 'dsg_hey',
+        expectedLayoutVersion: 2,
+        rect: { x: 0, y: 0, width: 720, height: 720 },
+      },
+    ],
+  },
+  snapshot: {
+    canvasId: 'cv_01',
+    sequence: 7,
+    frames: [
+      {
+        designId: 'dsg_hey',
+        name: 'Hey',
+        rect: { x: 0, y: 0, width: 720, height: 720 },
+        layoutVersion: 2,
+        revisionId: 'rev_02',
+        designSystem,
+        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02' },
+      },
+      {
+        designId: 'dsg_reserved',
+        name: 'Cards',
+        rect: { x: 760, y: 0, width: 720, height: 720 },
+        layoutVersion: 1,
+        revisionId: null,
+        designSystem,
+        build: { status: 'pending' },
+      },
+    ],
+  },
+  change: {
+    canvasId: 'cv_01',
+    sequence: 8,
+    frames: [
+      {
+        designId: 'dsg_hey',
+        name: 'Hey',
+        rect: { x: 0, y: 0, width: 720, height: 720 },
+        layoutVersion: 2,
+        revisionId: 'rev_03',
+        designSystem,
+        build: {
+          status: 'failed',
+          revisionId: 'rev_03',
+          diagnostics: [
+            {
+              code: 'unsupported_import',
+              message: 'Import "lodash" is not available.',
+              file: 'main.tsx',
+              line: 1,
+              column: 8,
+            },
+          ],
+          lastWorkingRevisionId: 'rev_02',
+        },
+      },
+    ],
+    removedDesignIds: ['dsg_reserved'],
+  },
+  summary: { canvasId: 'cv_01', name: 'Components', updatedAt: 1_767_225_600_000, designCount: 2 },
+  receipt: { designId: 'dsg_hey', revisionId: 'rev_03', sequence: 8 },
+  turnContext: {
+    designs: [{ designId: 'dsg_hey', revisionId: 'rev_02' }],
+    elements: [
+      { designId: 'dsg_hey', revisionId: 'rev_02', elementId: 'el_17', instancePath: '0/2/1' },
+    ],
+    designSystem,
+  },
+  designRef: { designId: 'dsg_hey', revisionId: 'rev_02' },
+  elementRef: {
+    designId: 'dsg_hey',
+    revisionId: 'rev_02',
+    elementId: 'el_17',
+    instancePath: '0/2/1',
+  },
+  element: {
+    elementId: 'el_17',
+    file: 'main.tsx',
+    start: 48,
+    end: 64,
+    tagName: 'h1',
+    editability: 'literal',
+  },
+  error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
+};
+
+test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
+  const exact: ExactMirror = {
+    create: true,
+    write: true,
+    arrange: true,
+    snapshot: true,
+    change: true,
+    summary: true,
+    receipt: true,
+    turnContext: true,
+    designRef: true,
+    elementRef: true,
+    element: true,
+    error: true,
+  };
+  assert.ok(Object.values(exact).every((isExact) => isExact));
+  assert.deepEqual(JSON.parse(JSON.stringify(wire)), wire);
+});
+
+test('the create, write and arrange fixtures parse, and the parsed value fits the mirror', () => {
+  const create: Renderer.CreateFramesInput = createFramesInputSchema.parse(wire.create);
+  const write: Renderer.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
+  const arrange: Renderer.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
+  assert.deepEqual(create, wire.create);
+  assert.deepEqual(write, wire.write);
+  assert.deepEqual(arrange, wire.arrange);
+});
+
+test('create rejects more than four frames and an out-of-range dimension', () => {
+  const frame = wire.create.frames[0];
+  assert.match(
+    rejection(createFramesInputSchema, { ...wire.create, frames: new Array(5).fill(frame) }),
+    /1 to 4 frames/,
+  );
+  assert.match(
+    rejection(createFramesInputSchema, { ...wire.create, frames: [{ ...frame, width: 8193 }] }),
+    /between 1 and 8192/,
+  );
+});
+
+test('create and arrange reject an identifier that is too long and a NaN coordinate', () => {
+  assert.match(
+    rejection(createFramesInputSchema, { ...wire.create, mutationId: 'm'.repeat(129) }),
+    /1 to 128 characters/,
+  );
+  const [frame] = wire.arrange.frames;
+  assert.match(
+    rejection(arrangeFramesInputSchema, {
+      ...wire.arrange,
+      frames: [{ ...frame, rect: { ...frame.rect, x: Number.NaN } }],
+    }),
+    /finite numbers/,
+  );
+  assert.match(
+    rejection(createFramesInputSchema, {
+      ...wire.create,
+      frames: [{ ...wire.create.frames[0], name: 'Hey\u0085' }],
+    }),
+    /without control characters/,
+  );
+});
+
+test('write rejects source that breaks a file-count, per-file or total byte limit', () => {
+  const many = Object.fromEntries(
+    Array.from({ length: 65 }, (_, index) => [`file${String(index)}.tsx`, 'export default 1;']),
+  );
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: many })),
+    /at most 64 source files/,
+  );
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'main.tsx': 'x'.repeat(257 * 1024) } })),
+    /under 256 KiB/,
+  );
+  const halfMebibyte = 'x'.repeat(512 * 1024);
+  assert.match(
+    rejection(
+      writeFilesInputSchema,
+      writeWith({ files: { 'a.tsx': halfMebibyte, 'b.tsx': halfMebibyte, 'c.tsx': 'x' } }),
+    ),
+    /under 1 MiB/,
+  );
+});
+
+test('write rejects escaping, absolute, backslash and case-colliding paths', () => {
+  for (const path of ['../x.tsx', '/abs.tsx', 'a\\b.tsx']) {
+    assert.match(
+      rejection(writeFilesInputSchema, writeWith({ files: { [path]: 'x' } })),
+      /relative/,
+    );
+  }
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'main.tsx': 'x', 'MAIN.tsx': 'y' } })),
+    /ignoring case/,
+  );
+  assert.match(
+    rejection(
+      writeFilesInputSchema,
+      writeWith({ files: { 'main.tsx': 'x' }, deletedPaths: ['main.tsx'] }),
+    ),
+    /cannot also be written/,
+  );
+});
+
+test('write rejects a path an object-keyed source tree would lose', () => {
+  // Only a parsed payload can carry an own `__proto__` key; Zod's record drops
+  // it, so without this rule an accepted write silently loses that file.
+  const payload: unknown = JSON.parse(
+    '{"mutationId":"write-hey","designId":"dsg_hey","expectedRevisionId":null,' +
+      '"files":{"__proto__":"source"},"deletedPaths":[]}',
+  );
+  assert.match(rejection(writeFilesInputSchema, payload), /__proto__, constructor or prototype/);
+});
+
+test('write rejects paths the filesystem would merge by Unicode form or surrogate', () => {
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'café.tsx': 'x', 'café.tsx': 'y' } })),
+    /Unicode normalization/,
+  );
+  assert.match(
+    rejection(
+      writeFilesInputSchema,
+      writeWith({ files: { 'café.tsx': 'x' }, deletedPaths: ['Café.tsx'] }),
+    ),
+    /cannot also be written/,
+  );
+  // Both lone surrogates encode to the same UTF-8 bytes, so both are refused.
+  assert.match(
+    rejection(
+      writeFilesInputSchema,
+      writeWith({ files: { '\ud800.tsx': 'x', '\ud801.tsx': 'y' } }),
+    ),
+    /relative/,
+  );
+  // U+0085 is a C1 control character: invisible, and legal in neither a path
+  // nor a frame name.
+  assert.match(
+    rejection(writeFilesInputSchema, writeWith({ files: { 'a\u0085.tsx': 'x' } })),
+    /relative/,
+  );
+});
+
+function writeWith(patch: Partial<WriteFilesInput>): unknown {
+  return { ...wire.write, deletedPaths: [], ...patch };
+}
+
+function rejection(schema: z.ZodTypeAny, input: unknown): string {
+  const result = schema.safeParse(input);
+  if (result.success) assert.fail('The boundary accepted an input it must reject.');
+  return result.error.issues.map((issue) => issue.message).join(' | ');
+}
