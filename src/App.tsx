@@ -75,7 +75,7 @@ import {
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
-import { listProjects, restoreBrowsers } from './lib/commands';
+import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
@@ -465,6 +465,10 @@ export default function App() {
 
   useEffect(() => {
     if (embedded) return;
+    // A sidecar that just started has none of the browsers the app kept, so
+    // every pane action would fail until the agent opened a page again. Each
+    // new connection hands them over before any queued pane command.
+    bridge.sendFirstOnOpen(() => restoreBrowsersCommand(store.getState().browsers));
     void (async () => {
       // Bridge info and the saved API key are independent IPCs; fetch them
       // together so the connect command reaches the sidecar one round-trip
@@ -476,7 +480,7 @@ export default function App() {
       // without it a custom model shows as its raw id until the selector opens.
       listModels();
     })();
-  }, [embedded]);
+  }, [embedded, store]);
 
   // The chat list hides a project's threads, so it waits to have been answered
   // about them before it draws. Asking on every connection rather than once at
@@ -484,12 +488,8 @@ export default function App() {
   // depending on one call at one moment to ever be made.
   const connection = useStoreSelector((current) => current.connection);
   useEffect(() => {
-    if (connection !== 'connected') return;
-    listProjects();
-    // A sidecar that just started has none of the browsers the app kept, so
-    // every pane action would fail until the agent opened a page again.
-    restoreBrowsers(store.getState().browsers);
-  }, [connection, store]);
+    if (connection === 'connected') listProjects();
+  }, [connection]);
 
   // App update discovery must never wait on CLI/env probing: that work can be
   // slow or unavailable, while the verified appcast is independent.
