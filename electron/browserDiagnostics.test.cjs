@@ -51,6 +51,12 @@ test('browser network diagnostics remove URL credentials and sensitive parameter
     redactBrowserDiagnosticUrl('/callback?auth_code=secret&safe=yes', 'https://example.com/page'),
     'https://example.com/callback?auth_code=%5Bredacted%5D&safe=yes',
   );
+  assert.doesNotMatch(
+    redactBrowserDiagnosticUrl(
+      `https://example.com/login?next=${encodeURIComponent('https://other.test/cb?token=secret')}`,
+    ),
+    /secret/,
+  );
 });
 
 test('browser console diagnostics use the Electron details object', () => {
