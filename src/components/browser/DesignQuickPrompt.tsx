@@ -251,11 +251,13 @@ function QuickPromptBox({
           quick.setText(event.target.value);
         }}
         onKeyDown={(event) => {
+          // Keys that pick or cancel an IME candidate are the IME's.
+          if (event.nativeEvent.isComposing || event.key === 'Process') return;
           if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
             close();
-          } else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+          } else if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             quick.send();
           }
