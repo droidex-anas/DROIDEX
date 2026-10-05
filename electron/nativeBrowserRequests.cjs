@@ -20,6 +20,7 @@ const ACTIONS = new Set([
   'press',
   'scroll',
   'resize',
+  'colorScheme',
   'inspect',
   'network',
   'console',
@@ -30,8 +31,8 @@ const ACTIONS = new Set([
   'wait',
   'awaitViewport',
 ]);
-// Reading the logs or recording the viewport never needs the page itself.
-const PAGELESS_ACTIONS = new Set(['resize', 'network', 'console']);
+// Reading the logs or recording the viewport or scheme never needs the page itself.
+const PAGELESS_ACTIONS = new Set(['resize', 'colorScheme', 'network', 'console']);
 const INPUT_ACTIONS = new Set(['click', 'hover', 'fill', 'type', 'press', 'scroll']);
 // What moves a page on, and so takes its turn; reads run alongside.
 const TURN_ACTIONS = new Set([
@@ -199,14 +200,13 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url, request.viewport);
+      await manager.open(browserSessionId, url, stillWanted);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
-      stillWanted();
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
-      await manager.reload(browserSessionId);
+      await manager.reload(browserSessionId, stillWanted);
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
@@ -306,6 +306,8 @@ function agentAction(request) {
     direction: request.direction,
     pixels: request.pixels,
     viewport: request.viewport,
+    viewportMode: request.viewportMode,
+    colorScheme: request.colorScheme,
     clearNetworkLog: request.clearNetworkLog,
     clearConsoleLog: request.clearConsoleLog,
   };

@@ -53,8 +53,8 @@ export function BrowserHost() {
       );
     const setWorking = (browserSessionId: string, working: boolean) => {
       const appSessionId = appSessionIdFor(browserSessionId);
-      const savedUrl = appSessionId ? browsersRef.current[appSessionId].url : undefined;
-      setBrowserPageWorking(browserSessionId, working, savedUrl);
+      const saved = appSessionId ? browsersRef.current[appSessionId] : undefined;
+      setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
     };
     const heard = new Set<string>();
     const subscriptions = [

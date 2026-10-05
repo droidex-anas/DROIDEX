@@ -222,8 +222,8 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
-  nativeBrowserReserve: (browserSessionId, savedUrl) =>
-    ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl }),
+  nativeBrowserReserve: (browserSessionId, savedUrl, savedMode) =>
+    ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl, savedMode }),
   nativeBrowserRelease: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-release', { browserSessionId }),
   nativeBrowserWorkingSessions: () => ipcRenderer.invoke('native-browser-working-sessions'),
