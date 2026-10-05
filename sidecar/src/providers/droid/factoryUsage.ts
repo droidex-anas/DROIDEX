@@ -59,7 +59,9 @@ export function factoryRefusalLimit(meters: readonly ReportedMeter[], now: numbe
     ...(first.window ? { window: first.window } : {}),
     resetsAt: first.resetsAt,
   };
-  const otherHasRoom = recoveries.size === 1 && meters.some((meter) => meter.model !== first.model);
+  // A spent window with no usable reset time still leaves its pool without room.
+  const otherPool = meters.filter((meter) => meter.model !== first.model);
+  const otherHasRoom = otherPool.length > 0 && otherPool.every((meter) => meter.usedPercent < 100);
   return otherHasRoom ? { ...limit, model: first.model ?? STANDARD_POOL } : limit;
 }
 
