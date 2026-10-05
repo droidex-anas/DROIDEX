@@ -238,6 +238,9 @@ export interface TranscriptEvent {
   // turn, with Stop or Send now. Reported by the harness, not inferred from the
   // text: it is not a failure and must not read as one.
   interrupted?: true;
+  // The pictures a 'tool_result' carried (a screenshot, an image file the agent
+  // read), as files saved in the profile. Their bytes are never in `text`.
+  images?: string[];
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
   author?: 'user';
