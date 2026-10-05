@@ -60,7 +60,7 @@ export class FakeBrowserSessionManager implements SessionBrowserDependencies {
     return Promise.resolve({ state, text: '' });
   }
 
-  readonly restore: SessionBrowserDependencies['restore'] = () => undefined;
+  readonly restore: SessionBrowserDependencies['restore'] = () => [];
 
   readonly resizeViewport: SessionBrowserDependencies['resizeViewport'] = () =>
     unsupportedBrowserMethod('resizeViewport');
