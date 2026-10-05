@@ -366,3 +366,45 @@ function buttonDetail(): DesignAnchorDetail {
     ancestors: [],
   };
 }
+
+test('restore takes up a kept browser under its id and page, and leaves an open one alone', async () => {
+  const updates: BrowserState[] = [];
+  const runtimes = new Map<string, FakeRuntime>();
+  const manager = createManager({
+    emit: recordUpdates(updates),
+    runtimeFactory: (id, viewport) => {
+      const runtime = new FakeRuntime(viewport);
+      runtimes.set(id, runtime);
+      return runtime;
+    },
+  });
+  const { state: open } = await manager.open({ appSessionId: 'm1', url: 'https://example.com' });
+  const updateCount = updates.length;
+  const viewport = { width: 900, height: 700, deviceScaleFactor: 2 };
+
+  manager.restore([
+    {
+      appSessionId: 'm1',
+      browserSessionId: 'kept-1',
+      url: 'https://old.example',
+      viewport,
+      viewportMode: 'fit',
+    },
+    {
+      appSessionId: 'm2',
+      browserSessionId: 'kept-2',
+      url: 'https://kept.example/',
+      viewport,
+      viewportMode: 'tablet',
+    },
+  ]);
+
+  assert.deepEqual(manager.state('m1'), open);
+  assert.equal(manager.state('m2')?.browserSessionId, 'kept-2');
+  assert.equal(manager.state('m2')?.url, 'https://kept.example/');
+  assert.equal(manager.state('m2')?.viewportMode, 'tablet');
+  assert.deepEqual(runtimes.get('kept-2')?.openedUrls, []);
+  assert.equal(updates.length, updateCount);
+  await manager.reload('m2');
+  assert.equal(runtimes.get('kept-2')?.reloads, 1);
+});

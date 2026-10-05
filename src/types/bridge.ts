@@ -921,6 +921,18 @@ export type ClientCommand =
   | { type: 'browser.close'; appSessionId: string }
   | { type: 'browser.reload'; appSessionId: string }
   | {
+      // The browsers the app kept from its last run, sent on each connection.
+      // The sidecar takes up any it lacks under the same id, leaving the page.
+      type: 'browser.restore';
+      browsers: {
+        appSessionId: string;
+        browserSessionId: string;
+        url: string;
+        viewport: BrowserViewport;
+        viewportMode: BrowserViewportMode;
+      }[];
+    }
+  | {
       type: 'browser.resizeViewport';
       appSessionId: string;
       viewport: BrowserViewport;

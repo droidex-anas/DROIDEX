@@ -14,6 +14,7 @@ export type SessionBrowsers = Pick<
   | 'closeAll'
   // Runtime retirement asks whether a session is still holding a browser.
   | 'hasSession'
+  | 'restore'
   | 'reload'
   | 'resizeViewport'
   | 'addReference'
@@ -65,6 +66,12 @@ export class SessionBrowser {
       // A browser the chat opened again meanwhile is not the one that closed.
       if (!this.d.browsers.hasSession(appSessionId))
         this.d.emit({ type: 'browser.closed', appSessionId });
+    });
+  }
+
+  async restore(cmd: Extract<ClientCommand, { type: 'browser.restore' }>): Promise<void> {
+    await this.handleBrowser(undefined, () => {
+      this.d.browsers.restore(cmd.browsers);
     });
   }
 
