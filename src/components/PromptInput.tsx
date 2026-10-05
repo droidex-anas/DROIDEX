@@ -470,6 +470,8 @@ export default function PromptInput({
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
+  // The draft a seed that goes out at once makes, sent once it is the draft.
+  const seedToSend = useRef<string | null>(null);
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
@@ -963,7 +965,8 @@ export default function PromptInput({
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
     setInput(text);
-    pendingCaret.current = text.length;
+    if (composerSeed.focus) pendingCaret.current = text.length;
+    seedToSend.current = composerSeed.send ? text : null;
     setVisualizeSelected(false);
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
@@ -1155,6 +1158,13 @@ export default function PromptInput({
       submittingRef.current = false;
     }
   };
+
+  // The browser's prompt box sends through here, as the composer's own prompt.
+  useEffect(() => {
+    if (seedToSend.current !== input) return;
+    seedToSend.current = null;
+    void handleSubmit();
+  });
 
   // The chat a send creates opens in the place it was sent from, even if the
   // user switches tabs while attachments settle or the folder is prepared. The
