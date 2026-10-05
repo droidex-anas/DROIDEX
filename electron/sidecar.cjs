@@ -130,13 +130,11 @@ function createSidecarSupervisor(options) {
     processAlive = true;
     bridgeResponsive = false;
     const token = crypto.randomBytes(32).toString('hex');
-    const assetToken = crypto.randomBytes(32).toString('hex');
     const env = {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_PORT: process.env.BRIDGE_PORT || '0',
       BRIDGE_TOKEN: token,
-      BROWSER_ASSET_TOKEN: assetToken,
       DROIDEX_USER_DATA_DIR: options.userData(),
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     };
