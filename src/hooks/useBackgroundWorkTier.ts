@@ -35,9 +35,9 @@ export function useBackgroundWorkTier(): void {
   const [power, setPower] = useState<PowerState>(VISIBLE_ON_MAINS);
   const lastSent = useRef<SentBackgroundWork | null>(null);
 
-  // Subscribed apart from the chats on screen, which change with every tile gesture.
+  // Power and memory pressure come from the desktop host, not the sidecar, so
+  // they stay current across reconnects and apart from every tile gesture.
   useEffect(() => {
-    if (!connected) return;
     let disposed = false;
     void desktopPowerTier().then((snapshot) => {
       if (!disposed && snapshot) setPower(snapshot);
@@ -51,7 +51,7 @@ export function useBackgroundWorkTier(): void {
       stopPower();
       stopPressure();
     };
-  }, [connected, dispatch]);
+  }, [dispatch]);
 
   useEffect(() => {
     if (!connected) {
