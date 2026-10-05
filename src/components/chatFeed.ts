@@ -253,13 +253,13 @@ export function buildFeed(
   // Each turn's browser calls and their results, in transcript order, under the
   // turn's first browser call. A result carries no tool name and can land in a
   // later turn, so it joins its call's turn by id; one with no id belongs to
-  // the call right before it.
+  // the call right before it. A model switch ends a turn as a prompt does.
   const browserTurns = new Map<TranscriptEvent, BrowserTurn>();
   const browserTurnOfCall = new Map<string, BrowserTurn>();
   let browserTurn: BrowserTurn | null = null;
   let previous: TranscriptEvent | undefined;
   for (const e of events) {
-    if (e.author === 'user') {
+    if (e.author === 'user' || isSettingsStatus(e)) {
       if (browserTurn) browserTurn.ended = true;
       browserTurn = null;
     } else if (e.kind === 'tool_call' && browserToolOf(e.toolName)) {
