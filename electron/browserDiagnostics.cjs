@@ -59,13 +59,25 @@ function redactBrowserDiagnosticUrl(value, baseUrl, depth = 0) {
   }
 }
 
+// The page a tool names: one off the web shows only its scheme, so a local
+// file's path and the user's name in it never reach the agent.
+function redactBrowserPageUrl(value) {
+  const text = String(value || '');
+  if (!URL.canParse(text)) return text.slice(0, 1000);
+  const { protocol } = new URL(text);
+  return /^(https?|about):$/.test(protocol)
+    ? redactBrowserDiagnosticUrl(text)
+    : `${protocol}[hidden]`;
+}
+
 function redactParameter(key, value, base, depth) {
   // `sig` alone is the signature of a signed URL.
   if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') return '[redacted]';
   // A relative URL (`next=/continue?code=...`) is read against the enclosing one.
   const relative = value.startsWith('/') || value.startsWith('?');
   if (!relative && !URL.canParse(value)) return value;
-  if (depth >= MAX_URL_DEPTH) return '[redacted]';
+  // One that looks like a URL but will not read as one goes whole.
+  if (depth >= MAX_URL_DEPTH || !URL.canParse(value, base)) return '[redacted]';
   const resolved = new URL(value, base).href;
   const redacted = redactBrowserDiagnosticUrl(resolved, undefined, depth + 1);
   return redacted === resolved ? value : redacted;
@@ -274,4 +286,5 @@ module.exports = {
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticText,
   redactBrowserDiagnosticUrl,
+  redactBrowserPageUrl,
 };
