@@ -5,7 +5,7 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame, ELEMENT_TAKES_TEXT } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
@@ -199,9 +199,12 @@ function createBrowserActions({
         if (!holding()) throw new Error(LATE);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
-        ({ takesText } = await keepsFocus(dbg, sessionId, document));
+        await keepsFocus(dbg, sessionId, document);
         if (!(await hasFocus(dbg, sessionId, target.backendNodeId)))
           throw new Error(`${request.ref} did not keep the focus; read the page again.`);
+        // Asked of the node itself, which the focused frame cannot reach
+        // inside a closed shadow root.
+        takesText = await callOnNode(dbg, sessionId, target.backendNodeId, ELEMENT_TAKES_TEXT);
       } else {
         ({ sessionId, document, takesText } = await focusedFrame(dbg));
       }
@@ -291,11 +294,17 @@ function createBrowserActions({
 
   // Whether a node is what its own document or shadow root has focused.
   async function hasFocus(dbg, sessionId, backendNodeId) {
+    const focused = 'function () { return this.getRootNode().activeElement === this; }';
+    return callOnNode(dbg, sessionId, backendNodeId, focused);
+  }
+
+  // Whether a function called on a node returns true.
+  async function callOnNode(dbg, sessionId, backendNodeId, functionDeclaration) {
     const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
     try {
       const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
         objectId: object.objectId,
-        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
+        functionDeclaration,
         returnByValue: true,
       });
       return result?.value === true;

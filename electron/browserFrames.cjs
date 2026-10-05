@@ -191,16 +191,24 @@ async function focusedFrame(dbg) {
   }
 }
 
-// Null once the document has left its frame; otherwise whether the element
-// with its focus, inside shadow roots too, takes typed text.
-const FOCUS_TAKES_TEXT = `function () {
-  if (this.defaultView === null) return null;
-  let a = this.activeElement;
-  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+// Whether an element takes typed text.
+const TAKES_TEXT = `function (a) {
   if (!a || a.matches(':disabled') || a.readOnly) return false;
   if (a.isContentEditable || a.localName === 'textarea') return true;
   const notText = ['button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'];
   return a.localName === 'input' && !notText.includes(a.type);
+}`;
+
+// Whether the element it is called on takes typed text.
+const ELEMENT_TAKES_TEXT = `function () { return (${TAKES_TEXT})(this); }`;
+
+// Null once the document has left its frame; otherwise whether the element
+// with its focus, inside open shadow roots too, takes typed text.
+const FOCUS_TAKES_TEXT = `function () {
+  if (this.defaultView === null) return null;
+  let a = this.activeElement;
+  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+  return (${TAKES_TEXT})(a);
 }`;
 
 // The element with the focus in the given document, inside shadow roots.
@@ -295,6 +303,7 @@ module.exports = {
   framePainted,
   frameHolds,
   focusedFrame,
+  ELEMENT_TAKES_TEXT,
   frameStep,
   scrollFrameIntoView,
   axTree,
