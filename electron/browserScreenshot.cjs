@@ -71,6 +71,8 @@ function createBrowserScreenshot({ reading, nativeImage, redactUrl }) {
       image: (png ? image.toPNG() : image.toJPEG(JPEG_QUALITY)).toString('base64'),
       mimeType: png ? 'image/png' : 'image/jpeg',
       text: `${geometry(options, clip, scale, view, width, height)}\n${footer(contents)}`,
+      // The rectangle the image shows, in CSS pixels, once cut to the viewport.
+      clip,
     };
   }
 

@@ -339,10 +339,11 @@ function createNativeBrowserPage({
       at: { url: selection.url, scroll: selection.scroll, onPickedPage },
     });
     const image = nativeImage.createFromBuffer(Buffer.from(shot.image, 'base64'));
+    // Near the viewport's edge the region is cut to it; the box is what was taken.
     if (image.getSize().width <= DESIGN_CAPTURE_MAX_WIDTH)
-      return { base64: shot.image, box: region };
+      return { base64: shot.image, box: shot.clip };
     const fitted = image.resize({ width: DESIGN_CAPTURE_MAX_WIDTH, quality: 'good' });
-    return { base64: fitted.toPNG().toString('base64'), box: region };
+    return { base64: fitted.toPNG().toString('base64'), box: shot.clip };
   }
 
   return {
