@@ -34,12 +34,10 @@ export function observedFileSystem(
     return run();
   };
   return {
-    mkdir: (path, options) =>
-      observe('mkdir', path, () => nodeCanvasFileSystem.mkdir(path, options)),
+    mkdir: (path) => observe('mkdir', path, () => nodeCanvasFileSystem.mkdir(path)),
+    mkdirAll: (path) => observe('mkdirAll', path, () => nodeCanvasFileSystem.mkdirAll(path)),
     open: (path, flags, mode) =>
       observe('open', path, () => nodeCanvasFileSystem.open(path, flags, mode)),
-    readFile: (path, encoding) =>
-      observe('readFile', path, () => nodeCanvasFileSystem.readFile(path, encoding)),
     readdir: (path) => observe('readdir', path, () => nodeCanvasFileSystem.readdir(path)),
     lstat: (path) => observe('lstat', path, () => nodeCanvasFileSystem.lstat(path)),
     rename: (from, to) => observe('rename', to, () => nodeCanvasFileSystem.rename(from, to)),

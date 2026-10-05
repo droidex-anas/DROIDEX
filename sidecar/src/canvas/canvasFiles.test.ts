@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { canvasRoot, observedFileSystem } from '../testing/canvasStorageSupport.js';
+import {
+  canvasRoot,
+  observedFileSystem,
+  type CanvasFileSystemOperation,
+} from '../testing/canvasStorageSupport.js';
+import { canvasError } from './canvasError.js';
 import { CanvasFiles, REVISION_METADATA_VERSION, type NewRevision } from './canvasFiles.js';
 import { emptyCanvasManifest, type CanvasManifest } from './canvasManifest.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+const keepGoing = (): void => undefined;
 
 function manifest(canvasId = 'cv_01'): CanvasManifest {
   const value = emptyCanvasManifest(canvasId, 'Components', 1_767_225_600_000);
@@ -50,11 +56,11 @@ test('a manifest round-trips, and a damaged one is reported without being change
   assert.deepEqual(await files.loadManifest('cv_01'), { state: 'missing' });
 
   const saved = manifest();
-  await files.writeManifest(saved);
+  await files.writeManifest(saved, keepGoing);
   assert.deepEqual(await files.loadManifest('cv_01'), { state: 'loaded', manifest: saved });
   // A new revision of the same canvas replaces the head in one rename.
   const updated = { ...saved, sequence: 1, name: 'Boards' };
-  await files.writeManifest(updated);
+  await files.writeManifest(updated, keepGoing);
   assert.deepEqual(await files.loadManifest('cv_01'), { state: 'loaded', manifest: updated });
 
   const path = join(root, 'cv_01', 'manifest.json');
@@ -68,6 +74,20 @@ test('a manifest round-trips, and a damaged one is reported without being change
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { ...saved, canvasId: 'cv_02' });
 });
 
+test('a manifest the caller abandons before the rename leaves the last head', async (t) => {
+  const { root, files } = await openRoot(t);
+  const saved = manifest();
+  await files.writeManifest(saved, keepGoing);
+  await assert.rejects(
+    files.writeManifest({ ...saved, sequence: 9 }, () => {
+      throw canvasError('scope_expired', 'the lease was revoked');
+    }),
+    { code: 'scope_expired' },
+  );
+  assert.deepEqual(await files.loadManifest('cv_01'), { state: 'loaded', manifest: saved });
+  assert.deepEqual(await readdir(join(root, 'cv_01')), ['manifest.json']);
+});
+
 test('a published revision round-trips, and another design cannot claim it', async (t) => {
   const { files } = await openRoot(t);
   await files.publishRevision('cv_01', revision(), source);
@@ -79,10 +99,96 @@ test('a published revision round-trips, and another design cannot claim it', asy
     files.readRevision('cv_01', { designId: 'dsg_other', revisionId: 'rev_01' }),
     { code: 'invalid_input' },
   );
+  // A revision nobody stored is an unusable reference, not damaged storage.
   await assert.rejects(
     files.readRevision('cv_01', { designId: 'dsg_hey', revisionId: 'rev_missing' }),
-    { code: 'storage_failed' },
+    { code: 'invalid_input' },
   );
+});
+
+test('a revision whose listed source is gone is damaged, not an unknown reference', async (t) => {
+  const { root, files } = await openRoot(t);
+  await files.publishRevision('cv_01', revision(), source);
+  await rm(join(root, 'cv_01', 'revisions', 'rev_01', 'files', 'main.tsx'));
+  await assert.rejects(files.readRevision('cv_01', { designId: 'dsg_hey', revisionId: 'rev_01' }), {
+    code: 'storage_failed',
+  });
+});
+
+test('every directory a publish creates is flushed, leaves before parents', async (t) => {
+  const root = await canvasRoot(t);
+  const calls: { operation: CanvasFileSystemOperation; path: string }[] = [];
+  const files = new CanvasFiles(
+    root,
+    observedFileSystem((operation, path) => {
+      calls.push({ operation, path });
+    }),
+  );
+  await files.createRoot();
+  await files.publishRevision('cv_01', revision(), source);
+
+  const staging = calls.find(
+    (call) => call.operation === 'mkdir' && basename(call.path).startsWith('.staging-'),
+  )?.path;
+  assert.ok(staging);
+  const canvas = join(root, 'cv_01');
+  const revisions = join(canvas, 'revisions');
+  const at = (operation: CanvasFileSystemOperation, path: string): number => {
+    const index = calls.findIndex((call) => call.operation === operation && call.path === path);
+    assert.notEqual(index, -1, `${operation} never reached ${path}`);
+    return index;
+  };
+  const published = at('rename', join(revisions, 'rev_01'));
+
+  // The staging tree is durable before it is renamed into place, deepest first.
+  assert.ok(at('open', join(staging, 'files', 'ui')) < at('open', join(staging, 'files')));
+  assert.ok(at('open', join(staging, 'files')) < at('open', staging));
+  assert.ok(at('open', staging) < published);
+  // Then the entries the rename and the new directories added, outwards.
+  assert.ok(published < at('open', revisions));
+  assert.ok(at('open', revisions) < at('open', canvas));
+  assert.ok(at('open', canvas) < at('open', root));
+});
+
+test('a first manifest flushes the canvas entry it added to the root', async (t) => {
+  const root = await canvasRoot(t);
+  const flushed: string[] = [];
+  const files = new CanvasFiles(
+    root,
+    observedFileSystem((operation, path) => {
+      if (operation === 'open' && !basename(path).includes('.')) flushed.push(path);
+    }),
+  );
+  await files.createRoot();
+  await files.writeManifest(manifest(), keepGoing);
+  assert.deepEqual(flushed, [join(root, 'cv_01'), root]);
+  // A canvas that already exists adds no entry to the root.
+  flushed.length = 0;
+  await files.writeManifest({ ...manifest(), sequence: 1 }, keepGoing);
+  assert.deepEqual(flushed, [join(root, 'cv_01')]);
+});
+
+test('a linked ancestor or metadata file is refused on the write and read paths', async (t) => {
+  const { root, files } = await openRoot(t);
+  const outside = join(root, '..', 'outside');
+  await mkdir(outside, { recursive: true });
+
+  // A linked `revisions/` would land this design's source outside the root.
+  await mkdir(join(root, 'cv_01'));
+  await symlink(outside, join(root, 'cv_01', 'revisions'));
+  await assert.rejects(files.publishRevision('cv_01', revision(), source), {
+    code: 'storage_failed',
+  });
+  assert.deepEqual(await readdir(outside), []);
+
+  await files.publishRevision('cv_02', revision(), source);
+  const metadata = join(root, 'cv_02', 'revisions', 'rev_01', 'revision.json');
+  await writeFile(join(outside, 'decoy.json'), JSON.stringify(revision()));
+  await rm(metadata);
+  await symlink(join(outside, 'decoy.json'), metadata);
+  await assert.rejects(files.readRevision('cv_02', { designId: 'dsg_hey', revisionId: 'rev_01' }), {
+    code: 'storage_failed',
+  });
 });
 
 test('a link anywhere under a revision is refused instead of followed', async (t) => {
@@ -123,20 +229,19 @@ test('a published revision is immutable: a second publish cannot replace it', as
 
 test('a failed write keeps the last head and leaves no temporary behind', async (t) => {
   const root = await canvasRoot(t);
-  let failing: string | null = null;
+  let failing: CanvasFileSystemOperation | null = null;
   const files = new CanvasFiles(
     root,
-    observedFileSystem((operation, path) => {
-      if (failing !== null && operation === failing) throw new Error('disk full');
-      void path;
+    observedFileSystem((operation) => {
+      if (operation === failing) throw new Error('disk full');
     }),
   );
   await files.createRoot();
   const saved = manifest();
-  await files.writeManifest(saved);
+  await files.writeManifest(saved, keepGoing);
 
   failing = 'rename';
-  await assert.rejects(files.writeManifest({ ...saved, sequence: 1 }), {
+  await assert.rejects(files.writeManifest({ ...saved, sequence: 1 }, keepGoing), {
     code: 'storage_failed',
   });
   await assert.rejects(files.publishRevision('cv_01', revision(), source), {
@@ -152,7 +257,7 @@ test('a failed write keeps the last head and leaves no temporary behind', async 
 
 test('open removes the staging trees and manifest temporaries a crash left behind', async (t) => {
   const { root, files } = await openRoot(t);
-  await files.writeManifest(manifest());
+  await files.writeManifest(manifest(), keepGoing);
   const staging = join(root, 'cv_01', 'revisions', '.staging-abandoned');
   await mkdir(staging, { recursive: true });
   await writeFile(join(staging, 'revision.json'), '{}');
@@ -167,8 +272,8 @@ test('open removes the staging trees and manifest temporaries a crash left behin
 
 test('only directories named like a canvas are listed, and a link is not one', async (t) => {
   const { root, files } = await openRoot(t);
-  await files.writeManifest(manifest('cv_02'));
-  await files.writeManifest(manifest('cv_01'));
+  await files.writeManifest(manifest('cv_02'), keepGoing);
+  await files.writeManifest(manifest('cv_01'), keepGoing);
   await writeFile(join(root, 'notes.txt'), 'ignored');
   await mkdir(join(root, 'has spaces'), { recursive: true });
   await symlink(join(root, 'cv_01'), join(root, 'cv_linked'));

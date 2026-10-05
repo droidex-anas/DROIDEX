@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { canvasRoot, observedFileSystem } from '../testing/canvasStorageSupport.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
+import { CANVAS_MUTATION_RETENTION } from './canvasManifest.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from './CanvasWorkspace.js';
 import type { CanvasScope, WriteFilesInput } from './protocol.js';
 
@@ -44,8 +45,9 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 /**
- * A filesystem that stops working once armed, either just before the manifest
- * rename or on the durability flush that follows it.
+ * A filesystem that fails once when armed, either just before the next manifest
+ * rename or on the durability flush that follows it. It disarms as it fires, so
+ * a test can keep using the workspace afterwards.
  */
 function terminateAtManifestRename(side: 'before' | 'after') {
   let armed = false;
@@ -53,17 +55,48 @@ function terminateAtManifestRename(side: 'before' | 'after') {
   const fs = observedFileSystem((operation, path) => {
     if (!armed) return;
     if (operation === 'rename' && path.endsWith('manifest.json')) {
-      if (side === 'before') throw new Error('power lost');
+      if (side === 'before') {
+        armed = false;
+        throw new Error('power lost');
+      }
       renamed = true;
       return;
     }
-    if (side === 'after' && renamed && operation === 'open') throw new Error('power lost');
+    if (side === 'after' && renamed && operation === 'open') {
+      armed = false;
+      renamed = false;
+      throw new Error('power lost');
+    }
   });
   return {
     fs,
     arm: () => {
       armed = true;
     },
+  };
+}
+
+/**
+ * Holds the next manifest temporary open until the test releases it, which is
+ * the window between a prepared replacement and the rename that publishes it.
+ */
+function holdManifestTemporary() {
+  let armed = false;
+  const reached = deferred();
+  const released = deferred();
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed || operation !== 'open' || !path.endsWith('.tmp')) return;
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+    reached: reached.promise,
+    release: released.resolve,
   };
 }
 
@@ -111,6 +144,9 @@ test('a write checkpoints source once per mutation ID and refuses a stale revisi
     code: 'revision_conflict',
   });
   assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], HEY);
+  await assert.rejects(workspace.readFiles(canvasId, { designId, revisionId: 'rev_missing' }), {
+    code: 'invalid_input',
+  });
   // The retry neither committed again nor moved the projection forward.
   assert.equal(workspace.snapshot(canvasId).sequence, first.sequence);
   assert.equal(workspace.snapshot(canvasId).frames[0]?.revisionId, first.revisionId);
@@ -225,13 +261,21 @@ test('a layout change and a source write on one frame both land', async (t) => {
   assert.deepEqual(frame?.rect, rect);
   assert.equal(frame.layoutVersion, 1);
   assert.equal(frame.revisionId, receipt.revisionId);
-  // A retry of the arrange answers the positions it accepted, not later ones.
+  // A retry answers the positions it accepted; the same ID carrying a different
+  // request is a caller error, not a retry.
   assert.deepEqual(
     await workspace.arrange(scope, {
       mutationId: 'arrange-hey',
-      frames: [{ designId, expectedLayoutVersion: 0, rect: { ...rect, x: 0 } }],
+      frames: [{ designId, expectedLayoutVersion: 0, rect }],
     }),
     change,
+  );
+  await assert.rejects(
+    workspace.arrange(scope, {
+      mutationId: 'arrange-hey',
+      frames: [{ designId, expectedLayoutVersion: 0, rect: { ...rect, x: 0 } }],
+    }),
+    { code: 'invalid_input' },
   );
 });
 
@@ -454,6 +498,191 @@ test('a revision seed copies the source it names, and a library seed is refused'
     { code: 'invalid_input' },
   );
   assert.equal(workspace.snapshot(canvasId).frames.length, 2);
+});
+
+test('a save that failed after its rename is reconciled, not treated as absent', async (t) => {
+  const fault = terminateAtManifestRename('after');
+  const { workspace, scope, canvasId, designId } = await withFrame(t, { fs: fault.fs });
+  const input = writeInput('write-hey', designId, null, { 'main.tsx': HEY });
+  fault.arm();
+  await assert.rejects(workspace.write(scope, input), { code: 'storage_failed' });
+
+  // The head moved on disk, so memory caught up with it: a writer that still
+  // expects no revision is refused, and the lost receipt is still recoverable.
+  await assert.rejects(
+    workspace.write(scope, writeInput('second', designId, null, { 'main.tsx': 'other' })),
+    { code: 'revision_conflict' },
+  );
+  const receipt = await workspace.write(scope, input);
+  assert.equal(workspace.snapshot(canvasId).frames[0]?.revisionId, receipt.revisionId);
+  assert.equal((await workspace.readFiles(canvasId, receipt))['main.tsx'], HEY);
+});
+
+test('a canvas whose head cannot be reread is held damaged until reopen', async (t) => {
+  t.mock.method(console, 'error', () => undefined);
+  let unreadable = false;
+  const { root, deps, workspace, scope, canvasId, designId } = await withFrame(t, {
+    fs: observedFileSystem((operation, path) => {
+      if (!unreadable || !path.endsWith('manifest.json')) return;
+      if (operation === 'rename' || operation === 'open') throw new Error('the volume went away');
+    }),
+  });
+  unreadable = true;
+  await assert.rejects(
+    workspace.write(scope, writeInput('write-hey', designId, null, { 'main.tsx': HEY })),
+    { code: 'storage_failed' },
+  );
+  // Neither head is served, because choosing one of them would be a guess.
+  assert.deepEqual(workspace.damagedCanvasIds(), [canvasId]);
+  assert.deepEqual(workspace.listCanvases(), []);
+  assert.throws(() => workspace.snapshot(canvasId), { code: 'storage_failed' });
+  await assert.rejects(workspace.write(scope, writeInput('later', designId, null, {})), {
+    code: 'storage_failed',
+  });
+
+  // A manifest already damaged on disk is reported the same way at open.
+  await writeFile(join(root, canvasId, 'manifest.json'), '{ not json');
+  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  assert.deepEqual(reopened.damagedCanvasIds(), [canvasId]);
+  assert.deepEqual(reopened.listCanvases(), []);
+});
+
+test('a lease revoked with the replacement manifest ready publishes and binds nothing', async (t) => {
+  let active = true;
+  const hold = holdManifestTemporary();
+  const { root, deps, workspace, scope, canvasId, designId } = await withFrame(t, {
+    isScopeActive: () => active,
+    fs: hold.fs,
+  });
+  hold.arm();
+  const writing = workspace.write(
+    scope,
+    writeInput('write-hey', designId, null, { 'main.tsx': HEY }),
+  );
+  await hold.reached;
+  active = false;
+  hold.release();
+  await assert.rejects(writing, { code: 'scope_expired' });
+  assert.equal(workspace.snapshot(canvasId).frames[0]?.revisionId, null);
+  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  assert.equal(reopened.snapshot(canvasId).frames[0]?.revisionId, null);
+
+  // An unattached create is the same window: no canvas, no attachment, no binding.
+  let unattachedActive = true;
+  const unattached = holdManifestTemporary();
+  const second = await openWorkspace(t, {
+    isScopeActive: () => unattachedActive,
+    fs: unattached.fs,
+  });
+  unattached.arm();
+  const creating = second.workspace.create(scopeFor(null), {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  });
+  await unattached.reached;
+  unattachedActive = false;
+  unattached.release();
+  await assert.rejects(creating, { code: 'scope_expired' });
+  assert.deepEqual(second.boundCanvasIds, []);
+  assert.deepEqual(second.workspace.listCanvases(), []);
+  assert.equal(second.workspace.attachedCanvasId('app-1'), null);
+});
+
+test('a retried mutation ID must carry the same request, and expires out of the window', async (t) => {
+  const { workspace, scope, canvasId, designId } = await withFrame(t);
+  const input = writeInput('write-hey', designId, null, { 'main.tsx': HEY });
+  const receipt = await workspace.write(scope, input);
+  assert.deepEqual(await workspace.write(scope, input), receipt);
+  await assert.rejects(
+    workspace.write(scope, { ...input, files: { 'main.tsx': 'something else' } }),
+    {
+      code: 'invalid_input',
+    },
+  );
+
+  const cards = { name: 'Cards', width: 720, height: 720, designSystem };
+  const created = await workspace.create(scope, { mutationId: 'create-cards', frames: [cards] });
+  // Enough accepted mutations to retire that receipt. Its ID is remembered, so
+  // the retry is refused rather than reserving a second frame.
+  for (let version = 0; version < CANVAS_MUTATION_RETENTION.receipts; version += 1) {
+    await workspace.arrange(scope, {
+      mutationId: `arrange-${String(version)}`,
+      frames: [
+        {
+          designId,
+          expectedLayoutVersion: version,
+          rect: { x: version, y: 0, width: 8, height: 8 },
+        },
+      ],
+    });
+  }
+  await assert.rejects(workspace.create(scope, { mutationId: 'create-cards', frames: [cards] }), {
+    code: 'invalid_input',
+  });
+  assert.deepEqual(
+    workspace.snapshot(canvasId).frames.map((frame) => frame.designId),
+    [designId, created.frames[0]?.designId],
+  );
+});
+
+test('concurrent creates read the manifest the commit they run in extends', async (t) => {
+  const unattached = await openWorkspace(t);
+  const input = {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  };
+  const [left, right] = await Promise.all([
+    unattached.workspace.create(scopeFor(null), input),
+    unattached.workspace.create(scopeFor(null), input),
+  ]);
+  assert.deepEqual(left, right);
+  assert.deepEqual(unattached.boundCanvasIds, [left?.canvasId]);
+  assert.equal(unattached.workspace.listCanvases().length, 1);
+
+  // Two distinct creates on one canvas are placed side by side, never stacked.
+  const attached = await withFrame(t);
+  const frames = [{ name: 'Cards', width: 400, height: 300, designSystem }];
+  await Promise.all([
+    attached.workspace.create(attached.scope, { mutationId: 'create-a', frames }),
+    attached.workspace.create(attached.scope, { mutationId: 'create-b', frames }),
+  ]);
+  assert.deepEqual(
+    attached.workspace.snapshot(attached.canvasId).frames.map((frame) => frame.rect.x),
+    [0, 800, 1280],
+  );
+});
+
+test('close waits for a mutation that is still staging its source', async (t) => {
+  const staged = deferred();
+  const released = deferred();
+  let armed = false;
+  const { workspace, scope, designId } = await withFrame(t, {
+    fs: observedFileSystem(async (operation, path) => {
+      if (!armed || operation !== 'rename' || !path.includes('revisions')) return;
+      armed = false;
+      staged.resolve();
+      await released.promise;
+    }),
+  });
+  armed = true;
+  const writing = workspace.write(
+    scope,
+    writeInput('write-hey', designId, null, { 'main.tsx': HEY }),
+  );
+  await staged.promise;
+
+  let settled = false;
+  const mark = (): void => {
+    settled = true;
+  };
+  void writing.then(mark, mark);
+  const closing = workspace.close();
+  released.resolve();
+  await closing;
+  // The staged write had settled before close resolved, so nothing was left
+  // writing into storage the workspace had already given up.
+  assert.equal(settled, true);
+  await assert.rejects(writing, { code: 'storage_failed' });
 });
 
 test('a closed workspace refuses further commits', async (t) => {

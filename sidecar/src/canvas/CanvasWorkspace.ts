@@ -1,10 +1,11 @@
 // The durable owner of every canvas: frames, layout, immutable source
 // revisions, attachments and mutation retries (spec §7). Commits run one at a
-// time, and each one writes its revision tree before it replaces a manifest, so
-// a terminated process reopens on a complete old or new head.
+// time, each one writes and flushes its revision tree before it replaces a
+// manifest, and the lease is checked once more with the replacement ready and
+// nothing published. A terminated process reopens on a complete old or new head.
 
 import { randomUUID } from 'node:crypto';
-import { canvasError } from './canvasError.js';
+import { canvasError, CanvasCommandError } from './canvasError.js';
 import {
   CanvasFiles,
   REVISION_METADATA_VERSION,
@@ -16,6 +17,7 @@ import {
   canvasSnapshot,
   canvasSummary,
   emptyCanvasManifest,
+  mutationFingerprint,
   recordedArrange,
   recordedCreate,
   recordedWrite,
@@ -53,21 +55,32 @@ const FRAME_GAP_PX = 80;
 const EXPIRED_TURN = 'That request belongs to a turn that already ended.';
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 const CLOSING = 'The Canvas workspace is closing.';
+const UNREADABLE_CANVAS = 'That canvas could not be read. Reopen DROIDEX to recover it.';
+
+/** One frame's identity and seeded source, prepared before the commit owner runs. */
+interface StagedFrame {
+  designId: string;
+  revisionId: string | null;
+  frame: CreateFramesInput['frames'][number];
+}
 
 export class CanvasWorkspace {
   private commits: Promise<unknown> = Promise.resolve();
+  private readonly running = new Set<Promise<void>>();
   private closed = false;
 
   private constructor(
     private readonly files: CanvasFiles,
     private readonly deps: CanvasWorkspaceDeps,
     private readonly canvases: Map<string, CanvasManifest>,
+    private readonly damaged: Set<string>,
   ) {}
 
   static async open(directory: string, deps: CanvasWorkspaceDeps): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
     await files.createRoot();
     const canvases = new Map<string, CanvasManifest>();
+    const damaged = new Set<string>();
     for (const canvasId of await files.listCanvasIds()) {
       const load = await files.loadManifest(canvasId);
       if (load.state === 'missing') continue;
@@ -75,12 +88,13 @@ export class CanvasWorkspace {
         // Left untouched on disk: repairing it here would be a guess, and one
         // unreadable board must not keep the others closed.
         console.error(`Canvas ${canvasId} was not opened because ${load.reason}.`);
+        damaged.add(canvasId);
         continue;
       }
       await files.removeTemporaries(canvasId);
       canvases.set(canvasId, load.manifest);
     }
-    return new CanvasWorkspace(files, deps, canvases);
+    return new CanvasWorkspace(files, deps, canvases, damaged);
   }
 
   snapshot(canvasId: string): CanvasSnapshot {
@@ -89,6 +103,11 @@ export class CanvasWorkspace {
 
   listCanvases(): CanvasSummary[] {
     return [...this.canvases.values()].map(canvasSummary);
+  }
+
+  /** Canvases that exist on disk but are not served, for a recovery action. */
+  damagedCanvasIds(): string[] {
+    return [...this.damaged].sort();
   }
 
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */
@@ -100,161 +119,185 @@ export class CanvasWorkspace {
   }
 
   createCanvas(): Promise<CanvasSnapshot> {
-    return this.commit(async () => {
-      const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
-      await this.install(manifest);
-      return canvasSnapshot(manifest);
-    });
+    return this.admit(() =>
+      this.commit(async () => {
+        const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
+        await this.install(manifest, this.openGate());
+        return canvasSnapshot(manifest);
+      }),
+    );
   }
 
   attach(appSessionId: string, canvasId: string): Promise<void> {
-    return this.commit(async () => {
-      // Refuse an unknown canvas before detaching the chat from its current one.
-      this.canvas(canvasId);
-      await this.detachFrom(appSessionId, canvasId);
-      const next = structuredClone(this.canvas(canvasId));
-      if (next.attachedAppSessionIds.includes(appSessionId)) return;
-      next.attachedAppSessionIds.push(appSessionId);
-      next.updatedAt = Date.now();
-      await this.install(next);
-    });
+    return this.admit(() =>
+      this.commit(async () => {
+        // Refuse an unknown canvas before detaching the chat from its current one.
+        this.canvas(canvasId);
+        await this.detachFrom(appSessionId, canvasId);
+        const next = structuredClone(this.canvas(canvasId));
+        if (next.attachedAppSessionIds.includes(appSessionId)) return;
+        next.attachedAppSessionIds.push(appSessionId);
+        next.updatedAt = Date.now();
+        await this.install(next, this.openGate());
+      }),
+    );
   }
 
   detach(appSessionId: string): Promise<void> {
-    return this.commit(() => this.detachFrom(appSessionId, null));
+    return this.admit(() => this.commit(() => this.detachFrom(appSessionId, null)));
   }
 
-  async create(scope: CanvasScope, input: CreateFramesInput): Promise<CreateFramesResult> {
-    // A lease bound to named designs may change those frames, not add more.
-    if (scope.allowedDesignIds !== 'canvas')
-      throw canvasError('scope_expired', 'This turn may change only the frames it was given.');
-    this.requireActiveScope(scope);
+  create(scope: CanvasScope, input: CreateFramesInput): Promise<CreateFramesResult> {
+    return this.admit(async () => {
+      this.requireOpen();
+      // A lease bound to named designs may change those frames, not add more.
+      if (scope.allowedDesignIds !== 'canvas')
+        throw canvasError('scope_expired', 'This turn may change only the frames it was given.');
+      this.requireActiveScope(scope);
+      const fingerprint = mutationFingerprint(input);
+      const unattached = scope.canvasId === null;
+      // Identities and seeded source are prepared outside the commit owner; the
+      // retry answer and the placement need the manifest the commit extends.
+      const canvasId = unattached ? randomUUID() : this.requireScopedCanvas(scope).canvasId;
+      const staged = await this.stageFrames(canvasId, input);
 
-    const existing = scope.canvasId === null ? null : this.requireScopedCanvas(scope);
-    if (existing === null) {
-      // An unattached lease's create may have committed and lost its response.
-      const attached = this.attachedCanvasId(scope.appSessionId);
-      if (attached !== null) {
-        const recorded = recordedCreate(this.canvas(attached), input.mutationId);
-        if (recorded) return recorded;
-        throw canvasError('scope_expired', ATTACHED_SINCE);
-      }
-    } else {
-      const recorded = recordedCreate(existing, input.mutationId);
+      return this.commit(async () => {
+        let next: CanvasManifest;
+        let beforeRename: () => void;
+        if (unattached) {
+          const attached = this.attachedCanvasId(scope.appSessionId);
+          if (attached !== null) {
+            const recorded = recordedCreate(this.canvas(attached), input.mutationId, fingerprint);
+            if (recorded) return recorded;
+            throw canvasError('scope_expired', ATTACHED_SINCE);
+          }
+          this.requireActiveScope(scope);
+          next = emptyCanvasManifest(canvasId, this.nextCanvasName(), Date.now());
+          // Spec §6: the canvas, the chat's attachment and the lease's binding
+          // are one commit, so a half-attached canvas never exists.
+          next.attachedAppSessionIds.push(scope.appSessionId);
+          beforeRename = () => {
+            this.requireOpen();
+            this.requireActiveScope(scope);
+            if (this.attachedCanvasId(scope.appSessionId) !== null)
+              throw canvasError('scope_expired', ATTACHED_SINCE);
+          };
+        } else {
+          const live = this.requireScopedCanvas(scope);
+          const recorded = recordedCreate(live, input.mutationId, fingerprint);
+          if (recorded) return recorded;
+          next = structuredClone(live);
+          beforeRename = this.scopedGate(scope, []);
+        }
+        const designs = placeFrames(staged, next.designs);
+        next.designs.push(...designs);
+        next.sequence += 1;
+        next.updatedAt = Date.now();
+        recordMutation(next, {
+          kind: 'create',
+          mutationId: input.mutationId,
+          fingerprint,
+          designs: structuredClone(designs),
+        });
+        await this.install(next, beforeRename);
+        if (unattached) this.deps.bindScopeCanvas(scope.scopeId, canvasId);
+        return { canvasId, frames: designs.map(toFrame) };
+      });
+    });
+  }
+
+  write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
+    return this.admit(async () => {
+      this.requireOpen();
+      const manifest = this.requireScopedDesigns(scope, [input.designId]);
+      const canvasId = manifest.canvasId;
+      const fingerprint = mutationFingerprint(input);
+      const recorded = recordedWrite(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
-    }
-    const canvasId = existing?.canvasId ?? randomUUID();
-    const designs = await this.stageDesigns(canvasId, existing, input);
 
-    return this.commit(async () => {
-      const unattached = existing === null;
-      let next: CanvasManifest;
-      if (unattached) {
-        this.requireActiveScope(scope);
-        if (this.attachedCanvasId(scope.appSessionId) !== null)
-          throw canvasError('scope_expired', ATTACHED_SINCE);
-        next = emptyCanvasManifest(canvasId, this.nextCanvasName(), Date.now());
-        // Spec §6: the canvas, the chat's attachment and the lease's binding
-        // are one commit, so a half-attached canvas never exists.
-        next.attachedAppSessionIds.push(scope.appSessionId);
-      } else {
-        const live = this.requireScopedCanvas(scope);
-        const recorded = recordedCreate(live, input.mutationId);
-        if (recorded) return recorded;
-        next = structuredClone(live);
-      }
-      next.designs.push(...designs);
-      next.sequence += 1;
-      next.updatedAt = Date.now();
-      recordMutation(next, {
-        kind: 'create',
-        mutationId: input.mutationId,
-        designs: structuredClone(designs),
-      });
-      await this.install(next);
-      if (unattached) this.deps.bindScopeCanvas(scope.scopeId, canvasId);
-      return { canvasId, frames: designs.map(toFrame) };
-    });
-  }
-
-  async write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
-    const manifest = this.requireScopedDesigns(scope, [input.designId]);
-    const canvasId = manifest.canvasId;
-    const recorded = recordedWrite(manifest, input.mutationId);
-    if (recorded) return recorded;
-
-    const design = this.design(manifest, input.designId);
-    requireExpectedRevision(design, input.expectedRevisionId);
-    const merged = mergeSource(await this.currentSource(canvasId, design), input);
-    const violation = mergedRevisionViolation(merged);
-    if (violation) throw canvasError('invalid_input', violation);
-    const metadata: NewRevision = {
-      version: REVISION_METADATA_VERSION,
-      designId: input.designId,
-      revisionId: randomUUID(),
-      parentRevisionId: design.revisionId,
-      designSystem: input.designSystem ?? design.designSystem,
-      createdAt: Date.now(),
-    };
-    await this.files.publishRevision(canvasId, metadata, merged);
-
-    return this.commit(async () => {
-      const live = this.requireScopedDesigns(scope, [input.designId]);
-      const again = recordedWrite(live, input.mutationId);
-      if (again) return again;
-      const next = structuredClone(live);
-      const target = this.design(next, input.designId);
-      requireExpectedRevision(target, input.expectedRevisionId);
-      target.revisionId = metadata.revisionId;
-      target.designSystem = metadata.designSystem;
-      next.sequence += 1;
-      next.updatedAt = Date.now();
-      const receipt: WriteReceipt = {
+      const design = this.design(manifest, input.designId);
+      requireExpectedRevision(design, input.expectedRevisionId);
+      const merged = mergeSource(await this.currentSource(canvasId, design), input);
+      const violation = mergedRevisionViolation(merged);
+      if (violation) throw canvasError('invalid_input', violation);
+      const revision: NewRevision = {
+        version: REVISION_METADATA_VERSION,
         designId: input.designId,
-        revisionId: metadata.revisionId,
-        sequence: next.sequence,
+        revisionId: randomUUID(),
+        parentRevisionId: design.revisionId,
+        designSystem: input.designSystem ?? design.designSystem,
+        createdAt: Date.now(),
       };
-      recordMutation(next, { kind: 'write', mutationId: input.mutationId, ...receipt });
-      await this.install(next);
-      return receipt;
+      await this.files.publishRevision(canvasId, revision, merged);
+
+      return this.commit(async () => {
+        const live = this.requireScopedDesigns(scope, [input.designId]);
+        const again = recordedWrite(live, input.mutationId, fingerprint);
+        if (again) return again;
+        const next = structuredClone(live);
+        const target = this.design(next, input.designId);
+        requireExpectedRevision(target, input.expectedRevisionId);
+        target.revisionId = revision.revisionId;
+        target.designSystem = revision.designSystem;
+        next.sequence += 1;
+        next.updatedAt = Date.now();
+        const receipt: WriteReceipt = {
+          designId: input.designId,
+          revisionId: revision.revisionId,
+          sequence: next.sequence,
+        };
+        recordMutation(next, {
+          kind: 'write',
+          mutationId: input.mutationId,
+          fingerprint,
+          ...receipt,
+        });
+        await this.install(next, this.scopedGate(scope, [input.designId]));
+        return receipt;
+      });
     });
   }
 
-  async arrange(scope: CanvasScope, input: ArrangeFramesInput): Promise<CanvasChange> {
-    const designIds = input.frames.map((frame) => frame.designId);
-    const manifest = this.requireScopedDesigns(scope, designIds);
-    const recorded = recordedArrange(manifest, input.mutationId);
-    if (recorded) return recorded;
+  arrange(scope: CanvasScope, input: ArrangeFramesInput): Promise<CanvasChange> {
+    return this.admit(async () => {
+      this.requireOpen();
+      const designIds = input.frames.map((frame) => frame.designId);
+      const fingerprint = mutationFingerprint(input);
+      const manifest = this.requireScopedDesigns(scope, designIds);
+      const recorded = recordedArrange(manifest, input.mutationId, fingerprint);
+      if (recorded) return recorded;
 
-    return this.commit(async () => {
-      const live = this.requireScopedDesigns(scope, designIds);
-      const again = recordedArrange(live, input.mutationId);
-      if (again) return again;
-      const next = structuredClone(live);
-      const moved: PersistedDesign[] = [];
-      for (const frame of input.frames) {
-        const design = this.design(next, frame.designId);
-        if (design.layoutVersion !== frame.expectedLayoutVersion)
-          throw canvasError(
-            'revision_conflict',
-            'That frame moved. Read its current layout version and place it again.',
-          );
-        design.rect = frame.rect;
-        design.layoutVersion += 1;
-        // A copy: the record answers a retry with the result it returned, not
-        // with wherever the frame ends up later.
-        moved.push(structuredClone(design));
-      }
-      next.sequence += 1;
-      next.updatedAt = Date.now();
-      recordMutation(next, {
-        kind: 'arrange',
-        mutationId: input.mutationId,
-        sequence: next.sequence,
-        designs: moved,
+      return this.commit(async () => {
+        const live = this.requireScopedDesigns(scope, designIds);
+        const again = recordedArrange(live, input.mutationId, fingerprint);
+        if (again) return again;
+        const next = structuredClone(live);
+        const moved: PersistedDesign[] = [];
+        for (const frame of input.frames) {
+          const design = this.design(next, frame.designId);
+          if (design.layoutVersion !== frame.expectedLayoutVersion)
+            throw canvasError(
+              'revision_conflict',
+              'That frame moved. Read its current layout version and place it again.',
+            );
+          design.rect = frame.rect;
+          design.layoutVersion += 1;
+          // A copy: the record answers a retry with the result it returned, not
+          // with wherever the frame ends up later.
+          moved.push(structuredClone(design));
+        }
+        next.sequence += 1;
+        next.updatedAt = Date.now();
+        recordMutation(next, {
+          kind: 'arrange',
+          mutationId: input.mutationId,
+          fingerprint,
+          sequence: next.sequence,
+          designs: moved,
+        });
+        await this.install(next, this.scopedGate(scope, designIds));
+        return canvasChange(next, moved);
       });
-      await this.install(next);
-      return canvasChange(next, moved);
     });
   }
 
@@ -269,27 +312,75 @@ export class CanvasWorkspace {
     return files;
   }
 
+  /** Resolves once every admitted mutation has settled, staging included. */
   async close(): Promise<void> {
     this.closed = true;
-    await this.commits.catch(() => undefined);
+    while (this.running.size > 0) await Promise.all([...this.running]);
+  }
+
+  /** Admits one mutation, so close() knows what it still has to wait for. */
+  private admit<T>(work: () => Promise<T>): Promise<T> {
+    const running = (async () => work())();
+    const settled = running.then(ignoreOutcome, ignoreOutcome);
+    this.running.add(settled);
+    void settled.then(() => this.running.delete(settled));
+    return running;
   }
 
   /** One commit at a time; a failed commit never poisons the queue. */
   private commit<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.commits
-      .catch(() => undefined)
-      .then(() => {
-        if (this.closed) throw canvasError('storage_failed', CLOSING);
-        return work();
-      });
-    this.commits = next.catch(() => undefined);
+    const next = this.commits.catch(ignoreOutcome).then(() => {
+      this.requireOpen();
+      return work();
+    });
+    this.commits = next.catch(ignoreOutcome);
     return next;
   }
 
-  /** Publishes a manifest: durable first, then visible to readers. */
-  private async install(manifest: CanvasManifest): Promise<void> {
-    await this.files.writeManifest(manifest);
+  /**
+   * Publishes a manifest: durable first, then visible to readers. `beforeRename`
+   * is the final lease check, and a failure anywhere else may still have landed
+   * the rename, so the head on disk decides what memory holds next.
+   */
+  private async install(manifest: CanvasManifest, beforeRename: () => void): Promise<void> {
+    let abandonment: unknown;
+    try {
+      await this.files.writeManifest(manifest, () => {
+        try {
+          beforeRename();
+        } catch (error) {
+          abandonment = error;
+          throw error;
+        }
+      });
+    } catch (error) {
+      // Anything but our own abort may have landed the rename, so the head on
+      // disk decides what memory holds next.
+      if (error !== abandonment) await this.reconcile(manifest.canvasId);
+      throw error;
+    }
     this.canvases.set(manifest.canvasId, manifest);
+  }
+
+  /**
+   * Rereads one canvas after a save whose outcome is unknown. A head that
+   * cannot be reread is held damaged until the workspace is reopened, because
+   * serving either the old or the new one would be a guess.
+   */
+  private async reconcile(canvasId: string): Promise<void> {
+    try {
+      const load = await this.files.loadManifest(canvasId);
+      if (load.state === 'loaded') {
+        this.canvases.set(canvasId, load.manifest);
+        return;
+      }
+      const reason = load.state === 'damaged' ? load.reason : 'its manifest is gone';
+      console.error(`Canvas ${canvasId} could not be reread because ${reason}.`);
+    } catch (error) {
+      console.error(`Canvas ${canvasId} could not be reread:`, error);
+    }
+    this.canvases.delete(canvasId);
+    this.damaged.add(canvasId);
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */
@@ -300,38 +391,24 @@ export class CanvasWorkspace {
       const next = structuredClone(manifest);
       next.attachedAppSessionIds = next.attachedAppSessionIds.filter((id) => id !== appSessionId);
       next.updatedAt = Date.now();
-      await this.install(next);
+      await this.install(next, this.openGate());
     }
   }
 
-  private async stageDesigns(
-    canvasId: string,
-    existing: CanvasManifest | null,
-    input: CreateFramesInput,
-  ): Promise<PersistedDesign[]> {
-    const origin = nextOrigin(existing?.designs ?? []);
-    const designs: PersistedDesign[] = [];
-    let x = origin.x;
+  /** Mints identities and copies any seeded source before the commit owner runs. */
+  private async stageFrames(canvasId: string, input: CreateFramesInput): Promise<StagedFrame[]> {
+    const staged: StagedFrame[] = [];
     for (const frame of input.frames) {
       const designId = randomUUID();
-      const revisionId = await this.stageSeed(canvasId, existing, designId, frame);
-      designs.push({
-        designId,
-        name: frame.name,
-        rect: { x, y: origin.y, width: frame.width, height: frame.height },
-        layoutVersion: 0,
-        revisionId,
-        designSystem: frame.designSystem,
-      });
-      x += frame.width + FRAME_GAP_PX;
+      const revisionId = await this.stageSeed(canvasId, designId, frame);
+      staged.push({ designId, revisionId, frame });
     }
-    return designs;
+    return staged;
   }
 
   /** A seeded frame owns an independent copy of the seed's source tree. */
   private async stageSeed(
     canvasId: string,
-    existing: CanvasManifest | null,
     designId: string,
     frame: CreateFramesInput['frames'][number],
   ): Promise<string | null> {
@@ -339,7 +416,7 @@ export class CanvasWorkspace {
     if (!seed) return null;
     if (seed.kind === 'library')
       throw canvasError('invalid_input', 'Seeding from the library is not available yet.');
-    if (existing === null || seed.canvasId !== canvasId)
+    if (seed.canvasId !== canvasId)
       throw canvasError('invalid_input', 'A seed revision must come from this canvas.');
     const files = await this.files.readRevision(canvasId, seed.revision);
     const revisionId = randomUUID();
@@ -358,10 +435,39 @@ export class CanvasWorkspace {
     return revisionId;
   }
 
-  private currentSource(canvasId: string, design: PersistedDesign): Promise<Map<string, string>> {
+  /** The manifest points at this revision, so a missing tree is storage damage. */
+  private async currentSource(
+    canvasId: string,
+    design: PersistedDesign,
+  ): Promise<Map<string, string>> {
     const revisionId = design.revisionId;
-    if (revisionId === null) return Promise.resolve(new Map<string, string>());
-    return this.files.readRevision(canvasId, { designId: design.designId, revisionId });
+    if (revisionId === null) return new Map<string, string>();
+    try {
+      return await this.files.readRevision(canvasId, { designId: design.designId, revisionId });
+    } catch (error) {
+      if (error instanceof CanvasCommandError && error.code === 'invalid_input')
+        throw canvasError('storage_failed', 'The saved source for that frame is missing.');
+      throw error;
+    }
+  }
+
+  private requireOpen(): void {
+    if (this.closed) throw canvasError('storage_failed', CLOSING);
+  }
+
+  /** The final check a commit with no lease behind it runs before publishing. */
+  private openGate(): () => void {
+    return () => {
+      this.requireOpen();
+    };
+  }
+
+  /** The final check a leased commit runs, with its replacement manifest ready. */
+  private scopedGate(scope: CanvasScope, designIds: readonly string[]): () => void {
+    return () => {
+      this.requireOpen();
+      this.requireScopedDesigns(scope, designIds);
+    };
   }
 
   private requireActiveScope(scope: CanvasScope): void {
@@ -371,13 +477,13 @@ export class CanvasWorkspace {
   /** The canvas a lease authorizes; a lease for a canvas we do not hold is stale. */
   private requireScopedCanvas(scope: CanvasScope): CanvasManifest {
     this.requireActiveScope(scope);
-    const manifest = this.canvases.get(scopeCanvasId(scope));
-    if (!manifest)
-      throw canvasError(
-        'scope_expired',
-        'That request names a canvas this workspace does not hold.',
-      );
-    return manifest;
+    const canvasId = scope.canvasId;
+    if (canvasId === null)
+      throw canvasError('invalid_input', 'This chat has no canvas yet. Create a frame first.');
+    const manifest = this.canvases.get(canvasId);
+    if (manifest) return manifest;
+    if (this.damaged.has(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
+    throw canvasError('scope_expired', 'That request names a canvas this workspace does not hold.');
   }
 
   private requireScopedDesigns(scope: CanvasScope, designIds: readonly string[]): CanvasManifest {
@@ -393,8 +499,9 @@ export class CanvasWorkspace {
 
   private canvas(canvasId: string): CanvasManifest {
     const manifest = this.canvases.get(canvasId);
-    if (!manifest) throw canvasError('invalid_input', 'That canvas is not open.');
-    return manifest;
+    if (manifest) return manifest;
+    if (this.damaged.has(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
+    throw canvasError('invalid_input', 'That canvas is not open.');
   }
 
   private design(manifest: CanvasManifest, designId: string): PersistedDesign {
@@ -408,12 +515,7 @@ export class CanvasWorkspace {
   }
 }
 
-function scopeCanvasId(scope: CanvasScope): string {
-  const canvasId = scope.canvasId;
-  if (canvasId === null)
-    throw canvasError('invalid_input', 'This chat has no canvas yet. Create a frame first.');
-  return canvasId;
-}
+const ignoreOutcome = (): void => undefined;
 
 function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
   if (design.revisionId === expected) return;
@@ -430,13 +532,33 @@ function mergeSource(current: Map<string, string>, input: WriteFilesInput): Map<
 }
 
 /** New frames land in a row to the right of everything already placed. */
-function nextOrigin(designs: readonly PersistedDesign[]): { x: number; y: number } {
-  if (designs.length === 0) return { x: 0, y: 0 };
-  let right = Number.NEGATIVE_INFINITY;
-  let top = Number.POSITIVE_INFINITY;
-  for (const design of designs) {
-    right = Math.max(right, design.rect.x + design.rect.width);
-    top = Math.min(top, design.rect.y);
+function placeFrames(
+  staged: readonly StagedFrame[],
+  placed: readonly PersistedDesign[],
+): PersistedDesign[] {
+  let x = 0;
+  let y = 0;
+  if (placed.length > 0) {
+    let right = Number.NEGATIVE_INFINITY;
+    let top = Number.POSITIVE_INFINITY;
+    for (const design of placed) {
+      right = Math.max(right, design.rect.x + design.rect.width);
+      top = Math.min(top, design.rect.y);
+    }
+    x = right + FRAME_GAP_PX;
+    y = top;
   }
-  return { x: right + FRAME_GAP_PX, y: top };
+  const designs: PersistedDesign[] = [];
+  for (const { designId, revisionId, frame } of staged) {
+    designs.push({
+      designId,
+      name: frame.name,
+      rect: { x, y, width: frame.width, height: frame.height },
+      layoutVersion: 0,
+      revisionId,
+      designSystem: frame.designSystem,
+    });
+    x += frame.width + FRAME_GAP_PX;
+  }
+  return designs;
 }
