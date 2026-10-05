@@ -405,15 +405,19 @@ export class BrowserSessionManager {
       throw new Error(
         'Select or sketch at least one browser reference before sending a Design Mode prompt.',
       );
-    // Every pick has its own id, so one already here is the same snapshot. One
-    // that has not arrived yet, was taken away since, or was lost with a
-    // restart comes with the prompt, which keeps its own copy.
+    // Every pick has its own id, so one already here is the same snapshot,
+    // unless the prompt has the crop it is still saving. One that has not
+    // arrived yet, was taken away since, or was lost with a restart comes with
+    // the prompt, which keeps its own copy.
     const references: DesignReference[] = [];
-    for (const reference of input.references)
+    for (const reference of input.references) {
+      const live = session?.references.get(reference.id);
       references.push(
-        session?.references.get(reference.id) ??
-          (await this.snapshot(input.appSessionId, session, reference, reference.screenshot)),
+        live && (live.screenshot || !reference.screenshot)
+          ? live
+          : await this.snapshot(input.appSessionId, session, reference, reference.screenshot),
       );
+    }
     const { path } = await (this.options.writePack ?? writeDesignPromptPack)({
       appSessionId: input.appSessionId,
       browserSessionId: session?.id,

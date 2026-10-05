@@ -16,8 +16,10 @@ import {
   addDesignMark,
   attachDesignShot,
   designReferenceFor,
-  keepDesignMarksFor,
+  dropDesignMarks,
+  expectDesignShot,
   removeDesignMark,
+  settleDesignShot,
 } from './designMarks';
 import {
   listWorkingNativeBrowsers,
@@ -54,9 +56,13 @@ export function BrowserHost() {
     return bySession;
   }, [browsers]);
 
-  // A chat whose browser has closed has nothing its marks could be sent with.
+  // Marks picked in a browser go when it closes. Marks a queued prompt brings
+  // back to the composer after that stay: they are its own snapshots.
+  const shownBrowsers = useRef(browsers);
   useEffect(() => {
-    keepDesignMarksFor((appSessionId) => appSessionId in browsers);
+    for (const appSessionId of Object.keys(shownBrowsers.current))
+      if (!(appSessionId in browsers)) dropDesignMarks(appSessionId);
+    shownBrowsers.current = browsers;
   }, [browsers]);
 
   // Pages work, navigate and crash while the pane is closed too, so all of it
@@ -88,6 +94,7 @@ export function BrowserHost() {
           // A crop that comes after its mark was taken away or picked again is dropped.
           const waiting = awaitingShot.get(event.pick);
           awaitingShot.delete(event.pick);
+          if (waiting) settleDesignShot(waiting.id, event.screenshot);
           const shot =
             waiting &&
             event.screenshot &&
@@ -102,6 +109,7 @@ export function BrowserHost() {
           const mark = addDesignMark(appSessionId, designReferenceFor(event.selection, viewport));
           addDesignReference(appSessionId, mark);
           awaitingShot.set(event.pick, { appSessionId, id: mark.id });
+          expectDesignShot(mark.id);
         } else if (event.type === 'unselect') removeDesignMark(appSessionId, event.id);
       }),
       onNativeBrowserLoadFailed((failure) => {

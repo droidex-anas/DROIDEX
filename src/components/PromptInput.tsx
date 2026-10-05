@@ -65,6 +65,7 @@ import {
   restartDesignMarkNumbers,
   setDesignMarks,
   useDesignMarks,
+  withDesignShots,
 } from './browser/designMarks';
 import { DesignMarkChip } from './composer/DesignMarkChip';
 import {
@@ -1251,7 +1252,17 @@ export default function PromptInput({
     const intakeCutoff = nextIntakeSeqRef.current;
     const readyImagesPromise = imageAttachments.whenReady(intakeCutoff);
     const readyFilesPromise = fileAttachments.whenReady(intakeCutoff);
-    const [readyImages, readyFiles] = await Promise.all([readyImagesPromise, readyFilesPromise]);
+    // The chat's marks make this a design prompt, taken now as its text is: one
+    // picked while it settles is the next prompt's. Crops still being taken of
+    // them are waited for with the attachments.
+    const marksPromise = withDesignShots(
+      activeSession && !targetChildSessionId ? stagedDesignMarks(activeSession.appSessionId) : [],
+    );
+    const [readyImages, readyFiles, marks] = await Promise.all([
+      readyImagesPromise,
+      readyFilesPromise,
+      marksPromise,
+    ]);
     if (updateInterruptedSubmit()) return;
     const allFiles = pathsInSequence([
       ...attachedFiles.map((path, index) => ({
@@ -1516,17 +1527,13 @@ export default function PromptInput({
       return;
     }
 
-    // Marks picked in the chat's open browser make this a design prompt: the
-    // sidecar sends it with their reference pack, and otherwise as any prompt
-    // is sent. It waits for a running turn like a queued prompt, whichever way
+    // A design prompt goes with its marks' reference pack, built by the sidecar
+    // from their own snapshots, so it goes the same way once their browser has
+    // closed. It waits for a running turn like a queued prompt, whichever way
     // it was sent.
     const appSessionId = activeSession.appSessionId;
-    const marks =
-      appSessionId in store.getState().browsers && !targetChildSessionId
-        ? stagedDesignMarks(appSessionId)
-        : [];
     if (marks.length > 0) {
-      const design = { browserKey: appSessionId, references: [...marks] };
+      const design = { browserKey: appSessionId, references: marks };
       // Only the marks this prompt carries go; one picked while it settles stays.
       const sent = new Set(marks.map((mark) => mark.id));
       const clearDesign = () => {

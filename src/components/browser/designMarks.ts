@@ -23,6 +23,12 @@ let marksByChat: Readonly<Record<string, readonly DesignReference[] | undefined>
 // The last number given out in each chat.
 const lastNumber = new Map<string, number>();
 const listeners = new Set<() => void>();
+// Crops still being taken, by pick id. Main answers every pick, with a crop or
+// without one, so a prompt sent meanwhile can wait for the crops of its marks.
+const shotsDue = new Map<string, Promise<DesignSelectionScreenshot | undefined>>();
+const settleShot = new Map<string, (shot?: DesignSelectionScreenshot) => void>();
+// The longest a prompt waits for a crop: past main's own limit for taking one.
+const SHOT_WAIT_MS = 8_000;
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
@@ -71,6 +77,44 @@ export function designReferenceFor(
     scroll: selection.scroll,
     screenshot: selection.screenshot,
   };
+}
+
+/** Notes that the crop of this pick is being taken. */
+export function expectDesignShot(id: string): void {
+  shotsDue.set(
+    id,
+    new Promise((resolve) => {
+      settleShot.set(id, resolve);
+    }),
+  );
+}
+
+/** The crop of this pick came, or will not. */
+export function settleDesignShot(id: string, screenshot?: DesignSelectionScreenshot): void {
+  settleShot.get(id)?.(screenshot);
+  settleShot.delete(id);
+  shotsDue.delete(id);
+}
+
+/** The marks with the crops still being taken of them, waited for a moment at most. */
+export async function withDesignShots(
+  marks: readonly DesignReference[],
+): Promise<DesignReference[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(resolve, SHOT_WAIT_MS, undefined);
+  });
+  try {
+    return await Promise.all(
+      marks.map(async (mark) => {
+        const due = shotsDue.get(mark.id);
+        const screenshot = due && (await Promise.race([due, late]));
+        return screenshot ? { ...mark, screenshot } : mark;
+      }),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Adds a pick as the next mark, or as the mark it picks again; returns it numbered. */
@@ -127,13 +171,11 @@ export function restartDesignMarkNumbers(appSessionId: string): void {
   if (designMarks(appSessionId).length === 0) lastNumber.delete(appSessionId);
 }
 
-/** Drops the marks of every chat whose browser has closed or gone away. */
-export function keepDesignMarksFor(open: (appSessionId: string) => boolean): void {
-  for (const appSessionId of Object.keys(marksByChat))
-    if (marksByChat[appSessionId] && !open(appSessionId)) {
-      set(appSessionId, []);
-      lastNumber.delete(appSessionId);
-    }
+/** Drops the marks of a chat whose browser has closed or gone away. */
+export function dropDesignMarks(appSessionId: string): void {
+  if (!marksByChat[appSessionId]) return;
+  set(appSessionId, []);
+  lastNumber.delete(appSessionId);
 }
 
 /** The chip's name: the component, else the element's name or text, else its tag. */
