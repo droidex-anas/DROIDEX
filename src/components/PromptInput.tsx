@@ -53,6 +53,7 @@ import { QueuedPrompts } from './composer/QueuedPrompts';
 import { markGitTurnStart } from '../lib/git';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { canRunAgents } from '../lib/runtimeHealth';
+import { activeDraftTileId } from '../features/tabs/tabNavigation';
 import {
   chatWorktreeName,
   prepareChatWorkingDirectory,
@@ -303,9 +304,13 @@ export default function PromptInput({
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
       // A split tab mounts a composer per tile, and each takes its own chat's
-      // seeds, oldest first.
+      // seeds, oldest first. The draft's composer takes those of its tile.
       composerSeed:
-        current.composerSeeds.find((seed) => seed.appSessionId === appSessionId) ?? null,
+        current.composerSeeds.find((seed) =>
+          appSessionId
+            ? seed.appSessionId === appSessionId
+            : seed.draftTileId !== null && seed.draftTileId === activeDraftTileId(current),
+        ) ?? null,
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,

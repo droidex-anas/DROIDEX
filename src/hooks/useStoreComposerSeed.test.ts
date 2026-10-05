@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { initialState, reducer, type AppState } from './useStore';
+import { activeDraftTileId } from '../features/tabs/tabNavigation';
+import type { SessionSummary } from '../types/bridge';
+import { initialState, reducer, type Action, type AppState } from './useStore';
 
 const seedsFor = (state: AppState, appSessionId: string | null) =>
   state.composerSeeds.filter((seed) => seed.appSessionId === appSessionId).map((s) => s.text);
@@ -71,4 +73,39 @@ test('a sent seed goes to its chat, leaving a child picked while it waited', () 
   let noted = reducer(state, { type: 'SEED_COMPOSER', appSessionId: 'owner', text: 'a note' });
   noted = reducer(noted, { type: 'CONSUME_COMPOSER_SEED', id: noted.composerSeeds[1]?.id ?? -1 });
   assert.equal(noted.selectedChild, state.selectedChild);
+});
+
+test("a draft's seeds wait in its tile and go to the chat it becomes", () => {
+  const draft = (state: AppState) =>
+    state.composerSeeds.filter((seed) => seed.draftTileId === activeDraftTileId(state));
+  // A suggestion picked while the draft is being sent waits for it.
+  const sending = [
+    { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'c1' },
+    {
+      type: 'SET_PENDING_COMPOSE',
+      clientRef: 'c1',
+      text: 'hi',
+      skills: [],
+      files: [],
+      originHoldId: 'c1',
+    },
+    { type: 'RELEASE_COMPOSE_ORIGIN', holdId: 'c1' },
+    { type: 'SEED_COMPOSER', text: 'suggestion' },
+  ] satisfies Action[];
+  const state = sending.reduce(reducer, { ...initialState, mainView: 'session' });
+  assert.equal(draft(state).length, 1);
+
+  // Another tab's draft does not take it.
+  assert.deepEqual(draft(reducer(state, { type: 'OPEN_NEW_CHAT_TAB' })), []);
+
+  // The chat the draft becomes does.
+  const session = { appSessionId: 'n', sessionPurpose: 'chat', updatedAt: 1 } as SessionSummary;
+  const created = reducer(state, { type: 'SESSION_CREATED', clientRef: 'c1', session });
+  assert.deepEqual(seedsFor(created, 'n'), ['suggestion']);
+
+  // A draft left for a view takes its seeds with it, so the next one starts clean.
+  const left = reducer(state, { type: 'OPEN_AUTOMATIONS' });
+  assert.deepEqual(left.composerSeeds, []);
+  const next = reducer(left, { type: 'START_CHAT', cwd: '', executionMode: 'local' });
+  assert.deepEqual(draft(next), []);
 });
