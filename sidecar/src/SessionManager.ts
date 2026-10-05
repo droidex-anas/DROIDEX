@@ -1154,23 +1154,8 @@ export class SessionManager {
       case 'browser.reload':
         await this.sessionBrowser.reload(cmd);
         return;
-      case 'browser.refresh':
-        await this.sessionBrowser.refresh(cmd);
-        return;
       case 'browser.resizeViewport':
         await this.sessionBrowser.resizeViewport(cmd);
-        return;
-      case 'browser.click':
-        await this.sessionBrowser.click(cmd);
-        return;
-      case 'browser.type':
-        await this.sessionBrowser.type(cmd);
-        return;
-      case 'browser.keypress':
-        await this.sessionBrowser.keypress(cmd);
-        return;
-      case 'browser.scroll':
-        await this.sessionBrowser.scroll(cmd);
         return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);

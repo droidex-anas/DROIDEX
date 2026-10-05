@@ -15,12 +15,7 @@ export type SessionBrowsers = Pick<
   // Runtime retirement asks whether a session is still holding a browser.
   | 'hasSession'
   | 'reload'
-  | 'refresh'
   | 'resizeViewport'
-  | 'click'
-  | 'type'
-  | 'keypress'
-  | 'scroll'
   | 'addReference'
   | 'designPrompt'
 >;
@@ -67,19 +62,15 @@ export class SessionBrowser {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
       await this.d.browsers.close(appSessionId);
-      this.d.emit({ type: 'browser.closed', appSessionId });
+      // A browser the chat opened again meanwhile is not the one that closed.
+      if (!this.d.browsers.hasSession(appSessionId))
+        this.d.emit({ type: 'browser.closed', appSessionId });
     });
   }
 
   async reload(cmd: Extract<ClientCommand, { type: 'browser.reload' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
       this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId)),
-    );
-  }
-
-  async refresh(cmd: Extract<ClientCommand, { type: 'browser.refresh' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.refresh(this.requireBrowserAppSessionId(cmd.appSessionId)),
     );
   }
 
@@ -91,39 +82,6 @@ export class SessionBrowser {
         ...cmd,
         appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
       }),
-    );
-  }
-
-  async click(cmd: Extract<ClientCommand, { type: 'browser.click' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.click({
-        ...cmd,
-        appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
-      }),
-    );
-  }
-
-  async type(cmd: Extract<ClientCommand, { type: 'browser.type' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.type(this.requireBrowserAppSessionId(cmd.appSessionId), cmd.text),
-    );
-  }
-
-  async keypress(cmd: Extract<ClientCommand, { type: 'browser.keypress' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.keypress(this.requireBrowserAppSessionId(cmd.appSessionId), cmd.key),
-    );
-  }
-
-  async scroll(cmd: Extract<ClientCommand, { type: 'browser.scroll' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.scroll(
-        this.requireBrowserAppSessionId(cmd.appSessionId),
-        cmd.direction,
-        cmd.pixels,
-        cmd.source,
-        cmd.ref,
-      ),
     );
   }
 

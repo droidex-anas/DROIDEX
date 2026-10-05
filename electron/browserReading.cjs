@@ -145,16 +145,14 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   }
 
   // A viewport point at the middle of the ref's element, scrolled into view,
-  // and the document it was resolved in.
+  // the same point in its frame's own viewport, and the document it was
+  // resolved in.
   async function pointForRef(contents, entry, ref) {
     return withPage(contents, async (dbg) => {
-      const { quad, document, sessionId } = await visibleQuad(dbg, entry, ref);
-      return {
-        x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4),
-        y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4),
-        document,
-        sessionId,
-      };
+      const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref);
+      // The point in the ref's own frame stays unrounded, so mapped out of its
+      // frame for the cover check it lands on the point that is clicked.
+      return { ...centrePixelOf(quad), local: centreOf(local), document, sessionId };
     });
   }
 
@@ -172,7 +170,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     );
     const quad = quads?.find((candidate) => quadArea(candidate) > 1);
     if (!quad) throw new Error(`${ref} has no visible box to act on.`);
-    return { quad: (await viewportMapping(dbg, sessionId))(quad), document, sessionId };
+    const toViewport = await viewportMapping(dbg, sessionId);
+    return { quad: toViewport(quad), local: quad, document, sessionId };
   }
 
   // The ref's element as a viewport box, for a screenshot crop, and the
@@ -189,12 +188,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (!frames.some((frame) => frame.loaderId === document))
         throw new Error('The page changed before the action ran; call browser_read_page.');
     });
-  }
-
-  // Chooses an option on the ref's own <select>, wherever it lives; `before`
-  // runs just before the page changes and can still stop it.
-  async function selectOption(contents, entry, ref, value, before) {
-    return (await callOnRef(contents, entry, ref, [value], SELECT_OPTION, before)).value;
   }
 
   // A CSS path to the ref's element, for page-side helpers that only reach the
@@ -242,6 +235,23 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
       if (/node|object/i.test(String(error?.message)))
         throw new Error(`${ref} is not on the page any more; call browser_read_page.`);
       throw error;
+    }
+  }
+
+  // Whether a node is what its own document or shadow root has focused.
+  async function hasFocus(dbg, sessionId, backendNodeId) {
+    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
+    try {
+      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
+        objectId: object.objectId,
+        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
+        returnByValue: true,
+      });
+      return result?.value === true;
+    } finally {
+      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
+        () => undefined,
+      );
     }
   }
 
@@ -427,7 +437,9 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     find,
     pointForRef,
     assertDocument,
-    selectOption,
+    lookupRef,
+    hasFocus,
+    callOnRef,
     selectorForRef,
     refBox,
     sensitiveBoxes: masking.sensitiveBoxes,
@@ -435,18 +447,7 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 }
 
 // Run inside the page on the ref's own element.
-const SELECT_OPTION = `function (wanted) {
-  if (this.localName !== 'select') throw new Error('not a select element');
-  const options = [...this.options];
-  const option =
-    options.find((candidate) => candidate.value === wanted) ??
-    options.find((candidate) => candidate.label.trim() === wanted || candidate.text.trim() === wanted);
-  if (!option) throw new Error('no option "' + wanted + '"');
-  this.value = option.value;
-  this.dispatchEvent(new Event('input', { bubbles: true }));
-  this.dispatchEvent(new Event('change', { bubbles: true }));
-  return option.value;
-}`;
+
 const CSS_PATH = `function () {
   if (window !== window.top || !(this.getRootNode() instanceof Document)) return null;
   const parts = [];
@@ -471,6 +472,18 @@ function ancestorsOf(lines, index) {
 }
 
 // Shoelace area, so a rotated element still counts as visible.
+function centreOf(quad) {
+  return {
+    x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4,
+    y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4,
+  };
+}
+
+function centrePixelOf(quad) {
+  const { x, y } = centreOf(quad);
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
 function quadArea(quad) {
   let twice = 0;
   for (let i = 0; i < 8; i += 2) {

@@ -14,15 +14,12 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
       'browser_read_page',
       'browser_read_text',
       'browser_find',
-      'browser_reload',
-      'browser_back',
-      'browser_forward',
       'browser_screenshot',
       'browser_click',
       'browser_hover',
-      'browser_select',
+      'browser_fill',
       'browser_type',
-      'browser_keypress',
+      'browser_press',
       'browser_resize',
       'browser_scroll',
       'browser_wait',
@@ -57,47 +54,42 @@ test('browser MCP handlers return visible tool errors', async () => {
   assert.match(JSON.stringify(result), /Browser session is not open yet/);
 });
 
-test('browser_open keeps high-detail viewport scale by default, and navigation tools return the page state', async () => {
+test('browser_open keeps high-detail viewport scale by default, and goes back, forward and reloads', async () => {
   let openedViewport: { width: number; height: number; deviceScaleFactor?: number } | undefined;
-  const state = (url: string) => ({
-    url,
-    viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
-    viewportMode: 'fit' as const,
-    scroll: { x: 0, y: 0 },
-  });
+  const calls: string[] = [];
+  const outcome = (title: string, url: string) => ({ state: {}, text: `[${title} · ${url}]` });
   const manager = {
     async open(input: {
       viewport?: { width: number; height: number; deviceScaleFactor?: number };
     }) {
       openedViewport = input.viewport;
-      return state('https://example.com');
-    },
-    async reload() {
-      return state('https://example.com/reloaded');
+      return outcome('Example', 'https://example.com/');
     },
     async goBack() {
-      return state('https://example.com/back');
+      calls.push('back');
+      return outcome('History', 'https://example.com/history');
     },
     async goForward() {
-      return state('https://example.com/forward');
+      calls.push('forward');
+      return outcome('History', 'https://example.com/history');
+    },
+    async reload() {
+      calls.push('reload');
+      return outcome('History', 'https://example.com/history');
     },
   } as unknown as BrowserSessionManager;
-  const server = createBrowserMcpServer(manager, () => 'm1');
-  const handler = (name: string) => server.tools.find((tool) => tool.name === name)?.handler;
+  const browserOpen = createBrowserMcpServer(manager, () => 'm1').tools.find(
+    (tool) => tool.name === 'browser_open',
+  );
 
-  const opened = await handler('browser_open')?.({
+  const opened = await browserOpen?.handler({
     url: 'https://example.com',
     viewport: { width: 1000, height: 700 },
     viewportMode: 'custom',
   });
   assert.equal(openedViewport?.deviceScaleFactor, 2);
-  assert.match(String(opened), /Opened the page in the live DROIDEX browser/);
+  assert.match(JSON.stringify(opened), /Opened the page.*\[Example · https:\/\/example.com\/\]/);
 
-  for (const [name, url] of [
-    ['browser_reload', /example.com\/reloaded/],
-    ['browser_back', /example.com\/back/],
-    ['browser_forward', /example.com\/forward/],
-  ] as const) {
-    assert.match(String(await handler(name)?.({})), url, name);
-  }
+  for (const action of ['back', 'forward', 'reload']) await browserOpen?.handler({ action });
+  assert.deepEqual(calls, ['back', 'forward', 'reload']);
 });

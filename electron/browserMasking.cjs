@@ -307,4 +307,4 @@ function isSensitiveField(attributes) {
   return false;
 }
 
-module.exports = { createBrowserMasking, fieldOf, foldedNames };
+module.exports = { createBrowserMasking, fieldOf, foldedNames, isField };

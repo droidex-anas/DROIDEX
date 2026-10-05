@@ -111,13 +111,3 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
       '</form>',
   );
 });
-
-test('select option matching accepts the option label', () => {
-  const select = Object.assign(new preload.HTMLSelectElement(), {
-    options: [{ value: 'us', label: 'United States', textContent: 'US' }],
-    dispatchEvent() {},
-  });
-  preload.document.querySelector = () => select;
-  preload.selectOption('#country', 'United States');
-  assert.equal(select.value, 'us');
-});
