@@ -61,6 +61,7 @@ function createNativeBrowserManager(options) {
     onViewDestroyed: (entry) => {
       if (attachedBrowserSessionId === entry.browserSessionId) attachedBrowserSessionId = null;
     },
+    onInput: options.onBrowserInput,
     listEntries: () => nativeBrowsers.values(),
   });
   const page = createNativeBrowserPage({

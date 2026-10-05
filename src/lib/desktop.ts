@@ -5,10 +5,12 @@ import type {
   NativeBrowserBox,
   NativeBrowserCaptureOptions,
   NativeBrowserDesignPrompt,
+  NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
   NativeBrowserSelection,
 } from './nativeBrowser';
+import type { NativeBrowserChord } from './shortcuts';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
 import type {
@@ -325,6 +327,8 @@ interface DroidControlApi {
     box?: NativeBrowserBox,
     options?: NativeBrowserCaptureOptions,
   ) => Promise<string | undefined>;
+  nativeBrowserSetShortcuts: (chords: NativeBrowserChord[]) => Promise<void>;
+  onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
   onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
   onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;

@@ -14,6 +14,7 @@ function createNativeBrowserViewFactory({
   autofill,
   recoverRenderer,
   onViewDestroyed,
+  onInput,
   listEntries,
 }) {
   let browserSessionConfigured = false;
@@ -100,6 +101,7 @@ function createNativeBrowserViewFactory({
       if (entry.view === view) loadUrl(entry, nextUrl);
       return { action: 'deny' };
     });
+    contents.on('before-input-event', onInput);
     contents.on('console-message', (details) => {
       entry.consoleEvents.push({
         timestamp: Date.now(),

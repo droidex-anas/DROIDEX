@@ -1,5 +1,5 @@
 import { saveDraftProvider } from '../features/providers/providerDraft';
-import { saveTabStrip } from '../features/tabs/tabStrip';
+import { saveTabStrip } from '../features/tabs/tabStorage';
 import { saveDefaultAutonomy } from '../lib/autonomy';
 import { saveChatMetadata } from '../lib/chatMetadata';
 import { isEmbedded } from '../lib/embed';

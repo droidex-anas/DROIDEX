@@ -47,19 +47,16 @@ import {
 } from '../hooks/useConversationTimeline';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import {
-  equalVisibleChatState,
-  selectChatViewState,
-  startingComposeInTab,
-  type ChatViewState,
-} from './chatViewState';
+import { equalVisibleChatState, selectChatViewState, type ChatViewState } from './chatViewState';
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
-import { viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
+import { showsTabStrip, viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
+import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
+import { tileHandleProps } from '../features/tabs/tileDrag';
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
 
@@ -168,6 +165,7 @@ function ChatHeader({
   sub,
   leadPx,
   appSessionId,
+  tile,
 }: {
   title: string;
   live: boolean;
@@ -182,15 +180,24 @@ function ChatHeader({
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
-  appSessionId: string;
+  // The chat whose processes the header lists; null when it lists none.
+  appSessionId: string | null;
+  // In a split tab the title is the tile's drag handle and close button.
+  tile: TileChrome | undefined;
 }) {
   return (
     <div
-      data-electron-drag-region
+      // Only the top row of tiles is the window's drag row.
+      data-electron-drag-region={tile && !tile.atTop ? undefined : true}
       className="shrink-0 flex items-center gap-2 h-9 pr-4"
       style={{ paddingLeft: leadPx }}
     >
-      <div className="flex min-w-0 items-center gap-1.5 rounded-xl bg-droid-elevated/60 pl-2 pr-3 py-1.5">
+      <div
+        {...(tile ? tileHandleProps(tile.id) : {})}
+        className={`flex min-w-0 items-center gap-1.5 rounded-xl pl-2 py-1.5 transition-colors ${
+          tile ? 'no-drag cursor-grab pr-2 active:cursor-grabbing' : 'pr-3'
+        } ${tile && !tile.focused ? 'bg-droid-elevated/25' : 'bg-droid-elevated/60'}`}
+      >
         <GripVertical className="w-3.5 h-3.5 shrink-0 text-droid-text-muted/40" />
         {sub ? (
           <button
@@ -221,8 +228,9 @@ function ChatHeader({
             )}
           </>
         )}
+        {tile && <CloseTileButton tileId={tile.id} title={title} />}
       </div>
-      <RunningProcessesMenu appSessionId={appSessionId} />
+      {appSessionId && <RunningProcessesMenu appSessionId={appSessionId} />}
       {sub?.onStop && (
         <button
           type="button"
@@ -243,6 +251,7 @@ export default function ChatView({
   rightInset = false,
   isObscured = false,
   besidePane = false,
+  tile,
 }: {
   // The chat this view shows; null is the new-chat welcome.
   appSessionId: string | null;
@@ -251,12 +260,15 @@ export default function ChatView({
   // The utility pane is open beside the chat, so the chat's scrollbar ends
   // mid-window and shows only while it moves.
   besidePane?: boolean;
+  // The tile this view fills, when its tab is split.
+  tile?: TileChrome;
 }) {
   const dispatch = useStoreDispatch();
   const openAgent = useOpenAgent();
+  const tileId = tile?.id ?? null;
   const selectState = useCallback(
-    (current: AppState) => selectChatViewState(current, appSessionId),
-    [appSessionId],
+    (current: AppState) => selectChatViewState(current, appSessionId, tileId),
+    [appSessionId, tileId],
   );
   const equalChatState = useCallback(
     (previous: ChatViewState, next: ChatViewState) =>
@@ -265,6 +277,7 @@ export default function ChatView({
   );
   const state = useStoreSelector(selectState, equalChatState);
   const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const tabStripShown = useStoreSelector(showsTabStrip);
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -475,7 +488,7 @@ export default function ChatView({
   // sidecar spawns the session, ~1-2s), there is no active session yet. Show the
   // user's message immediately with a starting cue instead of a blank screen;
   // the real feed (which seeds the same message) takes over once it exists.
-  const startingCompose = !activeSession ? startingComposeInTab(state) : undefined;
+  const { startingCompose } = state;
 
   const isSpec = activeSession?.interactionMode === 'spec';
   const capturedPlan = activeSession ? state.specPlans[activeSession.appSessionId] : undefined;
@@ -826,25 +839,41 @@ export default function ChatView({
     );
   }
 
+  // Only the top-left tile's header row takes in the window controls.
+  const leadPx =
+    holdsWindowControls && (!tile || (tile.atTop && tile.atLeft)) ? WINDOW_CONTROLS_LEAD_PX : 16;
+  // A lone chat in a tab is named by its tab, whose row also lists its
+  // processes, so it needs a header only for a crumb back.
+  const namedByTab = tabStripShown && !tile;
+  let header: ReactNode = null;
+  if (activeSession && (!namedByTab || chatHeaderSub)) {
+    header = (
+      <ChatHeader
+        title={
+          // A thread's crumb names the chat that started it; a child session's
+          // crumb walks back to this chat instead, so it keeps its own title.
+          (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
+        }
+        live={live}
+        leadPx={leadPx}
+        appSessionId={namedByTab ? null : activeSession.appSessionId}
+        tile={tile}
+        {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
+      />
+    );
+  } else if (!activeSession && tile) {
+    header = (
+      <ChatHeader title="New chat" live={false} leadPx={leadPx} appSessionId={null} tile={tile} />
+    );
+  } else if (!tabStripShown) {
+    // The welcome screen has no header of its own, but the top row still
+    // belongs to the window chrome.
+    header = <div data-electron-drag-region className="h-9 shrink-0" />;
+  }
+
   return (
     <div data-testid="chat-view" className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-      {activeSession ? (
-        <ChatHeader
-          title={
-            // A thread's crumb names the chat that started it; a child session's
-            // crumb walks back to this chat instead, so it keeps its own title.
-            (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
-          }
-          live={live}
-          leadPx={holdsWindowControls ? WINDOW_CONTROLS_LEAD_PX : 16}
-          appSessionId={activeSession.appSessionId}
-          {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
-        />
-      ) : (
-        // The welcome screen has no header of its own, but the top row still
-        // belongs to the window chrome.
-        <div data-electron-drag-region className="h-9 shrink-0" />
-      )}
+      {header}
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
         <TranscriptReachHost
           items={feedItems}
@@ -860,6 +889,7 @@ export default function ChatView({
             conversationListRef.current?.scrollToRow(rowId);
           }}
           enabled={Boolean(activeSession && transcript.length > 0)}
+          takesShortcuts={tile?.focused ?? true}
         >
           {activeSession && !isTimelinePriming && timelineAnchors.length >= 2 && (
             <ConversationTimeline

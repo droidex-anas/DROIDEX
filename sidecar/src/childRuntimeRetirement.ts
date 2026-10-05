@@ -15,9 +15,6 @@ import {
 // Reopening costs one loadSession (~3 s) and paints persisted history first.
 export const CHILD_RUNTIME_IDLE_RETIREMENT_MS = 5 * 60_000;
 
-export const CHILD_RUNTIME_RETIRED_STATUS =
-  'Task runtime released after 5 minutes idle to free memory. Opening this Task again restores it.';
-
 // Retiring a parent closes its whole child subtree, so it must wait for every
 // child to settle. Scoped to one parent and allocation-free: the session
 // retirement sweep re-evaluates this whenever a summary changes.
