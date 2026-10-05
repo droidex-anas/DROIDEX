@@ -12,6 +12,8 @@ import { imageExtension } from './imageSignature.js';
 // The most the app's local image scheme serves (electron/localImages.cjs).
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
 const UNSHOWN = 'An image this build cannot show.';
+// Claude Code names a picture it saved as a text line beside the picture itself.
+const SAVED_IMAGE_LINE = /^\[Image: source: [^\n]*\]$/;
 
 export interface ToolResultParts {
   text: string;
@@ -36,7 +38,9 @@ export function toolResultParts(content: unknown): ToolResultParts {
     if (path) images.push(path);
     else text.push(UNSHOWN);
   }
-  return { text: text.join('\n'), ...(images.length ? { images } : {}) };
+  if (images.length === 0) return { text: text.join('\n') };
+  const lines = text.join('\n').split('\n');
+  return { text: lines.filter((line) => !SAVED_IMAGE_LINE.test(line)).join('\n'), images };
 }
 
 function textOf(block: unknown): string {
