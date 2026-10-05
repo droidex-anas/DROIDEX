@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { composeOrigin } from '../features/tabs/tabNavigation';
 import { initialState, reducer, type AppState } from './useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import { sessionSummary } from '../test/sessionSummary';
@@ -178,7 +179,12 @@ test('session creation records the exact request-to-session settlement', () => {
   const state: AppState = {
     ...initialState,
     pendingCompose: {
-      'client-1': { text: 'hello', skills: [], files: [] },
+      'client-1': {
+        text: 'hello',
+        skills: [],
+        files: [],
+        origin: composeOrigin(initialState.tabStrip),
+      },
     },
   };
 
@@ -208,7 +214,12 @@ test('session seeds preserve live file provenance without claiming background co
     {
       ...initialState,
       pendingCompose: {
-        'client-1': { text: 'typed prompt', skills: [], files: [] },
+        'client-1': {
+          text: 'typed prompt',
+          skills: [],
+          files: [],
+          origin: composeOrigin(initialState.tabStrip),
+        },
       },
     },
     {

@@ -229,6 +229,13 @@ export default function Sidebar({
     },
     [dispatch, unreadOnly],
   );
+  const handleOpenInTab = useCallback(
+    (appSessionId: string) => {
+      dispatch({ type: 'OPEN_TAB', page: { kind: 'chat', appSessionId } });
+      if (unreadOnly) setUnreadOnly(false);
+    },
+    [dispatch, unreadOnly],
+  );
 
   const rowActions = useSidebarRowActions(state.sessions, chatMetadata);
   const {
@@ -278,6 +285,7 @@ export default function Sidebar({
         renaming={renamingId === m.appSessionId}
         now={now}
         onSelect={handleSelectSession}
+        onOpenInTab={handleOpenInTab}
         onMenu={handleRowMenu}
         onRenameCommit={handleRenameCommit}
         onRenameCancel={handleRenameCancel}
@@ -467,6 +475,9 @@ export default function Sidebar({
               }
             : {})}
           providerSessionId={rowMenuSession?.providerSessionId}
+          onOpenInTab={() => {
+            handleOpenInTab(rowMenu.appSessionId);
+          }}
           onRename={() => {
             rowActions.startRenaming(rowMenu.appSessionId);
           }}

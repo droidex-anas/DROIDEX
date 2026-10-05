@@ -48,7 +48,8 @@ export function WelcomeScreen({
   const [line] = useState(() => WELCOME_LINES[Math.floor(Math.random() * WELCOME_LINES.length)]);
   if (project) return <ProjectWelcome onStartChat={project.onStartChat} />;
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8">
+    // A short tile scrolls the screen instead of clipping its top.
+    <div className="flex min-h-full flex-col items-center justify-center px-8 py-6">
       <div className="droid-rise">
         <BrandMark size={34} className="text-droid-accent" />
       </div>
@@ -89,7 +90,7 @@ export function WelcomeScreen({
 // has to say what sending will do, and how to go back to starting a chat.
 function ProjectWelcome({ onStartChat }: { onStartChat: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8">
+    <div className="flex min-h-full flex-col items-center justify-center px-8 py-6">
       <div className="droid-rise">
         <BrandMark size={34} className="text-droid-accent" />
       </div>

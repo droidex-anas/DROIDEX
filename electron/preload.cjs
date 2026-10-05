@@ -248,10 +248,13 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-agent-action', { request }),
   nativeBrowserCapture: (browserSessionId, box, options) =>
     ipcRenderer.invoke('native-browser-capture', { browserSessionId, box, options }),
+  nativeBrowserSetShortcuts: (chords) =>
+    ipcRenderer.invoke('native-browser-set-shortcuts', { chords }),
 
   onNativeBrowserSelection: (handler) => on('native-browser-selection', handler),
   onNativeBrowserDesignPrompt: (handler) => on('native-browser-design-prompt', handler),
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserAgentResult: (handler) => on('native-browser-agent-result', handler),
+  onNativeBrowserShortcut: (handler) => on('native-browser-shortcut', handler),
 });

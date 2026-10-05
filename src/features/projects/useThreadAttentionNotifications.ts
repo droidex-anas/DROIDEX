@@ -3,6 +3,7 @@ import { notify } from '../../lib/desktop';
 import { isAppInForeground } from '../../lib/finishNotifications';
 import { useStoreApi } from '../../hooks/useStore';
 import { sessionAttention, type SessionAttentionKind } from '../../lib/sessionAttention';
+import { isChatInView } from '../tabs/tabStrip';
 
 /* A project runs while the user is somewhere else, so a thread that stops for
    an approval or a question would otherwise wait unseen. One banner per block,
@@ -43,7 +44,7 @@ export function useThreadAttentionNotifications(): void {
           // Looking at the thread is seeing the request; a banner repeats it.
           // Marking it only once one is sent, so a request first seen on screen
           // still reaches the user after they look away.
-          if (state.activeAppSessionId === thread.appSessionId && isAppInForeground()) continue;
+          if (isChatInView(state, thread.appSessionId) && isAppInForeground()) continue;
           notified.current.add(key);
           void notify(`${thread.title} ${LEAD[kind]}`, project.title, {
             appSessionId: thread.appSessionId,

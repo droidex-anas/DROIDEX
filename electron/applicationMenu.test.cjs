@@ -96,6 +96,19 @@ test('reload actions preserve safe shell reload behavior and accelerators', () =
   assert.deepEqual(reloads, [false, true]);
 });
 
+test('closing the window leaves Cmd/Ctrl+W to the renderer tabs', () => {
+  const macClose = submenu(createApplicationMenuTemplate(menuOptions()), 'File').find(
+    ({ role }) => role === 'close',
+  );
+  const otherClose = submenu(
+    createApplicationMenuTemplate(menuOptions({ platform: 'linux' })),
+    'Window',
+  ).find(({ role }) => role === 'close');
+
+  assert.equal(macClose.accelerator, 'CmdOrCtrl+Shift+W');
+  assert.equal(otherClose.accelerator, 'CmdOrCtrl+Shift+W');
+});
+
 test('installer wires native dependencies and logs failed system actions', async () => {
   const calls = [];
   let installedMenu;

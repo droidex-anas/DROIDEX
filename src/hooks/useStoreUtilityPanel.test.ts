@@ -170,7 +170,7 @@ test('a session switch drops a pending review focus and its captured change', ()
   assert.equal(state.reviewFocusPath, 'src/b.ts');
 });
 
-test('starting a new chat or creating another session drops a pending review focus', () => {
+test('starting a new chat drops a pending review focus', () => {
   const draft = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
     type: 'START_CHAT',
     cwd: '/repo',
@@ -178,21 +178,30 @@ test('starting a new chat or creating another session drops a pending review foc
   });
   assert.equal(draft.activeAppSessionId, null);
   assert.equal(draft.reviewFocusPath, null);
+});
 
-  let created = reducer(focusReview(activeState('session-a'), 'src/app.ts'), {
+test('a session created after the user moved to another chat keeps its review-focus request', () => {
+  // Sent from the new chat, which the user then left for session-a.
+  const sent = reducer(initialState, { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'hold-1' });
+  let state = focusReview(
+    { ...activeState('session-a'), heldComposeOrigins: sent.heldComposeOrigins },
+    'src/app.ts',
+  );
+  state = reducer(state, {
     type: 'SET_PENDING_COMPOSE',
     clientRef: 'ref-1',
     text: 'start another session',
     skills: [],
     files: [],
+    originHoldId: 'hold-1',
   });
-  created = reducer(created, {
+  state = reducer(state, {
     type: 'SESSION_CREATED',
     clientRef: 'ref-1',
     session: chat('session-b'),
   });
-  assert.equal(created.activeAppSessionId, 'session-b');
-  assert.equal(created.reviewFocusPath, null);
+  assert.equal(state.activeAppSessionId, 'session-a');
+  assert.equal(state.reviewFocusPath, 'src/app.ts');
 });
 
 test('a background resume preserves the active session review-focus request', () => {
