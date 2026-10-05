@@ -91,6 +91,7 @@ test('design reference screenshots render as openable image chips', () => {
 
   assert.match(html, /<button[^>]+title="View @region"/);
   assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.match(html, /alt=""/);
   assert.match(html, /@region/);
 });
 

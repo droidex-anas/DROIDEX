@@ -6,13 +6,15 @@ import { ImageLightbox } from '../media/ImageLightbox';
 export function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptReference }) {
   const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
   const [open, setOpen] = useState(false);
-  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [failedThumbnailSrc, setFailedThumbnailSrc] = useState<string | null>(null);
   const title = reference.selector
     ? `${reference.selector}\n${reference.url ?? ''}`
     : (reference.url ?? `Design reference: ${reference.label}`);
   const label = `@${reference.label}`;
 
   if (reference.imageDataUrl) {
+    const thumbnailFailed = failedThumbnailSrc === reference.imageDataUrl;
+
     return (
       <>
         <button
@@ -28,10 +30,10 @@ export function BrowserReferenceChip({ reference }: { reference: BrowserTranscri
           ) : (
             <img
               src={reference.imageDataUrl}
-              alt={reference.label}
+              alt=""
               className="h-5 max-w-12 rounded-sm object-cover"
               onError={() => {
-                setThumbnailFailed(true);
+                setFailedThumbnailSrc(reference.imageDataUrl ?? null);
               }}
             />
           )}
