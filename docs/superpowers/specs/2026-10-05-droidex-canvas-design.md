@@ -52,6 +52,7 @@ The complete local release includes:
 7. Truthful progress, smooth motion, reduced-motion support, light/dark polish and bounded preview mounting.
 8. Identical tooling for Droid, Claude Code and Codex, with an explicit contract for future adapters.
 9. Clean DROIDEX chat, history, search and export: no injected design instructions or raw Canvas scaffolding rendered as conversation content.
+10. Artifacts in every chat: React components, charts, dashboards and small apps created from an ordinary conversation, shown as an inline card and opened on the canvas; the existing /visualize AppBlock is unchanged.
 
 The first end-to-end slice is a milestone, not completion of this specification. Cloud sharing, multiplayer, Figma import/export, freehand drawing, arbitrary npm installation, hosted publishing and a template marketplace are outside this release. Do not show inert menu entries for them. Image export and the local library are included. This replaces no existing feature by implication; remove old code only when it is actually superseded.
 
@@ -80,6 +81,10 @@ Add **Canvas** to the utility-tool picker. Opening it creates no blank design an
 Expanding changes the space allocated to the same board. Keep the selected frame, viewport and live preview instance where feasible; do not remount the entire Canvas on pane resize. Closing the pane releases live previews but retains source, layout and attachment. Reopening reconstructs from durable state.
 
 A canvas has its own identity, independent of chat/provider lifecycle. A chat can have one attached canvas initially. “New chat with this canvas” creates an explicit attachment to the existing canvas; ordinary New chat starts without one. Two attached chats may edit the same canvas using revision checks. Open saved canvas makes detached work discoverable. Deleting a chat removes its attachment, not its designs. Canvas deletion is a separate explicit operation that shows affected attachments and preserves independently saved library items.
+
+### Artifacts in ordinary chats
+
+Any chat's agent may create React + Tailwind components, charts, dashboards and small apps on that chat's canvas through the same six tools and compiler; no design mode is required. Support React only, with no HTML/Markdown/SVG artifact kinds. The transcript shows an inline card with a live thumbnail from cached capture or an honest placeholder, title, build status and keyboard-accessible Open. The pane opens only on Open, focused on that frame; a failed call that created nothing shows no card. The existing `/visualize` AppBlock stays exactly as is. Task 6 chooses one bundled React charting library after a recorded size/license review (recharts, MIT, is the default candidate), adds it to the import allowlist and packages it like the kit module without a CDN. Pending bloom and real activity stages are shared frame behavior, identical in ordinary chats.
 
 ### Board controls
 
@@ -248,17 +253,18 @@ Measure a 50-frame board containing text, forms, cards, tables and a stateful co
 
 | Acceptance scenario | Evidence required | Plan owner |
 | --- | --- | --- |
-| “Make a Hey component” using each provider | Pending frame, working CTA, safe activity, source revision, reload/resume | Tasks 1–5, 11 |
-| Buttons/Inputs/Cards/Navigation/Tabs/Badges/Dialog/Table board | Persistent named frames, actual controls, smooth focus/search at 50-frame scale | Tasks 5–7, 10 |
-| Theme-selected prompt and later theme change | Original request retains original kit; light/dark previews consistent; chat contains no kit instructions | Tasks 4, 6, 11 |
-| Select literal title and edit; select computed/repeated title | Source round-trip for literal; honest scoped agent edit for ambiguous case | Task 7 |
-| Edit code while agent submits a revision | Conflict preserves local buffer; no lost source | Tasks 2, 7 |
-| Make two layout/style/color variants | Original unchanged; siblings persist and finish independently; real CTA state | Task 8 |
+| Dashboard artifact from a normal chat | Inline card with live thumbnail, Open focuses the frame, chart renders offline, AppBlock untouched | Task 6 |
+| “Make a Hey component” using each provider | Pending frame, working CTA, safe activity, source revision, reload/resume | Tasks 1–5, 12 |
+| Buttons/Inputs/Cards/Navigation/Tabs/Badges/Dialog/Table board | Persistent named frames, actual controls, smooth focus/search at 50-frame scale | Tasks 5–8, 11 |
+| Theme-selected prompt and later theme change | Original request retains original kit; light/dark previews consistent; chat contains no kit instructions | Tasks 4, 7, 12 |
+| Select literal title and edit; select computed/repeated title | Source round-trip for literal; honest scoped agent edit for ambiguous case | Task 8 |
+| Edit code while agent submits a revision | Conflict preserves local buffer; no lost source | Tasks 2, 8 |
+| Make two layout/style/color variants | Original unchanged; siblings persist and finish independently; real CTA state | Task 9 |
 | New chat with this canvas; resume/provider replacement | Same canvas; correct per-request scope; no stale mutation into replacement | Tasks 2, 4, 5 |
-| Export/reuse/history/delete/undo | Independent imported library copy, restore as new revision, source/assets export, bounded screenshot failure, durable undo | Tasks 8–9 |
-| Crash, disk-full, bad source, path escape, hung preview | No data loss or app freeze; actionable diagnostics; cleanup complete | Tasks 1–3, 9 |
+| Export/reuse/history/delete/undo | Independent imported library copy, restore as new revision, source/assets export, bounded screenshot failure, durable undo | Tasks 9–10 |
+| Crash, disk-full, bad source, path escape, hung preview | No data loss or app freeze; actionable diagnostics; cleanup complete | Tasks 1–3, 10 |
 | Privacy canary across live/replay/search/export | Internal unique marker absent from every DROIDEX surface; user-authored matching text preserved | Task 4 |
-| Animation and keyboard pass | Reference-inspired motion, actual actor presence, accessible interaction, light/dark and reduced motion | Tasks 5, 10–11 |
+| Animation and keyboard pass | Reference-inspired motion, actual actor presence, accessible interaction, light/dark and reduced motion | Tasks 5, 11–12 |
 
 Do not ship until all included controls work, documentation explains the workflow and limits, and a short recorded demo covers create → interact → edit → variants → reuse → reopen. Update the README feature description only when it is true. The implementation handoff should report checks actually run, measured performance and any remaining limitations without presenting this plan as delivered code.
 

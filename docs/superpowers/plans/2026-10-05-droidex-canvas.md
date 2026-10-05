@@ -12,7 +12,7 @@
 
 **Videos:** [V1 — component board and theme selection](</Users/anas/Desktop/Screen Recording 2026-10-05 at 12.10.35 PM.mov>); [V2 — generation, interaction and variants](</Users/anas/Desktop/Screen Recording 2026-10-05 at 12.39.57 PM.mov>). These local recordings are the visual references for implementation, not assets to commit or redistribute.
 
-**Execution:** Work lives in the `droidex-canvas` worktree on the `canvas/integration` branch, cut from `icons/menu-icons` at `1986663486e755a58c83439d35af18f94741a8ff`. Each task is a branch (`canvas/NN-<task>`) and a pull request into `canvas/integration`, merged only after review. Design, UI/UX and performance work and the reviews are routed to the models the user assigns through DROIDEX projects; this plan does not pick them. Checkboxes below are ticked only when the work is done and verified.
+**Execution:** Work lives in the `droidex-canvas` worktree on the `canvas/integration` branch, cut from `icons/menu-icons` at `1986663486e755a58c83439d35af18f94741a8ff`. Task 1 is a branch and pull request into `canvas/integration`; Tasks 2–12 use the ordered subtask branches below, each with its own pull request into `canvas/integration`, merged only after review. Design, UI/UX and performance work and the reviews are routed to the models the user assigns through DROIDEX projects; this plan does not pick them. Checkboxes below are ticked only when the work is done and verified.
 
 ## Global Constraints
 
@@ -33,7 +33,7 @@ Preserve unrelated changes. Re-read `AGENTS.md`, `/Users/anas/.codex/RTK.md`, `d
 ## Review Focus
 
 1. A queued/steered prompt outlives selection or provider replacement: retain the original references and reject stale capability writes, including late async completions. Tests in Tasks 2 and 4.
-2. Two chats/editors change one design or source contains repeated/computed JSX: preserve both authors' work and make edit scope explicit. Tests in Tasks 2 and 7.
+2. Two chats/editors change one design or source contains repeated/computed JSX: preserve both authors' work and make edit scope explicit. Tests in Tasks 2 and 8.
 3. Disk failure or process death occurs between source write and manifest commit: reopening exposes a complete old or new revision, never a partial one. Tests in Task 2.
 4. Generated code loops, escapes its resource boundary or floods messages: chat stays usable, privileged APIs remain unreachable and the preview can be terminated. Runtime gate in Task 1; regressions in Task 3.
 5. Native provider replay/search/export bypasses live transcript filtering: internal canaries stay absent while identical user-authored text remains visible. Tests in Task 4 for every provider format.
@@ -44,18 +44,19 @@ Paths marked “new” are proposed. Inspect existing helpers before introducing
 
 | Owner | Files | Responsibility |
 | --- | --- | --- |
-| Durable workspace | New `sidecar/src/canvas/{protocol.ts,schema.ts,CanvasWorkspace.ts,canvasFiles.ts}` | DTOs, boundary validation, mutations, CAS, attachments and atomic persistence |
-| Build/runtime | New `sidecar/src/canvas/{CanvasBuilds.ts,compiler.ts,compilerWorker.ts}`; new `src/features/canvas/{previewDocument.ts,previewRuntime.ts}` | Worker compilation, allowed imports/assets, preview contract and stale-build rejection |
-| Harness access | New `sidecar/src/canvas/{canvasMcpServer.ts,canvasTurnContext.ts,canvasToolPresentation.ts}` | Six schemas, session/turn scope, compact model context and safe transcript projection |
-| Design systems | New `sidecar/src/canvas/designSystems.ts`, `sidecar/src/canvas/presets/`; new `src/features/canvas/DesignSystemPicker.tsx` | Versioned kit content and composer selection |
-| Board | New `src/features/canvas/{protocol.ts,CanvasWorkspace.tsx,CanvasBoard.tsx,DesignFrame.tsx,DesignPreview.tsx,CanvasToolbar.tsx,CanvasNavigator.tsx,canvasState.ts,canvasGeometry.ts,canvasMotion.ts}` | Projection, gestures, visible previews, selection/navigation and motion |
-| Editing/reuse | New `sidecar/src/canvas/{sourceElements.ts,canvasLibrary.ts,canvasExport.ts}`; new `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx,CanvasVariants.tsx}` | Source mapping, direct edits, source/history UI, variants, local reuse and export |
-| Existing seams | `src/App.tsx`, utility modules, composer/send/store modules; `sidecar/src/SessionManager.ts`, lifecycle/event/history/provider modules; Electron packaging | Focused wiring only; feature behavior stays with its owner |
-| Verification | Focused `*.test.ts` next to the owning modules; `tests/integration/canvas.spec.ts`; `tests/smoke/electronCanvas.smoke.spec.ts`; `playwright.canvas-smoke.config.ts` | Core invariants, actual browser input and actual Electron isolation/packaging |
+| Durable workspace (Task 2) | New `sidecar/src/canvas/{protocol.ts,schema.ts,CanvasWorkspace.ts,canvasFiles.ts}` | DTOs, boundary validation, mutations, CAS, attachments and atomic persistence |
+| Build/runtime (Task 3) | New `sidecar/src/canvas/{CanvasBuilds.ts,compiler.ts,compilerWorker.ts}`; new `src/features/canvas/{previewDocument.ts,previewRuntime.ts}` | Worker compilation, allowed imports/assets, preview contract and stale-build rejection |
+| Harness access (Task 4) | New `sidecar/src/canvas/{canvasMcpServer.ts,canvasTurnContext.ts,canvasToolPresentation.ts}` | Six schemas, session/turn scope, compact model context and safe transcript projection |
+| Artifacts (Task 6) | New `src/features/canvas/CanvasArtifactCard.tsx`; `src/components/{messageFeedRows.tsx,MessageBody.tsx}`; `sidecar/src/canvas/{canvasToolPresentation.ts,compiler.ts}`; runtime packaging | Inline cards, chart runtime and shared frame presence in ordinary chats |
+| Design systems (Task 7) | New `sidecar/src/canvas/designSystems.ts`, `sidecar/src/canvas/presets/`; new `src/features/canvas/DesignSystemPicker.tsx` | Versioned kit content and composer selection |
+| Board (Tasks 5, 11) | New `src/features/canvas/{protocol.ts,CanvasWorkspace.tsx,CanvasBoard.tsx,DesignFrame.tsx,DesignPreview.tsx,CanvasToolbar.tsx,CanvasNavigator.tsx,canvasState.ts,canvasGeometry.ts,canvasMotion.ts}` | Projection, gestures, visible previews, selection/navigation and motion |
+| Editing/reuse (Tasks 8–10) | New `sidecar/src/canvas/{sourceElements.ts,canvasLibrary.ts,canvasExport.ts}`; new `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx,CanvasVariants.tsx}` | Source mapping, direct edits, source/history UI, variants, local reuse and export |
+| Existing seams (Tasks 2–7, 10) | `src/App.tsx`, utility modules, composer/send/store modules; `sidecar/src/SessionManager.ts`, lifecycle/event/history/provider modules; Electron packaging | Focused wiring only; feature behavior stays with its owner |
+| Verification (Tasks 1–12) | Focused `*.test.ts` next to the owning modules; `tests/integration/canvas.spec.ts`; `tests/smoke/electronCanvas.smoke.spec.ts`; `playwright.canvas-smoke.config.ts` | Core invariants, actual browser input and actual Electron isolation/packaging |
 
 The frontend may not import sidecar source (`.dependency-cruiser.cjs`). Mirror the small wire DTOs in `src/features/canvas/protocol.ts`, following existing bridge conventions, and assert representative serialized fixtures against both boundaries. Do not add a shared-package framework for this feature.
 
-Dependency order: **1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11**. The first user-visible vertical slice is complete at Task 5; Tasks 7–9 are a second wave that starts only after Tasks 5 and 6 are verified in the running app with all three providers; the requested release is complete only after Task 11. If Task 1 rejects the proposed preview host or the turn-lease binding, revise that boundary before its production task, preserving the product and shared-tool contracts.
+Dependency order: **1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12**. The first user-visible vertical slice is complete at Task 5; Tasks 8–10 are a second wave that starts only after Tasks 5, 6 and 7 are verified in the running app with all three providers; the requested release is complete only after Task 12. If Task 1 rejects the proposed preview host or the turn-lease binding, revise that boundary before its production task, preserving the product and shared-tool contracts.
 
 ## Boundary contracts to establish in Task 2
 
@@ -253,6 +254,15 @@ export default defineConfig({
 
 ## Task 2: Durable workspace and revision-safe commands
 
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/02a-canvas-contracts`: Define limited Zod contracts in sidecar Canvas `protocol.ts`/`schema.ts` and mirror `src/features/canvas/protocol.ts`.
+  Done: One serialized-fixture test passes against both boundaries, including rejected invalid inputs.
+- [ ] `canvas/02b-canvas-workspace`: Implement `CanvasWorkspace.ts` and `canvasFiles.ts` with atomic commits, CAS and persisted mutation IDs.
+  Done: Fault-injection and reopen tests preserve complete heads and reject stale or revoked writes.
+- [ ] `canvas/02c-canvas-bridge-commands`: Wire `canvas.*` commands/events through sidecar protocol, bridgeServer, droidexPaths and `src/types/bridge.ts`, including attachments and renderer sequence handling.
+  Done: Correlated commands persist attachments; duplicate events are ignored and gaps request a snapshot.
+
 **Files:** Create `sidecar/src/canvas/{protocol.ts,schema.ts,CanvasWorkspace.ts,canvasFiles.ts,CanvasWorkspace.test.ts,canvasFiles.test.ts}` and `src/features/canvas/protocol.ts`. Modify `sidecar/src/{protocol.ts,bridgeServer.ts,droidexPaths.ts}` and `src/types/bridge.ts` at their existing command/event boundaries. There is no current `sidecar/src/schema.ts`; Canvas input validation belongs in the new feature schema and its dispatch boundary. Keep all wire consumers in the same change.
 
 **Interfaces:** `CanvasWorkspace.open(directory: string): Promise<CanvasWorkspace>` loads current state. Instance methods: `snapshot(canvasId: string): CanvasSnapshot`, `create(scope: CanvasScope, input: CreateFramesInput): Promise<CanvasFrame[]>`, `write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt>`, `arrange(scope: CanvasScope, input: ArrangeFramesInput): Promise<CanvasChange>`, `readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles>`, `close(): Promise<void>`. Add `createCanvas(): Promise<CanvasSnapshot>`, `listCanvases(): CanvasSummary[]`, `attach(appSessionId: string, canvasId: string): Promise<void>` and `detach(appSessionId: string): Promise<void>` here; they own explicit attachment persistence. Scope validation is mandatory on mutations; read authorization is enforced at IPC/MCP entry points before calling internal read methods.
@@ -283,12 +293,23 @@ assert.equal((await workspace.readFiles(scope.context.canvasId, first))['main.ts
 
 ## Task 3: Incremental compiler and isolated live previews
 
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/03a-compiler-worker`: Implement `compiler.ts`, `compilerWorker.ts`, initial `designSystems.ts` and `presets/droidex.ts`, with virtual resolution and an import allowlist.
+  Done: Fixtures compile working stateful React and reject bad source, unsupported imports and path escapes.
+- [ ] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
+  Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
+- [ ] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
+  Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
+- [ ] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
+  Done: Offline packaged tests verify arm64/x64 resources and a working saved design; run `docs:generate` when scripts change.
+
 **Files:** Create `sidecar/src/canvas/{CanvasBuilds.ts,compiler.ts,compilerWorker.ts,designSystems.ts,CanvasBuilds.test.ts,compiler.test.ts,designSystems.test.ts}`, the initial `sidecar/src/canvas/presets/droidex.ts`, and `src/features/canvas/{previewDocument.ts,previewRuntime.ts,DesignPreview.tsx}`. Modify `sidecar/package.json`, `electron-builder.config.cjs` and the Task 1 runtime test. Change `electron/main.cjs`/preload only for the proven host's narrow needs; generated code receives no preload.
 
-**Interfaces:** `compileDesign(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign>` lives in the compiler worker. `CompileInput = { designId: string; revisionId: string; generation: number; files: SourceFiles; designSystem: DesignSystemRef }`. `CompiledDesign = { artifactId: string; html: string; diagnostics: CanvasDiagnostic[]; elements: SourceElement[] }` uses the Task 2 element DTO; Task 7 adds the instrumentation that populates it. `CanvasBuilds.enqueue(canvasId: string, receipt: WriteReceipt): void` coalesces per-design jobs; `cancelCanvas(canvasId: string): void` and `close(): Promise<void>` own cancellation/cleanup. `DesignPreview` consumes one frame/artifact and reports bounded preview events, never a provider/session object. Establish the `DesignSystem`, `readDesignSystem` and `saveDesignSystem` contracts specified in Task 6 here so compilation and Task 4 theme tools have a working default kit before the picker and additional presets arrive.
+**Interfaces:** `compileDesign(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign>` lives in the compiler worker. `CompileInput = { designId: string; revisionId: string; generation: number; files: SourceFiles; designSystem: DesignSystemRef }`. `CompiledDesign = { artifactId: string; html: string; diagnostics: CanvasDiagnostic[]; elements: SourceElement[] }` uses the Task 2 element DTO; Task 8 adds the instrumentation that populates it. `CanvasBuilds.enqueue(canvasId: string, receipt: WriteReceipt): void` coalesces per-design jobs; `cancelCanvas(canvasId: string): void` and `close(): Promise<void>` own cancellation/cleanup. `DesignPreview` consumes one frame/artifact and reports bounded preview events, never a provider/session object. Establish the `DesignSystem`, `readDesignSystem` and `saveDesignSystem` contracts specified in Task 7 here so compilation and Task 4 theme tools have a working default kit before the picker and additional presets arrive.
 
 - [ ] Add compile fixtures for working React state, CSS, relative modules, bad TSX, unsupported import and attempts to read outside the virtual tree. Reject undeclared packages, URL imports, Node builtins and filesystem escapes in the resolver. Never invoke generated source in the sidecar process.
-- [ ] Implement versioned kit persistence and the initial DROIDEX tokens plus Button/Card primitives using the Task 6 signatures/example. Resolve the pinned `@droidex/design-system` virtual module in the worker now. Test version immutability and a compiled stateful example; Task 6 extends this working owner with the complete presets, picker and image workflow, not a replacement path.
+- [ ] Implement versioned kit persistence and the initial DROIDEX tokens plus Button/Card primitives using the Task 7 signatures/example. Resolve the pinned `@droidex/design-system` virtual module in the worker now. Test version immutability and a compiled stateful example; Task 7 extends this working owner with the complete presets, picker and image workflow, not a replacement path.
 - [ ] Build in a worker with two global slots, per-design coalescing and a 15-second deadline; terminate an overdue worker and release its slot. Save complete source before scheduling. Source submission returns a revision receipt; `canvas_read/inspect` and UI events report the eventual build state without holding a provider tool call open indefinitely.
 - [ ] Pin the result to captured identity, revision and generation. The narrow publication predicate is:
 
@@ -306,6 +327,17 @@ Also require the owning lifecycle to remain active after each await; this predic
 - [ ] Add offline packaged-app tests that open a saved design, rebuild it and use its button without checkout dependencies. Run focused compiler/build tests, the Electron Canvas smoke and `rtk proxy npm run build`; verify arm64 and x64 resources. Update generated script documentation if scripts change.
 
 ## Task 4: One MCP surface, correct provider routing and clean transcripts
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
+  Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
+- [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
+  Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
+- [ ] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
+  Done: All three provider canaries stay absent from app-owned surfaces while matching user text remains visible.
+- [ ] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
+  Done: Each provider records live scope/routing results; unavailable account access remains explicitly unverified.
 
 **Files:** Create `sidecar/src/canvas/{canvasMcpServer.ts,canvasTurnContext.ts,canvasToolPresentation.ts,canvasMcpServer.test.ts,canvasTurnContext.test.ts,canvasToolPresentation.test.ts}`. Modify `sidecar/src/{SessionManager.ts,SessionLifecycle.ts,SessionEventFlow.ts,SessionTimeline.ts,timelineTranscripts.ts,sessionTranscriptParser.ts,sessionSearch.ts,protocol.ts}`, `sidecar/src/providers/{session.ts,primaryTurn.ts,ProviderTranscriptFile.ts}`, `sidecar/src/providers/codex/{CodexProvider.ts,codexSession.ts,appServer.ts}`, `src/{types/bridge.ts,lib/promptSend.ts}`, and owning queue/send/steer callers. Extend existing `SessionManager.mcp.test.ts`, race/queued-delivery tests, native-parser tests and `providers/codex/appServer.test.ts`.
 
@@ -345,6 +377,19 @@ These variables are outputs collected by the owning existing harness fixtures, n
 
 ## Task 5: Persistent Canvas in the utility pane
 
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/05a-canvas-pane-and-empty-state`: Add utility-tool type/picker/lazy surface, `CanvasWorkspace.tsx` shell, Create/Open saved canvas empty state and atomic attachment bootstrap.
+  Done: `canvasState.ts` snapshot/change subscriptions reconcile state; opening an empty pane creates no design or compiler.
+- [ ] `canvas/05b-board-geometry-and-gestures`: Implement `canvasGeometry.ts` and tests plus `CanvasBoard.tsx` pan/zoom/fit, pointer capture and transient frame dragging.
+  Done: Zoom anchors correctly; drag commits once on release and cancellation restores acknowledged geometry.
+- [ ] `canvas/05c-frames-selection-previews`: Implement `DesignFrame.tsx`, Select/Interact, Escape/Enter, multiselect/align/nudge/resize and four live slots with placeholders using `DesignPreview`.
+  Done: Running-board transformed input, clipping, ongoing gestures and layout conflicts preserve source and mounted preview state.
+- [ ] `canvas/05d-navigator-and-toolbar`: Build virtualized `CanvasNavigator.tsx` search, `CanvasToolbar.tsx`, completed context actions and zoom readout.
+  Done: Named/status-labeled controls work in empty/loading/error states and search focuses the requested frame.
+- [ ] `canvas/05e-full-canvas-header`: Add the DROIDEX mark, Canvas wordmark, Chat | Canvas segmented control and canvas picker popover in the expanded header.
+  Done: Light/dark inspection and `tests/integration/canvas.spec.ts` verify pane transitions, real CTA input and persisted attachments.
+
 **Files:** Create `src/features/canvas/{CanvasWorkspace.tsx,CanvasBoard.tsx,DesignFrame.tsx,CanvasToolbar.tsx,CanvasNavigator.tsx,canvasState.ts,canvasGeometry.ts,canvasGeometry.test.ts,canvasState.test.ts}` and `tests/integration/canvas.spec.ts`. Modify `src/lib/{utilityPanel.ts,lazySurfaces.tsx}`, `src/components/utility/{UtilityPane.tsx,utilityToolOptions.ts}`, `src/App.tsx`, `src/hooks/{useStore.tsx,persistedUiPreferences.ts}` and their existing focused tests. Reuse Task 3 `DesignPreview.tsx`.
 
 **Interfaces:** `CanvasWorkspace` consumes `{ appSessionId: string; canvasId: string | null; isExpanded: boolean }` plus focused bridge callbacks using the existing connection pattern. `applyCanvasChange(snapshot: CanvasSnapshot, change: CanvasChange): CanvasSnapshot` updates the feature-local projection. Geometry exports `screenToCanvas(viewport: Viewport, point: Point): Point`, `zoomAtPoint(viewport: Viewport, point: Point, scale: number): Viewport` and `fitFrames(rects: FrameRect[], viewportSize: Point): Viewport`, with `Point = { x: number; y: number }` and `Viewport = { x: number; y: number; scale: number }`. Frame/source ownership remains in Task 2.
@@ -367,12 +412,45 @@ assert.deepEqual(screenToCanvas(zoomAtPoint(before, pointer, 1.6), pointer), scr
 - [ ] Verify the measured guest presentation contract (spec §4): board transforms and pane `overflow` position/clip live `<webview>` previews; DOM controls and Select overlays paint above them. Commit overlay/hit-test changes before subsequent input, and handle an ongoing scroll gesture explicitly. Verify pan/zoom/drag, transformed input, pane clipping and four-preview composition in the running board.
 - [ ] Implement resize, multiselect, align/distribute and keyboard nudge using layout mutations with expected layout versions. Keep dragging transient and send a final layout commit on pointer release; cancel restores the last acknowledged rect. Test zoomed dragging/resizing and a concurrent remote layout conflict without losing source. Do not write manifest state on every pointer move.
 - [ ] Implement Select/Interact and Escape/Enter behavior. The frame header remains the drag handle; preview inputs receive real keyboard events in Interact. Mount at most four visible/active previews; other frames show an existing snapshot or an honest placeholder. Give the interacted frame priority. Releasing a slot may reset that frame's transient component state; retain source and explain the reload on return.
-- [ ] Build virtualized Components search/focus, useful empty/loading/error views and the compact frame toolbar. Expose only completed actions at each local milestone; Task 11 requires the complete menu. Use actual design names and statuses as accessible labels, not icon-only discoverability.
+- [ ] Build virtualized Components search/focus, useful empty/loading/error views and the compact frame toolbar. Expose only completed actions at each local milestone; Task 12 requires the complete menu. Use actual design names and statuses as accessible labels, not icon-only discoverability.
 - [ ] Give the expanded board its own top row. When the Canvas tab is expanded, `UtilityPane`'s header already owns the window's top row (with `WINDOW_CONTROLS_LEAD_PX` for the traffic lights); replace its tab strip there with a small DROIDEX mark and “Canvas” wordmark on the left in the same tone and weight as the chat title pill, a `Chat | Canvas` segmented control in the existing soft `bg-droid-elevated` pill style beside it, and the canvas picker (name, saved canvases, Create) as a popover off the wordmark. Chat returns the pane to its docked width; the composer stays where it is. Zoom readout sits bottom-left and Fit plus Select/Interact bottom-right of the board. No new palette, no second brand; verify light and dark in the running app before polishing.
 - [ ] Add integration behavior: create a frame through the real bridge owner, click its CTA, pan/zoom and expand the pane, then confirm the CTA stays changed while its preview remains mounted. Close/reopen the pane and confirm source/geometry survive; preview-local React state may reset by contract. Start a new chat with this canvas and an ordinary new chat and assert their attachments differ as specified.
 - [ ] Run focused geometry/state/utility tests and `rtk proxy npx playwright test tests/integration/canvas.spec.ts`. Manually inspect light/dark placement with a real chat, narrow utility pane and expanded board. The working create→build→click→reload flow is milestone one, not the final release.
 
-## Task 6: Executable design systems and owned image references
+## Task 6: Canvas artifacts in every chat
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/06a-artifact-card`: Add the inline artifact card at the transcript row boundary from safe Canvas activity, build state and cached thumbnails.
+  Done: Light/dark cards have keyboard-accessible Open that focuses the frame; failed calls creating nothing produce no card.
+- [ ] `canvas/06b-chart-runtime`: Choose one React charting library, record its size/license review and bundle it into the compiler allowlist/runtime like the kit module.
+  Done: An offline chart example compiles and renders without a CDN; recharts (MIT) is the default candidate.
+- [ ] `canvas/06c-artifact-presence`: Reuse shared frame pending bloom and real activity stages for artifacts created from ordinary chats.
+  Done: All three harnesses create/open artifacts without design mode, with identical presence and unchanged passing AppBlock tests.
+
+**Files:** Create `src/features/canvas/CanvasArtifactCard.tsx`. Modify `src/components/messageFeedRows.tsx` and `src/components/MessageBody.tsx` at their transcript row boundary. Extend `CanvasActivity` in `sidecar/src/canvas/canvasToolPresentation.ts` with the card's fields and mirror its bridge payload. Extend the compiler import allowlist and runtime packaging for the chosen chart library; keep chart resources beside the kit module.
+
+**Interfaces:** The card consumes a `CanvasActivity` record plus frame build state and a cached thumbnail, never raw source. The activity supplies safe canvas/frame references and title; build state supplies status. Open attaches/opens that canvas through the existing pane path and focuses that frame. Creating an artifact does not open the pane.
+
+- [ ] Let any chat's agent create React + Tailwind components, charts, dashboards and small apps on that chat's canvas through the same six tools and compiler, without design mode. Reuse atomic attachment bootstrap; support React only, with no HTML/Markdown/SVG artifact kinds.
+- [ ] Show an inline card with a live thumbnail from cached capture or an honest placeholder, title, build status and Open. Verify light/dark presentation and keyboard-accessible Open; the pane opens only on Open and focuses the referenced frame. A failed call that created nothing produces no card.
+- [ ] Choose one bundled React charting library in `canvas/06b-chart-runtime` after a recorded size/license review; recharts (MIT) is the default candidate. Add it to the import allowlist and package it like the kit module, without a CDN. A representative chart example must compile and render offline.
+- [ ] Reuse pending bloom and real queued/writing/building/ready/failed/cancelled stages as shared frame behavior, identical in ordinary chats. Presence comes from actual events and actors, including reduced-motion and hidden/settled cleanup.
+- [ ] Run create/build/Open from an ordinary chat on Droid, Claude Code and Codex. Confirm the existing `/visualize` AppBlock stays exactly as is and its tests are unchanged and passing.
+- [ ] Run focused activity/card/row-boundary tests, unchanged AppBlock tests and the offline packaged chart smoke. Inspect light/dark cards and keyboard Open in the running app; record ordinary-chat results separately for all three harnesses.
+
+## Task 7: Executable design systems and owned image references
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
+  Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
+- [ ] `canvas/07b-design-system-picker`: Add the composer picker and removable system/reference chips with persisted future-request selection.
+  Done: A queued request retains its pinned kit version after the user changes selection.
+- [ ] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
+  Done: Apply uses normal revision/CAS, preserves behavior and reports incompatible mappings without mutating the global kit.
+- [ ] `canvas/07d-image-references`: Import validated images through existing picker/drop and multimodal paths into owned content-addressed storage.
+  Done: Invalid image/path inputs fail; owned images/fonts render offline without exposing private paths.
 
 **Files:** Extend Task 3 `sidecar/src/canvas/{designSystems.ts,designSystems.test.ts}` and `sidecar/src/canvas/presets/droidex.ts`; create `sidecar/src/canvas/presets/{openai-inspired.ts,claude-inspired.ts}` and `src/features/canvas/DesignSystemPicker.tsx`. Extend compiler virtual modules, Canvas storage/schema and existing composer attachment/reference code in `src/components/PromptInput.tsx`, `src/lib/promptSend.ts` and its callers. Extract cohesive composer UI if needed instead of growing its existing monolith.
 
@@ -400,7 +478,18 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
-## Task 7: Element selection, direct edits and source/history UI
+## Task 8: Element selection, direct edits and source/history UI
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
+  Done: Round-trip tests preserve surrounding source and reject stale, repeated or computed edits honestly.
+- [ ] `canvas/08b-element-selection`: Add bounded preview selection events, board overlays and the direct inspector with scoped composer references.
+  Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
+- [ ] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
+  Done: Agent updates preserve the local buffer; explicit Save creates a source revision.
+- [ ] `canvas/08d-revision-history`: Add canonical revision history/diff, read-only viewing and restore through the normal commit/build path.
+  Done: Restore creates a new head, retains later history and reports system version/build status.
 
 **Files:** Create `sidecar/src/canvas/{sourceElements.ts,sourceElements.test.ts}` and `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx}`. Extend `compiler.ts`, preview runtime/event schemas, `CanvasWorkspace.ts`, `canvasMcpServer.ts` and Canvas integration tests.
 
@@ -429,9 +518,20 @@ Also cover escaping `<`, `&`, quotes and Unicode without changing surrounding so
 - [ ] Implement history list and diff using canonical revision files. Viewing a revision is read-only; Restore copies it into a new head through the normal commit/build path, retaining all later history. Include system version and build status in the revision summary.
 - [ ] Verify literal edit→source→build→reload, ambiguous selection, a remote agent edit while the source drawer is dirty, stale element IDs, repeated instances, and restore-as-new-revision. Run focused source-element/workspace tests and the real click/edit flow in Electron; source and rendered result must agree.
 
-## Task 8: Variants, local library and durable board undo
+## Task 9: Variants, local library and durable board undo
 
-**Files:** Create `src/features/canvas/CanvasVariants.tsx` and `sidecar/src/canvas/{canvasLibrary.ts,canvasLibrary.test.ts}`. Extend Task 2 workspace/schema/protocol, Task 5 navigator/toolbar and Task 7 history UI. Add focused cases to `CanvasWorkspace.test.ts` and `tests/integration/canvas.spec.ts`.
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/09a-variants`: Add pinned layout/style/color variant requests, deterministic adjacent placement and explicit target scopes.
+  Done: Idempotent creation leaves the original and siblings independent, including a failed sibling build.
+- [ ] `canvas/09b-duplicate-rename-library`: Implement duplicate/rename and searchable immutable local library copies with independent insertion.
+  Done: Reuse still works after original-canvas deletion and empty-library guidance explains Add to library.
+- [ ] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
+  Done: Undo restores source/location and surfaces remote-layout conflicts without replaying stale moves.
+- [ ] `canvas/09d-saved-canvases-and-deletion`: Add Open saved canvas and explicit whole-canvas deletion with affected attachment disclosure.
+  Done: Deletion unlinks attachments and cancels work while preserving independent library items; chat deletion retains canvas source.
+
+**Files:** Create `src/features/canvas/CanvasVariants.tsx` and `sidecar/src/canvas/{canvasLibrary.ts,canvasLibrary.test.ts}`. Extend Task 2 workspace/schema/protocol, Task 5 navigator/toolbar and Task 8 history UI. Add focused cases to `CanvasWorkspace.test.ts` and `tests/integration/canvas.spec.ts`.
 
 **Interfaces:** `LibraryItem = { itemId: string; name: string; sourceCanvasId: string; source: RevisionRef; designSystem: DesignSystemRef }`. `saveLibraryItem(input: Omit<LibraryItem, 'itemId'>): Promise<LibraryItem>` stores an independent immutable copy of source/assets plus revision provenance; `listLibraryItems(query: string): Promise<LibraryItem[]>` returns bounded summaries. Insertion uses `create` with `{ kind: 'library', itemId }` and makes an independent design. Workspace additions: `removeFrames(scope: CanvasScope, mutationId: string, designIds: string[]): Promise<{ undoId: string }>`, `undoRemoval(scope: CanvasScope, mutationId: string, undoId: string): Promise<CanvasChange>`, `renameFrame(scope: CanvasScope, mutationId: string, designId: string, name: string): Promise<CanvasChange>`, and `removeCanvas(canvasId: string): Promise<void>` behind an explicit app deletion action.
 
@@ -459,7 +559,16 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] Add Open saved canvas and explicit whole-canvas deletion in the canvas picker. Show affected chat attachments before deleting a canvas; unlink those attachments and cancel its work before removing its owned source. Preserve independently saved library items. Never treat chat deletion or closing a pane as whole-canvas deletion.
 - [ ] Run library/workspace tests and the V2-style integration flow: original above two pending variants, independent completion, working CTAs, searchable focus, library insertion, new chat retaining the board and reload after deletion/undo. Inspect the floating menu in narrow/expanded layouts.
 
-## Task 9: Source export, image capture and lifecycle recovery
+## Task 10: Source export, image capture and lifecycle recovery
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/10a-source-export`: Export the selected source revision, owned assets, kit/fonts/licenses and minimal locked-runtime README to a chosen directory.
+  Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
+- [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
+  Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
+- [ ] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
+  Done: Repeated close is harmless and reused provider handles reject old writes/events; committed source survives failures.
 
 **Files:** Create `sidecar/src/canvas/{canvasExport.ts,canvasExport.test.ts}`. Extend the existing Electron file-save/capture bridge at its actual owner and Canvas context actions; inspect `electron/main.cjs` and `electron/preload.cjs` before placing code. Extend runtime smoke and workspace/build teardown tests.
 
@@ -472,7 +581,18 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] Complete shutdown/profile isolation: cancel queues before awaiting external cleanup, terminate compiler workers, stop preview hosts/subscriptions, revoke MCP scopes, and release all waiters. Verify repeated close is harmless and a new session with a reused provider handle cannot accept old writes/events. Run failure cases with locked/unavailable capture, not only a visible happy-path window.
 - [ ] Run focused export, teardown and runtime tests; manually export a stateful design and confirm PNG and source describe the selected revision. Record capture limitations honestly.
 
-## Task 10: Motion, accessibility and measured performance
+## Task 11: Motion, accessibility and measured performance
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/11a-canvas-motion`: Implement feature-local motion tokens and truthful bloom, ready reveal and actor presence from real events.
+  Done: Busy animation stops offscreen, hidden, settled and under reduced motion; direct input stays immediate.
+- [ ] `canvas/11b-keyboard-and-identity`: Preserve mounted frame identity and add roving focus, restoration and concise accessible status announcements.
+  Done: Pane/inspector transitions retain state and text inputs keep ordinary editing shortcuts.
+- [ ] `canvas/11c-canvas-performance`: Measure the mixed board workload, live slots, close/reopen memory and idle work, then run replay and bundle gates.
+  Done: Recorded hardware evidence meets §11 targets or documents investigated misses; closed Canvas stays out of startup loading.
+- [ ] `canvas/11d-visual-pass`: Compare the running app with both videos and record narrow/expanded light/dark and reduced-motion behavior.
+  Done: Observed bloom, reveal, toolbar, variants, anchored zoom and expansion satisfy visual acceptance.
 
 **Files:** Create `src/features/canvas/canvasMotion.ts`. Refine board/frame/toolbar/inspector/navigator/preview components, existing `src/lib/theme.ts` only where chrome tokens genuinely need adjustment, and `tests/integration/canvas.spec.ts`. Extend the existing GUI benchmark/replay tooling at `tools/gui-bench-run.ts` and `sidecar/src/perf/` only with useful Canvas workloads; keep generated reports under `reports/`.
 
@@ -500,7 +620,18 @@ Direct pointer input bypasses easing. First ready content crossfades without a m
 - [ ] Run `rtk proxy npm run perf:replay -- --scenario idle`, then `streaming`, `multi-agent` and `session-switch`; compare with `origin/main` using existing `perf:compare`, `perf:report` and `perf:gates`. Run `quality:bundle-budgets` and compare startup/lazy chunk size. Canvas closed must not load the compiler, kit source or preview bundle into the renderer's startup path.
 - [ ] Watch both supplied videos alongside the local app. Check pending bloom, ready reveal, toolbar positioning, variant placement, cursor-anchored zoom and pane expansion. Record the app in light and dark plus reduced motion. Visual acceptance is actual observed behavior, not a passing build or an animation screenshot.
 
-## Task 11: Full acceptance, documentation and implementation handoff
+## Task 12: Full acceptance, documentation and implementation handoff
+
+**Subtasks (one branch and PR each, merged in order):**
+
+- [ ] `canvas/12a-acceptance-matrix`: Run spec §12 flows on every supported harness, including create, interact, edits, variants, reuse and reload.
+  Done: Provider create/resume/close evidence is recorded separately; auth/quota limitations remain unverified.
+- [ ] `canvas/12b-repository-gates`: Run the listed Node.js 22 repository checks and include replay plus packaged arm64/x64 evidence.
+  Done: Applicable gates pass with existing coverage/suppression policy; later fixes rerun affected checks.
+- [ ] `canvas/12c-docs-and-demo`: Document discoverable workflow/limits in architecture, Canvas docs, README and app help; record the product demo.
+  Done: Documentation describes implemented behavior and the demo shows real clicks and persisted designs in both pane sizes.
+- [ ] `canvas/12d-final-review-and-cleanup`: Review identity, stale work, ownership, controls, privacy and limits; remove scratch artifacts and superseded paths.
+  Done: The handoff reports actual checks, measurements, verification rows and remaining limitations without claiming undelivered work.
 
 **Files:** Update `docs/architecture.md`, create `docs/canvas.md`, update `README.md`, `docs/generated/project-reference.md` only via its generator when scripts change, and the existing release-note location used by the execution branch. Extend the Task 5 integration and Task 1 Electron smoke only for uncovered meaningful behavior.
 
@@ -529,7 +660,7 @@ npx playwright test tests/integration/canvas.spec.ts
 npx playwright test --config=playwright.canvas-smoke.config.ts
 ```
 
-Run `npm run docs:generate` before `docs:check` when script/environment documentation changes. Retain existing coverage thresholds and lint suppressions policy. Include the Task 10 replay evidence and actual packaged arm64/x64 runtime evidence in the handoff; unsigned testing does not authorize a signed release.
+Run `npm run docs:generate` before `docs:check` when script/environment documentation changes. Retain existing coverage thresholds and lint suppressions policy. Include the Task 11 replay evidence and actual packaged arm64/x64 runtime evidence in the handoff; unsigned testing does not authorize a signed release.
 
 - [ ] Document discoverable Canvas entry, one-composer workflow, Select/Interact, shortcuts, supported source/imports, kit versions, direct-edit limits, state reset on revisions/eviction, local storage, export, recovery and the exact privacy guarantee. Link the workflow from README and the in-app empty state/help. Add the honest feature sentence from the spec only after the feature exists.
 - [ ] Record a short product demo using both the narrow utility pane and expanded canvas. Demonstrate actual clicks and persisted designs rather than only generation animation. Use the original recordings as reference; do not redistribute them as DROIDEX marketing assets.
