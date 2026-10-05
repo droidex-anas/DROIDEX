@@ -80,7 +80,9 @@ function createBrowserMasking({ savedSecretsFor }) {
       for (const node of (await axTree(dbg, frame)).nodes) {
         if (!node.ignored) shown.add(`${frame.sessionId}:${node.backendDOMNodeId}`);
         const field = fieldOf(node, frame);
-        if ((field?.value || field?.editable) && (await isSensitive(dbg, field, logins)))
+        // A field with no value can still show what it holds, such as a
+        // listbox's options, so every field is checked.
+        if (field && (await isSensitive(dbg, field, logins)))
           add(frame.sessionId, field.backendNodeId, field.editable);
       }
     }
@@ -138,8 +140,7 @@ function createBrowserMasking({ savedSecretsFor }) {
     const nodes = new Set();
     for (const node of tree.nodes) {
       const field = fieldOf(node, frame);
-      if ((field?.value || field?.editable) && (await isSensitive(dbg, field, logins)))
-        nodes.add(node.nodeId);
+      if (field && (await isSensitive(dbg, field, logins))) nodes.add(node.nodeId);
     }
     return nodes;
   }
