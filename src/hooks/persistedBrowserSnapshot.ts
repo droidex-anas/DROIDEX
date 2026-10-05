@@ -16,20 +16,6 @@ export function loadPersistedBrowsers(value: unknown): Record<string, BrowserSta
   return Object.fromEntries(entries);
 }
 
-export function persistBrowsers(
-  browsers: Record<string, BrowserState>,
-): Record<string, BrowserState> {
-  return Object.fromEntries(
-    Object.entries(browsers).map(([key, browser]) => [
-      key,
-      {
-        ...browser,
-        agentCursor: undefined,
-      },
-    ]),
-  );
-}
-
 function sanitizePersistedBrowser(key: string, value: unknown): BrowserState | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const browser = value as Partial<BrowserState>;

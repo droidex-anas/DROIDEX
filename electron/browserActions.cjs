@@ -27,6 +27,7 @@ function createBrowserActions({
   credentials,
   unthrottled,
   redactUrl,
+  onPoint,
 }) {
   const { refuseCovered } = createBrowserCover({ reading });
 
@@ -96,6 +97,8 @@ function createBrowserActions({
   async function pointer(contents, entry, request, step) {
     const target = await targetOf(contents, entry, request, step);
     const { x, y } = target;
+    // Where the pane draws the agent's cursor; the input does not wait for it.
+    onPoint(entry, { x, y });
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
     if (request.action !== 'click') return;
@@ -131,6 +134,7 @@ function createBrowserActions({
     const target = request.ref
       ? await reading.pointForRef(contents, entry, request.ref, () => notLate(step))
       : await targetOf(contents, entry, request, step);
+    onPoint(entry, { x: target.x, y: target.y });
     const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
     const sign = request.direction === 'up' || request.direction === 'left' ? -1 : 1;
     const horizontal = request.direction === 'left' || request.direction === 'right';

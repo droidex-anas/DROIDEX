@@ -21,7 +21,7 @@ import {
   sanitizeUtilityPanels,
   type UtilityPanelState,
 } from '../lib/utilityPanel';
-import { loadPersistedBrowsers, persistBrowsers } from './persistedBrowserSnapshot';
+import { loadPersistedBrowsers } from './persistedBrowserSnapshot';
 
 export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
@@ -385,7 +385,7 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     sidebarCollapsed: state.sidebarCollapsed,
     specMode: state.specMode,
     missionControlMode: state.missionControlMode,
-    browsers: persistBrowsers(state.browsers),
+    browsers: state.browsers,
     selectedFeatureId: state.selectedFeatureId,
     mainView: state.mainView,
     prWorkspaceCwd: state.prWorkspaceCwd,
