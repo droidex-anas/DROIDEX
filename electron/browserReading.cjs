@@ -131,15 +131,18 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
         : render.refsCut
           ? ` (refs stop after ${MAX_REFS} elements; read one ref for more)`
           : '';
+      const complete = !render.exhausted && !render.skipped;
       if (results.length === 0)
         return {
           text: `No match for ${JSON.stringify(query)}${partial}.\n${footer(contents)}`,
           matches: 0,
+          complete,
         };
       const blocks = results.map((chain) => chain.map(indent).join('\n'));
       return {
         text: `${blocks.join('\n\n')}${partial ? `\n…${partial}` : ''}\n${footer(contents)}`,
         matches: results.length,
+        complete,
       };
     });
   }
@@ -147,9 +150,10 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   // A viewport point at the middle of the ref's element, scrolled into view,
   // the same point in its frame's own viewport, and the document it was
   // resolved in.
-  async function pointForRef(contents, entry, ref) {
+  // `before` runs right before the page is scrolled.
+  async function pointForRef(contents, entry, ref, before) {
     return withPage(contents, async (dbg) => {
-      const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref);
+      const { quad, local, document, sessionId } = await visibleQuad(dbg, entry, ref, before);
       // The point in the ref's own frame stays unrounded, so mapped out of its
       // frame for the cover check it lands on the point that is clicked.
       return { ...centrePixelOf(quad), local: centreOf(local), document, sessionId };
@@ -158,10 +162,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   // The ref's element scrolled into view: its first visible quad in the page's
   // viewport, wherever its frame runs.
-  async function visibleQuad(dbg, entry, ref) {
+  async function visibleQuad(dbg, entry, ref, before) {
     const { backendNodeId, document, frame } = await lookupRef(dbg, entry, ref);
     const { sessionId } = frame;
-    await scrollFrameIntoView(dbg, sessionId).catch(() => undefined);
+    await scrollFrameIntoView(dbg, sessionId, before);
+    before?.();
     await send(dbg, sessionId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId }).catch(
       () => undefined,
     );
@@ -176,8 +181,8 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
 
   // The ref's element as a viewport box, for a screenshot crop, and the
   // session of the frame it is in.
-  async function refBox(dbg, entry, ref) {
-    const { quad, sessionId } = await visibleQuad(dbg, entry, ref);
+  async function refBox(dbg, entry, ref, before) {
+    const { quad, sessionId } = await visibleQuad(dbg, entry, ref, before);
     return { ...boundsOf(quad), sessionId };
   }
 
@@ -238,23 +243,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     }
   }
 
-  // Whether a node is what its own document or shadow root has focused.
-  async function hasFocus(dbg, sessionId, backendNodeId) {
-    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
-    try {
-      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: object.objectId,
-        functionDeclaration: 'function () { return this.getRootNode().activeElement === this; }',
-        returnByValue: true,
-      });
-      return result?.value === true;
-    } finally {
-      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
-        () => undefined,
-      );
-    }
-  }
-
   async function lookupRef(dbg, entry, ref) {
     const known = knownRef(entry, ref);
     if (!known) throw new Error(`Unknown ref ${ref}; call browser_read_page for current refs.`);
@@ -282,7 +270,11 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
   }
 
   async function renderFrames(dbg, render) {
-    const frames = await documentFrames(dbg);
+    const frames = await documentFrames(dbg, {
+      onSkip: () => {
+        render.skipped = true;
+      },
+    });
     for (const frame of frames) {
       const tree = await axTree(dbg, frame);
       const root = tree.nodes.find((node) => !node.parentId);
@@ -438,7 +430,6 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     pointForRef,
     assertDocument,
     lookupRef,
-    hasFocus,
     callOnRef,
     selectorForRef,
     refBox,

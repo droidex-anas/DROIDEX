@@ -622,7 +622,8 @@ type BrowserNativeAction =
   | 'capture'
   | 'screenshot'
   | 'close'
-  | 'fillCredentials';
+  | 'fillCredentials'
+  | 'wait';
 
 export interface BrowserNativeRequest {
   requestId: string;
@@ -640,6 +641,10 @@ export interface BrowserNativeRequest {
   y?: number;
   selector?: string;
   text?: string;
+  /** browser_wait: text that must be gone, an address fragment, how long. */
+  textGone?: string;
+  urlIncludes?: string;
+  waitMs?: number;
   value?: string;
   submit?: boolean;
   key?: string;

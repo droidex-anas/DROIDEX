@@ -2,6 +2,7 @@ const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createBrowserActions } = require('./browserActions.cjs');
+const { createBrowserWait } = require('./browserWait.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 
 function createNativeBrowserPage({
@@ -33,6 +34,7 @@ function createNativeBrowserPage({
     unthrottled,
     redactUrl: redactBrowserDiagnosticUrl,
   });
+  const waits = createBrowserWait({ reading });
 
   function setDesignMode(browserSessionId, active) {
     const entry = ensureEntry(browserSessionId);
@@ -70,6 +72,8 @@ function createNativeBrowserPage({
     const entry = await restoreForAction(request.browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
+    // Waking the page can outlast the caller; then nothing more is done.
+    if (Date.now() >= request.startBy) throw new Error('The browser page did not finish in time.');
     if (request.action === 'find') {
       const found = await reading.find(contents, entry, request.query);
       return { requestId: request.requestId, ok: true, ...found };
@@ -90,6 +94,11 @@ function createNativeBrowserPage({
       // Capturing needs the page to keep producing frames.
       const shot = await unthrottled(contents, () => screenshots.take(contents, entry, request));
       return { requestId: request.requestId, ok: true, ...shot };
+    }
+    if (request.action === 'wait') {
+      // The page runs at full speed while the agent waits on it.
+      await unthrottled(contents, () => waits.wait(contents, entry, request));
+      return actions.act(contents, entry, { ...request, action: 'snapshot' });
     }
     return actions.act(contents, entry, request);
   }

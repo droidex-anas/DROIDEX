@@ -42,7 +42,6 @@ class FakeRuntime implements BrowserRuntime {
   canGoBack = false;
   canGoForward = false;
   omitHistory = false;
-  snapshotRequests = 0;
   clickError?: Error;
   viewportError?: Error;
 
@@ -93,9 +92,8 @@ class FakeRuntime implements BrowserRuntime {
     return Buffer.from('crop').toString('base64');
   }
 
-  async snapshot(url = 'http://127.0.0.1:1420/') {
-    this.snapshotRequests += 1;
-    return this.stateSnapshot(url);
+  async wait() {
+    return this.result();
   }
 
   private result(url?: string) {
@@ -218,10 +216,9 @@ test('refs go straight to the page, which resolves them', async () => {
   assert.deepEqual(runtime.hovers, [{ ref: 'e1' }]);
   assert.deepEqual(runtime.selections, [{ ref: 'e1', value: 'active' }]);
   assert.deepEqual(runtime.inspections, [{ ref: 'e1' }]);
-  assert.equal(runtime.snapshotRequests, 0);
 });
 
-test('a failed resize keeps the viewport and emits nothing, and a resize requests no snapshot', async () => {
+test('a failed resize keeps the viewport and emits nothing, and a resize records the viewport mode', async () => {
   const updates: BrowserState[] = [];
   const { manager, runtime } = await opened({ emit: recordUpdates(updates) });
   const mobile = {
@@ -242,7 +239,6 @@ test('a failed resize keeps the viewport and emits nothing, and a resize request
   delete runtime.viewportError;
   const state = await manager.resizeViewport(mobile);
   assert.equal(state.viewportMode, 'mobile');
-  assert.equal(runtime.snapshotRequests, 0);
 });
 
 test('agent clicks move the visible agent cursor, even when the click fails', async () => {

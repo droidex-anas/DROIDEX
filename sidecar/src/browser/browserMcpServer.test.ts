@@ -23,6 +23,7 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
       'browser_resize',
       'browser_scroll',
       'browser_wait',
+      'browser_batch',
       'browser_inspect',
       'browser_network',
       'browser_console',

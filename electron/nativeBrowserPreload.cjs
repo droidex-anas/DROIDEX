@@ -129,7 +129,27 @@ Object.assign(globalThis, {
   __droidexApplyDesignState: applyState,
   __droidexInspect: inspectElement,
   __droidexFillCredentials: fillCredentials,
+  __droidexNextChange: nextChange,
 });
+
+// Resolves at the next change to the document, or after ms, for browser_wait.
+function nextChange(ms) {
+  return new Promise((resolve) => {
+    const done = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve();
+    };
+    const observer = new MutationObserver(done);
+    const timer = setTimeout(done, ms);
+    observer.observe(document, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  });
+}
 
 ipcRenderer.on('native-browser-design-prompt-sent', (_event, payload) => {
   // Ignore acks that do not match the capture currently in flight: a stale ack
@@ -411,6 +431,12 @@ function fillCredentials(payload) {
   try {
     if (!payload || payload.origin !== location.origin)
       return { ok: false, filled: false, error: 'The page changed before the login was filled.' };
+    // Checked again around each focus: the page's handlers can take their time.
+    const inTime = () => {
+      if (payload.startBy && Date.now() >= payload.startBy)
+        throw new Error('The browser page did not finish in time.');
+    };
+    inTime();
     const username = typeof payload.username === 'string' ? payload.username : '';
     const password = typeof payload.password === 'string' ? payload.password : '';
     if (!password) return { ok: false, filled: false };
@@ -418,9 +444,9 @@ function fillCredentials(payload) {
     if (!passwordField) return { ok: false, filled: false };
     if (username) {
       const userField = usernameFieldFor(passwordField);
-      if (userField) setFieldValue(userField, username);
+      if (userField) setFieldValue(userField, username, inTime);
     }
-    setFieldValue(passwordField, password);
+    setFieldValue(passwordField, password, inTime);
     return { ok: true, filled: true };
   } catch (err) {
     return { ok: false, filled: false, error: err instanceof Error ? err.message : String(err) };
@@ -448,8 +474,10 @@ function usernameFieldFor(passwordField) {
   );
 }
 
-function setFieldValue(field, value) {
+function setFieldValue(field, value, inTime) {
+  inTime();
   field.focus();
+  inTime();
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
   if (setter) setter.call(field, value);
   else field.value = value;
