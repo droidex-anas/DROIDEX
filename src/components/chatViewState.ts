@@ -1,4 +1,5 @@
-import { activeTab } from '../features/tabs/tabStrip';
+import { activeGrid, activeTab } from '../features/tabs/tabStrip';
+import { gridTiles } from '../features/tabs/tileGrid';
 import type { AppState } from '../hooks/useStore';
 
 const EMPTY_TRANSCRIPT: never[] = [];
@@ -15,6 +16,15 @@ function startingCompose(current: AppState, tileId: string | null) {
       return origin?.tabId === tab.id && origin.tileId === shownTileId;
     })
     .at(-1);
+}
+
+// The live draft belongs to the focused tile; any other new-chat tile keeps
+// its own in the tab's grid.
+function shownDraft(current: AppState, tileId: string | null): AppState['draftChat'] {
+  const grid = activeGrid(current.tabStrip);
+  if (!tileId || !grid || grid.focusedTileId === tileId) return current.draftChat;
+  const page = gridTiles(grid).find((tile) => tile.id === tileId)?.page;
+  return page?.kind === 'new-chat' ? page.draft : null;
 }
 
 export function selectChatViewState(
@@ -35,7 +45,7 @@ export function selectChatViewState(
     childAccess: current.childAccess,
     childHistory: current.childHistory,
     childSessions: current.childSessions,
-    draftChat: current.draftChat,
+    draftChat: shownDraft(current, tileId),
     historyCursor: current.historyCursor,
     historyLoadingOlder: current.historyLoadingOlder,
     models: current.models,

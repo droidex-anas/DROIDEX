@@ -133,3 +133,36 @@ test('a new chat shows the message sent from its own place while it starts', () 
   assert.equal(selectChatViewState(sentFrom('left'), null, null).startingCompose, undefined);
   assert.equal(selectChatViewState(sentFrom(tab.tileId), null, null).startingCompose?.text, 'hi');
 });
+
+test('a new-chat tile offers its own draft while another tile has focus', () => {
+  const [tab] = initialState.tabStrip.tabs;
+  const page = (cwd: string) => ({
+    kind: 'new-chat' as const,
+    draft: { cwd, executionMode: 'local' as const },
+  });
+  const state: AppState = {
+    ...initialState,
+    draftChat: page('/focused').draft,
+    tabStrip: {
+      ...initialState.tabStrip,
+      tabs: [
+        {
+          ...tab,
+          page: {
+            kind: 'tiles',
+            grid: {
+              columns: [
+                { tiles: [{ id: 'left', page: page('/focused') }], rowSplit: 0.5 },
+                { tiles: [{ id: 'right', page: page('/beside') }], rowSplit: 0.5 },
+              ],
+              columnSplit: 0.5,
+              focusedTileId: 'left',
+            },
+          },
+        },
+      ],
+    },
+  };
+  assert.equal(selectChatViewState(state, null, 'left').draftChat?.cwd, '/focused');
+  assert.equal(selectChatViewState(state, null, 'right').draftChat?.cwd, '/beside');
+});
