@@ -49,6 +49,16 @@ const persistedDesignSchema = z
 // response answers the original result rather than today's state.
 const fingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
 
+// What one accepted arrange acknowledged, and all it has to retain: the layout
+// an arrange changes is the layout a retry has to answer for.
+const placementSchema = z
+  .object({
+    designId: canvasIdentifierSchema,
+    layoutVersion: versionSchema,
+    rect: frameRectSchema,
+  })
+  .strict();
+
 const persistedMutationSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -74,7 +84,7 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       mutationId: canvasIdentifierSchema,
       fingerprint: fingerprintSchema,
       sequence: versionSchema,
-      designs: z.array(persistedDesignSchema),
+      placements: z.array(placementSchema),
     })
     .strict(),
 ]);
@@ -105,6 +115,7 @@ export const canvasManifestSchema = z
   });
 
 export type PersistedDesign = z.infer<typeof persistedDesignSchema>;
+export type Placement = z.infer<typeof placementSchema>;
 export type PersistedMutation = z.infer<typeof persistedMutationSchema>;
 export type CanvasManifest = z.infer<typeof canvasManifestSchema>;
 
@@ -196,9 +207,23 @@ export function recordedArrange(
   return {
     canvasId: manifest.canvasId,
     sequence: record.sequence,
-    frames: record.designs.map(toFrame),
+    // The layout comes from the record, the rest of each frame from the current
+    // head, so a frame later commits removed is simply no longer in the answer.
+    frames: record.placements.flatMap((placement) => {
+      const design = manifest.designs.find((entry) => entry.designId === placement.designId);
+      return design ? [toFrame({ ...design, ...placement })] : [];
+    }),
     removedDesignIds: [],
   };
+}
+
+/** The layout an accepted arrange acknowledged, which is all a retry answers. */
+export function toPlacements(designs: readonly PersistedDesign[]): Placement[] {
+  return designs.map((design) => ({
+    designId: design.designId,
+    layoutVersion: design.layoutVersion,
+    rect: { ...design.rect },
+  }));
 }
 
 /** A digest of one command's arguments, so a retried ID must carry that request. */

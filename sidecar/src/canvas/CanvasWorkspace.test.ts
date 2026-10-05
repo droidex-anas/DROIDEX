@@ -231,7 +231,7 @@ test('two writers against one expected revision accept exactly one source head',
   );
 });
 
-test('a layout change and a source write on one frame both land', async (t) => {
+test('a layout change and a source write both land, and an arrange retry answers its own layout', async (t) => {
   const staged = deferred();
   const gate = deferred();
   const { workspace, scope, canvasId, designId } = await withFrame(t, {
@@ -261,15 +261,24 @@ test('a layout change and a source write on one frame both land', async (t) => {
   assert.deepEqual(frame?.rect, rect);
   assert.equal(frame.layoutVersion, 1);
   assert.equal(frame.revisionId, receipt.revisionId);
-  // A retry answers the positions it accepted; the same ID carrying a different
-  // request is a caller error, not a retry.
-  assert.deepEqual(
-    await workspace.arrange(scope, {
-      mutationId: 'arrange-hey',
-      frames: [{ designId, expectedLayoutVersion: 0, rect }],
-    }),
-    change,
-  );
+  // A second arrange moves the frame on, so the retry below can only answer
+  // the first layout from what that commit recorded.
+  const movedAgain = { x: 60, y: 0, width: 720, height: 720 };
+  await workspace.arrange(scope, {
+    mutationId: 'arrange-again',
+    frames: [{ designId, expectedLayoutVersion: 1, rect: movedAgain }],
+  });
+  const retried = await workspace.arrange(scope, {
+    mutationId: 'arrange-hey',
+    frames: [{ designId, expectedLayoutVersion: 0, rect }],
+  });
+  assert.equal(retried.sequence, change.sequence);
+  assert.deepEqual(retried.frames[0]?.rect, rect);
+  assert.equal(retried.frames[0]?.layoutVersion, 1);
+  assert.deepEqual(workspace.snapshot(canvasId).frames[0]?.rect, movedAgain);
+  // Fields the retry does not own show the current head, which is why the
+  // renderer discards a change older than its projection.
+  assert.equal(retried.frames[0]?.revisionId, receipt.revisionId);
   await assert.rejects(
     workspace.arrange(scope, {
       mutationId: 'arrange-hey',

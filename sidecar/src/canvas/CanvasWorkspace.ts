@@ -24,6 +24,7 @@ import {
   recordedWrite,
   recordMutation,
   toFrame,
+  toPlacements,
   type CanvasManifest,
   type PersistedDesign,
 } from './canvasManifest.js';
@@ -261,11 +262,9 @@ export class CanvasWorkspace {
               'revision_conflict',
               'That frame moved. Read its current layout version and place it again.',
             );
-          design.rect = frame.rect;
+          design.rect = { ...frame.rect };
           design.layoutVersion += 1;
-          // A copy: the record answers a retry with the result it returned, not
-          // with wherever the frame ends up later.
-          moved.push(structuredClone(design));
+          moved.push(design);
         }
         next.sequence += 1;
         next.updatedAt = Date.now();
@@ -274,7 +273,9 @@ export class CanvasWorkspace {
           mutationId: input.mutationId,
           fingerprint,
           sequence: next.sequence,
-          designs: moved,
+          // A retry answers this sequence and this layout; a frame's other
+          // fields follow the current head, which the renderer discards as old.
+          placements: toPlacements(moved),
         });
         await this.heads.install(next, this.scopedGate(scope, designIds));
         return canvasChange(next, moved);
