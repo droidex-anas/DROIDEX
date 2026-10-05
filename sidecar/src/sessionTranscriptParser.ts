@@ -141,10 +141,12 @@ function nonAssistantBlockEvent(
   index: number,
   block: Record<string, unknown>,
   messageRole: string | undefined,
+  textOnly: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'tool_result') {
-    const parts = toolResultParts(block.content);
+    // A text-only read leaves the content, and the pictures it would save, unread.
+    const parts = textOnly ? { text: '' } : toolResultParts(block.content);
     // The app's own transcript files keep the saved paths beside the text.
     const images = parts.images ?? storedImages(block.images);
     return event(base, index, 'tool_result', {
@@ -194,12 +196,14 @@ export function userPromptDisplay(storedText: string) {
 
 // Map one stored JSONL row to its transcript events. Each line converts
 // independently (no cross-line state), which is what makes backward,
-// parse-on-demand windowing safe.
+// parse-on-demand windowing safe. A text-only read, for search, still yields
+// every event so their indices match the replay's.
 export function parseSessionLineEvents(
   appSessionId: string,
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
+  { textOnly = false }: { textOnly?: boolean } = {},
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -284,7 +288,7 @@ export function parseSessionLineEvents(
     const parsed =
       messageRole === 'assistant'
         ? assistantBlockEvent(base, index, block, forkPointId)
-        : nonAssistantBlockEvent(base, index, block, messageRole);
+        : nonAssistantBlockEvent(base, index, block, messageRole, textOnly);
     if (parsed) events.push(parsed);
   });
   return events;
