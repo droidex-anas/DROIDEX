@@ -64,6 +64,12 @@ function liveGrid(stored: TileGrid | null, activeAppSessionId: string | null): T
   };
 }
 
+// Which tiles sit in which column of which tab: the layout a divider drags on.
+function layoutKey(tabId: string, grid: TileGrid): string {
+  const columns = grid.columns.map((column) => column.tiles.map((tile) => tile.id).join(','));
+  return `${tabId}/${columns.join('|')}`;
+}
+
 function resized(grid: TileGrid, resize: Resize | null): TileGrid {
   if (!resize) return grid;
   return resize.kind === 'columns'
@@ -142,6 +148,14 @@ export function ChatTiles({
   const areaRef = useRef<HTMLDivElement>(null);
   const [resize, setResize] = useState<Resize | null>(null);
   const live = liveGrid(source.grid, source.activeAppSessionId);
+  // A drag belongs to one layout: a tile closing or a tab switch mid-drag
+  // drops the preview and remounts the dividers, so the release commits nothing.
+  const layout = layoutKey(source.tabId, live);
+  const [resizeLayout, setResizeLayout] = useState(layout);
+  if (layout !== resizeLayout) {
+    setResizeLayout(layout);
+    setResize(null);
+  }
   const grid = resized(live, resize);
   const isSplit = source.grid !== null;
   const boxes = tileBoxes(grid);
@@ -262,6 +276,7 @@ export function ChatTiles({
       })}
       {grid.columns.length > 1 && (
         <TileDivider
+          key={layout}
           orientation="vertical"
           split={grid.columnSplit}
           label="Resize columns"
@@ -286,7 +301,7 @@ export function ChatTiles({
           const { columnIndex } = box;
           return (
             <TileDivider
-              key={box.tile.id}
+              key={`${layout}/${box.tile.id}`}
               orientation="horizontal"
               split={grid.columns[columnIndex].rowSplit}
               label="Resize tiles"

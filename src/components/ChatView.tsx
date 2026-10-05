@@ -228,7 +228,7 @@ function ChatHeader({
             )}
           </>
         )}
-        {tile && <CloseTileButton tileId={tile.id} />}
+        {tile && <CloseTileButton tileId={tile.id} title={title} />}
       </div>
       {appSessionId && <RunningProcessesMenu appSessionId={appSessionId} />}
       {sub?.onStop && (

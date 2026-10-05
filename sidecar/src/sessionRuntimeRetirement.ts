@@ -30,6 +30,7 @@ export interface SessionRetirementFacts {
   queuedSends: number;
   interrupting: boolean;
   closing: boolean;
+  coolingDown: boolean;
   onScreen: boolean;
   hasUnsettledChildren: boolean;
   hasOpenBrowser: boolean;
@@ -92,6 +93,7 @@ export function adoptedSessionFacts(identity: {
     queuedSends: 0,
     interrupting: false,
     closing: false,
+    coolingDown: false,
     onScreen: false,
     hasOpenBrowser: false,
     hasPendingSettings: false,
@@ -112,7 +114,9 @@ export function retirableSessions(
   }
   eligible.sort((a, b) => a.idleSince - b.idleSince);
   const excess = eligible.length - SESSION_RUNTIME_IDLE_LIMIT;
+  // A failed release leaves a live runtime; release the next-oldest instead.
   return eligible
+    .filter((session) => !session.coolingDown)
     .filter((session, index) => index < excess || isDueForRetirement(session, now, idleMs))
     .map((session) => session.appSessionId);
 }
@@ -126,10 +130,12 @@ export function nextSessionRetirementAt(
   let count = 0;
   for (const session of facts) {
     if (!isRetirableSession(session)) continue;
-    if (++count > SESSION_RUNTIME_IDLE_LIMIT) return now;
+    count++;
+    if (session.coolingDown) continue;
     const dueAt = session.idleSince + idleMs;
     if (earliest === undefined || dueAt < earliest) earliest = dueAt;
   }
+  if (count > SESSION_RUNTIME_IDLE_LIMIT && earliest !== undefined) return now;
   return earliest;
 }
 
@@ -240,12 +246,14 @@ export class SessionRuntimeRetirement {
     this.forgetClosedSessions(live);
     const onScreen = this.dependencies.onScreenAppSessionIds();
     if (!onScreen) return [];
-    return live
-      .filter((session) => (this.releaseRetryAt.get(session.summary.appSessionId) ?? 0) <= now)
-      .map((session) => this.describe(session, onScreen));
+    return live.map((session) => this.describe(session, onScreen, now));
   }
 
-  private describe(live: LiveSession, onScreen: ReadonlySet<string>): SessionRetirementFacts {
+  private describe(
+    live: LiveSession,
+    onScreen: ReadonlySet<string>,
+    now: number,
+  ): SessionRetirementFacts {
     const d = this.dependencies;
     const appSessionId = live.summary.appSessionId;
     return {
@@ -257,6 +265,7 @@ export class SessionRuntimeRetirement {
       queuedSends: live.pendingSends.length,
       interrupting: live.interrupting === true || live.interruptingToSend === true,
       closing: live.closeMode !== undefined,
+      coolingDown: (this.releaseRetryAt.get(appSessionId) ?? 0) > now,
       onScreen: onScreen.has(appSessionId),
       hasUnsettledChildren: d.hasUnsettledChildren(appSessionId),
       hasOpenBrowser: d.hasOpenBrowser(appSessionId),

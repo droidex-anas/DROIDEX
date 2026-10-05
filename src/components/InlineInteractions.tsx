@@ -31,13 +31,13 @@ export default function InlineInteractions({
       Boolean(current.pendingQuestions[appSessionId]?.length)
     );
   });
-  const [asked, setAsked] = useState(pending);
+  const [askedSessionId, setAskedSessionId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (pending) setAsked(true);
-  }, [pending]);
+    if (pending) setAskedSessionId(appSessionId);
+  }, [pending, appSessionId]);
 
-  if (!asked || !appSessionId) return null;
+  if (!appSessionId || (!pending && askedSessionId !== appSessionId)) return null;
   return (
     <Suspense fallback={null}>
       {plans && <PlanApprovalInline appSessionId={appSessionId} />}

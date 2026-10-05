@@ -1793,10 +1793,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // longer reports (deleted outside the app, or pruned from a hydrated
       // snapshot). Rows added locally this run are not confirmed yet and
       // survive.
-      const confirmed = state.listConfirmedSessionIds;
+      const confirmed = new Set(state.listConfirmedSessionIds);
+      const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
       const map: Record<string, SessionSummary> = {};
       for (const [id, summary] of Object.entries(state.sessions)) {
-        if (confirmed?.includes(id) && !incoming.has(id)) continue;
+        if (isConfirmedGone(id)) continue;
         map[id] = summary;
       }
       for (const m of action.sessions) {
@@ -1834,9 +1835,7 @@ export function reducer(state: AppState, action: Action): AppState {
       // localStorage does not accumulate orphans. Metadata for rows added
       // locally this run (not yet list-confirmed) survives.
       let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(
-        (id) => confirmed?.includes(id) && !incoming.has(id),
-      );
+      const orphaned = Object.keys(chatMetadata).filter(isConfirmedGone);
       if (orphaned.length > 0) {
         const drop = new Set(orphaned);
         chatMetadata = Object.fromEntries(
@@ -1852,6 +1851,8 @@ export function reducer(state: AppState, action: Action): AppState {
         listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
         earlierSessionsByCwd: action.earlierSessionsByCwd,
         activeAppSessionId,
+        // The list covers every folder in the sidebar, so a restored tab whose
+        // chat neither it nor the snapshot knows has nothing to show.
         tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
       };
       // A focused tile whose chat is gone closes like any other, so the tile

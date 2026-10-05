@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type ReactNode } from 'react';
+import { memo, useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Reorder } from 'framer-motion';
 import { Clock, Columns, Plus, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
@@ -31,7 +31,7 @@ const EDGE_FADE_PX = 28;
 
 // Only the strip scrolls: scrollIntoView would also move the window's own scrollers.
 function revealActiveTab(strip: HTMLElement, behavior: ScrollBehavior) {
-  const tab = strip.querySelector<HTMLElement>('[aria-current="page"]');
+  const tab = strip.querySelector<HTMLElement>('[aria-selected="true"]');
   if (!tab) return;
   const stripRect = strip.getBoundingClientRect();
   const tabRect = tab.getBoundingClientRect();
@@ -39,6 +39,21 @@ function revealActiveTab(strip: HTMLElement, behavior: ScrollBehavior) {
     strip.scrollBy({ left: tabRect.left - stripRect.left - EDGE_FADE_PX, behavior });
   } else if (tabRect.right > stripRect.right - EDGE_FADE_PX) {
     strip.scrollBy({ left: tabRect.right - stripRect.right + EDGE_FADE_PX, behavior });
+  }
+}
+
+function tabIndexForKey(key: string, index: number, count: number): number | null {
+  switch (key) {
+    case 'ArrowLeft':
+      return (index - 1 + count) % count;
+    case 'ArrowRight':
+      return (index + 1) % count;
+    case 'Home':
+      return 0;
+    case 'End':
+      return count - 1;
+    default:
+      return null;
   }
 }
 
@@ -166,6 +181,8 @@ const TabList = memo(function TabList() {
     };
     window.addEventListener('pointerup', reveal, { signal: release.signal });
     window.addEventListener('pointercancel', reveal, { signal: release.signal });
+    // Switching apps mid-press can swallow the release.
+    window.addEventListener('blur', reveal, { signal: release.signal });
   };
 
   // Narrowing the window or opening the sidebar shrinks the strip under the active tab.
@@ -187,11 +204,20 @@ const TabList = memo(function TabList() {
   const close = (tabId: string) => {
     dispatch({ type: 'CLOSE_TAB', tabId });
   };
+  const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const target = tabIndexForKey(event.key, index, items.length);
+    if (target === null) return;
+    event.preventDefault();
+    activate(items[target].id);
+    stripRef.current?.querySelectorAll<HTMLElement>('[role="tab"]').item(target).focus();
+  };
 
   return (
     <>
       <Reorder.Group
         ref={stripRef}
+        role="tablist"
+        aria-label="Tabs"
         onPointerDownCapture={holdRevealUntilRelease}
         as="div"
         axis="x"
@@ -202,7 +228,7 @@ const TabList = memo(function TabList() {
         }}
         className="no-drag no-scrollbar scroll-fade-x flex min-w-0 items-center gap-1 overflow-x-auto"
       >
-        {items.map((item) => {
+        {items.map((item, index) => {
           const active = item.id === activeTabId;
           return (
             <Reorder.Item
@@ -221,7 +247,12 @@ const TabList = memo(function TabList() {
               <HoverTooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">
                 <button
                   type="button"
-                  aria-current={active ? 'page' : undefined}
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  onKeyDown={(event) => {
+                    moveFocus(event, index);
+                  }}
                   // Browsers switch on press, so a drag that starts on a
                   // background tab carries that tab.
                   onPointerDown={(event) => {
@@ -249,12 +280,10 @@ const TabList = memo(function TabList() {
                     {item.label}
                   </span>
                   {item.tileCount > 1 && (
-                    <span
-                      aria-label={`${String(item.tileCount)} chats side by side`}
-                      className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted"
-                    >
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-droid-text-muted">
                       <Columns className="h-3 w-3" />
-                      {item.tileCount}
+                      <span aria-hidden="true">{item.tileCount}</span>
+                      <span className="sr-only">, {item.tileCount} panes side by side</span>
                     </span>
                   )}
                 </button>
@@ -267,6 +296,7 @@ const TabList = memo(function TabList() {
                 <button
                   type="button"
                   aria-label={`Close ${item.label}`}
+                  tabIndex={active ? 0 : -1}
                   onPointerDown={(event) => {
                     // Closing must not first switch to the tab or start a drag.
                     event.stopPropagation();

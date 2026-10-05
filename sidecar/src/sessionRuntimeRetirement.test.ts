@@ -28,6 +28,7 @@ function facts(
     queuedSends: 0,
     interrupting: false,
     closing: false,
+    coolingDown: false,
     onScreen: false,
     hasUnsettledChildren: false,
     hasOpenBrowser: false,
@@ -186,7 +187,8 @@ test('only three settled off-screen runtimes stay warm, longest idle released fi
   }
 });
 
-test('a failed release waits five minutes before counting toward the cap again', async () => {
+test('a failed release counts toward the cap while waiting five minutes to retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   let failRelease = true;
   const h = ownerHarness({
     retire: (appSessionId) => {
@@ -206,20 +208,66 @@ test('a failed release waits five minutes before counting toward the cap again',
     const retryAt = h.clock.now + 5 * 60_000;
 
     await h.owner.sweep();
-    assert.deepEqual(h.retired, []);
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['second']);
+    assert.deepEqual([...h.live.keys()], ['oldest', 'third', 'newest']);
     assert.equal(h.errors.length, 1);
     assert.equal(h.owner.armedFor(), retryAt);
 
     h.clock.now = retryAt - 1;
     await h.owner.sweep();
-    assert.deepEqual(h.retired, []);
+    assert.deepEqual(h.retired, ['second']);
     assert.equal(h.errors.length, 1, 'a sweep during cooldown must not retry the release');
 
     failRelease = false;
-    h.clock.now = retryAt + 1;
+    h.clock.now = retryAt;
+    h.add('resumed', retryAt);
     await h.owner.sweep();
-    assert.deepEqual(h.retired, ['oldest']);
-    assert.equal(h.owner.armedFor(), 2_000 + IDLE_MS);
+    assert.deepEqual(h.retired, ['second', 'oldest']);
+    assert.deepEqual([...h.live.keys()], ['third', 'newest', 'resumed']);
+    assert.equal(h.owner.armedFor(), 3_000 + IDLE_MS);
+  } finally {
+    h.owner.stop();
+  }
+});
+
+test('an over-cap set of cooling-down runtimes waits for retry even past the idle budget', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let failRelease = true;
+  const h = ownerHarness({
+    retire: (appSessionId) => {
+      if (failRelease) return Promise.reject(new Error('flush failed'));
+      h.retired.push(appSessionId);
+      h.live.delete(appSessionId);
+      return Promise.resolve();
+    },
+  });
+  try {
+    h.add('oldest', 1_000);
+    h.add('second', 2_000);
+    h.add('third', 3_000);
+    h.add('newest', 4_000);
+    h.clock.now = IDLE_MS;
+    h.show();
+    const retryAt = h.clock.now + 5 * 60_000;
+
+    for (let attempt = 0; attempt < 4; attempt++) await h.owner.sweep();
+    assert.equal(h.errors.length, 4);
+    assert.equal(h.live.size, 4);
+    assert.equal(h.owner.armedFor(), retryAt, 'cooldowns must not arm an immediate sweep');
+
+    h.clock.now = retryAt - 1;
+    await h.owner.sweep();
+    assert.equal(h.errors.length, 4, 'passing the idle budget must not bypass cooldown');
+    assert.deepEqual(h.retired, []);
+    assert.equal(h.owner.armedFor(), retryAt);
+
+    failRelease = false;
+    h.clock.now = retryAt;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest', 'second', 'third', 'newest']);
+    assert.equal(h.live.size, 0);
+    assert.equal(h.owner.armedFor(), undefined);
   } finally {
     h.owner.stop();
   }
