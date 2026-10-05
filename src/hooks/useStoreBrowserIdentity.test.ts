@@ -19,7 +19,6 @@ test('SESSION_LIST keeps browser state keyed by stable app session identity', ()
     viewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
     viewportMode: 'fit' as const,
     scroll: { x: 0, y: 0 },
-    refs: [],
   };
   const start: AppState = {
     ...initialState,

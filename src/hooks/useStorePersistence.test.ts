@@ -100,7 +100,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
             viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
             viewportMode: 'fit',
             scroll: { x: 3, y: 7 },
-            refs: [],
           },
         },
         selectedFeatureId: 'f1',

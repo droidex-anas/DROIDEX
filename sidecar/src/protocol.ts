@@ -598,19 +598,6 @@ export interface BrowserBox {
   height: number;
 }
 
-export interface BrowserElementRef {
-  ref: string;
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes?: Record<string, string>;
-  className?: string;
-  box: BrowserBox;
-  computedStyles?: Record<string, string>;
-}
-
 interface BrowserState {
   browserSessionId: string;
   appSessionId?: string;
@@ -621,7 +608,6 @@ interface BrowserState {
   screenshotPath?: string;
   screenshotUrl?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
   agentCursor?: { x: number; y: number };
@@ -632,7 +618,6 @@ interface BrowserNativeSnapshot {
   url: string;
   title?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
 }
@@ -675,6 +660,8 @@ type BrowserNativeAction =
   | 'goBack'
   | 'goForward'
   | 'snapshot'
+  | 'readPage'
+  | 'find'
   | 'click'
   | 'hover'
   | 'selectOption'
@@ -697,6 +684,10 @@ export interface BrowserNativeRequest {
   url?: string;
   viewport?: BrowserViewport;
   viewportMode?: BrowserViewportMode;
+  ref?: string;
+  filter?: 'interactive' | 'all';
+  maxChars?: number;
+  query?: string;
   x?: number;
   y?: number;
   selector?: string;
@@ -721,6 +712,10 @@ export interface BrowserNativeResult {
   networkEvents?: BrowserNetworkEvent[];
   consoleEvents?: BrowserConsoleEvent[];
   image?: string;
+  /** What browser_read_page and browser_find show the agent. */
+  text?: string;
+  /** How many lines browser_find matched. */
+  matches?: number;
   error?: string;
 }
 
@@ -1057,7 +1052,6 @@ export type ClientCommand =
       fullPage?: boolean;
       deviceScaleFactor?: number;
     }
-  | { type: 'browser.inspectPoint'; appSessionId: string; x: number; y: number }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
   | {
       type: 'browser.design.sendPrompt';

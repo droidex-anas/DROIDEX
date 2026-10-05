@@ -10,9 +10,9 @@ import {
 } from './BrowserSessionManager.js';
 import type {
   BrowserBox,
-  BrowserElementRef,
   BrowserScreenshotOptions,
   BrowserState,
+  BrowserTarget,
   BrowserViewport,
   DesignAnchor,
   DesignAnchorDetail,
@@ -29,10 +29,10 @@ function createManager(options: BrowserSessionManagerOptions = {}): BrowserSessi
 }
 
 class FakeRuntime implements BrowserRuntime {
-  clicks: { x: number; y: number; selector?: string }[] = [];
-  hovers: { x: number; y: number; selector?: string }[] = [];
-  refs: BrowserElementRef[] = [buttonRef()];
-  selections: { selector: string; value: string }[] = [];
+  clicks: BrowserTarget[] = [];
+  hovers: BrowserTarget[] = [];
+  selections: { ref: string; value: string }[] = [];
+  inspections: ({ ref: string } | { selector: string })[] = [];
   screenshots: BrowserScreenshotOptions[] = [];
   captures: (BrowserBox | undefined)[] = [];
   viewport: BrowserViewport;
@@ -95,24 +95,31 @@ class FakeRuntime implements BrowserRuntime {
       url,
       title: 'Droid Control',
       scroll: { x: 0, y: 0 },
-      refs: this.refs,
       ...(this.omitHistory ? {} : { canGoBack: this.canGoBack, canGoForward: this.canGoForward }),
     };
   }
 
-  async click(x: number, y: number, selector?: string) {
-    this.clicks.push({ x, y, selector });
+  async readPage() {
+    return '- button "Save" [ref=e1]';
+  }
+
+  async find() {
+    return { text: '- button "Save" [ref=e1]', matches: 1 };
+  }
+
+  async click(target: BrowserTarget) {
+    this.clicks.push(target);
     if (this.clickError) throw this.clickError;
     return this.stateSnapshot();
   }
 
-  async hover(x: number, y: number, selector?: string) {
-    this.hovers.push({ x, y, selector });
+  async hover(target: BrowserTarget) {
+    this.hovers.push(target);
     return this.stateSnapshot();
   }
 
-  async selectOption(selector: string, value: string) {
-    this.selections.push({ selector, value });
+  async selectOption(ref: string, value: string) {
+    this.selections.push({ ref, value });
     return this.stateSnapshot();
   }
   async type() {
@@ -124,17 +131,13 @@ class FakeRuntime implements BrowserRuntime {
   async scroll() {
     return this.stateSnapshot();
   }
-  async inspect(selector: string) {
-    const ref = this.refs.find((item) => item.selector === selector);
-    if (!ref) throw new Error('Element not found');
+  async inspect(target: { ref: string } | { selector: string }) {
+    this.inspections.push(target);
     return {
-      selector,
-      tagName: ref.tagName,
-      role: ref.role,
-      name: ref.name,
-      text: ref.text,
-      attributes: ref.attributes ?? {},
-      box: ref.box,
+      selector: 'button',
+      tagName: 'button',
+      attributes: {},
+      box: { x: 10, y: 20, width: 80, height: 30 },
       html: '<button>Save</button>',
     };
   }
@@ -189,35 +192,21 @@ test('reload and history navigation adopt the runtime history state, and a new p
   assert.equal(second.canGoForward, false);
 });
 
-test('actions by ref target the cached selector without a pre-action snapshot', async () => {
+test('refs go straight to the page, which resolves them', async () => {
   const { manager, runtime } = await opened();
-  await manager.click({ appSessionId: 'm1', ref: '@e1' });
-  await manager.hover({ appSessionId: 'm1', ref: '@e1' });
-  await manager.selectOption('m1', '@e1', 'active');
-  const inspection = await manager.inspect('m1', { ref: '@e1' });
+  await manager.click({ appSessionId: 'm1', ref: 'e1' });
+  await manager.hover({ appSessionId: 'm1', ref: 'e1' });
+  await manager.selectOption('m1', 'e1', 'active');
+  await manager.inspect('m1', { ref: 'e1' });
 
-  assert.deepEqual(runtime.clicks, [{ x: 50, y: 35, selector: 'button' }]);
-  assert.deepEqual(runtime.hovers, [{ x: 50, y: 35, selector: 'button' }]);
-  assert.deepEqual(runtime.selections, [{ selector: 'button', value: 'active' }]);
-  assert.equal(inspection.selector, 'button');
-  assert.equal(inspection.html, '<button>Save</button>');
+  assert.deepEqual(runtime.clicks, [{ ref: 'e1' }]);
+  assert.deepEqual(runtime.hovers, [{ ref: 'e1' }]);
+  assert.deepEqual(runtime.selections, [{ ref: 'e1', value: 'active' }]);
+  assert.deepEqual(runtime.inspections, [{ ref: 'e1' }]);
   assert.equal(runtime.snapshotRequests, 0);
 });
 
-test('click by missing ref fails without issuing a runtime action', async () => {
-  const runtime = new FakeRuntime({ width: 1200, height: 800, deviceScaleFactor: 2 });
-  runtime.refs = [];
-  const manager = createManager({ runtimeFactory: () => runtime });
-  await manager.open({ appSessionId: 'm1', url: 'http://127.0.0.1:1420/' });
-
-  await assert.rejects(
-    manager.click({ appSessionId: 'm1', ref: '@e1' }),
-    /Browser ref @e1 is not available/,
-  );
-  assert.deepEqual(runtime.clicks, []);
-});
-
-test('a failed resize keeps the viewport and emits nothing, and a resize clears refs without a snapshot', async () => {
+test('a failed resize keeps the viewport and emits nothing, and a resize requests no snapshot', async () => {
   const updates: BrowserState[] = [];
   const { manager, runtime } = await opened({ emit: recordUpdates(updates) });
   const mobile = {
@@ -237,7 +226,7 @@ test('a failed resize keeps the viewport and emits nothing, and a resize clears 
 
   delete runtime.viewportError;
   const state = await manager.resizeViewport(mobile);
-  assert.deepEqual(state.refs, []);
+  assert.equal(state.viewportMode, 'mobile');
   assert.equal(runtime.snapshotRequests, 0);
 });
 
@@ -245,14 +234,14 @@ test('only agent clicks move the visible agent cursor, even when the click fails
   const updates: BrowserState[] = [];
   const { manager, runtime } = await opened({ emit: recordUpdates(updates) });
 
-  const byUser = await manager.click({ appSessionId: 'm1', ref: '@e1', source: 'user' });
+  const byUser = await manager.click({ appSessionId: 'm1', x: 50, y: 35, source: 'user' });
   assert.equal(byUser.agentCursor, undefined);
-  const byAgent = await manager.click({ appSessionId: 'm1', ref: '@e1' });
+  const byAgent = await manager.click({ appSessionId: 'm1', x: 50, y: 35 });
   assert.deepEqual(byAgent.agentCursor, { x: 50, y: 35 });
 
   const updateCount = updates.length;
   runtime.clickError = new Error('click failed');
-  await assert.rejects(manager.click({ appSessionId: 'm1', ref: '@e1' }), /click failed/);
+  await assert.rejects(manager.click({ appSessionId: 'm1', x: 50, y: 35 }), /click failed/);
   assert.equal(updates.length, updateCount + 1);
   assert.deepEqual(updates.at(-1)?.agentCursor, { x: 50, y: 35 });
 });
@@ -350,20 +339,6 @@ test('open normalizes bare domains and resizes an existing runtime only when giv
   assert.deepEqual(state.viewport, custom);
   assert.equal(state.viewportMode, 'custom');
 });
-
-function buttonRef(): BrowserElementRef {
-  return {
-    ref: '@e1',
-    selector: 'button',
-    tagName: 'button',
-    role: 'button',
-    name: 'Save',
-    text: 'Save',
-    attributes: {},
-    box: { x: 10, y: 20, width: 80, height: 30 },
-    computedStyles: {},
-  };
-}
 
 function buttonAnchor(): DesignAnchor {
   return {
