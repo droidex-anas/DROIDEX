@@ -23,8 +23,8 @@ export function writeProviderSessionSettings(
   // record that the chat has no model of its own, which dropping the key would
   // leave to the transcript head's original one.
   if (modelId !== undefined) stored.modelId = modelId;
-  if (reasoningEffort) stored.reasoningEffort = reasoningEffort;
-  else if (reasoningEffort === null) delete stored.reasoningEffort;
+  // Likewise a null effort: the model in use has none of the chat's old one.
+  if (reasoningEffort !== undefined) stored.reasoningEffort = reasoningEffort;
   if (fastMode !== undefined) stored.fastMode = fastMode;
   if (contextWindowTokens !== undefined) stored.contextWindowTokens = contextWindowTokens;
   mkdirSync(directory, { recursive: true });

@@ -38,22 +38,29 @@ export async function readFactoryUsage(
   return factoryReading(await response.json());
 }
 
-// What Factory's windows say about a refused Droid turn: the spent window that
-// resets last, and the pool it belongs to only while the other pool still has
-// room, which is when another model can still run.
+// What Factory's windows say about a refused Droid turn. A pool runs again once
+// the last of its spent windows resets. With both pools spent the refused
+// model's pool is not known, so the hold lasts until the first pool recovers:
+// a turn sent then is at worst refused again. The pool is named only while the
+// other one still has room, which is when another model can run now.
 export function factoryRefusalLimit(meters: readonly ReportedMeter[], now: number): UsageLimit {
-  const spent = meters
-    .filter((meter) => meter.usedPercent >= 100 && (meter.resetsAt ?? 0) > now)
-    .sort((left, right) => (right.resetsAt ?? 0) - (left.resetsAt ?? 0));
-  const last = spent.at(0);
-  if (last?.resetsAt === undefined) return {};
+  const recoveries = new Map<string | undefined, ReportedMeter>();
+  for (const meter of meters) {
+    if (meter.usedPercent < 100 || (meter.resetsAt ?? 0) <= now) continue;
+    const latest = recoveries.get(meter.model);
+    if (!latest || (meter.resetsAt ?? 0) > (latest.resetsAt ?? 0)) recoveries.set(meter.model, meter);
+  }
+  const first = [...recoveries.values()].sort(
+    (left, right) => (left.resetsAt ?? 0) - (right.resetsAt ?? 0),
+  )[0];
+  if (first?.resetsAt === undefined) return {};
   const limit: UsageLimit = {
-    ...(last.window ? { window: last.window } : {}),
-    resetsAt: last.resetsAt,
+    ...(first.window ? { window: first.window } : {}),
+    resetsAt: first.resetsAt,
   };
-  const otherPool = meters.filter((meter) => meter.model !== last.model);
-  const otherHasRoom = otherPool.length > 0 && otherPool.every((meter) => !spent.includes(meter));
-  return otherHasRoom ? { ...limit, model: last.model ?? STANDARD_POOL } : limit;
+  const otherHasRoom =
+    recoveries.size === 1 && meters.some((meter) => meter.model !== first.model);
+  return otherHasRoom ? { ...limit, model: first.model ?? STANDARD_POOL } : limit;
 }
 
 // An account on Factory's older billing has no windows to report; any other
