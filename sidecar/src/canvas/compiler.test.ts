@@ -273,9 +273,11 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
 test('a reply the protocol does not define is not an answer', () => {
   // What the forked compiler sends is the one thing here this module does not
   // write, and an unknown reason would otherwise reach the renderer as advice
-  // to restart. A reply that fails this is handled as a crash: `liveCompiler`
-  // loses and ends the process, so every pending compile fails and the next
-  // build forks a replacement, the path 'a compiler process that dies' covers.
+  // to restart. This covers the rule, not its wiring: `liveCompiler`'s listener
+  // calling it, losing and ending the process, and the next build forking a
+  // replacement, are exercised only by a throwaway probe driving a real child,
+  // because nothing can make the packaged worker send a malformed reply —
+  // `compilerEnv` deletes NODE_OPTIONS and the entry path is not injectable.
   const unavailable = {
     requestId: 1,
     status: 'unavailable',

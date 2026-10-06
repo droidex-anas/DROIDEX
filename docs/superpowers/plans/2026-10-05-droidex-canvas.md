@@ -562,8 +562,14 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   `picocolors` was missing one file staged, recorded a faithful manifest, resolved all seven and
   was accepted while the worker refused it. The gate now **loads** esbuild, PostCSS and Tailwind,
   in a child process so a package that throws or hangs cannot take it down and the gate's module
-  cache stays clean, with `PATH` the only inherited variable, `Module._resolveFilename` traced and
-  anything resolving outside the root refused. None of the three starts a process at load and the
+  cache stays clean, with `PATH` the only inherited variable and `Module._resolveFilename` traced so
+  that a pinned package reaching outside the root through `require` is refused. **What that proves
+  is narrow**: those three packages load through the CommonJS loader from the owned root, and
+  nothing they resolve through it lands outside. The trace is not a sandbox — an `import()` uses the
+  ESM loader and a `new Worker` has its own, and cycle 6 confirmed neither is seen — and nothing
+  here authenticates package contents; the manifest sizes remain the only account of those. The
+  timeout kills with SIGKILL, because `spawnSync` sends a catchable SIGTERM and then waits: cycle 6
+  held the gate past 65 seconds with a package that handled the signal and kept its loop alive. None of the three starts a process at load and the
   staged binary is named through `ESBUILD_BINARY_PATH`, so esbuild never looks for a platform
   package and the foreign architecture's binary is still only inspected; a sound tree costs about
   120 ms. `npm run canvas:runtime` calls the same gate at the end of staging, so that input now

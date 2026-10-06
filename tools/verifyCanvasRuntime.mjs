@@ -112,9 +112,13 @@ export function verifyCanvasRuntime(runtimePath, arch) {
 }
 
 /**
- * Resolves every specifier and loads the three the compiler calls into, in a
- * child: a package that throws cannot take the gate down and one that never
- * finishes is killed, and the gate's own module cache stays clean. The
+ * Proves the pinned packages load: resolves every specifier and `require`s the
+ * three the compiler calls into, in a child, so a package that throws cannot
+ * take the gate down, one that never finishes is killed, and the gate's own
+ * module cache stays clean. It says nothing about what those packages contain —
+ * the manifest sizes are the only account of that — and the resolution trace
+ * covers the CommonJS loader the three use, not every way code can be loaded.
+ * The
  * runtime's JavaScript is the same for both architectures — only
  * `@esbuild/<platform>-<arch>` differs, and its Mach-O check is separate — so
  * naming the staged binary outright keeps esbuild from looking for a platform
@@ -150,6 +154,10 @@ const refuse = (reason) => {
   process.exit(1);
 };
 
+// What CommonJS resolution reaches, which is what these three packages use. It
+// is not a sandbox: an \`import()\` goes through the ESM loader and a new Worker
+// has its own, and neither is seen here. It catches a pinned package reaching
+// outside the runtime through \`require\`, not a package rewritten to avoid it.
 const resolveFilename = Module._resolveFilename;
 Module._resolveFilename = function (specifier, ...rest) {
   const resolved = resolveFilename.call(this, specifier, ...rest);
