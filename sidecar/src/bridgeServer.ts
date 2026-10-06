@@ -38,6 +38,12 @@ export interface BridgeServer {
   readonly ready: Promise<void>;
   broadcast(event: ServerEvent): void;
   browserAssetUrl(filePath: string): string;
+  /**
+   * Notified when a renderer page's socket goes away, so an owner holding
+   * per-page state can release it. A client that connected without a page ID
+   * is never reported, because nothing could have been held for it.
+   */
+  onPageGone(listener: (pageId: string) => void): () => void;
   close(): Promise<void>;
 }
 
@@ -45,13 +51,16 @@ export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
   assetToken: string;
-  onCommand: (command: ClientCommand) => Promise<void>;
+  // `pageId` identifies the renderer page the command came from, when it sent
+  // one, so an owner can scope per-page state to it.
+  onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
 }): BridgeServer {
   const clients = new Set<WebSocket>();
+  const pageGoneListeners = new Set<(pageId: string) => void>();
   const voiceOwners = new VoiceConnectionOwners((appSessionId) => {
     void options
-      .onCommand({ type: 'voice.stop', appSessionId })
+      .onCommand({ type: 'voice.stop', appSessionId }, null)
       .then(() => {
         broadcast({ type: 'voice.state', appSessionId, status: 'closed' });
       })
@@ -155,6 +164,7 @@ export function startBridgeServer(options: {
     const disconnect = () => {
       clients.delete(ws);
       voiceOwners.disconnected(ws);
+      if (pageId) reportPageGone(pageId);
     };
     ws.on('close', disconnect);
     ws.on('error', disconnect);
@@ -278,7 +288,7 @@ export function startBridgeServer(options: {
       const command = parsed as ClientCommand;
       if (command.type === 'voice.start' || command.type === 'voice.stop')
         await runVoiceCommand(command, pageId);
-      else await options.onCommand(command);
+      else await options.onCommand(command, pageId);
     } catch (err) {
       sendDirectWire(ws, {
         type: 'error',
@@ -294,7 +304,8 @@ export function startBridgeServer(options: {
     pageId: string | null,
   ): Promise<void> {
     if (command.type === 'voice.stop') {
-      if (voiceOwners.stopped(command.appSessionId, pageId ?? '')) await options.onCommand(command);
+      if (voiceOwners.stopped(command.appSessionId, pageId ?? ''))
+        await options.onCommand(command, pageId);
       return;
     }
     if (!pageId) throw new Error('Voice requires a renderer page ID. Reload DROIDEX.');
@@ -302,7 +313,7 @@ export function startBridgeServer(options: {
     voiceOwners.startBegan(appSessionId, pageId, attempt);
     // A failed start has already been reported to its chat by the voice owner;
     // here it only means this page does not take the call.
-    const started = await options.onCommand(command).then(
+    const started = await options.onCommand(command, pageId).then(
       () => true,
       () => false,
     );
@@ -468,6 +479,22 @@ export function startBridgeServer(options: {
     return closePromise;
   }
 
+  function onPageGone(listener: (pageId: string) => void): () => void {
+    pageGoneListeners.add(listener);
+    return () => pageGoneListeners.delete(listener);
+  }
+
+  /** One listener's failure must not keep the others from cleaning up. */
+  function reportPageGone(pageId: string): void {
+    for (const listener of pageGoneListeners) {
+      try {
+        listener(pageId);
+      } catch (error) {
+        console.error('A bridge page-gone listener failed:', error);
+      }
+    }
+  }
+
   return {
     get port() {
       return boundPort;
@@ -475,6 +502,7 @@ export function startBridgeServer(options: {
     ready,
     broadcast,
     browserAssetUrl,
+    onPageGone,
     close,
   };
 }

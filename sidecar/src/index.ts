@@ -29,13 +29,13 @@ const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
-  onCommand: async (command) => {
+  onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
       void projects?.userStopped(command.appSessionId).catch(reportProjectError);
     }
     if (await handleProjectCommand(command)) return;
-    if (await handleCanvasCommand(command)) return;
+    if (await handleCanvasCommand(command, pageId)) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
     await manager.handle(command);
   },
@@ -115,9 +115,14 @@ void canvasReady.catch((error: unknown) => {
     message: `Canvas storage did not open, so no board is available until DROIDEX restarts: ${error instanceof Error ? error.message : String(error)}`,
   });
 });
-const handleCanvasCommand = createCanvasCommandHandler(canvasReady, canvasScopes, (event) => {
-  server.broadcast(event);
-});
+const handleCanvasCommand = createCanvasCommandHandler(
+  canvasReady,
+  canvasScopes,
+  (event) => {
+    server.broadcast(event);
+  },
+  (listener) => server.onPageGone(listener),
+);
 
 automationManager = configureAutomationManager({
   dataDir: droidexUserDataDir(),

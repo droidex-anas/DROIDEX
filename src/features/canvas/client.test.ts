@@ -189,3 +189,101 @@ test('a reported failure rejects its own request with the stable code', async ()
   });
   assert.equal((await mutating).sequence, 6);
 });
+
+test('a change that commits after a snapshot was taken is applied, not dropped', async () => {
+  const bridge = fakeBridge();
+  const client = new CanvasClient(bridge.transport);
+  const seen: CanvasSnapshot[] = [];
+  client.subscribeCanvas(CANVAS, (snapshot) => seen.push(snapshot));
+
+  // The snapshot was taken before change 5 committed, so the change cannot be
+  // dropped just because its answer was still in flight.
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: bridge.last('canvas.subscribe').requestId,
+    snapshot: { canvasId: CANVAS, sequence: 4, frames: [frame('hey')] },
+  });
+  bridge.deliver({ type: 'canvas.change', change: change(5, [frame('cta')]) });
+  await flush();
+
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 5);
+  assert.deepEqual(
+    client.snapshotOf(CANVAS)?.frames.map((entry) => entry.designId),
+    ['hey', 'cta'],
+  );
+  assert.equal(bridge.count('canvas.subscribe'), 1);
+  assert.equal(seen.at(-1)?.sequence, 5);
+});
+
+test('a change queued behind a resync is applied onto the snapshot that answers it', async () => {
+  const { bridge, client } = await watching(4);
+  bridge.deliver({ type: 'canvas.change', change: change(9) });
+  await flush();
+  assert.equal(bridge.count('canvas.subscribe'), 2);
+
+  // Arrives while the resync is in flight and commits after the snapshot.
+  bridge.deliver({ type: 'canvas.change', change: change(10, [frame('cta')]) });
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: bridge.last('canvas.subscribe').requestId,
+    snapshot: { canvasId: CANVAS, sequence: 9, frames: [frame('hey')] },
+  });
+  await flush();
+
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 10);
+  assert.equal(bridge.count('canvas.subscribe'), 2);
+});
+
+test('a dropped subscription cannot roll back the board that replaced it', async () => {
+  const bridge = fakeBridge();
+  const client = new CanvasClient(bridge.transport);
+  const stop = client.subscribeCanvas(CANVAS, () => undefined);
+  const abandoned = bridge.last('canvas.subscribe').requestId;
+  stop();
+
+  const seen: CanvasSnapshot[] = [];
+  client.subscribeCanvas(CANVAS, (snapshot) => seen.push(snapshot));
+  const current = bridge.last('canvas.subscribe').requestId;
+  assert.notEqual(current, abandoned);
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: current,
+    snapshot: { canvasId: CANVAS, sequence: 9, frames: [frame('hey')] },
+  });
+  await flush();
+  bridge.deliver({ type: 'canvas.change', change: change(10) });
+  bridge.deliver({ type: 'canvas.change', change: change(11) });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 11);
+
+  // The first subscription's answer arrives at last; it belongs to nothing.
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: abandoned,
+    snapshot: { canvasId: CANVAS, sequence: 4, frames: [frame('hey')] },
+  });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 11);
+  assert.equal(seen.at(-1)?.sequence, 11);
+
+  // The replacement still owns its slot, so a gap can still resync it.
+  const before = bridge.count('canvas.subscribe');
+  bridge.deliver({ type: 'canvas.change', change: change(20) });
+  await flush();
+  assert.equal(bridge.count('canvas.subscribe'), before + 1);
+});
+
+test('a reconnected page watches its boards again and catches them up', async () => {
+  const { bridge, client } = await watching(4);
+  bridge.deliver({ type: 'connection', status: 'connected' });
+  await flush();
+  assert.equal(bridge.count('canvas.subscribe'), 2);
+
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: bridge.last('canvas.subscribe').requestId,
+    snapshot: { canvasId: CANVAS, sequence: 12, frames: [frame('hey', 'rev_12')] },
+  });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 12);
+});

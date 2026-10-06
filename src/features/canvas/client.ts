@@ -22,6 +22,10 @@ import type {
 
 const MAX_PENDING_REQUESTS = 32;
 const REQUEST_TIMEOUT_MS = 30_000;
+/** How many changes one board holds while a snapshot is in flight. */
+const MAX_QUEUED_CHANGES = 256;
+/** How many snapshots one resync may take before the board is hopeless. */
+const MAX_SNAPSHOT_ATTEMPTS = 4;
 
 /** The transport the client talks through, so a test can supply its own. */
 export interface CanvasTransport {
@@ -54,8 +58,21 @@ interface Waiter {
 interface CanvasBoard {
   /** null until the first snapshot lands. */
   snapshot: CanvasSnapshot | null;
-  /** The one snapshot request in flight, which supersedes every change. */
+  /** The one snapshot request in flight. */
   loading: Promise<CanvasSnapshot> | null;
+  /**
+   * Changes that arrived while a snapshot was in flight. A snapshot is taken
+   * before they commit, so they cannot simply be dropped. The newest are kept:
+   * once the oldest is no longer contiguous with the snapshot, the gap itself
+   * asks for another one.
+   */
+  queued: CanvasChange[];
+  /**
+   * Bumped when this board is dropped or its connection is replaced. A request
+   * in flight compares it after every await and abandons a board it no longer
+   * belongs to.
+   */
+  generation: number;
   listeners: Set<(snapshot: CanvasSnapshot) => void>;
 }
 
@@ -168,15 +185,20 @@ export class CanvasClient {
   subscribeCanvas(canvasId: string, listener: (snapshot: CanvasSnapshot) => void): () => void {
     let board = this.boards.get(canvasId);
     if (!board) {
-      board = { snapshot: null, loading: null, listeners: new Set() };
+      board = { snapshot: null, loading: null, queued: [], generation: 0, listeners: new Set() };
       this.boards.set(canvasId, board);
     }
-    board.listeners.add(listener);
-    void this.load(canvasId)?.catch(reportLostSnapshot);
+    const watching = board;
+    watching.listeners.add(listener);
+    void this.load(watching, canvasId).catch(reportLostSnapshot);
     return () => {
-      const watching = this.boards.get(canvasId);
-      if (!watching?.listeners.delete(listener) || watching.listeners.size > 0) return;
-      this.boards.delete(canvasId);
+      if (!watching.listeners.delete(listener) || watching.listeners.size > 0) return;
+      if (this.boards.get(canvasId) === watching) this.boards.delete(canvasId);
+      // Abandons whatever this board had in flight, so a late answer cannot
+      // reach the board a later subscribe puts in its place.
+      watching.generation += 1;
+      watching.loading = null;
+      watching.queued = [];
       // A dropped unsubscribe only costs changes this client now ignores.
       void this.request({ type: 'canvas.unsubscribe', requestId: requestId(), canvasId }).catch(
         () => undefined,
@@ -185,30 +207,67 @@ export class CanvasClient {
   }
 
   /** Seeds or resyncs one canvas, with a single snapshot request in flight. */
-  private load(canvasId: string): Promise<CanvasSnapshot> | null {
-    const board = this.boards.get(canvasId);
-    if (!board) return null;
-    board.loading ??= this.requestSnapshot(canvasId).finally(() => {
-      const watching = this.boards.get(canvasId);
-      if (watching) watching.loading = null;
+  private load(board: CanvasBoard, canvasId: string): Promise<CanvasSnapshot> {
+    const running = board.loading;
+    if (running) return running;
+    const generation = board.generation;
+    const loading = this.reload(board, canvasId, generation).finally(() => {
+      // A replacement request has its own slot; never release theirs.
+      if (board.generation === generation) board.loading = null;
     });
-    return board.loading;
+    board.loading = loading;
+    return loading;
   }
 
-  private async requestSnapshot(canvasId: string): Promise<CanvasSnapshot> {
-    const event = await this.request({
-      type: 'canvas.subscribe',
-      requestId: requestId(),
-      canvasId,
-    });
-    if (event.type !== 'canvas.snapshot') throw wrongReply();
-    this.project(canvasId, event.snapshot);
-    return event.snapshot;
+  /**
+   * Takes snapshots until the board is current. A snapshot is taken before the
+   * changes queued behind it commit, so the queue is drained onto it, and a gap
+   * the queue still shows means another snapshot is owed.
+   */
+  private async reload(
+    board: CanvasBoard,
+    canvasId: string,
+    generation: number,
+  ): Promise<CanvasSnapshot> {
+    for (let attempt = 0; attempt < MAX_SNAPSHOT_ATTEMPTS; attempt += 1) {
+      const event = await this.request({
+        type: 'canvas.subscribe',
+        requestId: requestId(),
+        canvasId,
+      });
+      if (event.type !== 'canvas.snapshot') throw wrongReply();
+      // This board was dropped, replaced or reconnected while the request was
+      // in flight, so its answer belongs to nothing.
+      if (board.generation !== generation) return event.snapshot;
+      const current = board.snapshot;
+      // An answer behind the projection would roll it back; ask again instead.
+      if (!current || event.snapshot.sequence >= current.sequence) {
+        const caught = this.drain(board, event.snapshot);
+        this.project(board, caught.snapshot);
+        if (caught.current) return caught.snapshot;
+      }
+    }
+    throw new Error('Canvas could not catch up with the changes on this board.');
   }
 
-  private project(canvasId: string, snapshot: CanvasSnapshot): void {
-    const board = this.boards.get(canvasId);
-    if (!board) return;
+  /** Applies the queued changes a snapshot does not already cover. */
+  private drain(
+    board: CanvasBoard,
+    snapshot: CanvasSnapshot,
+  ): { snapshot: CanvasSnapshot; current: boolean } {
+    const queued = [...board.queued].sort((left, right) => left.sequence - right.sequence);
+    board.queued = [];
+    let projection = snapshot;
+    for (const change of queued) {
+      if (change.sequence <= projection.sequence) continue;
+      if (change.sequence !== projection.sequence + 1)
+        return { snapshot: projection, current: false };
+      projection = applyCanvasChange(projection, change);
+    }
+    return { snapshot: projection, current: true };
+  }
+
+  private project(board: CanvasBoard, snapshot: CanvasSnapshot): void {
     board.snapshot = snapshot;
     for (const listener of board.listeners) listener(snapshot);
   }
@@ -241,6 +300,12 @@ export class CanvasClient {
       this.absorb(event.change);
       return;
     }
+    // The sidecar drops a reconnecting page's watches, and this client may have
+    // missed changes while the socket was down, so every board starts again.
+    if (event.type === 'connection' && event.status === 'connected') {
+      this.resubscribe();
+      return;
+    }
     if (event.type === 'canvas.snapshot') {
       this.answer(event.requestId)?.settle(event);
       return;
@@ -263,20 +328,32 @@ export class CanvasClient {
   private absorb(change: CanvasChange): void {
     const board = this.boards.get(change.canvasId);
     if (!board) return;
-    // A snapshot in flight already carries this change, so it is dropped here.
-    if (board.loading) return;
     const current = board.snapshot;
-    if (!current) {
-      void this.load(change.canvasId)?.catch(reportLostSnapshot);
+    // A snapshot in flight was taken before this change committed, so it waits
+    // for that answer rather than being dropped.
+    if (board.loading || !current) {
+      board.queued.push(change);
+      if (board.queued.length > MAX_QUEUED_CHANGES) board.queued.shift();
+      if (!board.loading) void this.load(board, change.canvasId).catch(reportLostSnapshot);
       return;
     }
     if (change.sequence <= current.sequence) return;
     if (change.sequence === current.sequence + 1) {
-      this.project(change.canvasId, applyCanvasChange(current, change));
+      this.project(board, applyCanvasChange(current, change));
       return;
     }
     // A gap means a change never arrived, and only a fresh snapshot closes it.
-    void this.load(change.canvasId)?.catch(reportLostSnapshot);
+    board.queued.push(change);
+    void this.load(board, change.canvasId).catch(reportLostSnapshot);
+  }
+
+  /** Re-watches every board this client holds and catches each one up. */
+  private resubscribe(): void {
+    for (const [canvasId, board] of this.boards) {
+      board.generation += 1;
+      board.loading = null;
+      void this.load(board, canvasId).catch(reportLostSnapshot);
+    }
   }
 }
 

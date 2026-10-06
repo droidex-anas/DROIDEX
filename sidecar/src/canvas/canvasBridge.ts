@@ -3,6 +3,7 @@
 // the clients watching that canvas. Authority here comes from the chat's
 // attachment, not from an agent turn's lease (spec §6).
 
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ServerEvent } from '../protocol.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
@@ -19,11 +20,15 @@ import {
 /** Bounds the correlation table, the way the Projects bridge bounds its own. */
 const MAX_PENDING_REQUESTS = 128;
 
-// An appSessionId never reaches a filesystem path, so it is bounded, not
-// charset-checked; a requestId is also one turn's scope ID.
-const wireId = z.string().min(1).max(200);
-const request = { requestId: wireId };
-const session = { appSessionId: wireId };
+const UNAVAILABLE = 'Canvas storage is unavailable. Reopen DROIDEX to try again.';
+const NO_PAGE = 'Canvas needs a renderer page ID. Reload DROIDEX.';
+
+// A requestId correlates one reply and nothing else, so it shares the canvas
+// identifier rule and the renderer validator can hold the same bound. An
+// appSessionId never reaches a filesystem path, so it is bounded, not
+// charset-checked.
+const request = { requestId: canvasIdentifierSchema };
+const session = { appSessionId: z.string().min(1).max(200) };
 const target = { ...session, canvasId: canvasIdentifierSchema };
 
 const canvasCommandSchema = z.discriminatedUnion('type', [
@@ -66,24 +71,181 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
 
 type Mutation = Extract<CanvasCommand, { type: `canvas.${'create' | 'write' | 'arrange'}` }>;
 
+/**
+ * Which canvases each renderer page is watching. A change on a canvas no page
+ * has open is never broadcast, and one page closing its pane cannot silence
+ * another page that still has the same canvas open.
+ */
+class CanvasWatches {
+  private readonly byPage = new Map<string, Set<string>>();
+
+  watch(pageId: string, canvasId: string): void {
+    const open = this.byPage.get(pageId) ?? new Set<string>();
+    open.add(canvasId);
+    this.byPage.set(pageId, open);
+  }
+
+  unwatch(pageId: string, canvasId: string): void {
+    const open = this.byPage.get(pageId);
+    if (!open?.delete(canvasId)) return;
+    if (open.size === 0) this.byPage.delete(pageId);
+  }
+
+  /** A page that reloaded or closed holds nothing; its watches go with it. */
+  forget(pageId: string): void {
+    this.byPage.delete(pageId);
+  }
+
+  isWatched(canvasId: string): boolean {
+    for (const open of this.byPage.values()) if (open.has(canvasId)) return true;
+    return false;
+  }
+}
+
+/**
+ * The owner of one sidecar's Canvas dispatch: the workspace it answers from,
+ * the scopes it mints, and which page is watching what.
+ */
+class CanvasDispatch {
+  private readonly watches = new CanvasWatches();
+  private readonly workspace: Promise<CanvasWorkspace>;
+
+  constructor(
+    ready: Promise<CanvasWorkspace>,
+    private readonly scopes: CanvasScopes,
+    private readonly emit: (event: ServerEvent) => void,
+    onPageGone: (listener: (pageId: string) => void) => () => void,
+  ) {
+    onPageGone((pageId) => {
+      this.watches.forget(pageId);
+    });
+    this.workspace = ready.then(
+      (opened) => {
+        opened.onChange((change) => {
+          if (this.watches.isWatched(change.canvasId)) this.emit({ type: 'canvas.change', change });
+        });
+        return opened;
+      },
+      () => {
+        // The owner that opened the workspace reports the failure; from here
+        // every command answers the same way until DROIDEX restarts.
+        throw canvasError('storage_failed', UNAVAILABLE);
+      },
+    );
+    // Nothing awaits this until the first command arrives, and an open that
+    // failed must not take the sidecar down with an unhandled rejection.
+    void this.workspace.catch(() => undefined);
+  }
+
+  async run(command: CanvasCommand, pageId: string | null): Promise<CanvasEvent> {
+    try {
+      const workspace = await this.workspace;
+      // The snapshot and the watch are one step: a client that holds a
+      // projection is exactly the client that needs the changes extending it.
+      if (command.type === 'canvas.subscribe') {
+        if (pageId === null) throw canvasError('invalid_input', NO_PAGE);
+        const snapshot = workspace.snapshot(command.canvasId);
+        this.watches.watch(pageId, command.canvasId);
+        return { type: 'canvas.snapshot', requestId: command.requestId, snapshot };
+      }
+      if (command.type === 'canvas.unsubscribe') {
+        if (pageId === null) throw canvasError('invalid_input', NO_PAGE);
+        this.watches.unwatch(pageId, command.canvasId);
+        return {
+          type: 'canvas.result',
+          requestId: command.requestId,
+          ok: true,
+          reply: { kind: 'ok' },
+        };
+      }
+      const reply = await this.answer(workspace, command);
+      if (CHANGES_SUMMARIES.has(command.type))
+        this.emit({ type: 'canvas.summaries', summaries: workspace.listCanvases() });
+      return { type: 'canvas.result', requestId: command.requestId, ok: true, reply };
+    } catch (error) {
+      return failure(command.requestId, canvasFailure(error));
+    }
+  }
+
+  private async answer(
+    workspace: CanvasWorkspace,
+    command: Exclude<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
+  ): Promise<CanvasReply> {
+    switch (command.type) {
+      case 'canvas.list':
+        return { kind: 'summaries', summaries: workspace.listCanvases() };
+      case 'canvas.attachment':
+        return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
+      case 'canvas.createCanvas': {
+        // Explicit Create in the pane: the canvas and the chat's attachment in
+        // one commit, with no lease behind it (spec §6).
+        const snapshot = await workspace.createCanvas(command.appSessionId);
+        return { kind: 'attachment', canvasId: snapshot.canvasId };
+      }
+      case 'canvas.attach':
+        await workspace.attach(command.appSessionId, command.canvasId);
+        return { kind: 'attachment', canvasId: command.canvasId };
+      case 'canvas.detach':
+        await workspace.detach(command.appSessionId);
+        return { kind: 'attachment', canvasId: null };
+      default:
+        return this.mutate(workspace, command);
+    }
+  }
+
+  /**
+   * Runs one pane mutation under a scope that lives exactly as long as the
+   * request. The chat's attachment is the authority: a request naming a canvas
+   * the chat has left is as stale as a settled turn's lease, and the workspace
+   * checks that again in its final commit gate.
+   */
+  private async mutate(workspace: CanvasWorkspace, command: Mutation): Promise<CanvasReply> {
+    const { appSessionId, canvasId } = command;
+    if (workspace.attachedCanvasId(appSessionId) !== canvasId)
+      throw canvasError('scope_expired', 'This chat is not attached to that canvas.');
+    // The scope ID is minted here, never taken from the request: a client that
+    // could name a scope could revive a revoked turn's lease.
+    const scope = {
+      origin: 'user',
+      scopeId: `user:${randomUUID()}`,
+      appSessionId,
+      canvasId,
+      allowedDesignIds: 'canvas',
+    } as const;
+    this.scopes.register(scope);
+    try {
+      switch (command.type) {
+        case 'canvas.create':
+          return { kind: 'created', created: await workspace.create(scope, command.input) };
+        case 'canvas.write':
+          return { kind: 'written', receipt: await workspace.write(scope, command.input) };
+        case 'canvas.arrange':
+          return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };
+      }
+    } finally {
+      this.scopes.revoke(scope.scopeId);
+    }
+  }
+}
+
+/** The commands that change the saved canvases, their names or their contents. */
+const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
+  'canvas.createCanvas',
+  'canvas.attach',
+  'canvas.detach',
+  'canvas.create',
+]);
+
 export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
   emit: (event: ServerEvent) => void,
-): (command: unknown) => Promise<boolean> {
+  onPageGone: (listener: (pageId: string) => void) => () => void,
+): (command: unknown, pageId: string | null) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  // The canvases some client is watching. A change on a canvas nobody has open
-  // is not broadcast at all, so an agent's work costs the pane nothing until it
-  // is being looked at.
-  const watched = new Set<string>();
-  const workspace = ready.then((opened) => {
-    opened.onChange((change) => {
-      if (watched.has(change.canvasId)) emit({ type: 'canvas.change', change });
-    });
-    return opened;
-  });
+  const dispatch = new CanvasDispatch(ready, scopes, emit, onPageGone);
 
-  return async (value) => {
+  return async (value, pageId) => {
     if (!isCanvasRequest(value)) return false;
     const parsed = canvasCommandSchema.safeParse(value);
     if (!parsed.success) {
@@ -116,11 +278,7 @@ export function createCanvasCommandHandler(
         );
         return true;
       }
-      entry = {
-        input: serialized,
-        reply: run(workspace, scopes, watched, emit, command),
-        done: false,
-      };
+      entry = { input: serialized, reply: dispatch.run(command, pageId), done: false };
       requests.set(command.requestId, entry);
       const settled = entry;
       void settled.reply.then(() => {
@@ -130,110 +288,6 @@ export function createCanvasCommandHandler(
     emit(await entry.reply);
     return true;
   };
-}
-
-async function run(
-  ready: Promise<CanvasWorkspace>,
-  scopes: CanvasScopes,
-  watched: Set<string>,
-  emit: (event: ServerEvent) => void,
-  command: CanvasCommand,
-): Promise<CanvasEvent> {
-  try {
-    const workspace = await ready;
-    // The snapshot and the watch are one step: a client that holds a projection
-    // is exactly the client that needs the changes extending it.
-    if (command.type === 'canvas.subscribe') {
-      const snapshot = workspace.snapshot(command.canvasId);
-      watched.add(command.canvasId);
-      return { type: 'canvas.snapshot', requestId: command.requestId, snapshot };
-    }
-    if (command.type === 'canvas.unsubscribe') {
-      watched.delete(command.canvasId);
-      return {
-        type: 'canvas.result',
-        requestId: command.requestId,
-        ok: true,
-        reply: { kind: 'ok' },
-      };
-    }
-    const reply = await answer(workspace, scopes, command);
-    if (CHANGES_SUMMARIES.has(command.type))
-      emit({ type: 'canvas.summaries', summaries: workspace.listCanvases() });
-    return { type: 'canvas.result', requestId: command.requestId, ok: true, reply };
-  } catch (error) {
-    return failure(command.requestId, canvasFailure(error));
-  }
-}
-
-/** The commands that change the saved canvases, their names or their contents. */
-const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
-  'canvas.createCanvas',
-  'canvas.attach',
-  'canvas.detach',
-  'canvas.create',
-]);
-
-async function answer(
-  workspace: CanvasWorkspace,
-  scopes: CanvasScopes,
-  command: Exclude<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
-): Promise<CanvasReply> {
-  switch (command.type) {
-    case 'canvas.list':
-      return { kind: 'summaries', summaries: workspace.listCanvases() };
-    case 'canvas.attachment':
-      return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
-    case 'canvas.createCanvas': {
-      // Explicit Create in the pane: the canvas and the chat's attachment in one
-      // commit, with no lease behind it (spec §6).
-      const snapshot = await workspace.createCanvas(command.appSessionId);
-      return { kind: 'attachment', canvasId: snapshot.canvasId };
-    }
-    case 'canvas.attach':
-      await workspace.attach(command.appSessionId, command.canvasId);
-      return { kind: 'attachment', canvasId: command.canvasId };
-    case 'canvas.detach':
-      await workspace.detach(command.appSessionId);
-      return { kind: 'attachment', canvasId: null };
-    default:
-      return mutate(workspace, scopes, command);
-  }
-}
-
-/**
- * Runs one pane mutation under a scope that lives exactly as long as the
- * request. The chat's attachment is the authority: a request naming a canvas
- * the chat has left is as stale as a settled turn's lease.
- */
-async function mutate(
-  workspace: CanvasWorkspace,
-  scopes: CanvasScopes,
-  command: Mutation,
-): Promise<CanvasReply> {
-  const { appSessionId, canvasId } = command;
-  if (workspace.attachedCanvasId(appSessionId) !== canvasId)
-    throw canvasError('scope_expired', 'This chat is not attached to that canvas.');
-  const scope = {
-    origin: 'user',
-    scopeId: command.requestId,
-    appSessionId,
-    canvasId,
-    allowedDesignIds: 'canvas',
-  } as const;
-  scopes.register(scope);
-  try {
-    switch (command.type) {
-      case 'canvas.create':
-        return { kind: 'created', created: await workspace.create(scope, command.input) };
-      case 'canvas.write':
-        return { kind: 'written', receipt: await workspace.write(scope, command.input) };
-      case 'canvas.arrange':
-        return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };
-    }
-  } finally {
-    scopes.revoke(command.requestId);
-  }
 }
 
 /**

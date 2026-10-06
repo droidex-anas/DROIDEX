@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
-import { canvasRoot } from '../testing/canvasStorageSupport.js';
+import { canvasRoot, observedFileSystem } from '../testing/canvasStorageSupport.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
+import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasEvent, CanvasReply, CanvasScope } from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const APP = 'app-1';
+const PAGE = 'page-1';
 const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
 
 interface Harness {
@@ -16,19 +18,48 @@ interface Harness {
   workspace: CanvasWorkspace;
   scopes: CanvasScopes;
   events: ServerEvent[];
-  handle: (command: unknown) => Promise<boolean>;
+  handle: (command: unknown, pageId?: string | null) => Promise<boolean>;
+  /** Reports a renderer page's socket closing, the way the bridge server does. */
+  pageGone: (pageId: string) => void;
 }
 
-async function harness(t: TestContext, root?: string): Promise<Harness> {
-  const directory = root ?? (await canvasRoot(t));
+async function harness(
+  t: TestContext,
+  options: { root?: string; fs?: CanvasFileSystem } = {},
+): Promise<Harness> {
+  const directory = options.root ?? (await canvasRoot(t));
   const scopes = new CanvasScopes();
   const events: ServerEvent[] = [];
-  const workspace = await CanvasWorkspace.open(directory, scopes);
-  t.after(() => workspace.close());
-  const handle = createCanvasCommandHandler(Promise.resolve(workspace), scopes, (event) => {
-    events.push(event);
+  const workspace = await CanvasWorkspace.open(directory, {
+    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      scopes.bindScopeCanvas(scopeId, canvasId);
+    },
+    ...(options.fs ? { fs: options.fs } : {}),
   });
-  return { root: directory, workspace, scopes, events, handle };
+  t.after(() => workspace.close());
+  const listeners = new Set<(pageId: string) => void>();
+  const handle = createCanvasCommandHandler(
+    Promise.resolve(workspace),
+    scopes,
+    (event) => {
+      events.push(event);
+    },
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  );
+  return {
+    root: directory,
+    workspace,
+    scopes,
+    events,
+    handle: (command, pageId = PAGE) => handle(command, pageId),
+    pageGone: (pageId) => {
+      for (const listener of listeners) listener(pageId);
+    },
+  };
 }
 
 /** The event answering one request, which every command produces exactly one of. */
@@ -155,7 +186,7 @@ test('an attachment made through the bridge survives a workspace reopen', async 
   const canvasId = await createCanvas(first);
   await first.workspace.close();
 
-  const reopened = await harness(t, first.root);
+  const reopened = await harness(t, { root: first.root });
   await reopened.handle({
     type: 'canvas.attachment',
     requestId: 'req-attachment',
@@ -209,6 +240,14 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
 
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-unknown', canvasId: 'nope' });
   assert.equal(errorOf(canvas, 'req-unknown').code, 'invalid_input');
+
+  // A correlation ID the renderer's validator would throw the reply away for is
+  // refused here instead, so one bound holds on both sides of the wire.
+  const tooLong = 'r'.repeat(129);
+  await canvas.handle({ type: 'canvas.list', requestId: tooLong });
+  assert.equal(errorOf(canvas, tooLong).code, 'invalid_input');
+  await canvas.handle({ type: 'canvas.list', requestId: 'r'.repeat(128) });
+  assert.equal(okReply(canvas, 'r'.repeat(128)).kind, 'summaries');
 });
 
 test('one request identity cannot carry two different requests', async (t) => {
@@ -307,4 +346,176 @@ test('a command that is not Canvas is left to the next handler', async (t) => {
   const [reported] = canvas.events;
   assert.ok(reported?.type === 'error');
   assert.equal(reported.code, 'canvas.invalid_input');
+});
+
+/** A promise a test resolves itself, to hold an awaited filesystem call open. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/** A filesystem that holds the next write of one source file open until released. */
+function pauseAtSource(path: string) {
+  const reached = deferred();
+  const release = deferred();
+  let armed = true;
+  return {
+    reached: reached.promise,
+    release: release.resolve,
+    fs: observedFileSystem(async (operation, target) => {
+      if (!armed || operation !== 'open' || !target.endsWith(path)) return;
+      armed = false;
+      reached.resolve();
+      await release.promise;
+    }),
+  };
+}
+
+test('a chat that detaches while its write is staging does not commit it', async (t) => {
+  const paused = pauseAtSource('main.tsx');
+  const canvas = await harness(t, { fs: paused.fs });
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+
+  const writing = canvas.handle({
+    type: 'canvas.write',
+    requestId: 'req-paused-write',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-paused',
+      designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': HEY },
+      deletedPaths: [],
+    },
+  });
+  await paused.reached;
+  // The pane's authority is the attachment, and this chat has just given it up.
+  await canvas.workspace.detach(APP);
+  paused.release();
+  await writing;
+
+  assert.equal(errorOf(canvas, 'req-paused-write').code, 'scope_expired');
+  assert.equal(canvas.workspace.snapshot(canvasId).frames[0]?.revisionId, null);
+});
+
+test('a request identity cannot revive a revoked turn lease', async (t) => {
+  const stolen = 'turn-1';
+  // Runs inside a commit, which is exactly when a stale turn's own write would
+  // check its lease one last time.
+  let insideCommit: (() => void) | null = null;
+  const fs = observedFileSystem((operation, target) => {
+    if (operation === 'rename' && target.endsWith('manifest.json')) insideCommit?.();
+  });
+  const canvas = await harness(t, { fs });
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+
+  const agent = turnScope(canvasId, stolen);
+  canvas.scopes.register(agent);
+  canvas.scopes.revoke(agent.scopeId);
+  let revivedMidRequest: boolean | null = null;
+  insideCommit = () => {
+    revivedMidRequest ??= canvas.scopes.isScopeActive(stolen);
+  };
+
+  // The renderer names the revoked lease as its own request ID.
+  await canvas.handle({
+    type: 'canvas.arrange',
+    requestId: stolen,
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-pane-arrange',
+      frames: [
+        { designId, expectedLayoutVersion: 0, rect: { x: 10, y: 10, width: 720, height: 720 } },
+      ],
+    },
+  });
+  insideCommit = null;
+  assert.equal(okReply(canvas, stolen).kind, 'arranged');
+  // `false`, not null: the sample has to have been taken inside the commit, or
+  // the assertion proves nothing.
+  assert.equal(revivedMidRequest, false);
+  assert.equal(canvas.scopes.isScopeActive(stolen), false);
+});
+
+test('a workspace that failed to open answers every command the same way', async (t) => {
+  const unhandled: unknown[] = [];
+  const capture = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', capture);
+  t.after(() => void process.off('unhandledRejection', capture));
+
+  const events: ServerEvent[] = [];
+  const handle = createCanvasCommandHandler(
+    Promise.reject(new Error('canvases directory is read-only')),
+    new CanvasScopes(),
+    (event) => {
+      events.push(event);
+    },
+    () => () => undefined,
+  );
+  // Two event-loop turns: an unhandled rejection is reported after the
+  // microtask queue drains, so a missing handler would already have fired.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(unhandled, []);
+
+  assert.equal(await handle({ type: 'canvas.list', requestId: 'req-list' }, PAGE), true);
+  const [reply] = events;
+  assert.ok(reply?.type === 'canvas.result' && !reply.ok);
+  assert.equal(reply.error.code, 'storage_failed');
+  assert.match(reply.error.message, /Canvas storage is unavailable/);
+  assert.deepEqual(unhandled, []);
+});
+
+test('one page unsubscribing leaves another page watching the same canvas', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-1', canvasId }, 'page-1');
+  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-2', canvasId }, 'page-2');
+  await canvas.handle(
+    { type: 'canvas.unsubscribe', requestId: 'req-unwatch-1', canvasId },
+    'page-1',
+  );
+
+  const changed = async (mutationId: string, name: string): Promise<number> => {
+    const agent = turnScope(canvasId, `turn-${mutationId}`);
+    canvas.scopes.register(agent);
+    await canvas.workspace.create(agent, {
+      mutationId,
+      frames: [{ name, width: 720, height: 720, designSystem }],
+    });
+    canvas.scopes.revoke(agent.scopeId);
+    return canvas.events.filter((event) => event.type === 'canvas.change').length;
+  };
+
+  assert.equal(await changed('m-one', 'One'), 1);
+  // The page that is gone holds nothing, and the last watcher ends the broadcast.
+  canvas.pageGone('page-2');
+  assert.equal(await changed('m-two', 'Two'), 1);
+
+  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-3', canvasId }, null);
+  assert.equal(errorOf(canvas, 'req-watch-3').code, 'invalid_input');
+});
+
+test('a change listener that throws loses its change, not the commit', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-subscribe', canvasId });
+  const seen: number[] = [];
+  canvas.workspace.onChange(() => {
+    throw new Error('listener failed');
+  });
+  canvas.workspace.onChange((change) => seen.push(change.sequence));
+
+  const designId = await createFrame(canvas, canvasId, 'req-create-after-throw');
+  assert.ok(designId);
+  assert.equal(seen.length, 1);
+  assert.equal(canvas.events.filter((event) => event.type === 'canvas.change').length, 1);
 });
