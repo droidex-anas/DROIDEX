@@ -519,3 +519,45 @@ test('a change listener that throws loses its change, not the commit', async (t)
   assert.equal(seen.length, 1);
   assert.equal(canvas.events.filter((event) => event.type === 'canvas.change').length, 1);
 });
+
+test('a page that goes away while the workspace opens installs no watch', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const opening = deferred();
+  const events: ServerEvent[] = [];
+  const listeners = new Set<(pageId: string) => void>();
+  const handle = createCanvasCommandHandler(
+    opening.promise.then(() => canvas.workspace),
+    canvas.scopes,
+    (event) => {
+      events.push(event);
+    },
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  );
+
+  const subscribing = handle({ type: 'canvas.subscribe', requestId: 'req-late', canvasId }, PAGE);
+  // The page closes its socket before Canvas storage finishes opening.
+  for (const listener of listeners) listener(PAGE);
+  opening.resolve();
+  await subscribing;
+
+  const [answer] = events;
+  assert.ok(answer?.type === 'canvas.result' && !answer.ok);
+  assert.equal(answer.error.code, 'scope_expired');
+
+  // Nothing is watching, so a later change is not broadcast to anyone.
+  const agent = turnScope(canvasId, 'turn-after-page-gone');
+  canvas.scopes.register(agent);
+  await canvas.workspace.create(agent, {
+    mutationId: 'm-after-page-gone',
+    frames: [{ name: 'Quiet', width: 720, height: 720, designSystem }],
+  });
+  canvas.scopes.revoke(agent.scopeId);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'canvas.change'),
+    [],
+  );
+});

@@ -22,6 +22,7 @@ const MAX_PENDING_REQUESTS = 128;
 
 const UNAVAILABLE = 'Canvas storage is unavailable. Reopen DROIDEX to try again.';
 const NO_PAGE = 'Canvas needs a renderer page ID. Reload DROIDEX.';
+const PAGE_GONE = 'That DROIDEX page is no longer connected.';
 
 // A requestId correlates one reply and nothing else, so it shares the canvas
 // identifier rule and the renderer validator can hold the same bound. An
@@ -72,6 +73,16 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
 type Mutation = Extract<CanvasCommand, { type: `canvas.${'create' | 'write' | 'arrange'}` }>;
 
 /**
+ * One renderer page's watch set. The set's own identity is the page's lifetime:
+ * a caller that awaits captures this before the await and hands it back after,
+ * which is how a watch cannot be installed for a page that went away in between.
+ */
+interface PageWatches {
+  pageId: string;
+  open: Set<string>;
+}
+
+/**
  * Which canvases each renderer page is watching. A change on a canvas no page
  * has open is never broadcast, and one page closing its pane cannot silence
  * another page that still has the same canvas open.
@@ -79,16 +90,23 @@ type Mutation = Extract<CanvasCommand, { type: `canvas.${'create' | 'write' | 'a
 class CanvasWatches {
   private readonly byPage = new Map<string, Set<string>>();
 
-  watch(pageId: string, canvasId: string): void {
+  /** The page's live watch set, which only `forget` ever replaces. */
+  live(pageId: string): PageWatches {
     const open = this.byPage.get(pageId) ?? new Set<string>();
-    open.add(canvasId);
     this.byPage.set(pageId, open);
+    return { pageId, open };
   }
 
+  /** False when that page is already gone, so nothing was installed. */
+  watch(page: PageWatches, canvasId: string): boolean {
+    if (!this.isLive(page)) return false;
+    page.open.add(canvasId);
+    return true;
+  }
+
+  /** By page ID, because unsubscribing awaits nothing and needs no token. */
   unwatch(pageId: string, canvasId: string): void {
-    const open = this.byPage.get(pageId);
-    if (!open?.delete(canvasId)) return;
-    if (open.size === 0) this.byPage.delete(pageId);
+    this.byPage.get(pageId)?.delete(canvasId);
   }
 
   /** A page that reloaded or closed holds nothing; its watches go with it. */
@@ -99,6 +117,10 @@ class CanvasWatches {
   isWatched(canvasId: string): boolean {
     for (const open of this.byPage.values()) if (open.has(canvasId)) return true;
     return false;
+  }
+
+  private isLive(page: PageWatches): boolean {
+    return this.byPage.get(page.pageId) === page.open;
   }
 }
 
@@ -139,25 +161,9 @@ class CanvasDispatch {
 
   async run(command: CanvasCommand, pageId: string | null): Promise<CanvasEvent> {
     try {
+      if (command.type === 'canvas.subscribe' || command.type === 'canvas.unsubscribe')
+        return await this.watch(command, pageId);
       const workspace = await this.workspace;
-      // The snapshot and the watch are one step: a client that holds a
-      // projection is exactly the client that needs the changes extending it.
-      if (command.type === 'canvas.subscribe') {
-        if (pageId === null) throw canvasError('invalid_input', NO_PAGE);
-        const snapshot = workspace.snapshot(command.canvasId);
-        this.watches.watch(pageId, command.canvasId);
-        return { type: 'canvas.snapshot', requestId: command.requestId, snapshot };
-      }
-      if (command.type === 'canvas.unsubscribe') {
-        if (pageId === null) throw canvasError('invalid_input', NO_PAGE);
-        this.watches.unwatch(pageId, command.canvasId);
-        return {
-          type: 'canvas.result',
-          requestId: command.requestId,
-          ok: true,
-          reply: { kind: 'ok' },
-        };
-      }
       const reply = await this.answer(workspace, command);
       if (CHANGES_SUMMARIES.has(command.type))
         this.emit({ type: 'canvas.summaries', summaries: workspace.listCanvases() });
@@ -165,6 +171,36 @@ class CanvasDispatch {
     } catch (error) {
       return failure(command.requestId, canvasFailure(error));
     }
+  }
+
+  /**
+   * Starts or stops watching one canvas. A page identity is required, as
+   * `voice.start` already requires one. Subscribing captures the page before it
+   * awaits the workspace, because a watch installed for a page that went away
+   * during that await would never be released. Unsubscribing awaits nothing, so
+   * a client can still drop a watch while Canvas storage is unavailable.
+   */
+  private async watch(
+    command: Extract<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
+    pageId: string | null,
+  ): Promise<CanvasEvent> {
+    if (pageId === null) throw canvasError('invalid_input', NO_PAGE);
+    if (command.type === 'canvas.unsubscribe') {
+      this.watches.unwatch(pageId, command.canvasId);
+      return {
+        type: 'canvas.result',
+        requestId: command.requestId,
+        ok: true,
+        reply: { kind: 'ok' },
+      };
+    }
+    const page = this.watches.live(pageId);
+    const workspace = await this.workspace;
+    // The snapshot and the watch are one step: a client that holds a projection
+    // is exactly the client that needs the changes extending it.
+    const snapshot = workspace.snapshot(command.canvasId);
+    if (!this.watches.watch(page, command.canvasId)) throw canvasError('scope_expired', PAGE_GONE);
+    return { type: 'canvas.snapshot', requestId: command.requestId, snapshot };
   }
 
   private async answer(
