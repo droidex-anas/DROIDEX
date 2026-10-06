@@ -751,8 +751,8 @@ export class SessionManager {
       appendProgress: (appSessionId, text) => {
         this.timeline.appendProgress(appSessionId, text);
       },
-      appendError: (appSessionId, message) => {
-        this.timeline.appendError(appSessionId, message);
+      appendError: (appSessionId, message, details) => {
+        this.timeline.appendError(appSessionId, message, details);
       },
       appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
       catalogUpdated: (liveSession, items) => {

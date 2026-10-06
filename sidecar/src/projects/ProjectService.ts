@@ -126,6 +126,8 @@ export interface ThreadReadout {
 
 export class ProjectService {
   private readonly projects = new Map<string, Project>();
+  // Sessions last seen mid-turn, so a settle is told from any other update.
+  private readonly streamingSessions = new Set<string>();
   private readonly membership = new Map<string, Project>();
   /* The project a chat builds with its first spawn or plan, keyed by that chat.
      It joins the ledger when a thread binds to it or the chat writes a plan,
@@ -693,10 +695,14 @@ export class ProjectService {
       if (this.membership.has(event.request.appSessionId)) this.wakes.waitingChanged();
       return;
     }
-    // Any session that goes idle may be one the runtime cap can release now,
-    // which is what a delivery parked on capacity is waiting for.
-    if (event.type === 'session.updated' && !event.session.streaming)
-      this.wakes.sessionIdle(this.projects.values());
+    // A session whose turn just settled may be one the runtime cap can release
+    // now, which is what a delivery parked on capacity is waiting for. Other
+    // updates free nothing, and retrying on each would only churn.
+    if (event.type === 'session.updated') {
+      const id = event.session.appSessionId;
+      if (event.session.streaming) this.streamingSessions.add(id);
+      else if (this.streamingSessions.delete(id)) this.wakes.sessionIdle(this.projects.values());
+    }
     if (event.type !== 'session.closed') return;
     // A delivery parked on a busy member waits for its turn to settle. A closed
     // session never settles one, and the next delivery resumes it instead.

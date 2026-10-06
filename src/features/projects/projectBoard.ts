@@ -42,7 +42,7 @@ function summarize(
   const parts: string[] = [];
   // A held project is not idle: nothing moves until it is resumed, and only
   // its own page says so otherwise.
-  if (project.paused) parts.push('Held until you resume it');
+  if (project.paused) parts.push('Held');
   else if (project.done) parts.push('Done');
   if (lead.attention > 0) parts.push('Main chat needs you');
   else if (lead.working > 0) parts.push('Main chat working');

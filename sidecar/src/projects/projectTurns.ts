@@ -194,6 +194,8 @@ export class ProjectTurns {
     if (!project || thread?.ask?.requestId !== requestId) return;
     clearAsk(project, thread);
     await this.d.save();
+    // Its message may have left the inbox, which is room for a report owed.
+    this.d.wakes.kick(project);
   }
 
   /** Whatever the thread was waiting on, it is not waiting any more. */
