@@ -22,6 +22,7 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
   sendToChild,
+  sendDesignPrompt,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -52,12 +53,23 @@ import { QueuedPrompts } from './composer/QueuedPrompts';
 import { markGitTurnStart } from '../lib/git';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { canRunAgents } from '../lib/runtimeHealth';
+import { activeDraftTileId } from '../features/tabs/tabNavigation';
 import {
   chatWorktreeName,
   prepareChatWorkingDirectory,
   type ChatWorkingDirectoryResult,
 } from '../lib/chatWorkspace';
-import { newQueueId } from '../lib/promptQueue';
+import { createLocalDesignTranscriptEvent, newQueueId } from '../lib/promptQueue';
+import { browserTranscriptReferencesFromDesignReferences } from './browser/browserTranscriptReferences';
+import {
+  designMarks as stagedDesignMarks,
+  removeDesignMark,
+  restartDesignMarkNumbers,
+  setDesignMarks,
+  useDesignMarks,
+  withDesignShots,
+} from './browser/designMarks';
+import { DesignMarkChip } from './composer/DesignMarkChip';
 import {
   composePrompt,
   isVisualizeCommand,
@@ -261,13 +273,11 @@ export default function PromptInput({
   appSessionId,
   rightInset = false,
   compact = false,
-  onOverlayChange,
 }: {
   // The chat this composer writes into; null drafts a new chat.
   appSessionId: string | null;
   rightInset?: boolean;
   compact?: boolean;
-  onOverlayChange?: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
   const askSideChat = useAskSideChat();
@@ -280,8 +290,6 @@ export default function PromptInput({
   const state = useStoreSelector(
     (current) => ({
       activeSession: appSessionId ? current.sessions[appSessionId] : null,
-      // A split tab mounts a composer per tile; the focused one shows the live chat.
-      isFocused: appSessionId === current.activeAppSessionId,
       attachedReplies: appSessionId
         ? sideChatPanel(current.sideChats, appSessionId).attachedReplies
         : undefined,
@@ -295,7 +303,14 @@ export default function PromptInput({
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
-      composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
+      // A split tab mounts a composer per tile, and each takes its own chat's
+      // seeds, oldest first. The draft's composer takes those of its tile.
+      composerSeed:
+        current.composerSeeds.find((seed) =>
+          appSessionId
+            ? seed.appSessionId === appSessionId
+            : seed.draftTileId !== null && seed.draftTileId === activeDraftTileId(current),
+        ) ?? null,
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -416,7 +431,10 @@ export default function PromptInput({
     attachedFiles.length > 0 ||
     imageAttachments.images.length > 0 ||
     fileAttachments.files.length > 0;
-  const hasChips = hasSelection || hasAttachmentChips;
+  // Marks picked in this chat's browser, which go out with the next prompt.
+  // Their chips lead the row, so Backspace takes them last.
+  const designMarks = useDesignMarks(state.activeSession?.appSessionId);
+  const hasChips = hasSelection || hasAttachmentChips || designMarks.length > 0;
 
   const removeLastChip = () => {
     if (sideChatReplies.length > 0) {
@@ -432,7 +450,12 @@ export default function PromptInput({
       skillFilePaths: activeSkills.map((skill) => skill.filePath),
       documentPaths: documents,
     });
-    if (removal === null) return;
+    if (removal === null) {
+      const last = designMarks.at(-1);
+      if (last && state.activeSession)
+        removeDesignMark(state.activeSession.appSessionId, last.anchor.id);
+      return;
+    }
     switch (removal.chip) {
       case 'attachment':
         attachedFileSeqRef.current.delete(removal.path);
@@ -463,6 +486,13 @@ export default function PromptInput({
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
+  // The draft a seed that goes out at once makes, sent once it is the draft.
+  const seedToSend = useRef<string | null>(null);
+  // A seed that came while a submit was going out, or a seed was about to be
+  // sent, waits for it to settle, so it is not added to that prompt's text.
+  // The count moves as it settles.
+  const seedWaiting = useRef(false);
+  const [submitSettled, setSubmitSettled] = useState(0);
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
@@ -766,18 +796,18 @@ export default function PromptInput({
     setHistoryIndex(null);
   };
   const draftEditing = useDraftEditing({ input, editDraft, editorRef });
+
+  // Writes @N at the caret, so the prompt can say which mark it means.
+  const insertMarkReference = (number: number | undefined) => {
+    const editor = editorRef.current;
+    if (number === undefined || !editor) return;
+    const before = input.slice(0, editor.selection().start);
+    editor.insert(`${before && !/\s$/.test(before) ? ' ' : ''}@${String(number)} `);
+  };
+
   const { applyFormat } = draftEditing;
 
   const trigger = useMemo(() => composerTrigger(input, caret), [input, caret]);
-  const overlayOpen = [
-    trigger,
-    modelsOpen,
-    addMenuOpen,
-    feedbackReport,
-    draftEditing.menu,
-    scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
-    sendHintOpen,
-  ].some(Boolean);
 
   // Switching conversations abandons any schedule in progress; the bumped
   // generation also stops an in-flight save from clearing the new draft.
@@ -818,17 +848,6 @@ export default function PromptInput({
       if (turnStartingTimerRef.current) clearTimeout(turnStartingTimerRef.current);
     },
     [],
-  );
-
-  useEffect(() => {
-    onOverlayChange?.(overlayOpen);
-  }, [onOverlayChange, overlayOpen]);
-
-  useEffect(
-    () => () => {
-      onOverlayChange?.(false);
-    },
-    [onOverlayChange],
   );
 
   // Everything the bound harness offers, as far as it has landed. Both menus
@@ -971,23 +990,27 @@ export default function PromptInput({
   // Welcome-screen suggestion cards and saved notes seed the composer through
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
-  // Only the focused tile's composer takes the seed.
-  const composerSeed = state.isFocused ? state.composerSeed : null;
+  const composerSeed = state.composerSeed;
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
+    if (submittingRef.current || seedToSend.current !== null) {
+      seedWaiting.current = true;
+      return;
+    }
     consumedComposerSeedId.current = composerSeed.id;
     setHistoryIndex(null);
     // Notes and suggestion cards append to an in-progress draft. A surface
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
     setInput(text);
-    pendingCaret.current = text.length;
+    if (composerSeed.focus) pendingCaret.current = text.length;
+    seedToSend.current = composerSeed.send ? text : null;
     setVisualizeSelected(false);
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
     // and guard by seed id so a double-invoked effect cannot duplicate the text.
-    dispatch({ type: 'CLEAR_COMPOSER_SEED' });
-  }, [composerSeed, input, dispatch, setVisualizeSelected]);
+    dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
+  }, [composerSeed, input, dispatch, setVisualizeSelected, submitSettled]);
 
   // Restore the caret after a programmatic replacement. The editor syncs the
   // new text in its own effect (child effects run first), so by the time this
@@ -1159,6 +1182,13 @@ export default function PromptInput({
     return result;
   };
 
+  const settleSubmit = () => {
+    submittingRef.current = false;
+    if (!seedWaiting.current) return;
+    seedWaiting.current = false;
+    setSubmitSettled((count) => count + 1);
+  };
+
   // Re-entry guard: submit still awaits in-flight image encodes before the
   // input is cleared, so a second Enter during that window would resend.
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
@@ -1170,9 +1200,18 @@ export default function PromptInput({
       await runSubmit(originHoldId, mode, autonomyOverride);
     } finally {
       if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
+
+  // The browser's prompt box sends through here, as the composer's own prompt.
+  // Consuming its seed left any child of this chat, so it waits for the render
+  // that shows the chat itself as the target.
+  useEffect(() => {
+    if (seedToSend.current !== input || targetChildSessionId) return;
+    seedToSend.current = null;
+    void handleSubmit();
+  });
 
   // The chat a send creates opens in the place it was sent from, even if the
   // user switches tabs while attachments settle or the folder is prepared. The
@@ -1264,7 +1303,7 @@ export default function PromptInput({
       }
       toast.success('Prompt scheduled.');
     } finally {
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
 
@@ -1315,7 +1354,17 @@ export default function PromptInput({
     const intakeCutoff = nextIntakeSeqRef.current;
     const readyImagesPromise = imageAttachments.whenReady(intakeCutoff);
     const readyFilesPromise = fileAttachments.whenReady(intakeCutoff);
-    const [readyImages, readyFiles] = await Promise.all([readyImagesPromise, readyFilesPromise]);
+    // The chat's marks make this a design prompt, taken now as its text is: one
+    // picked while it settles is the next prompt's. Crops still being taken of
+    // them are waited for with the attachments.
+    const marksPromise = withDesignShots(
+      activeSession && !targetChildSessionId ? stagedDesignMarks(activeSession.appSessionId) : [],
+    );
+    const [readyImages, readyFiles, marks] = await Promise.all([
+      readyImagesPromise,
+      readyFilesPromise,
+      marksPromise,
+    ]);
     if (updateInterruptedSubmit()) return;
     const allFiles = pathsInSequence([
       ...attachedFiles.map((path, index) => ({
@@ -1571,6 +1620,84 @@ export default function PromptInput({
       return;
     }
 
+    // A design prompt goes with its marks' reference pack, built by the sidecar
+    // from their own snapshots, so it goes the same way once their browser has
+    // closed. It waits for a running turn like a queued prompt, whichever way
+    // it was sent.
+    const appSessionId = activeSession.appSessionId;
+    if (marks.length > 0) {
+      const design = { browserKey: appSessionId, references: marks };
+      // Only the marks this prompt carries go; one picked while it settles stays.
+      const sent = new Set(marks.map((mark) => mark.id));
+      const clearDesign = () => {
+        clearAfterSubmit();
+        setDesignMarks(
+          appSessionId,
+          stagedDesignMarks(appSessionId).filter((mark) => !sent.has(mark.id)),
+        );
+        dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
+      };
+      if (isLive) {
+        dispatch({
+          type: 'QUEUE_PROMPT',
+          appSessionId,
+          prompt: {
+            id: newQueueId(),
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+            design,
+          },
+        });
+        if (sideChatReplies.length > 0) detachSideChatReplies();
+        clearDesign();
+        return;
+      }
+      startTurnStarting();
+      const committed = await commitPrimaryPromptAfterBaseline({
+        waitForBaseline: () =>
+          workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
+        canCommit: () => !updateInterruptedSubmit(),
+        appendTranscript: () => {
+          dispatch({
+            type: 'SESSION_TRANSCRIPT',
+            event: createLocalDesignTranscriptEvent(
+              appSessionId,
+              displayText,
+              browserTranscriptReferencesFromDesignReferences(design.references),
+              { skills: skillNames, files: allFiles, sideChatReplies },
+            ),
+          });
+          if (sideChatReplies.length > 0) detachSideChatReplies();
+        },
+        resetComposer: () => {
+          const draftKept = composerRevisionRef.current !== composerRevision;
+          clearDesign();
+          // Numbering starts again once nothing can still say @N: no queued
+          // prompt, and no draft the user went on writing while this one settled.
+          if (
+            !draftKept &&
+            !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design)
+          )
+            restartDesignMarkNumbers(appSessionId);
+        },
+        sendCommand: () => {
+          try {
+            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            armTurnStartingTimeout();
+          } catch (err) {
+            stopTurnStarting();
+            console.error('[PromptInput] sendDesignPrompt failed:', err);
+          }
+        },
+      });
+      if (!committed) stopTurnStarting();
+      return;
+    }
+
     // Model is working and the user chose to queue: stage the prompt locally.
     // It is held client-side and delivered automatically when the turn finishes.
     if (isLive && mode === 'queue' && !targetChildSessionId) {
@@ -1701,6 +1828,8 @@ export default function PromptInput({
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);
+    // A design prompt's marks come back as chips; anything staged since goes.
+    setDesignMarks(activeSession.appSessionId, p.design?.references ?? []);
     for (const reply of p.sideChatReplies ?? []) {
       dispatch({
         type: 'ATTACH_SIDE_CHAT_REPLY',
@@ -2193,8 +2322,20 @@ export default function PromptInput({
               : undefined
           }
         >
-          {hasAttachmentChips && (
+          {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+              {designMarks.map((mark) => (
+                <DesignMarkChip
+                  key={mark.id}
+                  mark={mark}
+                  onInsert={() => {
+                    insertMarkReference(mark.anchor.mark);
+                  }}
+                  onRemove={() => {
+                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
+                  }}
+                />
+              ))}
               {imageAttachments.images.map((img) => (
                 <ImageChip
                   key={img.id}

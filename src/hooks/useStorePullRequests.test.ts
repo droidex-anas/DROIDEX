@@ -84,6 +84,7 @@ test('leaving the workspace for a session or a pull request chat draft keeps the
     executionMode: 'local',
     branch: undefined,
   });
-  assert.equal(seeded.composerSeed?.text, 'Help me with PR #12');
+  assert.equal(seeded.composerSeeds[0]?.text, 'Help me with PR #12');
+  assert.equal(seeded.composerSeeds[0]?.appSessionId, null);
   assert.equal(seeded.mainView, 'session');
 });

@@ -18,7 +18,6 @@ import { hotPathMetrics } from '../sidecar/src/telemetry/hotPathMetrics.ts';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
-const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 const SCENARIO = process.env.GUI_BENCH_REPLAY_SCENARIO ?? 'streaming';
 
@@ -47,7 +46,6 @@ const runtime = new GuiBenchReplayRuntime(turnsBySession, hooks);
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
-  assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
     await manager.handle(command);
   },
@@ -56,7 +54,6 @@ const server = startBridgeServer({
 
 const history = new HistoryPersistence();
 const browsers = new BrowserSessionManager({
-  assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
   emit: (event) => {
     server.broadcast(event);
   },
@@ -124,7 +121,7 @@ function stubMcpResource() {
   };
 }
 
-function requiredSecret(name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN'): string {
+function requiredSecret(name: 'BRIDGE_TOKEN'): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

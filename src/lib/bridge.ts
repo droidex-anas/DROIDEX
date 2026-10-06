@@ -47,6 +47,7 @@ export class Bridge {
   private lastGeneration: string | null = null;
   private lastSeq = 0;
   private validateWireMessage: WireMessageValidator | null = null;
+  private firstCommand: () => ClientCommand | null = () => null;
 
   constructor(
     private readonly loadBridgeInfo = getBridgeInfo,
@@ -100,7 +101,8 @@ export class Bridge {
       if (this.ws !== ws) return;
       this.backoff = 500;
       setTransportHealth('connected');
-      const pending = this.queue;
+      const first = this.firstCommand();
+      const pending = first ? [first, ...this.queue] : this.queue;
       this.queue = [];
       this.sentRequestIds = new Set();
       pending.forEach((command) => {
@@ -239,6 +241,11 @@ export class Bridge {
   private scheduleReconnect(): void {
     this.schedule(() => void this.connect(), this.backoff);
     this.backoff = Math.min(this.backoff * 2, 5_000);
+  }
+
+  /** Sets a command every new connection sends ahead of anything queued. */
+  sendFirstOnOpen(build: () => ClientCommand | null): void {
+    this.firstCommand = build;
   }
 
   send(command: ClientCommand): void {

@@ -6,7 +6,8 @@
 // mapping, the canonical event builder, and the text shaping (trimming,
 // system-text filtering, tool-result stringification) every parsed event
 // shares.
-import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './values.js';
+import { toolResultParts } from './toolResultImages.js';
+import { dateMs, numberValue, objectValue, stringValue } from './values.js';
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
@@ -140,13 +141,19 @@ function nonAssistantBlockEvent(
   index: number,
   block: Record<string, unknown>,
   messageRole: string | undefined,
+  textOnly: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'tool_result') {
+    // A text-only read leaves the content, and the pictures it would save, unread.
+    const parts = textOnly ? { text: '' } : toolResultParts(block.content);
+    // The app's own transcript files keep the saved paths beside the text.
+    const images = parts.images ?? storedImages(block.images);
     return event(base, index, 'tool_result', {
       toolName: stringValue(block.name),
       // Machine output, never a runnable App: the shared cap always applies.
-      text: trimText(stringifyToolResult(block.content), MAX_TEXT_CHARS),
+      text: trimText(parts.text, MAX_TEXT_CHARS),
+      ...(images ? { images } : {}),
       isError: Boolean(block.is_error ?? block.isError),
       // Carry the originating call's id so the renderer can correlate a
       // result to its tool_call exactly (result blocks have no name and
@@ -174,7 +181,8 @@ export function userPromptDisplay(storedText: string) {
   // A branch prompt carries a whole copied conversation after its request; it
   // is cut back to the request before the cap could cut the request off.
   const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
-  const designDisplay = designPromptDisplayFromText(rawText);
+  // Design prompts once went out inside the App frame; both frames come off.
+  const designDisplay = designPromptDisplayFromText(appPromptDisplayFromText(rawText) ?? rawText);
   const text =
     designDisplay?.text ??
     appPromptDisplayFromText(rawText) ??
@@ -183,18 +191,20 @@ export function userPromptDisplay(storedText: string) {
   return {
     text,
     browserRefs: designDisplay?.browserRefs,
-    sideChatReplies: withReplies?.sideChatReplies,
+    sideChatReplies: withReplies?.sideChatReplies ?? designDisplay?.sideChatReplies,
   };
 }
 
 // Map one stored JSONL row to its transcript events. Each line converts
 // independently (no cross-line state), which is what makes backward,
-// parse-on-demand windowing safe.
+// parse-on-demand windowing safe. A text-only read, for search, still yields
+// every event so their indices match the replay's.
 export function parseSessionLineEvents(
   appSessionId: string,
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
+  { textOnly = false }: { textOnly?: boolean } = {},
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -279,7 +289,7 @@ export function parseSessionLineEvents(
     const parsed =
       messageRole === 'assistant'
         ? assistantBlockEvent(base, index, block, forkPointId)
-        : nonAssistantBlockEvent(base, index, block, messageRole);
+        : nonAssistantBlockEvent(base, index, block, messageRole, textOnly);
     if (parsed) events.push(parsed);
   });
   return events;
@@ -294,18 +304,10 @@ function skillActivationFromContent(content: unknown[]) {
   return parseSkillActivation(text);
 }
 
-function stringifyToolResult(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        const block = objectValue(item);
-        return nonEmpty(stringValue(block?.text), safeStringify(item));
-      })
-      .filter(Boolean)
-      .join('\n');
-  }
-  return safeStringify(value);
+function storedImages(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const paths = value.filter((path): path is string => typeof path === 'string');
+  return paths.length > 0 ? paths : undefined;
 }
 
 function trimText(text: string, max: number): string {

@@ -288,6 +288,9 @@ export interface TranscriptEvent {
   // turn, with Stop or Send now. Reported by the harness, not inferred from the
   // text: it is not a failure and must not read as one.
   interrupted?: true;
+  // The pictures a 'tool_result' carried (a screenshot, an image file the agent
+  // read), as files saved in the profile. Their bytes are never in `text`.
+  images?: string[];
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
   author?: 'user';
@@ -588,7 +591,10 @@ export interface BrowserViewport {
   deviceScaleFactor: number;
 }
 
-export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
+export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile';
+
+/** The scheme a page is asked for; auto follows the system's setting. */
+export type BrowserColorScheme = 'light' | 'dark' | 'auto';
 type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface BrowserBox {
@@ -598,19 +604,6 @@ export interface BrowserBox {
   height: number;
 }
 
-export interface BrowserElementRef {
-  ref: string;
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes?: Record<string, string>;
-  className?: string;
-  box: BrowserBox;
-  computedStyles?: Record<string, string>;
-}
-
 interface BrowserState {
   browserSessionId: string;
   appSessionId?: string;
@@ -618,13 +611,9 @@ interface BrowserState {
   title?: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
-  screenshotPath?: string;
-  screenshotUrl?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
-  agentCursor?: { x: number; y: number };
   error?: string;
 }
 
@@ -632,7 +621,6 @@ interface BrowserNativeSnapshot {
   url: string;
   title?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
 }
@@ -644,6 +632,8 @@ export interface BrowserElementInspection {
   name?: string;
   text?: string;
   attributes: Record<string, string>;
+  /** Computed styles that say how it looks: colours, font, display, spacing. */
+  styles: Record<string, string>;
   box: BrowserBox;
   html: string;
   iframe?: {
@@ -659,6 +649,10 @@ export interface BrowserNetworkEvent {
   resourceType?: string;
   status?: number;
   error?: string;
+  durationMs?: number;
+  /** The size the server stated, when it stated one. */
+  bytes?: number;
+  cached?: boolean;
 }
 
 export interface BrowserConsoleEvent {
@@ -675,19 +669,26 @@ type BrowserNativeAction =
   | 'goBack'
   | 'goForward'
   | 'snapshot'
+  | 'readPage'
+  | 'readText'
+  | 'find'
   | 'click'
   | 'hover'
-  | 'selectOption'
+  | 'fill'
   | 'type'
-  | 'keypress'
+  | 'press'
   | 'scroll'
   | 'resize'
+  | 'colorScheme'
   | 'inspect'
   | 'network'
   | 'console'
-  | 'capture'
+  | 'screenshot'
   | 'close'
-  | 'fillCredentials';
+  | 'fillCredentials'
+  | 'wait'
+  | 'awaitViewport'
+  | 'evaluate';
 
 export interface BrowserNativeRequest {
   requestId: string;
@@ -697,18 +698,33 @@ export interface BrowserNativeRequest {
   url?: string;
   viewport?: BrowserViewport;
   viewportMode?: BrowserViewportMode;
+  colorScheme?: BrowserColorScheme;
+  /** browser_evaluate: the JavaScript to run in the page. */
+  script?: string;
+  ref?: string;
+  filter?: 'interactive' | 'all';
+  maxChars?: number;
+  query?: string;
   x?: number;
   y?: number;
   selector?: string;
   text?: string;
+  /** browser_wait: text that must be gone, an address fragment, how long. */
+  textGone?: string;
+  urlIncludes?: string;
+  waitMs?: number;
+  value?: string;
+  submit?: boolean;
   key?: string;
+  repeat?: number;
+  button?: 'left' | 'right' | 'middle';
+  count?: number;
+  modifiers?: string[];
   direction?: BrowserScrollDirection;
   pixels?: number;
-  box?: BrowserBox;
+  region?: BrowserBox;
   fullPage?: boolean;
-  deviceScaleFactor?: number;
-  clearNetworkLog?: boolean;
-  clearConsoleLog?: boolean;
+  format?: 'jpeg' | 'png';
 }
 
 export interface BrowserNativeResult {
@@ -721,6 +737,11 @@ export interface BrowserNativeResult {
   networkEvents?: BrowserNetworkEvent[];
   consoleEvents?: BrowserConsoleEvent[];
   image?: string;
+  mimeType?: 'image/jpeg' | 'image/png';
+  /** What the reading tools show the agent; for a screenshot, its geometry. */
+  text?: string;
+  /** How many lines browser_find matched. */
+  matches?: number;
   error?: string;
 }
 
@@ -762,6 +783,8 @@ export interface DesignAnchor {
   source?: ElementSource;
   screenshotPath?: string;
   strokes?: DesignStrokePoint[][];
+  /** The mark's number in the composer, which the user writes as @1, @2. */
+  mark?: number;
 }
 
 export interface DesignAnchorDetail {
@@ -1026,46 +1049,38 @@ export type ClientCommand =
     }
   | { type: 'browser.close'; appSessionId: string }
   | { type: 'browser.reload'; appSessionId: string }
-  | { type: 'browser.refresh'; appSessionId: string }
+  | {
+      // The browsers the app kept from its last run, sent on each connection.
+      // The sidecar takes up any it lacks under the same id, leaving the page.
+      type: 'browser.restore';
+      browsers: {
+        appSessionId: string;
+        browserSessionId: string;
+        url: string;
+        viewport: BrowserViewport;
+        viewportMode: BrowserViewportMode;
+      }[];
+    }
   | {
       type: 'browser.resizeViewport';
       appSessionId: string;
       viewport: BrowserViewport;
       viewportMode: BrowserViewportMode;
+      /** The pane's size for Fit, taken only while the page is on Fit. */
+      follow?: boolean;
     }
-  | {
-      type: 'browser.click';
-      appSessionId: string;
-      ref?: string;
-      x?: number;
-      y?: number;
-      source?: 'agent' | 'user';
-    }
-  | { type: 'browser.type'; appSessionId: string; text: string }
-  | { type: 'browser.keypress'; appSessionId: string; key: string }
-  | {
-      type: 'browser.scroll';
-      appSessionId: string;
-      direction: BrowserScrollDirection;
-      pixels?: number;
-      ref?: string;
-      source?: 'agent' | 'user';
-    }
-  | {
-      type: 'browser.screenshot';
-      appSessionId: string;
-      fullPage?: boolean;
-      deviceScaleFactor?: number;
-    }
-  | { type: 'browser.inspectPoint'; appSessionId: string; x: number; y: number }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
+  /** Marks the user took away or picked again, so design-mode reads only live ones. */
+  | { type: 'browser.design.removeReferences'; appSessionId: string; ids: string[] }
   | {
       type: 'browser.design.sendPrompt';
       appSessionId: string;
       instruction: string;
-      referenceIds: string[];
+      /** The prompt's own snapshots of its marks, each under an id no other pick has. */
+      references: DesignReference[];
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
     }
-  | { type: 'browser.native.result'; result: BrowserNativeResult }
   | { type: 'sidebar.result'; result: SidebarResult };
 
 type ChildUpdatedEvent =
@@ -1295,9 +1310,13 @@ export type ServerEvent =
   | { type: 'history.persistenceRecovered' }
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
-  | { type: 'browser.native.request'; request: BrowserNativeRequest }
   | { type: 'sidebar.request'; request: SidebarRequest }
-  | { type: 'browser.closed'; appSessionId: string }
+  | {
+      type: 'browser.closed';
+      appSessionId: string;
+      /** Closed with the chat's runtime, not by the user: the pane stays open for a new page. */
+      keepPane?: boolean;
+    }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
 export const BRIDGE_PROTOCOL_VERSION = 9 as const;

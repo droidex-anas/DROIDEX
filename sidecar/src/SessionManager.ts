@@ -52,6 +52,7 @@ import { buildRuntimeSnapshot } from './runtimeSnapshot.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
+import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import { SidebarRequests } from './sidebar/sidebarRequests.js';
 import { SidebarSessions } from './sidebar/SidebarSessions.js';
 import { requireProjectService } from './projects/service.js';
@@ -203,7 +204,6 @@ export interface SessionManagerDependencies {
 
 export interface SessionManagerOptions {
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
-  assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
   dependencies?: SessionManagerDependencies;
@@ -212,6 +212,8 @@ export interface SessionManagerOptions {
   // writing under $HOME long after the answer arrives. A test that pins $HOME
   // to a temp directory must pass its own probes — usually none at all.
   providerProbes?: ProviderProbeMap;
+  /** The desktop app's browser channel; without one, browser actions fail. */
+  requestBrowser?: RequestBrowser;
 }
 
 const MAX_OPEN_CHILD_SESSIONS = boundedInt(
@@ -408,7 +410,6 @@ export class SessionManager {
         },
       });
       const browsers = new BrowserSessionManager({
-        assetUrlFor: options.assetUrlFor,
         emit: (event) => {
           this.emit(event);
         },
@@ -728,7 +729,14 @@ export class SessionManager {
       forgetPendingSettings: (appSessionId) => {
         this.modelSettings.forget(appSessionId);
       },
-      closeBrowserSession: (appSessionId) => this.browsers.close(appSessionId),
+      // A browser closed with its chat's runtime goes from the app too, with
+      // its marks, while its pane stays for a new page. One closed by a
+      // shutdown is kept for the next sidecar to take up.
+      closeBrowserSession: async (appSessionId) => {
+        await this.browsers.close(appSessionId);
+        if (!this.shutdownPromise && !this.browsers.hasSession(appSessionId))
+          this.emit({ type: 'browser.closed', appSessionId, keepPane: true });
+      },
       stopVoiceSession: (appSessionId) => this.sessionVoice.closeSession(appSessionId),
       emit: (event) => {
         this.emit(event);
@@ -828,7 +836,14 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      sendPrompt: (appSessionId, prompt) => this.lifecycle.send(appSessionId, prompt),
+      framePrompt: (appSessionId, text, responseFormat) =>
+        this.sessionPrompt(appSessionId, text, responseFormat),
+      sendPrompt: (appSessionId, prompt, mentions) =>
+        this.lifecycle.send(appSessionId, prompt, mentions),
+      requestBrowser:
+        options.requestBrowser ??
+        (() =>
+          Promise.reject(new Error('The browser is only available in the DROIDEX desktop app.'))),
     });
   }
 
@@ -1176,41 +1191,23 @@ export class SessionManager {
         // Closing the last resource a session was holding can make it retirable.
         this.runtimeRetirement.arm();
         return;
+      case 'browser.restore':
+        await this.sessionBrowser.restore(cmd);
+        return;
       case 'browser.reload':
         await this.sessionBrowser.reload(cmd);
-        return;
-      case 'browser.refresh':
-        await this.sessionBrowser.refresh(cmd);
         return;
       case 'browser.resizeViewport':
         await this.sessionBrowser.resizeViewport(cmd);
         return;
-      case 'browser.click':
-        await this.sessionBrowser.click(cmd);
-        return;
-      case 'browser.type':
-        await this.sessionBrowser.type(cmd);
-        return;
-      case 'browser.keypress':
-        await this.sessionBrowser.keypress(cmd);
-        return;
-      case 'browser.scroll':
-        await this.sessionBrowser.scroll(cmd);
-        return;
-      case 'browser.screenshot':
-        await this.sessionBrowser.screenshot(cmd);
-        return;
-      case 'browser.inspectPoint':
-        await this.sessionBrowser.inspectPoint(cmd);
-        return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);
         return;
+      case 'browser.design.removeReferences':
+        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
+        return;
       case 'browser.design.sendPrompt':
         await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
-      case 'browser.native.result':
-        this.sessionBrowser.resolveNativeBrowserRequest(cmd.result);
         return;
       case 'sidebar.result':
         this.sidebarRequests.answer(cmd.result);
