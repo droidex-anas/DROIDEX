@@ -5,9 +5,9 @@
 // source and the manifest, projects each frame's build state from this registry,
 // and enqueues a build once a revision is durable.
 //
-// An outcome reaches the canvas in one commit on the workspace's own queue: the
-// gate, the outcome file and the recorded state all run against the head as it
-// stands there, so nothing can land after a newer attempt won the frame.
+// An outcome reaches the canvas in one commit on the workspace's own queue, and
+// its gate runs again after every await there, so nothing about a build lands
+// once a newer attempt, a cancellation or shutdown has taken its frame.
 
 import { builtState, CanvasBuildCache, type BuildResult } from './canvasBuildCache.js';
 import { buildFailure, unsavedBuild } from './canvasBuildFailures.js';
@@ -53,15 +53,14 @@ export interface CanvasBuildHost {
   readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles>;
   /**
    * Publishes one frame on this canvas's commit queue, the queue a write
-   * commits on. `publish` runs with the design as the head holds it and answers
-   * with what the manifest should keep, or null to publish nothing at all. The
-   * result never rejects: a commit that cannot be made is the workspace's to
-   * report, and the frame keeps its state in memory either way.
+   * commits on, so `publish` runs with the head held still and answers with
+   * what the manifest keeps, or null to publish nothing. It never rejects: a
+   * commit that cannot be made is the workspace's to report.
    */
   commitBuild(
     canvasId: string,
     designId: string,
-    publish: (target: BuildTarget) => Promise<BuildCommit | null>,
+    publish: () => Promise<BuildCommit | null>,
   ): Promise<void>;
 }
 
@@ -84,7 +83,6 @@ interface QueuedBuild {
   revisionId: string;
 }
 
-/** The identity a build's result is pinned to. */
 interface BuildPin {
   designId: string;
   revisionId: string;
@@ -388,19 +386,24 @@ export class CanvasBuilds {
   }
 
   /**
-   * Publishes one outcome in one commit: the gate runs against the head as the
-   * commit finds it, and the outcome file, the recorded state and the frame all
-   * follow inside that same step or not at all.
+   * Publishes one outcome in one commit: file, state and frame all follow the
+   * gate inside that step or not at all. The gate runs again after the write,
+   * because cancellation, a rebuild and `close` happen outside this queue; a
+   * result that lost its frame there takes its file back and settles silently.
    */
   private publish(slot: BuildSlot, job: RunningBuild, result: BuildResult): Promise<void> {
-    return this.owner.host.commitBuild(job.canvasId, job.designId, async (target) => {
-      if (this.closed || slot.job !== job) return null;
-      if (!canPublish(target.frame, job)) return null;
+    return this.owner.host.commitBuild(job.canvasId, job.designId, async () => {
+      if (!this.wanted(slot, job)) return null;
       try {
         await this.owner.cache.saveOutcome(job.canvasId, job.designId, job.revisionId, result);
       } catch (error) {
         // The frame still reports what the build did; a restart rebuilds it.
         console.error('A Canvas build outcome was not saved:', error);
+      }
+      const target = this.wanted(slot, job);
+      if (!target) {
+        await this.owner.cache.discardOutcome(job.canvasId, job.revisionId);
+        return null;
       }
       this.record(
         job.canvasId,
@@ -411,19 +414,16 @@ export class CanvasBuilds {
     });
   }
 
-  /**
-   * Whether this build is still the one its frame wants. The gate that decides
-   * publication is the one inside the commit; this only saves work and orphans.
-   */
-  private wanted(slot: BuildSlot, job: RunningBuild): boolean {
-    if (this.closed || slot.job !== job) return false;
+  /** The frame this build may still publish to, or null once it may not. */
+  private wanted(slot: BuildSlot, job: RunningBuild): BuildTarget | null {
+    if (this.closed || slot.job !== job) return null;
     const target = this.owner.host.buildTarget(job.canvasId, job.designId);
     if (!target) {
       // The frame is gone, so nothing projects its build state any more.
       this.states.delete(key(job.canvasId, job.designId));
-      return false;
+      return null;
     }
-    return canPublish(target.frame, job);
+    return canPublish(target.frame, job) ? target : null;
   }
 
   /** Stops one slot's build without publishing anything for it. */

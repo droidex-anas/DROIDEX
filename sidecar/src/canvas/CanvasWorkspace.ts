@@ -361,14 +361,14 @@ export class CanvasWorkspace {
   /**
    * Publishes one frame on this canvas's commit queue, the queue a write
    * commits on, so a build's gate, its outcome file and its state all land in
-   * one serialized step against the head as this commit finds it. `publish`
-   * answers with the revision the design now falls back to (spec §7), or null
-   * to publish nothing at all.
+   * one serialized step with the head held still. `publish` answers with the
+   * revision the design now falls back to (spec §7), or null to publish
+   * nothing at all.
    */
   commitBuild(
     canvasId: string,
     designId: string,
-    publish: (target: BuildTarget) => Promise<BuildCommit | null>,
+    publish: () => Promise<BuildCommit | null>,
   ): Promise<void> {
     return this.commits
       .admit(() =>
@@ -377,10 +377,7 @@ export class CanvasWorkspace {
           const design = live?.designs.find((entry) => entry.designId === designId);
           // A build that outlived its canvas has nothing left to report.
           if (!live || !design) return { value: undefined };
-          const committed = await publish({
-            frame: toFrame(canvasId, design, this.builds),
-            lastWorkingRevisionId: design.lastWorkingRevisionId,
-          });
+          const committed = await publish();
           if (!committed) return { value: undefined };
           const next = structuredClone(live);
           const target = this.design(next, designId);

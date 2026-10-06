@@ -245,9 +245,8 @@ export class CanvasFiles {
   }
 
   /**
-   * Replaces one derived build output in one rename. Build outputs are
-   * rebuildable caches (spec §7), so a reader treats a missing name as a miss,
-   * but a writer still flushes: a half-written artifact would be served.
+   * Replaces one derived build output in one rename, flushed: a reader treats a
+   * missing name as a miss, but a half-written one would be served (spec §7).
    */
   async writeBuildOutput(canvasId: string, name: string, content: string): Promise<void> {
     const canvas = this.canvasPath(canvasId);
@@ -268,7 +267,7 @@ export class CanvasFiles {
     }
   }
 
-  /** The derived outputs this canvas holds. A cache that is not there is empty. */
+  /** The outputs this canvas holds. A cache that is not there is empty. */
   async listBuildOutputs(canvasId: string): Promise<Set<string>> {
     const builds = join(this.canvasPath(canvasId), BUILDS_DIRECTORY);
     try {
@@ -277,6 +276,11 @@ export class CanvasFiles {
     } catch (error) {
       throw storageFailure(READ_RECOVERY, error);
     }
+  }
+
+  /** Removes one derived output; one that cannot go waits for the next open. */
+  async removeBuildOutput(canvasId: string, name: string): Promise<void> {
+    await this.discard(join(this.canvasPath(canvasId), BUILDS_DIRECTORY, buildOutputSegment(name)));
   }
 
   /** One derived output, or null once the cache no longer holds it. */

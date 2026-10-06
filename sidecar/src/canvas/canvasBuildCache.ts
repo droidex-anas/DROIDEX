@@ -93,6 +93,11 @@ export class CanvasBuildCache {
     );
   }
 
+  /** Takes back an outcome whose build lost its frame while it was writing. */
+  discardOutcome(canvasId: string, revisionId: string): Promise<void> {
+    return this.files.removeBuildOutput(canvasId, outcomeName(revisionId));
+  }
+
   /** One ready artifact's document, or null once the cache has lost it. */
   async readArtifact(canvasId: string, artifactId: string): Promise<string | null> {
     return this.files.readBuildOutput(canvasId, artifactName(artifactId));
