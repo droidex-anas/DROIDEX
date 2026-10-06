@@ -104,7 +104,13 @@ function observeMain(electron) {
   electron.session.defaultSession.protocol = {
     handle: (scheme, handler) => boot.protocolHandlers.set(scheme, handler),
   };
-  electron.session.fromPartition = () => ({ protocol: { handle() {} } });
+  // A partitioned session carries the same surface the preview guest configures.
+  electron.session.fromPartition = () => ({
+    protocol: { handle() {} },
+    setProxy: () => Promise.resolve(),
+    setPermissionRequestHandler() {},
+    setPermissionCheckHandler() {},
+  });
 
   const github = require('./github.cjs');
   const conversation = require('./githubPrConversation.cjs');

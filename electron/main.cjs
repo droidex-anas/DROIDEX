@@ -223,7 +223,7 @@ app.whenReady().then(async () => {
   registerLocalImageProtocol();
   registerMediaPermissions();
   registerFaviconProtocol();
-  registerCanvasPreviewProtocol();
+  await registerCanvasPreviewProtocol();
   createMainWindow();
   powerTier.start();
   const metricsTimer = setInterval(() => performanceMetrics.collect(), 30_000);
@@ -362,6 +362,11 @@ function installCanvasPreviewAttachment(contents) {
     }
     delete preferences.preload;
     delete params.preload;
+    // The guest's own in-memory session: no storage, every TCP connection to a
+    // dead proxy, no permissions. A `<webview>` may name any partition, so this
+    // is forced here rather than trusted from the element.
+    params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+    preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
     preferences.nodeIntegration = false;
     preferences.nodeIntegrationInSubFrames = false;
     preferences.contextIsolation = true;
@@ -486,7 +491,7 @@ function registerFaviconProtocol() {
 // drop it, and the generated frame inherits it through `srcdoc`.
 function registerCanvasPreviewProtocol() {
   const document = canvasPreview.canvasPreviewDocument();
-  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, (request) => {
+  const serve = (request) => {
     if (request.url !== canvasPreview.CANVAS_PREVIEW_URL) {
       console.warn('Refused a Canvas preview request for %s', request.url);
       return new Response('Forbidden', { status: 403, headers: { 'content-type': 'text/plain' } });
@@ -499,7 +504,15 @@ function registerCanvasPreviewProtocol() {
         'x-content-type-options': 'nosniff',
       },
     });
-  });
+  };
+  // Guests live in their own in-memory partition, which is where the preview's
+  // network is shut off; the default session serves the scheme too, so a
+  // mis-partitioned guest fails to attach rather than failing to load.
+  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, serve);
+  return canvasPreview.configureCanvasPreviewSession(
+    session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION),
+    serve,
+  );
 }
 
 function registerIpc() {

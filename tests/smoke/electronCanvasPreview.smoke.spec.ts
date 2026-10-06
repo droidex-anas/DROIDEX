@@ -18,6 +18,7 @@ import {
 import {
   askGuest,
   compileDesign,
+  generatedFrameUrl,
   guestUrl,
   inspectGuest,
   mountPreviewGuest,
@@ -273,85 +274,183 @@ test('[C5] main ends a guest the board asks about, and refuses one it never atta
 });
 
 /**
- * Every egress path CSP's fetch directives do not obviously cover. ICE is the
- * one the reviewer got a datagram out of; `sendBeacon`, `a[ping]` and the
- * prefetch hints are the siblings worth holding to the same standard.
+ * Every egress path a fetch directive does not obviously cover. ICE is the one
+ * the reviewer got out, over UDP and then over TURN with TCP; a direct TCP host
+ * candidate, WebTransport, `sendBeacon` and the prefetch hints are the siblings
+ * worth holding to the same standard.
  *
- * `stunUrl` is a UDP listener and `httpUrl` a stream one; the design must reach
- * neither. The anchor is clicked from an effect rather than at module scope,
- * because clicking one before this document has mounted ends the document.
+ * Each attempt reports itself through the production channel before the test
+ * measures anything, so "zero at the listener" can never mean "never tried".
+ * `stunUrl` is a UDP listener and `httpUrl` a stream one.
  */
 function egressDesign(stunUrl: string, httpUrl: string): SourceFiles {
+  const turn = `turn:${httpUrl.replace('http://', '')}?transport=tcp`;
   return {
     'main.tsx': `import { useEffect, useState } from 'react';
 
 const tried: string[] = [];
-try {
-  const peer = new RTCPeerConnection({
-    iceServers: [{ urls: ${JSON.stringify(`stun:${stunUrl}`)} }],
-  });
+const attempt = (name: string, run: () => void) => {
+  try {
+    run();
+    tried.push(name);
+  } catch (error) {
+    tried.push(name + ' refused: ' + String(error).slice(0, 40));
+  }
+};
+const report = () => {
+  const said = tried.join(' ');
+  setTimeout(() => {
+    throw new Error('EGRESS ' + said);
+  }, 0);
+};
+
+const negotiate = (peer: RTCPeerConnection) => {
   peer.createDataChannel('canvas');
   void peer.createOffer().then((offer) => peer.setLocalDescription(offer));
-  tried.push('ice');
-} catch (error) {
-  tried.push('ice refused: ' + String(error));
-}
-void navigator.sendBeacon?.(${JSON.stringify(httpUrl + '/beacon')});
-for (const rel of ['dns-prefetch', 'preconnect', 'prefetch']) {
-  const hint = document.createElement('link');
-  hint.rel = rel;
-  hint.href = ${JSON.stringify(httpUrl + '/hint')};
-  document.head.append(hint);
-}
+};
+const servers = [
+  { urls: ${JSON.stringify(`stun:${stunUrl}`)} },
+  { urls: ${JSON.stringify(turn)}, username: 'u', credential: 'c' },
+];
+
+// Negotiated at once, and again on a peer that existed well before it: the
+// reviewer found both timings reached a TURN server over TCP.
+attempt('ice-now', () => negotiate(new RTCPeerConnection({ iceServers: servers })));
+const waiting = new RTCPeerConnection({ iceServers: servers });
+// A direct host candidate needs no server at all.
+attempt('ice-host', () => negotiate(new RTCPeerConnection()));
+attempt('beacon', () => {
+  navigator.sendBeacon?.(${JSON.stringify(httpUrl + '/beacon')});
+});
+attempt('hints', () => {
+  for (const rel of ['dns-prefetch', 'preconnect', 'prefetch']) {
+    const hint = document.createElement('link');
+    hint.rel = rel;
+    hint.href = ${JSON.stringify(httpUrl + '/hint')};
+    document.head.append(hint);
+  }
+});
+attempt('webtransport', () => {
+  void new WebTransport(${JSON.stringify(httpUrl.replace('http://', 'https://') + '/wt')}).ready.catch(
+    () => undefined,
+  );
+});
 
 export default function Hey() {
-  const [pinged, setPinged] = useState(false);
+  const [late, setLate] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => {
-      const ping = document.createElement('a');
-      ping.setAttribute('ping', ${JSON.stringify(httpUrl + '/ping')});
-      // A fragment, so the click fires the ping rather than leaving the page.
-      ping.href = '#canvas';
-      document.documentElement.append(ping);
-      ping.click();
-      setPinged(true);
+      attempt('ice-late', () => negotiate(waiting));
+      report();
+      setLate(true);
     }, 200);
     return () => clearTimeout(timer);
   }, []);
-  return <p className={pinged ? 'block h-96 w-48' : 'block h-24 w-48'}>{tried.join(',')}</p>;
+  return <p className={late ? 'block h-96 w-48' : 'block h-24 w-48'}>{tried.length}</p>;
 }
 `,
   };
 }
 
-test('[C6] no generated network path reaches a listener, including ICE', async () => {
+/**
+ * `a[ping]` on its own guest, because clicking the anchor stops that document
+ * running: anything measured after it in the same design would be measuring a
+ * dead frame. The attempt reports itself before the click.
+ */
+function pingDesign(httpUrl: string): SourceFiles {
+  return {
+    'main.tsx': `import { useEffect, useState } from 'react';
+
+export default function Hey() {
+  const [clicked, setClicked] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const ping = document.createElement('a');
+      ping.setAttribute('ping', ${JSON.stringify(httpUrl + '/ping')});
+      // A fragment, so the click never aims this frame at the listener itself.
+      ping.href = '#canvas';
+      document.documentElement.append(ping);
+      setClicked(true);
+      setTimeout(() => {
+        throw new Error('EGRESS ping');
+      }, 0);
+      setTimeout(() => ping.click(), 50);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, []);
+  return <p className={clicked ? 'block h-96 w-48' : 'block h-24 w-48'}>ping</p>;
+}
+`,
+  };
+}
+
+/** The paths the design must have attempted before zero means anything. */
+const EGRESS_PATHS = ['ice-now', 'ice-host', 'beacon', 'hints', 'webtransport', 'ice-late'];
+
+/** Drains until every named path has reported itself, then lets traffic land. */
+async function awaitAttempts(page: Page, instance: PreviewInstance, paths: readonly string[]) {
+  const reported = new Set<string>();
+  const collect = async () => {
+    for (const event of (await drainGuest(page, instance)).events) {
+      if (event.event !== 'diagnostics') continue;
+      for (const diagnostic of event.diagnostics) {
+        if (!diagnostic.message.includes('EGRESS ')) continue;
+        for (const path of paths) if (diagnostic.message.includes(path)) reported.add(path);
+      }
+    }
+    return reported;
+  };
+  await expect
+    .poll(
+      async () => {
+        const seen = await collect();
+        return paths.every((path) => seen.has(path));
+      },
+      { timeout: 30_000, intervals: [100] },
+    )
+    .toBe(true);
+  for (let poll = 0; poll < 20; poll += 1) await collect();
+  return [...reported];
+}
+
+test('[C6] no generated network path reaches a listener, including ICE over TCP', async () => {
   await withDatagramListener(async (datagram) => {
     await withNetworkListener(async ({ url, attempts }) => {
-      const design = await compileDesign(egressDesign(datagram.url, url));
+      const quiet = { connections: 0, requests: 0, upgrades: 0 };
+      const egress = await compileDesign(egressDesign(datagram.url, url));
+      const ping = await compileDesign(pingDesign(url));
+
       await withCanvasHost(async (app, page) => {
         const guestId = await mountPreviewGuest(page);
-        const instance = newInstance('ice');
+        const instance = newInstance('egress');
         assert.equal(
-          await askGuest(page, previewStartScript(instance, design.html)),
+          await askGuest(page, previewStartScript(instance, egress.html)),
           PREVIEW_STARTED,
         );
-        await expect
-          .poll(
-            async () =>
-              (await drainGuest(page, instance)).events.some((event) => event.event === 'ready'),
-            { timeout: 20_000, intervals: [100] },
-          )
-          .toBe(true);
-        // Give every attempt the design made room to land before measuring.
-        for (let poll = 0; poll < 20; poll += 1) await drainGuest(page, instance);
+        const reported = await awaitAttempts(page, instance, EGRESS_PATHS);
 
         assert.equal(datagram.datagrams(), 0, 'ICE reached the UDP listener');
-        assert.deepEqual(attempts, { connections: 0, requests: 0, upgrades: 0 });
-        // The design is still running, so none of this ended the guest either.
+        assert.deepEqual(attempts, quiet);
+        // Still the document that was mounted rather than a replacement: every
+        // path above reported itself from inside it before this measured.
+        assert.match(await generatedFrameUrl(app, guestId), /^about:srcdoc/);
         assert.equal(await guestUrl(app, guestId), GUEST_URL);
-        console.log(
-          JSON.stringify({ generatedNetwork: { datagrams: datagram.datagrams(), ...attempts } }),
+        console.log(JSON.stringify({ generatedNetwork: { ...attempts, reported } }));
+      });
+
+      // The ping on its own guest, so its click cannot cut the measurement short.
+      await withCanvasHost(async (_app, page) => {
+        const guestId = await mountPreviewGuest(page);
+        assert.ok(guestId > 0);
+        const instance = newInstance('ping');
+        assert.equal(
+          await askGuest(page, previewStartScript(instance, ping.html)),
+          PREVIEW_STARTED,
         );
+        await awaitAttempts(page, instance, ['ping']);
+
+        assert.deepEqual(attempts, quiet, 'a[ping] reached the listener');
+        assert.equal(datagram.datagrams(), 0);
       });
     });
   });
@@ -421,5 +520,75 @@ export default function Hey() {
       2,
     );
     console.log(JSON.stringify({ wedgedAfterReady: { ...pids, owned, goneMs } }));
+  });
+});
+
+test('[C8] a wide-character diagnostic is truncated, and never ends the preview', async () => {
+  // 200 three-byte characters: 200 code units, 600 bytes. A cap counted in code
+  // units lets it through; a reader that refuses over 512 bytes then throws the
+  // whole snapshot away and ends the guest over a diagnostic.
+  const design = await compileDesign({
+    'main.tsx': `import { useEffect, useState } from 'react';
+
+export default function Hey() {
+  const [thrown, setThrown] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setThrown(true);
+      setTimeout(() => {
+        throw new Error('界'.repeat(200));
+      }, 0);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, []);
+  return <p className={thrown ? 'block h-96 w-48' : 'block h-24 w-48'}>Hey</p>;
+}
+`,
+  });
+  await withCanvasHost(async (app, page) => {
+    const guestId = await mountPreviewGuest(page);
+    const instance = newInstance('wide');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+
+    // Every snapshot is read by the production reader, so a refusal here would
+    // surface as a drain that cannot be validated at all.
+    let message = '';
+    await expect
+      .poll(
+        async () => {
+          for (const event of (await drainGuest(page, instance)).events) {
+            if (event.event !== 'diagnostics') continue;
+            for (const diagnostic of event.diagnostics)
+              if (diagnostic.message.includes('界')) message = diagnostic.message;
+          }
+          return message.length > 0;
+        },
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+
+    // Cut to the byte cap on a code point boundary: 170 characters is 510 bytes,
+    // and a 171st would be 513.
+    assert.equal(Buffer.byteLength(message, 'utf8') <= 512, true);
+    assert.equal(message.includes('�'), false, 'a character was split in half');
+    assert.equal(
+      [...message].every((character) => character.length === 1),
+      true,
+    );
+    assert.ok(message.includes('界'.repeat(100)), 'the diagnostic still says something');
+
+    // The guest is untouched: a diagnostic is display data, not a reason to end a
+    // preview, and the design is still running.
+    assert.equal(await guestUrl(app, guestId), GUEST_URL);
+    assert.equal(await generatedFrameUrl(app, guestId), 'about:srcdoc');
+    assert.deepEqual(await drainGuest(page, instance), { events: [], dropped: 0 });
+    console.log(
+      JSON.stringify({
+        wideDiagnostic: {
+          characters: [...message].length,
+          bytes: Buffer.byteLength(message, 'utf8'),
+        },
+      }),
+    );
   });
 });

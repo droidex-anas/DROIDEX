@@ -143,3 +143,18 @@ export async function guestUrl(app: ElectronApplication, guestId: number): Promi
     'guest url',
   );
 }
+
+/** The generated design's own frame URL, so a probe cannot replace it unseen. */
+export async function generatedFrameUrl(
+  app: ElectronApplication,
+  guestId: number,
+): Promise<string> {
+  return bounded(
+    app.evaluate(({ webContents }, id) => {
+      const guest = webContents.fromId(id);
+      if (!guest) throw new Error('Main does not know that guest');
+      return guest.mainFrame.frames[0]?.url ?? 'none';
+    }, guestId),
+    'generated frame url',
+  );
+}

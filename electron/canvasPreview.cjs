@@ -22,6 +22,25 @@
 const CANVAS_PREVIEW_SCHEME = 'droidex-canvas-preview';
 /** The only URL the handler serves, and the only `src` an attachment allows. */
 const CANVAS_PREVIEW_URL = `${CANVAS_PREVIEW_SCHEME}://preview/guest`;
+/**
+ * The guest's own in-memory partition. Not `persist:`, so it keeps no storage,
+ * and separate from the default session so the preview's network stack can be
+ * shut off at the socket without touching the app's.
+ */
+const CANVAS_PREVIEW_PARTITION = 'droidex-canvas-preview';
+
+/**
+ * A proxy that cannot be reached, with loopback explicitly not bypassed.
+ * Chromium resolves every TCP connection the guest makes through this, including
+ * the P2P sockets WebRTC uses for TURN over TCP, so they go nowhere. Without
+ * `<-loopback>` Chromium would bypass the proxy for loopback, which is exactly
+ * where a probe's listener lives.
+ */
+const CANVAS_PREVIEW_PROXY = {
+  mode: 'fixed_servers',
+  proxyRules: 'http://127.0.0.1:1',
+  proxyBypassRules: '<-loopback>',
+};
 
 /**
  * No network source anywhere, and `about:` frames only. Inline script and style
@@ -30,9 +49,10 @@ const CANVAS_PREVIEW_URL = `${CANVAS_PREVIEW_SCHEME}://preview/guest`;
  * 03a's ruling is that runtime loading is bounded here, and esbuild's `__require`
  * shim throws in a browser.
  *
- * `webrtc` is named because ICE is not a fetch and `connect-src` does not govern
- * it: without this a design could reach a STUN server. `attach` below takes the
- * guest's UDP path away as well, so neither layer is the only thing holding.
+ * This policy does not bound WebRTC at all: `connect-src` does not govern ICE,
+ * and Chromium never shipped the CSP3 `webrtc` directive — it logs it as
+ * unrecognised. The guest's own session is what closes that path, by sending
+ * every TCP connection through a dead proxy and refusing non-proxied UDP.
  */
 const CANVAS_PREVIEW_CSP = [
   "default-src 'none'",
@@ -46,7 +66,6 @@ const CANVAS_PREVIEW_CSP = [
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
-  "webrtc 'block'",
 ].join('; ');
 
 /** One message from the generated frame, as JSON. Diagnostics are the largest. */
@@ -55,7 +74,12 @@ const MAX_PREVIEW_EVENT_BYTES = 4096;
 const MAX_PREVIEW_QUEUED_EVENTS = 64;
 /** Diagnostics one message may carry, and how much text each may carry. */
 const MAX_PREVIEW_DIAGNOSTICS = 8;
-const MAX_PREVIEW_MESSAGE_CHARS = 512;
+/**
+ * Bytes, like every other cap here, and the same number the renderer's reader
+ * cuts to. Both sides cut rather than refuse, so a design cannot end its own
+ * preview by writing a diagnostic in a script where characters are three bytes.
+ */
+const MAX_PREVIEW_TEXT_BYTES = 512;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
@@ -92,7 +116,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
   };
   const report = (message) => {
     post('diagnostics', {
-      diagnostics: [{ code: 'preview_error', message: String(message).slice(0, ${String(MAX_PREVIEW_MESSAGE_CHARS)}) }],
+      diagnostics: [{ code: 'preview_error', message: String(message) }],
     });
   };
   addEventListener('error', (event) => report(event.message || 'The preview stopped with an error.'));
@@ -131,8 +155,17 @@ const INTERMEDIATE_SCRIPT = `(() => {
 
   const encoder = new TextEncoder();
   const bytes = (value) => encoder.encode(value).length;
-  const text = (value) =>
-    typeof value === 'string' ? value.slice(0, ${String(MAX_PREVIEW_MESSAGE_CHARS)}) : '';
+  // Cut on a code point boundary, to the same byte cap the renderer cuts to.
+  const text = (value) => {
+    if (typeof value !== 'string') return '';
+    if (bytes(value) <= ${String(MAX_PREVIEW_TEXT_BYTES)}) return value;
+    let cut = '';
+    for (const character of value) {
+      if (bytes(cut + character) > ${String(MAX_PREVIEW_TEXT_BYTES)}) break;
+      cut += character;
+    }
+    return cut;
+  };
   const size = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 
@@ -331,8 +364,8 @@ function createCanvasPreviewHosts({ log, clock = realClock }) {
     /** Registers one attached guest and installs main's own watchdogs on it. */
     attach(contents) {
       const guestId = contents.id;
-      // ICE is not a fetch, so `connect-src 'none'` does not stop it. The CSP
-      // blocks WebRTC and this takes the guest's UDP path away underneath it.
+      // No UDP that is not proxied, and the guest's session proxies to nowhere,
+      // so ICE has neither a datagram path nor a TCP one.
       contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
       contents.setWindowOpenHandler(() => ({ action: 'deny' }));
       contents.on('will-navigate', (event, url) => {
@@ -375,9 +408,26 @@ const realClock = {
   },
 };
 
+/**
+ * Shuts the guest session's network off and takes every capability away from it.
+ * The owned scheme is served here as well as on the default session, because a
+ * guest in its own partition cannot see the default session's handlers.
+ */
+function configureCanvasPreviewSession(guestSession, serve) {
+  guestSession.protocol.handle(CANVAS_PREVIEW_SCHEME, serve);
+  guestSession.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(false);
+  });
+  guestSession.setPermissionCheckHandler(() => false);
+  return guestSession.setProxy(CANVAS_PREVIEW_PROXY);
+}
+
 module.exports = {
   CANVAS_PREVIEW_CSP,
+  CANVAS_PREVIEW_PARTITION,
+  CANVAS_PREVIEW_PROXY,
   CANVAS_PREVIEW_SCHEME,
+  configureCanvasPreviewSession,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
   createCanvasPreviewHosts,

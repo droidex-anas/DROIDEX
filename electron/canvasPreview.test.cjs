@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 
 const {
   CANVAS_PREVIEW_CSP,
+  CANVAS_PREVIEW_PARTITION,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
+  configureCanvasPreviewSession,
   createCanvasPreviewHosts,
 } = require('./canvasPreview.cjs');
 
@@ -205,15 +207,52 @@ test('the guest refuses navigation away from the owned source', () => {
   assert.equal(allowed.prevented, false);
 });
 
-test('the CSP blocks WebRTC and the guest loses its UDP path', () => {
+test('the guest loses every network path at its own session', async () => {
   const { hosts } = createHosts();
   const guest = createGuest(21);
-
   hosts.attach(guest);
 
-  // ICE is not a fetch, so `connect-src 'none'` never governed it.
-  assert.match(CANVAS_PREVIEW_CSP, /webrtc 'block'/);
+  // CSP cannot bound WebRTC: `connect-src` does not govern ICE, and Chromium
+  // never shipped the `webrtc` directive. Claiming it would be a lie.
+  assert.equal(CANVAS_PREVIEW_CSP.includes('webrtc'), false);
   assert.equal(guest.webRtcPolicy, 'disable_non_proxied_udp');
+
+  const configured = { handled: [], proxy: null, requested: [], checked: null };
+  await configureCanvasPreviewSession(
+    {
+      protocol: {
+        handle(scheme, serve) {
+          configured.handled.push({ scheme, serve });
+        },
+      },
+      setProxy(proxy) {
+        configured.proxy = proxy;
+        return Promise.resolve();
+      },
+      setPermissionRequestHandler(handler) {
+        handler({}, 'media', (allowed) => configured.requested.push(allowed));
+        handler({}, 'clipboard-read', (allowed) => configured.requested.push(allowed));
+      },
+      setPermissionCheckHandler(handler) {
+        configured.checked = handler({}, 'media', 'droidex-canvas-preview://preview', {});
+      },
+    },
+    'serve',
+  );
+
+  // The owned scheme is served on the guest's session; nothing else is.
+  assert.deepEqual(configured.handled, [{ scheme: 'droidex-canvas-preview', serve: 'serve' }]);
+  // Every TCP connection, including WebRTC's P2P sockets, goes to a dead proxy,
+  // and loopback is explicitly not bypassed.
+  assert.deepEqual(configured.proxy, {
+    mode: 'fixed_servers',
+    proxyRules: 'http://127.0.0.1:1',
+    proxyBypassRules: '<-loopback>',
+  });
+  assert.deepEqual(configured.requested, [false, false]);
+  assert.equal(configured.checked, false);
+  // In memory only: a `persist:` partition would keep storage for generated code.
+  assert.equal(CANVAS_PREVIEW_PARTITION.startsWith('persist:'), false);
 });
 
 test('main ends a guest whose design stops answering, one probe at a time', () => {
