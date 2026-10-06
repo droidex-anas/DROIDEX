@@ -1045,8 +1045,13 @@ export class SessionLifecycle {
   }
 
   async closeAll(): Promise<void> {
+    const snapshot = this.dependencies.registry.liveSessionsSnapshot();
+    // A failed process kill skips beginClose below, but cannot leave a tool
+    // lease usable while shutdown waits or after it reports the failure.
+    for (const liveSession of snapshot)
+      this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
     if (this.dependencies.isShutdownStarted()) {
-      for (const liveSession of this.dependencies.registry.liveSessionsSnapshot())
+      for (const liveSession of snapshot)
         clearTimeout(this.deferredCloses.get(liveSession)?.retryTimer);
     }
     // One concurrent kill pass before the serialized closes. Each close kills
@@ -1054,9 +1059,7 @@ export class SessionLifecycle {
     // session closes), but paying the kill grace one session at a time would
     // overrun the sidecar's force-exit budget and leave the last session's
     // dev server running — and its history unflushed.
-    const live = this.dependencies.registry
-      .liveSessionsSnapshot()
-      .map((liveSession) => liveSession.summary.appSessionId);
+    const live = snapshot.map((liveSession) => liveSession.summary.appSessionId);
     const killed = await Promise.allSettled(
       live.map((id) => this.dependencies.agentProcesses.killSession(id)),
     );

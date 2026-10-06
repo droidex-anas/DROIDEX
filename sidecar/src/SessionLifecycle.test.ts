@@ -1222,6 +1222,44 @@ test('closeAll kills every session in one pass before the serialized closes', as
   );
 });
 
+test('closeAll expires Canvas leases before process cleanup, even when a kill fails', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'shutdown-lease');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('shutdown-lease', 'pinned', undefined, undefined, pinned('dsg_one'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const scope = turnLease(h, 'shutdown-lease');
+
+  let started = (): void => undefined;
+  const killing = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let releaseKill = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    releaseKill = resolve;
+  });
+  h.setProcessKiller(async () => {
+    started();
+    await held;
+    throw new Error('kill failed');
+  });
+  h.setShutdownStarted(true);
+  const closing = h.lifecycle.closeAll();
+  await killing;
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+
+  releaseKill();
+  await assert.rejects(closing, /kill failed/);
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+  h.setProcessKiller(() => Promise.resolve());
+  second.resolve();
+  await h.lifecycle.close('shutdown-lease');
+});
+
 test('close waits for the authoritative post-close session list', async () => {
   const harness = createHarness();
   const provider = queueCreate(harness, 'await-list');

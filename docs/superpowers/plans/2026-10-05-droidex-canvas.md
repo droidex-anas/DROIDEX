@@ -859,13 +859,14 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   | `onDelegatedTurn(false)`, only when no typed turn runs | — | the same, for a turn the provider started |
   | `interrupt`, before `await session.interrupt()` | — | the running turn, before the external cleanup await |
   | `sendNow`, before `await session.interrupt()` | — | the turn being stopped to send now |
-  | `beginClose` (close, relaunch, `closeAll`, shutdown) | — | every lease the chat holds, and the generation advances |
+  | `beginClose` (close, relaunch) | — | every lease the chat holds, and the generation advances |
+  | `closeAll`, before its concurrent process kills | — | every captured chat's leases, even if its kill later fails |
   | `sessionCompactionExecution.adoptProvider`, before `oldSession.close()` | — | the same, so the replacement starts a new era |
 
   Revocation is idempotent everywhere, and a handle reaches only the leases it minted (each
   carries the turn that owns it), so a settlement that lands late cannot revoke a later turn's
-  or a replacement's. Sidecar shutdown needs no seam of its own: `closeAll` begins a close for
-  every live session, and a lease only ever exists for one.
+  or a replacement's. `closeAll` invalidates its captured chats before its first process-kill
+  await; later `beginClose` calls may repeat the idempotent revocation.
 - **One owner for `liveSession.canvasTurn`.** Codex starts a delegated turn for any
   `turn/started` whose id differs from the adopted typed one, "however close behind the typed
   one it arrives" (`codexSession.ts`), so `onDelegatedTurn(true)` can fire while a typed turn is
