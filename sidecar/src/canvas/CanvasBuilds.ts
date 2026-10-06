@@ -219,6 +219,15 @@ export class CanvasBuilds {
     for (const started of this.pump()) this.announce(started);
   }
 
+  /** A removed frame owns no queued work, running compiler or build state. */
+  cancelDesign(canvasId: string, designId: string): void {
+    this.queued.delete(designKey(canvasId, designId));
+    const slot = this.slotOf(canvasId, designId);
+    if (slot) this.abandon(slot);
+    this.states.forget(canvasId, designId);
+    for (const started of this.pump()) this.announce(started);
+  }
+
   /**
    * What a preview loads: the document one revision's build produced, or null
    * once the derived cache has lost it. Keyed by revision because a `failed`

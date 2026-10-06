@@ -9,6 +9,9 @@ import type {
   DesignRef,
   DesignSystemRef,
   FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 
@@ -17,6 +20,10 @@ export type {
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
+  FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -117,6 +124,7 @@ export interface CanvasFrame {
   name: string;
   rect: FrameRect;
   layoutVersion: number;
+  manifestVersion: number;
   // null while the frame is reserved and has no source yet.
   revisionId: string | null;
   designSystem: DesignSystemRef;
@@ -167,11 +175,14 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
-  | 'storage_failed';
+  | 'storage_failed'
+  | 'layout_conflict'
+  | 'not_found';
 
 export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
+  currentRect?: FrameRect;
 }
 
 // ── Bridge commands and events ───────────────────────────────────────
@@ -217,6 +228,27 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: ArrangeFramesInput;
+    }
+  | {
+      type: 'canvas.remove';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RemoveFramesInput;
+    }
+  | {
+      type: 'canvas.undoRemoval';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: UndoRemovalInput;
+    }
+  | {
+      type: 'canvas.renameFrame';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RenameFrameInput;
     };
 
 /** What a successful command answers with, one kind per command. */
@@ -227,6 +259,9 @@ export type CanvasReply =
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'removed'; undoId: string }
+  | { kind: 'undone'; change: CanvasChange }
+  | { kind: 'renamed'; change: CanvasChange }
   | { kind: 'artifact'; artifact: PreviewArtifact | null };
 
 export type CanvasEvent =

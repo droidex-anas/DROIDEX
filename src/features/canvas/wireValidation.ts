@@ -13,6 +13,8 @@ const ERROR_CODES = new Set([
   'capture_unavailable',
   'scope_expired',
   'storage_failed',
+  'layout_conflict',
+  'not_found',
 ]);
 
 const REPLY_KINDS = new Set([
@@ -22,6 +24,9 @@ const REPLY_KINDS = new Set([
   'created',
   'written',
   'arranged',
+  'removed',
+  'undone',
+  'renamed',
   'artifact',
 ]);
 
@@ -59,7 +64,11 @@ function isReply(value: unknown): boolean {
     case 'written':
       return isReceipt(value.receipt);
     case 'arranged':
+    case 'undone':
+    case 'renamed':
       return isChange(value.change);
+    case 'removed':
+      return id(value.undoId);
     case 'artifact':
       return value.artifact === null || isArtifact(value.artifact);
     default:
@@ -108,6 +117,7 @@ function isFrame(value: unknown): boolean {
     text(value.name) &&
     isRect(value.rect) &&
     count(value.layoutVersion) &&
+    count(value.manifestVersion) &&
     (value.revisionId === null || id(value.revisionId)) &&
     isDesignSystem(value.designSystem) &&
     isBuild(value.build)
@@ -172,7 +182,8 @@ function isError(value: unknown): boolean {
     record(value) &&
     typeof value.code === 'string' &&
     ERROR_CODES.has(value.code) &&
-    text(value.message)
+    text(value.message) &&
+    (value.code === 'layout_conflict' ? isRect(value.currentRect) : value.currentRect === undefined)
   );
 }
 

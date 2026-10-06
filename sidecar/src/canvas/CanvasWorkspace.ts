@@ -10,21 +10,21 @@ import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
-import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
+import { CanvasFrameEdits } from './CanvasFrameEdits.js';
+import { placeFrames, requireSeedFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { CanvasRevisionCleanup } from './canvasRevisionCleanup.js';
 import {
   canvasChange,
   canvasSnapshot,
   canvasSummary,
   emptyCanvasManifest,
   mutationFingerprint,
-  recordedArrange,
   recordedCreate,
   recordedWrite,
   recordMutation,
   toFrame,
-  toPlacements,
   type CanvasManifest,
   type PersistedDesign,
 } from './canvasManifest.js';
@@ -52,13 +52,17 @@ export class CanvasWorkspace {
   /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
   private readonly commits = new CanvasCommits(this.changes);
+  private readonly frameEdits: CanvasFrameEdits;
 
   private constructor(
     private readonly files: CanvasFiles,
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
-  ) {}
+    cleanup: CanvasRevisionCleanup,
+  ) {
+    this.frameEdits = new CanvasFrameEdits(cleanup, heads, leases, builds, this.commits);
+  }
 
   /**
    * Opens the storage root and hands the build registry the canvases it serves,
@@ -70,9 +74,23 @@ export class CanvasWorkspace {
     deps: CanvasWorkspaceDeps,
   ): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
+    const cleanup = new CanvasRevisionCleanup(directory, deps.fs);
     const heads = await CanvasHeads.load(files);
-    const workspace = new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads), builds);
+    const workspace = new CanvasWorkspace(
+      files,
+      heads,
+      new CanvasLeases(deps, heads),
+      builds,
+      cleanup,
+    );
     await builds.load(workspace, files, heads.all());
+    for (const manifest of heads.all()) {
+      try {
+        await cleanup.collect(manifest);
+      } catch {
+        console.error(`Canvas ${manifest.canvasId} source cleanup will retry on the next open.`);
+      }
+    }
     return workspace;
   }
 
@@ -149,7 +167,7 @@ export class CanvasWorkspace {
       const canvasId = target ?? randomUUID();
       if (!bootstrapping) {
         this.leases.requireAttachment(scope, canvasId);
-        this.leases.requireCanvas(scope, canvasId);
+        requireSeedFrames(this.leases.requireCanvas(scope, canvasId), input);
       }
       const staged = await stageFrames(this.files, canvasId, input);
 
@@ -187,6 +205,7 @@ export class CanvasWorkspace {
           const live = this.leases.requireCanvas(scope, canvasId);
           const recorded = recordedCreate(live, input.mutationId, fingerprint, this.builds);
           if (recorded) return { value: recorded };
+          requireSeedFrames(live, input);
           next = structuredClone(live);
           beforeRename = () => {
             this.commits.requireOpen();
@@ -196,6 +215,7 @@ export class CanvasWorkspace {
         }
         const designs = placeFrames(staged, next.designs);
         next.designs.push(...designs);
+        next.layoutSequence += 1;
         next.sequence += 1;
         next.updatedAt = Date.now();
         recordMutation(
@@ -257,6 +277,7 @@ export class CanvasWorkspace {
         requireExpectedRevision(target, input.expectedRevisionId);
         target.revisionId = revision.revisionId;
         target.designSystem = revision.designSystem;
+        target.manifestVersion += 1;
         next.sequence += 1;
         next.updatedAt = Date.now();
         const receipt: WriteReceipt = {
@@ -286,57 +307,38 @@ export class CanvasWorkspace {
   }
 
   arrange(scope: CanvasScope, input: ArrangeFramesInput): Promise<CanvasChange> {
-    return this.commits.admit(async () => {
-      this.commits.requireOpen();
-      const designIds = input.frames.map((frame) => frame.designId);
-      const fingerprint = mutationFingerprint(input);
-      const manifest = this.leases.requireDesigns(scope, designIds);
-      const recorded = recordedArrange(manifest, input.mutationId, fingerprint, this.builds);
-      if (recorded) return recorded;
+    return this.frameEdits.arrange(scope, input);
+  }
 
-      return this.commits.publish(async () => {
-        const live = this.leases.requireDesigns(scope, designIds);
-        const again = recordedArrange(live, input.mutationId, fingerprint, this.builds);
-        if (again) return { value: again };
-        const next = structuredClone(live);
-        const moved: PersistedDesign[] = [];
-        for (const frame of input.frames) {
-          const design = this.design(next, frame.designId);
-          if (design.layoutVersion !== frame.expectedLayoutVersion)
-            throw canvasError(
-              'revision_conflict',
-              'That frame moved. Read its current layout version and place it again.',
-            );
-          design.rect = { ...frame.rect };
-          design.layoutVersion += 1;
-          moved.push(design);
-        }
-        next.sequence += 1;
-        next.updatedAt = Date.now();
-        recordMutation(
-          next,
-          {
-            kind: 'arrange',
-            mutationId: input.mutationId,
-            scopeId: scope.scopeId,
-            fingerprint,
-            sequence: next.sequence,
-            // A retry answers this sequence and this layout; a frame's other
-            // fields follow the current head, which the renderer discards as old.
-            placements: toPlacements(moved),
-          },
-          this.leases.isActive,
-        );
-        await this.heads.install(next, this.scopedGate(scope, designIds));
-        const change = canvasChange(next, moved, this.builds);
-        return { value: change, change };
-      });
-    });
+  removeFrames(
+    scope: CanvasScope,
+    mutationId: string,
+    designIds: string[],
+  ): Promise<{ undoId: string }> {
+    return this.frameEdits.removeFrames(scope, mutationId, designIds);
+  }
+
+  undoRemoval(scope: CanvasScope, mutationId: string, undoId: string): Promise<CanvasChange> {
+    return this.frameEdits.undoRemoval(scope, mutationId, undoId);
+  }
+
+  renameFrame(
+    scope: CanvasScope,
+    mutationId: string,
+    designId: string,
+    name: string,
+    expectedManifestVersion: number,
+  ): Promise<CanvasChange> {
+    return this.frameEdits.renameFrame(scope, mutationId, designId, name, expectedManifestVersion);
   }
 
   async readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles> {
-    // An unreferenced revision still reads, but only from a canvas we hold.
-    this.canvas(canvasId);
+    const manifest = this.canvas(canvasId);
+    if (!manifest.designs.some((design) => design.designId === ref.designId))
+      throw canvasError(
+        'not_found',
+        'That frame was removed. Use Undo to restore it before reading its source.',
+      );
     const tree = await this.files.readRevision(canvasId, ref);
     // A null-prototype tree, so a source path can never reach an inherited
     // member even if the path rules change.
@@ -383,6 +385,7 @@ export class CanvasWorkspace {
           const target = this.design(next, designId);
           if (committed.workingRevisionId !== null)
             target.lastWorkingRevisionId = committed.workingRevisionId;
+          target.manifestVersion += 1;
           next.sequence += 1;
           await this.heads.install(next, this.openGate());
           return { value: undefined, change: canvasChange(next, [target], this.builds) };

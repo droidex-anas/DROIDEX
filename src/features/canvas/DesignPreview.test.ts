@@ -13,6 +13,7 @@ function frameWith(build: CanvasBuildState): CanvasFrame {
     name: 'Hey',
     rect: { x: 0, y: 0, width: 720, height: 720 },
     layoutVersion: 1,
+    manifestVersion: 1,
     revisionId: 'rev_02',
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     build,

@@ -15,6 +15,9 @@ import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
   createFramesInputSchema,
+  removeFramesInputSchema,
+  renameFrameInputSchema,
+  undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -78,9 +81,36 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
       input: arrangeFramesInputSchema,
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('canvas.remove'),
+      ...request,
+      ...target,
+      input: removeFramesInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.undoRemoval'),
+      ...request,
+      ...target,
+      input: undoRemovalInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.renameFrame'),
+      ...request,
+      ...target,
+      input: renameFrameInputSchema,
+    })
+    .strict(),
 ]);
 
-type Mutation = Extract<CanvasCommand, { type: `canvas.${'create' | 'write' | 'arrange'}` }>;
+type Mutation = Extract<
+  CanvasCommand,
+  { type: `canvas.${'create' | 'write' | 'arrange' | 'remove' | 'undoRemoval' | 'renameFrame'}` }
+>;
 
 /**
  * One renderer page's watch set. The set's own identity is the page's lifetime:
@@ -283,6 +313,35 @@ class CanvasDispatch {
           return { kind: 'written', receipt: await workspace.write(scope, command.input) };
         case 'canvas.arrange':
           return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };
+        case 'canvas.remove':
+          return {
+            kind: 'removed',
+            ...(await workspace.removeFrames(
+              scope,
+              command.input.mutationId,
+              command.input.designIds,
+            )),
+          };
+        case 'canvas.undoRemoval':
+          return {
+            kind: 'undone',
+            change: await workspace.undoRemoval(
+              scope,
+              command.input.mutationId,
+              command.input.undoId,
+            ),
+          };
+        case 'canvas.renameFrame':
+          return {
+            kind: 'renamed',
+            change: await workspace.renameFrame(
+              scope,
+              command.input.mutationId,
+              command.input.designId,
+              command.input.name,
+              command.input.expectedManifestVersion,
+            ),
+          };
       }
     } finally {
       this.scopes.revoke(scope.scopeId);
@@ -296,6 +355,9 @@ const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
   'canvas.attach',
   'canvas.detach',
   'canvas.create',
+  'canvas.remove',
+  'canvas.undoRemoval',
+  'canvas.renameFrame',
 ]);
 
 export function createCanvasCommandHandler(
@@ -379,7 +441,12 @@ function failure(requestId: string, error: CanvasError): CanvasEvent {
 
 /** A CanvasError passes through; anything else is storage damage we own. */
 function canvasFailure(error: unknown): CanvasError {
-  if (error instanceof CanvasCommandError) return { code: error.code, message: error.message };
+  if (error instanceof CanvasCommandError)
+    return {
+      code: error.code,
+      message: error.message,
+      ...(error.currentRect ? { currentRect: error.currentRect } : {}),
+    };
   console.error('Canvas command failed:', error);
   return {
     code: 'storage_failed',

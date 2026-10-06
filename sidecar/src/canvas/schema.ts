@@ -5,6 +5,7 @@ import { z } from 'zod';
 export const CANVAS_LIMITS = {
   maxFramesPerCreate: 4,
   maxFramesPerArrange: 256,
+  maxFramesPerRemoval: 256,
   maxSourceFilesPerDesign: 64,
   maxDesignSourceBytes: 1024 * 1024,
   maxFileBytes: 256 * 1024,
@@ -46,7 +47,7 @@ export const canvasIdentifierSchema = z
   .max(CANVAS_LIMITS.maxIdentifierLength, IDENTIFIER_MESSAGE)
   .regex(/^[A-Za-z0-9_-]+$/, IDENTIFIER_MESSAGE);
 
-const frameNameSchema = z
+export const frameNameSchema = z
   .string()
   .trim()
   .min(1, FRAME_NAME_MESSAGE)
@@ -193,6 +194,35 @@ export const arrangeFramesInputSchema = z
   })
   .strict();
 
+export const removeFramesInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designIds: z
+      .array(canvasIdentifierSchema)
+      .min(1)
+      .max(CANVAS_LIMITS.maxFramesPerRemoval)
+      .refine((ids) => !hasDuplicate(ids), {
+        message: 'A frame can be removed only once per change.',
+      }),
+  })
+  .strict();
+
+export const undoRemovalInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    undoId: canvasIdentifierSchema,
+  })
+  .strict();
+
+export const renameFrameInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designId: canvasIdentifierSchema,
+    name: frameNameSchema,
+    expectedManifestVersion: versionSchema,
+  })
+  .strict();
+
 // One write is bounded by the schema above; the revision it produces carries
 // unchanged files too, so the same §5 limits are checked against the merge.
 // Returns the limit's own message, or null when the revision fits.
@@ -214,6 +244,9 @@ export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
+export type RemoveFramesInput = z.infer<typeof removeFramesInputSchema>;
+export type UndoRemovalInput = z.infer<typeof undoRemovalInputSchema>;
+export type RenameFrameInput = z.infer<typeof renameFrameInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
 // other, so two distinct paths would address one file on disk.

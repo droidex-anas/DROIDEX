@@ -1,4 +1,5 @@
 import type { CanvasError, CanvasErrorCode } from './protocol.js';
+import type { FrameRect } from './schema.js';
 
 /**
  * The only failure Canvas storage and the workspace throw. The message reaches
@@ -9,14 +10,19 @@ export class CanvasCommandError extends Error implements CanvasError {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
+    readonly currentRect?: FrameRect,
   ) {
     super(message);
     this.name = 'CanvasCommandError';
   }
 }
 
-export function canvasError(code: CanvasErrorCode, message: string): CanvasCommandError {
-  return new CanvasCommandError(code, message);
+export function canvasError(
+  code: CanvasErrorCode,
+  message: string,
+  currentRect?: FrameRect,
+): CanvasCommandError {
+  return new CanvasCommandError(code, message, currentRect);
 }
 
 /** The cause goes to the sidecar log; the caller learns only what to retry. */
