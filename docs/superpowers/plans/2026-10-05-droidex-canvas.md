@@ -343,7 +343,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
   Done: Fixtures compile working stateful React and reject bad source, unsupported imports and path escapes.
 - [x] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
-- [ ] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
+- [x] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
   Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
 - [ ] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
   Done: Offline packaged tests verify arm64/x64 resources and a working saved design; run `docs:generate` when scripts change.
