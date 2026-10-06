@@ -11,12 +11,14 @@ import {
   MousePointer,
   PenLine,
   RefreshCw,
+  Search,
   Spinner,
 } from '@droidex/icons';
 import { describeLink } from '../../lib/linkPresentation';
 import { HoverTooltip } from '../HoverTooltip';
 import { LinkBadge } from '../transcript/LinkBadge';
 import { browserAddressValue } from './browserUrlSafety';
+import { normalizeUrl, SEARCH_URL } from './browserViewport';
 
 interface BrowserToolbarProps {
   urlInputRef: RefObject<HTMLInputElement | null>;
@@ -178,6 +180,9 @@ function AddressBar({
 }) {
   const link = useMemo(() => describeLink(pageUrl), [pageUrl]);
   const secure = link !== null && pageUrl.startsWith('https:');
+  // Typed text that will run a search shows the search icon, not the page's.
+  const searching =
+    value !== browserAddressValue(pageUrl) && normalizeUrl(value).startsWith(SEARCH_URL);
   // A click that focuses the field selects the address instead of placing the caret.
   const selectOnRelease = useRef(false);
 
@@ -189,7 +194,9 @@ function AddressBar({
         onOpen();
       }}
     >
-      {secure ? (
+      {searching ? (
+        <Search className="h-4 w-4 shrink-0 text-droid-text-muted" />
+      ) : secure ? (
         <LinkBadge key={link.host} link={link} className="h-4 w-4 shrink-0" />
       ) : (
         <Globe className="h-4 w-4 shrink-0 text-droid-text-muted" />
@@ -212,13 +219,14 @@ function AddressBar({
             event.currentTarget.select();
           }}
           onKeyDown={(event) => {
-            if (event.key !== 'Escape') return;
+            // An input method still composing keeps its own Escape.
+            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
             event.preventDefault();
             onChange(browserAddressValue(pageUrl));
             event.currentTarget.blur();
           }}
           spellCheck={false}
-          className="peer absolute inset-0 bg-transparent text-[13px] text-transparent outline-none placeholder:text-droid-text-muted focus:text-droid-text"
+          className="peer absolute inset-0 h-full w-full min-w-0 bg-transparent text-[13px] text-transparent outline-none placeholder:text-droid-text-muted focus:text-droid-text"
           placeholder="Search or enter address"
           aria-label="Browser address"
         />

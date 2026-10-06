@@ -73,6 +73,9 @@ export function sameViewport(a: BrowserViewport, b: BrowserViewport): boolean {
   );
 }
 
+/** Where text typed in the address bar that is not an address is searched. */
+export const SEARCH_URL = 'https://www.google.com/search?q=';
+
 export function normalizeUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return 'about:blank';
@@ -82,12 +85,16 @@ export function normalizeUrl(value: string): string {
   if (ipv6Loopback) return ipv6Loopback;
   if (/^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?(\/|$)/i.test(trimmed))
     return `http://${trimmed}`;
-  // As in a browser's address bar: a name with a dot, or a host and port, is
-  // a site; anything else, a single word or words with spaces, is a search.
+  // As in a browser's address bar, the part before the first /, ? or # decides:
+  // a host with a dot or a port, after any login in it, makes the whole input a
+  // site, spaces in its path included; anything else is a search.
+  const authority = trimmed.split(/[/?#]/, 1)[0];
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  if (/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host)) return `http://${trimmed}`;
   const site =
-    !/\s/.test(trimmed) && (trimmed.includes('.') || /^[\w-]+:\d+([/?#]|$)/.test(trimmed));
+    /^[\w-]+(\.[\w-]+)*(:\d+)?$/.test(host) && (host.includes('.') || /:\d+$/.test(host));
   if (site) return `https://${trimmed}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+  return `${SEARCH_URL}${encodeURIComponent(trimmed)}`;
 }
 
 function normalizeBareIpv6Loopback(value: string): string | null {
