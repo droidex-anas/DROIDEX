@@ -103,11 +103,16 @@ export async function runPrimaryTurn(
   try {
     const configured =
       preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
-    // Preparation can yield to a provider-started turn. Keep this prompt's row
-    // and queue reservation, but wait for that turn's final rows before sending.
-    // A delivery whose row is written counts as taken, so its project's claim
-    // is released while it waits: that turn may need the project's answer.
-    if (liveSession.delegatedTurnSettled) delivery?.accepted();
+    // A delivery never waits holding its project's claim, since the turn the
+    // provider just started may need the project's answer. It comes again
+    // instead; its row, written as that turn began, may then show twice.
+    if (delivery && liveSession.delegatedTurnSettled) {
+      delivery.declined('stale');
+      context.stopPolling();
+      return;
+    }
+    // A typed prompt keeps its row and queue reservation, and waits for that
+    // turn's final rows before sending.
     let reservation = liveSession.delegatedTurnSettled;
     while (isCurrent() && !stoppedBeforeStart() && reservation) {
       await reservation;
