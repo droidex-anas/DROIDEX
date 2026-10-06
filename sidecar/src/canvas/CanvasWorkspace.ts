@@ -6,8 +6,8 @@
 
 import { randomUUID } from 'node:crypto';
 import type { BuildCommit, BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
-import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
+import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
@@ -24,6 +24,7 @@ import {
   recordedCreate,
   recordedWrite,
   recordMutation,
+  requireExpectedRevision,
   toFrame,
   toPlacements,
   type CanvasManifest,
@@ -51,7 +52,6 @@ export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 
 export class CanvasWorkspace {
-  /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
   private readonly commits = new CanvasCommits(this.changes);
 
@@ -98,9 +98,9 @@ export class CanvasWorkspace {
     return this.heads.damagedIds();
   }
 
-  /** Main has already decoded the selected bytes and vouched for their digest. */
   importCanvasImage(request: CanvasImageImport): Promise<OwnedAsset> {
     return this.commits.admit(() => {
+      this.commits.requireOpen();
       this.canvas(request.canvasId);
       return importCanvasImage(this.root, request);
     });
@@ -355,8 +355,7 @@ export class CanvasWorkspace {
     // An unreferenced revision still reads, but only from a canvas we hold.
     this.canvas(canvasId);
     const tree = await this.files.readRevision(canvasId, ref);
-    // A null-prototype tree, so a source path can never reach an inherited
-    // member even if the path rules change.
+    // A null-prototype tree keeps source paths off inherited members.
     const files = Object.create(null) as SourceFiles;
     for (const [path, content] of tree) files[path] = content;
     return files;
@@ -492,12 +491,4 @@ export class CanvasWorkspace {
   private nextCanvasName(): string {
     return `Canvas ${String(this.heads.all().length + 1)}`;
   }
-}
-
-function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
-  if (design.revisionId === expected) return;
-  throw canvasError(
-    'revision_conflict',
-    'That frame has a newer revision. Read it and apply your change again.',
-  );
 }

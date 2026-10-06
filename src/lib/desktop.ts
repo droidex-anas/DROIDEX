@@ -210,6 +210,7 @@ interface DroidControlApi {
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   canvasPreviewUrl: string;
+  canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
@@ -688,6 +689,12 @@ export async function editorIcon(editor: EditorId): Promise<string | null> {
 /** The owned source every Canvas live preview guest loads (spec §6). */
 export function canvasPreviewUrl(): string | null {
   return desktopApi()?.canvasPreviewUrl ?? null;
+}
+
+export async function bindCanvasPreviewGuest(guestId: number, canvasId: string): Promise<boolean> {
+  const api = desktopApi();
+  if (!api) return false;
+  return api.canvasPreviewBind(guestId, canvasId);
 }
 
 /**

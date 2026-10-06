@@ -218,6 +218,14 @@ export function recordedWrite(
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
 }
 
+export function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
+  if (design.revisionId === expected) return;
+  throw canvasError(
+    'revision_conflict',
+    'That frame has a newer revision. Read it and apply your change again.',
+  );
+}
+
 export function recordedArrange(
   manifest: CanvasManifest,
   mutationId: string,

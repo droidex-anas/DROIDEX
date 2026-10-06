@@ -191,6 +191,7 @@ export interface CanvasError {
 
 export type CanvasCommand =
   | { type: 'canvas.list'; requestId: string }
+  | { type: 'canvas.listAssets'; requestId: string; canvasId: string }
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
@@ -232,6 +233,7 @@ export type CanvasCommand =
 export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
+  | { kind: 'assets'; assets: OwnedAsset[] }
   | { kind: 'attachment'; canvasId: string | null }
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }

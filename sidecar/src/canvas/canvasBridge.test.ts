@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
+import { importCanvasImage, listCanvasAssets } from './canvasAssets.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
@@ -47,7 +51,7 @@ async function harness(
     Promise.resolve(workspace),
     scopes,
     builds,
-    'test-canvas-secret',
+    { secret: 'test-canvas-secret', list: (canvasId) => listCanvasAssets(directory, canvasId) },
     (event) => {
       events.push(event);
     },
@@ -104,6 +108,35 @@ async function createCanvas(harnessed: Harness, requestId = 'req-create-canvas')
   assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
   return reply.canvasId;
 }
+
+test('a lost image import reply is recovered by listing that canvas after the source is gone', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const chosen = join(canvas.root, 'chosen.png');
+  const bytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await writeFile(chosen, bytes);
+  const assetId = createHash('sha256').update(bytes).digest('hex');
+  await importCanvasImage(canvas.root, {
+    canvasId,
+    filePath: chosen,
+    digest: assetId,
+    width: 1,
+    height: 1,
+  });
+  await unlink(chosen);
+
+  assert.equal(
+    await canvas.handle({ type: 'canvas.listAssets', requestId: 'assets', canvasId }),
+    true,
+  );
+  assert.deepEqual(okReply(canvas, 'assets'), {
+    kind: 'assets',
+    assets: [{ assetId, mediaType: 'image/png', byteLength: bytes.length, width: 1, height: 1 }],
+  });
+});
 
 async function createFrame(
   harnessed: Harness,
@@ -490,7 +523,7 @@ test('a workspace that failed to open answers every command the same way', async
     Promise.reject(new Error('canvases directory is read-only')),
     new CanvasScopes(),
     quietBuilds(),
-    'test-canvas-secret',
+    { secret: 'test-canvas-secret', list: async () => [] },
     (event) => {
       events.push(event);
     },
@@ -596,7 +629,7 @@ test('a page that goes away while the workspace opens installs no watch', async 
     opening.promise.then(() => canvas.workspace),
     canvas.scopes,
     canvas.builds,
-    'test-canvas-secret',
+    { secret: 'test-canvas-secret', list: async () => [] },
     (event) => {
       events.push(event);
     },

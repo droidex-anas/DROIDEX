@@ -11,7 +11,13 @@ import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
-import type { CanvasCommand, CanvasError, CanvasEvent, CanvasReply } from './protocol.js';
+import type {
+  CanvasCommand,
+  CanvasError,
+  CanvasEvent,
+  CanvasReply,
+  OwnedAsset,
+} from './protocol.js';
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
@@ -36,6 +42,9 @@ const target = { ...session, canvasId: canvasIdentifierSchema };
 
 const canvasCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('canvas.list'), ...request }).strict(),
+  z
+    .object({ type: z.literal('canvas.listAssets'), ...request, canvasId: canvasIdentifierSchema })
+    .strict(),
   z.object({ type: z.literal('canvas.attachment'), ...request, ...session }).strict(),
   z
     .object({ type: z.literal('canvas.subscribe'), ...request, canvasId: canvasIdentifierSchema })
@@ -147,7 +156,10 @@ class CanvasDispatch {
     ready: Promise<CanvasWorkspace>,
     private readonly scopes: CanvasScopes,
     private readonly builds: CanvasBuilds,
-    private readonly assetSecret: string,
+    private readonly assets: {
+      secret: string;
+      list: (canvasId: string) => Promise<OwnedAsset[]>;
+    },
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
@@ -227,6 +239,9 @@ class CanvasDispatch {
     switch (command.type) {
       case 'canvas.list':
         return { kind: 'summaries', summaries: workspace.listCanvases() };
+      case 'canvas.listAssets':
+        workspace.snapshot(command.canvasId);
+        return { kind: 'assets', assets: await this.assets.list(command.canvasId) };
       case 'canvas.attachment':
         return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
       case 'canvas.createCanvas': {
@@ -254,7 +269,7 @@ class CanvasDispatch {
         const html = resolveCanvasAssetReferences(
           artifact.html,
           command.canvasId,
-          this.assetSecret,
+          this.assets.secret,
         );
         return {
           kind: 'artifact',
@@ -313,12 +328,12 @@ export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
   builds: CanvasBuilds,
-  assetSecret: string,
+  assets: { secret: string; list: (canvasId: string) => Promise<OwnedAsset[]> },
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
 ): (command: unknown, pageId: string | null) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  const dispatch = new CanvasDispatch(ready, scopes, builds, assetSecret, emit, onPageGone);
+  const dispatch = new CanvasDispatch(ready, scopes, builds, assets, emit, onPageGone);
 
   return async (value, pageId) => {
     if (!isCanvasRequest(value)) return false;

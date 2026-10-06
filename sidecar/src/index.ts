@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { CanvasBuilds } from './canvas/CanvasBuilds.js';
+import { listCanvasAssets } from './canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
@@ -130,7 +131,10 @@ const handleCanvasCommand = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
-  CANVAS_ASSET_SECRET,
+  {
+    secret: CANVAS_ASSET_SECRET,
+    list: (canvasId) => listCanvasAssets(canvasDir(), canvasId),
+  },
   (event) => {
     server.broadcast(event);
   },

@@ -7,7 +7,11 @@
 // component owns one frame and reports only bounded preview facts upward.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { canvasPreviewUrl, terminateCanvasPreviewGuest } from '../../lib/desktop';
+import {
+  bindCanvasPreviewGuest,
+  canvasPreviewUrl,
+  terminateCanvasPreviewGuest,
+} from '../../lib/desktop';
 import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame, PreviewArtifact } from './protocol';
@@ -44,6 +48,7 @@ export function DesignPreview({ canvasId, frame, readArtifact, onResize }: Desig
   return (
     <PreviewGuestFrame
       key={`${frame.designId}:${read.artifact.artifactId}`}
+      canvasId={canvasId}
       designId={frame.designId}
       revisionId={revisionId}
       // Spec §5: a failed revision labels the older working preview it is showing.
@@ -114,6 +119,7 @@ function useArtifact(
  * element API, and removing it on unmount is what releases the guest's processes.
  */
 export function PreviewGuestFrame({
+  canvasId,
   designId,
   revisionId,
   showingRevisionId,
@@ -121,6 +127,7 @@ export function PreviewGuestFrame({
   diagnostics,
   onResize,
 }: {
+  canvasId: string;
   designId: string;
   revisionId: string;
   /** Named when this is an older working revision rather than the frame's own. */
@@ -139,41 +146,56 @@ export function PreviewGuestFrame({
     const container = host.current;
     const url = canvasPreviewUrl();
     if (!container || url === null) return;
+    const parent = container;
     const guest = createGuestElement(url);
     let run: PreviewRun | null = null;
-    let mounted = true;
+    async function bindAndStart() {
+      if (!parent.contains(guest)) return;
+      const guestId = guest.getWebContentsId();
+      let bound = false;
+      try {
+        bound = await bindCanvasPreviewGuest(guestId, canvasId);
+      } catch (error) {
+        console.error('A Canvas preview could not be bound to its canvas:', error);
+      }
+      if (!guest.isConnected) return;
+      if (!bound) {
+        setPhase('guest_gone');
+        void terminateCanvasPreviewGuest(guestId);
+        return;
+      }
+      run = startPreview({
+        guest,
+        designId,
+        revisionId,
+        generation: (previewMounts += 1),
+        html,
+        terminate: terminateCanvasPreviewGuest,
+        observer: {
+          onReady: () => {
+            setPhase('ready');
+          },
+          onResize: (size) => resized.current?.(designId, size),
+          onDiagnostics: (entries) => {
+            setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+          },
+          onLost: setPhase,
+        },
+      });
+    }
     guest.addEventListener(
       'dom-ready',
       () => {
-        if (!mounted) return;
-        run = startPreview({
-          guest,
-          designId,
-          revisionId,
-          generation: (previewMounts += 1),
-          html,
-          terminate: terminateCanvasPreviewGuest,
-          observer: {
-            onReady: () => {
-              setPhase('ready');
-            },
-            onResize: (size) => resized.current?.(designId, size),
-            onDiagnostics: (entries) => {
-              setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
-            },
-            onLost: setPhase,
-          },
-        });
+        void bindAndStart();
       },
       { once: true },
     );
     container.append(guest);
     return () => {
-      mounted = false;
       run?.stop();
       guest.remove();
     };
-  }, [designId, revisionId, html]);
+  }, [canvasId, designId, revisionId, html]);
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
   return (

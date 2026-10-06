@@ -26,7 +26,7 @@ async function readCanvasPreviewAsset(requestUrl, { canvasRoot, fontRoot, secret
     const assets = join(canvas, 'assets');
     const data = await readOwnedFile(join(assets, assetId), [canvas, assets], 10 * 1024 * 1024);
     if (!data || createHash('sha256').update(data).digest('hex') !== assetId) return null;
-    const mime = imageMime(data);
+    const mime = imageMediaType(data);
     return mime ? { mime, data } : null;
   }
 
@@ -64,7 +64,7 @@ async function readOwnedFile(target, directories, maxBytes) {
   }
 }
 
-function imageMime(data) {
+function imageMediaType(data) {
   if (data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff)
     return 'image/jpeg';
@@ -73,4 +73,4 @@ function imageMime(data) {
   return null;
 }
 
-module.exports = { readCanvasPreviewAsset };
+module.exports = { readCanvasPreviewAsset, imageMediaType };

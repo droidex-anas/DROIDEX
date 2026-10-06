@@ -70,6 +70,7 @@ test('a revision with an artifact to load waits for it rather than guessing', ()
 test('a mounted fallback names the older working revision beside its diagnostics', () => {
   const markup = renderToStaticMarkup(
     createElement(PreviewGuestFrame, {
+      canvasId: 'canvas-one',
       designId: 'dsg_hey',
       revisionId: 'rev_01',
       showingRevisionId: 'rev_01',
@@ -86,6 +87,7 @@ test('a mounted fallback names the older working revision beside its diagnostics
   assert.equal(
     renderToStaticMarkup(
       createElement(PreviewGuestFrame, {
+        canvasId: 'canvas-one',
         designId: 'dsg_hey',
         revisionId: 'rev_02',
         showingRevisionId: null,

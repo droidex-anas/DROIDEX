@@ -112,17 +112,34 @@ function subscribeTerminalPort(id) {
   return channel;
 }
 
+function canvasImageReply(reply) {
+  if (reply.ok) return reply.asset;
+  throw { code: reply.error.code, message: reply.error.message };
+}
+
+function canvasDroppedFilePath(file) {
+  try {
+    const filePath = webUtils.getPathForFile(file);
+    if (filePath) return filePath;
+  } catch {
+    // A synthetic or invalid File has no selected local path.
+  }
+  throw { code: 'invalid_input', message: 'Drop an image from your computer.' };
+}
+
 contextBridge.exposeInMainWorld('droidControl', {
   bridgeInfo: () => ipcRenderer.invoke('bridge-info'),
   sidecarStatus: () => ipcRenderer.invoke('sidecar-status'),
   onSidecarStatus: (handler) => on('sidecar-status', handler),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   pickFiles: () => ipcRenderer.invoke('pick-files'),
-  canvasPickImage: (canvasId) => ipcRenderer.invoke('canvas-pick-image', { canvasId }),
-  canvasDropImage: (canvasId, file) => {
-    const filePath = webUtils.getPathForFile(file);
-    if (!filePath) return Promise.reject(new Error('Drop an image from your computer.'));
-    return ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath });
+  canvasPickImage: async (canvasId) => {
+    const reply = await ipcRenderer.invoke('canvas-pick-image', { canvasId });
+    return reply === null ? null : canvasImageReply(reply);
+  },
+  canvasDropImage: async (canvasId, file) => {
+    const filePath = canvasDroppedFilePath(file);
+    return canvasImageReply(await ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath }));
   },
   saveImage: (dataUrl) => ipcRenderer.invoke('save-image', { dataUrl }),
   saveAttachment: (name, dataUrl) => ipcRenderer.invoke('save-attachment', { name, dataUrl }),
@@ -155,6 +172,8 @@ contextBridge.exposeInMainWorld('droidControl', {
   // board can ask main to end one. Main owns the registry of guests it
   // attached, so an ID it does not recognise is refused.
   canvasPreviewUrl: CANVAS_PREVIEW_URL,
+  canvasPreviewBind: (guestId, canvasId) =>
+    ipcRenderer.invoke('canvas-preview-bind', { guestId, canvasId }),
   canvasPreviewTerminate: (guestId) => ipcRenderer.invoke('canvas-preview-terminate', { guestId }),
   systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),
   powerTier: () => ipcRenderer.invoke('power-tier'),

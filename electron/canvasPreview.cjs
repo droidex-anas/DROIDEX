@@ -379,7 +379,26 @@ function createCanvasPreviewHosts({ log, clock = realClock }) {
         forget(guestId);
       });
       contents.on('destroyed', () => forget(guestId));
-      guests.set(guestId, { contents, stopProbing: watchGeneratedFrame(guestId, contents) });
+      guests.set(guestId, {
+        contents,
+        canvasId: null,
+        stopProbing: watchGeneratedFrame(guestId, contents),
+      });
+    },
+
+    bindCanvas(guestId, canvasId) {
+      const guest = guests.get(guestId);
+      if (!guest || guest.contents.isDestroyed()) return false;
+      if (guest.canvasId !== null && guest.canvasId !== canvasId) return false;
+      guest.canvasId = canvasId;
+      return true;
+    },
+
+    canvasForFrame(guestId, frame) {
+      const guest = guests.get(guestId);
+      if (!guest || guest.contents.isDestroyed()) return null;
+      if (frame !== generatedFrameOf(guest.contents)) return null;
+      return guest.canvasId;
     },
 
     /** Ends a guest the renderer asked about. False when main does not own it. */

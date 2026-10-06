@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { canvasError, CanvasCommandError } from './canvasError.js';
@@ -10,6 +10,16 @@ import { canvasIdentifierSchema } from './schema.js';
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_DIMENSION = 8192;
 const IMAGE_RECOVERY = 'Choose a PNG, JPEG or WebP image under 10 MiB and 8192 pixels per side.';
+const DAMAGED_ASSET = 'A saved Canvas image is damaged. Reopen DROIDEX to recover it.';
+const ownedAssetSchema = z
+  .object({
+    assetId: z.string().regex(/^[0-9a-f]{64}$/),
+    mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+    byteLength: z.number().int().min(1).max(MAX_IMAGE_BYTES),
+    width: z.number().int().min(1).max(MAX_DIMENSION),
+    height: z.number().int().min(1).max(MAX_DIMENSION),
+  })
+  .strict();
 
 // Main decodes these exact bytes before sending the digest and dimensions over
 // its private bridge route. The digest closes the path replacement race.
@@ -62,21 +72,22 @@ export async function importCanvasImage(
   const assetId = createHash('sha256').update(bytes).digest('hex');
   if (assetId !== request.digest)
     throw canvasError('invalid_input', 'The selected image changed. Choose it again.');
-  await saveOwnedAsset(root, request.canvasId, assetId, bytes);
-  return {
+  const asset: OwnedAsset = {
     assetId,
     mediaType,
     byteLength: bytes.length,
     width: request.width,
     height: request.height,
   };
+  await saveOwnedAsset(root, request.canvasId, asset, bytes);
+  return asset;
 }
 
 /** Content-addressed, immutable storage, with no links below the profile root. */
-async function saveOwnedAsset(root: string, canvasId: string, assetId: string, bytes: Buffer) {
+async function saveOwnedAsset(root: string, canvasId: string, asset: OwnedAsset, bytes: Buffer) {
   const canvas = join(root, canvasId);
   const assets = join(canvas, 'assets');
-  const target = join(assets, assetId);
+  const target = join(assets, asset.assetId);
   const temporary = `${target}.${randomUUID()}.tmp`;
   try {
     const canvasInfo = await lstat(canvas);
@@ -102,22 +113,17 @@ async function saveOwnedAsset(root: string, canvasId: string, assetId: string, b
       try {
         const info = await existing.stat();
         if (!info.isFile() || info.size < 1 || info.size > MAX_IMAGE_BYTES)
-          throw canvasError(
-            'storage_failed',
-            'That saved image is damaged. Reopen DROIDEX to recover it.',
-          );
+          throw canvasError('storage_failed', DAMAGED_ASSET);
         if (
           createHash('sha256')
             .update(await existing.readFile())
-            .digest('hex') !== assetId
+            .digest('hex') !== asset.assetId
         )
-          throw canvasError(
-            'storage_failed',
-            'That saved image is damaged. Reopen DROIDEX to recover it.',
-          );
+          throw canvasError('storage_failed', DAMAGED_ASSET);
       } finally {
         await existing.close();
       }
+      await saveAssetMetadata(assets, asset);
       return;
     } catch (error) {
       if (!isCode(error, 'ENOENT')) throw error;
@@ -136,6 +142,7 @@ async function saveOwnedAsset(root: string, canvasId: string, assetId: string, b
     }
     await rename(temporary, target);
     await syncDirectory(assets);
+    await saveAssetMetadata(assets, asset);
     await syncDirectory(canvas);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
@@ -144,6 +151,102 @@ async function saveOwnedAsset(root: string, canvasId: string, assetId: string, b
       'storage_failed',
       'The image could not be saved. Free disk space and try again.',
     );
+  }
+}
+
+/** A lost import reply is recovered from the canvas's durable asset records. */
+export async function listCanvasAssets(root: string, canvasId: string): Promise<OwnedAsset[]> {
+  const canvas = join(root, canvasId);
+  const directory = join(canvas, 'assets');
+  try {
+    const canvasInfo = await lstat(canvas);
+    if (!canvasInfo.isDirectory() || canvasInfo.isSymbolicLink())
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+    let directoryInfo;
+    try {
+      directoryInfo = await lstat(directory);
+    } catch (error) {
+      if (isCode(error, 'ENOENT')) return [];
+      throw error;
+    }
+    if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink())
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+
+    const names = await readdir(directory);
+    const assets: OwnedAsset[] = [];
+    for (const name of names.sort()) {
+      if (!/^[0-9a-f]{64}\.json$/.test(name)) continue;
+      const assetId = name.slice(0, 64);
+      const asset = await readAssetMetadata(join(directory, name), assetId);
+      const image = await open(join(directory, assetId), constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const info = await image.stat();
+        if (!info.isFile() || info.size !== asset.byteLength)
+          throw canvasError('storage_failed', DAMAGED_ASSET);
+        if (
+          createHash('sha256')
+            .update(await image.readFile())
+            .digest('hex') !== assetId
+        )
+          throw canvasError('storage_failed', DAMAGED_ASSET);
+      } finally {
+        await image.close();
+      }
+      assets.push(asset);
+    }
+    return assets;
+  } catch (error) {
+    if (error instanceof CanvasCommandError) throw error;
+    throw canvasError('storage_failed', DAMAGED_ASSET);
+  }
+}
+
+async function saveAssetMetadata(directory: string, asset: OwnedAsset): Promise<void> {
+  const target = join(directory, `${asset.assetId}.json`);
+  try {
+    const existing = await readAssetMetadata(target, asset.assetId);
+    if (JSON.stringify(existing) !== JSON.stringify(asset))
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+    return;
+  } catch (error) {
+    if (!isCode(error, 'ENOENT')) throw error;
+  }
+
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    const file = await open(
+      temporary,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await file.writeFile(`${JSON.stringify(asset)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await rename(temporary, target);
+    await syncDirectory(directory);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+async function readAssetMetadata(path: string, assetId: string): Promise<OwnedAsset> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.size < 1 || info.size > 512)
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+    const parsed = ownedAssetSchema.safeParse(JSON.parse(await file.readFile('utf8')));
+    if (!parsed.success || parsed.data.assetId !== assetId)
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof CanvasCommandError) throw error;
+    throw canvasError('storage_failed', DAMAGED_ASSET);
+  } finally {
+    await file.close();
   }
 }
 

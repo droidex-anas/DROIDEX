@@ -365,14 +365,18 @@ frame an arrange merely re-sent, and a rebuild of identical source — which is
 content-addressed to the same artifact ID — still reads as a new attempt.
 
 For image imports, preload passes a native dropped `File` path or main opens its
-own picker. Main checks the 10 MiB limit, decodes pixels with `nativeImage` and
-checks the 8192-pixel dimension limit. Its private loopback route sends the
+own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPEG
+with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
+dimension limit. Its private loopback route sends the
 selected path with a digest and decoded dimensions to the sidecar; the sidecar
-rejects a changed file and stores accepted bytes by hash under the canvas.
+rejects a changed file and stores accepted bytes by hash under the canvas. Each
+asset has a durable metadata record, and `canvas.listAssets` recovers its ID
+even when the import reply or original file is lost.
 `canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
-when an artifact is read. The guest sees no path and cannot use that URL to
-read another canvas's assets. Kit WOFF2 data is stored once under the profile
-and referenced from generated CSS through the same preview scheme.
+when an artifact is read. Main binds each preview's generated frame to its
+canvas and refuses asset requests from another canvas, an unbound guest or the
+default session. Kit WOFF2 data is stored once under the profile and referenced
+from generated CSS through the same preview scheme.
 
 ### Electron main gauges
 

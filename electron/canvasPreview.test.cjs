@@ -156,6 +156,20 @@ test('main refuses a guest ID it never attached', () => {
   assert.equal(guest.crashes, 0);
 });
 
+test('a preview frame is bound once to its canvas and loses that binding on close', () => {
+  const { hosts } = createHosts();
+  const frame = createGeneratedFrame();
+  const guest = createGuest(42, [frame]);
+  hosts.attach(guest);
+  assert.equal(hosts.canvasForFrame(42, frame), null);
+  assert.equal(hosts.bindCanvas(42, 'canvas-a'), true);
+  assert.equal(hosts.canvasForFrame(42, frame), 'canvas-a');
+  assert.equal(hosts.canvasForFrame(42, {}), null);
+  assert.equal(hosts.bindCanvas(42, 'canvas-b'), false);
+  hosts.terminate(42);
+  assert.equal(hosts.canvasForFrame(42, frame), null);
+});
+
 test("main's own watchdog ends an unresponsive guest", () => {
   const { hosts, logged } = createHosts();
   const guest = createGuest(11);
