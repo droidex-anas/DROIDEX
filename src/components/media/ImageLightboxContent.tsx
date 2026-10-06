@@ -58,6 +58,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     maxScale: MAX_PIXEL_ZOOM / fitRatio,
   });
   const { zoomBy, reset } = zoom;
+  const zoomPercent = String(Math.round(zoom.scale * fitRatio * 100));
 
   useEffect(() => {
     const opener = document.activeElement;
@@ -177,10 +178,8 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
           >
             <Minus className="h-4 w-4" />
           </ViewerToolbarButton>
-          <ViewerToolbarButton label="Fit to window (0)" onClick={reset}>
-            <span className="min-w-[3rem] text-center tabular-nums">
-              {Math.round(zoom.scale * fitRatio * 100)}%
-            </span>
+          <ViewerToolbarButton label={`Zoom ${zoomPercent}%, fit to window (0)`} onClick={reset}>
+            <span className="min-w-[3rem] text-center tabular-nums">{zoomPercent}%</span>
           </ViewerToolbarButton>
           <ViewerToolbarButton
             label="Zoom in (+)"
