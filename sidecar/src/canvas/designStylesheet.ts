@@ -1,7 +1,14 @@
 // The one stylesheet a compiled design gets: Tailwind 3's preflight and the
 // utilities its source actually mentions, the pinned kit's mode tokens and CSS,
-// and the design's own CSS files. Tailwind scans the source as text, so nothing
-// here executes generated source either (spec §6).
+// and the design's own CSS files.
+//
+// CSS is untrusted input that reaches a code loader. Tailwind resolves
+// `@config` against the stylesheet's own file location and then requires that
+// file, and PostCSS adopts a file location from an inline source map, so a
+// design could name a module on disk and have the sidecar execute it. Every
+// loading at-rule is refused here before PostCSS parses for real, source maps
+// are off so no file location can be adopted, and the Tailwind configuration is
+// passed inline so nothing is ever looked up from disk (spec §6).
 
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
@@ -29,26 +36,77 @@ export async function buildDesignStylesheet(
   files: SourceFiles,
   system: DesignSystem,
 ): Promise<DesignStylesheetResult> {
+  const sources: [string, string][] = [
+    [TOKENS_FILE, modeTokens(system)],
+    ...cssFiles(system.files).map(([path, css]): [string, string] => [
+      `${KIT_SPECIFIER}/${path}`,
+      css,
+    ]),
+    ...cssFiles(files),
+  ];
+
+  const refusals = sources.flatMap(([file, css]) => reviewCss(file, css));
+  if (refusals.length > 0) return { ok: false, diagnostics: refusals };
+
   const segments: Segment[] = [];
   let sheet = PREAMBLE;
-  const append = (file: string, css: string): void => {
+  for (const [file, css] of sources) {
     segments.push({ file, firstLine: countLines(sheet) });
     sheet += css.endsWith('\n') ? css : `${css}\n`;
-  };
-
-  append(TOKENS_FILE, modeTokens(system));
-  for (const [path, css] of cssFiles(system.files)) append(`${KIT_SPECIFIER}/${path}`, css);
-  for (const [path, css] of cssFiles(files)) append(path, css);
+  }
   sheet += UTILITIES;
 
   try {
     const processed = await postcss([tailwindcss(tailwindConfig(files, system))]).process(sheet, {
       from: undefined,
+      map: false,
     });
     return { ok: true, css: processed.css };
   } catch (error) {
     return { ok: false, diagnostics: [cssDiagnostic(error, segments)] };
   }
+}
+
+// Every at-rule that can make PostCSS or Tailwind read a second file. A design's
+// stylesheets are already concatenated into one sheet, so none of them has
+// anything legitimate to reach for.
+const LOADING_AT_RULES = new Set(['config', 'plugin', 'import', 'use', 'forward']);
+
+// A preview loads with no network, so a remote asset would silently fail and a
+// remote font would report the preview's existence. Inline data is all a design
+// can carry until Task 7 adds owned image references.
+const EXTERNAL_RESOURCE = /\b(?:url|image-set|-webkit-image-set)\(\s*(['"]?)(?!data:)([^'")]*)\1/i;
+
+/** What one stylesheet may not contain, checked before it joins the sheet. */
+function reviewCss(file: string, css: string): CanvasDiagnostic[] {
+  let root;
+  try {
+    // Parsed with source maps off, so this file cannot name a location that a
+    // later at-rule or plugin would resolve against.
+    root = postcss.parse(css, { from: undefined, map: false });
+  } catch (error) {
+    return [cssDiagnostic(error, [{ file, firstLine: 1 }])];
+  }
+
+  const refusals: CanvasDiagnostic[] = [];
+  const refuse = (message: string, line: number | undefined): void => {
+    refusals.push({ code: 'css_error', message, ...(line === undefined ? {} : { file, line }) });
+  };
+  root.walkAtRules((rule) => {
+    if (!LOADING_AT_RULES.has(rule.name.toLowerCase())) return;
+    refuse(
+      `@${rule.name} is not available in a design. Put the CSS in a stylesheet of its own; every .css file in the design is already included.`,
+      rule.source?.start?.line,
+    );
+  });
+  root.walkDecls((declaration) => {
+    if (!EXTERNAL_RESOURCE.test(declaration.value)) return;
+    refuse(
+      `"${declaration.prop}" refers to a resource outside the design. A preview loads with no network, so only inline data: values render.`,
+      declaration.source?.start?.line,
+    );
+  });
+  return refusals;
 }
 
 // A synthetic name for the token block, so a diagnostic in it is attributable

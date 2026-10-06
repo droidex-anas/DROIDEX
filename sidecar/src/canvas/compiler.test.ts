@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { after, test } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test, type TestContext } from 'node:test';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -215,6 +219,155 @@ test('terminating rejects every in-flight compile and accepts no more', async ()
     CompilerUnavailableError,
   );
 });
+
+test('CSS cannot make the compiler load a module from disk', async (t) => {
+  // Tailwind resolves `@config` against the stylesheet's file location and then
+  // requires it, and PostCSS adopts a file location from an inline source map.
+  const lair = scratchDirectory(t);
+  const marker = join(lair, 'executed.txt');
+  writeFileSync(
+    join(lair, 'evil.cjs'),
+    `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran');\nmodule.exports = { content: [] };\n`,
+  );
+  const sourceMap = Buffer.from(
+    JSON.stringify({
+      version: 3,
+      file: join(lair, 'host.css'),
+      sources: [],
+      names: [],
+      mappings: '',
+    }),
+  ).toString('base64');
+
+  const [diagnostic] = await diagnosticsFor({
+    ...STATEFUL_DESIGN,
+    'styles.css': `@config "./evil.cjs";\n.a { color: red; }\n/*# sourceMappingURL=data:application/json;base64,${sourceMap} */\n`,
+  });
+
+  assert.equal(diagnostic?.code, 'css_error');
+  assert.equal(diagnostic?.file, 'styles.css');
+  assert.equal(existsSync(marker), false, 'no host code ran');
+});
+
+test('CSS cannot reach outside the preview for a resource', async () => {
+  for (const value of [
+    'url(https://fonts.example.com/a.woff2)',
+    "url('//cdn.example.com/x.png')",
+  ]) {
+    const [diagnostic] = await diagnosticsFor({
+      ...STATEFUL_DESIGN,
+      'styles.css': `.a { background-image: ${value}; }\n`,
+    });
+    assert.equal(diagnostic?.code, 'css_error', value);
+    assert.equal(diagnostic?.file, 'styles.css');
+  }
+
+  // An inline value is the one a preview with no network can actually render.
+  const inline = await compile({
+    ...STATEFUL_DESIGN,
+    'styles.css': '.a { background-image: url(data:image/gif;base64,R0lGODlhAQABAAAAACw=); }\n',
+  });
+  assert.ok(inline.html.includes('data:image/gif'));
+});
+
+test('no Tailwind or PostCSS configuration is read from disk or from the design', async () => {
+  const { html } = await compile({
+    ...STATEFUL_DESIGN,
+    'main.tsx': STATEFUL_DESIGN['main.tsx']!.replace(
+      'text-center',
+      'text-center text-droid-accent',
+    ),
+    // Shaped like a real config, and ignored: the compiler passes its own.
+    'tailwind.config.cjs':
+      "module.exports = { theme: { extend: { colors: { smuggled: '#ff0000' } } } };\n",
+  });
+
+  assert.equal(html.includes('smuggled'), false, 'a config in the design is not honored');
+  // The repository's own tailwind.config.js defines this one; the sidecar runs
+  // from the repository root, so a disk lookup would find it.
+  assert.equal(/\.text-droid-accent\s*\{/.test(html), false, 'no config is found on disk');
+});
+
+test('a module cannot be loaded past the allowlist at runtime', async () => {
+  const loaders = [
+    'export default function Hey() {\n  void import(globalThis.location.hash);\n  return <p>hey</p>;\n}\n',
+    'declare const require: (id: string) => unknown;\nexport default function Hey() {\n  void require(globalThis.location.hash);\n  return <p>hey</p>;\n}\n',
+  ];
+
+  for (const main of loaders) {
+    const [diagnostic] = await diagnosticsFor({ 'main.tsx': main });
+    assert.equal(diagnostic?.code, 'unsupported_import');
+    assert.equal(diagnostic?.file, 'main.tsx');
+  }
+
+  const [stylesheet] = await diagnosticsFor({
+    ...STATEFUL_DESIGN,
+    'styles.css': "@import 'https://cdn.example.com/reset.css';\n",
+  });
+  assert.equal(stylesheet?.code, 'css_error');
+});
+
+test('an adversarial closing tag never ends the inline style or script', async () => {
+  // PostCSS escapes "<" as \3c and esbuild escapes "</script" in a string, so
+  // this holds the document's own invariant rather than either tool's habit.
+  const adversarial: SourceFiles[] = [
+    { ...STATEFUL_DESIGN, 'styles.css': '.x { font-family: </STYLE >; }\n' },
+    { ...STATEFUL_DESIGN, 'styles.css': '.x::after { content: "</style><img>"; }\n' },
+    {
+      'main.tsx':
+        'const t = String.raw`</SCRIPT >`;\nexport default function Hey() {\n  return <p>{t}</p>;\n}\n',
+    },
+  ];
+
+  for (const files of adversarial) {
+    const { html } = await compile(files);
+    const styles = html.slice(html.indexOf('<style>') + '<style>'.length, html.indexOf('</style>'));
+    const script = html.slice(
+      html.indexOf('<script>') + '<script>'.length,
+      html.lastIndexOf('</script>'),
+    );
+    assert.equal(/<\/style/i.test(styles), false, 'the style element ends where it should');
+    assert.equal(/<\/script/i.test(script), false, 'the script element ends where it should');
+  }
+});
+
+test('terminating leaves no compiler service process behind', async (t) => {
+  if (process.platform === 'win32') return;
+  const before = compilerServiceIds();
+  const worker = new CompilerWorker();
+  t.after(() => worker.terminate());
+  await worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
+  const started = [...compilerServiceIds()].filter((pid) => !before.has(pid));
+  assert.ok(started.length > 0, 'the bundler runs a service process');
+
+  await worker.terminate();
+
+  const surviving = (): string[] => started.filter((pid) => compilerServiceIds().has(pid));
+  for (let turn = 0; turn < 200 && surviving().length > 0; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(surviving(), [], 'the service process is gone');
+});
+
+/**
+ * The PIDs of the bundler's own esbuild service processes. Matched by the
+ * sidecar's copy, because the test runner's loader owns one of its own.
+ */
+function compilerServiceIds(): Set<string> {
+  const listed = execFileSync('/bin/sh', [
+    '-c',
+    `pgrep -P ${String(process.pid)} -f 'sidecar/node_modules/.*bin/esbuild' || true`,
+  ]);
+  return new Set(listed.toString().trim().split('\n').filter(Boolean));
+}
+
+function scratchDirectory(t: TestContext): string {
+  const directory = mkdtempSync(join(tmpdir(), 'droidex-canvas-compile-'));
+  t.after(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  return directory;
+}
 
 function compileInput(files: SourceFiles): CompileInput {
   return {

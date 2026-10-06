@@ -63,6 +63,11 @@ if (root) createRoot(root).render(<Design />);
 
 const SUPPORTED_LIST = SUPPORTED_IMPORTS.join(', ');
 const ESCAPE_MESSAGE = 'A relative import must stay inside the design.';
+const LOADER_MESSAGE =
+  'A module can only be loaded by a static import of a literal path, so this allowlist can be applied before the design runs.';
+
+// esbuild's own ids for the two constructs it cannot resolve at build time.
+const LOADER_MESSAGE_IDS = new Set(['unsupported-dynamic-import', 'unsupported-require-call']);
 const BUNDLE_RECOVERY = 'The design could not be compiled. Check main.tsx and retry.';
 const MISSING_ENTRY_MESSAGE = `A design needs ${DESIGN_ENTRY}, which default-exports its component.`;
 
@@ -86,6 +91,13 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
       // React's CommonJS entry branches on this; defining it picks the
       // production build and leaves no `process` reference in the artifact.
       define: { 'process.env.NODE_ENV': '"production"' },
+      // A specifier esbuild cannot see through is a module loader left in the
+      // artifact, which would resolve at runtime past this allowlist. esbuild
+      // only warns about both by default.
+      logOverride: {
+        'unsupported-dynamic-import': 'error',
+        'unsupported-require-call': 'error',
+      },
       plugins: [virtualTreePlugin(sources)],
     });
   } catch (error) {
@@ -104,6 +116,15 @@ function bundleFailure(diagnostics: CanvasDiagnostic[]): DesignBundleResult {
 
 // esbuild rejects with a BuildFailure carrying the messages; anything else is a
 // bug in this module, which the caller turns into one generic diagnostic.
+/**
+ * Releases the esbuild service process this module started. The compiler worker
+ * calls it before its thread goes away, so the service is never left to the
+ * destruction of the thread's handles.
+ */
+export async function stopBundler(): Promise<void> {
+  await esbuild.stop();
+}
+
 function buildFailureMessages(error: unknown): readonly esbuild.Message[] {
   if (typeof error === 'object' && error !== null && 'errors' in error) {
     const errors: unknown = error.errors;
@@ -223,6 +244,8 @@ function diagnosticFrom(message: esbuild.Message, severity: 'error' | 'warning')
   const code = pluginCode(message);
   const location = designLocation(message.location);
   if (code !== null) return { code, message: message.text, ...location };
+  if (LOADER_MESSAGE_IDS.has(message.id))
+    return { code: 'unsupported_import', message: LOADER_MESSAGE, ...location };
   // The bootstrap is ours, so the only failure it can report is the contract it
   // depends on: `main.tsx` has to default-export a component.
   if (message.location?.file.startsWith(`${BOOT_NAMESPACE}:`)) return missingDefaultExport(message);
