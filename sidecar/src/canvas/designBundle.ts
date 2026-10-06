@@ -1,20 +1,17 @@
 // Bundles one design's virtual source tree into a single browser script. The
 // tree is text and stays text: esbuild parses and concatenates it, so nothing
 // here executes generated source (spec §6). Only the four supported packages
-// resolve, and only from the Canvas runtime (see canvasRuntime.ts).
+// resolve, and esbuild itself comes from the Canvas runtime rather than from an
+// import, so the bundled worker takes it from the directory a packaged app owns
+// (see canvasRuntime.ts).
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
-import { canvasRuntimeRequire } from './canvasRuntime.js';
+import { canvasRuntime, canvasRuntimeRequire } from './canvasRuntime.js';
 import { KIT_ENTRY } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
-
-// esbuild is loaded through the Canvas runtime rather than imported, so the
-// bundled worker takes it, and the packages a design may import, from the one
-// directory a packaged app owns; see canvasRuntime.ts.
-const bundler = canvasRuntimeRequire('esbuild') as typeof esbuild;
 
 /** The file a design's component is compiled from. */
 const DESIGN_ENTRY = 'main.tsx';
@@ -104,7 +101,7 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
 
   let build: esbuild.BuildResult;
   try {
-    build = await bundler.build({
+    build = await canvasRuntime().esbuild.build({
       entryPoints: [DESIGN_ENTRY],
       bundle: true,
       write: false,
@@ -151,7 +148,7 @@ function bundleFailure(diagnostics: CanvasDiagnostic[]): DesignBundleResult {
  * destruction of the thread's handles.
  */
 export async function stopBundler(): Promise<void> {
-  await bundler.stop();
+  await canvasRuntime().esbuild.stop();
 }
 
 /**

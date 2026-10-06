@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { CanvasCommandError } from './canvasError.js';
-import { ownedCanvasRuntimeDir, verifyCanvasRuntime } from './canvasRuntime.js';
+import { ownedCanvasRuntimeDir, startCanvasRuntime } from './canvasRuntime.js';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -98,11 +98,12 @@ if (!process.send) throw new Error('The design compiler must run as a forked pro
 const send = process.send.bind(process);
 const running = new Map<number, AbortController>();
 
-// The runtime an app owns is checked once, before any request: node resolution
+// The runtime is checked and loaded once, before any request: node resolution
 // cannot be bounded per module, so an incomplete runtime must not compile at
-// all rather than silently borrow a module from somewhere else. The reason goes
-// to the sidecar log; a caller only ever learns the compiler is unavailable.
-const runtimeFault = verifyCanvasRuntime(ownedCanvasRuntimeDir);
+// all rather than silently borrow a module from somewhere else, and nothing is
+// loaded until it has been vouched for. The reason goes to the sidecar log; a
+// caller only ever learns the compiler is unavailable.
+const runtimeFault = startCanvasRuntime(ownedCanvasRuntimeDir);
 if (runtimeFault !== null) console.error('Canvas runtime is incomplete:', runtimeFault);
 
 process.on('message', (request: CompilerRequest) => {

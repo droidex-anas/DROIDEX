@@ -9,26 +9,19 @@
 // loading at-rule is refused here before PostCSS parses for real, source maps
 // are off so no file location can be adopted, and the Tailwind configuration is
 // passed inline so nothing is ever looked up from disk (spec §6).
+//
+// Tailwind and PostCSS come from the Canvas runtime rather than from an import,
+// so a packaged compile loads the copies the app owns and Tailwind and this
+// module share one PostCSS; see canvasRuntime.ts.
 
-import type * as postcssModule from 'postcss';
 import type { Declaration, Root } from 'postcss';
-import type * as valueParserModule from 'postcss-value-parser';
-import type * as tailwindModule from 'tailwindcss';
+import valueParser from 'postcss-value-parser';
 import type { Config } from 'tailwindcss';
-import { canvasRuntimeRequire } from './canvasRuntime.js';
+import { canvasRuntime } from './canvasRuntime.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 import { KIT_SPECIFIER } from './designBundle.js';
-
-// Tailwind and PostCSS come from the Canvas runtime rather than from an import,
-// so a packaged compile loads them from the directory the app owns; see
-// canvasRuntime.ts.
-const postcss = canvasRuntimeRequire('postcss') as typeof postcssModule.default;
-const valueParser = canvasRuntimeRequire(
-  'postcss-value-parser',
-) as typeof valueParserModule.default;
-const tailwindcss = canvasRuntimeRequire('tailwindcss') as typeof tailwindModule.default;
 
 export type DesignStylesheetResult =
   | { ok: true; css: string }
@@ -68,6 +61,7 @@ export async function buildDesignStylesheet(
   }
   sheet += UTILITIES;
 
+  const { postcss, tailwindcss } = canvasRuntime();
   try {
     const processed = await postcss([tailwindcss(tailwindConfig(files, system))]).process(sheet, {
       from: undefined,
@@ -100,7 +94,7 @@ function reviewCss(file: string, css: string): CanvasDiagnostic[] {
   try {
     // Parsed with source maps off, so this file cannot name a location that a
     // later at-rule or plugin would resolve against.
-    root = postcss.parse(css, { from: undefined, map: false });
+    root = canvasRuntime().postcss.parse(css, { from: undefined, map: false });
   } catch (error) {
     return [cssDiagnostic(error, [{ file, firstLine: 1 }])];
   }
