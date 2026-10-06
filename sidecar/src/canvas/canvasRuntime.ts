@@ -19,14 +19,22 @@
 
 import { existsSync, lstatSync, readFileSync, realpathSync, type Stats } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
 import type * as postcssModule from 'postcss';
 import type * as tailwindModule from 'tailwindcss';
 
-/** The runtime the app owns, or null when a checkout resolves its own. */
-export const ownedCanvasRuntimeDir = process.env.DROIDEX_CANVAS_RUNTIME_DIR ?? null;
+const configuredRuntimeDir = process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+
+/**
+ * The runtime the app owns, or null when a checkout resolves its own. Made
+ * absolute, because `createRequire` refuses a relative anchor and the host's
+ * mistake belongs in the refusal below rather than in a module that throws as
+ * it loads.
+ */
+export const ownedCanvasRuntimeDir =
+  configuredRuntimeDir === undefined ? null : resolve(configuredRuntimeDir);
 
 /** Written by tools/stage-canvas-runtime.mjs; tools/verifyCanvasRuntime.mjs reads it too. */
 const MANIFEST_FILE = 'manifest.json';
