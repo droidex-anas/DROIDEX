@@ -35,6 +35,7 @@ import type {
   CanvasChange,
   CanvasFrame,
   CanvasScope,
+  SourceElement,
   WriteReceipt,
 } from '../canvas/protocol.js';
 import { deferred, observedFileSystem } from './canvasStorageSupport.js';
@@ -52,7 +53,7 @@ export interface HeldCompile {
   signal: AbortSignal;
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
-  ready(artifactId: string): void;
+  ready(artifactId: string, elements?: SourceElement[]): void;
   failed(code: string): void;
   unavailable(): void;
   /** The compiler refused the runtime the app staged, which no restart fixes. */
@@ -139,12 +140,12 @@ class FakeCompiler implements DesignCompiler {
         input,
         signal,
         client: this,
-        ready: (artifactId) => {
+        ready: (artifactId, elements = []) => {
           resolve({
             artifactId,
             html: `<html>${input.revisionId}</html>`,
             diagnostics: [],
-            elements: [],
+            elements,
           });
         },
         failed: (code) => {

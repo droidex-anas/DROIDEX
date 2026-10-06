@@ -25,11 +25,6 @@ export interface BuildOutcome {
   persists: boolean;
 }
 
-/** A build that produced a usable artifact, which a restart can serve again. */
-export function readyBuild(artifactId: string): BuildOutcome {
-  return { result: { status: 'ready', artifactId }, persists: true };
-}
-
 /** A build whose artifact document could not be written. This attempt's own. */
 export function unsavedBuild(): BuildOutcome {
   return attemptFailed({ code: 'storage_failed', message: BUILD_NOT_SAVED });

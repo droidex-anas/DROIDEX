@@ -359,9 +359,25 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
   const [designId] = await canvas.create('Hey');
   assert.ok(designId);
   const receipt = await canvas.write(designId, null, 'v1');
-  (await canvas.fleet.compile(1)).ready('artifact-one');
+  const elements = [
+    {
+      elementId: 'element-one',
+      file: 'main.tsx',
+      start: 1,
+      end: 12,
+      tagName: 'h1',
+      editability: 'literal' as const,
+    },
+  ];
+  (await canvas.fleet.compile(1)).ready('artifact-one', elements);
   await canvas.reported(designId, 'ready');
 
+  const cached = await new CanvasFiles(canvas.store.root).readBuildOutput(
+    canvas.canvasId,
+    `${receipt.revisionId}.json`,
+  );
+  assert.ok(cached);
+  assert.deepEqual(JSON.parse(cached).result.elements, elements);
   // The transition persisted the pointer and nothing else: a build is not a
   // mutation, so it records no receipt and never touches the retry ledger.
   const saved = await savedManifest(canvas);

@@ -1139,6 +1139,57 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 
 **Interfaces:** Uses Task 2 `SourceElement`. `instrumentSource(files: SourceFiles, revisionId: string): { files: SourceFiles; elements: SourceElement[] }` produces derived instrumented source without modifying canonical files. `ElementEdit = { element: ElementRef; change: { kind: 'text'; value: string } | { kind: 'token'; property: string; token: string } | { kind: 'image'; assetId: string } }`. `applyElementEdit(files: SourceFiles, elements: SourceElement[], edit: ElementEdit): SourceFiles` returns complete changed files or a typed ambiguity/stale-reference error; the caller commits through `write` with the reference's revision.
 
+Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache path):
+
+- `instrumentSource` uses TypeScript 5.9.3 from the existing lockfile, bundled into the
+  existing owned compiler entry. It derives instrumented files before esbuild; Tailwind still
+  scans canonical source. The parser adds about 9.6 MiB to that worker bundle. It is compiled
+  application code, with no external parser require/package or extra staging/resolution path.
+  TypeScript initializes its Node system using `__filename`; the compiler build binds that to
+  Node 22's `import.meta.filename`, so it names the owned worker rather than a checkout module.
+  The existing runtime manifest/verifier still owns every external package. The sidecar placement
+  was measured first and rejected after dense JSX blocked it for two seconds: the existing
+  compiler process and deadline must contain parsing too. Sonatype was unavailable; no dependency
+  security verdict is implied.
+- Every owned native JSX site carries `data-droidex-element`. IDs hash the revision, complete
+  canonical source tree, file and offset; offsets are UTF-16 positions in canonical source.
+  The inline insertion map carries canonical content into esbuild's composed artifact map.
+  Artifact maps omit source content and replace host runtime paths with opaque runtime names.
+  IDs are selection hints, never authorization; callers must still commit edits with the selected
+  revision as `expectedRevisionId`.
+- `applyElementEdit` returns complete contents of changed paths only. It reparses canonical
+  source and checks the selection map before replacing one AST range. `SourceElementError.code`
+  distinguishes `stale_reference` (reselect), `ambiguous_element` (ask the agent with the original
+  reference), `invalid_source`, and `invalid_edit`. There is one edit per call, no batch API.
+- Direct scope is a literal site in the entry's default function/arrow. Other component
+  definitions, callbacks/maps, JSX stored in variables/arrays, loops, and children passed through
+  custom components are shared. Reused/imported entry components are shared too. JSX spreads,
+  spread children, computed or split text, computed class names/styles, duplicate attributes or
+  style properties, and `children`/`dangerouslySetInnerHTML`/`srcset` overrides are not directly
+  editable. An image inside `picture` is computed because a source alternative can override it. Fragments have no DOM marker; native children in conditional branches keep distinct
+  sites. A literal site still requires the requested property to have a supported literal range.
+- Text editing supports a single JSX text node or string/no-substitution-template expression,
+  plus empty paired tags. Token editing replaces an existing literal `var(--token)` in an
+  allowlisted React style property; it does not rewrite utility classes or invent style objects.
+  Image editing replaces a literal `img src="canvas-asset:<assetId>"`; asset existence and offline
+  resolution belong to 07c, and kit token membership belongs to the inspector's pinned kit.
+- `CompiledDesign.elements` follows the accepted build into the required `elements` field on
+  the ready `BuildResult` in the derived cache. Older outcomes without that field are cache misses
+  and rebuild. No historical reader or migration was added. The renderer-facing ready-state
+  projection is unchanged: its mirror/validation/fixture updates require renderer-file ownership,
+  explicitly excluded from this subtask. That projection is pending the ownership decision requested
+  from the orchestrator. No preview selection events or inspector behavior are included.
+- Measurements on this arm64 checkout, Node 22: kit example (928 bytes, four sites) first
+  instrumentation 8.65 ms, warm median 0.43 ms across 29 runs; 1 MiB of source across four
+  maximum-sized files 33.91 ms. These exclude parser module loading and worker startup and
+  vary with host load. Exact-column inline maps expand that 1 MiB input to 9,438,320 bytes
+  inside the worker; esbuild composes them down to the output locations it emits. A deliberately
+  dense 256 KiB file with 65,529 JSX sites took 2.02 seconds in the initial probe. Parsing now
+  runs in the deadline-owned compiler process, and `maxSourceElements: 8192` refuses excessive
+  native JSX site counts with a simplify/rebuild diagnostic before producing that expanded map.
+  This independent bound also applies at the worker reply and cache boundaries. These are
+  probes, not timing assertions in unit tests.
+
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.
 - [ ] Add a focused round-trip regression whose meaningful contract is source preservation:

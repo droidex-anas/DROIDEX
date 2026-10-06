@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
 import type { CanvasBuildOutcome, PreviewArtifact } from './protocol.js';
-import { CANVAS_LIMITS, canvasIdentifierSchema } from './schema.js';
+import { CANVAS_LIMITS, canvasIdentifierSchema, sourceElementSchema } from './schema.js';
 
 const BUILD_OUTCOME_VERSION = 1;
 
@@ -31,7 +31,13 @@ const diagnosticSchema = z
   .strict();
 
 const buildResultSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('ready'), artifactId: canvasIdentifierSchema }).strict(),
+  z
+    .object({
+      status: z.literal('ready'),
+      artifactId: canvasIdentifierSchema,
+      elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
+    })
+    .strict(),
   z
     .object({
       status: z.literal('failed'),

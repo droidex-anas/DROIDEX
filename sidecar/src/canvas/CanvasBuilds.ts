@@ -10,12 +10,7 @@
 // attempt, a cancellation or shutdown has taken the frame.
 
 import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
-import {
-  buildFailure,
-  readyBuild,
-  unsavedBuild,
-  type BuildOutcome,
-} from './canvasBuildFailures.js';
+import { buildFailure, unsavedBuild, type BuildOutcome } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
@@ -391,7 +386,10 @@ export class CanvasBuilds {
   private async saveArtifact(job: RunningBuild, compiled: CompiledDesign): Promise<BuildOutcome> {
     try {
       await this.owner.cache.saveArtifact(job.canvasId, compiled.artifactId, compiled.html);
-      return readyBuild(compiled.artifactId);
+      return {
+        result: { status: 'ready', artifactId: compiled.artifactId, elements: compiled.elements },
+        persists: true,
+      };
     } catch (error) {
       // Nothing can load an artifact that is not there, so the frame reports
       // the save rather than a working preview.

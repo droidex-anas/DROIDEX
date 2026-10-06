@@ -31,6 +31,14 @@ export interface ElementRef {
   instancePath: string;
 }
 
+export interface ElementEdit {
+  element: ElementRef;
+  change:
+    | { kind: 'text'; value: string }
+    | { kind: 'token'; property: string; token: string }
+    | { kind: 'image'; assetId: string };
+}
+
 // The references a turn pinned when its lease was minted. Later selection
 // changes cannot retarget an earlier request, so this never changes.
 export interface CanvasTurnContext {

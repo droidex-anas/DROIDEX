@@ -13,7 +13,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
 import type { CanvasDiagnostic, DesignSystemRef, SourceElement } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import { CANVAS_LIMITS, sourceElementSchema, type SourceFiles } from './schema.js';
 
 export interface CompileInput {
   designId: string;
@@ -31,7 +31,7 @@ export interface CompiledDesign {
   html: string;
   /** Warnings that accompany a usable artifact; errors arrive as a rejection. */
   diagnostics: CanvasDiagnostic[];
-  /** Empty until Task 8 adds the source instrumentation that fills it. */
+  /** Revision-scoped sites mapped to canonical source for selection and edits. */
   elements: SourceElement[];
 }
 
@@ -313,7 +313,9 @@ function isCompiledDesign(design: unknown): design is CompiledDesign {
     typeof artifactId === 'string' &&
     typeof html === 'string' &&
     Array.isArray(diagnostics) &&
-    Array.isArray(elements)
+    Array.isArray(elements) &&
+    elements.length <= CANVAS_LIMITS.maxSourceElements &&
+    elements.every((element) => sourceElementSchema.safeParse(element).success)
   );
 }
 

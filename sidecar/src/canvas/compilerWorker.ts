@@ -19,6 +19,7 @@ import {
 import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem } from './designSystems.js';
+import { instrumentSource, SourceElementError } from './sourceElements.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
@@ -37,7 +38,23 @@ export async function compileDesign(
   const system = await readDesignSystem(input.designSystem);
   stopIfCancelled(signal);
 
-  const bundle = await bundleDesign({ files: input.files, kitFiles: system.files });
+  let instrumented: ReturnType<typeof instrumentSource>;
+  try {
+    instrumented = instrumentSource(input.files, input.revisionId);
+  } catch (error) {
+    if (!(error instanceof SourceElementError)) throw error;
+    throw new CompileFailedError([
+      {
+        code: 'syntax_error',
+        message: error.message,
+        file: error.file,
+        line: error.line,
+        column: error.column,
+      },
+    ]);
+  }
+  stopIfCancelled(signal);
+  const bundle = await bundleDesign({ files: instrumented.files, kitFiles: system.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
 
@@ -50,7 +67,7 @@ export async function compileDesign(
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
     diagnostics: bundle.warnings,
-    elements: [],
+    elements: instrumented.elements,
   };
 }
 

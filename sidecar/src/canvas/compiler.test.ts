@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { SourceMap } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
 import {
@@ -16,7 +17,8 @@ import {
 } from './compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
+import { applyElementEdit } from './sourceElements.js';
 import type { SourceFiles } from './schema.js';
 
 // One real worker for every case that only reads its answer; the cases that
@@ -54,7 +56,11 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   const design = await compile(STATEFUL_DESIGN);
 
   assert.deepEqual(design.diagnostics, []);
-  assert.deepEqual(design.elements, []);
+  assert.equal(design.elements.length, 1);
+  assert.equal(design.elements[0]?.tagName, 'p');
+  assert.equal(design.elements[0]?.editability, 'shared');
+  for (const element of design.elements)
+    assert.equal(design.html.split(element.elementId).length - 1, 1);
   assert.match(design.artifactId, /^[0-9a-f]{64}$/);
   assert.ok(design.html.includes('id="canvas-root"'), 'the document mounts into a root element');
   assert.ok(design.html.includes('data-mode="dark"'), 'the document carries the pinned mode');
@@ -62,6 +68,62 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   assert.ok(design.html.includes('letter-spacing: 0.04em'), "the design's own CSS is included");
   assert.ok(design.html.includes("[data-mode='dark']"), 'the kit tokens are included');
   assert.ok(design.html.includes('--ds-accent'), 'the kit tokens carry semantic names');
+});
+
+test('direct edits compile through the worker and its map points to canonical source', async () => {
+  const cases: { source: string; change: ElementEdit['change']; rendered: string }[] = [
+    { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
+    {
+      source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
+      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      rendered: 'var(--ds-accent)',
+    },
+    {
+      source: '<img src="canvas-asset:before" />',
+      change: { kind: 'image', assetId: 'after' },
+      rendered: 'canvas-asset:after',
+    },
+  ];
+  for (const fixture of cases) {
+    const files = { 'main.tsx': `export default function App(){\n  return ${fixture.source};\n}` };
+    const original = await compile(files);
+    const element = original.elements[0];
+    assert.ok(element);
+    const changed = applyElementEdit(files, original.elements, {
+      element: {
+        designId: 'design',
+        revisionId: compileInput(files).revisionId,
+        elementId: element.elementId,
+        instancePath: '0',
+      },
+      change: fixture.change,
+    });
+    const rebuilt = await compile(changed);
+    assert.ok(rebuilt.html.includes(fixture.rendered));
+    for (const site of rebuilt.elements)
+      assert.equal(rebuilt.html.split(site.elementId).length - 1, 1);
+    const script = original.html.slice(
+      original.html.indexOf('<script>') + '<script>\n'.length,
+      original.html.indexOf('</script>'),
+    );
+    const encoded = script.split('base64,')[1];
+    assert.ok(encoded);
+    const payload = JSON.parse(Buffer.from(encoded.trim(), 'base64').toString());
+    assert.ok(payload.sources.includes('main.tsx'));
+    assert.ok(
+      payload.sources.every(
+        (path: string) => !path.includes('node_modules') && !path.includes(tmpdir()),
+      ),
+    );
+    const lines = script.split('\n');
+    const line = lines.findIndex((text) => text.includes(element.elementId));
+    const column = lines[line]?.indexOf(element.elementId);
+    assert.ok(column !== undefined && column >= 0);
+    const entry = new SourceMap(payload).findEntry(line, column);
+    assert.ok('originalSource' in entry);
+    assert.equal(entry.originalSource, 'main.tsx');
+    assert.equal(entry.originalLine, 1);
+  }
 });
 
 test('the compiled document is self-contained', async () => {
