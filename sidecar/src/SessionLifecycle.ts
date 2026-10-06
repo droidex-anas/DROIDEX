@@ -122,6 +122,8 @@ interface LiveTurnState {
   // Counts the turns the provider started by itself, so a settlement that
   // waited knows whether another began meanwhile.
   delegatedTurns?: number;
+  // A turn the provider started is running on the chat's own source.
+  delegatedTurnOpen?: boolean;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
@@ -1159,6 +1161,7 @@ export class SessionLifecycle {
       if (running) {
         liveSession.streaming = true;
         liveSession.delegatedTurns = (liveSession.delegatedTurns ?? 0) + 1;
+        liveSession.delegatedTurnOpen = true;
         // A settled turn leaves the chat's own source closed, and nothing else
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
@@ -1170,8 +1173,11 @@ export class SessionLifecycle {
         });
         return;
       }
-      // Its rows are all in: anything later is noise, as after a typed turn's end.
-      this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', { done: true });
+      liveSession.delegatedTurnOpen = false;
+      // Its rows are all in: anything later is noise, as after a typed turn's
+      // end. A typed turn still draining its rows closes the source itself.
+      if (!liveSession.turnPromise)
+        this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', { done: true });
       // The chat stays busy until the turn's last words are written, so what
       // reads its reply as it settles (a project report) has them, and until
       // Send now's interrupt settles, so nothing new starts under it.
@@ -1428,6 +1434,10 @@ export class SessionLifecycle {
     } finally {
       // A provider-started turn that ended meanwhile may have started the next one.
       if (liveSession.turnPromise === turn) liveSession.turnPromise = undefined;
+      // This turn's rows are all in. One the provider started meanwhile, and
+      // still running, keeps the source open; one that ended left it to us.
+      if (!liveSession.delegatedTurnOpen)
+        d.eventFlow.apply(stableAppSessionId, stableAppSessionId, 'primary', { done: true });
       if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
       // A turn the provider started since this one began owns the chat and its queue now.
       if (liveSession.delegatedTurns === delegatedTurns)
