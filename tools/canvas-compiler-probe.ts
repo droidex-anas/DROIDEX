@@ -36,9 +36,10 @@ import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js'
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
+const VENDORED_SHAPE_LICENSE = 'node_modules/victory-vendor/lib-vendor/d3-shape/LICENSE';
 
 /** Each way a shipped runtime can be short of, or lying about, what it needs. */
-const DAMAGE: [string, (runtime: string) => void][] = [
+const DAMAGE: [string, (runtime: string) => void, string?][] = [
   ['a transitive package', (runtime) => drop(runtime, 'node_modules/picocolors')],
   ['a chart dependency', (runtime) => drop(runtime, 'node_modules/victory-vendor')],
   ['the esbuild binary', (runtime) => drop(runtime, `node_modules/${PLATFORM_PACKAGE}/bin/esbuild`)],
@@ -80,13 +81,14 @@ const DAMAGE: [string, (runtime: string) => void][] = [
     // VictoryVendor license inventory is the rule that refuses it.
     'a vendored chart license, with a manifest that agrees',
     (runtime) => {
-      const path = 'node_modules/victory-vendor/lib-vendor/d3-shape/LICENSE';
-      drop(runtime, path);
+      drop(runtime, VENDORED_SHAPE_LICENSE);
+      drop(runtime, 'node_modules/victory-vendor/lib-vendor/d3-shape');
       rewriteManifest(runtime, (manifest) => {
-        delete manifest.files[path];
-        manifest.notices = manifest.notices.filter((notice) => notice !== path);
+        delete manifest.files[VENDORED_SHAPE_LICENSE];
+        manifest.notices = manifest.notices.filter((notice) => notice !== VENDORED_SHAPE_LICENSE);
       });
     },
+    `Canvas runtime: ${VENDORED_SHAPE_LICENSE} is missing`,
   ],
   [
     // A FIFO blocks a plain read for as long as nobody writes to it, so the
@@ -432,13 +434,13 @@ function assertRefused(run: WorkerRun, what: string): void {
   assertClean(run, what);
 }
 
-/** Whether the release verifier would let this tree ship. */
-function releaseVerifierAccepts(runtimeDir: string): boolean {
+/** The release verifier's reason for refusing this tree, if any. */
+function releaseVerifierFailure(runtimeDir: string): string | null {
   try {
     verifyCanvasRuntime(runtimeDir, process.arch);
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
 }
 
@@ -482,13 +484,15 @@ rmSync(copied.layout, { recursive: true, force: true });
 assertClean(intact, 'an intact copy');
 process.stdout.write(`An intact copy under a linked path compiled: ${artifactOf(intact.compiled).label}\n`);
 
-for (const [what, damage] of DAMAGE) {
+for (const [what, damage, expectedFailure] of DAMAGE) {
   const { layout, target: damaged } = copiedLayout(target, damage);
-  const accepted = releaseVerifierAccepts(damaged.runtimeDir);
+  const verifierFailure = releaseVerifierFailure(damaged.runtimeDir);
   const run = await runWorker(damaged, damaged.runtimeDir);
   rmSync(layout, { recursive: true, force: true });
   assertRefused(run, `a runtime missing ${what}`);
-  if (accepted) fail(`the release verifier would ship a runtime missing ${what}`);
+  if (verifierFailure === null) fail(`the release verifier would ship a runtime missing ${what}`);
+  if (expectedFailure !== undefined && verifierFailure !== expectedFailure)
+    fail(`the release verifier refused ${what} for ${verifierFailure}, not ${expectedFailure}`);
   process.stdout.write(`A runtime missing ${what} is refused by both, and loaded nothing.\n`);
 }
 
@@ -503,9 +507,9 @@ for (const [how, configure] of AWKWARD) {
 for (const [how, configure] of MISCONFIGURED) {
   const { layout, target: sound } = copiedLayout(target, null);
   const run = await runWorker(sound, configure(layout, sound.runtimeDir));
-  const accepted = releaseVerifierAccepts(sound.runtimeDir);
+  const verifierFailure = releaseVerifierFailure(sound.runtimeDir);
   rmSync(layout, { recursive: true, force: true });
   assertRefused(run, `a runtime that ${how}`);
-  if (!accepted) fail(`the release verifier refused a sound runtime that ${how}`);
+  if (verifierFailure !== null) fail(`the release verifier refused a sound runtime that ${how}`);
   process.stdout.write(`A runtime that ${how} compiled nothing and loaded nothing.\n`);
 }

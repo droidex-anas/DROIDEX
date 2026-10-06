@@ -1,9 +1,8 @@
 // Stages the Canvas compiler runtime that electron-builder ships as
-// resources/sidecar/canvas-runtime (spec §6): esbuild's Node API with the
-// selected architecture's native binary, Tailwind's PostCSS plugin, PostCSS and
-// React and Recharts, each with its own license file. The packages are copied as they are
-// installed, so Tailwind's preflight loader still finds its CSS beside itself
-// and node resolution inside the runtime works unchanged.
+// resources/sidecar/canvas-runtime (spec §6). Node-loaded compiler packages
+// retain their dependency closure; browser packages come from esbuild's resolved
+// module graph, plus package metadata and notices. VictoryVendor's README
+// carries its top-level license statement; its vendored libraries have licenses.
 //
 // One complete tree per architecture, because DROIDEX_CANVAS_RUNTIME_DIR names
 // a single directory a packaged compile may resolve from.
