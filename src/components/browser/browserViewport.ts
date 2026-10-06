@@ -85,15 +85,16 @@ export function normalizeUrl(value: string): string {
   if (ipv6Loopback) return ipv6Loopback;
   if (/^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?(\/|$)/i.test(trimmed))
     return `http://${trimmed}`;
-  // As in a browser's address bar, the part before the first /, ? or # decides:
-  // a host with a dot or a port, after any login in it, makes the whole input a
-  // site, spaces in its path included; anything else is a search.
+  // As in a browser's address bar, the part before the first /, ? or # decides,
+  // read by the URL parser itself: a host with a dot, an IP or a port makes the
+  // whole input a site, any login and spaces in its path included; anything
+  // else is a search.
   const authority = trimmed.split(/[/?#]/, 1)[0];
-  const host = authority.slice(authority.lastIndexOf('@') + 1);
-  if (/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host)) return `http://${trimmed}`;
-  const site =
-    /^[\w-]+(\.[\w-]+)*(:\d+)?$/.test(host) && (host.includes('.') || /:\d+$/.test(host));
-  if (site) return `https://${trimmed}`;
+  if (!/\s/.test(authority) && URL.canParse(`https://${authority}`)) {
+    const { hostname, port } = new URL(`https://${authority}`);
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return `http://${trimmed}`;
+    if (hostname.includes('.') || hostname.startsWith('[') || port) return `https://${trimmed}`;
+  }
   return `${SEARCH_URL}${encodeURIComponent(trimmed)}`;
 }
 

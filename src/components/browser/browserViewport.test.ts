@@ -46,6 +46,10 @@ test('normalizeUrl opens sites and searches for everything else', () => {
     'http://alice:secret@localhost:3000/private',
   );
   assert.equal(normalizeUrl('example.com/my page'), 'https://example.com/my page');
+  assert.equal(normalizeUrl('alice:x@bücher.de/private'), 'https://alice:x@bücher.de/private');
+  assert.equal(normalizeUrl('example.com.'), 'https://example.com.');
+  assert.equal(normalizeUrl('[::ffff:192.0.2.1]:8080'), 'https://[::ffff:192.0.2.1]:8080');
+  assert.equal(normalizeUrl('hello:world'), 'https://www.google.com/search?q=hello%3Aworld');
   assert.equal(
     normalizeUrl('what is 1.5 + 2'),
     'https://www.google.com/search?q=what%20is%201.5%20%2B%202',
