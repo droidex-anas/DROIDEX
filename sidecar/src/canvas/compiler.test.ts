@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
@@ -221,16 +221,21 @@ test('terminating rejects every in-flight compile and accepts no more', async ()
 
 test('a runtime the app owns but cannot vouch for compiles nothing', async (t) => {
   // Both cases would otherwise compile: the checkout's own node_modules sits
-  // above this fixture, and esbuild falls back to its own copy of the binary
-  // when ESBUILD_BINARY_PATH names a file that is not there.
+  // beside this fixture, where node looks next, and esbuild falls back to its
+  // own copy of the binary when ESBUILD_BINARY_PATH names a file that is not
+  // there. That the refused worker also loads nothing, through shutdown, is
+  // measured by tools/canvas-compiler-probe.ts, which owns the child's
+  // environment and can trace its resolutions.
   const damaged: [string, Record<string, unknown>][] = [
     ['a file its manifest lists is gone', { 'node_modules/absent/index.js': 12 }],
     ['nothing is wrong but its binary', {}],
   ];
 
   for (const [reason, files] of damaged) {
-    const runtime = scratchDirectory(t);
-    symlinkSync(resolve(import.meta.dirname, '../../node_modules'), join(runtime, 'node_modules'));
+    const layout = scratchDirectory(t);
+    symlinkSync(resolve(import.meta.dirname, '../../node_modules'), join(layout, 'node_modules'));
+    const runtime = join(layout, 'canvas-runtime');
+    mkdirSync(runtime);
     writeFileSync(
       join(runtime, 'manifest.json'),
       `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files })}\n`,
@@ -241,7 +246,15 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
       worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
     );
     await assert.rejects(compiling, CompilerUnavailableError, reason);
+
+    // Shutdown is the other way into the loader, so a refused worker still has
+    // to stop cleanly rather than be killed on the grace timeout.
     await worker.terminate();
+    await assert.rejects(
+      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+      CompilerUnavailableError,
+      `${reason}, after terminating`,
+    );
   }
 });
 

@@ -143,15 +143,6 @@ function bundleFailure(diagnostics: CanvasDiagnostic[]): DesignBundleResult {
 }
 
 /**
- * Releases the esbuild service process this module started. The compiler worker
- * calls it before its thread goes away, so the service is never left to the
- * destruction of the thread's handles.
- */
-export async function stopBundler(): Promise<void> {
-  await canvasRuntime().esbuild.stop();
-}
-
-/**
  * The messages an esbuild `BuildFailure` carries, or null when the rejection is
  * not one. A service that stopped under the build and a bug in this module both
  * land here, and neither is something to show as a diagnostic about the source.

@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { CanvasCommandError } from './canvasError.js';
-import { ownedCanvasRuntimeDir, startCanvasRuntime } from './canvasRuntime.js';
+import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -15,7 +15,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from './compiler.js';
-import { ROOT_ELEMENT_ID, bundleDesign, stopBundler } from './designBundle.js';
+import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
@@ -126,11 +126,11 @@ process.on('message', (request: CompilerRequest) => {
   });
 });
 
-/** Releases the bundler's service process before the parent ends this thread. */
+/** Releases the compiler's service process before the parent ends it. */
 async function shutdown(requestId: number): Promise<void> {
   for (const controller of running.values()) controller.abort();
   try {
-    await stopBundler();
+    await stopCanvasRuntime();
   } catch (error) {
     console.error('Canvas compiler shutdown failed:', error);
   }
