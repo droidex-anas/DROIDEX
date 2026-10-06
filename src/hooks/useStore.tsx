@@ -785,7 +785,13 @@ export type Action =
       requestId: string;
       settings: PendingModelSettings;
     }
-  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string };
+  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
+  // The sidecar was replaced: nothing it was working on will be answered.
+  | {
+      type: 'MODEL_UPDATES_UNANSWERED';
+      liveAppSessionIds: ReadonlySet<string>;
+      resentRequestIds: ReadonlySet<string>;
+    };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -2736,6 +2742,21 @@ export function reducer(state: AppState, action: Action): AppState {
         },
       };
 
+    case 'MODEL_UPDATES_UNANSWERED': {
+      // Only a live chat's change the old sidecar took is lost: the snapshot
+      // carries that chat's confirmed settings, which then show. A closed chat
+      // gets no summary here, and a request resent on reconnect is answered by
+      // the new sidecar.
+      const kept = Object.entries(state.pendingModelUpdates).filter(
+        ([appSessionId, pending]) =>
+          !action.liveAppSessionIds.has(appSessionId) ||
+          (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
+      );
+      return kept.length === Object.keys(state.pendingModelUpdates).length
+        ? state
+        : { ...state, pendingModelUpdates: Object.fromEntries(kept) };
+    }
+
     case 'MODEL_UPDATE_SETTLED': {
       if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
         return state;
@@ -3115,8 +3136,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       batcher.pushBridgeBatch(actions);
     });
+    // Queued ahead of the snapshot's own events, through the same batcher.
+    const unsubReplaced = bridge.subscribeRuntimeReplaced((liveAppSessionIds, resentRequestIds) => {
+      batcher.pushBridgeBatch([
+        { type: 'MODEL_UPDATES_UNANSWERED', liveAppSessionIds, resentRequestIds },
+      ]);
+    });
     return () => {
       unsub();
+      unsubReplaced();
       // StrictMode remounts this effect in dev; deliver anything in flight so
       // no event is lost across the resubscribe.
       batcher.dispose();

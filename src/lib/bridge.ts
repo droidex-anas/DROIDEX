@@ -15,6 +15,11 @@ type Listener = (event: ServerEvent) => void;
 // `fromSnapshot` marks the events a fresh stream starts from: what the last
 // stream said may no longer hold.
 type BatchListener = (events: readonly ServerEvent[], fromSnapshot: boolean) => void;
+// Which chats the new sidecar answered for, and which requests went to it.
+type RuntimeReplacedListener = (
+  liveAppSessionIds: ReadonlySet<string>,
+  resentRequestIds: ReadonlySet<string>,
+) => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
 type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
 
@@ -31,7 +36,11 @@ export class Bridge {
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
+  private readonly runtimeReplacedListeners = new Set<RuntimeReplacedListener>();
   private queue: ClientCommand[] = [];
+  // Requests sent on the socket now open, before its first answer: they reach
+  // the sidecar that answers this connection, whichever one that is.
+  private sentRequestIds: Set<string> | null = null;
   private backoff = 500;
   private url = '';
   private started = false;
@@ -93,8 +102,9 @@ export class Bridge {
       setTransportHealth('connected');
       const pending = this.queue;
       this.queue = [];
+      this.sentRequestIds = new Set();
       pending.forEach((command) => {
-        ws.send(JSON.stringify(command));
+        this.sendOpen(ws, command);
       });
     };
     ws.onmessage = (message) => {
@@ -112,19 +122,13 @@ export class Bridge {
         }
         return;
       }
-      if (wireMessage.type === 'events.batch') {
-        this.receiveBatch(wireMessage);
-        return;
-      }
-      if (wireMessage.type === 'bridge.reset') {
-        this.receiveReset(wireMessage);
-        return;
-      }
-      if (wireMessage.type === 'bridge.snapshot') {
-        this.receiveSnapshot(wireMessage);
-        return;
-      }
-      this.publishEvents([wireMessage]);
+      if (wireMessage.type === 'events.batch') this.receiveBatch(wireMessage);
+      else if (wireMessage.type === 'bridge.reset') this.receiveReset(wireMessage);
+      else if (wireMessage.type === 'bridge.snapshot') this.receiveSnapshot(wireMessage);
+      else this.publishEvents([wireMessage]);
+      // The sidecar has answered this socket: a replacement can only show up on
+      // a later one.
+      this.sentRequestIds = null;
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
@@ -177,6 +181,11 @@ export class Bridge {
   private receiveSnapshot(message: BridgeSnapshotMessage): void {
     this.lastGeneration = message.generation;
     this.lastSeq = message.lastSeq;
+    if (message.reason === 'generation_changed') {
+      const live = new Set(message.snapshot.sessions.map((session) => session.appSessionId));
+      const sent = this.sentRequestIds ?? new Set<string>();
+      for (const listener of this.runtimeReplacedListeners) listener(live, sent);
+    }
     this.publishEvents(eventsFromSnapshot(message), true);
   }
 
@@ -233,8 +242,14 @@ export class Bridge {
   }
 
   send(command: ClientCommand): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
+    if (this.ws?.readyState === WebSocket.OPEN) this.sendOpen(this.ws, command);
     else this.queue.push(command);
+  }
+
+  private sendOpen(ws: WebSocket, command: ClientCommand): void {
+    if ('requestId' in command && typeof command.requestId === 'string')
+      this.sentRequestIds?.add(command.requestId);
+    ws.send(JSON.stringify(command));
   }
 
   sendIfConnected(command: ClientCommand): boolean {
@@ -251,6 +266,14 @@ export class Bridge {
   subscribeBatch(listener: BatchListener): () => void {
     this.batchListeners.add(listener);
     return () => this.batchListeners.delete(listener);
+  }
+
+  // Called just before the events of a snapshot from a replaced sidecar. What
+  // the old process was still working on will never be answered; a command
+  // queued while the socket was down goes to the new one and is answered there.
+  subscribeRuntimeReplaced(listener: RuntimeReplacedListener): () => void {
+    this.runtimeReplacedListeners.add(listener);
+    return () => this.runtimeReplacedListeners.delete(listener);
   }
 }
 
