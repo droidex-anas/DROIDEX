@@ -737,10 +737,14 @@ export class ProjectService {
     if (this.closed) return;
     // Read before any wait, so a slow save cannot reorder a turn's start and end.
     const settled = event.type === 'session.updated' && this.noteStreaming(event.session);
+    // Decided as the event arrives, so a project_done made while this observer
+    // waits is never undone by it; saved once the turn is recorded.
+    const reopened =
+      event.type === 'session.updated' &&
+      event.session.streaming &&
+      this.reopenOnWork(event.session.appSessionId);
     await this.turns.observe(event);
-    // After the turn is recorded, so waiting on this save cannot reorder turns.
-    if (event.type === 'session.updated' && event.session.streaming)
-      await this.reopenOnWork(event.session.appSessionId);
+    if (reopened) await this.save();
     // A delivered turn that stops on the user's approval frees its slot.
     if (event.type === 'approval.requested') {
       if (this.membership.has(event.request.appSessionId)) this.wakes.waitingChanged();
@@ -763,11 +767,11 @@ export class ProjectService {
   }
 
   /** A thread working again means its finished project's goal is open after all. */
-  private async reopenOnWork(appSessionId: string): Promise<void> {
+  private reopenOnWork(appSessionId: string): boolean {
     const project = this.membership.get(appSessionId);
-    if (!project?.done || !requireThread(project, appSessionId).ownerAppSessionId) return;
+    if (!project?.done || !requireThread(project, appSessionId).ownerAppSessionId) return false;
     delete project.done;
-    await this.save();
+    return true;
   }
 
   /** True when this update ends a turn the session was last seen running. */
