@@ -33,6 +33,7 @@ const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
+const imageSave = require('./imageSave.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const editorApps = require('./editorApps.cjs');
@@ -484,6 +485,21 @@ function registerIpc() {
   ipcMain.handle('discard-image', (event, { path: target }) => {
     assertMainRenderer(event);
     return attachments.discard(attachmentsDir, target);
+  });
+  ipcMain.handle('save-image-as', async (event, { url, name }) => {
+    assertMainRenderer(event);
+    // Node's fetch decodes data: URLs; only the session's fetch reaches droidex-img.
+    const signal = AbortSignal.timeout(30_000);
+    const response =
+      imageSave.saveableImageProtocol(url) === 'data:'
+        ? await fetch(url, { signal })
+        : await session.defaultSession.fetch(url, { signal });
+    const { mime, data } = await imageSave.readImageResponse(response);
+    const defaultPath = path.join(app.getPath('downloads'), imageSave.imageSaveName(name, mime));
+    const result = await dialog.showSaveDialog({ defaultPath });
+    if (result.canceled || !result.filePath) return { saved: false };
+    await fsp.writeFile(result.filePath, data);
+    return { saved: true, filePath: result.filePath };
   });
   // OS finish/status banners. silent=false plays the system notification sound.
   // Foreground suppress is owned by the renderer; click opens the finished

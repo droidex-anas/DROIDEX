@@ -45,7 +45,6 @@ import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
-import { ImageViewerModal } from './composer/ImageViewerModal';
 import { ImageLightbox } from './media/ImageLightbox';
 import { imageSrc, partitionImagePaths } from '../lib/localImage';
 import ComposerDock from './composer/ComposerDock';
@@ -187,6 +186,10 @@ const ScheduledPrompts = lazy(() => import('../features/automations/ScheduledPro
 // part of the composer's first frame.
 const UsageTabs = lazy(() =>
   import('./composer/UsageTabs').then((m) => ({ default: m.UsageTabs })),
+);
+// The attachment viewer and its crop tool open only from a chip click.
+const ImageViewerModal = lazy(() =>
+  import('./composer/ImageViewerModal').then((m) => ({ default: m.ImageViewerModal })),
 );
 // The model pickers open on demand; hovering the chip starts the download so
 // the first open does not wait on it.
@@ -2682,13 +2685,15 @@ export default function PromptInput({
       </div>
 
       {viewerImage && (
-        <ImageViewerModal
-          image={viewerImage}
-          onClose={() => {
-            setViewerImageId(null);
-          }}
-          onCrop={imageAttachments.applyCrop}
-        />
+        <Suspense fallback={null}>
+          <ImageViewerModal
+            image={viewerImage}
+            onClose={() => {
+              setViewerImageId(null);
+            }}
+            onCrop={imageAttachments.applyCrop}
+          />
+        </Suspense>
       )}
       {viewerPath !== null && viewerSrc !== null && (
         <ImageLightbox

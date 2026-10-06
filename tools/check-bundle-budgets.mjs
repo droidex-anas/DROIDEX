@@ -134,9 +134,16 @@ import { join } from 'node:path';
 // of utility classes to the app frame (100_269 before, 102_538 after), leaving
 // ~1KB of headroom as past CSS raises have. On main at 64949712 (100_614) the
 // two together measure 102_602.
+//
+// initialCssBytes raised from 103_500 to 105_000 for the image viewers and code
+// cards: the floating viewer chrome, zoom toolbar, crop controls and the
+// transcript's code and diagram cards add ~1.3KB of utility classes. Tailwind
+// emits them into the one stylesheet even though both viewers load lazily, so
+// main at 1b21548c (102_602) measures 103_872 with them, leaving ~1.1KB. The
+// entry JS stays ~1.3KB under main's.
 const BUDGETS = {
   initialRendererJsBytes: 1_459_000,
-  initialCssBytes: 103_500,
+  initialCssBytes: 105_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

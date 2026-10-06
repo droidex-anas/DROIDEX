@@ -187,6 +187,8 @@ export type NotifyResult =
       message?: string;
     };
 
+type SaveImageResult = { saved: true; filePath: string } | { saved: false };
+
 interface DroidControlApi {
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
@@ -196,6 +198,7 @@ interface DroidControlApi {
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
   discardImage: (path: string) => Promise<void>;
+  saveImageAs: (url: string, name: string) => Promise<SaveImageResult>;
   pathForFile: (file: File) => string;
   notify: (title: string, body: string, options?: NotifyOptions) => Promise<NotifyResult>;
   onNotificationActivate: (handler: (payload: { appSessionId: string }) => void) => () => void;
@@ -429,6 +432,12 @@ export async function pickFiles(): Promise<string[]> {
 // is what the prompt @-mentions. Only the desktop app can write to disk.
 export async function saveImage(dataUrl: string): Promise<string> {
   return requireDesktopApi('Image attachments need the desktop app.').saveImage(dataUrl);
+}
+
+// Asks where to save an image the viewer is showing and writes it there. The
+// main process fetches it, since droidex-img bytes are unreadable to the page.
+export async function saveImageAs(url: string, name: string): Promise<SaveImageResult> {
+  return requireDesktopApi('Saving images needs the desktop app.').saveImageAs(url, name);
 }
 
 // Same store for pasted non-image files; the original name is kept (sanitized)
