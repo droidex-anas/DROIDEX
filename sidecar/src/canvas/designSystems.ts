@@ -3,9 +3,10 @@
 // that version never changes afterwards, so a saved design keeps compiling the
 // way it was designed.
 
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, open, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { link, lstat, mkdir, open, rm, unlink } from 'node:fs/promises';
+import { dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { canvasError, storageFailure } from './canvasError.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -35,6 +36,7 @@ const BUILT_IN_MESSAGE = 'That design system name belongs to a built-in kit. Cho
 const IMMUTABLE_MESSAGE =
   'That design system version is already saved. Save the change as the next version.';
 const SAVE_RECOVERY = 'The design system could not be saved.';
+const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
 
 // A token value is pasted into a stylesheet, so it may not close the rule it
 // sits in or open a comment.
@@ -110,18 +112,20 @@ export async function saveDesignSystem(system: DesignSystem): Promise<DesignSyst
   if (BUILT_IN_DESIGN_SYSTEMS.some((builtIn) => builtIn.id === kit.id))
     throw canvasError('invalid_input', BUILT_IN_MESSAGE);
 
-  const path = versionPath(kit.id, kit.version);
-  if ((await readSavedText(path)) !== null) throw canvasError('invalid_input', IMMUTABLE_MESSAGE);
-  await writeVersion(path, `${JSON.stringify(kit)}\n`);
+  await writeVersion(versionPath(kit.id, kit.version), `${JSON.stringify(kit)}\n`);
   // A reference also names a mode; a saved kit has both, so the light one is
   // the selection a caller gets back until the user picks otherwise.
   return { id: kit.id, version: kit.version, mode: 'light' };
 }
 
+function systemsRoot(): string {
+  return join(canvasDir(), 'design-systems');
+}
+
 function versionPath(id: string, version: number): string {
   const parsed = canvasIdentifierSchema.safeParse(id);
   if (!parsed.success) throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? '');
-  return join(canvasDir(), 'design-systems', parsed.data, `${String(version)}.json`);
+  return join(systemsRoot(), parsed.data, `${String(version)}.json`);
 }
 
 function parseJson(text: string): unknown {
@@ -141,6 +145,7 @@ const CREATE_FLAGS =
 async function readSavedText(path: string): Promise<string | null> {
   let file;
   try {
+    await refuseLinkedPath(path);
     file = await open(path, READ_FLAGS);
   } catch (error) {
     if (isMissing(error)) return null;
@@ -156,15 +161,18 @@ async function readSavedText(path: string): Promise<string | null> {
 }
 
 /**
- * A kit version becomes readable in one rename, so a reader never sees a
- * half-written kit. The existence check above plus the sidecar's single writer
- * are what keep a published version immutable.
+ * A kit version becomes readable in one `link`, which refuses a destination
+ * that already exists. That refusal is what makes a published version
+ * immutable: a check followed by a rename would let two writers that both saw
+ * nothing overwrite each other. The temporary is named per call, so concurrent
+ * writers never collide on it either.
  */
 async function writeVersion(path: string, content: string): Promise<void> {
   const directory = dirname(path);
-  const temporary = `${path}.${String(process.pid)}.tmp`;
+  const temporary = join(directory, `.${randomUUID()}.tmp`);
   try {
-    await mkdir(directory, { recursive: true });
+    await refuseLinkedPath(path);
+    const created = await mkdir(directory, { recursive: true });
     const file = await open(temporary, CREATE_FLAGS, 0o600);
     try {
       await file.writeFile(content, 'utf8');
@@ -172,11 +180,30 @@ async function writeVersion(path: string, content: string): Promise<void> {
     } finally {
       await file.close();
     }
-    await rename(temporary, path);
+    await link(temporary, path);
+    await unlink(temporary);
+    await flushNewDirectories(created, directory);
     await syncDirectory(directory);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
+    if (isExisting(error)) throw canvasError('invalid_input', IMMUTABLE_MESSAGE);
     throw storageFailure(SAVE_RECOVERY, error);
+  }
+}
+
+/**
+ * Flushes every directory this save created, and the parent that now holds the
+ * outermost new entry, so a crash cannot leave a kit in a directory the
+ * filesystem never recorded. `mkdir` reports the first path it created.
+ */
+async function flushNewDirectories(created: string | undefined, leaf: string): Promise<void> {
+  if (created === undefined) return;
+  await syncDirectory(dirname(created));
+  let current = created;
+  for (const segment of relative(created, leaf).split(sep)) {
+    await syncDirectory(current);
+    if (segment === '') break;
+    current = join(current, segment);
   }
 }
 
@@ -190,6 +217,40 @@ async function syncDirectory(path: string): Promise<void> {
   }
 }
 
+/**
+ * Refuses a path that crosses a symbolic link anywhere below the design-system
+ * root. `O_NOFOLLOW` guards only the final component, so a linked kit directory
+ * would otherwise let a read or a write land outside Canvas storage.
+ */
+async function refuseLinkedPath(path: string): Promise<void> {
+  const root = systemsRoot();
+  let current = root;
+  for (const segment of relative(root, path).split(sep)) {
+    const stats = await lstatIfPresent(current);
+    // Nothing exists below a component that is not there.
+    if (!stats) return;
+    if (stats.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
+    current = join(current, segment);
+  }
+}
+
+async function lstatIfPresent(path: string): Promise<{ isSymbolicLink(): boolean } | null> {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+}
+
 function isMissing(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+  return hasCode(error, 'ENOENT');
+}
+
+function isExisting(error: unknown): boolean {
+  return hasCode(error, 'EEXIST');
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
 }

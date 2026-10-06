@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mkdir, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test, type TestContext } from 'node:test';
+import { canvasDir } from '../droidexPaths.js';
 import { CanvasCommandError } from './canvasError.js';
 import {
   DESIGN_SYSTEM_LIMITS,
@@ -106,6 +110,66 @@ test('an unusable kit is refused before anything is written', async () => {
     );
   }
 });
+
+test('concurrent saves of one version publish exactly one of them', async () => {
+  const kit = userKit('contested-kit');
+  const rival = { ...kit, name: 'Rival' };
+
+  const outcomes = await Promise.allSettled([saveDesignSystem(kit), saveDesignSystem(rival)]);
+
+  const saved = outcomes.filter((outcome) => outcome.status === 'fulfilled');
+  const refused = outcomes.filter((outcome) => outcome.status === 'rejected');
+  assert.equal(saved.length, 1, 'one writer publishes');
+  assert.equal(refused.length, 1, 'the other is told the version exists');
+  assert.ok(refused[0]?.status === 'rejected' && refused[0].reason instanceof CanvasCommandError);
+  assert.equal((refused[0] as PromiseRejectedResult).reason.code, 'invalid_input');
+
+  // Whichever won, the stored kit is one of the two intact, never a blend.
+  const stored = await readDesignSystem({ id: 'contested-kit', version: 1, mode: 'light' });
+  assert.ok(stored.name === kit.name || stored.name === rival.name);
+});
+
+test('concurrent saves of different versions both publish', async () => {
+  const kit = userKit('busy-kit');
+
+  await Promise.all([
+    saveDesignSystem(kit),
+    saveDesignSystem({ ...kit, version: 2 }),
+    saveDesignSystem({ ...kit, version: 3 }),
+  ]);
+
+  for (const version of [1, 2, 3]) {
+    assert.equal(
+      (await readDesignSystem({ id: 'busy-kit', version, mode: 'light' })).version,
+      version,
+    );
+  }
+});
+
+test('a linked kit directory is refused instead of followed', async (t) => {
+  const outside = await scratchDirectory(t);
+  const linked = join(canvasDir(), 'design-systems', 'linked-kit');
+  await mkdir(join(canvasDir(), 'design-systems'), { recursive: true });
+  await symlink(outside, linked, 'dir');
+  t.after(() => rm(linked, { force: true }));
+
+  await assert.rejects(saveDesignSystem(userKit('linked-kit')), (error) => {
+    assert.ok(error instanceof CanvasCommandError);
+    assert.equal(error.code, 'storage_failed');
+    return true;
+  });
+  await assert.rejects(
+    readDesignSystem({ id: 'linked-kit', version: 1, mode: 'light' }),
+    CanvasCommandError,
+  );
+  assert.deepEqual(await readdir(outside), [], 'nothing was written through the link');
+});
+
+async function scratchDirectory(t: TestContext): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'droidex-canvas-kit-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return directory;
+}
 
 function userKit(id: string): DesignSystem {
   return {
