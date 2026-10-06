@@ -7,6 +7,8 @@ import { type McpServerConfig, type SdkMcpServer } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { CanvasTurnContext } from './canvas/protocol.js';
+import type { CanvasTurnLeases, CanvasTurns } from './canvas/canvasTurnContext.js';
 import type { FactorySession } from './DroidRuntime.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type {
@@ -104,6 +106,10 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
+  // What the Canvas pane had selected when this prompt was composed. It stays
+  // with the prompt wherever it waits, so a later selection change cannot
+  // retarget it, and the turn that runs it mints its lease from this.
+  canvasContext?: CanvasTurnContext;
 }
 
 interface LiveTurnState {
@@ -126,6 +132,9 @@ export interface LiveSession extends LiveTurnState {
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   turnPromise?: Promise<void>;
+  // The Canvas leases the running turn holds (spec §6), revoked wherever that
+  // turn ends so a lease never outlives the turn that pinned it.
+  canvasTurn?: CanvasTurnLeases;
   restartBeforeNextTurn?: boolean;
   providerClosePromise?: Promise<void>;
   mcpServers: LocalMcpResource[];
@@ -170,6 +179,7 @@ export interface SessionLifecycleDependencies {
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
+  canvasTurns: Pick<CanvasTurns, 'beginTurn' | 'endSession'>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
   context: Pick<
     SessionContext,
@@ -636,8 +646,12 @@ export class SessionLifecycle {
     text: string,
     mentions?: ProviderMention[],
     steerId?: string,
+    canvasContext?: CanvasTurnContext,
   ): Promise<void> {
-    await this.sendPrompt(requestedAppSessionId, sessionPrompt(text, mentions, steerId));
+    await this.sendPrompt(
+      requestedAppSessionId,
+      sessionPrompt(text, mentions, steerId, canvasContext),
+    );
   }
 
   // A redelivered prompt keeps what it was sent with, so one nobody typed is
@@ -704,6 +718,9 @@ export class SessionLifecycle {
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
     const appSessionId = liveSession.summary.appSessionId;
+    // The model has it, so this steer is running: its own lease, beside the
+    // running turn's, never over it.
+    liveSession.canvasTurn?.addSteer(prompt.canvasContext);
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       await this.dependencies.appendSteer(appSessionId, prompt.text);
     this.updateQueuedSends(liveSession);
@@ -743,6 +760,9 @@ export class SessionLifecycle {
       return;
     }
     liveSession.interruptingToSend = true;
+    // As for a Stop: the turn's authority ends before the interrupt is awaited,
+    // and one the provider refuses leaves the turn running without it.
+    liveSession.canvasTurn?.revoke();
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
     try {
       await liveSession.session.interrupt();
@@ -815,6 +835,10 @@ export class SessionLifecycle {
       !liveSession.closeMode &&
       liveSession.session === session;
     liveSession.interrupting = true;
+    // Before the external cleanup await: a Stop ends the turn's authority at
+    // once, even while the provider is still unwinding it. A Stop the provider
+    // refuses leaves the turn running without one, which is the safe direction.
+    liveSession.canvasTurn?.revoke();
     try {
       await liveSession.session.interrupt();
     } catch (error) {
@@ -884,6 +908,8 @@ export class SessionLifecycle {
   }
 
   private beginClose(liveSession: LiveSession, mode: SessionCloseMode): CloseOperation {
+    // Before any external cleanup await, and before a resume can mint again.
+    this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
     if (mode === 'discard-pending') {
       liveSession.closeMode = mode;
       liveSession.pendingSends = [];
@@ -1133,6 +1159,12 @@ export class SessionLifecycle {
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
         this.dependencies.eventFlow.beginTurn(appSessionId, appSessionId);
+        // Nobody composed this turn, so it pins nothing; the handle still owns
+        // the leases of any steer the model takes in while it runs. Codex can
+        // start one beside a typed turn, and that turn's handle already owns the
+        // chat's leases, so this never takes the field from it.
+        if (!liveSession.turnPromise)
+          liveSession.canvasTurn = this.dependencies.canvasTurns.beginTurn(appSessionId, undefined);
         this.dependencies.registry.updateSummary(appSessionId, {
           phase: 'running',
           streaming: true,
@@ -1140,6 +1172,8 @@ export class SessionLifecycle {
         });
         return;
       }
+      // Only the leases this turn owns: a typed turn still running keeps its own.
+      if (!liveSession.turnPromise) liveSession.canvasTurn?.revoke();
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
@@ -1344,6 +1378,7 @@ export class SessionLifecycle {
     const stableAppSessionId = liveSession.summary.appSessionId;
     try {
       liveSession.streaming = true;
+      liveSession.canvasTurn = d.canvasTurns.beginTurn(stableAppSessionId, prompt.canvasContext);
       // Persist resumed activity immediately so the chat stays near the top
       // even if the app closes mid-turn. The renderer suppresses unread while
       // streaming; completion advances the timestamp again for review.
@@ -1362,6 +1397,9 @@ export class SessionLifecycle {
       });
       await liveSession.turnPromise;
     } finally {
+      // First in the finally: the turn's authority ends before anything here
+      // awaits, and before the queue can advance to the next turn.
+      liveSession.canvasTurn?.revoke();
       liveSession.turnPromise = undefined;
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
       liveSession.interruptingToSend = false;
@@ -1532,11 +1570,13 @@ function sessionPrompt(
   text: string,
   mentions?: ProviderMention[],
   steerId?: string,
+  canvasContext?: CanvasTurnContext,
 ): SessionPrompt {
   return {
     text,
     ...(mentions?.length ? { mentions } : {}),
     ...(steerId ? { steerId } : {}),
+    ...(canvasContext ? { canvasContext } : {}),
     order: ++promptOrder,
   };
 }

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import type { CanvasTurnContext } from './canvas/protocol.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -143,10 +146,14 @@ function createHarness(
   const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
     calls.push({ target, method, args });
   };
+  // The production lease owner, with no Canvas workspace open behind it, so
+  // every chat reads as unattached.
+  const canvasTurns = new CanvasTurns(new CanvasScopes(), () => null);
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => provider,
+    canvasTurns,
     registry,
     ensureConnected: () => record('runtime', 'ensureConnected'),
     getFactoryDefaults: () => Promise.resolve(defaults),
@@ -273,6 +280,7 @@ function createHarness(
     runtime,
     registry,
     lifecycle,
+    canvasTurns,
     publicationRegistration,
     forgettingAfterUnregister,
     eventFlowForgettingAfterUnregister,
@@ -384,6 +392,22 @@ function requireLive(harness: Harness, id: string): LiveSession {
   const live = harness.registry.getLive(id);
   assert.ok(live);
   return live;
+}
+
+/** A composed prompt's pinned references, as the Canvas pane would supply them. */
+function pinned(designId: string): CanvasTurnContext {
+  return {
+    designs: [{ designId, revisionId: null }],
+    elements: [],
+    designSystem: { id: 'droidex', version: 1, mode: 'light' },
+  };
+}
+
+/** The lease the chat's running turn holds, which these cases always expect. */
+function turnLease(harness: Harness, appSessionId: string) {
+  const scope = harness.canvasTurns.activeScope(appSessionId);
+  assert.ok(scope?.origin === 'turn');
+  return scope;
 }
 
 function interruptCount(harness: Harness): number {
@@ -1909,4 +1933,185 @@ test('dependent ownership is committed before the first provider turn, and a fai
       (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
     ),
   );
+});
+
+test('a queued or reordered prompt runs under the references it was sent with', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'pinned');
+  const gates = [
+    provider.deferNextStream(),
+    provider.deferNextStream(),
+    provider.deferNextStream(),
+  ];
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  // Composed against one selection, then the pane moved on before the next.
+  await h.lifecycle.send('pinned', 'queued', undefined, undefined, pinned('dsg_queued'));
+  await h.lifecycle.send('pinned', 'steered', undefined, 'steer-1', pinned('dsg_steered'));
+  await h.lifecycle.sendNow('pinned', 'steer-1');
+  // The create's own turn pinned nothing, so it leases nothing.
+  assert.equal(h.canvasTurns.activeScope('pinned'), undefined);
+
+  gates[0].resolve();
+  await provider.waitForPrompts(2);
+  assert.deepEqual(turnLease(h, 'pinned').allowedDesignIds, ['dsg_steered']);
+
+  gates[1].resolve();
+  await provider.waitForPrompts(3);
+  assert.deepEqual(provider.prompts, ['first', 'steered', 'queued']);
+  // Reordering moved the prompts, not their references.
+  assert.deepEqual(turnLease(h, 'pinned').allowedDesignIds, ['dsg_queued']);
+
+  gates[2].resolve();
+  await requireLive(h, 'pinned').turnPromise;
+  assert.equal(h.canvasTurns.activeScope('pinned'), undefined);
+});
+
+test('Stop and provider replacement end a turn’s Canvas authority before they await', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'authority');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('authority', 'pinned', undefined, undefined, pinned('dsg_hey'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const stopped = turnLease(h, 'authority');
+
+  // Stop: the lease is gone before the provider has been asked to unwind.
+  const interruptGate = provider.deferNextInterrupt();
+  const stopping = h.lifecycle.interrupt('authority');
+  assert.equal(h.canvasTurns.activeScope('authority'), undefined);
+  assert.throws(() => h.canvasTurns.requireScope(stopped.scopeId), { code: 'scope_expired' });
+  interruptGate.resolve();
+  await stopping;
+  second.resolve();
+  await requireLive(h, 'authority').turnPromise;
+
+  // A turn whose provider session is replaced under it: the lease ends with the
+  // old provider, and the prompt redelivered to the replacement leases again.
+  const third = provider.deferNextStream();
+  const running = h.lifecycle.send(
+    'authority',
+    'running',
+    undefined,
+    undefined,
+    pinned('dsg_running'),
+  );
+  await provider.waitForPrompts(3);
+  const replaced = turnLease(h, 'authority');
+  await h.lifecycle.send('authority', 'queued', undefined, undefined, pinned('dsg_queued'));
+  const replacement = queueLoad(h, 'authority');
+  const closing = h.lifecycle.close('authority', 'preserve-pending');
+  assert.throws(() => h.canvasTurns.requireScope(replaced.scopeId), { code: 'scope_expired' });
+  third.resolve();
+  await Promise.all([closing, running]);
+  await replacement.waitForPrompts(1);
+  assert.deepEqual(replacement.prompts, ['queued']);
+  const redelivered = turnLease(h, 'authority');
+  assert.deepEqual(redelivered.allowedDesignIds, ['dsg_queued']);
+  assert.equal(redelivered.generation, replaced.generation + 1);
+});
+
+test('a steer the model takes in leases its own references beside the running turn', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'steering');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('steering', 'running', undefined, undefined, pinned('dsg_running'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const live = requireLive(h, 'steering');
+  const turn = turnLease(h, 'steering');
+
+  const deliveries: ((delivered: boolean) => void)[] = [];
+  live.session.steer = () =>
+    new Promise<boolean>((settle) => {
+      deliveries.push(settle);
+    });
+  const steering = h.lifecycle.send(
+    'steering',
+    'steered',
+    undefined,
+    'steer-1',
+    pinned('dsg_steered'),
+  );
+  while (deliveries.length < 1) await new Promise((resolve) => setImmediate(resolve));
+  // Nothing is leased until the model has it.
+  assert.equal(h.canvasTurns.activeScope('steering')?.scopeId, turn.scopeId);
+  deliveries[0](true);
+  await steering;
+
+  const steer = turnLease(h, 'steering');
+  assert.deepEqual(steer.allowedDesignIds, ['dsg_steered']);
+  // The running turn's lease is untouched and still answers by name.
+  assert.equal(h.canvasTurns.requireScope(turn.scopeId), turn);
+  assert.deepEqual(turn.allowedDesignIds, ['dsg_running']);
+
+  second.resolve();
+  await live.turnPromise;
+  assert.equal(h.canvasTurns.activeScope('steering'), undefined);
+  assert.throws(() => h.canvasTurns.requireScope(steer.scopeId), { code: 'scope_expired' });
+});
+
+/** A provider that starts turns of its own beside a typed one, as Codex does. */
+function delegatingProvider(
+  harness: Harness,
+  session: FakeFactorySession,
+  onDelegated: (notify: (running: boolean) => void) => void,
+): Provider {
+  const created = new DroidProviderSession(session.sessionId, session, harness.runtime);
+  return {
+    kind: 'codex',
+    fork: () => Promise.reject(new Error('unexpected fork')),
+    resume: () => Promise.reject(new Error('unexpected resume')),
+    create: () =>
+      Promise.resolve({
+        provider: 'codex',
+        providerSessionId: session.sessionId,
+        onDelegatedTurn: (notify: (running: boolean) => void) => {
+          onDelegated(notify);
+          return () => undefined;
+        },
+        stream: created.stream.bind(created),
+        setModel: created.setModel.bind(created),
+        setAutonomy: created.setAutonomy.bind(created),
+        interrupt: created.interrupt.bind(created),
+        close: created.close.bind(created),
+      }),
+  };
+}
+
+test('a turn the provider starts beside a typed one never takes its Canvas leases', async () => {
+  const h = createHarness();
+  const session = new FakeFactorySession('delegated', {}, h.calls);
+  let notify: (running: boolean) => void = () => undefined;
+  h.setProvider(
+    delegatingProvider(h, session, (listener) => {
+      notify = listener;
+    }),
+  );
+  const first = session.deferNextStream();
+  const second = session.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await session.waitForPrompts(1);
+  await h.lifecycle.send('delegated', 'pinned', undefined, undefined, pinned('dsg_hey'));
+  first.resolve();
+  await session.waitForPrompts(2);
+  const typed = turnLease(h, 'delegated');
+
+  // Codex starts a turn of its own behind the typed one; the typed turn's lease
+  // stays the chat's, and that turn settling does not revoke it.
+  notify(true);
+  assert.equal(h.canvasTurns.requireScope(typed.scopeId), typed);
+  notify(false);
+  assert.equal(h.canvasTurns.requireScope(typed.scopeId), typed);
+
+  second.resolve();
+  await requireLive(h, 'delegated').turnPromise;
+  assert.equal(h.canvasTurns.activeScope('delegated'), undefined);
+  assert.throws(() => h.canvasTurns.requireScope(typed.scopeId), { code: 'scope_expired' });
 });
