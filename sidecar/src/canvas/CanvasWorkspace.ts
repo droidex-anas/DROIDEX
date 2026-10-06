@@ -21,7 +21,7 @@ import {
   mutationFingerprint,
   recordedArrange,
   recordedCreate,
-  recordedWrite,
+  recordedRevision,
   recordMutation,
   toFrame,
   toPlacements,
@@ -36,6 +36,7 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  EditElementInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -235,13 +236,25 @@ export class CanvasWorkspace {
     });
   }
 
-  write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
+  recordedEdit(scope: CanvasScope, input: EditElementInput): WriteReceipt | null {
+    this.commits.requireOpen();
+    const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
+    return recordedRevision(manifest, input.mutationId, 'edit', mutationFingerprint(input));
+  }
+
+  // Direct edits retain their original request fingerprint, not the derived file write.
+  write(
+    scope: CanvasScope,
+    input: WriteFilesInput,
+    edit?: EditElementInput,
+  ): Promise<WriteReceipt> {
     return this.commits.admit(async () => {
       this.commits.requireOpen();
       const manifest = this.leases.requireDesigns(scope, [input.designId]);
       const canvasId = manifest.canvasId;
-      const fingerprint = mutationFingerprint(input);
-      const recorded = recordedWrite(manifest, input.mutationId, fingerprint);
+      const kind = edit ? 'edit' : 'write';
+      const fingerprint = mutationFingerprint(edit ?? input);
+      const recorded = recordedRevision(manifest, input.mutationId, kind, fingerprint);
       if (recorded) return recorded;
 
       const design = this.design(manifest, input.designId);
@@ -250,7 +263,7 @@ export class CanvasWorkspace {
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);
-        const again = recordedWrite(live, input.mutationId, fingerprint);
+        const again = recordedRevision(live, input.mutationId, kind, fingerprint);
         if (again) return { value: again };
         const next = structuredClone(live);
         const target = this.design(next, input.designId);
@@ -267,7 +280,7 @@ export class CanvasWorkspace {
         recordMutation(
           next,
           {
-            kind: 'write',
+            kind,
             mutationId: input.mutationId,
             scopeId: scope.scopeId,
             fingerprint,

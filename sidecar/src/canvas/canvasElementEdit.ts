@@ -14,6 +14,9 @@ export async function editCanvasElement(
   scope: Extract<CanvasScope, { origin: 'user' }>,
   input: EditElementInput,
 ): Promise<WriteReceipt> {
+  // A successful edit advanced this revision, so its retry must be answered first.
+  const recorded = workspace.recordedEdit(scope, input);
+  if (recorded) return recorded;
   const { element, change } = input.edit;
   const target = workspace.buildTarget(scope.canvasId, element.designId);
   if (!target) throw canvasError('invalid_input', 'That design is not on this canvas.');
@@ -53,13 +56,17 @@ export async function editCanvasElement(
     await worker.terminate();
   }
   try {
-    return await workspace.write(scope, {
-      mutationId: input.mutationId,
-      designId: element.designId,
-      expectedRevisionId: element.revisionId,
-      files: changed,
-      deletedPaths: [],
-    });
+    return await workspace.write(
+      scope,
+      {
+        mutationId: input.mutationId,
+        designId: element.designId,
+        expectedRevisionId: element.revisionId,
+        files: changed,
+        deletedPaths: [],
+      },
+      input,
+    );
   } catch (error) {
     if (error instanceof CanvasCommandError && error.code === 'revision_conflict')
       throw canvasError(
