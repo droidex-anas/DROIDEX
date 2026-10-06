@@ -433,8 +433,15 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   a published `ready` set that pointer in the same commit, so an outcome whose commit never
   happened can never match it however the cleanup of its file went. Taking an abandoned outcome
   file back stays best-effort hygiene rather than something publication correctness rests on.
+- The cache keeps only an outcome that is a function of the source: a `ready` build and the
+  compiler's own diagnostics. A failure of the attempt rather than the design — `build_timeout`,
+  `compiler_unavailable`, `storage_failed` — is live state and is never written, because some of
+  them advise restarting DROIDEX and a restart that still showed them would make that a lie; the
+  next open leaves the frame `pending` and the sweep retries. `canvasBuildFailures.ts` owns that
+  rule beside the codes, so the publication gate needs no knowledge of either.
 - `load` reads those outcomes when the workspace opens; anything the manifest does not vouch for
-  leaves the frame `pending`. `requestRebuilds(snapshot)` is the on-demand
+  leaves the frame `pending`, and so does one whose file cannot be read or parsed — a derived cache
+  that refuses a read is a miss, never a reason a canvas with readable source fails to open. `requestRebuilds(snapshot)` is the on-demand
   recovery, which any read may call (`canvas.subscribe` today, after it has confirmed the page is
   still there, so a refused subscription schedules nothing). It queues the `pending` and
   `cancelled` frames that still have source, checked against the head. Missing cache is never an
