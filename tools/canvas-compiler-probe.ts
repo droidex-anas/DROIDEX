@@ -61,6 +61,17 @@ const DAMAGE: [string, (runtime: string) => void][] = [
     (runtime) => linkOutside(runtime, 'node_modules/picocolors/picocolors.js'),
   ],
   [
+    // The tree agrees with its manifest and all seven specifiers resolve, so
+    // only loading the packages finds it.
+    'one file of a package PostCSS loads, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, 'node_modules/picocolors/picocolors.js');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files['node_modules/picocolors/picocolors.js'];
+      });
+    },
+  ],
+  [
     // The tree agrees with its manifest, so only resolving the specifiers sees it.
     'a package a compile resolves, with a manifest that agrees',
     (runtime) => {

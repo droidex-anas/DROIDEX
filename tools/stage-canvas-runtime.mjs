@@ -24,7 +24,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import process from 'node:process';
-import { CANVAS_RUNTIME_MANIFEST } from './verifyCanvasRuntime.mjs';
+import { CANVAS_RUNTIME_MANIFEST, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const sidecarDir = 'sidecar';
 const stagingDir = join(sidecarDir, 'canvas-runtime');
@@ -279,6 +279,10 @@ for (const arch of architectures) {
   for (const entry of closure) copyPackage(entry, archDir);
   const binaryPath = await stagePlatformBinary(arch, esbuildVersion, archDir);
   const { bytes, files } = writeManifest(archDir, binaryPath);
+  // The gate the release runs, run here: an input missing one file of one
+  // package stages and records faithfully, and only loading the packages finds
+  // it. Failing now beats shipping a runtime that cannot start.
+  verifyCanvasRuntime(archDir, arch);
   process.stdout.write(
     `${archDir}: ${String(closure.length + 1)} packages, ${String(files)} files, ${String(bytes)} bytes (${(bytes / 1024 / 1024).toFixed(2)} MiB)\n`,
   );

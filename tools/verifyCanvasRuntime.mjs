@@ -10,7 +10,7 @@
 // build tool and this tool may not depend on tsx. canvas-compiler-probe.ts runs
 // both against every damaged fixture and fails if they ever disagree.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
@@ -19,8 +19,7 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join, sep } from 'node:path';
+import { join } from 'node:path';
 import process from 'node:process';
 
 /** Also read by sidecar/src/canvas/canvasRuntime.ts, which owns its contract. */
@@ -30,9 +29,17 @@ const EXECUTABLE_ARCH = { arm64: 'arm64', x64: 'x86_64' };
 const LICENSED = ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'scheduler'];
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
-// tree can agree with its own manifest and still be short of a package a
-// compile resolves, so the gate resolves them too.
+// tree can agree with its own manifest and still be short of what a compile
+// needs, so the gate resolves all seven and loads the three the compiler calls
+// into: resolving a package says nothing about whether its own dependencies are
+// there. `postcss-value-parser` arrives through Tailwind, and the React a design
+// imports is read as files by esbuild rather than required.
 const ANCHOR_FILE = 'canvas-runtime.js';
+const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss'];
+
+// Long enough for a cold load of a 16 MiB runtime, short enough that a package
+// that hangs fails the gate rather than holding it.
+const LOAD_TIMEOUT_MS = 60_000;
 
 // FINDER_METADATA in sidecar/src/canvas/canvasRuntime.ts: Finder writes it into
 // any directory a user opens and the app's signature omits it, so the runtime
@@ -101,18 +108,65 @@ export function verifyCanvasRuntime(runtimePath, arch) {
   if (existsSync(join(modulesPath, '@esbuild', `darwin-${foreign}`)))
     fail(`the ${foreign} esbuild binary ships alongside the ${arch} one`);
 
-  const runtimeRequire = createRequire(join(root, ANCHOR_FILE));
-  for (const specifier of RUNTIME_SPECIFIERS) {
-    let resolved;
-    try {
-      resolved = runtimeRequire.resolve(specifier);
-    } catch {
-      fail(`${specifier} does not resolve`);
-    }
-    if (!resolved.startsWith(`${modulesPath}${sep}`))
-      fail(`${specifier} resolves outside the runtime`);
+  proveLoadable(root, manifest.binary);
+}
+
+/**
+ * Resolves every specifier and loads the three the compiler calls into, in a
+ * child: a package that throws or hangs cannot take the gate down, and the
+ * gate's own module cache stays clean. The runtime's JavaScript is the same for
+ * both architectures — only `@esbuild/<platform>-<arch>` differs, and its
+ * Mach-O check is separate — so naming the staged binary outright keeps esbuild
+ * from looking for a platform package by name. None of the three starts a
+ * process at load, so the foreign binary is never run.
+ */
+function proveLoadable(root, binary) {
+  const probe = spawnSync(process.execPath, ['--input-type=module', '--eval', LOAD_PROBE, root], {
+    encoding: 'utf8',
+    timeout: LOAD_TIMEOUT_MS,
+    // Nothing ambient may add a module path or a loader to this child.
+    env: { PATH: '/usr/bin:/bin', ESBUILD_BINARY_PATH: join(root, binary) },
+  });
+  if (probe.status === 0) return;
+  const reason =
+    probe.stderr?.trim() || `the load probe ended as ${String(probe.status ?? probe.signal)}`;
+  fail(reason.split('\n')[0]);
+}
+
+const LOAD_PROBE = `
+import Module, { createRequire } from 'node:module';
+
+const root = process.argv[1];
+const inside = root + '/node_modules/';
+const refuse = (reason) => {
+  process.stderr.write(reason + '\\n');
+  process.exit(1);
+};
+
+const resolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (specifier, ...rest) {
+  const resolved = resolveFilename.call(this, specifier, ...rest);
+  if (resolved.startsWith('/') && !resolved.startsWith(inside))
+    refuse(specifier + ' resolves outside the runtime, to ' + resolved);
+  return resolved;
+};
+
+const runtimeRequire = createRequire(root + '/' + ${JSON.stringify(ANCHOR_FILE)});
+for (const specifier of ${JSON.stringify(RUNTIME_SPECIFIERS)}) {
+  try {
+    runtimeRequire.resolve(specifier);
+  } catch {
+    refuse(specifier + ' does not resolve');
   }
 }
+for (const specifier of ${JSON.stringify(LOADED_SPECIFIERS)}) {
+  try {
+    runtimeRequire(specifier);
+  } catch (error) {
+    refuse(specifier + ' could not be loaded: ' + error.message);
+  }
+}
+`;
 
 function walk(root, within, sizes, directories, found) {
   for (const entry of readdirSync(join(root, within), { withFileTypes: true })) {
