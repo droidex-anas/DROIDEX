@@ -49,6 +49,9 @@ import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+// How long a settled turn waits for Send now's interrupt. A harness that never
+// answers it must not leave the chat busy for good.
+const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
 
@@ -113,6 +116,12 @@ interface LiveTurnState {
   // Steers the harness holds for the running turn and has not delivered yet.
   steers: SessionPrompt[];
   interruptingToSend?: boolean;
+  // Send now's interrupt while it is in flight. A turn that ends on its own
+  // first waits for it, or it would stop the turn started after it.
+  sendNowInterrupt?: Promise<void>;
+  // Counts the turns the provider started by itself, so a settlement that
+  // waited knows whether another began meanwhile.
+  delegatedTurns?: number;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
@@ -744,16 +753,24 @@ export class SessionLifecycle {
     }
     liveSession.interruptingToSend = true;
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
-    try {
-      await liveSession.session.interrupt();
-    } catch (error) {
+    // A refusal is reported first, so the turn settling after it sees it.
+    const interrupt = liveSession.session.interrupt().catch((error: unknown) => {
       liveSession.interruptingToSend = false;
       this.dependencies.emitError({
         code: 'session.send_now_failed',
         appSessionId,
         message: `Could not stop the turn to send now: ${errMsg(error)}`,
       });
-    }
+    });
+    // Capped, like the settlement that waits on it, so a harness that never
+    // answers cannot hold the command either.
+    const settled = new Promise<void>((resolve) => {
+      setTimeout(resolve, SEND_NOW_INTERRUPT_WAIT_MS).unref();
+      void interrupt.then(resolve);
+    });
+    liveSession.sendNowInterrupt = settled;
+    await settled;
+    if (liveSession.sendNowInterrupt === settled) liveSession.sendNowInterrupt = undefined;
   }
 
   // Where a prompt the user sent goes: the live session to send it to, 'held'
@@ -1127,8 +1144,9 @@ export class SessionLifecycle {
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
     const delegated = liveSession.session.onDelegatedTurn?.((running) => {
       if (!isCurrent()) return;
-      liveSession.streaming = running;
       if (running) {
+        liveSession.streaming = true;
+        liveSession.delegatedTurns = (liveSession.delegatedTurns ?? 0) + 1;
         // A settled turn leaves the chat's own source closed, and nothing else
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
@@ -1140,25 +1158,43 @@ export class SessionLifecycle {
         });
         return;
       }
-      // A Stop lands before the turn reports itself finished, so the flags it
-      // set are cleared here as they are for a typed turn.
-      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
-      liveSession.interrupting = false;
-      liveSession.interruptingToSend = false;
-      this.publishTurnSettled(liveSession);
-      if (stopped) this.dependencies.childSessions.retryAgentWave(liveSession.summary.appSessionId);
-      // A runtime that has gone takes the queue with it through the close
-      // path, which reopens and redelivers. Taking a prompt off it here would
-      // spend it on a client that cannot run it.
-      if (liveSession.session.isClosed) return;
-      const next = liveSession.pendingSends.shift();
-      if (next !== undefined) void this.driveInBackground(appSessionId, next);
+      // The chat stays busy until Send now's interrupt settles, so nothing new
+      // starts under it.
+      const interrupt = liveSession.sendNowInterrupt;
+      if (!interrupt) {
+        this.settleDelegatedTurn(liveSession);
+        return;
+      }
+      const turn = liveSession.delegatedTurns;
+      void interrupt.then(() => {
+        // The chat closed, or the provider started another turn, meanwhile.
+        if (isCurrent() && liveSession.delegatedTurns === turn)
+          this.settleDelegatedTurn(liveSession);
+      });
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
         events?.();
         delegated?.();
       };
+  }
+
+  private settleDelegatedTurn(liveSession: LiveSession): void {
+    liveSession.streaming = false;
+    // A Stop lands before the turn reports itself finished, so the flags it
+    // set are cleared here as they are for a typed turn.
+    const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+    liveSession.interrupting = false;
+    liveSession.interruptingToSend = false;
+    this.publishTurnSettled(liveSession);
+    const appSessionId = liveSession.summary.appSessionId;
+    if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);
+    // A runtime that has gone takes the queue with it through the close
+    // path, which reopens and redelivers. Taking a prompt off it here would
+    // spend it on a client that cannot run it.
+    if (liveSession.session.isClosed) return;
+    const next = liveSession.pendingSends.shift();
+    if (next !== undefined) void this.driveInBackground(appSessionId, next);
   }
 
   private observeProviderClosure(liveSession: LiveSession): void {
@@ -1363,35 +1399,44 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
-      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
-      liveSession.interruptingToSend = false;
-      liveSession.interrupting = false;
-      liveSession.streaming = false;
-      // A wave held back while the Stop was outstanding is owed once it is over.
-      if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
-      // Let the closure observer claim cleanup before advancing the queue.
-      if (liveSession.session.isClosed) await liveSession.session.closed;
-      if (liveSession.providerClosePromise) {
-        if (d.registry.getLive(stableAppSessionId) === liveSession)
-          this.publishTurnSettled(liveSession);
-        // The closure observer reports cleanup failures; keep queued sends here
-        // until the runtime can actually be released.
-        await liveSession.providerClosePromise.catch(() => undefined);
-      }
-      if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
-        liveSession.pendingSends = [];
-      } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
-        const queued = liveSession.pendingSends.splice(0);
-        if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
-      } else if (liveSession.autoCompacting) {
-        const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
-        if (compactionTarget) d.compaction.afterTurn(compactionTarget);
+      const delegatedTurns = liveSession.delegatedTurns;
+      if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
+      // A turn the provider started meanwhile owns the chat and its queue now.
+      if (liveSession.delegatedTurns === delegatedTurns)
+        await this.settleTypedTurn(liveSession, stableAppSessionId);
+    }
+  }
+
+  private async settleTypedTurn(liveSession: LiveSession, stableAppSessionId: string) {
+    const d = this.dependencies;
+    const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+    liveSession.interruptingToSend = false;
+    liveSession.interrupting = false;
+    liveSession.streaming = false;
+    // A wave held back while the Stop was outstanding is owed once it is over.
+    if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
+    // Let the closure observer claim cleanup before advancing the queue.
+    if (liveSession.session.isClosed) await liveSession.session.closed;
+    if (liveSession.providerClosePromise) {
+      if (d.registry.getLive(stableAppSessionId) === liveSession)
         this.publishTurnSettled(liveSession);
-      } else {
-        const next = liveSession.pendingSends.shift();
-        this.publishTurnSettled(liveSession);
-        if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
-      }
+      // The closure observer reports cleanup failures; keep queued sends here
+      // until the runtime can actually be released.
+      await liveSession.providerClosePromise.catch(() => undefined);
+    }
+    if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
+      liveSession.pendingSends = [];
+    } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
+      const queued = liveSession.pendingSends.splice(0);
+      if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
+    } else if (liveSession.autoCompacting) {
+      const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
+      if (compactionTarget) d.compaction.afterTurn(compactionTarget);
+      this.publishTurnSettled(liveSession);
+    } else {
+      const next = liveSession.pendingSends.shift();
+      this.publishTurnSettled(liveSession);
+      if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
     }
   }
 
