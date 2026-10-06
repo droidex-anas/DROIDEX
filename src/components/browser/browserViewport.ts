@@ -91,11 +91,13 @@ export function normalizeUrl(value: string): string {
   // sent to a search; anything else is a search.
   const authority = trimmed.split(/[/?#]/, 1)[0];
   const host = authority.slice(authority.lastIndexOf('@') + 1);
-  if (host && !/\s/.test(host) && URL.canParse(`https://${host}`)) {
+  // A user name has no spaces, though its password may; text with an @ that is
+  // no login, such as a sentence with an email in it, is a search.
+  const login = /^[^\s:@]+(:[^@]*)?@/.test(authority);
+  const atWithoutLogin = authority.includes('@') && !login;
+  if (!atWithoutLogin && host && !/\s/.test(host) && URL.canParse(`https://${host}`)) {
     const { hostname } = new URL(`https://${host}`);
     if (hostname === 'localhost' || hostname === '127.0.0.1') return `http://${trimmed}`;
-    // A user name has no spaces, though its password may; a sentence with an @ is no login.
-    const login = /^[^\s:@]+(:[^@]*)?@/.test(authority);
     if (login || hostname.includes('.') || hostname.startsWith('[') || /:\d+$/.test(host))
       return `https://${trimmed}`;
   }

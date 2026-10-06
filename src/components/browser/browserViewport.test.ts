@@ -60,6 +60,10 @@ test('normalizeUrl opens sites and searches for everything else', () => {
     'https://www.google.com/search?q=email%20me%20at%20x%40y',
   );
   assert.equal(
+    normalizeUrl('email me at x@example.com'),
+    'https://www.google.com/search?q=email%20me%20at%20x%40example.com',
+  );
+  assert.equal(
     normalizeUrl('what is 1.5 + 2'),
     'https://www.google.com/search?q=what%20is%201.5%20%2B%202',
   );
