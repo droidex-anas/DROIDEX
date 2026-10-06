@@ -135,8 +135,8 @@ started; one from before that shows its main chat's start.
 ## The Threads panel
 
 The chat's utility panel has a **Threads** tab. It opens with a short greeting
-that changes through the day, the project's name, and when it started or how
-long it took, with the outcome once it is done, or a line saying to resume the
+that changes through the day, the project's name, and how long it has been
+running or how long it took, with the outcome once it is done, or a line saying to resume the
 project in Projects while it is held. Below them come the plan, headed by how
 many of its steps are done, and the threads, grouped the way the sidebar's
 Activity view groups chats: **Needs you**, **Working** and **Recent**. Each
@@ -150,8 +150,13 @@ Opening a row shows that thread's conversation read-only, loading its history
 first if this window has not, with **Open** to bring it into the main pane,
 where the ordinary composer and Stop steer it. In the chat, a started thread
 renders as an inline line with its live step that stays visible after the turn
-folds, and opening it shows the thread in the Threads tab. A thread's report
-arrives as a quiet notice rather than a message wearing the user's bubble. A
+folds, and opening it shows the thread in the Threads tab. A project's chat
+reads like a group chat: a thread's report, question or message arrives as that
+thread speaking, with its harness's mark as its face and its name and what it
+did over the bubble, never in the user's bubble or the main chat's own prose.
+A message from a chat outside the project stays a quiet notice. While the main
+chat waits with its turn ended and threads of its own working, its last reply
+says **Waiting for N threads** beside Copy and Fork, naming them on hover. A
 chat started with `reportBack` false gets the same inline line without a step,
 and opening it opens that chat in the main pane. In the Projects view, opening a
 thread opens it in the main pane.
