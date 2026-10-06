@@ -149,7 +149,7 @@ export function BrowserHost() {
             placement={placementOf(host, page.browserSessionId)}
             working={page.browserSessionId in host.working}
             anchor={slot?.anchor}
-            rounded={slot?.rounded ?? false}
+            radius={slot?.radius ?? '0'}
             scale={slot?.scale}
             size={sizes.get(page.browserSessionId) ?? DEFAULT_PAGE_SIZE}
           />
@@ -164,7 +164,7 @@ function BrowserPageFrame({
   placement,
   working,
   anchor,
-  rounded,
+  radius,
   scale,
   size,
 }: {
@@ -173,7 +173,7 @@ function BrowserPageFrame({
   /** An agent has work in flight on the page. */
   working: boolean;
   anchor?: string;
-  rounded: boolean;
+  radius: string;
   scale?: number;
   size: PageSize;
 }) {
@@ -187,7 +187,7 @@ function BrowserPageFrame({
   }, [shown]);
 
   return (
-    <div style={frameStyle(placement, anchor, rounded)} aria-hidden={!shown}>
+    <div style={frameStyle(placement, anchor, radius)} aria-hidden={!shown}>
       <webview
         ref={webviewRef}
         src={page.src}
@@ -222,7 +222,7 @@ function pageStyle(size: PageSize, scale?: number): CSSProperties {
   };
 }
 
-function frameStyle(placement: Placement, anchor: string | undefined, rounded: boolean) {
+function frameStyle(placement: Placement, anchor: string | undefined, radius: string) {
   if (placement === 'shown' && anchor) {
     // Anchored to the pane's slot, so the page follows the pane's layout with
     // no measuring. The page is pane content: anything the app stacks (menus,
@@ -237,7 +237,7 @@ function frameStyle(placement: Placement, anchor: string | undefined, rounded: b
       width: 'anchor-size(width)',
       height: 'anchor-size(height)',
       overflow: 'hidden',
-      borderRadius: rounded ? 6 : 0,
+      borderRadius: radius,
     } satisfies CSSProperties;
   }
   // Parked in a 1x1 clip at the window's top-left corner, which the window's

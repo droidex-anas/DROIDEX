@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Globe, Square } from '@droidex/icons';
+import { OVER_PAGE_CHIP } from './browser/overPageChip';
 import { Popover } from './environment/Popover';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { openBrowser, stopAgentProcess } from '../lib/commands';
@@ -80,11 +81,7 @@ export function RunningProcessesMenu({
         title={label}
         className={`flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
           overPage
-            ? `h-8 rounded-md border bg-droid-bg/90 shadow-droid-sm hover:border-droid-border-hover hover:text-droid-text-secondary ${
-                open
-                  ? 'border-droid-border-hover text-droid-text-secondary'
-                  : 'border-droid-border text-droid-text-muted'
-              }`
+            ? `${OVER_PAGE_CHIP} text-droid-text-muted hover:text-droid-text-secondary aria-expanded:text-droid-text-secondary`
             : `rounded-lg py-1.5 ${
                 open
                   ? 'bg-droid-elevated text-droid-text'
