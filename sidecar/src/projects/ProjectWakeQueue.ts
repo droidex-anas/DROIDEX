@@ -296,7 +296,11 @@ const VERB: Record<ThreadMessage['kind'], string> = {
    blob addressed to a model reads as a leak. The first line is what the window
    recognises such a turn by. A thread cannot thread_send the chat that started
    it and does not talk to the user, so it is told to answer with its report. */
-function wakePrompt(project: Project, to: string, messages: readonly ThreadMessage[]): string {
+export function wakePrompt(
+  project: Project,
+  to: string,
+  messages: readonly ThreadMessage[],
+): string {
   const threads = new Map(project.threads.map((thread) => [thread.appSessionId, thread]));
   const lines = messages.map((message) => {
     const from = threads.get(message.from)?.title ?? 'A thread';

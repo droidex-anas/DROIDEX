@@ -86,9 +86,33 @@ const sendInput = z.object({
     .max(200)
     .optional()
     .describe('Required with answers: the questionId from thread_read or the question message.'),
+  delivery: z
+    .enum(['steer', 'now', 'queue'])
+    .optional()
+    .describe(
+      "steer (default): into its running turn at the harness's next step, as the user's Steer does. now: stop its running turn and run this instead, for work that must not continue. queue: after its current turn. A thread with no turn running starts on it at once either way.",
+    ),
+});
+
+const doneInput = z.object({
+  outcome: z
+    .string()
+    .trim()
+    .min(1)
+    .max(LEDGER_LIMITS.outcome)
+    .describe("What the project achieved, in one or two sentences in the user's words."),
 });
 
 const planInput = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(LEDGER_LIMITS.title)
+    .optional()
+    .describe(
+      "The project's name: a few words for its goal, never the user's opening prompt. Set it with the first plan; it names this chat too.",
+    ),
   steps: z
     .array(
       z.object({
@@ -147,6 +171,17 @@ const configureInput = z.object({
 
 const stopInput = z.object({ threadId });
 
+// What happened to a message, so the lead never takes a queued one for a delivered one.
+const DELIVERY_NOTES: Partial<Record<string, string>> = {
+  steered:
+    'The thread takes it at its next step in the turn it is running, or right after that turn when the harness cannot take it sooner. Its report still wakes you.',
+  'sent-now':
+    'It runs next: DROIDEX asks the turn the thread is running to stop first. Its report wakes you.',
+  queued:
+    'It starts the thread now if it is idle, or waits for the turn it is running. Its report wakes you; end your turn.',
+  held: 'The project is held, so it waits until the user resumes the project.',
+};
+
 /**
  * The tools that let a chat run work in parallel. What it starts is a full
  * DROIDEX conversation of its own (its own history, settings and transcript),
@@ -196,7 +231,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_send',
-      "Send one of this chat's threads new instructions or a correction. When it is waiting on a question it asked, pass answers, one per question in order, with its questionId; they reach it at once. Forward the user's own words when relaying theirs.",
+      "Send one of this chat's threads new instructions or a correction. A working thread takes it inside its running turn unless you pass delivery. When it is waiting on a question it asked, pass answers, one per question in order, with its questionId; they reach it at once. Forward the user's own words when relaying theirs.",
       sendInput.shape,
       safeTool(async (input: z.infer<typeof sendInput>) => {
         const projects = await requireProjectService();
@@ -206,8 +241,14 @@ export function threadTools(appSessionId: () => string) {
           input.text,
           input.answers,
           input.questionId,
+          input.delivery,
         );
-        return jsonResult({ ok: true, threadId: input.threadId, delivery });
+        return jsonResult({
+          ok: true,
+          threadId: input.threadId,
+          delivery,
+          ...(DELIVERY_NOTES[delivery] ? { note: DELIVERY_NOTES[delivery] } : {}),
+        });
       }),
     ),
     tool(
@@ -227,8 +268,22 @@ export function threadTools(appSessionId: () => string) {
             ...step,
             ...(threadId ? { threadAppSessionId: threadId } : {}),
           })),
+          input.title,
         );
         return jsonResult({ ok: true, stepCount });
+      }),
+    ),
+    tool(
+      'project_done',
+      [
+        "Mark this project done once the user's goal is achieved and no thread is still working.",
+        'Projects shows the outcome and how long the project took. Spawning a thread, or a plan with open steps, reopens it.',
+      ].join(' '),
+      doneInput.shape,
+      safeTool(async (input: z.infer<typeof doneInput>) => {
+        const projects = await requireProjectService();
+        await projects.finish(appSessionId(), input.outcome);
+        return jsonResult({ ok: true });
       }),
     ),
     tool(
@@ -237,6 +292,7 @@ export function threadTools(appSessionId: () => string) {
         `Read one of this chat's threads: its latest final replies (the last ${String(LEDGER_LIMITS.text)} characters of each; an old thread may keep only its final one), the question it is waiting on, and its settings.`,
         'A report is an excerpt, so read the rest here before acting on it or telling the user.',
         'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
+        'queued counts the messages it has not been seen to take yet, yours waiting or handed over and any steer it has not read, so do not send them again. live is false when no runtime is open for it, because DROIDEX released it while idle or is reopening it; a message opens one.',
       ].join(' '),
       readInput.shape,
       safeTool(async (input: z.infer<typeof readInput>) => {

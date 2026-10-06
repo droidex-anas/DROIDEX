@@ -1,5 +1,5 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
-import { ProjectWakeQueue } from './ProjectWakeQueue.js';
+import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
 import {
   clearAsk,
   ProjectTurns,
@@ -30,6 +30,7 @@ import type {
   ProjectStep,
   ProjectThread,
   ProjectView,
+  ThreadDelivery,
   ThreadInput,
   ThreadMessage,
   ThreadSettings,
@@ -55,8 +56,19 @@ export interface ProjectPort {
   isAsking(appSessionId: string, requestId: string): boolean;
   /** Whether the conversation is stopped on a permission request only the user can answer. */
   awaitingApproval(appSessionId: string): boolean;
+  /** Whether its runtime is open; an idle one is released to save memory. */
+  isLive(appSessionId: string): boolean;
   /** Retunes a live thread, the way the composer's own controls do. */
   configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
+  /** Hands a prompt to the turn a chat is running, as the user's Steer does, or,
+      when `now`, stops that turn so the prompt runs next. False when no turn took it. */
+  steer(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now: boolean,
+  ): Promise<boolean>;
+  rename(appSessionId: string, title: string): Promise<void>;
   /** Answers a question a thread is blocked on; false when it was already settled. */
   answer(
     appSessionId: string,
@@ -96,6 +108,10 @@ export interface ThreadReadout {
   replies: string[];
   /** Older replies DROIDEX still holds, for an owner that wants more context. */
   moreReplies: number;
+  /** Messages to it not yet seen taken: queued, handed over, or steered and unread. */
+  queued: number;
+  /** False when no runtime is open for it: released while idle, or reopening. */
+  live?: boolean;
   /** Why replies is empty when the thread did reply. */
   note?: string;
   error?: string;
@@ -110,6 +126,11 @@ export interface ThreadReadout {
 
 export class ProjectService {
   private readonly projects = new Map<string, Project>();
+  // Counts each project's holds, so a message on its way when one lands stays
+  // withdrawn after Resume.
+  private readonly holds = new WeakMap<Project, number>();
+  // Messages to threads still on their way to a running turn, which a finish must wait for.
+  private readonly sending = new WeakMap<Project, number>();
   // Sessions last seen mid-turn, so a settle is told from any other update.
   private readonly streamingSessions = new Set<string>();
   private readonly membership = new Map<string, Project>();
@@ -198,10 +219,14 @@ export class ProjectService {
 
   private view(project: Project): ProjectView {
     const main = project.threads.find((thread) => !thread.ownerAppSessionId);
-    const cwd = main ? this.sessions.get(main.appSessionId)?.cwd : undefined;
+    const lead = main ? this.sessions.get(main.appSessionId) : undefined;
+    const cwd = lead?.cwd;
+    const startedAt = project.startedAt ?? lead?.createdAt;
     return {
       id: project.id,
       title: project.title,
+      ...(startedAt ? { startedAt } : {}),
+      ...(project.done ? { done: project.done } : {}),
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
       launching: project.launching,
@@ -271,6 +296,8 @@ export class ProjectService {
         throw new Error('This chat has started no threads to share a checkout with.');
       const project = joined ?? this.adoption(source, owner);
       try {
+        // Its first turn reopens a finished project (reopenOnWork); a refused
+        // spawn starts none, so it reopens nothing.
         return await this.startThread(project, spawn, owner, input, requested);
       } finally {
         if (this.settleAdoption(project)) await this.save();
@@ -371,13 +398,25 @@ export class ProjectService {
    * that leads no project yet becomes one with its first plan, so it can plan
    * first and then spawn a thread for each step.
    */
-  async setPlan(source: string, steps: readonly Omit<ProjectStep, 'id'>[]): Promise<number> {
+  async setPlan(
+    source: string,
+    steps: readonly Omit<ProjectStep, 'id'>[],
+    title?: string,
+  ): Promise<number> {
     this.requireOpen();
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
     let project = this.membership.get(source);
     if (project && requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the chat that leads a project keeps its plan.');
+    // Named before anything changes: a name the chat refuses leaves no project
+    // half made and no plan replaced; Droid keeps the title itself and can refuse it.
+    const name = title?.slice(0, LEDGER_LIMITS.title);
+    if (name && name !== project?.title && (project || steps.length)) {
+      await this.sessions.rename(source, name);
+      // Another plan for this chat may have made its project meanwhile.
+      project = this.membership.get(source);
+    }
     if (!project) {
       // With no project there is no plan to clear.
       if (!steps.length) return 0;
@@ -390,11 +429,49 @@ export class ProjectService {
       project = this.adoption(source, owner);
       this.commitAdoption(source, project);
     }
+    if (name) {
+      project.title = name;
+      requireThread(project, source).title = name;
+    }
     const members = new Set(project.threads.map((thread) => thread.appSessionId));
     project.plan = planFromSteps(steps, (id) => members.has(id));
+    // A step of the chat's own that is not done, stated or not, means work remains.
+    if (project.plan.some((step) => !step.threadAppSessionId && step.state !== 'done'))
+      delete project.done;
     this.settleAdoption(project);
     await this.save();
     return project.plan.length;
+  }
+
+  /** The lead's word that the goal is achieved. Spawning again reopens the project. */
+  async finish(source: string, outcome: string): Promise<void> {
+    this.requireOpen();
+    const project = this.requireProjectFor(source);
+    if (requireThread(project, source).ownerAppSessionId)
+      throw new Error('Only the chat that leads a project can mark it done.');
+    if (project.launching > 0) throw new Error('A thread of this project is still starting.');
+    const waiting = project.threads.find(
+      (thread) =>
+        thread.appSessionId !== source &&
+        (thread.ask !== undefined || this.sessions.awaitingApproval(thread.appSessionId)),
+    );
+    if (waiting) throw new Error(`${waiting.title} is still waiting on an answer or an approval.`);
+    if (
+      project.delivery ||
+      (this.sending.get(project) ?? 0) > 0 ||
+      project.pending.some((message) => message.to !== source)
+    )
+      throw new Error('Messages to its threads are still on their way.');
+    const working = project.threads.filter(
+      (thread) =>
+        thread.appSessionId !== source && this.sessions.get(thread.appSessionId)?.streaming,
+    );
+    if (working.length)
+      throw new Error(
+        `${working.map((thread) => thread.title).join(', ')} ${working.length === 1 ? 'is' : 'are'} still working. Wait for ${working.length === 1 ? 'its' : 'their'} report, or stop ${working.length === 1 ? 'it' : 'them'}, first.`,
+      );
+    project.done = { at: Date.now(), outcome: outcome.slice(0, LEDGER_LIMITS.outcome) };
+    await this.save();
   }
 
   publish(): void {
@@ -419,7 +496,8 @@ export class ProjectService {
     text: string,
     answers?: string[],
     questionId?: string,
-  ): Promise<'answered' | 'queued' | 'already-answered'> {
+    delivery: ThreadDelivery = 'steer',
+  ): Promise<'answered' | 'already-answered' | 'steered' | 'sent-now' | 'queued' | 'held'> {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const ask = thread.ask;
@@ -458,10 +536,53 @@ export class ProjectService {
       this.wakes.kick(project);
       return landed ? 'answered' : 'already-answered';
     }
+    // A running turn takes it at the harness's next step, or, sent now, in
+    // place of the rest of that turn. A thread with no turn running gets it as
+    // its next turn, which the wake queue starts.
+    requireMessageText(text);
+    // Work sent to a thread means the goal is open again; cleared before any
+    // wait, so a project_done racing this send sees the work.
+    const reopened = project.done !== undefined;
+    delete project.done;
+    // A held project holds its main chat's messages too: they queue for Resume.
+    if (delivery !== 'queue' && !project.paused && this.sessions.get(target)?.streaming) {
+      const message = {
+        id: randomUUID(),
+        from: source,
+        to: target,
+        kind: 'message' as const,
+        text,
+      };
+      const prompt = wakePrompt(project, target, [message]);
+      // Only this thread leaving the project withdraws it. A Stop on the
+      // thread drops it with the rest of that chat's queue, as it would the user's.
+      const holds = this.holds.get(project);
+      const isCurrent = () =>
+        !this.closed &&
+        !project.paused &&
+        this.holds.get(project) === holds &&
+        this.membership.get(target) === project;
+      this.sending.set(project, (this.sending.get(project) ?? 0) + 1);
+      let steered: boolean;
+      try {
+        steered = await this.sessions.steer(target, prompt, isCurrent, delivery === 'now');
+      } finally {
+        this.sending.set(project, (this.sending.get(project) ?? 1) - 1);
+      }
+      if (steered) {
+        if (reopened) await this.save();
+        return delivery === 'now' ? 'sent-now' : 'steered';
+      }
+      // Its turn ended, or was stopped, while this was on its way. Starting a
+      // new turn could undo a Stop, so the lead decides.
+      throw new Error(
+        `${thread.title}'s turn ended before it took this message. Read it with thread_read, and send again if the message still applies.`,
+      );
+    }
     this.enqueue(project, { from: source, to: target, kind: 'message', text });
     await this.save();
     this.wakes.kick(project);
-    return 'queued';
+    return project.paused ? 'held' : 'queued';
   }
 
   /**
@@ -482,6 +603,11 @@ export class ProjectService {
       state: threadState(thread, session),
       replies: kept.slice(-wanted),
       moreReplies: Math.max(kept.length - wanted, 0),
+      queued:
+        [...project.pending, ...(project.delivery?.messages ?? [])].filter(
+          (message) => message.to === target,
+        ).length + (session?.pendingSteers?.length ?? 0),
+      ...(session ? { live: this.sessions.isLive(target) } : {}),
       ...(thread.repliesShed
         ? {
             note: 'DROIDEX dropped its replies to keep the project ledger small. Its whole conversation stays in its own transcript, which the user can open.',
@@ -567,6 +693,7 @@ export class ProjectService {
       delete project.delivery;
     }
     this.wakes.invalidate(project);
+    if (paused) this.noteHold(project);
     project.paused = paused;
     delete project.leadStopped;
     delete project.leadFailed;
@@ -593,6 +720,7 @@ export class ProjectService {
       if (!project.paused) project.leadStopped = true;
       delete project.leadFailed;
       this.wakes.invalidate(project);
+      this.noteHold(project);
       project.paused = true;
       await this.save();
       return;
@@ -605,7 +733,14 @@ export class ProjectService {
     if (this.closed) return;
     // Read before any wait, so a slow save cannot reorder a turn's start and end.
     const settled = event.type === 'session.updated' && this.noteStreaming(event.session);
+    // Decided as the event arrives, so a project_done made while this observer
+    // waits is never undone by it; saved once the turn is recorded.
+    const reopened =
+      event.type === 'session.updated' &&
+      event.session.streaming &&
+      this.reopenOnWork(event.session.appSessionId);
     await this.turns.observe(event);
+    if (reopened) await this.save();
     // A delivered turn that stops on the user's approval frees its slot.
     if (event.type === 'approval.requested') {
       if (this.membership.has(event.request.appSessionId)) this.wakes.waitingChanged();
@@ -625,6 +760,14 @@ export class ProjectService {
     // the capacity hook fires for a resume that produced no runtime, not for a
     // session that closed.
     this.capacityChanged();
+  }
+
+  /** A thread working again means its finished project's goal is open after all. */
+  private reopenOnWork(appSessionId: string): boolean {
+    const project = this.membership.get(appSessionId);
+    if (!project?.done || !requireThread(project, appSessionId).ownerAppSessionId) return false;
+    delete project.done;
+    return true;
   }
 
   /** True when this update ends a turn the session was last seen running. */
@@ -816,6 +959,7 @@ export class ProjectService {
     return {
       id,
       title: title.slice(0, LEDGER_LIMITS.title) || 'Project',
+      startedAt: Date.now(),
       paused: false,
       launching: 0,
       plan: [],
@@ -901,8 +1045,13 @@ export class ProjectService {
     if (this.closed) throw new Error('Projects are shutting down.');
   }
 
+  private noteHold(project: Project): void {
+    this.holds.set(project, (this.holds.get(project) ?? 0) + 1);
+  }
+
   private fail(project: Project, error: unknown): void {
     this.wakes.invalidate(project);
+    this.noteHold(project);
     project.paused = true;
     delete project.leadStopped;
     delete project.leadFailed;

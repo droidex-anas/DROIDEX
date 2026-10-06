@@ -69,6 +69,8 @@ export async function gitRepository(t: TestContext): Promise<string> {
 export async function harness(t: TestContext, saved: Project[] = [], historyReady = true) {
   const sessions = new Map<string, SessionSummary>();
   const sent: { id: string; prompt: string }[] = [];
+  // What reached a running turn, as the lifecycle's steer would take it.
+  const steered: { id: string; prompt: string; now: boolean }[] = [];
   const launched: ThreadInput[] = [];
   const events: ServerEvent[] = [];
   const state = {
@@ -102,6 +104,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
     awaitingApproval: (id) => state.awaitingApproval.has(id),
+    isLive: (id) => sessions.has(id),
     catalog: async () => {
       if (state.catalogGate) await state.catalogGate;
       return [
@@ -146,6 +149,18 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
       return { status: 'accepted', settled };
     },
     isAsking: (id, requestId) => asking.get(id) === requestId,
+    steer: async (id, prompt, isCurrent, now) => {
+      if (!sessions.get(id)?.streaming || !isCurrent()) return false;
+      steered.push({ id, prompt, now });
+      // Send now stops the running turn, as the lifecycle's does.
+      if (now) await streaming(id, false);
+      return true;
+    },
+    rename: (id, title) => {
+      const session = sessions.get(id);
+      if (session) sessions.set(id, { ...session, title });
+      return Promise.resolve();
+    },
     configure: async (id, settings) => {
       const session = sessions.get(id);
       assert.ok(session);
@@ -220,6 +235,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     projects,
     sessions,
     sent,
+    steered,
     answered,
     asking,
     launched,

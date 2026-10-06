@@ -1,6 +1,5 @@
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
 import { ThreadList } from './ThreadList';
-import { threadSubtitle } from './threadGreeting';
 import type { ProjectBoardEntry } from './useProjectBoard';
 
 /* One project: what it is, whether its coordination is held, and the threads it
@@ -68,7 +67,9 @@ export function ProjectThreads({
         <ThreadList
           rows={rows}
           plan={project.plan}
-          subtitle={threadSubtitle(undefined, project.cwd, rows.length)}
+          cwd={project.cwd}
+          startedAt={project.startedAt}
+          done={project.done}
           // This view carries its own held banner, with the control to resume.
           held={false}
           now={now}

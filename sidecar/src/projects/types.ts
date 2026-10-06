@@ -80,6 +80,10 @@ export interface ProjectThread {
   waiting: boolean;
 }
 
+/** How a lead's message reaches a thread: into its running turn at the
+    harness's next step, in place of the rest of that turn, or after it. */
+export type ThreadDelivery = 'steer' | 'now' | 'queue';
+
 export interface ThreadMessage {
   id: string;
   from: string;
@@ -104,6 +108,10 @@ export interface Project {
   leadStopped?: true;
   /** The hold is the main chat's failed turn alone, which its next successful turn lifts. */
   leadFailed?: true;
+  /** When it began. Projects from before this was kept show their lead's start. */
+  startedAt?: number;
+  /** Set when the lead marks the goal achieved; new work clears it. */
+  done?: ProjectDone;
   launching: number;
   plan: ProjectStep[];
   threads: ProjectThread[];
@@ -112,9 +120,17 @@ export interface Project {
   error?: string;
 }
 
+/** The lead's word that the project's goal is achieved, and what it achieved. */
+interface ProjectDone {
+  at: number;
+  outcome: string;
+}
+
 export interface ProjectView {
   id: string;
   title: string;
+  startedAt?: number;
+  done?: ProjectDone;
   // The main conversation's workspace, when its session is still known.
   cwd?: string;
   paused: boolean;

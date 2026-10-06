@@ -302,12 +302,43 @@ test('holding a project cancels every spawn still starting before it reaches the
   assert.equal(h.projects.list()[0]?.launching, 0);
 });
 
+test("a lead's message reaches a working thread's turn, or starts an idle one", async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  assert.equal(await h.projects.send(main, child.appSessionId, 'Also cover the tests'), 'steered');
+  assert.equal(
+    await h.projects.send(
+      main,
+      child.appSessionId,
+      'Stop, wrong branch',
+      undefined,
+      undefined,
+      'now',
+    ),
+    'sent-now',
+  );
+  assert.deepEqual(
+    h.steered.map(({ now }) => now),
+    [false, true],
+  );
+  await h.finish(child.appSessionId);
+  await drain();
+  const reported = h.sent.length;
+  assert.equal(await h.projects.send(main, child.appSessionId, 'One more thing'), 'queued');
+  await drain();
+  assert.ok(h.sent.slice(reported).some(({ id }) => id === child.appSessionId));
+});
+
 test('persistence failure fails closed without delivering a queued wake', async (t) => {
   const h = await harness(t);
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
   h.state.failSave = true;
-  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work'), /Disk full/);
+  await assert.rejects(
+    h.projects.send(main, child.appSessionId, 'Work', undefined, undefined, 'queue'),
+    /Disk full/,
+  );
   await drain();
   assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.paused, true);
@@ -439,7 +470,10 @@ test("the main chat's next spawn lifts the hold its Stop put on, and no other ho
 
   // A failure's hold stays the user's to lift, even after a later Stop.
   h.state.failSave = true;
-  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work'), /Disk full/);
+  await assert.rejects(
+    h.projects.send(main, child.appSessionId, 'Work', undefined, undefined, 'queue'),
+    /Disk full/,
+  );
   h.state.failSave = false;
   await h.projects.userStopped(main);
   await assert.rejects(h.projects.spawn(main, input), /held/);

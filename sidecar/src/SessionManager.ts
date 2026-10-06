@@ -1246,6 +1246,15 @@ export class SessionManager {
     return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent);
   }
 
+  steerRunningTurn(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now = false,
+  ): Promise<boolean> {
+    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now);
+  }
+
   async automationSessionContext(appSessionId: string): Promise<{
     cwd: string | null;
     modelId: string | null;
