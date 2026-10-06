@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   activateUtilityTab,
   closeUtilityTab,
+  isExpandableTool,
   openUtilityTool,
   persistUtilityPanels,
   removeSessionPanel,
@@ -23,6 +24,19 @@ test('singleton tools activate their existing tab and unknown tab ids are reject
   assert.equal(reopened.activeTabId, 'tab-1');
   assert.equal(reopened.open, true);
   assert.equal(activateUtilityTab(reopened, 'missing'), reopened);
+});
+
+test('Canvas is one expandable pane per chat and comes back after a restart', () => {
+  let id = 0;
+  const createId = () => `tab-${String(++id)}`;
+  const opened = openUtilityTool(undefined, 'canvas', createId);
+  assert.deepEqual(opened.tabs, [{ id: 'tab-1', tool: 'canvas', label: 'Canvas' }]);
+  assert.equal(openUtilityTool(opened, 'canvas', createId), opened);
+  assert.equal(isExpandableTool('canvas'), true);
+
+  // A canvas reconstructs from durable state, so unlike a terminal it persists.
+  assert.deepEqual(persistUtilityPanels({ session: opened }), { session: opened });
+  assert.deepEqual(sanitizeUtilityPanels({ session: opened }), { session: opened });
 });
 
 test('terminal tabs are independent and closing the active tab chooses its neighbor', () => {

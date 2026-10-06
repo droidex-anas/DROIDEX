@@ -3,6 +3,7 @@ import {
   Files,
   Globe,
   Hierarchy,
+  LayoutTemplate,
   MessageBubble,
   MessageSquareText,
   SquareTerminal,
@@ -22,6 +23,9 @@ export const UTILITY_TOOL_OPTIONS: UtilityToolOption[] = [
   { tool: 'terminal', label: 'Terminal', icon: SquareTerminal, shortcut: '⌃`' },
   { tool: 'browser', label: 'Browser', icon: Globe, shortcut: '⌘⇧B' },
   { tool: 'files', label: 'Files', icon: Files, shortcut: '⌘⇧F' },
+  // Canvas has no shortcut yet; the picker shows an empty cell rather than a
+  // chord nothing is bound to.
+  { tool: 'canvas', label: 'Canvas', icon: LayoutTemplate, shortcut: '' },
 ];
 
 // Opened from an agent row or a project thread, never from the picker: the tool

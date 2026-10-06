@@ -115,6 +115,7 @@ import {
   LazyAutomationsRoute,
   LazyProjectsRoute,
   LazyBrowserFocusWorkspace,
+  LazyCanvasWorkspace,
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
@@ -227,6 +228,9 @@ export default function App() {
   const hasProjects = useStoreSelector((current) => current.projects.length > 0);
   useThreadsPaneAutoOpen();
   const activeSession = state.activeSession;
+  const canvasAttachment = useStoreSelector((current) =>
+    activeSession ? (current.canvasAttachments[activeSession.appSessionId] ?? null) : null,
+  );
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);
   const documentVisible = useDocumentVisible();
@@ -299,11 +303,19 @@ export default function App() {
       bindLazySurfaceIntent('files', toggle),
       bindLazySurfaceIntent('terminal', toggle),
       bindLazySurfaceIntent('review', toggle),
+      bindLazySurfaceIntent('canvas', toggle),
     ];
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
   }, []);
+  // Stable so the Canvas pane's attachment read does not re-run every render.
+  const setCanvasAttachment = useCallback(
+    (appSessionId: string, canvasId: string | null) => {
+      dispatch({ type: 'SET_CANVAS_ATTACHMENT', appSessionId, canvasId });
+    },
+    [dispatch],
+  );
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
 
@@ -1010,6 +1022,23 @@ export default function App() {
                         return (
                           <Suspense fallback={utilityToolFallback('threads')}>
                             <LazyThreadsWorkspace tab={tab} />
+                          </Suspense>
+                        );
+                      }
+                      if (tab.tool === 'canvas') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('canvas')}>
+                            <LazyCanvasWorkspace
+                              appSessionId={activeSession.appSessionId}
+                              canvasId={canvasAttachment}
+                              isExpanded={paneExpanded}
+                              onToggleExpanded={() => {
+                                setExpandedPaneAppSessionId(
+                                  paneExpanded ? null : activeSession.appSessionId,
+                                );
+                              }}
+                              onAttachmentChange={setCanvasAttachment}
+                            />
                           </Suspense>
                         );
                       }

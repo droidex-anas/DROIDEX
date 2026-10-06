@@ -3,6 +3,7 @@ export type UtilityTool =
   | 'terminal'
   | 'browser'
   | 'files'
+  | 'canvas'
   | 'agents'
   | 'threads'
   | 'side';
@@ -36,6 +37,7 @@ const SINGLETON_TOOLS = new Set<UtilityTool>([
   'review',
   'browser',
   'files',
+  'canvas',
   'agents',
   'threads',
   'side',
@@ -43,7 +45,7 @@ const SINGLETON_TOOLS = new Set<UtilityTool>([
 
 // The tools whose pane can take the whole content row.
 export function isExpandableTool(tool: UtilityTool | undefined): boolean {
-  return tool === 'browser' || tool === 'agents' || tool === 'side';
+  return tool === 'browser' || tool === 'canvas' || tool === 'agents' || tool === 'side';
 }
 
 export function utilityPanelForSession(
@@ -285,6 +287,7 @@ function isUtilityTool(value: unknown): value is UtilityTool {
     value === 'terminal' ||
     value === 'browser' ||
     value === 'files' ||
+    value === 'canvas' ||
     value === 'threads' ||
     value === 'side'
   );
