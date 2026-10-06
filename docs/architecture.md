@@ -44,7 +44,7 @@ flowchart LR
 
 - `appSessionId` is the stable top-level application identity. `childSessionId` is the stable logical child identity within its `parentAppSessionId`; `providerSessionId` is reserved for the backing Factory session.
 - `SessionManager` is the composition root and public command coordinator. It retains public dispatch, cross-module routing, and shutdown ordering.
-- `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter.
+- `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter. A Droid steer is `add_user_message` with a caller-minted `messageId`, delivered when the user message carrying that id arrives and dropped on discard, acknowledged Stop or close. Slash-command candidates use ordinary delivery. `DroidTurn` keeps the app turn open across Droid's follow-on loops and an in-flight interrupt, observing an active loop through its terminal idle before emitting one final result. The SDK owns main-loop conversion; only late-loop notifications are buffered and converted here. Child sessions still queue.
 - `SessionRegistry` owns top-level sessions only: the live parent map, stable application identity, provider aliases, canonical parent summary persistence, and projected summary reads. Children never enter `SessionRegistry` or `sessions.list`.
 - Ordinary chats enter durable `sessions.list` history only after the provider file contains both a user message and an assistant response. In-progress first turns remain visible through the live registry; abandoned or unanswered provider files never become permanent sidebar rows.
 - `ChildSessions` is the one stateful generic owner of parent-child membership, canonical child identity, provider replacement, admission, capacity, queues, turns, settings, cleanup, exact context/compaction targets, and child persistence/hydration. Spawn ownership is indexed during hydration, admission, and link changes so child deltas do not scan historical siblings.
@@ -221,7 +221,7 @@ non-replaceable event. Approvals, questions, sidebar requests, errors,
 lifecycle boundaries, history responses, and turn settlement flush immediately.
 Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
-Renderers must advertise bridge protocol 8, apply one wire batch as one
+Renderers must advertise bridge protocol 9, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of

@@ -24,6 +24,7 @@ import {
   type ServerEventBatch,
   type ServerWireMessage,
 } from './protocol.js';
+import { providerKind } from './providers/providerKind.js';
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
@@ -159,9 +160,16 @@ export function startBridgeServer(options: {
     ws.on('close', disconnect);
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
+    // A renderer sends its queued commands as soon as the socket opens, while
+    // the resume below is still replaying; hold them and run them in order.
+    const early: RawData[] = [];
+    const hold = (raw: RawData) => early.push(raw);
+    ws.on('message', hold);
     const admitted = await resumeClient(ws, url);
+    ws.off('message', hold);
     if (!admitted || ws.readyState !== ws.OPEN) return;
     clients.add(ws);
+    for (const raw of early) void handleMessage(ws, raw, pageId);
     ws.on('message', (raw) => void handleMessage(ws, raw, pageId));
   }
 
@@ -274,6 +282,7 @@ export function startBridgeServer(options: {
         assertValidSteerId(parsed);
         assertValidInteractionResponse(parsed);
         assertValidChatPreferences(parsed);
+        assertValidUsageRefresh(parsed);
       }
       const command = parsed as ClientCommand;
       if (command.type === 'voice.start' || command.type === 'voice.stop')
@@ -501,6 +510,16 @@ function assertValidChatPreferences(command: object): void {
     if (!settingsCommand)
       throw new Error('A context window only applies to top-level session settings.');
   }
+}
+
+// A read of a harness account can start that harness's process, so the
+// harness and both switches must be exactly what the sidecar expects.
+function assertValidUsageRefresh(command: object): void {
+  if (!('type' in command) || command.type !== 'usage.refresh') return;
+  const { provider, panelOpen, immediate } = command as Record<string, unknown>;
+  if (!providerKind(provider)) throw new Error('usage.refresh needs a known harness.');
+  if (typeof panelOpen !== 'boolean' || typeof immediate !== 'boolean')
+    throw new Error('usage.refresh needs panelOpen and immediate as booleans.');
 }
 
 function maxBufferedAmount(clients: Iterable<WebSocket>): number {

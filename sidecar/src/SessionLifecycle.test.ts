@@ -413,7 +413,8 @@ test('create and cold resume publish only after registration', async () => {
     resumeTrace.filter((method) =>
       ['loadSession', 'autoCompaction.arm', 'onNotification', 'syncSummaries'].includes(method),
     ),
-    ['loadSession', 'autoCompaction.arm', 'onNotification', 'syncSummaries'],
+    // The Droid session's own listener, then the compaction subscription.
+    ['loadSession', 'onNotification', 'autoCompaction.arm', 'onNotification', 'syncSummaries'],
   );
   assert.deepEqual(
     resumed.events.slice(-2).map((event) => event.type),
@@ -603,6 +604,8 @@ test('post-registration failures retain cleanup ownership through a process outa
     [
       ['unsubscribe', 'failed-create-publication'],
       ['mcp.close', 'mcp-1'],
+      // The Droid session's own listener goes as the session closes.
+      ['unsubscribe', 'failed-create-publication'],
       ['session.close', 'failed-create-publication'],
     ],
   );
@@ -629,6 +632,7 @@ test('post-registration failures retain cleanup ownership through a process outa
     [
       ['unsubscribe', 'failed-resume-publication-provider'],
       ['mcp.close', 'mcp-1'],
+      ['unsubscribe', 'failed-resume-publication-provider'],
       ['session.close', 'failed-resume-publication-provider'],
     ],
   );
@@ -819,6 +823,26 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   );
   gate.resolve();
   await rejectingProvider.waitForPrompts(2);
+});
+
+test('a turn that ends while send-now is stopping it waits for the interrupt before the next prompt', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'racing');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('racing', 'urgent', undefined, 'urgent');
+  const interrupt = provider.deferNextInterrupt();
+  const sending = h.lifecycle.sendNow('racing', 'urgent');
+  // The turn finishes on its own before the harness acknowledges the
+  // interrupt, which would otherwise land on the turn started next.
+  turn.resolve();
+  for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(provider.prompts, ['first']);
+  interrupt.resolve();
+  await sending;
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'urgent']);
 });
 
 test('a steer is pending until the harness delivers it, and one refused late still runs', async () => {
@@ -1117,6 +1141,7 @@ test('close follows ownership order and closeAll closes its initial snapshot', a
     'compaction.forgetSession:owner',
     'unsubscribe:owner',
     'mcp.close:mcp-1',
+    'unsubscribe:owner',
     'session.close:owner',
     'browser.close:owner',
     'runtimeCaches.clear:owner',
@@ -1714,6 +1739,7 @@ function claudeResumeProvider(
     kind: 'claude',
     create: () => Promise.reject(new Error('unexpected create')),
     fork: () => Promise.reject(new Error('unexpected fork')),
+    readUsage: () => Promise.reject(new Error('unexpected usage read')),
     resume: async (id, input) => {
       await beforeResume(id, input);
       return {
@@ -1721,6 +1747,7 @@ function claudeResumeProvider(
         providerSessionId: id,
         ...(setInteractionMode ? { setInteractionMode } : {}),
         stream: resumed.stream.bind(resumed),
+        steer: () => Promise.resolve(false),
         setModel: resumed.setModel.bind(resumed),
         setAutonomy: resumed.setAutonomy.bind(resumed),
         interrupt: resumed.interrupt.bind(resumed),
@@ -1761,13 +1788,14 @@ test('a context switch waits for the turn and resumes the same chat before queue
     runtime: h.runtime,
     getFactoryDefaults: async () => ({}),
     providerDefaultModelId: () => 'model-default',
+    knownModel: () => undefined,
     validateModelSettings: async (_summary, selection) => {
       if (selection.modelId === 'unavailable') throw new Error('1M context unavailable');
     },
     maxContextTokensForModel: () => undefined,
     isShutdownStarted: () => false,
     refreshPrimary: async () => undefined,
-    onPrimaryModelChanged: () => undefined,
+    onPrimaryModelChanged: () => Promise.resolve(),
     updateChildAgentModel: async () => true,
     onSettled: () => {
       stored.splice(0, stored.length, { ...live.summary });

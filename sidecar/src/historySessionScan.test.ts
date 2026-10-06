@@ -392,6 +392,7 @@ test('voice finals append once and extend under the same id across runtime repla
     providerSessionId: 'provider-1',
     voice,
     async *stream() {},
+    steer: async () => false,
     setAutonomy: async () => undefined,
     setModel: async () => undefined,
     interrupt: async () => undefined,

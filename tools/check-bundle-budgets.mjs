@@ -114,8 +114,15 @@ import { join } from 'node:path';
 // tile chrome, drop zones) are ~3.9KB, too little to be worth a skeleton in the
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
+//
+// Raised from 1_434_000 to 1_443_000 for usage limits. Against main at
+// b1a4f45c (1_431_240) the entry measures 1_434_484 with the usage slot (/usage,
+// the limit tab, the pace warning: ~6.6KB) already loaded lazily. The ~3.2KB
+// left must paint with the chat: the limit a chat is held on gates its queue,
+// the model-switch divider renders in the transcript, and the composer shows
+// the effort a fallback model actually runs. The headroom is again ~8.5KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_434_000,
+  initialRendererJsBytes: 1_443_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

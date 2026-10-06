@@ -260,8 +260,9 @@ test('provider-session swap retries a failed load, rewires the replacement, and 
     assert.equal(typeof load.handlers.permissionHandler, 'function');
     assert.equal(typeof load.handlers.askUserHandler, 'function');
     assert.equal(load.handlers.mcpServers, creation.mcpServers);
-    assert.equal(callCount(h.calls, 'provider', 'onNotification', 'provider-2'), 1);
-    assert.equal(callCount(h.calls, 'cleanup', 'unsubscribe', 'provider-1'), 1);
+    // Each turn adds and removes its own listener beside the compaction subscription.
+    assert.equal(callCount(h.calls, 'provider', 'onNotification', 'provider-2'), 2);
+    assert.equal(callCount(h.calls, 'cleanup', 'unsubscribe', 'provider-1'), 2);
     assert.equal(compactionArms(h, 'provider-2').length > 0, true);
     assert.equal(callCount(h.calls, 'cleanup', 'session.close', 'provider-1'), 1);
     assert.equal(syncsSummary(h.calls, 'provider-1', 'provider-2'), true);

@@ -60,10 +60,11 @@ test('clearing a live child role model requires an effective provider default', 
     runtime: {} as never,
     getFactoryDefaults: async () => ({}),
     providerDefaultModelId: () => undefined,
+    knownModel: () => undefined,
     maxContextTokensForModel: () => undefined,
     isShutdownStarted: () => false,
     refreshPrimary: async () => undefined,
-    onPrimaryModelChanged: () => undefined,
+    onPrimaryModelChanged: () => Promise.resolve(),
     updateChildAgentModel: async () => {
       childUpdates += 1;
       return true;

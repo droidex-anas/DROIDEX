@@ -89,7 +89,8 @@ function safe(value: string): string {
 
 export function imageUsageLimit(failure: GeneratedImage['failure']): UsageLimitError | undefined {
   if (failure?.type !== 'usageLimitExceeded') return undefined;
-  return new UsageLimitError(failureText(failure.type), resetAtMillis(failure.resetsAt));
+  const resetsAt = resetAtMillis(failure.resetsAt);
+  return new UsageLimitError(failureText(failure.type), resetsAt === undefined ? {} : { resetsAt });
 }
 
 function failureText(type: string): string {
