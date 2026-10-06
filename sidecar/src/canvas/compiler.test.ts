@@ -560,17 +560,39 @@ async function compile(files: SourceFiles): Promise<CompiledDesign> {
   return await shared.compile(compileInput(files), new AbortController().signal);
 }
 
+/**
+ * The machine path a diagnostic must never carry, anywhere in any field, quoted
+ * or not: a diagnostic reaches the model and the user, so it names design paths
+ * only, and a compiler or runtime path means a machine failure is being
+ * reported as the design's fault (spec §8).
+ */
+function machinePath(text: string): string | null {
+  const roots = ['/Users/', '/home/', '/private/', '/tmp/', '/var/', 'node_modules'];
+  return (
+    [...roots, resolve(import.meta.dirname, '../../..')].find((root) => text.includes(root)) ?? null
+  );
+}
+
+test('a diagnostic may not carry a machine path, quoted or not', () => {
+  for (const leaked of [
+    'ENOENT: could not open "/Users/example/Library/runtime.js"',
+    "Cannot find module 'react' from '/private/tmp/app/canvas-runtime'",
+    'see node_modules/tailwindcss/lib/css/preflight.css',
+    `missing ${resolve(import.meta.dirname, '../../..')}/sidecar/dist/compilerWorker.mjs`,
+  ]) {
+    assert.notEqual(machinePath(leaked), null, leaked);
+  }
+  assert.equal(machinePath('main.tsx must default-export a React component.'), null);
+});
+
 async function diagnosticsFor(files: SourceFiles): Promise<CanvasDiagnostic[]> {
   try {
     await compile(files);
   } catch (error) {
     assert.ok(error instanceof CompileFailedError, 'bad source fails the build');
-    // A diagnostic reaches the model and the user, so it names design paths
-    // only; a compiler or runtime path means a machine failure is being
-    // reported as the design's fault (spec §8).
     for (const diagnostic of error.diagnostics) {
       const text = `${diagnostic.code} ${diagnostic.message} ${diagnostic.file ?? ''}`;
-      assert.equal(/(?:^|\s)\/|node_modules/.test(text), false, `no path in ${text}`);
+      assert.equal(machinePath(text), null, `no machine path in ${text}`);
     }
     return error.diagnostics;
   }
