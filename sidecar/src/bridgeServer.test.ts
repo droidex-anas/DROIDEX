@@ -262,11 +262,14 @@ test('an oversized batch resets a reconnect cursor instead of replaying the payl
   assert.equal(next.lastSeq, 3);
 });
 
-test('a generation change sends a snapshot, delivered before later broadcasts', async (t) => {
+test('a generation change sends a snapshot, delivered before later broadcasts and commands', async (t) => {
   let releaseSnapshot: ((snapshot: BridgeRuntimeSnapshot) => void) | undefined;
+  const commands: string[] = [];
   const harness = await bridgeServer(
     t,
-    async () => undefined,
+    async (command) => {
+      commands.push(command.type);
+    },
     () =>
       new Promise<BridgeRuntimeSnapshot>((resolve) => {
         releaseSnapshot = resolve;
@@ -277,6 +280,13 @@ test('a generation change sends a snapshot, delivered before later broadcasts', 
   socket.on('message', (raw) => received.push(String(raw)));
   t.after(() => closeSocket(socket));
   await waitFor(() => releaseSnapshot !== undefined);
+  // A command the renderer sends while the snapshot is still being read.
+  socket.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
+  // The server answers a ping only after reading the frames before it.
+  await new Promise((resolve) => {
+    socket.once('pong', resolve);
+    socket.ping();
+  });
   harness.broadcast({ type: 'connection', status: 'connected' });
   releaseSnapshot?.({
     runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
@@ -293,6 +303,8 @@ test('a generation change sends a snapshot, delivered before later broadcasts', 
   const batch = JSON.parse(received[1] ?? '') as ServerEventBatch;
   assert.equal(batch.type, 'events.batch');
   assert.equal(batch.firstSeq, 1);
+  await waitFor(() => commands.length > 0);
+  assert.deepEqual(commands, ['voice.stop']);
 });
 
 test('health and perf metrics require the bridge token, and event-loop sampling arms only on demand', async (t) => {
