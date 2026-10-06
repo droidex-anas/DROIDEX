@@ -831,11 +831,11 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   settlement path revokes, and a provider replacement revokes the chat, so `requireScope` asks
   only whether the registry still holds the scope. A `generation !== current` comparison there
   was written first and removed: nothing can produce a registered turn scope from a past era, so
-  the branch was unreachable, and the one real stale-lease bug review did find (below) never
-  moved the generation, so the belt would not have caught it either. The generation is what the
-  lease records about its era — the field `CanvasScope` already carries, and what spec §6 says
-  04b binds dispatch with — plus the guard that stops an in-flight steer from leasing after its
-  era ended.
+  the branch was unreachable, and the late-steer bug review found (below) never moved the
+  generation. Each new provider era takes the next process-wide generation, while `endSession`
+  revokes and deletes its chat record. A stale steer handle checks that its original record is
+  still current before minting; the recorded generation remains available for 04b's dispatch
+  binding without retaining ended chats.
 - **Every turn mints a lease.** A prompt with no pinned context uses empty design and element
   references and `DEFAULT_DESIGN_SYSTEM_REF` from the design-system owner, giving an ordinary
   chat authority over its canvas without opening the pane. A delivered steer with no pinned
@@ -859,7 +859,7 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   | `onDelegatedTurn(false)`, only when no typed turn runs | — | the same, for a turn the provider started |
   | `interrupt`, before `await session.interrupt()` | — | the running turn, before the external cleanup await |
   | `sendNow`, before `await session.interrupt()` | — | the turn being stopped to send now |
-  | `beginClose` (close, relaunch) | — | every lease the chat holds, and the generation advances |
+  | `beginClose` (close, relaunch) | — | every lease the chat holds; its record is removed before the next era |
   | `closeAll`, before its concurrent process kills | — | every captured chat's leases, even if its kill later fails |
   | `sessionCompactionExecution.adoptProvider`, before `oldSession.close()` | — | the same, so the replacement starts a new era |
 

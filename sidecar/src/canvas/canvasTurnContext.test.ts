@@ -117,6 +117,8 @@ test('a settled turn revokes once, and never a later turn or a replacement', () 
   assert.equal(turns.activeScope('app-1'), undefined);
   const replacement = turns.beginTurn('app-1', context('dsg_hey'));
   const minted = lease(turns, 'app-1');
+  second.addSteer(context('dsg_late'));
+  assert.equal(turns.activeScope('app-1'), minted);
   second.revoke();
   assert.equal(turns.activeScope('app-1'), minted);
   assert.equal(minted.generation, running.generation + 1);

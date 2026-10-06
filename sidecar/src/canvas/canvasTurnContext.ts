@@ -39,6 +39,8 @@ interface ChatLeases {
 
 export class CanvasTurns {
   private readonly chats = new Map<string, ChatLeases>();
+  // New eras stay ordered without retaining a record for every closed chat.
+  private nextGeneration = 1;
 
   constructor(
     private readonly scopes: Pick<CanvasScopes, 'get' | 'register' | 'revoke'>,
@@ -52,7 +54,6 @@ export class CanvasTurns {
    */
   beginTurn(appSessionId: string, context: CanvasTurnContext | undefined): CanvasTurnLeases {
     const chat = this.chat(appSessionId);
-    const era = chat.generation;
     const turn = Symbol('canvasTurn');
     let settled = false;
     this.mint(appSessionId, chat, turn, context ?? emptyContext());
@@ -61,7 +62,7 @@ export class CanvasTurns {
         // A steer the harness delivered after this turn ended, or after the
         // provider that was running it was replaced, has no running turn to
         // authorize it, so it leases nothing.
-        if (settled || chat.generation !== era) return;
+        if (settled || this.chats.get(appSessionId) !== chat) return;
         this.mint(appSessionId, chat, turn, steerContext ?? emptyContext());
       },
       revoke: () => {
@@ -86,7 +87,7 @@ export class CanvasTurns {
     if (!chat) return;
     for (const lease of chat.live) this.scopes.revoke(lease.scopeId);
     chat.live = [];
-    chat.generation += 1;
+    this.chats.delete(appSessionId);
   }
 
   /**
@@ -137,7 +138,7 @@ export class CanvasTurns {
   private chat(appSessionId: string): ChatLeases {
     const existing = this.chats.get(appSessionId);
     if (existing) return existing;
-    const chat: ChatLeases = { generation: 1, live: [] };
+    const chat: ChatLeases = { generation: this.nextGeneration++, live: [] };
     this.chats.set(appSessionId, chat);
     return chat;
   }
