@@ -94,11 +94,13 @@ export function normalizeUrl(value: string): string {
   if (!/\s/.test(authority) && URL.canParse(`https://${authority}`)) {
     const { hostname, username, password } = new URL(`https://${authority}`);
     const local = hostname === 'localhost' || hostname === '127.0.0.1';
+    // The host as typed: the parser reads 1.2 as the IPv4 1.0.0.2.
+    const typedHost = authority.replace(/:\d+$/, '');
+    const numberOnly = /^[\d.]+$/.test(typedHost);
     const site =
       Boolean(username || password) ||
       (!authority.includes('@') &&
-        ((hostname.includes('.') &&
-          (!/^[\d.]+$/.test(hostname) || /^\d+(\.\d+){3}$/.test(hostname))) ||
+        ((hostname.includes('.') && (!numberOnly || /^\d+(\.\d+){3}$/.test(typedHost))) ||
           hostname.startsWith('[') ||
           /:\d+$/.test(authority)));
     if (site) return `${local ? 'http' : 'https'}://${trimmed}`;
