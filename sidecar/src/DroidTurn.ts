@@ -1,11 +1,27 @@
 import { randomUUID } from 'node:crypto';
 import {
   convertNotificationToStreamMessage,
+  DroidWorkingState,
   StreamStateTracker,
   type DroidClient,
   type DroidStreamEvent,
 } from '@factory/droid-sdk';
 import { extractNotification } from './normalize.js';
+
+// Notices of Droid working on its loop, down to the error that ends it. A busy
+// working state counts too.
+const LOOP_OUTPUT: ReadonlySet<unknown> = new Set([
+  'assistant_text_delta',
+  'thinking_text_delta',
+  'tool_call',
+  'tool_result',
+  'tool_progress_update',
+  'error',
+]);
+
+// The working states the SDK's stream parses. It drops the rest, "thinking"
+// among them.
+const SDK_STATES: ReadonlySet<string> = new Set(Object.values(DroidWorkingState));
 
 // One app turn may span several Droid loops. Only its final result settles it.
 export class DroidTurn {
@@ -15,9 +31,18 @@ export class DroidTurn {
   private wake: (() => void) | undefined;
   private mainEnded = false;
   private busy = false;
+  // The SDK settles the main loop only on an idle after a state it parses, and
+  // it drops "thinking". These place the idle that ends a loop it never saw
+  // working among the idle events its stream yields.
+  private sdkSawMainWork = false;
+  private mainIdles = 0;
+  private openMainLoopIdle: number | undefined;
+  private consumedMainIdles = 0;
   // A delivered steer whose reply loop has not yet run to idle. Droid can show
-  // the message while still idle, a moment before that loop starts.
+  // the message before that loop starts: while idle, or after a failed loop's
+  // last output, just before it goes idle.
   private loopOwed = false;
+  private outputSinceDelivery = false;
   private stopped = false;
   private acceptingSteers = true;
   private interrupting: Promise<void> | undefined;
@@ -61,19 +86,14 @@ export class DroidTurn {
       return;
     }
     if (raw.type === 'create_message' && 'message' in raw) this.observeDelivery(raw.message);
+    if (LOOP_OUTPUT.has(raw.type)) this.outputSinceDelivery = true;
     const wasMainEnded = this.mainEnded;
     if (
       raw.type === 'droid_working_state_changed' &&
       'newState' in raw &&
       typeof raw.newState === 'string'
-    ) {
-      const wasBusy = this.busy;
-      this.busy = raw.newState !== 'idle';
-      if (wasBusy && !this.busy) {
-        this.mainEnded = true;
-        this.loopOwed = false;
-      }
-    }
+    )
+      this.observeState(raw.newState);
     // The SDK owns the main loop. Buffer later notices even before its iterator
     // drains. The main loop's own idle still wakes a tail already waiting on it.
     if (!wasMainEnded) {
@@ -94,6 +114,33 @@ export class DroidTurn {
       typeof message.id === 'string'
     )
       this.settle(message.id, true);
+  }
+
+  private observeState(newState: string): void {
+    const wasBusy = this.busy;
+    this.busy = newState !== 'idle';
+    if (this.busy) {
+      this.outputSinceDelivery = true;
+      if (SDK_STATES.has(newState)) this.sdkSawMainWork = true;
+      return;
+    }
+    if (!this.mainEnded) {
+      this.mainIdles += 1;
+      if (wasBusy && !this.sdkSawMainWork) this.openMainLoopIdle = this.mainIdles;
+    }
+    if (wasBusy) {
+      this.mainEnded = true;
+      if (this.outputSinceDelivery) this.loopOwed = false;
+    }
+  }
+
+  // Whether this SDK event is the idle that ends a main loop the SDK will never
+  // settle. Counted as the SDK yields, since raw notices run ahead of it.
+  endsOpenMainLoop(event: DroidStreamEvent): boolean {
+    if (event.type !== 'working_state_changed' || event.state !== DroidWorkingState.Idle)
+      return false;
+    this.consumedMainIdles += 1;
+    return this.consumedMainIdles === this.openMainLoopIdle;
   }
 
   observeMainEvent(event: DroidStreamEvent): void {
@@ -170,7 +217,10 @@ export class DroidTurn {
   }
 
   private settle(messageId: string, delivered: boolean): void {
-    if (delivered && this.deliveries.has(messageId)) this.loopOwed = true;
+    if (delivered && this.deliveries.has(messageId)) {
+      this.loopOwed = true;
+      this.outputSinceDelivery = false;
+    }
     this.deliveries.get(messageId)?.(delivered);
     this.deliveries.delete(messageId);
     this.wake?.();
