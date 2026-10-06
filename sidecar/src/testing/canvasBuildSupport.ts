@@ -384,7 +384,9 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     changes.push(change);
     for (const waiter of [...waiters]) waiter();
   });
-  const canvasId = workspace.attachedCanvasId(APP) ?? (await workspace.createCanvas(APP)).canvasId;
+  const canvasId =
+    workspace.attachedCanvasId(APP) ??
+    (await workspace.createCanvas(APP, 'build-support')).canvasId;
   let scopeCount = 0;
   const under = async <T>(work: (scope: CanvasScope) => Promise<T>): Promise<T> => {
     scopeCount += 1;

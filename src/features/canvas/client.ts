@@ -99,11 +99,12 @@ export class CanvasClient {
   }
 
   /** Explicit Create in the pane: a new canvas, attached to this chat. */
-  async createCanvas(appSessionId: string): Promise<string> {
+  async createCanvas(appSessionId: string, mutationId: string): Promise<string> {
     const event = await this.request({
       type: 'canvas.createCanvas',
       requestId: requestId(),
       appSessionId,
+      mutationId,
     });
     const canvasId = reply(event, 'attachment').canvasId;
     if (canvasId === null) throw wrongReply();

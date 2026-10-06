@@ -13,6 +13,8 @@ export type CanvasPaneState =
   | { status: 'unattached'; error: string }
   // Explicit Create in flight.
   | { status: 'creating' }
+  // The reply was lost or Create failed; only the same mutation may be retried.
+  | { status: 'create-recovering'; message: string }
   // Attached, waiting for the first snapshot.
   | { status: 'loading'; canvasId: string }
   | { status: 'ready'; canvasId: string; snapshot: CanvasSnapshot }
@@ -21,6 +23,7 @@ export type CanvasPaneState =
 export type CanvasPaneEvent =
   // The attachment as the sidecar reports it, which outranks any cached id.
   | { type: 'attached'; canvasId: string | null }
+  | { type: 'created'; canvasId: string }
   | { type: 'creating' }
   | { type: 'create-failed'; message: string }
   | { type: 'snapshot'; snapshot: CanvasSnapshot }
@@ -44,9 +47,13 @@ export function watchedCanvasId(state: CanvasPaneState): string | null {
 
 export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent): CanvasPaneState {
   switch (event.type) {
+    case 'created':
     case 'attached': {
-      // The re-read that follows a failed Create answers null when nothing was
-      // committed, and the reason that Create failed is still what to show.
+      if (
+        event.type === 'attached' &&
+        (state.status === 'creating' || state.status === 'create-recovering')
+      )
+        return state;
       if (event.canvasId === null)
         return state.status === 'unattached' ? state : { status: 'unattached', error: '' };
       // The answer that confirms what the pane already shows must not throw
@@ -57,7 +64,7 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
     case 'creating':
       return { status: 'creating' };
     case 'create-failed':
-      return { status: 'unattached', error: event.message };
+      return { status: 'create-recovering', message: event.message };
     case 'snapshot': {
       const { snapshot } = event;
       if (watchedCanvasId(state) !== snapshot.canvasId) return state;

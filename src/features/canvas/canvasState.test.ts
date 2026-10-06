@@ -46,7 +46,7 @@ test('opening the pane only reads: nothing but an explicit Create attaches a can
   assert.equal(creating.status, 'creating');
   assert.equal(watchedCanvasId(creating), null);
   assert.equal(
-    watchedCanvasId(reduceCanvasPane(creating, { type: 'attached', canvasId: 'canvas-1' })),
+    watchedCanvasId(reduceCanvasPane(creating, { type: 'created', canvasId: 'canvas-1' })),
     'canvas-1',
   );
 });
@@ -115,27 +115,24 @@ test('a late snapshot cannot resurrect a board the chat has detached from', () =
   );
 });
 
-test('a failed Create returns to the empty state with its reason', () => {
+test('a failed Create stays in recovery until the same request is retried', () => {
   const failed = apply(
     initialCanvasPaneState(null),
     { type: 'attached', canvasId: null },
     { type: 'creating' },
     { type: 'create-failed', message: 'DROIDEX is not connected.' },
   );
-  assert.deepEqual(failed, { status: 'unattached', error: 'DROIDEX is not connected.' });
+  assert.deepEqual(failed, { status: 'create-recovering', message: 'DROIDEX is not connected.' });
 
-  // The attachment is read again in case the commit landed anyway. Nothing was
-  // committed here, so the reason Create failed is still what to show.
+  // A read can race an unsettled Create; it cannot re-offer the Create button.
   assert.equal(reduceCanvasPane(failed, { type: 'attached', canvasId: null }), failed);
-  // A commit whose response was lost shows its canvas instead.
-  assert.deepEqual(reduceCanvasPane(failed, { type: 'attached', canvasId: 'canvas-7' }), {
+  assert.equal(reduceCanvasPane(failed, { type: 'attached', canvasId: 'canvas-7' }), failed);
+
+  const retried = apply(failed, { type: 'creating' }, { type: 'created', canvasId: 'canvas-7' });
+  assert.deepEqual(retried, {
     status: 'loading',
     canvasId: 'canvas-7',
   });
-
-  // Create is offered again, and succeeding clears the reason.
-  const retried = apply(failed, { type: 'creating' }, { type: 'attached', canvasId: 'canvas-7' });
-  assert.deepEqual(retried, { status: 'loading', canvasId: 'canvas-7' });
 });
 
 test('a failed read offers a retry that starts the pane over', () => {

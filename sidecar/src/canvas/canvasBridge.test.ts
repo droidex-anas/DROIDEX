@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readdir } from 'node:fs/promises';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
@@ -96,13 +97,57 @@ function errorOf(harnessed: Harness, requestId: string): { code: string; message
 /** Creates the chat's canvas the way the pane's Create button does. */
 async function createCanvas(harnessed: Harness, requestId = 'req-create-canvas'): Promise<string> {
   assert.equal(
-    await harnessed.handle({ type: 'canvas.createCanvas', requestId, appSessionId: APP }),
+    await harnessed.handle({
+      type: 'canvas.createCanvas',
+      requestId,
+      appSessionId: APP,
+      mutationId: requestId,
+    }),
     true,
   );
   const reply = okReply(harnessed, requestId);
   assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
   return reply.canvasId;
 }
+
+test('a lost Create reply replays its durable canvas while the first commit is in flight', async (t) => {
+  const reached = deferred();
+  const release = deferred();
+  let hold = true;
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!hold || operation !== 'rename' || !path.endsWith('manifest.json')) return;
+    hold = false;
+    reached.resolve();
+    await release.promise;
+  });
+  const canvas = await harness(t, { fs });
+  const first = canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'first',
+    appSessionId: APP,
+    mutationId: 'same-create',
+  });
+  await reached.promise;
+  const retry = canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'retry',
+    appSessionId: APP,
+    mutationId: 'same-create',
+  });
+  release.resolve();
+  await Promise.all([first, retry]);
+
+  const firstReply = okReply(canvas, 'first');
+  const replay = okReply(canvas, 'retry');
+  assert.deepEqual(replay, firstReply);
+  assert.ok(firstReply.kind === 'attachment');
+  assert.deepEqual(
+    canvas.workspace.listCanvases().map((item) => item.canvasId),
+    [firstReply.canvasId],
+  );
+  assert.equal(canvas.workspace.attachedCanvasId(APP), firstReply.canvasId);
+  assert.equal((await readdir(canvas.root)).length, 1);
+});
 
 async function createFrame(
   harnessed: Harness,

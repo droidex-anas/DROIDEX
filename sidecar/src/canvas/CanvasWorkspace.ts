@@ -99,11 +99,18 @@ export class CanvasWorkspace {
    * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
    * first: a crash between the two writes must leave it unattached, not twice.
    */
-  createCanvas(appSessionId: string): Promise<CanvasSnapshot> {
+  createCanvas(appSessionId: string, mutationId: string): Promise<CanvasSnapshot> {
     return this.commits.admit(() =>
       this.commits.run(async () => {
+        const previous = this.heads.all().find((head) => head.creation?.mutationId === mutationId);
+        if (previous) {
+          if (previous.creation?.appSessionId !== appSessionId)
+            throw canvasError('invalid_input', 'That Canvas mutation ID belongs to another chat.');
+          return canvasSnapshot(previous, this.builds);
+        }
         await this.detachFrom(appSessionId, null);
         const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
+        manifest.creation = { mutationId, appSessionId };
         manifest.attachedAppSessionIds.push(appSessionId);
         await this.heads.install(manifest, this.openGate());
         return canvasSnapshot(manifest, this.builds);

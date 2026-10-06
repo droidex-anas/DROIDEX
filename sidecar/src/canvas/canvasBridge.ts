@@ -51,7 +51,14 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
       revisionId: canvasIdentifierSchema,
     })
     .strict(),
-  z.object({ type: z.literal('canvas.createCanvas'), ...request, ...session }).strict(),
+  z
+    .object({
+      type: z.literal('canvas.createCanvas'),
+      ...request,
+      ...session,
+      mutationId: canvasIdentifierSchema,
+    })
+    .strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
   z.object({ type: z.literal('canvas.detach'), ...request, ...session }).strict(),
   z
@@ -230,7 +237,7 @@ class CanvasDispatch {
       case 'canvas.createCanvas': {
         // Explicit Create in the pane: the canvas and the chat's attachment in
         // one commit, with no lease behind it (spec §6).
-        const snapshot = await workspace.createCanvas(command.appSessionId);
+        const snapshot = await workspace.createCanvas(command.appSessionId, command.mutationId);
         return { kind: 'attachment', canvasId: snapshot.canvasId };
       }
       case 'canvas.attach':

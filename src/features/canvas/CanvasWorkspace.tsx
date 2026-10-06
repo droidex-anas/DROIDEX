@@ -6,7 +6,7 @@
 // The board, frames, gestures, navigator and toolbar mount in the body below
 // (Tasks 5b–5e); this file owns the pane's lifecycle and its empty state.
 
-import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { LayoutTemplate, Spinner } from '@droidex/icons';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useStoreDispatch } from '../../hooks/useStore';
@@ -38,6 +38,8 @@ export function CanvasWorkspace({
 }) {
   const [state, dispatch] = useReducer(reduceCanvasPane, canvasId, initialCanvasPaneState);
   const [reopenCount, setReopenCount] = useState(0);
+  const createMutationId = useRef<string | null>(null);
+  const createInFlight = useRef(false);
 
   const attach = useCallback(
     (attached: string | null) => {
@@ -72,6 +74,26 @@ export function CanvasWorkspace({
     });
   }, [watched]);
 
+  const create = () => {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
+    createMutationId.current ??= crypto.randomUUID();
+    dispatch({ type: 'creating' });
+    canvas
+      .createCanvas(appSessionId, createMutationId.current)
+      .then((created) => {
+        createMutationId.current = null;
+        dispatch({ type: 'created', canvasId: created });
+        onAttachmentChange(appSessionId, created);
+      })
+      .catch((error: unknown) => {
+        dispatch({ type: 'create-failed', message: recoveryMessage(error) });
+      })
+      .finally(() => {
+        createInFlight.current = false;
+      });
+  };
+
   return (
     <div
       data-testid="canvas-workspace"
@@ -84,19 +106,7 @@ export function CanvasWorkspace({
         state={state}
         appSessionId={appSessionId}
         onAttached={attach}
-        onCreate={() => {
-          dispatch({ type: 'creating' });
-          canvas
-            .createCanvas(appSessionId)
-            .then(attach)
-            .catch((error: unknown) => {
-              dispatch({ type: 'create-failed', message: recoveryMessage(error) });
-              // Create has no mutation ID to retry with, so a lost response is
-              // answered by reading the attachment again: a commit that landed
-              // shows its canvas instead of inviting a second one.
-              setReopenCount((count) => count + 1);
-            });
-        }}
+        onCreate={create}
         onRetry={() => {
           dispatch({ type: 'reopened' });
           setReopenCount((count) => count + 1);
@@ -124,6 +134,13 @@ function CanvasBody({
       return <CanvasStatus label="Opening Canvas…" />;
     case 'creating':
       return <CanvasStatus label="Creating a canvas…" />;
+    case 'create-recovering':
+      return (
+        <CanvasPlate title="Check canvas creation">
+          <CanvasNote>{state.message}</CanvasNote>
+          <CanvasAction label="Try again" onClick={onCreate} />
+        </CanvasPlate>
+      );
     case 'loading':
       return <CanvasStatus label="Loading this canvas…" />;
     case 'failed':
