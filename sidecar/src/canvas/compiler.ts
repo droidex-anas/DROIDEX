@@ -11,6 +11,7 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ownedEsbuildBinary } from './canvasRuntime.js';
 import type { CanvasDiagnostic, DesignSystemRef, SourceElement } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 
@@ -50,9 +51,19 @@ export class CompileCancelledError extends Error {
   }
 }
 
-/** The worker died or was terminated; the compile reached no conclusion. */
+/**
+ * Why a compiler could not answer, which decides what a user can do about it. A
+ * damaged runtime is not something a restart repairs, and the two cases must
+ * not be told apart by matching text.
+ */
+export type CompilerUnavailableReason = 'damaged-runtime' | 'lost-compiler';
+
+/** The worker died, was terminated, or refused the runtime it was given. */
 export class CompilerUnavailableError extends Error {
-  constructor(message: string) {
+  constructor(
+    readonly reason: CompilerUnavailableReason,
+    message: string,
+  ) {
     super(message);
     this.name = 'CompilerUnavailableError';
   }
@@ -67,7 +78,12 @@ export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
-  | { requestId: number; status: 'unavailable'; message: string }
+  | {
+      requestId: number;
+      status: 'unavailable';
+      reason: CompilerUnavailableReason;
+      message: string;
+    }
   | { requestId: number; status: 'stopped' };
 
 interface PendingCompile {
@@ -76,9 +92,12 @@ interface PendingCompile {
   release(): void;
 }
 
-// The only thing a user can do about a dead compiler, and the only thing safe
-// to show: a worker's own failure text carries its absolute module path.
-const UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
+// The only two things a user can do about a compiler that cannot answer, and
+// the only text safe to show: a worker's own failure carries module paths.
+// `canvasBuildFailures.ts` picks between them by the reason, never by matching.
+export const COMPILER_UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
+export const RUNTIME_UNAVAILABLE =
+  'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
 // How long a shutdown may take before the thread is ended anyway. This is
 // cleanup, not the build deadline Task 3b owns.
@@ -97,7 +116,8 @@ export class CompilerWorker {
    * `CompilerUnavailableError` when the worker dies under the call.
    */
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
-    if (this.terminated) return Promise.reject(new CompilerUnavailableError(UNAVAILABLE));
+    if (this.terminated)
+      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
 
     const requestId = this.nextRequestId++;
@@ -129,7 +149,7 @@ export class CompilerWorker {
     this.terminated = true;
     const compiler = this.compiler;
     this.compiler = null;
-    this.failAll(new CompilerUnavailableError(UNAVAILABLE));
+    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (!compiler) return;
     // The compiler owns esbuild's service process, so it gets the turn it needs
     // to stop that service while it can still reap it.
@@ -167,8 +187,19 @@ export class CompilerWorker {
       execArgv: [],
       execPath: process.execPath,
       serialization: 'advanced',
+      env: compilerEnv(),
     });
-    compiler.on('message', (response: CompilerResponse) => {
+    compiler.on('message', (message: unknown) => {
+      const response = compilerResponse(message);
+      // A forked process is a boundary. A reply that is not one of its own
+      // answers is the compiler failing, not a result to pass on, so it is
+      // treated exactly like a crash: this job and every other in flight fail,
+      // the process is ended, and the next build forks a replacement.
+      if (response === null) {
+        this.loseCompiler(compiler, new Error('The compiler sent a reply it does not define.'));
+        compiler.kill();
+        return;
+      }
       this.receive(response);
     });
     compiler.on('error', (error: Error) => {
@@ -200,7 +231,7 @@ export class CompilerWorker {
         case 'unavailable':
           // Already a curated recovery message from the sidecar's own storage
           // boundary, which never carries a path (spec §8).
-          call.reject(new CompilerUnavailableError(response.message));
+          call.reject(new CompilerUnavailableError(response.reason, response.message));
           return;
       }
     });
@@ -211,7 +242,7 @@ export class CompilerWorker {
     if (this.compiler !== compiler) return;
     this.compiler = null;
     console.error('Canvas compiler lost:', cause);
-    this.failAll(new CompilerUnavailableError(UNAVAILABLE));
+    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
   }
 
   private failAll(error: Error): void {
@@ -230,6 +261,80 @@ export class CompilerWorker {
     call.release();
     finish(call);
   }
+}
+
+const UNAVAILABLE_REASONS: readonly CompilerUnavailableReason[] = [
+  'damaged-runtime',
+  'lost-compiler',
+];
+
+/**
+ * The child's answer, or null when what arrived is not one: the compiler is a
+ * forked process, and what it sends is the one thing in this module that is not
+ * this module's own. Only the shape the protocol defines is read. An answer for
+ * a request nobody is waiting for is not malformed — a cancelled compile is
+ * answered after its caller has already been told, and `settle` drops it — so
+ * `requestId` is checked for its type and nothing more.
+ */
+export function compilerResponse(message: unknown): CompilerResponse | null {
+  if (typeof message !== 'object' || message === null) return null;
+  const {
+    requestId,
+    status,
+    reason,
+    message: text,
+    design,
+    diagnostics,
+  } = message as Record<string, unknown>;
+  if (typeof requestId !== 'number') return null;
+  switch (status) {
+    case 'cancelled':
+    case 'stopped':
+      return { requestId, status };
+    case 'ready':
+      return isCompiledDesign(design) ? { requestId, status, design } : null;
+    case 'failed':
+      return Array.isArray(diagnostics)
+        ? { requestId, status, diagnostics: diagnostics as CanvasDiagnostic[] }
+        : null;
+    case 'unavailable':
+      if (typeof text !== 'string') return null;
+      if (!UNAVAILABLE_REASONS.includes(reason as CompilerUnavailableReason)) return null;
+      return { requestId, status, reason: reason as CompilerUnavailableReason, message: text };
+    default:
+      return null;
+  }
+}
+
+function isCompiledDesign(design: unknown): design is CompiledDesign {
+  if (typeof design !== 'object' || design === null) return false;
+  const { artifactId, html, diagnostics, elements } = design as Record<string, unknown>;
+  return (
+    typeof artifactId === 'string' &&
+    typeof html === 'string' &&
+    Array.isArray(diagnostics) &&
+    Array.isArray(elements)
+  );
+}
+
+/**
+ * `process.execPath` is Electron's own binary in a packaged app, so the
+ * compiler is told to run as Node rather than as a second Electron. A packaged
+ * app also owns its esbuild binary; a checkout lets esbuild find its own.
+ */
+function compilerEnv(): NodeJS.ProcessEnv {
+  const binary = ownedEsbuildBinary();
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    ...(binary === null ? {} : { ESBUILD_BINARY_PATH: binary }),
+  };
+  // Either would let a module or a loader from outside the owned runtime into
+  // the compiler, and nothing DROIDEX sets needs them: the compiler picks its
+  // own loader through `execArgv`.
+  delete env.NODE_PATH;
+  delete env.NODE_OPTIONS;
+  return env;
 }
 
 // The loader registers tsx and imports the TypeScript entry in development; the

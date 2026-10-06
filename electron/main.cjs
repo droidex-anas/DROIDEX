@@ -95,6 +95,7 @@ const usageAnalytics = createUsageAnalytics({
 });
 const sidecarSupervisor = createSidecarSupervisor({
   entryPath: sidecarEntry,
+  canvasRuntimeDir,
   cwd: () => (app.isPackaged ? process.resourcesPath : appRoot()),
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
@@ -1251,6 +1252,13 @@ function sidecarEntry() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'sidecar/dist/sidecar.mjs')
     : path.join(appRoot(), 'sidecar/dist/sidecar.mjs');
+}
+
+function canvasRuntimeDir() {
+  // The design compiler's esbuild, Tailwind, PostCSS and React ship beside the
+  // sidecar bundle (electron-builder.config.cjs). A checkout stages no runtime,
+  // so the sidecar keeps resolving them from its own node_modules.
+  return app.isPackaged ? path.join(process.resourcesPath, 'sidecar/canvas-runtime') : undefined;
 }
 
 function readBuildMetadata() {

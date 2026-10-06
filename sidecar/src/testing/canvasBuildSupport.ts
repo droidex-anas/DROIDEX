@@ -18,9 +18,11 @@ import {
   type CanvasBuildHost,
 } from '../canvas/CanvasBuilds.js';
 import {
+  COMPILER_UNAVAILABLE,
   CompileCancelledError,
   CompileFailedError,
   CompilerUnavailableError,
+  RUNTIME_UNAVAILABLE,
   type CompiledDesign,
   type CompileInput,
 } from '../canvas/compiler.js';
@@ -53,6 +55,8 @@ export interface HeldCompile {
   ready(artifactId: string): void;
   failed(code: string): void;
   unavailable(): void;
+  /** The compiler refused the runtime the app staged, which no restart fixes. */
+  damagedRuntime(): void;
 }
 
 /**
@@ -147,7 +151,10 @@ class FakeCompiler implements DesignCompiler {
           reject(new CompileFailedError([{ code, message: COMPILE_FAILED }]));
         },
         unavailable: () => {
-          reject(new CompilerUnavailableError('The compiler worker died.'));
+          reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+        },
+        damagedRuntime: () => {
+          reject(new CompilerUnavailableError('damaged-runtime', RUNTIME_UNAVAILABLE));
         },
       });
     });

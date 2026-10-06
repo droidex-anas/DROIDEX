@@ -28,6 +28,7 @@ function harness(children, extras = {}) {
     cwd: () => '/app',
     userData: () => '/profiles/droidex',
     historyDir: extras.historyDir,
+    canvasRuntimeDir: extras.canvasRuntimeDir,
     stdout: new PassThrough(),
     stderr: extras.stderr || new PassThrough(),
     now: () => nowMs,
@@ -108,6 +109,23 @@ test('history isolation uses the launcher directory and strips ambient overrides
     const { supervisor, calls } = harness([child], { historyDir });
     const started = supervisor.start();
     assert.equal(calls[0].options.env.DROIDEX_HISTORY_DIR, historyDir?.());
+    child.stdout.write('SIDECAR_READY 43123\n');
+    await started;
+  }
+});
+
+test('the Canvas runtime is passed only when the app owns one', async (t) => {
+  const previous = process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+    else process.env.DROIDEX_CANVAS_RUNTIME_DIR = previous;
+  });
+  process.env.DROIDEX_CANVAS_RUNTIME_DIR = '/ambient/canvas-runtime';
+  for (const canvasRuntimeDir of [undefined, () => '/resources/sidecar/canvas-runtime']) {
+    const child = fakeChild();
+    const { supervisor, calls } = harness([child], { canvasRuntimeDir });
+    const started = supervisor.start();
+    assert.equal(calls[0].options.env.DROIDEX_CANVAS_RUNTIME_DIR, canvasRuntimeDir?.());
     child.stdout.write('SIDECAR_READY 43123\n');
     await started;
   }

@@ -345,7 +345,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
 - [x] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
   Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
-- [ ] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
+- [x] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
   Done: Offline packaged tests verify arm64/x64 resources and a working saved design; run `docs:generate` when scripts change.
 
 **Files:** Create `sidecar/src/canvas/{CanvasBuilds.ts,compiler.ts,compilerWorker.ts,designSystems.ts,CanvasBuilds.test.ts,compiler.test.ts,designSystems.test.ts}`, the initial `sidecar/src/canvas/presets/droidex.ts`, and `src/features/canvas/{previewDocument.ts,previewRuntime.ts,DesignPreview.tsx}`. Modify `sidecar/package.json`, `electron-builder.config.cjs` and the Task 1 runtime test. Change `electron/main.cjs`/preload only for the proven host's narrow needs; generated code receives no preload.
@@ -740,6 +740,215 @@ Settled by 03c's fourth review cycle (Astra xhigh, adversarial, against `f0ddc90
   and every termination is awaited before the registry closes. That is deliberately not the slot
   scheduler 03b examined and rejected — a process outlives the build that ended it, since an overdue
   build's kill is still settling while its slot has taken the next job. `CanvasBuilds.ts` is 490.
+
+Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
+`tools/{stage-canvas-runtime.mjs,verifyCanvasRuntime.mjs,canvas-compiler-probe.ts}`,
+`electron-builder.config.cjs`, `electron/{main.cjs,sidecar.cjs}`):
+
+- **One owner for "where is the Canvas runtime": the Electron host, through one variable.**
+  `electron/main.cjs` derives `resources/sidecar/canvas-runtime` from `process.resourcesPath` when
+  `app.isPackaged`, and `electron/sidecar.cjs` passes it as `DROIDEX_CANVAS_RUNTIME_DIR` (deleting
+  any ambient value otherwise, like `DROIDEX_HISTORY_DIR`). `canvasRuntime.ts` is the only reader:
+  it anchors the compiler's `require` at that directory or, unset, at its own
+  (`sidecar/src/canvas` under tsx, `sidecar/dist` built), and derives
+  `ESBUILD_BINARY_PATH` as `<dir>/node_modules/@esbuild/<platform>-<arch>/bin/esbuild`. The fork in
+  `compiler.ts` states `ELECTRON_RUN_AS_NODE=1` and that binary, and deletes `NODE_PATH` and
+  `NODE_OPTIONS`, either of which would let a module or a loader from outside the runtime in. The
+  variable is app-private, so both `childEnv` lists strip it from agent children. There is no third
+  case and no fallback: a packaged runtime that cannot be loaded fails as `compiler_unavailable`.
+- **The boundary is completeness, not interception.** Pointing `require` at the runtime is not a
+  sandbox: node resolution is nearest-first but also walks ancestor `node_modules`, `NODE_PATH` and
+  the user's own global folders (`~/.node_modules`, `~/.node_libraries`, `$PREFIX/lib/node`), a
+  transitive `require` inside a package cannot be intercepted, and esbuild's `generateBinPath()`
+  warns and falls back to ordinary resolution when `ESBUILD_BINARY_PATH` names a file that is not
+  there. Review cycle 1 measured every consequence: with the checkout above a packaged layout, a
+  runtime missing Tailwind, missing React, missing one transitive package (`picocolors`), empty,
+  unconfigured, or without its binary all returned `ready` with the normal artifact hash, and
+  an inherited `NODE_PATH` alone did it with no ancestor at all.
+  So staging writes `canvas-runtime/manifest.json` — every file it placed with its size — and
+  `startCanvasRuntime` checks the tree against it once, in the compiler child, before anything is
+  loaded and before any request is accepted. **The tree is compared to the manifest, not the
+  manifest to the tree.** The root is canonicalised once (so a linked app location still works) and
+  then walked: every entry must be a regular file the manifest lists at the staged size, or a
+  directory the manifest has files under, and anything else — a symbolic link, an unlisted file, an
+  unlisted directory, anything that is not a regular file — refuses the runtime. The binary is
+  listed without a size, because signing rewrites it, and must be executable. Finally each of the
+  seven specifiers a compile resolves has to land inside `<root>/node_modules`. Any miss and the
+  worker answers every request with one curated sentence and logs the first path at fault; nothing
+  is ever a diagnostic.
+  Walking only the listed paths was not enough, twice over. Cycle 2 replaced a nested dependency
+  *directory* with a link to an outside copy — no listed file changed, three outside files resolved,
+  `ready`. Cycle 3 then added a `node_modules/tailwindcss/node_modules` link that no listed path
+  traverses at all: 227 outside paths, `ready`. Only an account of what is actually in the tree
+  closes that, which is why the per-component `lstat` walk was replaced rather than extended.
+- **One canonical root for the check, the loader and a design's imports.** The verifier used
+  `realpath(runtimeDir)` while the `require` was built from the configured spelling, and the two are
+  not interchangeable for node's search paths: cycle 3 configured an `alias/node_modules` link to a
+  sound runtime, which made node skip that directory's own packages and resolve esbuild from the
+  ancestor checkout — `ready`, 311 outside paths, with the verifier meanwhile resolving esbuild
+  inside the runtime. The `require` is now created inside `startCanvasRuntime` from the canonical
+  root after the tree check, and it is the same object that resolves the seven specifiers, loads the
+  three packages and answers `canvasRuntime().resolve()` for a design's imports. There is no
+  module-load-time `createRequire`, so an unverified path is never an anchor at all, and that
+  `alias/node_modules` spelling now compiles normally with nothing outside. A relative
+  DROIDEX_CANVAS_RUNTIME_DIR is a malformed host rather than a tree to find from the cwd, and is
+  refused.
+- **One loader, and cleanup is not it.** Cycle 2 also found the other way in: shutdown called
+  `stopBundler`, which went through a lazy accessor and loaded esbuild, PostCSS and Tailwind from
+  wherever node found them even after startup had refused the runtime — 307 distinct outside module
+  paths for a missing Tailwind with an ancestor, 308 for an empty or unconfigured one. The runtime
+  is now loaded in exactly one place, `startCanvasRuntime`, after verification; `canvasRuntime()`
+  returns what it loaded and `stopCanvasRuntime()` releases only a service that was started. The
+  probe asks for a graceful shutdown and requires zero outside resolutions across the whole life of
+  every refused worker, which is what the earlier probe missed by killing its children.
+  Sizes rather than digests, because the risk is an incomplete or damaged install rather than
+  tampering and this runs on every compiler start; the binary carries no size because code signing
+  rewrites it while packaging (9,750,242 staged, 9,712,896 shipped).
+  The check also refuses a built worker that finds a manifest beside it with nothing configured, so
+  a host that loses the variable compiles nothing instead of resolving from a global folder.
+  `tools/verifyCanvasRuntime.mjs` reads that manifest for packaged trees in `release:verify:mac`
+  and `canvas:probe`. **It enforces the same tree-equals-manifest rule, as a second
+  implementation**, because the sidecar bundle may not import a build tool and the tool may not
+  depend on tsx. Sharing one implementation across that boundary was the alternative and was
+  rejected for those two reasons; drift is held off instead by `canvas:probe`, which puts every
+  damaged fixture to both the tool verifier and a real worker and fails if they ever disagree. Cycle
+  3 found the tool accepting three trees the worker refused, and cycle 4 two more — a `null` size in
+  `manifest.files`, which collided with the tool's own no-size sentinel, and a tree that agrees with
+  its regenerated manifest but is short of a package a compile resolves, which the tool never
+  resolved. Both are closed and both are fixtures now. **The claim is that the two refuse the same
+  trees for every fixture the probe exercises, not for every malformed shape that exists**; the
+  tool keeps its release-only checks (licences, Mach-O architecture, the foreign binary's absence)
+  and accepts a relative argument, which is tooling input rather than a host setting.
+  Cycle 5 then found the last gap of this kind: resolving the seven specifiers says nothing about
+  whether the packages behind them can load their own dependencies, and a staging input whose
+  `picocolors` was missing one file staged, recorded a faithful manifest, resolved all seven and
+  was accepted while the worker refused it. The gate now **loads** esbuild, PostCSS and Tailwind,
+  in a child process so a package that throws or hangs cannot take it down and the gate's module
+  cache stays clean, with `PATH` the only inherited variable and `Module._resolveFilename` traced so
+  that a pinned package reaching outside the root through `require` is refused. **What that proves
+  is narrow**: those three packages load through the CommonJS loader from the owned root, and
+  nothing they resolve through it lands outside. The trace is not a sandbox — an `import()` uses the
+  ESM loader and a `new Worker` has its own, and cycle 6 confirmed neither is seen — and nothing
+  here authenticates package contents; the manifest sizes remain the only account of those. The
+  timeout kills with SIGKILL, because `spawnSync` sends a catchable SIGTERM and then waits: cycle 6
+  held the gate past 65 seconds with a package that handled the signal and kept its loop alive. None of the three starts a process at load and the
+  staged binary is named through `ESBUILD_BINARY_PATH`, so esbuild never looks for a platform
+  package and the foreign architecture's binary is still only inspected; a sound tree costs about
+  120 ms. `npm run canvas:runtime` calls the same gate at the end of staging, so that input now
+  fails where it was made.
+- **Two things the walk does before it trusts anything, and one it forgives.** The manifest's type
+  is proven before it is read: cycle 4 replaced it with a FIFO and both validators blocked in
+  `readFileSync` — the worker answered neither compile nor shutdown, and the release gate hung —
+  so both `lstat` it and refuse anything that is not a regular file. And a regular `.DS_Store` is
+  tolerated anywhere in the tree: the assumption that code signing would refuse one was wrong, the
+  app's `CodeResources` omits that name and a signed app with one still verifies strictly, so
+  refusing Canvas because a user opened the resource folder in Finder would be a support failure
+  rather than a boundary. As a link or a directory it is refused like anything else, and nothing
+  else unstaged is tolerated.
+- **A damaged runtime is never the design's fault.** esbuild reports a plugin's thrown error as a
+  message detail, and 03a's mapping read that detail's `code` as a curated diagnostic code: a
+  runtime without React answered a valid design `failed`, with `MODULE_NOT_FOUND` and the
+  compiler's own absolute require stack in diagnostics that 3b persists and shows, and a missing
+  Tailwind preflight asset arrived as `css_error`. Only the seven codes 03a defined are a
+  diagnostic now; anything else esbuild attached, and any stylesheet failure that is not PostCSS's
+  own `CssSyntaxError`, is rethrown so the worker reports an unavailable compiler. Invalid design
+  CSS still reports `css_error`. `compiler.test.ts`'s diagnostic helper refuses a machine path
+  anywhere in any diagnostic field — `/Users/`, `/home/`, `/private/`, `/tmp/`, `/var/`,
+  `node_modules` or the repository root, quoted or not — which is where that rule belongs for every
+  future case. Cycle 2 caught the first version recognising a slash only after whitespace, so
+  `could not open "/Users/…"` passed it; the quoted form is now a case of its own. Cycle 3 noted it
+  covered only `CompileFailedError`, so the damaged-runtime test asserts the `unavailable` message
+  is the one curated sentence and runs the same rule over it, and the probe requires that sentence
+  from every runtime it refuses.
+- **A damaged installation is not something a restart repairs, and the renderer is told so.**
+  `buildFailure` replaced every unavailable reason with the restart sentence, so cycle 4 found the
+  frame advising a restart for a runtime the app had staged wrongly. `CompilerUnavailableError` and
+  the worker's `unavailable` response now carry a `reason` — `damaged-runtime` or `lost-compiler` —
+  and `buildFailure` picks between the two curated sentences by that reason rather than by reading
+  text; no exception text is ever forwarded. Both sentences live in `compiler.ts`.
+  `compiler.test.ts` asserts the reason survives the real IPC boundary and `CanvasBuilds.test.ts`
+  asserts the sentence the frame publishes for each reason.
+  The parent reads that reply as a boundary rather than as its own type. Cycle 5 showed a missing,
+  object or invented `reason` passing the cast straight into `CompilerUnavailableError` and landing
+  in the renderer's else branch as advice to restart; `compilerResponse` now accepts only the shape
+  the protocol defines and anything else is handled as a crash — the process is lost and ended,
+  every compile in flight fails as a lost compiler, and the next build forks a replacement.
+  `requestId` is checked for its type and nothing more, because a cancelled compile is answered
+  after its caller has already been told and `settle` drops it.
+- **No tsconfig covered `tools/`**, which is how a `CompilerResponse` the protocol change missed
+  survived in `canvas-compiler-probe.ts`: the root config includes `src` only, `tsconfig.node.json`
+  is referenced but never built (so `tsc --noEmit` ignores it), and `canvas:probe` runs under tsx,
+  which does not typecheck. `sidecar/tsconfig.json` now covers that one file and allows JavaScript,
+  which types the plain `.mjs` verifier it calls, so `npm run sidecar:typecheck` sees it. Adding
+  `tools` to the root config was the alternative and is not viable: it pulls the sidecar graph in
+  under the frontend's options and surfaces ten pre-existing errors the sidecar's own config
+  accepts.
+- The worker loads `esbuild`, `tailwindcss` and `postcss` through that one anchor instead of
+  importing them, so `build:compiler-worker` needs no `--external` flags at all and the bundled
+  entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only `react`/`react-dom`
+  move is therefore superseded: a bundled ESM external would have resolved from
+  `resources/sidecar/node_modules`, which does not exist. `postcss-value-parser` keeps its plain
+  import and is bundled: it has no `__dirname` and no native part, so bundling keeps the
+  per-declaration CSS resource review free of an accessor. Tailwind's own copy is still staged and
+  listed, and the specifier is still checked.
+- **As-is copy, pruned of what a compile cannot reach.** `npm run canvas:runtime` stages one
+  complete tree per architecture at `sidecar/canvas-runtime/<arch>/node_modules`, closing over
+  `dependencies` only and keeping nested duplicates where their dependent reads them, so Tailwind's
+  `__dirname` preflight loader and node resolution both work untouched. Dropping esbuild's own
+  binary copy, Tailwind's CLI and prebundled `peers`, Tailwind's `src` ESM mirror, and React's
+  server/profiling builds takes the staged tree from **36.75 MiB (1,443 files)** to **16.09 MiB
+  (902 staged files)** arm64. A dedicated bundle was not built: §6's bundled estimate for arm64 was
+  12,339,334 bytes (11.77 MiB), so the as-is copy costs 4,497,134 bytes more and keeps Tailwind's
+  preflight loader and node resolution working as installed.
+- **Measured packaged resources.** arm64 `resources/sidecar/canvas-runtime`: 903 files,
+  16,889,391 bytes (16.11 MiB) — 901 listed files, a 52,923-byte manifest and the binary — with
+  `@esbuild/darwin-arm64/bin/esbuild` at 9,712,896 bytes, mode 755, Mach-O arm64 (electron-builder
+  re-signs it, so it is 37,346 bytes smaller than the 9,750,242 npm ships). x64: 903 files,
+  17,709,603 bytes (16.89 MiB), 52,919-byte manifest, binary 10,533,120 bytes, mode 755, Mach-O
+  x86_64. Each app carries only its own architecture's binary, and the packaged tree matches the
+  manifest exactly: staging drops the names electron-builder would have dropped (`.gitkeep` among
+  them), so nothing is lost between staging and the app.
+- **electron-builder drops a copied directory's own top-level `node_modules`** (`createFilter` in
+  `app-builder-lib/out/util/filter.js`), which silently produced an app with no Canvas runtime at
+  all. The file set therefore names `sidecar/canvas-runtime/${arch}/node_modules` as its source.
+  `${arch}` is expanded in a file set's `from` and `to`, so one entry covers both architectures.
+- **The cross-architecture binary is fetched against the reviewed lockfile, without npm.** npm
+  skips an optional dependency whose cpu does not match, and `npm install --force` pinned only a
+  version: review cycle 1 replaced the `darwin-x64` SRI in `sidecar/package-lock.json` with an
+  all-zero value and staging still succeeded, with lifecycle scripts permitted and npm writing its
+  cache and logs to `HOME`. Staging now fetches the tarball the lockfile resolves, verifies it
+  against that lockfile's integrity before extracting, unpacks it into an empty directory inside
+  `sidecar/canvas-runtime/.tarballs` and copies only the files found under it, then checks the
+  staged binary is executable and this architecture's. A verified tarball is kept, so a repeat
+  build is offline: cross-architecture packaging needs the registry once per esbuild version. A
+  design compile needs it never.
+- **Offline packaged probe, run from inside the produced app, with negatives.** `npm run
+  canvas:probe -- release/mac-arm64/DROIDEX.app` forked
+  `Contents/Resources/sidecar/dist/compilerWorker.mjs` with `Contents/MacOS/DROIDEX` as `execPath`,
+  `ELECTRON_RUN_AS_NODE=1`, the owned runtime and binary, `PATH=/usr/bin:/bin`, an empty `HOME`, and
+  `net.connect`/`dns.lookup`/`http(s).request`/`fetch` replaced by throws in the child. It compiled
+  the kit's own `Hey.tsx` to artifact
+  `64dd3d94797e60278aa967ed683c5f26beac49a31477d1323f6427f3b8b2bd7b` (209,916 bytes) — byte for byte
+  the artifact the checkout produces. The probe then verifies the packaged tree through the shared
+  manifest reader and damages four copies of the runtime in turn — a transitive package, the
+  esbuild binary, Tailwind's preflight, and the variable itself — each with the checkout's own
+  `node_modules` symlinked above it, and requires each to compile nothing. Every one of those cases
+  returned the normal artifact before this boundary existed.
+- **x64 was verified by inspection only, never executed**, on this arm64 machine: the x64 `--dir`
+  pack's resource tree, binary architecture, mode and the absence of the arm64 binary were checked
+  on disk. `release:verify:mac` makes the same assertions for both architectures and runs the probe
+  only for the architecture it is on.
+- **Dependency review: 4 prod findings to 12** (`npm --prefix sidecar audit --omit=dev`): before, 3
+  moderate + 1 critical, all through `@anthropic-ai/claude-agent-sdk` (`fast-uri`, `hono`,
+  `ip-address`, `proxy-addr`). After, +5 high and +2 moderate: `braces` (and `chokidar`,
+  `micromatch`, `fast-glob`, `tailwindcss` depending on it) and `postcss-selector-parser` (with
+  `postcss-nested`), plus `esbuild <= 0.24.2`. **No non-breaking upgrade removes any of them.**
+  3.4.19 is the last Tailwind 3.4; every published `braces` is in range; the
+  `postcss-selector-parser` fix is 7.1.6 and Tailwind 3 pins `^6.0.11`; the esbuild fix is 0.25+.
+  The esbuild advisory is its development server, which Canvas never starts — it calls `build()`
+  with `write: false`. Tailwind 4 is out of scope by instruction. **No Sonatype verdict is
+  claimed**: the `sonatype-guide` MCP server refused the configured token (HTTP 401,
+  `invalid_token`).
 
 
 

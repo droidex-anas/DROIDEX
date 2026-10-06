@@ -13,6 +13,7 @@ import { join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import { extractFile, listPackage } from '@electron/asar';
 import { parse as parseYaml } from 'yaml';
+import { probeCanvasCompiler, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const releaseDirectory = resolve(process.argv[2] || 'release');
 const requireSignedArtifacts = process.argv.includes('--signed');
@@ -260,17 +261,6 @@ async function smokePackagedRuntime(architecture) {
   const resourcesPath = join(appPath, 'Contents', 'Resources');
   const asarPath = join(resourcesPath, 'app.asar');
   const sidecarPath = join(resourcesPath, 'sidecar', 'dist', 'sidecar.mjs');
-  const sparkleFrameworkPath = join(appPath, 'Contents', 'Frameworks', 'Sparkle.framework');
-  const sparkleAddonPath = join(
-    resourcesPath,
-    'app.asar.unpacked',
-    'node_modules',
-    '@droidex',
-    'sparkle-updater',
-    'build',
-    'Release',
-    'sparkle_updater.node',
-  );
   const temporaryHome = mkdtempSync(join(tmpdir(), `droidex-${name}-runtime-`));
   const databasePath = join(temporaryHome, '.factory', 'droidex', 'session-index.sqlite');
   const bridgeToken = 'release-verifier-bridge-token';
@@ -468,6 +458,7 @@ for (const architecture of architectures) {
     `${name} updater cache identity is stale`,
   );
   assert(statSync(sidecarPath).isFile(), `${name} sidecar bundle is missing`);
+  verifyCanvasRuntime(join(resourcesPath, 'sidecar', 'canvas-runtime'), name);
   assert(statSync(sparkleFrameworkPath).isDirectory(), `${name} Sparkle framework is missing`);
   assert(statSync(sparkleAddonPath).isFile(), `${name} Sparkle native bridge is missing`);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', sparkleFrameworkPath]);
@@ -554,6 +545,10 @@ for (const architecture of architectures) {
 }
 
 for (const architecture of architectures) await smokePackagedRuntime(architecture);
+
+for (const { appPath, name } of architectures) {
+  process.stdout.write(probeCanvasCompiler(appPath, name));
+}
 
 for (const architecture of architectures) {
   const dmgPath = join(releaseDirectory, `droidex-${architecture.name}.dmg`);

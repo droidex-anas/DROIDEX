@@ -5,11 +5,16 @@
 // reached again by a rebuild. An attempt's own failure is this attempt's alone.
 
 import { MAX_BUILD_DIAGNOSTICS, type BuildResult } from './canvasBuildCache.js';
-import { CompileCancelledError, CompileFailedError, CompilerUnavailableError } from './compiler.js';
+import {
+  COMPILER_UNAVAILABLE,
+  CompileCancelledError,
+  CompileFailedError,
+  CompilerUnavailableError,
+  RUNTIME_UNAVAILABLE,
+} from './compiler.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
-const COMPILER_UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
 const SOURCE_UNREADABLE = 'The saved source for this design could not be read.';
 const BUILD_NOT_SAVED = 'The build could not be saved. Free some disk space and try again.';
 const OVERDUE = `This design took longer than ${String(CANVAS_LIMITS.buildDeadlineMs / 1000)} seconds to build. Simplify it and try again.`;
@@ -45,9 +50,14 @@ export function buildFailure(error: unknown, overdue: boolean): BuildOutcome | n
       persists: true,
     };
   // The client forks a fresh process on its next build, so a crash costs this
-  // job and nothing else, on this slot or any other.
+  // job and nothing else, on this slot or any other. A runtime the app staged
+  // wrongly is the one case a restart cannot repair, and the compiler says
+  // which it is rather than leaving its text to be read.
   if (error instanceof CompilerUnavailableError)
-    return attemptFailed({ code: 'compiler_unavailable', message: COMPILER_UNAVAILABLE });
+    return attemptFailed({
+      code: 'compiler_unavailable',
+      message: error.reason === 'damaged-runtime' ? RUNTIME_UNAVAILABLE : COMPILER_UNAVAILABLE,
+    });
   if (error instanceof CompileCancelledError) return null;
   // Canonical source that could not be read is the only failure left here.
   console.error('A Canvas build failed:', error);

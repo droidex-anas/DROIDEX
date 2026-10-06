@@ -1,12 +1,14 @@
 // Bundles one design's virtual source tree into a single browser script. The
 // tree is text and stays text: esbuild parses and concatenates it, so nothing
 // here executes generated source (spec §6). Only the four supported packages
-// resolve, and only from the runtime directory this module ships in.
+// resolve, and esbuild itself comes from the Canvas runtime rather than from an
+// import, so the bundled worker takes it from the directory a packaged app owns
+// (see canvasRuntime.ts).
 
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as esbuild from 'esbuild';
+import type * as esbuild from 'esbuild';
+import { canvasRuntime } from './canvasRuntime.js';
 import { KIT_ENTRY } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -46,12 +48,6 @@ const VIRTUAL_NAMESPACES = new Set([DESIGN_NAMESPACE, KIT_NAMESPACE, BOOT_NAMESP
 
 const DESIGN_SPECIFIER = 'canvas:design';
 
-// react and react-dom are resolved from the directory this module ships in,
-// which is `sidecar/src/canvas` in development and `sidecar/dist` once built.
-// Task 3d points it at the packaged Canvas runtime instead of a checkout's
-// node_modules.
-const runtimeRequire = createRequire(import.meta.url);
-
 /**
  * The directory every virtual file claims to live in. It is never created.
  *
@@ -78,6 +74,19 @@ const LOADER_MESSAGE =
 // esbuild's own ids for the two constructs it cannot resolve at build time.
 const LOADER_MESSAGE_IDS = new Set(['unsupported-dynamic-import', 'unsupported-require-call']);
 
+// The codes a diagnostic may carry (spec §8). esbuild reports a plugin's thrown
+// error as a message detail too, so only these are read as something to show;
+// see `messageDetail`.
+const DIAGNOSTIC_CODES = new Set([
+  'syntax_error',
+  'unsupported_import',
+  'missing_module',
+  'missing_default_export',
+  'css_error',
+  'missing_design_system',
+  'compile_failed',
+]);
+
 // A template-literal dynamic import with a static prefix is turned into a glob
 // by esbuild itself, underneath plugins, and reported as an unresolved import
 // of a pattern. A design can never write that specifier, so the pattern names
@@ -92,7 +101,7 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
 
   let build: esbuild.BuildResult;
   try {
-    build = await esbuild.build({
+    build = await canvasRuntime().esbuild.build({
       entryPoints: [DESIGN_ENTRY],
       bundle: true,
       write: false,
@@ -131,15 +140,6 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
 function bundleFailure(diagnostics: CanvasDiagnostic[]): DesignBundleResult {
   if (diagnostics.length > 0) return { ok: false, diagnostics };
   return { ok: false, diagnostics: [{ code: 'compile_failed', message: BUNDLE_RECOVERY }] };
-}
-
-/**
- * Releases the esbuild service process this module started. The compiler worker
- * calls it before its thread goes away, so the service is never left to the
- * destruction of the thread's handles.
- */
-export async function stopBundler(): Promise<void> {
-  await esbuild.stop();
 }
 
 /**
@@ -206,7 +206,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
  * package from a real directory, which is its own business.
  */
 function runtimePath(specifier: string): string {
-  return runtimeRequire.resolve(specifier);
+  return canvasRuntime().resolve(specifier);
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {
@@ -259,9 +259,15 @@ function diagnosticsFrom(
 }
 
 function diagnosticFrom(message: esbuild.Message, severity: 'error' | 'warning'): CanvasDiagnostic {
-  const code = pluginCode(message);
+  const detail = messageDetail(message);
+  // Only this module throws inside a plugin, and only when the runtime cannot
+  // be resolved. That is the compiler failing, not the design, and the error
+  // carries an absolute path, so it is rethrown for the worker to report as an
+  // unavailable compiler rather than mapped to anything showable.
+  if (detail.kind === 'failure') throw detail.error;
   const location = designLocation(message.location);
-  if (code !== null) return { code, message: message.text, ...location };
+  if (detail.kind === 'diagnostic')
+    return { code: detail.code, message: message.text, ...location };
   if (LOADER_MESSAGE_IDS.has(message.id) || EXPANDED_GLOB_IMPORT.test(message.text))
     return { code: 'unsupported_import', message: LOADER_MESSAGE, ...location };
   // The bootstrap is ours, so the only failure it can report is the contract it
@@ -287,10 +293,18 @@ function missingDefaultExport(message: esbuild.Message): CanvasDiagnostic {
   };
 }
 
-function pluginCode(message: esbuild.Message): string | null {
+type MessageDetail =
+  | { kind: 'diagnostic'; code: string }
+  | { kind: 'failure'; error: unknown }
+  | { kind: 'none' };
+
+/** What esbuild attached to a message: this module's code, or a thrown error. */
+function messageDetail(message: esbuild.Message): MessageDetail {
   const detail: unknown = message.detail;
-  if (typeof detail !== 'object' || detail === null || !('code' in detail)) return null;
-  return typeof detail.code === 'string' ? detail.code : null;
+  if (typeof detail !== 'object' || detail === null) return { kind: 'none' };
+  if ('code' in detail && typeof detail.code === 'string' && DIAGNOSTIC_CODES.has(detail.code))
+    return { kind: 'diagnostic', code: detail.code };
+  return { kind: 'failure', error: detail };
 }
 
 /**

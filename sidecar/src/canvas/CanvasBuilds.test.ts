@@ -39,6 +39,11 @@ function diagnosticCodes(canvas: Board, designId: string): string[] {
   return build.status === 'failed' ? build.diagnostics.map((entry) => entry.code) : [];
 }
 
+function diagnosticMessages(canvas: Board, designId: string): string[] {
+  const build = canvas.frame(designId).build;
+  return build.status === 'failed' ? build.diagnostics.map((entry) => entry.message) : [];
+}
+
 /** Every build state a published change reported for one frame, in order. */
 function reportedStates(canvas: Board, designId: string): CanvasBuildState[] {
   return canvas.changes.flatMap((change) =>
@@ -149,6 +154,20 @@ test('an overdue build ends its compiler process and fails the frame', async (t)
   assert.equal(canvas.fleet.clients.length, 2);
 });
 
+test('a compiler that refuses its own runtime asks for a reinstall, not a restart', async (t) => {
+  // A restart cannot repair a runtime the app staged wrongly, so the frame says
+  // so. The compiler reports which case it is; nothing here reads its text.
+  const canvas = await board(t);
+  const [one] = await canvas.create('One');
+  assert.ok(one);
+  await canvas.write(one, null, 'v1');
+  (await canvas.fleet.compile(1)).damagedRuntime();
+  await canvas.reported(one, 'failed');
+
+  assert.deepEqual(diagnosticCodes(canvas, one), ['compiler_unavailable']);
+  assert.match(diagnosticMessages(canvas, one)[0] ?? '', /not installed correctly\. Reinstall/);
+});
+
 test('a compiler process that dies fails only the build it was running', async (t) => {
   const canvas = await board(t);
   const [one, two] = await canvas.create('One', 'Two');
@@ -158,6 +177,7 @@ test('a compiler process that dies fails only the build it was running', async (
   await canvas.reported(one, 'failed');
 
   assert.deepEqual(diagnosticCodes(canvas, one), ['compiler_unavailable']);
+  assert.match(diagnosticMessages(canvas, one)[0] ?? '', /restart DROIDEX/);
   // The client forks a fresh process itself, so the slot keeps the one it has.
   assert.equal(canvas.fleet.terminated, 0);
   await canvas.write(two, null, 'v1');

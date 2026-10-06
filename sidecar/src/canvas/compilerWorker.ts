@@ -6,15 +6,17 @@
 
 import { createHash } from 'node:crypto';
 import { CanvasCommandError } from './canvasError.js';
+import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
 import {
   CompileCancelledError,
   CompileFailedError,
+  RUNTIME_UNAVAILABLE,
   type CompileInput,
   type CompiledDesign,
   type CompilerRequest,
   type CompilerResponse,
 } from './compiler.js';
-import { ROOT_ELEMENT_ID, bundleDesign, stopBundler } from './designBundle.js';
+import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
@@ -96,6 +98,14 @@ if (!process.send) throw new Error('The design compiler must run as a forked pro
 const send = process.send.bind(process);
 const running = new Map<number, AbortController>();
 
+// The runtime is checked and loaded once, before any request: node resolution
+// cannot be bounded per module, so an incomplete runtime must not compile at
+// all rather than silently borrow a module from somewhere else, and nothing is
+// loaded until it has been vouched for. The reason goes to the sidecar log; a
+// caller only ever learns the compiler is unavailable.
+const runtimeFault = startCanvasRuntime(ownedCanvasRuntimeDir);
+if (runtimeFault !== null) console.error('Canvas runtime is incomplete:', runtimeFault);
+
 process.on('message', (request: CompilerRequest) => {
   if (request.type === 'cancel') {
     running.get(request.requestId)?.abort();
@@ -105,6 +115,15 @@ process.on('message', (request: CompilerRequest) => {
     void shutdown(request.requestId);
     return;
   }
+  if (runtimeFault !== null) {
+    send({
+      requestId: request.requestId,
+      status: 'unavailable',
+      reason: 'damaged-runtime',
+      message: RUNTIME_UNAVAILABLE,
+    });
+    return;
+  }
   const controller = new AbortController();
   running.set(request.requestId, controller);
   void runCompile(request.requestId, request.input, controller.signal).finally(() => {
@@ -112,11 +131,11 @@ process.on('message', (request: CompilerRequest) => {
   });
 });
 
-/** Releases the bundler's service process before the parent ends this thread. */
+/** Releases the compiler's service process before the parent ends it. */
 async function shutdown(requestId: number): Promise<void> {
   for (const controller of running.values()) controller.abort();
   try {
-    await stopBundler();
+    await stopCanvasRuntime();
   } catch (error) {
     console.error('Canvas compiler shutdown failed:', error);
   }
@@ -141,19 +160,20 @@ function outcomeOf(
 ):
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { status: 'cancelled' }
-  | { status: 'unavailable'; message: string } {
+  | { status: 'unavailable'; reason: 'lost-compiler'; message: string } {
   if (error instanceof CompileCancelledError) return { status: 'cancelled' };
   if (error instanceof CompileFailedError)
     return { status: 'failed', diagnostics: error.diagnostics };
   // A revision pinning a kit version that is not there is the revision's
   // problem; a storage failure is the machine's.
   if (error instanceof CanvasCommandError) {
-    if (error.code === 'storage_failed') return { status: 'unavailable', message: error.message };
+    if (error.code === 'storage_failed')
+      return { status: 'unavailable', reason: 'lost-compiler', message: error.message };
     return {
       status: 'failed',
       diagnostics: [{ code: 'missing_design_system', message: error.message }],
     };
   }
   console.error('Canvas compile failed unexpectedly:', error);
-  return { status: 'unavailable', message: COMPILER_RECOVERY };
+  return { status: 'unavailable', reason: 'lost-compiler', message: COMPILER_RECOVERY };
 }
