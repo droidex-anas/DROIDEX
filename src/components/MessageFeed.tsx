@@ -264,6 +264,10 @@ export function MessageFeed({
   const forkDividerAfter = forkedFrom ? lastInheritedItemIndex(items, forkedFrom.forkedAt) : -1;
 
   const lastIdx = items.length - 1;
+  // The chat's own latest reply: a changes row can follow it, and a native
+  // subagent's replies share the chat's id but are not the chat speaking.
+  let lastReplyIdx = lastIdx;
+  while (lastReplyIdx >= 0 && !isOwnReply(items[lastReplyIdx])) lastReplyIdx -= 1;
   // Empty feeds are real (a fresh session), so the tail is genuinely optional.
   const last: FeedItem | undefined = items.length > 0 ? items[lastIdx] : undefined;
   // Tool rows wear their MCP server's mark; the catalog follows this
@@ -384,7 +388,7 @@ export function MessageFeed({
                   density={density}
                   inlineDiffs={inlineDiffs}
                   isFinalResponse={isCopyableFinalResponse(item.key, finalResponseState, pending)}
-                  waitingOnThreads={!pending && index === lastIdx}
+                  waitingOnThreads={!pending && index === lastReplyIdx}
                   onFork={fork ? callbacks.onFork : undefined}
                   forkPointId={fork?.forkPointId}
                   forking={fork ? forking : undefined}
@@ -413,4 +417,8 @@ export function MessageFeed({
       </div>
     </ProseFileLinks>
   );
+}
+
+function isOwnReply(item: FeedItem): boolean {
+  return item.type === 'message' && item.event.author !== 'user' && item.event.role === 'primary';
 }

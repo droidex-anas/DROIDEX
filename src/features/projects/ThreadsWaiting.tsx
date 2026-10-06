@@ -17,20 +17,21 @@ export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
         ?.threads.filter((thread) => thread.ownerAppSessionId === appSessionId) ?? [],
     [projects, appSessionId],
   );
-  // Joined, so the selector returns a value that compares equal while nothing changed.
+  // Serialised, so the selector's value compares equal while nothing changed.
   const working = useStoreSelector((state) =>
-    threads
-      .filter((thread) => {
-        const session = Object.hasOwn(state.sessions, thread.appSessionId)
-          ? state.sessions[thread.appSessionId]
-          : undefined;
-        return session !== undefined && sessionIsLive(session);
-      })
-      .map((thread) => thread.title)
-      .join('\n'),
+    JSON.stringify(
+      threads
+        .filter((thread) => {
+          const session = Object.hasOwn(state.sessions, thread.appSessionId)
+            ? state.sessions[thread.appSessionId]
+            : undefined;
+          return session !== undefined && sessionIsLive(session);
+        })
+        .map((thread) => thread.title),
+    ),
   );
-  if (!working) return null;
-  const names = working.split('\n');
+  const names = JSON.parse(working) as string[];
+  if (names.length === 0) return null;
   return (
     <HoverTooltip label={names.join(', ')}>
       <span
