@@ -550,8 +550,22 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   depend on tsx. Sharing one implementation across that boundary was the alternative and was
   rejected for those two reasons; drift is held off instead by `canvas:probe`, which puts every
   damaged fixture to both the tool verifier and a real worker and fails if they ever disagree. Cycle
-  3 found the tool accepting three trees the worker refused, which is exactly what that step now
-  prevents: a green release gate may not bless a runtime that will not launch.
+  3 found the tool accepting three trees the worker refused, and cycle 4 two more — a `null` size in
+  `manifest.files`, which collided with the tool's own no-size sentinel, and a tree that agrees with
+  its regenerated manifest but is short of a package a compile resolves, which the tool never
+  resolved. Both are closed and both are fixtures now. **The claim is that the two refuse the same
+  trees for every fixture the probe exercises, not for every malformed shape that exists**; the
+  tool keeps its release-only checks (licences, Mach-O architecture, the foreign binary's absence)
+  and accepts a relative argument, which is tooling input rather than a host setting.
+- **Two things the walk does before it trusts anything, and one it forgives.** The manifest's type
+  is proven before it is read: cycle 4 replaced it with a FIFO and both validators blocked in
+  `readFileSync` — the worker answered neither compile nor shutdown, and the release gate hung —
+  so both `lstat` it and refuse anything that is not a regular file. And a regular `.DS_Store` is
+  tolerated anywhere in the tree: the assumption that code signing would refuse one was wrong, the
+  app's `CodeResources` omits that name and a signed app with one still verifies strictly, so
+  refusing Canvas because a user opened the resource folder in Finder would be a support failure
+  rather than a boundary. As a link or a directory it is refused like anything else, and nothing
+  else unstaged is tolerated.
 - **A damaged runtime is never the design's fault.** esbuild reports a plugin's thrown error as a
   message detail, and 03a's mapping read that detail's `code` as a curated diagnostic code: a
   runtime without React answered a valid design `failed`, with `MODULE_NOT_FOUND` and the
@@ -567,6 +581,14 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   covered only `CompileFailedError`, so the damaged-runtime test asserts the `unavailable` message
   is the one curated sentence and runs the same rule over it, and the probe requires that sentence
   from every runtime it refuses.
+- **A damaged installation is not something a restart repairs, and the renderer is told so.**
+  `buildFailure` replaced every unavailable reason with the restart sentence, so cycle 4 found the
+  frame advising a restart for a runtime the app had staged wrongly. `CompilerUnavailableError` and
+  the worker's `unavailable` response now carry a `reason` — `damaged-runtime` or `lost-compiler` —
+  and `buildFailure` picks between the two curated sentences by that reason rather than by reading
+  text; no exception text is ever forwarded. Both sentences live in `compiler.ts`.
+  `compiler.test.ts` asserts the reason survives the real IPC boundary and `CanvasBuilds.test.ts`
+  asserts the sentence the frame publishes for each reason.
 - The worker loads `esbuild`, `tailwindcss` and `postcss` through that one anchor instead of
   importing them, so `build:compiler-worker` needs no `--external` flags at all and the bundled
   entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only `react`/`react-dom`
