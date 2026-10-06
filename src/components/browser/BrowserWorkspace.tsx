@@ -373,6 +373,7 @@ export default function BrowserWorkspace({
       <BrowserToolbar
         urlInputRef={urlInputRef}
         urlInput={urlInput}
+        pageUrl={activeUrl}
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         loading={loading}
