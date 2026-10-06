@@ -458,6 +458,10 @@ test('[E1] Authenticated desktop round trip', async () => {
     XDG_DATA_HOME: profile.data,
     APPDATA: profile.roamingAppData,
     LOCALAPPDATA: profile.localAppData,
+    // Claude Code's updater installs into XDG_DATA_HOME and links the launcher
+    // to it; from this profile that would leave the launcher dangling once the
+    // profile is deleted.
+    DISABLE_UPDATES: '1',
     ELECTRON_START_URL: bootstrapUrl,
     DROID_PATH: droidPath,
     SIDECAR_ENTRY: sidecarEntry,
@@ -497,6 +501,7 @@ test('[E1] Authenticated desktop round trip', async () => {
       await window.droidControl!.setOnboarding({
         completed: false,
         cliAutoUpdate: false,
+        harnessCliAutoUpdate: false,
         appAutoUpdate: false,
       });
     }, apiKey);

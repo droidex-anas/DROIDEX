@@ -44,6 +44,9 @@ const TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export class CodexToolBridge {
   readonly declarations: CodexNamespace[];
+  /** Names the deferred namespaces up front; without it a chat outside a
+      project never looks them up and says DROIDEX gave it no tools. */
+  readonly instructions: string | undefined;
   private readonly tools = new Map<
     string,
     { serverName: string; tool: DroidTool; input: z.ZodObject<Record<string, z.ZodTypeAny>> }
@@ -82,6 +85,12 @@ export class CodexToolBridge {
         tools,
       };
     });
+    this.instructions = this.declarations.length
+      ? [
+          "This chat runs inside DROIDEX, the user's desktop app for coding agents, and DROIDEX has given it these tools. They are available now; only their full definitions load when you look them up. Use them whenever the user asks about DROIDEX, its chats, threads, projects, sidebar or automations:",
+          ...this.declarations.map(({ name, description }) => `- ${name}: ${description}`),
+        ].join('\n')
+      : undefined;
   }
 
   async call(params: unknown): Promise<ToolReply> {
