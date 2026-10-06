@@ -34,7 +34,9 @@ export async function mountWebview(app: ElectronApplication, script: string) {
     addEventListener('message', event => {
       if (event.source !== child || event.data?.probe !== 'flood') return;
       received++;
-      if (received % 10000 === 0) console.log('WEBVIEW_RECEIVED ' + JSON.stringify({
+      // The first message is reported at once, so receipt is observable without
+      // waiting for a 10,000 checkpoint the guest may not reach for seconds.
+      if (received === 1 || received % 10000 === 0) console.log('WEBVIEW_RECEIVED ' + JSON.stringify({
         received, elapsedMs: performance.now() - startedAt,
       }));
     });

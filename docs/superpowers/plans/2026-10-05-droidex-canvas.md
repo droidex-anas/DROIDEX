@@ -672,7 +672,7 @@ Settled by 03c's second review cycle (Astra xhigh, adversarial, against `0790088
   probe is inline in the spec, and esbuild is resolved from the sidecar's declared copy so the root's
   dependency list is unchanged.
 
-Settled by 03c's third review cycle (Astra xhigh, adversarial, against `0790088b`):
+Settled by 03c's third review cycle (Astra xhigh, adversarial, against `7e2c90cb`):
 
 - **`activate` could create a window before the preview session existed.** `app.on('activate')`
   called `createMainWindow()` directly, so a guest could attach into a session that still routed
@@ -710,6 +710,29 @@ Settled by 03c's third review cycle (Astra xhigh, adversarial, against `0790088b
   so restoring the old character-based cut in the intermediate still passed: the case now drains the
   raw `drain()` answer and asserts that snapshot is already within 512 bytes and identical to what
   the reader produced, so the two sides cannot drift apart unnoticed.
+
+Settled by 03c's fourth review cycle (Astra xhigh, adversarial, against `f0ddc906`):
+
+- **`[C2]`'s receipt check was a race, and it is the one thing that keeps the case honest.** The
+  retained probe reported guest receipt only at 10,000-message checkpoints, while the poll waited on
+  the *sender's* count — which the generated frame reaches in its own process long before the guest
+  has drained anything — and then asserted receipt afterwards. Under load the guest had received 1
+  message when the window closed, so the assertion failed with nothing wrong in the code. The probe
+  now reports the first message immediately as well, and the poll waits on receipt rather than on
+  `sent`. Without that fact `direct === 0` would hold just as well for a flood that never happened.
+- **The 3,000 ms chat bound was a property of the machine, not of the code, so it is reported rather
+  than asserted.** Measured on one Apple M4, the chat's p95 during the flood is 11–34 ms while its
+  single worst sample ranges over 1.1–3.3 s: maxima of 1,102 and 1,239 ms on early idle runs
+  (matching Task 1's 1,178/1,219), but 3,135 ms on a later idle run and 2,600/3,320 ms under ten busy
+  cores. The old bound therefore failed on an idle machine too, and it failed under that load at the
+  base commit `243b9ba5`, which is what settles it: the number being asserted was one outlier sample,
+  not the chat's responsiveness. Calls made while the flood is in flight now use a 30,000 ms bound that guards against a
+  hang, and `[C2]` asserts containment instead: nothing reached the chat, the guest did receive the
+  flood, no renderer died, both processes answered repeatedly throughout the window, and both child
+  processes were released. The latencies are in the case's own output for whoever wants to compare
+  them. Timing belongs to the replay harness, not to a smoke gate (AGENTS.md).
+- `[C1]` and `[C3]` were left alone; they were not observed flaking, and widening bounds nobody has
+  seen fail would be guessing.
 
 - Adding the repair took `CanvasBuilds.ts` to 514 lines. The two queueing paths were folded into one
   `queueFromHead` (the head rule had been written twice), and `canvasCompilerProcesses.ts` now owns
