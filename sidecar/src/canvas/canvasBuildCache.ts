@@ -114,12 +114,9 @@ export class CanvasBuildCache {
     const restored: RestoredBuild[] = [];
     for (const manifest of manifests) {
       // A cache that cannot be read is a cache that gets rebuilt.
-      const present = await this.files
-        .listBuildOutputs(manifest.canvasId)
-        .catch((error: unknown) => {
-          console.error(`Canvas ${manifest.canvasId} build outputs were not read:`, error);
-          return null;
-        });
+      // Canvas storage logs the cause; what matters here is that this canvas's
+      // frames stay pending and the sweep rebuilds them.
+      const present = await this.files.listBuildOutputs(manifest.canvasId).catch(() => null);
       if (!present) continue;
       for (const design of manifest.designs) {
         const revisionId = design.revisionId;
@@ -136,10 +133,7 @@ export class CanvasBuildCache {
 
   /** A cache entry we cannot read or parse is one we cannot use; it rebuilds. */
   private async readOutcome(canvasId: string, name: string): Promise<CachedOutcome | null> {
-    const text = await this.files.readBuildOutput(canvasId, name).catch((error: unknown) => {
-      console.error(`Canvas ${canvasId} build outcome ${name} was not read:`, error);
-      return null;
-    });
+    const text = await this.files.readBuildOutput(canvasId, name).catch(() => null);
     if (text === null) return null;
     let value: unknown;
     try {
