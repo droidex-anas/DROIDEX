@@ -75,6 +75,8 @@ export interface ProjectThread {
   repliesShed?: true;
   /** Why that turn failed. The session summary keeps the phase, not the reason. */
   error?: string;
+  /** Its newest report, kept here while the project's inbox is full. */
+  owedReport?: string;
   waiting: boolean;
 }
 
@@ -100,6 +102,8 @@ export interface Project {
   paused: boolean;
   /** The hold is the user's Stop on the main chat alone, which that chat's own next spawn lifts. */
   leadStopped?: true;
+  /** The hold is the main chat's failed turn alone, which its next successful turn lifts. */
+  leadFailed?: true;
   launching: number;
   plan: ProjectStep[];
   threads: ProjectThread[];

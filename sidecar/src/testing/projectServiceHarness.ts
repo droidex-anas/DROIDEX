@@ -81,6 +81,8 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     // Holds a bound thread before its first turn, while it is not streaming yet.
     firstTurnGate: undefined as Promise<void> | undefined,
     createFailure: undefined as 'before-bind' | 'after-bind' | undefined,
+    // Sessions stopped on a permission request only the user can answer.
+    awaitingApproval: new Set<string>(),
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
   // What each session is actually blocked on, the way the harness would know.
@@ -99,6 +101,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
+    awaitingApproval: (id) => state.awaitingApproval.has(id),
     catalog: async () => {
       if (state.catalogGate) await state.catalogGate;
       return [

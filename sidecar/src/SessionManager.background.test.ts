@@ -112,7 +112,10 @@ for (const action of ['cancel', 'close', 'interrupt'] as const) {
         });
       settings.resolve();
       // Nothing was dispatched, and only the caller withdrawing it is a cancellation.
-      assert.equal((await delivery).status, action === 'cancel' ? 'cancelled' : 'unavailable');
+      assert.deepEqual(
+        await delivery,
+        action === 'cancel' ? { status: 'cancelled' } : { status: 'busy', retryOn: 'target' },
+      );
       assert.deepEqual(provider.prompts, ['Initial user prompt']);
       if (action === 'cancel') assert.deepEqual(providerCloses(h), []);
     } finally {

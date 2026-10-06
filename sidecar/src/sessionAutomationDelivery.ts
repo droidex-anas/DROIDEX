@@ -4,6 +4,8 @@ import type { LiveSession, SessionLifecycleDependencies } from './SessionLifecyc
 interface DeliveryContext {
   dependencies: SessionLifecycleDependencies;
   canResume: () => boolean;
+  /** Releases an idle runtime that is safe to release; false when none is. */
+  makeRoom: (appSessionId: string) => Promise<boolean>;
   resume: (appSessionId: string) => Promise<boolean>;
   start: (appSessionId: string, prompt: string, delivery: ScheduledTurnDelivery) => Promise<void>;
 }
@@ -11,8 +13,11 @@ interface DeliveryContext {
 export interface ScheduledTurnDelivery {
   isCurrent: () => boolean;
   accepted: () => void;
-  /** The turn stopped before the runtime was given the prompt. */
-  declined: () => void;
+  /**
+   * The turn stopped before the runtime was given the prompt: 'stale' when the
+   * runtime changed under it, 'failed' when preparing a current runtime failed.
+   */
+  declined: (reason: 'stale' | 'failed') => void;
 }
 
 /** Acceptance requires a runtime stream response, not merely a reserved turn. */
@@ -34,7 +39,13 @@ export async function deliverScheduledMessage(
   if (historical?.appSessionId !== appSessionId || !available()) return refusal();
   let live = d.registry.getLive(appSessionId);
   if (!live) {
-    if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };
+    if (!context.canResume()) {
+      // At the runtime cap, an idle runtime that is safe to release makes room.
+      if (!available()) return refusal();
+      await context.makeRoom(appSessionId);
+      if (!available()) return refusal();
+      if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };
+    }
     if (!(await context.resume(appSessionId)) || !available()) return refusal();
     live = d.registry.getLive(appSessionId);
     if (live?.summary.providerSessionId !== (historical.providerSessionId ?? appSessionId))
@@ -70,8 +81,8 @@ async function dispatch(
   isCurrent: () => boolean,
   turn: Pick<ScheduledTurnDelivery, 'isCurrent'>,
 ): Promise<AutomationDeliveryReceipt> {
-  let acknowledge: (outcome: 'accepted' | 'declined' | 'unknown') => void = () => undefined;
-  const acknowledgement = new Promise<'accepted' | 'declined' | 'unknown'>((resolve) => {
+  let acknowledge: (outcome: 'accepted' | 'stale' | 'failed' | 'unknown') => void = () => undefined;
+  const acknowledgement = new Promise<'accepted' | 'stale' | 'failed' | 'unknown'>((resolve) => {
     acknowledge = resolve;
   });
   // Reserve synchronously, then wait for the runtime, not async provider setup.
@@ -80,8 +91,8 @@ async function dispatch(
     accepted: () => {
       acknowledge('accepted');
     },
-    declined: () => {
-      acknowledge('declined');
+    declined: (reason) => {
+      acknowledge(reason);
     },
   });
   void settled.then(
@@ -94,7 +105,15 @@ async function dispatch(
   );
   const outcome = await acknowledgement;
   if (outcome === 'accepted') return { status: 'accepted', settled };
-  if (outcome === 'declined' && !isCurrent()) return { status: 'cancelled' };
+  if (outcome !== 'unknown' && !isCurrent()) return { status: 'cancelled' };
+  // The recipient changed under the delivery; it waits for that recipient.
+  if (outcome === 'stale') return { status: 'busy', retryOn: 'target' };
+  // Retrying a preparation that failed would fail the same way, so it holds.
+  if (outcome === 'failed')
+    return {
+      status: 'unavailable',
+      error: 'The chat could not be prepared for this delivery, so nothing was sent to it.',
+    };
   return {
     status: 'unavailable',
     error: 'Delivery was not acknowledged; outcome unknown. Inspect conversation before retrying.',
