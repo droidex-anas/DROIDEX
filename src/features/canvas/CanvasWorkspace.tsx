@@ -13,6 +13,7 @@ import { useStoreDispatch } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
 import { CanvasClient } from './client';
 import {
+  CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
   reduceCanvasPane,
   watchedCanvasId,
@@ -21,6 +22,9 @@ import {
 import type { CanvasSummary } from './protocol';
 
 const canvas = new CanvasClient(bridge);
+// A Create may finish after its tab unmounts. Keep its key until a mounted pane
+// confirms the reply, so reopening cannot offer a second Create.
+const pendingCreateMutationIds = new Map<string, string>();
 
 export function CanvasWorkspace({
   appSessionId,
@@ -39,14 +43,23 @@ export function CanvasWorkspace({
   onToggleExpanded: () => void;
   onAttachmentChange: (appSessionId: string, canvasId: string | null) => void;
 }) {
-  const [state, dispatch] = useReducer(
-    reduceCanvasPane,
-    namedCanvasId ?? canvasId,
-    initialCanvasPaneState,
+  const [state, dispatch] = useReducer(reduceCanvasPane, namedCanvasId ?? canvasId, (initialId) =>
+    initialCanvasPaneState(
+      initialId,
+      namedCanvasId === undefined && pendingCreateMutationIds.has(appSessionId),
+    ),
   );
   const [reopenCount, setReopenCount] = useState(0);
-  const createMutationId = useRef<string | null>(null);
-  const createInFlight = useRef(false);
+  const createInFlight = useRef<string | null>(null);
+  const currentTarget = useRef({ appSessionId, namedCanvasId });
+  currentTarget.current = { appSessionId, namedCanvasId };
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const attach = useCallback(
     (attached: string | null) => {
@@ -60,6 +73,10 @@ export function CanvasWorkspace({
   useEffect(() => {
     if (namedCanvasId !== undefined) {
       dispatch({ type: 'selected', canvasId: namedCanvasId });
+      return;
+    }
+    if (pendingCreateMutationIds.has(appSessionId)) {
+      dispatch({ type: 'create-failed', message: CREATE_RECOVERY_MESSAGE });
       return;
     }
     let active = true;
@@ -85,22 +102,30 @@ export function CanvasWorkspace({
   }, [watched]);
 
   const create = () => {
-    if (createInFlight.current) return;
-    createInFlight.current = true;
-    createMutationId.current ??= crypto.randomUUID();
+    if (createInFlight.current === appSessionId) return;
+    createInFlight.current = appSessionId;
+    const mutationId = pendingCreateMutationIds.get(appSessionId) ?? crypto.randomUUID();
+    pendingCreateMutationIds.set(appSessionId, mutationId);
     dispatch({ type: 'creating' });
     canvas
-      .createCanvas(appSessionId, createMutationId.current)
+      .createCanvas(appSessionId, mutationId)
       .then((created) => {
-        createMutationId.current = null;
-        dispatch({ type: 'created', canvasId: created });
+        if (!mounted.current || currentTarget.current.appSessionId !== appSessionId) return;
+        pendingCreateMutationIds.delete(appSessionId);
         onAttachmentChange(appSessionId, created);
+        if (currentTarget.current.namedCanvasId === undefined)
+          dispatch({ type: 'created', canvasId: created });
       })
       .catch((error: unknown) => {
-        dispatch({ type: 'create-failed', message: recoveryMessage(error) });
+        if (
+          mounted.current &&
+          currentTarget.current.appSessionId === appSessionId &&
+          currentTarget.current.namedCanvasId === undefined
+        )
+          dispatch({ type: 'create-failed', message: recoveryMessage(error) });
       })
       .finally(() => {
-        createInFlight.current = false;
+        if (createInFlight.current === appSessionId) createInFlight.current = null;
       });
   };
 

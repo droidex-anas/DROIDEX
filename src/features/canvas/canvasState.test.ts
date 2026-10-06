@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
   reduceCanvasPane,
   watchedCanvasId,
@@ -49,6 +50,13 @@ test('opening the pane only reads: nothing but an explicit Create attaches a can
     watchedCanvasId(reduceCanvasPane(creating, { type: 'created', canvasId: 'canvas-1' })),
     'canvas-1',
   );
+});
+
+test('reopening a pane with an unsettled Create keeps recovery ahead of cached attachment', () => {
+  assert.deepEqual(initialCanvasPaneState('canvas-old', true), {
+    status: 'create-recovering',
+    message: CREATE_RECOVERY_MESSAGE,
+  });
 });
 
 test('a cached attachment loads its canvas and the sidecar answer still decides', () => {

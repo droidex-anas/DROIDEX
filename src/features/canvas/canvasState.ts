@@ -6,6 +6,8 @@
 
 import type { CanvasSnapshot } from './protocol';
 
+export const CREATE_RECOVERY_MESSAGE = 'Canvas creation may still be in progress.';
+
 export type CanvasPaneState =
   // Reading which canvas this chat is attached to.
   | { status: 'opening' }
@@ -35,7 +37,11 @@ export type CanvasPaneEvent =
  * A cached attachment lets a reopened pane show its canvas instead of blinking
  * through the empty state; the sidecar is still asked, and its answer wins.
  */
-export function initialCanvasPaneState(cachedCanvasId: string | null): CanvasPaneState {
+export function initialCanvasPaneState(
+  cachedCanvasId: string | null,
+  pendingCreate = false,
+): CanvasPaneState {
+  if (pendingCreate) return { status: 'create-recovering', message: CREATE_RECOVERY_MESSAGE };
   return cachedCanvasId === null
     ? { status: 'opening' }
     : { status: 'loading', canvasId: cachedCanvasId };

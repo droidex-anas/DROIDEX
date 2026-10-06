@@ -110,7 +110,9 @@ const canvasScopes = new CanvasScopes();
 const canvasBuilds = new CanvasBuilds();
 const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
   isScopeActive: (scopeId) => canvasScopes.isScopeActive(scopeId),
-  bindScopeCanvas: (scopeId, canvasId) => { canvasScopes.bindScopeCanvas(scopeId, canvasId); },
+  bindScopeCanvas: (scopeId, canvasId) => {
+    canvasScopes.bindScopeCanvas(scopeId, canvasId);
+  },
   isChatKnown: (appSessionId) =>
     manager.sessionSummary(appSessionId)?.appSessionId === appSessionId,
 }).then((workspace) => {
