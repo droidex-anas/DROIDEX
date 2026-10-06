@@ -341,7 +341,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
 
 - [x] `canvas/03a-compiler-worker`: Implement `compiler.ts`, `compilerWorker.ts`, initial `designSystems.ts` and `presets/droidex.ts`, with virtual resolution and an import allowlist.
   Done: Fixtures compile working stateful React and reject bad source, unsupported imports and path escapes.
-- [ ] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
+- [x] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
 - [ ] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
   Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
@@ -368,6 +368,117 @@ Settled by 03a (landed in `sidecar/src/canvas/{compiler.ts,compilerWorker.ts,des
 - The virtual source tree never touches the real filesystem. esbuild expands a template-literal dynamic import with a static relative prefix into a glob and lists the importer's resolve directory underneath plugins, so every virtual file claims a directory that is never created, and the supported packages are resolved to absolute paths by the plugin rather than through node resolution from a virtual importer. A glob esbuild synthesised is refused like any other non-literal import.
 - Indirect `require`, `require.resolve`, `import.meta.resolve`, `new Function` and `globalThis['require']` are runtime behaviour inside the sandboxed preview, not compiler concerns: the allowlist bounds what is bundled and which paths the resolver may touch, and the webview CSP and the no-network boundary own what can be loaded at run time. esbuild's `__require` shim throws in a browser. Task 3c must not put `unsafe-eval` in the preview CSP. A design importing its own `./x.css` stays inside the tree and remains supported.
 - CSS resources are reviewed on the parsed value rather than on its text, both as authored and with CSS escapes decoded, and once more over Tailwind's generated CSS, because a utility with an arbitrary value is written in the TSX and appears nowhere else. Only `data:` resources are accepted until Task 7 adds owned image references.
+
+Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.ts,canvasCommits.ts}`):
+
+- `CanvasBuilds` is the only owner of a design's build state. `canvasManifest.ts` projects
+  `CanvasFrame.build` from it through the one-method `BuildStates` port, so there is no second copy
+  to keep in step, and a design the registry has never heard of is `pending`. `CanvasWorkspace`
+  implements `CanvasBuildHost` (`buildTarget`, `readFiles`, `commitBuild`); nothing else reaches in.
+- `CANVAS_LIMITS` did not carry the build limits after 02a, so 03b added them where the other
+  spec §5 contracts live: `buildSlots: 2` and `buildDeadlineMs: 15_000`. Nothing hard-codes either.
+- `write` enqueues inside the commit that makes the revision durable, right after `heads.install`,
+  and a `create` whose frame is seeded from a saved revision enqueues there too: both arrive with
+  source, so both are built the same way. That is what lets the change each publishes already say
+  `pending` or `building` for the new revision instead of the previous revision's `ready` artifact
+  (spec §4), and it is why neither publishes a second change of its own.
+- **One commit owns an outcome.** A build's result reaches the canvas through `commitBuild`, which
+  runs on the workspace's own commit queue beside `write` and `arrange`. Inside that one step, and
+  nowhere else: the `canPublish` and lifecycle gate against the head as the commit finds it, the
+  outcome file `builds/<revisionId>.json`, the recorded state, the `lastWorkingRevisionId` read
+  from that same head, and the published frame. Only the content-addressed
+  `builds/<artifactId>.html` is written beforehand; an orphan there is harmless and unreferenced.
+- The gate runs again after the outcome file is written, because `cancelCanvas`, `requestRebuilds`
+  and `close` all run outside the commit queue and any of them can take the frame while that write
+  is in flight. A result that has lost it unlinks the file it just placed and settles silently: the
+  replacement's own commit is already behind this one in the queue and writes its own outcome. That
+  is the only way a restart cannot be handed an abandoned success.
+- **The deadline bounds compilation only.** It starts when the compile does and is released the
+  moment the compile settles, so saving and publishing — bounded by storage failure handling like
+  every other workspace write — can never be read as an overdue build, and no process is ever ended
+  for a build that had already finished.
+- Build state is keyed by canvas and design: two manifests may hold the same design ID, and sharing
+  one entry would have them share a generation counter and overwrite each other's outcomes.
+- `requestRebuilds` holds no sweep mark and may be called on every read. The head decides, never
+  the caller's projection: a frame whose revision has moved on since that snapshot is left alone,
+  so an old projection cannot erase a current `ready`. Coalescing makes the repeat cheap.
+- A `cancelled` frame is rebuilt by the next read of its canvas, the same as a `pending` one: both
+  mean nothing has been built for the current revision, and a detach that cancelled a board's
+  builds would otherwise leave its frames stuck until Task 5's Retry ships.
+- A build transition commits the manifest to take the next change sequence. The renderer drops a
+  change whose sequence is at or below its projection (`client.ts`), so an in-memory sequence would
+  make build changes invisible; the commit is also where `ready` persists the last-working pointer.
+  A commit refused because the workspace is closing is the expected shutdown path and is not logged.
+- `PersistedDesign` gained a required `lastWorkingRevisionId` (spec §7). `CANVAS_MANIFEST_VERSION`
+  stays 1: Canvas has never shipped, so there is no old manifest to read and no migration to add.
+  `failed` reports that pointer; `ready` advances it; nothing else writes it.
+- `canPublish` is the plan's predicate verbatim. Its `job` parameter is typed as the three fields it
+  reads (`designId`, `revisionId`, `generation`), which `CompileInput` satisfies, so the running job
+  can be passed directly. `generation` is a per-design attempt counter owned by this registry.
+  Beside the predicate, every publication revalidates the lifecycle after each await: the registry
+  is open, the job still holds its slot, and the canvas and frame are still there.
+- Diagnostic codes 03a did not need, all produced by the queue rather than the compiler:
+  `build_timeout` (the overdue message names `CANVAS_LIMITS.buildDeadlineMs`), `compiler_unavailable`
+  (one fixed recovery message, never the worker's own text) and `storage_failed` (canonical source
+  that cannot be read, or an artifact that cannot be saved). A failed build keeps at most
+  `MAX_BUILD_DIAGNOSTICS` (64) of them, which is also the bound the cache schema enforces.
+- Derived cache layout per canvas: `builds/<artifactId>.html` and one outcome per revision at
+  `builds/<revisionId>.json` (`{version, designId, revisionId, result}`, revalidated on read).
+  Both go through `canvasFiles.ts`'s flushed write-and-rename, `removeTemporaries` now sweeps
+  `builds/*.tmp`, and a build superseded while it was saving can leave an orphan entry: spec §7
+  keeps derived-cache cleanup bounded and out of this release.
+- **The cache never decides whether an outcome is valid; the manifest does.** On restore a `ready`
+  outcome is served only when the design's `lastWorkingRevisionId` is that same revision and the
+  artifact document is there, and a `failed` one only for the revision the frame currently holds;
+  a published `ready` set that pointer in the same commit, so an outcome whose commit never
+  happened can never match it however the cleanup of its file went. Taking an abandoned outcome
+  file back stays best-effort hygiene rather than something publication correctness rests on.
+- The cache keeps only an outcome that is a function of the source: a `ready` build and the
+  compiler's own diagnostics. A failure of the attempt rather than the design — `build_timeout`,
+  `compiler_unavailable`, `storage_failed` — is live state and is never written, because some of
+  them advise restarting DROIDEX and a restart that still showed them would make that a lie; the
+  next open leaves the frame `pending` and the sweep retries. `canvasBuildFailures.ts` owns that
+  rule beside the codes, so the publication gate needs no knowledge of either.
+- `load` reads those outcomes when the workspace opens; anything the manifest does not vouch for
+  leaves the frame `pending`, and so does one whose file cannot be read or parsed — a derived cache
+  that refuses a read is a miss, never a reason a canvas with readable source fails to open. `requestRebuilds(snapshot)` is the on-demand
+  recovery, which any read may call (`canvas.subscribe` today, after it has confirmed the page is
+  still there, so a refused subscription schedules nothing). It queues the `pending` and
+  `cancelled` frames that still have source, checked against the head. Missing cache is never an
+  error.
+- Each slot owns its own `CompilerWorker`, forked on that slot's first build, so the second process
+  exists only once two builds overlap. An overdue build aborts its signal and then ends its own
+  slot's process, which may be wedged inside single-threaded Tailwind where no signal is read; the
+  build on the other slot is untouched, and the overdue slot forks a fresh process for its next
+  build. A process that dies on its own rejects with `CompilerUnavailableError`, which fails that
+  one job as `compiler_unavailable` and nothing else: 03a's client forks a replacement itself, so
+  the slot keeps it. Nothing shared means no build is ever blamed for another design's hog.
+- `cancelCanvas` drops that canvas's queued jobs, abandons its running ones and reports `cancelled`
+  with the revision each was building, so a later reader's sweep asks for the work again. A
+  superseded or cancelled compile never flashes `cancelled`: its rejection publishes nothing,
+  because the state that replaced it is already the frame's.
+- `shutdownCanvas` closes builds before the workspace, so a settling build still reports through the
+  workspace and the workspace then waits for that commit. `close()` is idempotent, and it waits for
+  the compiler terminations it has already started, including one an overdue build began.
+- What 3c and Task 5 consume: `CanvasBuilds.readArtifact(canvasId, artifactId)` returns one ready
+  artifact's HTML document or null when the cache has lost it; `frame.build` carries the
+  `artifactId` to ask for, the diagnostics to show, and the `lastWorkingRevisionId` whose artifact
+  is still on disk; `requestRebuilds` is what a new reader calls. How a preview receives that
+  document is 3c's problem.
+- A build transition commits only the manifest fields it owns. It records no mutation receipt and
+  never touches the retry ledger, because a build is not a mutation and nothing can retry one; a
+  commit it cannot make leaves the last-working pointer, the change sequence and the ledger exactly
+  as they were on disk, and `canvasHeads.recover` rereads the head so memory follows disk (02b's
+  rule). The frame keeps its derived state in memory and the pane reads it on the next snapshot.
+- Keeping `CanvasWorkspace.ts` under 500 lines took two extractions, both cohesive owners rather
+  than forwarding layers: `canvasCommits.ts` owns admission, one-at-a-time commits and publication
+  after the lock moves on, and `canvasFrames.stageRevision` owns the revision tree a write stages,
+  beside the `stageFrames` a create already staged there. `canvasBuildCache.ts` likewise owns the
+  projection from its own files to a build state (`restoreStates`, `builtState`), which is where
+  Task 8's element output belongs too. The slot scheduler was examined as a third owner and
+  rejected: its members are all thin accessors over a two-element array, and splitting it from the
+  state registry would give one invariant two owners with a callback seam between them.
+
 
 
 - [ ] Add compile fixtures for working React state, CSS, relative modules, bad TSX, unsupported import and attempts to read outside the virtual tree. Reject undeclared packages, URL imports, Node builtins and filesystem escapes in the resolver. Never invoke generated source in the sidecar process.
@@ -739,6 +850,7 @@ Noted during execution; not in any task's scope. Each needs its own change and r
 - `sidecar/src/canvas/CanvasWorkspace.test.ts` sits at 798 effective lines against the 800 cap. The next behavior that needs a workspace-level test must first move an existing contract to its module's owner suite (`canvasHeads`, `canvasLeases`, `canvasFrames`, `canvasManifest`) rather than grow this one.
 - `Bridge.send` now returns `false` when the renderer's offline queue holds `MAX_QUEUED_COMMANDS`, and the sidecar holds up to `MAX_HELD_CLIENT_MESSAGES` frames while admitting a socket (02c). Nothing presents a refused command to the user yet, and the 64-frame headroom for live commands sent during admission is not enforced on callers (voice sends freely). Surface refusals in the UI and bound live admission traffic as one bridge-level change.
 - The Canvas renderer client logs a failed gap-recovery resync and retries on the next change; it has no error channel. Task 5 surfaces it in the pane.
+- A failed frame names the revision it falls back to, but the artifact document for that revision may be gone from the derived cache. The manifest pointer is the truth and survives; `CanvasBuilds.readArtifact` answers `null`, as its contract says, and the frame shows an honest placeholder beside its diagnostics. Rebuilding that revision on demand belongs with Task 5, where the Retry control lives and there is a user action to attach the work to (03b review cycle 1, accepted as a follow-up).
 
 ## Plan self-review and handoff checklist
 

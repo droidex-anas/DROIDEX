@@ -12,6 +12,7 @@ import {
   type PersistedDesign,
   type PersistedMutation,
 } from './canvasManifest.js';
+import type { CanvasBuildState } from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 
@@ -21,8 +22,12 @@ const design: PersistedDesign = {
   rect: { x: 0, y: 0, width: 720, height: 720 },
   layoutVersion: 0,
   revisionId: null,
+  lastWorkingRevisionId: null,
   designSystem,
 };
+
+/** These cases are about the ledger, where nothing has been built yet. */
+const unbuilt = { stateOf: (): CanvasBuildState => ({ status: 'pending' }) };
 
 const createInput = {
   mutationId: 'create-hey',
@@ -84,6 +89,7 @@ test('a ledger of unsettled receipts refuses the next mutation', () => {
     manifest,
     createInput.mutationId,
     mutationFingerprint(createInput),
+    unbuilt,
   );
   assert.equal(recorded?.frames[0]?.designId, design.designId);
 
@@ -96,18 +102,22 @@ test('a receipt answers only the request and the command it was issued for', () 
   const manifest = emptyCanvasManifest('cv_01', 'Canvas 1', 1_767_225_600_000);
   const fingerprint = mutationFingerprint(createInput);
   recordMutation(manifest, createRecord('scope-1'), anyLeaseLives);
-  assert.equal(recordedCreate(manifest, createInput.mutationId, fingerprint)?.canvasId, 'cv_01');
+  assert.equal(
+    recordedCreate(manifest, createInput.mutationId, fingerprint, unbuilt)?.canvasId,
+    'cv_01',
+  );
   assert.throws(
     () =>
       recordedCreate(
         manifest,
         createInput.mutationId,
         mutationFingerprint({ ...createInput, frames: [] }),
+        unbuilt,
       ),
     { code: 'invalid_input' },
   );
   assert.throws(() => recordedWrite(manifest, createInput.mutationId, fingerprint), {
     code: 'invalid_input',
   });
-  assert.equal(recordedArrange(manifest, 'never-issued', fingerprint), null);
+  assert.equal(recordedArrange(manifest, 'never-issued', fingerprint, unbuilt), null);
 });

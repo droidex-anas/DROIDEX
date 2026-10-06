@@ -116,7 +116,11 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
       plugins: [virtualTreePlugin(sources)],
     });
   } catch (error) {
-    return bundleFailure(diagnosticsFrom(buildFailureMessages(error), 'error'));
+    const messages = buildFailureMessages(error);
+    // Not esbuild's own answer about this source, so not an answer about the
+    // design: the worker reports it as an unavailable compiler instead.
+    if (!messages) throw error;
+    return bundleFailure(diagnosticsFrom(messages, 'error'));
   }
   const js = build.outputFiles?.[0]?.text;
   if (js === undefined) return bundleFailure([]);
@@ -129,8 +133,6 @@ function bundleFailure(diagnostics: CanvasDiagnostic[]): DesignBundleResult {
   return { ok: false, diagnostics: [{ code: 'compile_failed', message: BUNDLE_RECOVERY }] };
 }
 
-// esbuild rejects with a BuildFailure carrying the messages; anything else is a
-// bug in this module, which the caller turns into one generic diagnostic.
 /**
  * Releases the esbuild service process this module started. The compiler worker
  * calls it before its thread goes away, so the service is never left to the
@@ -140,13 +142,17 @@ export async function stopBundler(): Promise<void> {
   await esbuild.stop();
 }
 
-function buildFailureMessages(error: unknown): readonly esbuild.Message[] {
+/**
+ * The messages an esbuild `BuildFailure` carries, or null when the rejection is
+ * not one. A service that stopped under the build and a bug in this module both
+ * land here, and neither is something to show as a diagnostic about the source.
+ */
+function buildFailureMessages(error: unknown): readonly esbuild.Message[] | null {
   if (typeof error === 'object' && error !== null && 'errors' in error) {
     const errors: unknown = error.errors;
     if (isMessageArray(errors)) return errors;
   }
-  console.error('Canvas bundler failure:', error);
-  return [];
+  return null;
 }
 
 function isMessageArray(value: unknown): value is esbuild.Message[] {

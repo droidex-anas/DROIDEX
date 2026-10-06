@@ -4,8 +4,10 @@ import { basename, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import {
   canvasRoot,
+  deferred,
   ledgerAtCapacity,
   observedFileSystem,
+  quietBuilds,
 } from '../testing/canvasStorageSupport.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { mutationFingerprint } from './canvasManifest.js';
@@ -44,15 +46,6 @@ function writeInput(
   deletedPaths: string[] = [],
 ): WriteFilesInput {
   return { mutationId, designId, expectedRevisionId, files, deletedPaths };
-}
-
-/** A promise a test resolves itself, to hold or release an awaited filesystem call. */
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve = (): void => undefined;
-  const promise = new Promise<void>((settle) => {
-    resolve = settle;
-  });
-  return { promise, resolve };
 }
 
 /**
@@ -163,7 +156,7 @@ async function openWorkspace(t: TestContext, options: Options = {}) {
     },
     fs: options.fs,
   };
-  const workspace = await CanvasWorkspace.open(root, deps);
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), deps);
   t.after(() => workspace.close());
   return { root, deps, workspace, boundCanvasIds };
 }
@@ -211,7 +204,7 @@ test('a reopen after termination before the manifest rename finds the old head',
     workspace.write(scope, writeInput('write-hey', designId, null, { 'main.tsx': HEY })),
     { code: 'storage_failed' },
   );
-  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), { ...deps, fs: undefined });
   assert.equal(reopened.snapshot(canvasId).frames[0]?.revisionId, null);
 });
 
@@ -342,7 +335,7 @@ test('a lease revoked while the revision is being written publishes nothing', as
   assert.equal(workspace.snapshot(canvasId).frames[0]?.revisionId, null);
   // The orphan revision is allowed on disk; nothing may ever reference it.
   assert.equal((await readdir(join(root, canvasId, 'revisions'))).length, 1);
-  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), { ...deps, fs: undefined });
   assert.equal(reopened.snapshot(canvasId).frames[0]?.revisionId, null);
 });
 
@@ -477,7 +470,7 @@ test('an attachment survives a reopen, and detaching keeps the canvas and its so
   assert.equal(workspace.attachedCanvasId('app-1'), canvasId);
   await workspace.close();
 
-  const reopened = await CanvasWorkspace.open(root, deps);
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), deps);
   assert.equal(reopened.attachedCanvasId('app-1'), canvasId);
   await reopened.detach('app-1');
   assert.equal(reopened.attachedCanvasId('app-1'), null);
@@ -493,7 +486,7 @@ test('an attachment survives a reopen, and detaching keeps the canvas and its so
   await reopened.attach('app-1', other.canvasId);
   assert.equal(reopened.attachedCanvasId('app-1'), other.canvasId);
   await reopened.close();
-  const again = await CanvasWorkspace.open(root, deps);
+  const again = await CanvasWorkspace.open(root, quietBuilds(), deps);
   assert.equal(again.attachedCanvasId('app-1'), other.canvasId);
 });
 
@@ -576,7 +569,7 @@ test('a canvas whose head cannot be reread is held damaged until reopen', async 
 
   // A manifest already damaged on disk is reported the same way at open.
   await writeFile(join(root, canvasId, 'manifest.json'), '{ not json');
-  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), { ...deps, fs: undefined });
   assert.deepEqual(reopened.damagedCanvasIds(), [canvasId]);
   assert.deepEqual(reopened.listCanvases(), []);
 });
@@ -598,7 +591,7 @@ test('a lease revoked with the replacement manifest ready publishes and binds no
   hold.release();
   await assert.rejects(writing, { code: 'scope_expired' });
   assert.equal(workspace.snapshot(canvasId).frames[0]?.revisionId, null);
-  const reopened = await CanvasWorkspace.open(root, { ...deps, fs: undefined });
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), { ...deps, fs: undefined });
   assert.equal(reopened.snapshot(canvasId).frames[0]?.revisionId, null);
 
   // An unattached create is the same window: no canvas, no attachment, no binding.
@@ -725,7 +718,7 @@ test('a chat on a damaged canvas waits for recovery instead of getting another',
   assert.deepEqual(await readdir(root), [damaged]);
 
   // Reopening finds one manifest, attaching this chat exactly once.
-  const reopened = await CanvasWorkspace.open(root, {
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), {
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });
@@ -746,6 +739,7 @@ test('a canvas full of unsettled receipts refuses a mutation and keeps the old o
     rect: { x: 0, y: 0, width: 720, height: 720 },
     layoutVersion: 0,
     revisionId: null,
+    lastWorkingRevisionId: null,
     designSystem,
   };
   const input = createInput('create-hey');
@@ -761,7 +755,7 @@ test('a canvas full of unsettled receipts refuses a mutation and keeps the old o
     }),
     () => undefined,
   );
-  const workspace = await CanvasWorkspace.open(root, {
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });

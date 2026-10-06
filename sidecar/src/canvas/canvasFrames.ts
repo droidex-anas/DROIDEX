@@ -1,12 +1,14 @@
-// Turning one `canvas_create` into the designs a commit appends: an identity
-// and any seeded source per frame, prepared before the commit owner runs, and
-// the placement, which can only be decided against the manifest being extended.
+// What a create or a write puts on disk before the commit owner runs: an
+// identity and any seeded source per new frame, a complete immutable revision
+// for a changed one, and the placement, which can only be decided against the
+// manifest being extended.
 
 import { randomUUID } from 'node:crypto';
-import { canvasError } from './canvasError.js';
-import { REVISION_METADATA_VERSION, type CanvasFiles } from './canvasFiles.js';
+import { canvasError, CanvasCommandError } from './canvasError.js';
+import { REVISION_METADATA_VERSION, type CanvasFiles, type NewRevision } from './canvasFiles.js';
 import type { PersistedDesign } from './canvasManifest.js';
-import type { CreateFramesInput } from './protocol.js';
+import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
+import { mergedRevisionViolation } from './schema.js';
 
 /** Gap between a created frame and its neighbour, for deterministic placement. */
 const FRAME_GAP_PX = 80;
@@ -30,6 +32,33 @@ export async function stageFrames(
     staged.push({ designId, revisionId, frame });
   }
   return staged;
+}
+
+/**
+ * Writes the complete revision one accepted change produces: the design's
+ * current source with this change applied, flushed into an immutable tree. The
+ * caller publishes it by moving the manifest pointer; until then it is an
+ * unreferenced revision, which is harmless.
+ */
+export async function stageRevision(
+  files: CanvasFiles,
+  canvasId: string,
+  design: PersistedDesign,
+  input: WriteFilesInput,
+): Promise<NewRevision> {
+  const merged = mergeSource(await currentSource(files, canvasId, design), input);
+  const violation = mergedRevisionViolation(merged);
+  if (violation) throw canvasError('invalid_input', violation);
+  const revision: NewRevision = {
+    version: REVISION_METADATA_VERSION,
+    designId: input.designId,
+    revisionId: randomUUID(),
+    parentRevisionId: design.revisionId,
+    designSystem: input.designSystem ?? design.designSystem,
+    createdAt: Date.now(),
+  };
+  await files.publishRevision(canvasId, revision, merged);
+  return revision;
 }
 
 /** New frames land in a row to the right of everything already placed. */
@@ -57,6 +86,7 @@ export function placeFrames(
       rect: { x, y, width: frame.width, height: frame.height },
       layoutVersion: 0,
       revisionId,
+      lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
     });
     x += frame.width + FRAME_GAP_PX;
@@ -92,4 +122,27 @@ async function stageSeed(
     source,
   );
   return revisionId;
+}
+
+/** The manifest points at this revision, so a missing tree is storage damage. */
+async function currentSource(
+  files: CanvasFiles,
+  canvasId: string,
+  design: PersistedDesign,
+): Promise<Map<string, string>> {
+  const revisionId = design.revisionId;
+  if (revisionId === null) return new Map<string, string>();
+  try {
+    return await files.readRevision(canvasId, { designId: design.designId, revisionId });
+  } catch (error) {
+    if (error instanceof CanvasCommandError && error.code === 'invalid_input')
+      throw canvasError('storage_failed', 'The saved source for that frame is missing.');
+    throw error;
+  }
+}
+
+function mergeSource(current: Map<string, string>, input: WriteFilesInput): Map<string, string> {
+  for (const path of input.deletedPaths) current.delete(path);
+  for (const [path, content] of Object.entries(input.files)) current.set(path, content);
+  return current;
 }

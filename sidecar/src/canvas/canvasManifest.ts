@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { canvasError } from './canvasError.js';
 import type {
+  CanvasBuildState,
   CanvasChange,
   CanvasFrame,
   CanvasSnapshot,
@@ -45,6 +46,9 @@ const persistedDesignSchema = z
     rect: frameRectSchema,
     layoutVersion: versionSchema,
     revisionId: canvasIdentifierSchema.nullable(),
+    // Spec §7: the manifest owns the revision a failed build falls back to.
+    // The artifact itself is a derived cache that `CanvasBuilds` rebuilds.
+    lastWorkingRevisionId: canvasIdentifierSchema.nullable(),
     designSystem: designSystemRefSchema,
   })
   .strict();
@@ -139,9 +143,16 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
   };
 }
 
-// Build state is a derived cache (spec §7), so nothing persists it; Task 3 owns
-// the registry that replaces this projection with a real build.
-export function toFrame(design: PersistedDesign): CanvasFrame {
+/** Where a frame's build state comes from: `CanvasBuilds` is its one owner. */
+export interface BuildStates {
+  stateOf(canvasId: string, designId: string): CanvasBuildState;
+}
+
+export function toFrame(
+  canvasId: string,
+  design: PersistedDesign,
+  builds: BuildStates,
+): CanvasFrame {
   return {
     designId: design.designId,
     name: design.name,
@@ -149,15 +160,15 @@ export function toFrame(design: PersistedDesign): CanvasFrame {
     layoutVersion: design.layoutVersion,
     revisionId: design.revisionId,
     designSystem: { ...design.designSystem },
-    build: { status: 'pending' },
+    build: builds.stateOf(canvasId, design.designId),
   };
 }
 
-export function canvasSnapshot(manifest: CanvasManifest): CanvasSnapshot {
+export function canvasSnapshot(manifest: CanvasManifest, builds: BuildStates): CanvasSnapshot {
   return {
     canvasId: manifest.canvasId,
     sequence: manifest.sequence,
-    frames: manifest.designs.map(toFrame),
+    frames: manifest.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
   };
 }
 
@@ -173,11 +184,12 @@ export function canvasSummary(manifest: CanvasManifest): CanvasSummary {
 export function canvasChange(
   manifest: CanvasManifest,
   designs: readonly PersistedDesign[],
+  builds: BuildStates,
 ): CanvasChange {
   return {
     canvasId: manifest.canvasId,
     sequence: manifest.sequence,
-    frames: designs.map(toFrame),
+    frames: designs.map((design) => toFrame(manifest.canvasId, design, builds)),
     removedDesignIds: [],
   };
 }
@@ -186,10 +198,14 @@ export function recordedCreate(
   manifest: CanvasManifest,
   mutationId: string,
   fingerprint: string,
+  builds: BuildStates,
 ): CreateFramesResult | null {
   const record = findMutation(manifest, mutationId, 'create', fingerprint);
   if (record?.kind !== 'create') return null;
-  return { canvasId: manifest.canvasId, frames: record.designs.map(toFrame) };
+  return {
+    canvasId: manifest.canvasId,
+    frames: record.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
+  };
 }
 
 export function recordedWrite(
@@ -206,6 +222,7 @@ export function recordedArrange(
   manifest: CanvasManifest,
   mutationId: string,
   fingerprint: string,
+  builds: BuildStates,
 ): CanvasChange | null {
   const record = findMutation(manifest, mutationId, 'arrange', fingerprint);
   if (record?.kind !== 'arrange') return null;
@@ -216,7 +233,7 @@ export function recordedArrange(
     // head, so a frame later commits removed is simply no longer in the answer.
     frames: record.placements.flatMap((placement) => {
       const design = manifest.designs.find((entry) => entry.designId === placement.designId);
-      return design ? [toFrame({ ...design, ...placement })] : [];
+      return design ? [toFrame(manifest.canvasId, { ...design, ...placement }, builds)] : [];
     }),
     removedDesignIds: [],
   };
