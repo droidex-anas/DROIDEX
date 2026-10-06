@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Check } from '@droidex/icons';
 import type { BrowserViewport, BrowserViewportMode } from '../../types/bridge';
 import { VIEWPORT_LABELS, viewportForMode } from './browserViewport';
+import { OVER_PAGE_CHIP } from './overPageChip';
 
 const MODES = Object.keys(VIEWPORT_LABELS) as BrowserViewportMode[];
 
@@ -65,9 +66,9 @@ export function ViewportMenu({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex h-8 items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 px-2.5 text-[11px] text-droid-text-muted shadow-droid-sm transition-colors hover:text-droid-text-secondary"
+        className={`${OVER_PAGE_CHIP} gap-2 px-3 text-[12px] text-droid-text-muted hover:text-droid-text-secondary aria-expanded:text-droid-text-secondary`}
       >
-        <span className="tabular-nums text-droid-text-secondary">{size(mode)}</span>
+        <span className="tabular-nums text-droid-text">{size(mode)}</span>
         <span>{VIEWPORT_LABELS[mode]}</span>
       </button>
       <AnimatePresence>

@@ -503,15 +503,16 @@ export default function BrowserWorkspace({
 
         {/* Design mode's pill takes the size menu's place while it is on. */}
         {expanded ? (
-          // A fitted page runs under the row and the composer, so it fades into
-          // the app's background behind them; a standard size ends above them.
+          // A fitted page runs under the row and the composer, so a short, soft
+          // veil of the app's background sets them apart from it; a standard
+          // size ends above them.
           <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pt-16"
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pt-8"
             style={{
               paddingBottom: 'calc(var(--composer-height, 0px) + 8px)',
               background:
                 viewportMode === 'fit'
-                  ? 'linear-gradient(to top, var(--droid-bg) calc(100% - 64px), transparent)'
+                  ? 'linear-gradient(to top, color-mix(in srgb, var(--droid-bg) 70%, transparent), color-mix(in srgb, var(--droid-bg) 40%, transparent) var(--composer-height, 0px), color-mix(in srgb, var(--droid-bg) 15%, transparent) calc(var(--composer-height, 0px) + 44px), transparent)'
                   : undefined,
             }}
           >
