@@ -27,10 +27,16 @@ function isCanvasCommand(command: ClientCommand): command is CanvasCommand {
   return command.type.startsWith('canvas.');
 }
 
-/** A transport the test drives directly, standing in for the bridge socket. */
+/**
+ * A transport the test drives directly, standing in for the bridge socket. Its
+ * `reconnect` is the Bridge's own notification, which only a readmitted socket
+ * fires: a first connection sends nothing, and an ordinary replay resume
+ * publishes no event, so a client that waited for one would never catch up.
+ */
 function fakeBridge() {
   const sent: CanvasCommand[] = [];
   let receive: ((event: ServerEvent) => void) | null = null;
+  let readmitted: (() => void) | null = null;
   const transport: CanvasTransport = {
     sendIfConnected(command: ClientCommand) {
       assert.ok(isCanvasCommand(command), 'the Canvas client sent a command it does not own');
@@ -43,10 +49,20 @@ function fakeBridge() {
         receive = null;
       };
     },
+    onReconnected(listener) {
+      readmitted = listener;
+      return () => {
+        readmitted = null;
+      };
+    },
   };
   return {
     sent,
     transport,
+    reconnect(): void {
+      assert.ok(readmitted, 'the client is not watching for reconnections');
+      readmitted();
+    },
     deliver(event: ServerEvent): void {
       assert.ok(receive, 'the client has not subscribed yet');
       receive(event);
@@ -275,7 +291,8 @@ test('a dropped subscription cannot roll back the board that replaced it', async
 
 test('a reconnected page watches its boards again and catches them up', async () => {
   const { bridge, client } = await watching(4);
-  bridge.deliver({ type: 'connection', status: 'connected' });
+  // A replay resume publishes no event, so only the transport can say this.
+  bridge.reconnect();
   await flush();
   assert.equal(bridge.count('canvas.subscribe'), 2);
 

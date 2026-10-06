@@ -31,6 +31,8 @@ const MAX_SNAPSHOT_ATTEMPTS = 4;
 export interface CanvasTransport {
   sendIfConnected(command: ClientCommand): boolean;
   subscribe(listener: (event: ServerEvent) => void): () => void;
+  /** Fired after a reconnected socket is admitted, never for the first one. */
+  onReconnected(listener: () => void): () => void;
 }
 
 /** A failure the sidecar reported, with the stable code from spec §8. */
@@ -278,6 +280,13 @@ export class CanvasClient {
       this.transport.subscribe((event) => {
         this.receive(event);
       });
+      // The sidecar drops a reconnecting page's watches, and this client may
+      // have missed changes while the socket was down, so every board it holds
+      // starts again. A replay resume publishes no event of its own, which is
+      // why this comes from the transport rather than from a connection event.
+      this.transport.onReconnected(() => {
+        this.resubscribe();
+      });
     }
     if (this.pending.size >= MAX_PENDING_REQUESTS)
       return Promise.reject(new Error('Wait for the current Canvas requests to finish.'));
@@ -298,12 +307,6 @@ export class CanvasClient {
   private receive(event: ServerEvent): void {
     if (event.type === 'canvas.change') {
       this.absorb(event.change);
-      return;
-    }
-    // The sidecar drops a reconnecting page's watches, and this client may have
-    // missed changes while the socket was down, so every board starts again.
-    if (event.type === 'connection' && event.status === 'connected') {
-      this.resubscribe();
       return;
     }
     if (event.type === 'canvas.snapshot') {

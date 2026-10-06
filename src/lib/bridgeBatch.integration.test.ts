@@ -345,6 +345,37 @@ test('reconnect carries the last fully applied generation and sequence', async (
   assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
 });
 
+test('every readmitted socket reports a reconnection, and the first one does not', async () => {
+  const reconnected: number[] = [];
+  const { bridge, socket: first, seenTypes, reconnect } = await startBridge();
+  // Subscribed after the first socket opened, the way a lazily started feature
+  // subscribes: the count below is what a reconnect alone adds.
+  const stop = bridge.onReconnected(() => reconnected.push(reconnected.length + 1));
+  first.message(batch('generation-1', 1, 1, [CONNECTED]));
+  assert.deepEqual(reconnected, []);
+  first.close();
+
+  // An ordinary resume the sidecar answers by replaying: no snapshot, no reset,
+  // and no connection event of its own.
+  const second = await reconnect();
+  assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
+  second.open();
+  assert.deepEqual(reconnected, [1]);
+  second.message(batch('generation-1', 2, 2, [{ type: 'history.persistenceRecovered' }]));
+  assert.deepEqual(seenTypes(), ['connection', 'history.persistenceRecovered']);
+
+  second.close();
+  const third = await reconnect();
+  third.open();
+  assert.deepEqual(reconnected, [1, 2]);
+
+  stop();
+  third.close();
+  const fourth = await reconnect();
+  fourth.open();
+  assert.deepEqual(reconnected, [1, 2]);
+});
+
 test('coalesced sequence gaps inside one batch advance the resume cursor safely', async () => {
   const { socket: first, seenTypes, reconnect } = await startBridge();
   first.message({

@@ -29,6 +29,9 @@ export class Bridge {
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
+  private readonly reconnectListeners = new Set<() => void>();
+  /** Whether a socket has ever been admitted, so the first open is not a reconnect. */
+  private admitted = false;
   private queue: ClientCommand[] = [];
   private backoff = 500;
   private url = '';
@@ -94,6 +97,13 @@ export class Bridge {
       pending.forEach((command) => {
         ws.send(JSON.stringify(command));
       });
+      const reconnected = this.admitted;
+      this.admitted = true;
+      // A same-generation replay resume publishes no event of its own, so a
+      // subscription the sidecar held per connection can only be restored from
+      // here. Fired after the queue so a listener's commands follow the
+      // caller's own.
+      if (reconnected) for (const listener of this.reconnectListeners) listener();
     };
     ws.onmessage = (message) => {
       if (this.ws !== ws || typeof message.data !== 'string') return;
@@ -239,6 +249,15 @@ export class Bridge {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
     this.ws.send(JSON.stringify(command));
     return true;
+  }
+
+  /**
+   * Notified after every reconnected socket is admitted, including a resume the
+   * sidecar answered by replaying events. Not fired for the first connection.
+   */
+  onReconnected(listener: () => void): () => void {
+    this.reconnectListeners.add(listener);
+    return () => this.reconnectListeners.delete(listener);
   }
 
   subscribe(listener: Listener): () => void {
