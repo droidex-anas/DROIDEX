@@ -557,6 +557,17 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   trees for every fixture the probe exercises, not for every malformed shape that exists**; the
   tool keeps its release-only checks (licences, Mach-O architecture, the foreign binary's absence)
   and accepts a relative argument, which is tooling input rather than a host setting.
+  Cycle 5 then found the last gap of this kind: resolving the seven specifiers says nothing about
+  whether the packages behind them can load their own dependencies, and a staging input whose
+  `picocolors` was missing one file staged, recorded a faithful manifest, resolved all seven and
+  was accepted while the worker refused it. The gate now **loads** esbuild, PostCSS and Tailwind,
+  in a child process so a package that throws or hangs cannot take it down and the gate's module
+  cache stays clean, with `PATH` the only inherited variable, `Module._resolveFilename` traced and
+  anything resolving outside the root refused. None of the three starts a process at load and the
+  staged binary is named through `ESBUILD_BINARY_PATH`, so esbuild never looks for a platform
+  package and the foreign architecture's binary is still only inspected; a sound tree costs about
+  120 ms. `npm run canvas:runtime` calls the same gate at the end of staging, so that input now
+  fails where it was made.
 - **Two things the walk does before it trusts anything, and one it forgives.** The manifest's type
   is proven before it is read: cycle 4 replaced it with a FIFO and both validators blocked in
   `readFileSync` — the worker answered neither compile nor shutdown, and the release gate hung —
@@ -589,6 +600,21 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   text; no exception text is ever forwarded. Both sentences live in `compiler.ts`.
   `compiler.test.ts` asserts the reason survives the real IPC boundary and `CanvasBuilds.test.ts`
   asserts the sentence the frame publishes for each reason.
+  The parent reads that reply as a boundary rather than as its own type. Cycle 5 showed a missing,
+  object or invented `reason` passing the cast straight into `CompilerUnavailableError` and landing
+  in the renderer's else branch as advice to restart; `compilerResponse` now accepts only the shape
+  the protocol defines and anything else is handled as a crash — the process is lost and ended,
+  every compile in flight fails as a lost compiler, and the next build forks a replacement.
+  `requestId` is checked for its type and nothing more, because a cancelled compile is answered
+  after its caller has already been told and `settle` drops it.
+- **No tsconfig covered `tools/`**, which is how a `CompilerResponse` the protocol change missed
+  survived in `canvas-compiler-probe.ts`: the root config includes `src` only, `tsconfig.node.json`
+  is referenced but never built (so `tsc --noEmit` ignores it), and `canvas:probe` runs under tsx,
+  which does not typecheck. `sidecar/tsconfig.json` now covers that one file and allows JavaScript,
+  which types the plain `.mjs` verifier it calls, so `npm run sidecar:typecheck` sees it. Adding
+  `tools` to the root config was the alternative and is not viable: it pulls the sidecar graph in
+  under the frontend's options and surfaces ten pre-existing errors the sidecar's own config
+  accepts.
 - The worker loads `esbuild`, `tailwindcss` and `postcss` through that one anchor instead of
   importing them, so `build:compiler-worker` needs no `--external` flags at all and the bundled
   entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only `react`/`react-dom`
