@@ -121,7 +121,7 @@ class CanvasDispatch {
     });
     this.workspace = ready.then(
       (opened) => {
-        opened.onChange((change) => {
+        opened.changes.subscribe((change) => {
           if (this.watches.isWatched(change.canvasId)) this.emit({ type: 'canvas.change', change });
         });
         return opened;

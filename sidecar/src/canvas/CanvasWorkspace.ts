@@ -5,6 +5,7 @@
 // nothing published. `canvasHeads.ts` owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
+import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import {
   CanvasFiles,
@@ -61,7 +62,8 @@ interface Committed<T> {
 export class CanvasWorkspace {
   private commits: Promise<unknown> = Promise.resolve();
   private readonly running = new Set<Promise<void>>();
-  private readonly listeners = new Set<(change: CanvasChange) => void>();
+  /** Every committed change, in sequence, for the pane to project. */
+  readonly changes = new CanvasChangeFeed();
   private closed = false;
 
   private constructor(
@@ -92,12 +94,6 @@ export class CanvasWorkspace {
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */
   attachedCanvasId(appSessionId: string): string | null {
     return this.heads.attachedCanvasId(appSessionId);
-  }
-
-  /** Every committed change, in sequence; agent tools mutate this directly. */
-  onChange(listener: (change: CanvasChange) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
   }
 
   /**
@@ -350,7 +346,7 @@ export class CanvasWorkspace {
     this.closed = true;
     while (this.running.size > 0) await Promise.all([...this.running]);
     this.leases.forget();
-    this.listeners.clear();
+    this.changes.clear();
   }
 
   /** Admits one mutation, so close() knows what it still has to wait for. */
@@ -379,20 +375,9 @@ export class CanvasWorkspace {
    */
   private commitChange<T>(work: () => Promise<Committed<T>>): Promise<T> {
     return this.commit(work).then(({ value, change }) => {
-      if (change) this.announce(change);
+      if (change) this.changes.publish(change);
       return value;
     });
-  }
-
-  /** A subscriber that throws loses its change, not the commit or its siblings. */
-  private announce(change: CanvasChange): void {
-    for (const listener of this.listeners) {
-      try {
-        listener(change);
-      } catch (error) {
-        console.error(`A Canvas ${change.canvasId} change listener failed:`, error);
-      }
-    }
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */

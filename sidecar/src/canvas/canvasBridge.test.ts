@@ -509,10 +509,10 @@ test('a change listener that throws loses its change, not the commit', async (t)
   const canvasId = await createCanvas(canvas);
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-subscribe', canvasId });
   const seen: number[] = [];
-  canvas.workspace.onChange(() => {
+  canvas.workspace.changes.subscribe(() => {
     throw new Error('listener failed');
   });
-  canvas.workspace.onChange((change) => seen.push(change.sequence));
+  canvas.workspace.changes.subscribe((change) => seen.push(change.sequence));
 
   const designId = await createFrame(canvas, canvasId, 'req-create-after-throw');
   assert.ok(designId);
