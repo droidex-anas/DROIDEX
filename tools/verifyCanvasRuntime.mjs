@@ -33,6 +33,11 @@ const LICENSED = ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'sc
 // tree can agree with its own manifest and still be short of a package a
 // compile resolves, so the gate resolves them too.
 const ANCHOR_FILE = 'canvas-runtime.js';
+
+// FINDER_METADATA in sidecar/src/canvas/canvasRuntime.ts: Finder writes it into
+// any directory a user opens and the app's signature omits it, so the runtime
+// tolerates it as a regular file and nothing else.
+const FINDER_METADATA = '.DS_Store';
 const RUNTIME_SPECIFIERS = [
   'esbuild',
   'postcss',
@@ -119,6 +124,7 @@ function walk(root, within, sizes, directories, found) {
       continue;
     }
     if (!entry.isFile()) fail(`${path} is not a regular file`);
+    if (entry.name === FINDER_METADATA) continue;
     if (!sizes.has(path)) fail(`${path} is not part of the runtime`);
     found.add(path);
     const bytes = sizes.get(path);

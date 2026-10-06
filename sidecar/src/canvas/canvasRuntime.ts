@@ -37,6 +37,11 @@ const RUNTIME_MODULES = 'node_modules';
 // then above it, so naming a file inside the runtime starts the lookup there.
 const ANCHOR_FILE = 'canvas-runtime.js';
 
+// The one entry staging never places that the runtime tolerates: Finder writes
+// it into any directory a user opens, and the app's own signature omits it, so
+// refusing it would disable Canvas over a still-valid app.
+const FINDER_METADATA = '.DS_Store';
+
 /**
  * Every specifier a compile resolves: the three packages the compiler itself
  * calls into, the value parser Tailwind shares with it, and the three a design
@@ -206,6 +211,7 @@ function walkRuntime(
       continue;
     }
     if (!entry.isFile()) return `${path} is not a regular file`;
+    if (entry.name === FINDER_METADATA) continue;
     const bytes = sizes.get(path);
     if (bytes === undefined) return `${path} is not part of the runtime`;
     found.add(path);

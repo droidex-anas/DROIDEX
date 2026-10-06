@@ -95,6 +95,11 @@ const DAMAGE: [string, (runtime: string) => void][] = [
         join(runtime, 'node_modules/tailwindcss/node_modules'),
       ),
   ],
+  [
+    // Finder's own file is tolerated as a regular file; as a link it is a link.
+    'nothing, but wears a Finder name over a link',
+    (runtime) => symlinkSync(resolve('sidecar/node_modules'), join(runtime, '.DS_Store')),
+  ],
 ];
 
 /**
@@ -104,6 +109,13 @@ const DAMAGE: [string, (runtime: string) => void][] = [
  * rather than the canonical root would find the ancestor's instead.
  */
 const AWKWARD: [string, (layout: string, runtime: string) => string][] = [
+  [
+    'a user opened in Finder',
+    (_layout, runtime) => {
+      writeFileSync(join(runtime, 'node_modules', '.DS_Store'), 'Finder metadata\n');
+      return runtime;
+    },
+  ],
   [
     'reached as a node_modules directory',
     (layout, runtime) => {
