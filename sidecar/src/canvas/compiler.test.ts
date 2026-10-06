@@ -250,7 +250,7 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     mkdirSync(runtime);
     writeFileSync(
       join(runtime, 'manifest.json'),
-      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files })}\n`,
+      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files, notices: [] })}\n`,
     );
 
     const worker = new CompilerWorker();

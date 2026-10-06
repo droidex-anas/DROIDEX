@@ -76,6 +76,19 @@ const DAMAGE: [string, (runtime: string) => void][] = [
     },
   ],
   [
+    // Removing it from both inventories leaves a consistent tree; the reviewed
+    // VictoryVendor license inventory is the rule that refuses it.
+    'a vendored chart license, with a manifest that agrees',
+    (runtime) => {
+      const path = 'node_modules/victory-vendor/lib-vendor/d3-shape/LICENSE';
+      drop(runtime, path);
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files[path];
+        manifest.notices = manifest.notices.filter((notice) => notice !== path);
+      });
+    },
+  ],
+  [
     // A FIFO blocks a plain read for as long as nobody writes to it, so the
     // manifest's type is proven before its contents are.
     'a manifest that can be read at all',
@@ -364,6 +377,7 @@ function drop(runtime: string, relative: string): void {
 interface StagedManifest {
   binary: string;
   files: Record<string, number | null>;
+  notices: string[];
 }
 
 function rewriteManifest(runtime: string, change: (manifest: StagedManifest) => void): void {

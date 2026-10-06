@@ -26,15 +26,22 @@ import process from 'node:process';
 export const CANVAS_RUNTIME_MANIFEST = 'manifest.json';
 
 const EXECUTABLE_ARCH = { arm64: 'arm64', x64: 'x86_64' };
-const LICENSED = [
-  'esbuild',
-  'tailwindcss',
-  'postcss',
-  'react',
-  'react-dom',
-  'scheduler',
-  'react-is',
-  'recharts',
+// victory-vendor embeds these distributions without their package manifests.
+// Keep their reviewed notice inventory when pruning its browser module graph.
+const VICTORY_VENDOR_LICENSES = [
+  'd3-array',
+  'd3-color',
+  'd3-ease',
+  'd3-format',
+  'd3-interpolate',
+  'd3-path',
+  'd3-scale',
+  'd3-shape',
+  'd3-time',
+  'd3-time-format',
+  'd3-timer',
+  'd3-voronoi',
+  'internmap',
 ];
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
@@ -46,7 +53,7 @@ const LICENSED = [
 const ANCHOR_FILE = 'canvas-runtime.js';
 const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss'];
 
-// Long enough for a cold load of a 16 MiB runtime, and the point at which a
+// Long enough for a cold load of the staged runtime, and the point at which a
 // package that never finishes loading is killed rather than waited for.
 const LOAD_TIMEOUT_MS = 60_000;
 
@@ -100,16 +107,9 @@ export function verifyCanvasRuntime(runtimePath, arch) {
   walk(root, '', sizes, directories, found);
   for (const path of sizes.keys()) if (!found.has(path)) fail(`${path} is missing`);
 
+  verifyNotices(manifest);
+
   const modulesPath = join(root, 'node_modules');
-  for (const licensed of LICENSED) {
-    if (!['LICENSE', 'LICENSE.md'].some((file) => existsSync(join(modulesPath, licensed, file))))
-      fail(`${licensed} ships without its license`);
-  }
-  if (
-    !existsSync(join(modulesPath, 'victory-vendor', 'README.md')) ||
-    !existsSync(join(modulesPath, 'victory-vendor', 'lib-vendor', 'd3-array', 'LICENSE'))
-  )
-    fail('victory-vendor ships without its license notices');
 
   // Code signing rewrites the binary while packaging, so the manifest records
   // no size for it; being there, executable and this architecture's is the
@@ -124,6 +124,61 @@ export function verifyCanvasRuntime(runtimePath, arch) {
     fail(`the ${foreign} esbuild binary ships alongside the ${arch} one`);
 
   proveLoadable(root, manifest.binary);
+}
+
+function isNotice(path) {
+  return /^(?:LICEN[CS]E|NOTICE)(?:$|[.-])/i.test(path.slice(path.lastIndexOf('/') + 1));
+}
+
+function isLicense(path) {
+  return /^LICEN[CS]E(?:$|[.-])/i.test(path.slice(path.lastIndexOf('/') + 1));
+}
+
+function verifyNotices(manifest) {
+  const files = new Set(Object.keys(manifest.files));
+  const expected = [...files]
+    .filter(
+      (path) =>
+        isNotice(path) ||
+        path === 'node_modules/victory-vendor/README.md' ||
+        path === 'node_modules/dlv/README.md',
+    )
+    .sort();
+  if (JSON.stringify(manifest.notices) !== JSON.stringify(expected))
+    fail('manifest.json has an incomplete license and notice inventory');
+
+  const packages = [...files].filter((path) => path.endsWith('/package.json'));
+  const packageSet = new Set(packages);
+  const licenses = expected.filter(isLicense);
+  for (const packagePath of packages) {
+    let directory = packagePath.slice(0, -'/package.json'.length);
+    if (directory.startsWith('node_modules/@esbuild/darwin-')) {
+      if (!files.has('node_modules/esbuild/LICENSE.md')) fail(`${directory} has no esbuild license`);
+      continue;
+    }
+    if (directory === 'node_modules/victory-vendor' || directory === 'node_modules/dlv') {
+      if (!files.has(`${directory}/README.md`)) fail(`${directory} has no license statement`);
+      continue;
+    }
+    const ownPackage = directory;
+    while (directory.startsWith('node_modules/')) {
+      if (
+        packageSet.has(`${directory}/package.json`) &&
+        licenses.some(
+          (path) =>
+            path.startsWith(`${directory}/`) && !path.slice(directory.length + 1).includes('/'),
+        )
+      )
+        break;
+      directory = directory.slice(0, directory.lastIndexOf('/'));
+    }
+    if (!directory.startsWith('node_modules/')) fail(`${ownPackage} has no staged license`);
+  }
+  for (const name of VICTORY_VENDOR_LICENSES) {
+    const path = `node_modules/victory-vendor/lib-vendor/${name}/LICENSE`;
+    if (files.has('node_modules/victory-vendor/package.json') && !files.has(path))
+      fail(`${path} is missing`);
+  }
 }
 
 /**
