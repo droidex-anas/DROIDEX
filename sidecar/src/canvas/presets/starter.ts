@@ -8,6 +8,7 @@ export default function Hey() {
   const [tab, setTab] = useState('start');
   const [open, setOpen] = useState(false);
   const nameInputId = useId();
+  const startOverId = useId();
   return (
     <main className="flex min-h-screen items-center justify-center p-6 sm:p-10">
       <Card className="flex w-full max-w-lg flex-col gap-6">
@@ -45,7 +46,7 @@ export default function Hey() {
                       {done ? "You're all set" : 'Get started'}
                     </Button>
                     {done ? (
-                      <Button variant="quiet" onClick={() => setDone(false)}>
+                      <Button id={startOverId} variant="quiet" onClick={() => setDone(false)}>
                         Start over
                       </Button>
                     ) : null}
@@ -71,7 +72,7 @@ export default function Hey() {
             { value: 'later', label: 'Coming soon', disabled: true, content: null },
           ]}
         />
-        <Dialog open={open} onClose={() => setOpen(false)} title="Make yourself at home" returnFocusId={nameInputId}>
+        <Dialog open={open} onClose={() => setOpen(false)} title="Make yourself at home" returnFocusId={nameInputId} fallbackFocusId={startOverId}>
           <p>Try your name, switch tabs, and get started. You can start over at any time.</p>
           <Button
             className="mt-4"
@@ -97,8 +98,9 @@ Tabs takes label, value, onValueChange and items: { value, label, content, disab
 Use unique item values and keep value on an enabled item. Arrow keys, Home and End
 move and select; Tab enters the active panel. Dialog takes open, onClose, title and
 children; keep open in state, set false in onClose. Tab stays inside, Escape
-requests close, and closing restores a visible opener. Set returnFocusId to a
-visible destination when closing hides the opener. Use buttons, not clickable divs.
+requests close, and closing restores an enabled, visible opener. Set returnFocusId
+when closing hides the opener, and fallbackFocusId if that destination can be
+disabled. Use buttons, not clickable divs.
 
 Give every control a real action, labels, and honest loading/empty/error states.
 Keep the focus, disabled and reduced-motion behavior. Use semantic --ds-* tokens;

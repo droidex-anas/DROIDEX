@@ -1136,8 +1136,9 @@ Settled by 07a (`canvas/07a-design-kits`):
   (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
   Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
   Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
-  `title`, `children`, optional `returnFocusId`) using native modal behavior, explicit
-  focus cycling at the preview-frame edge, Escape and visible-destination restoration.
+  `title`, `children`, optional `returnFocusId`/`fallbackFocusId`) using native modal
+  behavior, explicit focus cycling at the preview-frame edge, Escape and enabled,
+  visible-destination restoration.
   Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
   Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
 - Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable

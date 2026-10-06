@@ -144,6 +144,7 @@ export interface DialogProps {
   title: string;
   children: ReactNode;
   returnFocusId?: string;
+  fallbackFocusId?: string;
 }
 
 const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable="true"]';
@@ -153,7 +154,11 @@ function isVisible(element: HTMLElement) {
     getComputedStyle(element).visibility !== 'hidden' && !element.closest('[inert]');
 }
 
-export function Dialog({ open, onClose, title, children, returnFocusId }: DialogProps) {
+function isFocusable(element: HTMLElement) {
+  return isVisible(element) && element.tabIndex >= 0 && !element.matches(':disabled');
+}
+
+export function Dialog({ open, onClose, title, children, returnFocusId, fallbackFocusId }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -163,13 +168,15 @@ export function Dialog({ open, onClose, title, children, returnFocusId }: Dialog
     dialog.showModal();
     return () => {
       dialog.close();
-      if (previous instanceof HTMLElement && isVisible(previous)) previous.focus();
-      else if (returnFocusId) {
-        const destination = document.getElementById(returnFocusId);
-        if (destination && isVisible(destination)) destination.focus();
+      if (previous instanceof HTMLElement && isFocusable(previous)) previous.focus();
+      else {
+        const destination = returnFocusId && document.getElementById(returnFocusId);
+        const fallback = fallbackFocusId && document.getElementById(fallbackFocusId);
+        if (destination && isFocusable(destination)) destination.focus();
+        else if (fallback && isFocusable(fallback)) fallback.focus();
       }
     };
-  }, [open, returnFocusId]);
+  }, [open, returnFocusId, fallbackFocusId]);
   return (
     <dialog
       ref={ref}
@@ -179,9 +186,7 @@ export function Dialog({ open, onClose, title, children, returnFocusId }: Dialog
         if (event.key !== 'Tab') return;
         // Native Tab can leave the preview iframe while its modal stays open.
         const dialog = event.currentTarget;
-        const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-          (element) => isVisible(element) && element.tabIndex >= 0 && !element.matches(':disabled'),
-        );
+        const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(isFocusable);
         const active = document.activeElement;
         const position = focusable.findIndex((element) => element === active);
         if (focusable.length === 0) {

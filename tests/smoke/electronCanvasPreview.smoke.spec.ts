@@ -232,6 +232,29 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
         inDialog: false,
         hasFocus: true,
       });
+
+    await click(
+      '[...document.querySelectorAll("button")].find(button => button.textContent?.includes("Get started"))',
+    );
+    assert.equal(await generated('document.querySelector("input")?.disabled'), true);
+    await click('document.querySelectorAll("[role=tab]")[1]');
+    await click(
+      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
+    );
+    await click(
+      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Try it")',
+    );
+    await expect
+      .poll(() => active())
+      .toEqual({
+        open: false,
+        tag: 'BUTTON',
+        text: 'Start over',
+        placeholder: null,
+        inDialog: false,
+        hasFocus: true,
+      });
+    assert.equal(await generated('document.activeElement?.matches(":disabled")'), false);
   });
 });
 
