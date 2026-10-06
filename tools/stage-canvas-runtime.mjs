@@ -12,6 +12,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import {
   cpSync,
   existsSync,
@@ -22,7 +23,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { CANVAS_RUNTIME_MANIFEST, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
@@ -33,16 +34,15 @@ const stagingDir = join(sidecarDir, 'canvas-runtime');
 const PLATFORM = 'darwin';
 const ARCHITECTURES = ['arm64', 'x64'];
 
-/** What a design compile loads; everything else arrives as their dependency. */
-const RUNTIME_ROOTS = [
-  'esbuild',
-  'tailwindcss',
-  'postcss',
-  'postcss-value-parser',
+/** Loaded by the worker through Node; keep their complete dependency closure. */
+const NODE_RUNTIME_ROOTS = ['esbuild', 'tailwindcss', 'postcss', 'postcss-value-parser'];
+
+/** Browser entries esbuild may bundle from a design. Add future allowlisted entries here. */
+const BUNDLED_SPECIFIERS = [
   'react',
-  'react-dom',
-  'react-is',
-  'recharts',
+  'react/jsx-runtime',
+  'react-dom/client',
+  'recharts/es6/index.js',
 ];
 
 // No runtime path reads these, and a packaged app may not carry source maps.
@@ -56,7 +56,8 @@ const SKIPPED_NAMES = new Set([
   '.DS_Store',
   '.gitkeep',
 ]);
-const SKIPPED_SUFFIXES = ['.map', '.ts', '.flow'];
+const SKIPPED_SUFFIXES = ['.map', '.ts', '.tsx', '.mts', '.cts', '.flow'];
+const SKIPPED_DIRECTORIES = new Set(['test', 'tests', '__tests__', 'doc', 'docs', 'skills']);
 
 /** The parts of a package a design compile can never reach. */
 const PRUNED = {
@@ -69,14 +70,6 @@ const PRUNED = {
     ['peers/', 'src/', 'scripts/', 'types/', 'lib/cli/'].some((prefix) =>
       path.startsWith(prefix),
     ) || path === 'lib/cli.js',
-  // A design imports `react-dom/client`. A preview has no server renderer and
-  // no profiling build; the development builds stay so that both branches of
-  // React's NODE_ENV switch still resolve.
-  'react-dom': (path) => /server|static|profiling|test-utils/.test(path),
-  react: (path) => /react-server|profiling/.test(path),
-  scheduler: (path) => /native|unstable_mock|unstable_post_task/.test(path),
-  // The compiler imports this ESM entry so esbuild can discard unused charts.
-  recharts: (path) => !['package.json', 'LICENSE'].includes(path) && !path.startsWith('es6/'),
 };
 
 function fail(message) {
@@ -102,7 +95,7 @@ function packageDirectory(fromDir, name) {
 /** Every installed package the runtime roots reach through `dependencies`. */
 function runtimeClosure() {
   const packages = new Map();
-  const queue = RUNTIME_ROOTS.map((name) => ({ name, from: sidecarDir }));
+  const queue = NODE_RUNTIME_ROOTS.map((name) => ({ name, from: sidecarDir }));
   while (queue.length > 0) {
     const { name, from } = queue.shift();
     const dir = packageDirectory(from, name);
@@ -142,22 +135,85 @@ function stagedFiles(dir) {
 
 function isSkipped(packagePath) {
   const name = packagePath.slice(packagePath.lastIndexOf('/') + 1);
-  return SKIPPED_NAMES.has(name) || SKIPPED_SUFFIXES.some((suffix) => name.endsWith(suffix));
+  return (
+    SKIPPED_NAMES.has(name) ||
+    SKIPPED_SUFFIXES.some((suffix) => name.endsWith(suffix)) ||
+    packagePath.split('/').slice(0, -1).some((part) => SKIPPED_DIRECTORIES.has(part))
+  );
+}
+
+function isNotice(path) {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  return /^(?:LICEN[CS]E|NOTICE)(?:$|[.-])/i.test(name);
+}
+
+function copyFile(file, archDir) {
+  const destination = join(archDir, relative(sidecarDir, file));
+  mkdirSync(dirname(destination), { recursive: true });
+  cpSync(file, destination);
 }
 
 function copyPackage({ dir, name }, archDir) {
   const prune = PRUNED[name];
   for (const file of packageFiles(dir)) {
     const packagePath = relative(dir, file).split(sep).join('/');
-    // victory-vendor has no top-level LICENSE; its README states its MIT/ISC
-    // terms and its vendored libraries carry their own LICENSE files.
-    if (isSkipped(packagePath) && !(name === 'victory-vendor' && packagePath === 'README.md'))
-      continue;
+    if (isSkipped(packagePath) && !(name === 'dlv' && packagePath === 'README.md')) continue;
     if (prune?.(packagePath)) continue;
-    const destination = join(archDir, relative(sidecarDir, dir), packagePath);
-    mkdirSync(dirname(destination), { recursive: true });
-    cpSync(file, destination);
+    copyFile(file, archDir);
   }
+}
+
+/** The files reachable when esbuild retains every export of each browser entry. */
+function browserModuleFiles() {
+  const requireFromSidecar = createRequire(resolve(sidecarDir, 'canvas-runtime.js'));
+  const entry = BUNDLED_SPECIFIERS.map(
+    (specifier, index) => `export * as entry${String(index)} from ${JSON.stringify(specifier)};`,
+  ).join('\n');
+  const build = requireFromSidecar('esbuild').buildSync({
+    stdin: {
+      contents: entry,
+      resolveDir: resolve(sidecarDir),
+      sourcefile: 'canvas-runtime-entries.js',
+    },
+    bundle: true,
+    platform: 'browser',
+    format: 'esm',
+    target: 'es2022',
+    define: { 'process.env.NODE_ENV': '"production"' },
+    write: false,
+    metafile: true,
+    logLevel: 'silent',
+  });
+  const modules = `${resolve(sidecarDir, 'node_modules')}${sep}`;
+  const packages = new Map();
+  for (const input of Object.keys(build.metafile.inputs)) {
+    if (input === join(sidecarDir, 'canvas-runtime-entries.js')) continue;
+    const file = resolve(input);
+    if (!file.startsWith(modules)) fail(`${input} resolves outside sidecar/node_modules.`);
+    let dir = dirname(file);
+    let packageRoot = null;
+    while (dir !== sidecarDir && !dir.endsWith(`${sep}node_modules`)) {
+      if (existsSync(join(dir, 'package.json'))) packageRoot = dir;
+      dir = dirname(dir);
+    }
+    if (packageRoot === null) fail(`${input} has no installed package.`);
+    const files = packages.get(packageRoot) ?? new Set();
+    files.add(file);
+    for (let ancestor = dirname(file); ancestor !== packageRoot; ancestor = dirname(ancestor)) {
+      const manifest = join(ancestor, 'package.json');
+      if (existsSync(manifest)) files.add(manifest);
+    }
+    packages.set(packageRoot, files);
+  }
+  for (const [dir, files] of packages) {
+    files.add(join(dir, 'package.json'));
+    for (const file of packageFiles(dir)) {
+      const path = relative(dir, file).split(sep).join('/');
+      if (isNotice(path) || (dir.endsWith('victory-vendor') && path === 'README.md'))
+        files.add(file);
+    }
+  }
+  return packages;
 }
 
 /** The version, tarball and integrity the reviewed lockfile records. */
@@ -263,11 +319,26 @@ function writeManifest(archDir, binaryPath) {
     bytes += size;
     if (path !== binaryPath) files[path] = size;
   }
+  const paths = Object.keys(files);
+  const notices = paths
+    .filter(
+      (path) =>
+        isNotice(path) ||
+        path === 'node_modules/victory-vendor/README.md' ||
+        path === 'node_modules/dlv/README.md',
+    )
+    .sort();
+  const packagePaths = paths.filter((path) => path.endsWith('/package.json'));
+  const manifestPath = join(archDir, CANVAS_RUNTIME_MANIFEST);
   writeFileSync(
-    join(archDir, CANVAS_RUNTIME_MANIFEST),
-    `${JSON.stringify({ version: 1, binary: binaryPath, files }, null, 2)}\n`,
+    manifestPath,
+    `${JSON.stringify({ version: 1, binary: binaryPath, files, notices }, null, 2)}\n`,
   );
-  return { bytes, files: Object.keys(files).length + 1 };
+  return {
+    bytes: bytes + statSync(manifestPath).size,
+    files: paths.length + 2,
+    packages: packagePaths.length,
+  };
 }
 
 const requested = process.argv.slice(2);
@@ -277,6 +348,7 @@ for (const arch of architectures) {
 }
 
 const closure = runtimeClosure();
+const browserPackages = browserModuleFiles();
 const esbuildVersion = JSON.parse(
   readFileSync(join(sidecarDir, 'node_modules', 'esbuild', 'package.json'), 'utf8'),
 ).version;
@@ -285,13 +357,15 @@ for (const arch of architectures) {
   const archDir = join(stagingDir, arch);
   rmSync(archDir, { recursive: true, force: true });
   for (const entry of closure) copyPackage(entry, archDir);
+  for (const files of browserPackages.values())
+    for (const file of files) copyFile(file, archDir);
   const binaryPath = await stagePlatformBinary(arch, esbuildVersion, archDir);
-  const { bytes, files } = writeManifest(archDir, binaryPath);
+  const { bytes, files, packages } = writeManifest(archDir, binaryPath);
   // The gate the release runs, run here: an input missing one file of one
   // package stages and records faithfully, and only loading the packages finds
   // it. Failing now beats shipping a runtime that cannot start.
   verifyCanvasRuntime(archDir, arch);
   process.stdout.write(
-    `${archDir}: ${String(closure.length + 1)} packages, ${String(files)} files, ${String(bytes)} bytes (${(bytes / 1024 / 1024).toFixed(2)} MiB)\n`,
+    `${archDir}: ${String(packages)} packages, ${String(files)} files, ${String(bytes)} bytes (${(bytes / 1024 / 1024).toFixed(2)} MiB)\n`,
   );
 }
