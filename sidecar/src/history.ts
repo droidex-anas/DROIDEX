@@ -48,6 +48,7 @@ import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permi
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
 import { removeSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
+import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
 
 interface StoredMissionState {
   missionId?: string;
@@ -1023,7 +1024,8 @@ function transcriptReaderFor(
     cached.sizeBytes === stat.size &&
     cached.appSessionId === appSessionId &&
     cached.role === role &&
-    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId)
+    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId) &&
+    cached.reader.canvasBindingsRevision === canvasToolBindingsRevision(appSessionId)
   ) {
     transcriptReaders.delete(path);
     transcriptReaders.set(path, cached);

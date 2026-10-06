@@ -229,6 +229,13 @@ export interface TranscriptEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
+  canvasActivity?: {
+    toolUseId: string;
+    action: 'create' | 'write' | 'inspect' | 'arrange' | 'theme';
+    designIds: string[];
+    state: 'running' | 'completed' | 'failed';
+    message: string;
+  };
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already
   // tracking: polling that agent for output, or stopping it. The same tool

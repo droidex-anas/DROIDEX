@@ -14,6 +14,7 @@ import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import { canvasToolProvenance } from '../../canvas/canvasToolPresentation.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
 
@@ -235,14 +236,25 @@ export class ClaudeEventMapper {
           transcript: this.transcript('thinking', { text: block.thinking }),
         });
     }
-    if (message.error)
+    if (message.error) {
+      const canvasTools = message.message.content
+        .map(toolBlock)
+        .filter((tool) => tool && canvasToolProvenance(tool.name, tool.id));
+      const canvasTool =
+        message.error === 'rate_limit'
+          ? undefined
+          : canvasTools.length === 1
+            ? canvasTools[0]
+            : undefined;
       events.push({
-        transcript: this.transcript('error', {
+        transcript: this.transcript(canvasTool ? 'tool_result' : 'error', {
           text: message.error,
           isError: true,
+          ...(canvasTool ? { toolUseId: canvasTool.id } : {}),
           ...(message.error === 'rate_limit' ? { errorKind: 'usage_limit' } : {}),
         }),
       });
+    }
     return events;
   }
 
@@ -358,8 +370,10 @@ export class ClaudeEventMapper {
     // keeps only the fields that label the call.
     const toolArgs = isSpawnToolName(name) && isRecord(input) ? slimChildSessionArgs(input) : input;
     const pollsChildSessionId = this.subagents.pollsChildSessionId(name, input);
+    const toolProvenance = canvasToolProvenance(name, id);
     return {
       ...this.childOwner(parentToolUseId),
+      ...(toolProvenance ? { toolProvenance } : {}),
       transcript: this.transcript('tool_call', {
         toolName: name,
         toolArgs,

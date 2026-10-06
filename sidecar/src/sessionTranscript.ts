@@ -16,6 +16,8 @@ import {
 } from './sessionTranscriptParser.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { readSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
+import { CanvasToolPresentation } from './canvas/canvasToolPresentation.js';
+import { canvasToolBindingsRevision, readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 
 // Stored-row shapes are owned by the parser module but re-exported here so
 // the history path's import stays stable.
@@ -88,6 +90,7 @@ export function parseFullSessionTranscript(
   const stat = statSync(path);
   const window = readSessionRawWindow(path, stat.size);
   const events: TranscriptEvent[] = [];
+  const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
   if (window.trimmed) {
     events.push(oversizedStatusEvent(appSessionId, providerSessionId, role, stat.mtimeMs));
   }
@@ -101,6 +104,7 @@ export function parseFullSessionTranscript(
           providerSessionId,
           role,
           JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart,
+          canvas,
         ),
       );
     } catch {
@@ -169,9 +173,11 @@ export class SessionTranscriptReader {
   readonly mtimeMs: number;
   readonly sizeBytes: number;
   readonly noticesRevision: string;
+  readonly canvasBindingsRevision: string;
   private readonly notices: TranscriptEvent[];
   private readonly lineStarts: number[];
   private readonly parsedLines = new Map<number, TranscriptEvent[]>();
+  private readonly canvas: CanvasToolPresentation;
 
   constructor(
     private readonly appSessionId: string,
@@ -184,6 +190,8 @@ export class SessionTranscriptReader {
     this.sizeBytes = stat.size;
     this.lineStarts = scanLineStarts(path, stat.size);
     this.noticesRevision = sessionNoticesRevision(providerSessionId);
+    this.canvasBindingsRevision = canvasToolBindingsRevision(appSessionId);
+    this.canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
     this.notices = this.noticesRevision
       ? readSessionNotices(appSessionId, providerSessionId, role)
       : [];
@@ -287,6 +295,7 @@ export class SessionTranscriptReader {
             this.providerSessionId,
             this.role,
             JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
+            this.canvas,
           );
         } catch {
           /* skip partial/corrupt JSONL rows */

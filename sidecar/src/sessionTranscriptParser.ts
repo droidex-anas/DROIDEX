@@ -15,6 +15,12 @@ import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { parseStoredNotice } from './sessionNotices.js';
+import {
+  CanvasToolPresentation,
+  canvasToolProvenance,
+  type CanvasActivity,
+} from './canvas/canvasToolPresentation.js';
+import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 
 // Replayed text is capped so one enormous message cannot dominate a history
 // page. An App answer is the exception: it is a document that only runs when
@@ -130,6 +136,7 @@ function assistantBlockEvent(
       toolUseId: stringValue(block.id),
       pollsChildSessionId: stringValue(block.pollsChildSessionId),
       ...(block.interrupted === true ? { interrupted: true } : {}),
+      ...canvasActivityField(block),
     });
   }
   return null;
@@ -154,6 +161,7 @@ function nonAssistantBlockEvent(
       toolUseId: stringValue(block.tool_use_id ?? block.toolUseId) ?? undefined,
       pollsChildSessionId: stringValue(block.pollsChildSessionId),
       ...(block.interrupted === true ? { interrupted: true } : {}),
+      ...canvasActivityField(block),
     });
   }
   if (messageRole === 'user' && type === 'text') {
@@ -195,6 +203,7 @@ export function parseSessionLineEvents(
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
+  canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId)),
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -282,7 +291,28 @@ export function parseSessionLineEvents(
         : nonAssistantBlockEvent(base, index, block, messageRole);
     if (parsed) events.push(parsed);
   });
-  return events;
+  return events.map((entry) =>
+    canvas.project(entry, canvasToolProvenance(entry.toolName, entry.toolUseId)),
+  );
+}
+
+function canvasActivityField(block: Record<string, unknown>): { canvasActivity?: CanvasActivity } {
+  const activity = objectValue(block.canvasActivity);
+  const toolUseId = stringValue(block.id ?? block.tool_use_id ?? block.toolUseId);
+  if (!activity || !toolUseId || activity.toolUseId !== toolUseId) return {};
+  const action = (['create', 'write', 'inspect', 'arrange', 'theme'] as const).find(
+    (value) => value === activity.action,
+  );
+  const state = (['running', 'completed', 'failed'] as const).find(
+    (value) => value === activity.state,
+  );
+  if (!action || !state || !Array.isArray(activity.designIds)) return {};
+  const rawIds: unknown[] = activity.designIds;
+  const designIds = rawIds.filter(
+    (id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id),
+  );
+  if (designIds.length !== rawIds.length) return {};
+  return { canvasActivity: { toolUseId, action, designIds, state, message: '' } };
 }
 
 function skillActivationFromContent(content: unknown[]) {
