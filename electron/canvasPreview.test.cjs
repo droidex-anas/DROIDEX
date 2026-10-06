@@ -6,6 +6,7 @@ const {
   CANVAS_PREVIEW_PARTITION,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
+  canvasPreviewSessionReady,
   configureCanvasPreviewSession,
   createCanvasPreviewHosts,
 } = require('./canvasPreview.cjs');
@@ -328,4 +329,27 @@ test('the intermediate measures its message cap in bytes', () => {
   assert.match(document, /new TextEncoder\(\)/);
   assert.match(document, /bytes\(encoded\) > 4096/);
   assert.equal(/encoded\.length >/.test(document), false);
+});
+
+test('a guest is not attachable until the preview session is configured', async () => {
+  // The module that configures the session is what reports readiness, so main
+  // has no second flag to forget: an unconfigured session routes DIRECT, and a
+  // guest attached then has a live network however correct its partition is.
+  const held = Promise.withResolvers();
+  const guestSession = {
+    protocol: { handle() {} },
+    setProxy: () => held.promise,
+    setPermissionRequestHandler() {},
+    setPermissionCheckHandler() {},
+  };
+
+  const configuring = configureCanvasPreviewSession(guestSession, () => undefined);
+  assert.equal(canvasPreviewSessionReady(guestSession), false, 'ready before the proxy is set');
+
+  held.resolve();
+  await configuring;
+
+  assert.equal(canvasPreviewSessionReady(guestSession), true);
+  // Readiness belongs to the session that was configured, not to the module.
+  assert.equal(canvasPreviewSessionReady({}), false);
 });

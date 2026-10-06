@@ -208,6 +208,26 @@ if (
 // Before diagnostics writes into userData, or a new install looks like an old one.
 usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
+/**
+ * Resolves once the preview guest session's network is off. Every path that can
+ * create the app window goes through `openMainWindow`, so no window — and
+ * therefore no guest — can exist before that, and an `activate` that arrives
+ * during startup waits here instead of racing it into a second window.
+ */
+const previewSessionReady = app.whenReady().then(() => registerCanvasPreviewProtocol());
+
+function openMainWindow() {
+  return previewSessionReady.then(
+    () => {
+      if (!mainWindow) createMainWindow();
+      else focusMainWindow();
+    },
+    (error) => {
+      console.error('Canvas preview session setup failed; no window was opened:', error);
+    },
+  );
+}
+
 app.whenReady().then(async () => {
   await diagnosticsInitialization;
   installApplicationMenu({
@@ -223,8 +243,7 @@ app.whenReady().then(async () => {
   registerLocalImageProtocol();
   registerMediaPermissions();
   registerFaviconProtocol();
-  await registerCanvasPreviewProtocol();
-  createMainWindow();
+  await openMainWindow();
   powerTier.start();
   const metricsTimer = setInterval(() => performanceMetrics.collect(), 30_000);
   metricsTimer.unref?.();
@@ -263,10 +282,10 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
-  if (!mainWindow) createMainWindow();
-  else focusMainWindow();
+  void openMainWindow().then(() => {
+    deliverPendingNotificationOpen();
+  });
   void sidecarSupervisor.start().catch((error) => console.error(error));
-  deliverPendingNotificationOpen();
 });
 
 app.on('child-process-gone', (_event, details) => {
@@ -355,6 +374,13 @@ function createMainWindow() {
  */
 function installCanvasPreviewAttachment(contents) {
   contents.on('will-attach-webview', (event, preferences, params) => {
+    // Before the guest session is configured it routes DIRECT, so a guest that
+    // attached then would have a live network however correct its partition is.
+    if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
+      console.warn('[canvas-preview] Refused a guest before its session was configured');
+      event.preventDefault();
+      return;
+    }
     if (params.src !== canvasPreview.CANVAS_PREVIEW_URL) {
       console.warn('[canvas-preview] Refused a guest for %s', params.src);
       event.preventDefault();
@@ -489,6 +515,11 @@ function registerFaviconProtocol() {
 // Serves the one trusted intermediate a Canvas preview guest loads (see
 // canvasPreview.cjs). The policy travels as a header, so no document surgery can
 // drop it, and the generated frame inherits it through `srcdoc`.
+/** The one session every preview guest attaches into (see canvasPreview.cjs). */
+function previewGuestSession() {
+  return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
+}
+
 function registerCanvasPreviewProtocol() {
   const document = canvasPreview.canvasPreviewDocument();
   const serve = (request) => {
@@ -509,10 +540,7 @@ function registerCanvasPreviewProtocol() {
   // network is shut off; the default session serves the scheme too, so a
   // mis-partitioned guest fails to attach rather than failing to load.
   session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, serve);
-  return canvasPreview.configureCanvasPreviewSession(
-    session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION),
-    serve,
-  );
+  return canvasPreview.configureCanvasPreviewSession(previewGuestSession(), serve);
 }
 
 function registerIpc() {
@@ -1101,9 +1129,7 @@ function applyAppIcon() {
 }
 
 function focusMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    createMainWindow();
-  }
+  // Never creates one: `openMainWindow` owns that, behind the preview session.
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -1113,16 +1139,17 @@ function focusMainWindow() {
 
 function queueNotificationSessionOpen(appSessionId) {
   if (!appSessionId) {
-    focusMainWindow();
+    void openMainWindow();
     return;
   }
   pendingNotificationOpen = {
     appSessionId,
     expiresAt: Date.now() + PENDING_NOTIFICATION_OPEN_MS,
   };
-  focusMainWindow();
   // Immediate attempt; focus/show/did-finish-load will retry until ack.
-  deliverPendingNotificationOpen();
+  void openMainWindow().then(() => {
+    deliverPendingNotificationOpen();
+  });
 }
 
 function pendingNotificationPayload() {
