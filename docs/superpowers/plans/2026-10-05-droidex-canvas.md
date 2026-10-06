@@ -659,9 +659,17 @@ Settled by 03c's second review cycle (Astra xhigh, adversarial, against `0790088
   the frame holds as `ready`, which is the read that queued the work), no longer available (a miss
   for a `failed` frame's fallback, which queues nothing), or unreadable (the read threw). Promising a
   rebuild in the second case was a lie.
-- Not covered, and not faked: proving the re-read behaviour in this repo needs a DOM renderer, and
-  neither jsdom nor `react-test-renderer` is a dependency here. The label rule is a pure exported
-  function with its own test; the dependency change itself is one line with its reason beside it.
+- The re-read **is** covered, in the renderer rather than in Node: `[C9]` bundles a probe from source
+  with the esbuild the sidecar declares, evaluates it in the built app's page, and drives the real
+  `DesignPreview` with a `readArtifact` whose identity never changes. It renders `ready` for a
+  revision whose document is gone, waits for the miss and its label, then in one task flips the
+  artifact to available and renders `building` and `ready` back to back. React commits only the
+  second, so the commit carries the same revision and the same `artifactId` the frame already had and
+  the build object is the only thing that moved — which is why keying on the artifact ID cannot work.
+  With `build` removed from the deps the read count stays at 1 and the label stays; with it, the
+  second read lands and the guest mounts. No DOM library and no production export were needed; the
+  probe is inline in the spec, and esbuild is resolved from the sidecar's declared copy so the root's
+  dependency list is unchanged.
 
 - Adding the repair took `CanvasBuilds.ts` to 514 lines. The two queueing paths were folded into one
   `queueFromHead` (the head rule had been written twice), and `canvasCompilerProcesses.ts` now owns
