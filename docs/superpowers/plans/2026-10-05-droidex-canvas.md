@@ -1068,7 +1068,7 @@ assert.deepEqual(screenToCanvas(zoomAtPoint(before, pointer, 1.6), pointer), scr
 
 - [ ] `canvas/06a-artifact-card`: Add the inline artifact card at the transcript row boundary from safe Canvas activity, build state and cached thumbnails.
   Done: Light/dark cards have keyboard-accessible Open that focuses the frame; failed calls creating nothing produce no card.
-- [ ] `canvas/06b-chart-runtime`: Choose one React charting library, record its size/license review and bundle it into the compiler allowlist/runtime like the kit module.
+- [x] `canvas/06b-chart-runtime`: Choose one React charting library, record its size/license review and bundle it into the compiler allowlist/runtime like the kit module.
   Done: An offline chart example compiles and renders without a CDN; recharts (MIT) is the default candidate.
 - [ ] `canvas/06c-artifact-presence`: Reuse shared frame pending bloom and real activity stages for artifacts created from ordinary chats.
   Done: All three harnesses create/open artifacts without design mode, with identical presence and unchanged passing AppBlock tests; a resumed pre-Canvas Codex thread shows the new-chat guidance instead of a broken artifact.
