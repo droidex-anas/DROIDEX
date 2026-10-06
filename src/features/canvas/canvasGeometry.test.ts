@@ -7,9 +7,12 @@ import {
   fitFrames,
   interpolateViewport,
   moveRect,
+  reduceFrameDrag,
   screenToCanvas,
   wheelZoomScale,
   zoomAtPoint,
+  type FrameDrag,
+  type FrameDragEvent,
   type Viewport,
 } from './canvasGeometry';
 import type { FrameRect } from './protocol';
@@ -128,4 +131,115 @@ test('a fit animation starts where it was and ends on the target', () => {
   assert.deepEqual(interpolateViewport(from, to, 0), from);
   assert.deepEqual(interpolateViewport(from, to, 1), to);
   assert.deepEqual(interpolateViewport(from, to, 0.5), { x: -100, y: 30, scale: 0.7 });
+});
+
+/** The rect a dragged frame starts from, as the last snapshot acknowledged it. */
+const DRAGGED = rect(100, 50);
+
+/** Walks one drag through its moves and reports every rect it committed. */
+function runDrag(
+  pointers: { x: number; y: number }[],
+  scale: number,
+  ending: 'release' | 'cancel',
+): { commits: FrameRect[]; drag: FrameDrag | null } {
+  let drag: FrameDrag | null = {
+    designId: 'dsg_hey',
+    pointerId: 1,
+    expectedLayoutVersion: 3,
+    origin: { x: 200, y: 200 },
+    startRect: DRAGGED,
+    rect: DRAGGED,
+  };
+  const commits: FrameRect[] = [];
+  const step = (event: FrameDragEvent) => {
+    const next = reduceFrameDrag(drag, event);
+    drag = next.drag;
+    if (next.commit) commits.push(next.commit);
+  };
+
+  for (const pointer of pointers) step({ type: 'move', pointerId: 1, pointer, scale });
+  // The end of the gesture, and then the same end again: a pointerup followed
+  // by a lost pointer capture must not write layout twice.
+  const end: FrameDragEvent =
+    ending === 'release' ? { type: 'release', pointerId: 1 } : { type: 'cancel' };
+  step(end);
+  step(end);
+  return { commits, drag };
+}
+
+test('a drag commits once, on release, with the rect the hand left it at', () => {
+  const { commits, drag } = runDrag(
+    [
+      { x: 260, y: 200 },
+      { x: 300, y: 240 },
+      { x: 320, y: 260 },
+    ],
+    1,
+    'release',
+  );
+
+  // No move wrote layout, and the one release wrote it exactly once.
+  assert.equal(commits.length, 1);
+  assert.deepEqual(commits[0], { x: 220, y: 110, width: 400, height: 300 });
+  assert.equal(drag, null);
+});
+
+test('a drag that ends where it began commits nothing', () => {
+  const { commits } = runDrag(
+    [
+      { x: 260, y: 240 },
+      { x: 200, y: 200 },
+    ],
+    1,
+    'release',
+  );
+  assert.deepEqual(commits, []);
+});
+
+test('the committed rect follows the hand 1:1 at half and double zoom', () => {
+  // 60 screen pixels right and 40 down, read at each zoom.
+  const pointers = [{ x: 260, y: 240 }];
+  assert.deepEqual(runDrag(pointers, 0.5, 'release').commits, [
+    { x: 220, y: 130, width: 400, height: 300 },
+  ]);
+  assert.deepEqual(runDrag(pointers, 2, 'release').commits, [
+    { x: 130, y: 70, width: 400, height: 300 },
+  ]);
+});
+
+test('a cancelled drag commits nothing and ends the gesture', () => {
+  const { commits, drag } = runDrag(
+    [
+      { x: 260, y: 200 },
+      { x: 400, y: 600 },
+    ],
+    1,
+    'cancel',
+  );
+  assert.deepEqual(commits, []);
+  assert.equal(drag, null);
+});
+
+test('a second pointer cannot move or finish the drag in progress', () => {
+  const held: FrameDrag = {
+    designId: 'dsg_hey',
+    pointerId: 1,
+    expectedLayoutVersion: 3,
+    origin: { x: 200, y: 200 },
+    startRect: DRAGGED,
+    rect: { ...DRAGGED, x: 180 },
+  };
+
+  const moved = reduceFrameDrag(held, {
+    type: 'move',
+    pointerId: 9,
+    pointer: { x: 999, y: 999 },
+    scale: 1,
+  });
+  assert.equal(moved.drag, held);
+  assert.equal(moved.commit, null);
+
+  const released = reduceFrameDrag(held, { type: 'release', pointerId: 9 });
+  assert.equal(released.drag, held);
+  assert.equal(released.commit, null);
 });

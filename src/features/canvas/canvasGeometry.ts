@@ -106,6 +106,46 @@ export function moveRect(rect: FrameRect, screenDelta: Point, scale: number): Fr
   return { ...rect, x: rect.x + screenDelta.x / scale, y: rect.y + screenDelta.y / scale };
 }
 
+/** One frame under the hand. Nothing here is written to layout until release. */
+export interface FrameDrag {
+  designId: string;
+  pointerId: number;
+  /** The layout the gesture started from; a remote move since then rejects it. */
+  expectedLayoutVersion: number;
+  /** Where the pointer went down, in client pixels. */
+  origin: Point;
+  startRect: FrameRect;
+  rect: FrameRect;
+}
+
+export type FrameDragEvent =
+  | { type: 'move'; pointerId: number; pointer: Point; scale: number }
+  | { type: 'release'; pointerId: number }
+  | { type: 'cancel' };
+
+/**
+ * One step of a frame drag. Moving never commits; releasing commits once and
+ * ends the gesture, so layout cannot be written twice for it; and cancelling
+ * commits nothing, which leaves the snapshot's acknowledged rect as the only
+ * thing the board can draw.
+ */
+export function reduceFrameDrag(
+  drag: FrameDrag | null,
+  event: FrameDragEvent,
+): { drag: FrameDrag | null; commit: FrameRect | null } {
+  if (drag === null || event.type === 'cancel') return { drag: null, commit: null };
+  if (event.pointerId !== drag.pointerId) return { drag, commit: null };
+  if (event.type === 'release') {
+    const moved = drag.rect.x !== drag.startRect.x || drag.rect.y !== drag.startRect.y;
+    return { drag: null, commit: moved ? drag.rect : null };
+  }
+  const screenDelta = { x: event.pointer.x - drag.origin.x, y: event.pointer.y - drag.origin.y };
+  return {
+    drag: { ...drag, rect: moveRect(drag.startRect, screenDelta, event.scale) },
+    commit: null,
+  };
+}
+
 /** One frame of a programmatic fit or focus (spec §11: 220 ms, eased). */
 export function interpolateViewport(from: Viewport, to: Viewport, progress: number): Viewport {
   return {
