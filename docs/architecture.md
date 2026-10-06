@@ -312,6 +312,37 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas live previews
+
+A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
+crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
+the privileged `droidex-canvas-preview` scheme, the single URL it serves, the
+restrictive CSP it serves it under, the trusted intermediate document, and the
+registry of guests main attached. `electron/main.cjs` sets `webviewTag` on the
+app window alone and installs `will-attach-webview` before that window loads
+anything, so renderer content can only ever attach the owned source, with any
+requested preload deleted and Node, nested Node and nested guests off.
+
+The intermediate holds the compiled design in an opaque-origin
+`sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the
+intermediate rather than the chat renderer and the three documents hold three
+processes. Generated code gets no preload and no Electron API. The board drives
+a preview through the webview element's `executeJavaScript` with two audited
+literals in `src/features/canvas/previewDocument.ts`: one hands over the
+artifact and the instance identity, the other drains a bounded queue of
+`ready`/`resize`/`diagnostics` events as one validated JSON snapshot.
+`previewRuntime.ts` keeps exactly one poll in flight per guest on a bounded
+cadence and revalidates the instance after every await, so a replaced preview
+can never be reached by the guest it replaced.
+
+Main owns termination. The renderer asks through a narrow
+`canvas-preview-terminate` IPC and main ends the guest through the
+`webContents` it attached, which also ends the generated frame's process;
+independently, main ends a guest on that guest's own `unresponsive` event. Both
+paths wait for no guest reply. The artifact itself travels over the ordinary
+bridge: `canvas.readArtifact` answers one revision's document, read from the
+derived build cache by `sidecar/src/canvas/canvasBuildCache.ts`.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and

@@ -479,6 +479,95 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   rejected: its members are all thin accessors over a two-element array, and splitting it from the
   state registry would give one invariant two owners with a callback seam between them.
 
+Settled by 03c (landed in `electron/{canvasPreview.cjs,main.cjs,preload.cjs}` and
+`src/features/canvas/{previewDocument.ts,previewRuntime.ts,DesignPreview.tsx}`):
+
+- **The host contract.** `electron/canvasPreview.cjs` owns the guest end-to-end, the way
+  `favicons.cjs` owns its scheme, and is free of `require('electron')`. It exports the scheme
+  (`droidex-canvas-preview`, `standard` and `secure`, no `supportFetchAPI`), the one URL
+  (`droidex-canvas-preview://preview/guest`), the CSP, the document, and the registry of guests main
+  attached. `main.cjs` registers the scheme before `app.whenReady`, serves that one URL from the
+  default session and answers 403 to every other, sets `webviewTag: true` on the app window only,
+  and installs `will-attach-webview`/`did-attach-webview` before the window loads anything.
+- **The CSP** is `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';
+  img-src data:; font-src data:; frame-src about:; connect-src 'none'; worker-src 'none';
+  object-src 'none'; base-uri 'none'; form-action 'none'`. It travels as a response header rather
+  than a `<meta>`, so no document surgery can drop it, and an `about:srcdoc` frame inherits it
+  either way. Inline script and style are allowed because 03a's artifact is one
+  inline-everything document; there is no `unsafe-eval`, per 03a's ruling.
+- The guest keeps the **default session**. A dedicated in-memory partition was considered and left
+  out: `connect-src 'none'` with no fetchable scheme is what bounds the network, the generated frame
+  is opaque-origin and has no storage at all, and forcing a partition through
+  `will-attach-webview` is not part of the measured decision in spec §6.
+- **Who owns what inside the guest.** The intermediate's receiver, its bounded queue, and the
+  reporter that runs inside the generated frame are all main-owned literals in
+  `canvasPreview.cjs`: everything inside the guest arrives through the privileged scheme under the
+  policy that document declares. The renderer owns only the two pull-channel literals in
+  `previewDocument.ts`. The reporter is appended to the artifact as a trailing script element
+  written with JS escapes, so the compiler's document stays byte-identical to the one its
+  `artifactId` names.
+- **The pull channel.** `globalThis.__droidexCanvasPreview.start({nonce, designId, revisionId,
+  generation, html})` answers `'started'`, `'already_started'` or `'invalid_request'`; `drain()`
+  answers one JSON snapshot and throws when the document was never started, which the runtime reads
+  as a guest it no longer owns. Payloads are JSON arguments to fixed strings with `<` escaped to
+  `\u003c`, so nothing the compiler or a design produced is interpolated as code. `start` validates
+  the nonce against `^[0-9a-f]{32}$` because it is the one value embedded in script text.
+- **Bounds.** Queue cap 64 events (a full queue drops and counts, never grows); message cap 4,096
+  bytes of JSON; 8 diagnostics per message and 512 characters of text each. The renderer refuses a
+  snapshot over 64 events or 64 KiB outright rather than trimming it. Poll cadence 100 ms with
+  exactly one poll in flight per guest; poll deadline 3,000 ms, above the 1,906 ms a flooding guest
+  measured in Task 1, so a guest over it is wedged rather than busy; ready deadline 10,000 ms, since
+  the artifact is already built and only generated code that never finishes running takes longer.
+- **The watchdog is two paths, both main's.** `canvas-preview-terminate` is a narrow preload IPC
+  (`assertMainRenderer`, one safe integer): main ends the guest through the `webContents` it
+  attached with `forcefullyCrashRenderer()`, which is synchronous and waits for no guest reply, and
+  refuses an ID it never attached. Independently, main ends a guest on that guest's own
+  `unresponsive` event with no renderer involved. Crashing the guest takes the generated frame's
+  process with it, which is spec §6's requirement that main end the queue owner rather than only the
+  generated sender. The renderer's cheap path is still removing the element, measured at 27.99 ms.
+- **The event schema** is `ready`, `resize {width, height}`, `diagnostics [{code, message}]`, and the
+  `selection {elementId, instancePath}` / `interaction {kind}` shapes Task 8 fills. The intermediate
+  rebuilds each event field by field, so no getter, prototype or extra property from generated code
+  travels, and `previewRuntime` drops `selection`/`interaction` until Task 8 owns them.
+- **`canvas.readArtifact { canvasId, designId, revisionId }` → `{ artifactId, html } | null`** is the
+  new bridge command, authorized like `canvas.subscribe` by the page asking rather than by a chat's
+  attachment: an artifact is a projection of a canvas any page may watch. `CanvasBuilds.readArtifact`
+  is rekeyed from `(canvasId, artifactId)` to `(canvasId, designId, revisionId)` and
+  `canvasBuildCache.readRevisionArtifact` resolves it from `builds/<revisionId>.json`. The old shape
+  could not serve a fallback at all: a `failed` frame carries `lastWorkingRevisionId` and no
+  artifact ID, so one revision-keyed read now serves both a `ready` frame's own revision and a
+  `failed` frame's fallback. A missing or superseded entry stays a miss, never an error.
+- **Transport.** A realistic artifact was measured rather than assumed: the kit's stateful Hey
+  design compiles to 209,305 bytes, and the `canvas.result` event carrying it is 214,401 bytes.
+  That is under the batcher's 512 KiB flush threshold, far under the 8 MiB hard client-buffer
+  disconnect, and four live previews hold 858 KB of the 32 MiB replay buffer, so no transport change
+  was needed. One artifact can briefly put a client over the 512 KiB soft pressure mark, which is a
+  reason Task 5's four-slot cap should not fetch four artifacts on one tick.
+- **What Task 5 consumes:** `DesignPreview` takes one `canvasId`, one `CanvasFrame`, a
+  `readArtifact` reader, an `onRefresh` that re-subscribes (which is what makes the sidecar's
+  `requestRebuilds` run), and an optional `onResize(designId, size)`. It reports nothing else
+  upward and never a session or provider object. Its Retry is the minimum that works; Task 5 owns
+  the real one, the slot allocation, the board transform and the Select-mode overlay.
+- **What Task 8 consumes:** the reporter is where a selection or interaction message is produced,
+  the intermediate already accepts and bounds both shapes, and `previewRuntime.report` is the one
+  switch that has to grow a case.
+- **Verification.** The renderer's cadence, deadlines, staleness and validation are `node:test`
+  suites with an injected clock and a fake webview whose `executeJavaScript` calls are controlled
+  promises (`previewRuntime.test.ts`, `previewDocument.test.ts`); `electron/canvasPreview.test.cjs`
+  holds the registry, the refusals and the CSP with fake `webContents`. The Electron smoke runs
+  through the production boundary: `[C4]` mounts a deliberately unsafe `<webview>` in the production
+  window, asserts the stripped preferences and three processes, starts a really compiled design with
+  the production start script, clicks its button with a real pointer event through the guest's own
+  widget and sees the resize come back, and watches the intermediate refuse an oversized message, a
+  wrong nonce, an unknown shape and a message from the guest's own window while a loopback listener
+  stays untouched; `[C5]` wedges a design, keeps polling the guest for 25 answers to show the guest
+  is fine, and has main end it through the production IPC, releasing both processes.
+  `withNetworkListener` moved into `canvasSmoke.ts` so `[C1]` and `[C4]` share one listener.
+- **Not covered.** The board's own composition, transformed input and the Select-mode overlay are
+  Task 5's (spec §4), and the smoke drives the guest from page-level scripts because no board exists
+  to mount `DesignPreview` yet; the runtime's own deadline arithmetic is therefore proven by its
+  unit suite rather than by the smoke.
+
 
 
 - [ ] Add compile fixtures for working React state, CSS, relative modules, bad TSX, unsupported import and attempts to read outside the virtual tree. Reject undeclared packages, URL imports, Node builtins and filesystem escapes in the resolver. Never invoke generated source in the sidecar process.

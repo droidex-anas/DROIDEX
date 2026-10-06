@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { CANVAS_PREVIEW_URL } = require('./canvasPreview.cjs');
 
 function on(channel, handler) {
   const listener = (_event, payload) => handler(payload);
@@ -144,6 +145,11 @@ contextBridge.exposeInMainWorld('droidControl', {
   setApiKey: (key) => ipcRenderer.invoke('set-api-key', { key }),
   listFiles: (dir) => ipcRenderer.invoke('list-files', { dir }),
   getPerformanceMetrics: () => ipcRenderer.invoke('get-performance-metrics'),
+  // The owned source every Canvas preview guest loads, and the only way the
+  // board can ask main to end one. Main owns the registry of guests it
+  // attached, so an ID it does not recognise is refused.
+  canvasPreviewUrl: CANVAS_PREVIEW_URL,
+  canvasPreviewTerminate: (guestId) => ipcRenderer.invoke('canvas-preview-terminate', { guestId }),
   systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),
   powerTier: () => ipcRenderer.invoke('power-tier'),
   onPowerTier: (handler) => on('power-tier', handler),

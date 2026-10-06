@@ -35,6 +35,7 @@ const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
+const canvasPreview = require('./canvasPreview.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -117,6 +118,9 @@ const appUpdater = createAppUpdater({
   logError: (message, error) => console.error('[update] %s:', message, error),
 });
 const rendererOomRecovery = createRendererOomRecovery();
+const canvasPreviewHosts = canvasPreview.createCanvasPreviewHosts({
+  log: (message) => console.warn('[canvas-preview] %s', message),
+});
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via
 // nativeTheme; 'light'/'dark' pin a specific artwork.
@@ -174,6 +178,12 @@ protocol.registerSchemesAsPrivileged([
     scheme: favicons.FAVICON_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
   },
+  // The trusted intermediate a Canvas live preview loads (see canvasPreview.cjs).
+  // No `supportFetchAPI`: nothing in that guest may fetch anything.
+  {
+    scheme: canvasPreview.CANVAS_PREVIEW_SCHEME,
+    privileges: { standard: true, secure: true },
+  },
 ]);
 // Overridable so a second dev instance (e.g. a feature worktree) can run beside
 // the main one without fighting over the Chromium profile lock.
@@ -213,6 +223,7 @@ app.whenReady().then(async () => {
   registerLocalImageProtocol();
   registerMediaPermissions();
   registerFaviconProtocol();
+  registerCanvasPreviewProtocol();
   createMainWindow();
   powerTier.start();
   const metricsTimer = setInterval(() => performanceMetrics.collect(), 30_000);
@@ -287,9 +298,14 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Canvas live previews are `<webview>` guests in the board's DOM flow
+      // (spec §6). Only this window may create one, and only under the
+      // hardening installed below, before any renderer content loads.
+      webviewTag: true,
     },
   });
 
+  installCanvasPreviewAttachment(mainWindow.webContents);
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
   );
@@ -328,6 +344,34 @@ function createMainWindow() {
     mainWindow = null;
   });
   powerTier.attachWindow(mainWindow);
+}
+
+/**
+ * The attachment boundary for Canvas preview guests (spec §6). It is installed
+ * before the window loads anything, so renderer content can never create a guest
+ * that was not hardened here: only the owned source is allowed, any requested
+ * preload is deleted, and Node, nested Node and nested guests stay off while
+ * context isolation, the guest sandbox and web security stay on.
+ */
+function installCanvasPreviewAttachment(contents) {
+  contents.on('will-attach-webview', (event, preferences, params) => {
+    if (params.src !== canvasPreview.CANVAS_PREVIEW_URL) {
+      console.warn('[canvas-preview] Refused a guest for %s', params.src);
+      event.preventDefault();
+      return;
+    }
+    delete preferences.preload;
+    delete params.preload;
+    preferences.nodeIntegration = false;
+    preferences.nodeIntegrationInSubFrames = false;
+    preferences.contextIsolation = true;
+    preferences.sandbox = true;
+    preferences.webSecurity = true;
+    preferences.webviewTag = false;
+  });
+  contents.on('did-attach-webview', (_event, guest) => {
+    canvasPreviewHosts.attach(guest);
+  });
 }
 
 // Voice mode records only while the user holds a conversation open, and only
@@ -437,6 +481,27 @@ function registerFaviconProtocol() {
   });
 }
 
+// Serves the one trusted intermediate a Canvas preview guest loads (see
+// canvasPreview.cjs). The policy travels as a header, so no document surgery can
+// drop it, and the generated frame inherits it through `srcdoc`.
+function registerCanvasPreviewProtocol() {
+  const document = canvasPreview.canvasPreviewDocument();
+  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, (request) => {
+    if (request.url !== canvasPreview.CANVAS_PREVIEW_URL) {
+      console.warn('Refused a Canvas preview request for %s', request.url);
+      return new Response('Forbidden', { status: 403, headers: { 'content-type': 'text/plain' } });
+    }
+    return new Response(document, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': canvasPreview.CANVAS_PREVIEW_CSP,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  });
+}
+
 function registerIpc() {
   ipcMain.handle('bridge-info', (event) => {
     assertMainRenderer(event);
@@ -538,6 +603,13 @@ function registerIpc() {
   ipcMain.handle('system-idle-time', (event) => {
     assertMainRenderer(event);
     return powerMonitor.getSystemIdleTime();
+  });
+  // The board asks main to end one preview guest. Main ends it through the
+  // `webContents` it attached and refuses an ID it never attached; it never asks
+  // the guest for anything (spec §6).
+  ipcMain.handle('canvas-preview-terminate', (event, { guestId }) => {
+    assertMainRenderer(event);
+    return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
   });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);
