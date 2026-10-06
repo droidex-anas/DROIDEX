@@ -296,11 +296,14 @@ export class CanvasClient {
         fail(new Error('The runtime did not answer that Canvas request.'));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(command.requestId, { settle, fail, timeout });
-      // A mutation must not be replayed from the transport's offline queue.
+      // A mutation must not be replayed from the transport's offline queue: it
+      // carries a revision the runtime may have moved past by the time a queue
+      // drains. A refused send becomes this request's rejection, so the caller
+      // hears about it now instead of waiting out the timeout above.
       if (this.transport.sendIfConnected(command)) return;
       this.pending.delete(command.requestId);
       clearTimeout(timeout);
-      fail(new Error('DROIDEX is not connected.'));
+      fail(new Error('DROIDEX is not connected, so that Canvas request was not sent.'));
     });
   }
 

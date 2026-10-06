@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
-import { Bridge, BridgeQueueFullError } from './bridge';
+import { Bridge } from './bridge';
 import { adaptEvent, initialState, reducer } from '../hooks/useStore';
 import type { ServerEvent, ServerEventBatch } from '../types/bridge';
 
@@ -146,19 +146,20 @@ test('a full offline queue flushes whole and in order on the next socket', async
   console.warn = (message: string) => warnings.push(message);
   try {
     for (let index = 0; index < QUEUE_CAP; index += 1)
-      bridge.send({ type: 'session.interrupt', appSessionId: `late-${String(index)}` });
-    assert.throws(
-      () => bridge.send({ type: 'runtime.status' }),
-      (error: unknown) =>
-        error instanceof BridgeQueueFullError && error.commandType === 'runtime.status',
-    );
-    assert.throws(() => bridge.send({ type: 'env.detect' }), BridgeQueueFullError);
+      assert.equal(
+        bridge.send({ type: 'session.interrupt', appSessionId: `late-${String(index)}` }),
+        true,
+      );
+    // Refused, not thrown: a send from a render or an effect may not unmount the
+    // React root because the runtime happens to be down.
+    assert.equal(bridge.send({ type: 'runtime.status' }), false);
+    assert.equal(bridge.send({ type: 'env.detect' }), false);
   } finally {
     console.warn = previousWarn;
   }
-  // Once per full queue, not once per refusal.
+  // Once per full queue, not once per refusal, and it names what it refused.
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0] ?? '', /holding 256 commands/);
+  assert.match(warnings[0] ?? '', /holding 256 commands; refused runtime\.status/);
 
   const third = await reconnect();
   third.open();

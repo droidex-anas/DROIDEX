@@ -319,7 +319,7 @@ test('a refused send rejects its request instead of waiting for the timeout', as
   // A Canvas command is never queued for later: it carries a mutation ID and a
   // revision the runtime may have moved past by the time a queue drains. The
   // caller is told now, and this file exiting proves no timer was left behind.
-  await assert.rejects(client.listCanvases(), /not connected/);
+  await assert.rejects(client.listCanvases(), /not connected, so that Canvas request was not sent/);
   await assert.rejects(
     client.createFrames('app-1', CANVAS, {
       mutationId: 'm-create',

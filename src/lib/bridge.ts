@@ -25,19 +25,6 @@ type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
  */
 const MAX_QUEUED_COMMANDS = 256;
 
-/**
- * A command the bridge would not queue because it is offline and already
- * holding `MAX_QUEUED_COMMANDS`. Nothing already queued is ever dropped to make
- * room: a Stop the user asked for outranks whatever was asked for after it, so
- * the new command is refused where its caller can see it instead.
- */
-export class BridgeQueueFullError extends Error {
-  constructor(readonly commandType: string) {
-    super(`DROIDEX is offline and its command queue is full; ${commandType} was not sent.`);
-    this.name = 'BridgeQueueFullError';
-  }
-}
-
 interface TurnBaselineAdopter {
   gitAdoptTurnBaseline: (dir: string, clientRef: string, appSessionId: string) => Promise<unknown>;
 }
@@ -264,11 +251,17 @@ export class Bridge {
     this.backoff = Math.min(this.backoff * 2, 5_000);
   }
 
-  /** Throws `BridgeQueueFullError` when offline with a full queue. */
-  send(command: ClientCommand): void {
+  /**
+   * Sends the command, or queues it while this bridge is offline. False means it
+   * was refused because the queue is full: nothing already queued is dropped to
+   * make room, because a Stop the user asked for outranks whatever came after
+   * it. A caller with nowhere to report that may ignore it, which is the outcome
+   * a dropped command always had, and never an error thrown out of a render.
+   */
+  send(command: ClientCommand): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(command));
-      return;
+      return true;
     }
     if (this.queue.length >= MAX_QUEUED_COMMANDS) {
       // Once per full queue, not once per refusal: a UI that keeps trying while
@@ -276,12 +269,13 @@ export class Bridge {
       if (!this.queueFull) {
         this.queueFull = true;
         console.warn(
-          `Bridge is offline and holding ${String(MAX_QUEUED_COMMANDS)} commands; refusing more until it reconnects.`,
+          `Bridge is offline and holding ${String(MAX_QUEUED_COMMANDS)} commands; refused ${command.type} and will refuse more until it reconnects.`,
         );
       }
-      throw new BridgeQueueFullError(command.type);
+      return false;
     }
     this.queue.push(command);
+    return true;
   }
 
   sendIfConnected(command: ClientCommand): boolean {
