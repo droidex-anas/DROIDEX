@@ -119,7 +119,6 @@ import {
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
-import { UsageTabs } from './composer/UsageTabs';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
@@ -172,6 +171,11 @@ import { createProject } from '../features/projects/client';
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 const SchedulePromptPopover = lazy(() => import('../features/automations/SchedulePromptPopover'));
 const ScheduledPrompts = lazy(() => import('../features/automations/ScheduledPrompts'));
+// Usage shows only after /usage, a limit or a pace warning, so its slot is not
+// part of the composer's first frame.
+const UsageTabs = lazy(() =>
+  import('./composer/UsageTabs').then((m) => ({ default: m.UsageTabs })),
+);
 // The model pickers open on demand; hovering the chip starts the download so
 // the first open does not wait on it.
 const loadModelSliderPopover = () => import('./ModelSliderPopover');
@@ -2144,18 +2148,20 @@ export default function PromptInput({
 
         {/* The usage tabs share this slot with StartInBar, which only shows
             before a chat exists and steps aside while /usage is open. */}
-        <UsageTabs
-          provider={composerProvider}
-          connected={runtimeReady}
-          panelOpen={usageOpen}
-          onClosePanel={() => {
-            setUsageOpen(false);
-          }}
-          chat={activeSession && visibleTarget.kind === 'primary' ? { usageLimit } : undefined}
-          onSwitchModel={() => {
-            setModelsOpen(true);
-          }}
-        />
+        <Suspense fallback={null}>
+          <UsageTabs
+            provider={composerProvider}
+            connected={runtimeReady}
+            panelOpen={usageOpen}
+            onClosePanel={() => {
+              setUsageOpen(false);
+            }}
+            chat={activeSession && visibleTarget.kind === 'primary' ? { usageLimit } : undefined}
+            onSwitchModel={() => {
+              setModelsOpen(true);
+            }}
+          />
+        </Suspense>
         {showStartIn && !usageOpen && (
           <div
             className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
