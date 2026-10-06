@@ -312,6 +312,21 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas agent tools
+
+Each chat gets one local `droidex-canvas` MCP server with six tools: read, create,
+write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
+the server binds an omitted scope to that chat's newest live lease and refuses a
+named lease after its turn or provider ends. `CanvasWorkspace` owns board
+mutations, including retry receipts and attachment bootstrap; the design-system
+store owns immutable kit versions. Droid and Claude use
+the per-chat loopback endpoint; Codex declares the same tools through dynamic
+tools on thread start. Claude's session-local `PreToolUse` hook pins each read's
+tool-use ID to its original lease. Child runtimes do not inherit the parent's
+Canvas endpoint without an assigned child scope. Agent inspection currently
+returns build diagnostics; screenshot and element capture report
+`capture_unavailable` until a scoped capture API exists.
+
 ### Canvas live previews
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it

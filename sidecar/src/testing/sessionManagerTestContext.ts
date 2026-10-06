@@ -111,6 +111,8 @@ export function createSessionManagerTestContext(
     agentProcessHost?: SessionManagerDependencies['agentProcessHost'];
     onEvent?: (event: Protocol.ServerEvent) => void;
     onSessionAvailable?: (appSessionId: string) => void;
+    configuredMcpServers?: McpServerConfig[];
+    createLocalMcpResource?: SessionManagerDependencies['createLocalMcpResource'];
   } = {},
 ): SessionManagerTestContext {
   const calls: RecordedCall[] = [];
@@ -129,10 +131,11 @@ export function createSessionManagerTestContext(
     runtime,
     history,
     browsers,
-    createLocalMcpResource: () => new FakeLocalMcpResource(calls),
+    createLocalMcpResource:
+      options.createLocalMcpResource ?? (() => new FakeLocalMcpResource(calls)),
     createAutomationMcpResource: () => new FakeAutomationMcpResource(),
     createSessionsMcpResource: () => new FakeInAppMcpResource(SESSIONS_MCP_CONFIG),
-    loadConfiguredMcpServers: () => [CLI_MCP_CONFIG],
+    loadConfiguredMcpServers: () => options.configuredMcpServers ?? [CLI_MCP_CONFIG],
     mcpConfiguration: {
       add: (server, cwd) => {
         calls.push({ target: 'runtime', method: 'mcp.addConfigured', args: [server, cwd] });

@@ -1,4 +1,6 @@
 import type { FactorySession } from './DroidRuntime.js';
+import { CANVAS_MCP_SERVER_NAME } from './canvas/canvasMcpServer.js';
+import { normalizeMcpServerName } from './automations/permissionPolicy.js';
 import type { PersistedChildSession } from './history.js';
 import type { ServerEvent } from './protocol.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
@@ -232,7 +234,10 @@ export async function installChildRuntime(input: {
     const load = host.d.runtime.loadSession(providerSessionId, {
       ...droidInteractionHandlers(ref, host.d.interactions.interactionsFor(ref)),
       cwd: parent.lease.summary.cwd,
-      mcpServers: parent.lease.mcpConfigs,
+      // A child has no turn lease of its own. Never give it the parent's Canvas endpoint.
+      mcpServers: parent.lease.mcpConfigs.filter(
+        (config) => normalizeMcpServerName(config.name) !== CANVAS_MCP_SERVER_NAME,
+      ),
     });
     const result = await awaitOpenStep(attempt, load, (late) => late.close().catch(ignoreError));
     if (result === CHILD_OPEN_CANCELLED) return;

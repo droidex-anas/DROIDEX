@@ -24,6 +24,8 @@ export interface ProviderOpenInput {
   contextWindowTokens?: ContextWindowTokens;
   mcpServers: McpServerConfig[];
   inAppMcpServers?: SdkMcpServer[];
+  /** Claude's session-local PreToolUse binds a read to this turn's Canvas lease. */
+  canvasScopeForRead?: () => string | undefined;
   interactions: ProviderInteractions;
   // Set only when the session opens on Droid.
   droidLaunch?: DroidLaunchSettings;
@@ -39,6 +41,7 @@ export interface ProviderResumeInput {
   cwd?: string;
   mcpServers?: McpServerConfig[];
   inAppMcpServers?: SdkMcpServer[];
+  canvasScopeForRead?: () => string | undefined;
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;

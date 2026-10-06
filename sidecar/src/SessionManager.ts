@@ -1,6 +1,8 @@
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
+import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -207,6 +209,7 @@ export interface SessionManagerOptions {
   // Canvas workspace checks; a harness that opens no workspace gets its own, so
   // turns still mint and revoke exactly as they do in production.
   canvasTurns?: CanvasTurns;
+  canvasWorkspace?: () => Promise<CanvasWorkspace>;
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -313,6 +316,7 @@ export class SessionManager {
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
+  private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -366,6 +370,9 @@ export class SessionManager {
     );
     this.onSessionAvailable = options.onSessionAvailable;
     this.canvasTurns = options.canvasTurns ?? new CanvasTurns(new CanvasScopes(), () => null);
+    this.canvasWorkspace =
+      options.canvasWorkspace ??
+      (() => Promise.reject(new Error('Canvas storage is unavailable.')));
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -1452,14 +1459,17 @@ export class SessionManager {
     // run has nobody watching, and only an ordinary chat may call them, so no
     // other session carries their schemas.
     const managesChats = attended && (ref.purpose === undefined || ref.purpose === 'chat');
+    const canvas = createCanvasMcpServer(this.canvasWorkspace, this.canvasTurns, ref.id);
     if (kind === 'codex') {
       const inAppServers = [
         ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),
         ...(attended ? [createAutomationMcpServer(() => ref.id)] : []),
+        canvas,
       ];
+      requireUniqueMcpNames(inAppServers.map((server) => server.name));
       return { servers: [], configs: [], inAppServers };
     }
-    const servers = [this.createLocalMcpResource(() => ref.id)];
+    const servers = [this.createLocalMcpResource(() => ref.id), canvas];
     if (attended) servers.push(this.createAutomationMcpResource(() => ref.id));
     if (managesChats) servers.push(this.createSessionsMcpResource(() => ref.id));
     // A folderless session has no project scope: user-level config only, the
@@ -1472,11 +1482,15 @@ export class SessionManager {
     try {
       for (const server of servers) {
         const config = await server.start();
-        const collision = configured.find(
+        const collision = configs.find(
           (candidate) =>
             normalizeMcpServerName(candidate.name) === normalizeMcpServerName(config.name),
         );
         if (collision) {
+          if (!configured.includes(collision))
+            throw new Error(
+              `DROIDEX in-app MCP servers "${collision.name}" and "${config.name}" share a reserved name.`,
+            );
           throw new Error(
             `Droid MCP server "${collision.name}" collides with "${config.name}", which is reserved by DROIDEX. Rename it in your Droid MCP configuration and start the session again.`,
           );
@@ -2153,6 +2167,16 @@ export class SessionManager {
     await run(() => this.history.close());
     if (firstError !== undefined)
       throw firstError instanceof Error ? firstError : new Error(errMsg(firstError));
+  }
+}
+
+function requireUniqueMcpNames(names: readonly string[]): void {
+  const seen = new Set<string>();
+  for (const name of names) {
+    const normalized = normalizeMcpServerName(name);
+    if (seen.has(normalized))
+      throw new Error(`DROIDEX MCP server "${name}" has a reserved-name collision.`);
+    seen.add(normalized);
   }
 }
 

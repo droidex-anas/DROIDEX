@@ -64,6 +64,21 @@ test('a published version never changes', async () => {
   );
 });
 
+test('a saved version answers a lost-response retry only for the original mutation and content', async () => {
+  const kit = userKit('retry-kit');
+  const mutationId = 'save-retry-kit';
+  const first = await saveDesignSystem(kit, { mutationId });
+
+  assert.deepEqual(await saveDesignSystem(kit, { mutationId }), first);
+  await assert.rejects(saveDesignSystem({ ...kit, name: 'Different' }, { mutationId }), {
+    code: 'invalid_input',
+  });
+  await assert.rejects(saveDesignSystem(kit, { mutationId: 'other-save' }), {
+    code: 'invalid_input',
+  });
+  assert.deepEqual(await readDesignSystem(first), kit);
+});
+
 test('a built-in id cannot be shadowed by a user kit', async () => {
   await assert.rejects(saveDesignSystem(userKit('droidex')), CanvasCommandError);
 });

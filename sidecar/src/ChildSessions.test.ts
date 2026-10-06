@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ReasoningEffort } from '@factory/droid-sdk';
+import { McpServerConfigSchema, ReasoningEffort, type McpServerConfig } from '@factory/droid-sdk';
 
 import { ChildSessions } from './ChildSessions.js';
 import type { ChildSessionsDependencies } from './ChildSessionsTypes.js';
@@ -52,6 +52,7 @@ function createHarness(
     deferDurabilityForStatus?: PersistedChildSession['status'];
     childRuntimeIdleMs?: number;
     adoptDescendants?: (isCurrent: () => boolean) => Promise<boolean>;
+    parentMcpConfigs?: McpServerConfig[];
   } = {},
 ): Harness {
   const calls: RecordedCall[] = [];
@@ -87,6 +88,7 @@ function createHarness(
   };
   history.seedChildSessions(records);
   let parent = parentLease(parentId, calls);
+  if (options.parentMcpConfigs) parent.mcpConfigs = options.parentMcpConfigs;
   if (options.parentProvider) {
     parent.summary.provider = options.parentProvider;
     parent.summary.modelId = 'parent-model';
@@ -731,7 +733,20 @@ test('polled children keep state fidelity until driven with partial messages', a
 
 test('opening a child the harness is still driving keeps it running', async () => {
   const record = childRecord('child', 'provider');
-  const h = createHarness([record]);
+  const h = createHarness([record], {
+    parentMcpConfigs: [
+      McpServerConfigSchema.parse({
+        type: 'http',
+        name: 'droidex-canvas',
+        url: 'http://127.0.0.1/canvas',
+      }),
+      McpServerConfigSchema.parse({
+        type: 'http',
+        name: 'test-browser',
+        url: 'http://127.0.0.1/browser',
+      }),
+    ],
+  });
   // The parent spawned this child through Task, so the harness drives it; the
   // app has no runtime for it until someone opens it to watch.
   observe(h, {
@@ -753,6 +768,10 @@ test('opening a child the harness is still driving keeps it running', async () =
   assert.ok(replayIndex >= 0);
   assert.ok(loadIndex >= 0);
   assert.ok(replayIndex < loadIndex, 'cached history must render before provider hydration');
+  assert.deepEqual(
+    h.runtime.loadCalls[0]?.handlers.mcpServers?.map((server) => server.name),
+    ['test-browser'],
+  );
 
   assert.equal(
     h.events.some(
