@@ -722,6 +722,8 @@ export class ProjectService {
 
   async observe(event: ServerEvent): Promise<void> {
     if (this.closed) return;
+    // Read before any wait, so a slow save cannot reorder a turn's start and end.
+    const settled = event.type === 'session.updated' && this.noteStreaming(event.session);
     await this.turns.observe(event);
     // A delivered turn that stops on the user's approval frees its slot.
     if (event.type === 'approval.requested') {
@@ -731,11 +733,7 @@ export class ProjectService {
     // A session whose turn just settled may be one the runtime cap can release
     // now, which is what a delivery parked on capacity is waiting for. Other
     // updates free nothing, and retrying on each would only churn.
-    if (event.type === 'session.updated') {
-      const id = event.session.appSessionId;
-      if (event.session.streaming) this.streamingSessions.add(id);
-      else if (this.streamingSessions.delete(id)) this.wakes.sessionIdle(this.projects.values());
-    }
+    if (settled) this.wakes.sessionIdle(this.projects.values());
     if (event.type !== 'session.closed') return;
     // A delivery parked on a busy member waits for its turn to settle. A closed
     // session never settles one, and the next delivery resumes it instead.
@@ -746,6 +744,15 @@ export class ProjectService {
     // the capacity hook fires for a resume that produced no runtime, not for a
     // session that closed.
     this.capacityChanged();
+  }
+
+  /** True when this update ends a turn the session was last seen running. */
+  private noteStreaming(session: SessionSummary): boolean {
+    if (session.streaming) {
+      this.streamingSessions.add(session.appSessionId);
+      return false;
+    }
+    return this.streamingSessions.delete(session.appSessionId);
   }
 
   /** Session history knows every thread now, so what a restart left queued can go out. */
