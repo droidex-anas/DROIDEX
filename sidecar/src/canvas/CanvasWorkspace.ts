@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BuildCommit, BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
+import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
@@ -36,6 +37,7 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  OwnedAsset,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -54,6 +56,7 @@ export class CanvasWorkspace {
   private readonly commits = new CanvasCommits(this.changes);
 
   private constructor(
+    private readonly root: string,
     private readonly files: CanvasFiles,
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
@@ -71,7 +74,13 @@ export class CanvasWorkspace {
   ): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
     const heads = await CanvasHeads.load(files);
-    const workspace = new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads), builds);
+    const workspace = new CanvasWorkspace(
+      directory,
+      files,
+      heads,
+      new CanvasLeases(deps, heads),
+      builds,
+    );
     await builds.load(workspace, files, heads.all());
     return workspace;
   }
@@ -87,6 +96,14 @@ export class CanvasWorkspace {
   /** Canvases that exist on disk but are not served, for a recovery action. */
   damagedCanvasIds(): string[] {
     return this.heads.damagedIds();
+  }
+
+  /** Main has already decoded the selected bytes and vouched for their digest. */
+  importCanvasImage(request: CanvasImageImport): Promise<OwnedAsset> {
+    return this.commits.admit(() => {
+      this.canvas(request.canvasId);
+      return importCanvasImage(this.root, request);
+    });
   }
 
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */

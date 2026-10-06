@@ -1123,6 +1123,13 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+Settled by 07d (`canvas/07d-image-references`):
+
+- Electron main is the file permission boundary. Its picker chooses the path, and its drop API accepts only a native `File` path obtained by preload. Main bounds the file, decodes its pixels with `nativeImage`, and sends the path, SHA-256 digest and dimensions over a private loopback bridge route. The sidecar opens that exact file without following its final link and refuses a changed digest; a renderer WebSocket command or agent tool cannot submit a path.
+- The sidecar stores each accepted PNG/JPEG/WebP as `canvases/<canvasId>/assets/<sha256>`, with a 10 MiB and 8192 × 8192 limit. Identical bytes return the same asset ID. The bridge reply contains `OwnedAsset`, never the selected path. Composer picker/drop chips and provider multimodal attachment wiring remain owned by 07b; this branch adds no text path to a prompt.
+- `canvas-asset:<assetId>` is the source spelling. The artifact read signs each owned reference for its canvas; the preview scheme serves only a matching file under that canvas, with its validated image MIME. The generated frame keeps its opaque origin and its network-denied guest session.
+- The 07a Inter/Lora WOFF2 source and OFL notices are copied unchanged from `5db7dc99`. The stylesheet writer replaces kit font data URLs with content-addressed host URLs and saves each font once under the profile. When 07a's presets merge, their existing inline CSS takes this path automatically; no second font loader is needed.
+
 ## Task 8: Element selection, direct edits and source/history UI
 
 **Subtasks (one branch and PR each, merged in order):**

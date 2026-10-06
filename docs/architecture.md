@@ -316,9 +316,10 @@ Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
 crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
-the privileged `droidex-canvas-preview` scheme, the single URL it serves, the
-restrictive CSP it serves it under, the trusted intermediate document, and the
-registry of guests main attached. `electron/main.cjs` sets `webviewTag` on the
+the privileged `droidex-canvas-preview` scheme, the one guest document, its
+restrictive CSP, the trusted intermediate and the registry of guests main
+attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
+and content-addressed kit fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
 app window alone and installs `will-attach-webview` before that window loads
 anything, so renderer content can only ever attach the owned source, with any
 requested preload deleted and Node, nested Node and nested guests off.
@@ -362,6 +363,16 @@ answers one revision's document, read from the derived build cache by
 registry's per-design `generation`, so a board can tell a build that moved from a
 frame an arrange merely re-sent, and a rebuild of identical source — which is
 content-addressed to the same artifact ID — still reads as a new attempt.
+
+For image imports, preload passes a native dropped `File` path or main opens its
+own picker. Main checks the 10 MiB limit, decodes pixels with `nativeImage` and
+checks the 8192-pixel dimension limit. Its private loopback route sends the
+selected path with a digest and decoded dimensions to the sidecar; the sidecar
+rejects a changed file and stores accepted bytes by hash under the canvas.
+`canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
+when an artifact is read. The guest sees no path and cannot use that URL to
+read another canvas's assets. Kit WOFF2 data is stored once under the profile
+and referenced from generated CSS through the same preview scheme.
 
 ### Electron main gauges
 

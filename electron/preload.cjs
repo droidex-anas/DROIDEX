@@ -118,6 +118,12 @@ contextBridge.exposeInMainWorld('droidControl', {
   onSidecarStatus: (handler) => on('sidecar-status', handler),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   pickFiles: () => ipcRenderer.invoke('pick-files'),
+  canvasPickImage: (canvasId) => ipcRenderer.invoke('canvas-pick-image', { canvasId }),
+  canvasDropImage: (canvasId, file) => {
+    const filePath = webUtils.getPathForFile(file);
+    if (!filePath) return Promise.reject(new Error('Drop an image from your computer.'));
+    return ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath });
+  },
   saveImage: (dataUrl) => ipcRenderer.invoke('save-image', { dataUrl }),
   saveAttachment: (name, dataUrl) => ipcRenderer.invoke('save-attachment', { name, dataUrl }),
   discardImage: (path) => ipcRenderer.invoke('discard-image', { path }),

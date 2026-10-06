@@ -112,6 +112,15 @@ export interface PreviewArtifact {
   html: string;
 }
 
+/** An image copied into one canvas; no private path crosses this contract. */
+export interface OwnedAsset {
+  assetId: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
 export interface CanvasFrame {
   designId: string;
   name: string;

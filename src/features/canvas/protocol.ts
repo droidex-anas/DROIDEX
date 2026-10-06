@@ -53,6 +53,14 @@ export interface PreviewArtifact {
   html: string;
 }
 
+export interface OwnedAsset {
+  assetId: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
 export interface FrameRect {
   x: number;
   y: number;

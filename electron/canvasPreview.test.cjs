@@ -99,7 +99,7 @@ function createHosts() {
   };
 }
 
-test('the intermediate forbids every network source and allows only about: frames', () => {
+test('the intermediate forbids network sources and allows only local images and fonts', () => {
   const directives = new Map(
     CANVAS_PREVIEW_CSP.split('; ').map((directive) => {
       const [name, ...values] = directive.split(' ');
@@ -110,8 +110,8 @@ test('the intermediate forbids every network source and allows only about: frame
   assert.equal(directives.get('default-src'), "'none'");
   assert.equal(directives.get('connect-src'), "'none'");
   assert.equal(directives.get('frame-src'), 'about:');
-  assert.equal(directives.get('img-src'), 'data:');
-  assert.equal(directives.get('font-src'), 'data:');
+  assert.equal(directives.get('img-src'), 'data: droidex-canvas-preview:');
+  assert.equal(directives.get('font-src'), 'data: droidex-canvas-preview:');
   // The generated document is inline script and inline style, and inherits this
   // policy through `srcdoc`; nothing beyond that is allowed.
   assert.equal(directives.get('script-src'), "'unsafe-inline'");

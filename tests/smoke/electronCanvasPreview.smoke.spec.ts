@@ -4,6 +4,9 @@
 // electronCanvas.smoke.spec.ts; nothing here fakes a boundary.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
@@ -26,6 +29,7 @@ import {
 import {
   bounded,
   processAlive,
+  withCanvasBridge,
   withCanvasHost,
   withDatagramListener,
   withNetworkListener,
@@ -111,6 +115,150 @@ async function focusHost(app: ElectronApplication): Promise<void> {
 function newInstance(designId: string): PreviewInstance {
   return { nonce: previewNonce(), designId, revisionId: `rev_${designId}`, generation: 1 };
 }
+
+test('[C4 assets] a canvas image and kit font render inside the offline guest', async () => {
+  await withCanvasHost(
+    async (app, page) => {
+      const profile = await app.evaluate(({ app }) => app.getPath('userData'));
+      const fontRoot = path.join(profile, 'canvas-fonts');
+      const inter = JSON.parse(
+        await readFile('sidecar/src/canvas/presets/fonts/inter.json', 'utf8'),
+      ) as { css: string };
+      const encodedFont = /url\(data:font\/woff2;base64,([A-Za-z0-9+/=]+)\)/.exec(inter.css)?.[1];
+      assert.ok(encodedFont);
+      const font = Buffer.from(encodedFont, 'base64');
+      const fontId = createHash('sha256').update(font).digest('hex');
+      await mkdir(fontRoot, { recursive: true });
+      await writeFile(path.join(fontRoot, fontId), font);
+
+      await withCanvasBridge(page, async (send) => {
+        const created = await send({
+          type: 'canvas.createCanvas',
+          appSessionId: 'asset-smoke-chat',
+        });
+        assert.ok(created.kind === 'attachment' && created.canvasId);
+        const canvasId = created.canvasId;
+        const chosen = path.join(profile, 'chosen.png');
+        const png = Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+          'base64',
+        );
+        await writeFile(chosen, png);
+        await page.evaluate(() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.id = 'canvas-image-input';
+          document.body.append(input);
+        });
+        await page.locator('#canvas-image-input').setInputFiles(chosen);
+        const owned = await page.evaluate(async (id) => {
+          const input = document.getElementById('canvas-image-input') as HTMLInputElement;
+          const file = input.files?.[0];
+          if (!file) throw new Error('The image was not selected');
+          return window.droidControl!.canvasDropImage(id, file);
+        }, canvasId);
+        const added = await send({
+          type: 'canvas.create',
+          canvasId,
+          appSessionId: 'asset-smoke-chat',
+          input: {
+            mutationId: 'asset-frame',
+            frames: [
+              {
+                name: 'Owned assets',
+                width: 320,
+                height: 240,
+                designSystem: { id: 'droidex', version: 1, mode: 'light' },
+              },
+            ],
+          },
+        });
+        assert.ok(added.kind === 'created');
+        const [frame] = added.created.frames;
+        assert.ok(frame);
+        const written = await send({
+          type: 'canvas.write',
+          canvasId,
+          appSessionId: 'asset-smoke-chat',
+          input: {
+            mutationId: 'asset-source',
+            designId: frame.designId,
+            expectedRevisionId: null,
+            files: {
+              'main.tsx': `export default function Assets() { return <div style={{fontFamily:'Smoke Inter'}}><img id="owned-image" src="canvas-asset:${owned.assetId}" />Offline font</div> }`,
+              'styles.css': `@font-face { font-family: 'Smoke Inter'; src: url(droidex-canvas-preview://preview/font/${fontId}) format('woff2'); }`,
+            },
+            deletedPaths: [],
+          },
+        });
+        assert.ok(written.kind === 'written');
+        let html = '';
+        await expect
+          .poll(
+            async () => {
+              const reply = await send({
+                type: 'canvas.readArtifact',
+                canvasId,
+                designId: frame.designId,
+                revisionId: written.receipt.revisionId,
+              });
+              if (reply.kind === 'artifact') html = reply.artifact?.html ?? '';
+              return html.length > 0;
+            },
+            { timeout: 30_000, intervals: [200] },
+          )
+          .toBe(true);
+        assert.ok(html.includes('droidex-canvas-preview://preview/asset/'));
+        const imageUrl =
+          /droidex-canvas-preview:\/\/preview\/asset\/[A-Za-z0-9_-]+\/[0-9a-f]{64}\?sig=[0-9a-f]{64}/.exec(
+            html,
+          )?.[0];
+        assert.ok(imageUrl);
+        const fontUrl = `droidex-canvas-preview://preview/font/${fontId}`;
+        assert.deepEqual(
+          await app.evaluate(
+            async ({ net }, urls) => {
+              const [image, font] = await Promise.all(urls.map((url) => net.fetch(url)));
+              return [image.status, font.status];
+            },
+            [imageUrl, fontUrl],
+          ),
+          [200, 200],
+        );
+
+        const guestId = await mountPreviewGuest(page);
+        const instance = {
+          nonce: previewNonce(),
+          designId: frame.designId,
+          revisionId: written.receipt.revisionId,
+          generation: 1,
+        };
+        assert.equal(await askGuest(page, previewStartScript(instance, html)), PREVIEW_STARTED);
+        await expect
+          .poll(
+            () =>
+              app.evaluate(async ({ webContents }, id) => {
+                const frame = webContents.fromId(id)?.mainFrame.frames[0];
+                if (!frame) return { image: false, font: false };
+                return frame.executeJavaScript(`(async () => {
+                  const image = document.getElementById('owned-image');
+                  if (!image) return { image: false, font: false };
+                  try {
+                    const fonts = await document.fonts.load('16px "Smoke Inter"');
+                    return { image: image.complete && image.naturalWidth === 1, font: fonts.length === 1 && fonts[0].status === 'loaded' };
+                  } catch (error) {
+                    return { image: image.complete && image.naturalWidth === 1, font: String(error) };
+                  }
+                })()`);
+              }, guestId),
+            { timeout: 20_000, intervals: [200] },
+          )
+          .toEqual({ image: true, font: true });
+      });
+    },
+    { realSidecar: true },
+  );
+});
 
 test('[C4] the production host runs a compiled design and refuses every spoof', async () => {
   await withNetworkListener(async ({ url: networkUrl, attempts }) => {

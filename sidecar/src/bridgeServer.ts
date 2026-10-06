@@ -27,6 +27,7 @@ import {
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
+import { serveCanvasImageImport, type CanvasImages } from './canvas/canvasImageRoute.js';
 
 const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
@@ -59,6 +60,7 @@ export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
   assetToken: string;
+  canvasImages?: CanvasImages;
   // `pageId` identifies the renderer page the command came from, when it sent
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
@@ -82,6 +84,7 @@ export function startBridgeServer(options: {
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
+    if (serveCanvasImageImport(req, res, options.canvasImages)) return;
     if (serveBrowserAsset(req, res, options.assetToken)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;

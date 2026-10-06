@@ -1,3 +1,4 @@
+import type { OwnedAsset } from '../features/canvas/protocol';
 import type {
   NativeBrowserAgentAction,
   NativeBrowserAgentResult,
@@ -194,6 +195,8 @@ interface DroidControlApi {
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   pickFiles: () => Promise<string[]>;
+  canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
+  canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
   discardImage: (path: string) => Promise<void>;

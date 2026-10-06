@@ -21,6 +21,7 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
 const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
+const CANVAS_ASSET_SECRET = requiredSecret('CANVAS_ASSET_SECRET');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
@@ -30,6 +31,10 @@ const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
+  canvasImages: {
+    secret: CANVAS_ASSET_SECRET,
+    importImage: async (request) => (await canvasReady).importCanvasImage(request),
+  },
   onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
@@ -125,6 +130,7 @@ const handleCanvasCommand = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
+  CANVAS_ASSET_SECRET,
   (event) => {
     server.broadcast(event);
   },
@@ -224,7 +230,9 @@ async function shutdown(): Promise<void> {
   process.exit();
 }
 
-function requiredSecret(name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN'): string {
+function requiredSecret(
+  name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN' | 'CANVAS_ASSET_SECRET',
+): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

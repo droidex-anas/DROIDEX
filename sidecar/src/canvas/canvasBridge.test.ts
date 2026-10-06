@@ -47,6 +47,7 @@ async function harness(
     Promise.resolve(workspace),
     scopes,
     builds,
+    'test-canvas-secret',
     (event) => {
       events.push(event);
     },
@@ -489,6 +490,7 @@ test('a workspace that failed to open answers every command the same way', async
     Promise.reject(new Error('canvases directory is read-only')),
     new CanvasScopes(),
     quietBuilds(),
+    'test-canvas-secret',
     (event) => {
       events.push(event);
     },
@@ -594,6 +596,7 @@ test('a page that goes away while the workspace opens installs no watch', async 
     opening.promise.then(() => canvas.workspace),
     canvas.scopes,
     canvas.builds,
+    'test-canvas-secret',
     (event) => {
       events.push(event);
     },

@@ -3,11 +3,12 @@
 // the clients watching that canvas. Authority here comes from the chat's
 // attachment, not from an agent turn's lease (spec §6).
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ServerEvent } from '../protocol.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
+import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type { CanvasCommand, CanvasError, CanvasEvent, CanvasReply } from './protocol.js';
@@ -146,6 +147,7 @@ class CanvasDispatch {
     ready: Promise<CanvasWorkspace>,
     private readonly scopes: CanvasScopes,
     private readonly builds: CanvasBuilds,
+    private readonly assetSecret: string,
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
@@ -248,7 +250,16 @@ class CanvasDispatch {
           command.designId,
           command.revisionId,
         );
-        return { kind: 'artifact', artifact };
+        if (artifact === null) return { kind: 'artifact', artifact: null };
+        const html = resolveCanvasAssetReferences(
+          artifact.html,
+          command.canvasId,
+          this.assetSecret,
+        );
+        return {
+          kind: 'artifact',
+          artifact: { html, artifactId: createHash('sha256').update(html).digest('hex') },
+        };
       }
       default:
         return this.mutate(workspace, command);
@@ -302,11 +313,12 @@ export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
   builds: CanvasBuilds,
+  assetSecret: string,
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
 ): (command: unknown, pageId: string | null) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  const dispatch = new CanvasDispatch(ready, scopes, builds, emit, onPageGone);
+  const dispatch = new CanvasDispatch(ready, scopes, builds, assetSecret, emit, onPageGone);
 
   return async (value, pageId) => {
     if (!isCanvasRequest(value)) return false;

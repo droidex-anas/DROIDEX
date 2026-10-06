@@ -7,6 +7,7 @@ const {
   WebContentsView,
   dialog,
   ipcMain,
+  nativeImage,
   nativeTheme,
   powerMonitor,
   protocol,
@@ -36,6 +37,8 @@ const attachments = require('./attachments.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
+const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const { createCanvasImageImporter } = require('./canvasImageImport.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -101,6 +104,7 @@ const sidecarSupervisor = createSidecarSupervisor({
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
 });
+const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
@@ -179,11 +183,12 @@ protocol.registerSchemesAsPrivileged([
     scheme: favicons.FAVICON_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
   },
-  // The trusted intermediate a Canvas live preview loads (see canvasPreview.cjs).
-  // No `supportFetchAPI`: nothing in that guest may fetch anything.
+  // The trusted intermediate and its owned image/font subresources. Font
+  // loading from an opaque srcdoc needs CORS, while connect-src still denies
+  // generated fetches.
   {
     scheme: canvasPreview.CANVAS_PREVIEW_SCHEME,
-    privileges: { standard: true, secure: true },
+    privileges: { standard: true, secure: true, corsEnabled: true },
   },
 ]);
 // Overridable so a second dev instance (e.g. a feature worktree) can run beside
@@ -523,7 +528,23 @@ function previewGuestSession() {
 
 function registerCanvasPreviewProtocol() {
   const document = canvasPreview.canvasPreviewDocument();
-  const serve = (request) => {
+  const serve = async (request) => {
+    if (/^droidex-canvas-preview:\/\/preview\/(?:asset|font)\//.test(request.url)) {
+      const asset = await readCanvasPreviewAsset(request.url, {
+        canvasRoot: path.join(app.getPath('userData'), 'canvases'),
+        fontRoot: path.join(app.getPath('userData'), 'canvas-fonts'),
+        secret: sidecarSupervisor.canvasAssetSecret(),
+      });
+      if (!asset) return new Response('Not found', { status: 404 });
+      return new Response(asset.data, {
+        headers: {
+          'content-type': asset.mime,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+          ...(asset.mime === 'font/woff2' ? { 'access-control-allow-origin': '*' } : {}),
+        },
+      });
+    }
     if (request.url !== canvasPreview.CANVAS_PREVIEW_URL) {
       console.warn('Refused a Canvas preview request for %s', request.url);
       return new Response('Forbidden', { status: 403, headers: { 'content-type': 'text/plain' } });
@@ -564,6 +585,19 @@ function registerIpc() {
     assertMainRenderer(event);
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
+  });
+  ipcMain.handle('canvas-pick-image', async (event, { canvasId }) => {
+    assertMainRenderer(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return importCanvasImage(canvasId, result.filePaths[0]);
+  });
+  ipcMain.handle('canvas-drop-image', (event, { canvasId, filePath }) => {
+    assertMainRenderer(event);
+    return importCanvasImage(canvasId, filePath);
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
