@@ -698,6 +698,7 @@ export class SessionLifecycle {
   // took it back first. False when the turn could not take it.
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const session = liveSession.session;
+    const canvasTurn = liveSession.canvasTurn;
     if (
       !session.steer ||
       !liveSession.streaming ||
@@ -718,11 +719,16 @@ export class SessionLifecycle {
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
     const appSessionId = liveSession.summary.appSessionId;
-    // The model has it, so this steer is running: its own lease, beside the
-    // running turn's, never over it.
-    liveSession.canvasTurn?.addSteer(prompt.canvasContext);
-    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
+    if (
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      liveSession.canvasTurn === canvasTurn
+    ) {
+      // The original turn may have settled or its provider been replaced while
+      // steer delivery awaited. Only that turn's handle can mint this lease.
+      canvasTurn?.addSteer(prompt.canvasContext);
       await this.dependencies.appendSteer(appSessionId, prompt.text);
+    }
     this.updateQueuedSends(liveSession);
     return true;
   }

@@ -2088,6 +2088,101 @@ test('a steer the model takes in leases its own references beside the running tu
   assert.throws(() => h.canvasTurns.requireScope(steer.scopeId), { code: 'scope_expired' });
 });
 
+test('a late steer cannot lease the next turn', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'late-steer');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  const third = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('late-steer', 'running', undefined, undefined, pinned('dsg_running'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const live = requireLive(h, 'late-steer');
+  let deliver: (accepted: boolean) => void = () => undefined;
+  let entered = (): void => undefined;
+  const delivering = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  live.session.steer = () => {
+    entered();
+    return new Promise<boolean>((resolve) => {
+      deliver = resolve;
+    });
+  };
+
+  const steering = h.lifecycle.send(
+    'late-steer',
+    'old steer',
+    undefined,
+    'old-steer',
+    pinned('dsg_old'),
+  );
+  await delivering;
+  await h.lifecycle.send('late-steer', 'next turn', undefined, undefined, pinned('dsg_next'));
+  second.resolve();
+  await provider.waitForPrompts(3);
+  const next = turnLease(h, 'late-steer');
+  assert.deepEqual(next.allowedDesignIds, ['dsg_next']);
+  deliver(true);
+  await steering;
+  assert.equal(h.canvasTurns.activeScope('late-steer')?.scopeId, next.scopeId);
+  third.resolve();
+  await live.turnPromise;
+});
+
+test('a steer pending across provider adoption cannot lease the replacement turn', async () => {
+  const h = createHarness();
+  const original = queueCreate(h, 'adopted-steer');
+  const first = original.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await original.waitForPrompts(1);
+  const live = requireLive(h, 'adopted-steer');
+  let deliver: (accepted: boolean) => void = () => undefined;
+  let entered = (): void => undefined;
+  const delivering = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  live.session.steer = () => {
+    entered();
+    return new Promise<boolean>((resolve) => {
+      deliver = resolve;
+    });
+  };
+  const steering = h.lifecycle.send(
+    'adopted-steer',
+    'old steer',
+    undefined,
+    'old-steer',
+    pinned('dsg_old'),
+  );
+  await delivering;
+
+  // Compaction keeps LiveSession and replaces its provider after invalidating
+  // the old era. The old steer must not bind through the new turn's handle.
+  h.canvasTurns.endSession('adopted-steer');
+  const replacement = new FakeFactorySession('replacement', {}, h.calls);
+  const nextGate = replacement.deferNextStream();
+  live.session = new DroidProviderSession('replacement', replacement, h.runtime);
+  first.resolve();
+  await live.turnPromise;
+  const sending = h.lifecycle.send(
+    'adopted-steer',
+    'new turn',
+    undefined,
+    undefined,
+    pinned('dsg_new'),
+  );
+  await replacement.waitForPrompts(1);
+  const next = turnLease(h, 'adopted-steer');
+  deliver(true);
+  await steering;
+  assert.equal(h.canvasTurns.activeScope('adopted-steer')?.scopeId, next.scopeId);
+  nextGate.resolve();
+  await sending;
+});
+
 /** A provider that starts turns of its own beside a typed one, as Codex does. */
 function delegatingProvider(
   harness: Harness,

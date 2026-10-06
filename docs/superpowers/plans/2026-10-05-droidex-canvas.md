@@ -884,7 +884,9 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   took in. Dispatch carries no steer discriminator on Droid (spec §6), and the newest lease is
   the user's latest instruction for the turn that is running. Every earlier lease stays valid
   and may still be presented by ID, so a call already in flight is answered rather than
-  retargeted, and a steer the harness delivers after the turn ended leases nothing.
+  retargeted. Steer delivery captures its original turn handle before awaiting the harness and
+  checks the provider and handle again afterward; a result delivered after that turn or provider
+  ended cannot lease the next turn, including after compaction keeps the same `LiveSession`.
 - **The queued representations that carry a context** are `SessionPrompt`, which is the one
   shape behind `pendingSends`, `steers`, send-now reordering, `relaunch`'s waiting list,
   post-compaction `settleAfterCompaction` and `redeliverQueuedSends`. The context rides on the
