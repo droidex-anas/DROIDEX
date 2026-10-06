@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import { useReducedMotion } from 'framer-motion';
 
 const MIN_SCALE = 0.25;
@@ -106,10 +106,11 @@ function viewportCenter(layout: Layout): Point {
 
 /**
  * Zoom and pan for a full-window viewer: `contentRef` is the transformed
- * element, laid out inside `stageRef`, which fills the window. Pinch (or
- * Ctrl/Cmd + wheel) zooms toward the pointer, a plain wheel or a drag pans
- * once zoomed in, and double-click toggles between fit and 2x. `maxScale` is
- * relative to the fitted size.
+ * element, laid out inside `stageRef`, which fills the window. Ctrl/Cmd + wheel
+ * zooms toward the pointer (a trackpad pinch arrives as Ctrl + wheel; touch
+ * screens get no pinch), a plain wheel or a drag pans once zoomed in, and
+ * double-click toggles between fit and 2x. `maxScale` is relative to the
+ * fitted size.
  */
 export function useZoomPan({
   stageRef,
@@ -185,18 +186,23 @@ export function useZoomPan({
     );
   }, [contentRef, maxScale, stageRef]);
 
-  const zoomBy = (factor: number) => {
-    const layout = measureLayout(stageRef, contentRef);
-    if (!layout) return;
-    const focus = viewportCenter(layout);
-    setView((current) =>
-      zoomAbout(current, limitScale(current.scale * factor, maxScale), focus, layout, true),
-    );
-  };
+  // Stable across zoom steps so a caller's key listener is not re-registered
+  // on every wheel tick.
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const layout = measureLayout(stageRef, contentRef);
+      if (!layout) return;
+      const focus = viewportCenter(layout);
+      setView((current) =>
+        zoomAbout(current, limitScale(current.scale * factor, maxScale), focus, layout, true),
+      );
+    },
+    [contentRef, maxScale, stageRef],
+  );
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setView(FIT_VIEW);
-  };
+  }, []);
 
   const toggleAt = (clientX: number, clientY: number) => {
     const layout = measureLayout(stageRef, contentRef);
@@ -217,7 +223,8 @@ export function useZoomPan({
 
   const contentHandlers = {
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
-      if (view.scale <= 1 || event.button !== 0) return;
+      // A second finger must not take over the pan from the first.
+      if (drag.current || view.scale <= 1 || event.button !== 0) return;
       const layout = measureLayout(stageRef, contentRef);
       if (!layout) return;
       event.currentTarget.setPointerCapture(event.pointerId);

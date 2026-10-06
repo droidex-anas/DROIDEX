@@ -37,7 +37,8 @@ interface ImageLightboxProps {
 const MAX_PIXEL_ZOOM = 8;
 
 export function ImageLightbox(props: ImageLightboxProps) {
-  return createPortal(<ImageLightboxContent {...props} />, document.body);
+  // Keyed by src: another image starts from a fresh view, not the last one's zoom.
+  return createPortal(<ImageLightboxContent key={props.src} {...props} />, document.body);
 }
 
 // The fitted image's drawn width over its pixel width, so the zoom readout says
@@ -63,8 +64,7 @@ function ImageLightboxContent({ src, label, vector = false, onClose }: ImageLigh
   const stageRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const failed = failedSrc === src;
+  const [failed, setFailed] = useState(false);
   const reduceMotion = useReducedMotion();
   // A diagram has no pixel size, so its readout stays relative to the fit.
   const fitRatio = useFitRatio(imageRef, !vector && !failed);
@@ -176,7 +176,7 @@ function ImageLightboxContent({ src, label, vector = false, onClose }: ImageLigh
                   : 'block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-lg object-contain shadow-droid'
               }
               onError={() => {
-                setFailedSrc(src);
+                setFailed(true);
               }}
             />
           </div>

@@ -8,7 +8,7 @@
  */
 
 const { sanitizeAttachmentName } = require('./attachments.cjs');
-const { MAX_IMAGE_BYTES, imageExtensionForMime } = require('./localImages.cjs');
+const { MAX_IMAGE_BYTES, imageExtensionForMime, imageMimeForPath } = require('./localImages.cjs');
 
 const SAVEABLE_PROTOCOLS = new Set(['droidex-img:', 'data:', 'https:', 'http:']);
 
@@ -49,12 +49,19 @@ async function readImageResponse(response, maxBytes = MAX_IMAGE_BYTES) {
   return { mime, data: await readBoundedBody(response.body, maxBytes) };
 }
 
-/** A safe default file name for the save dialog, with an extension for its type. */
+/**
+ * A safe default file name for the save dialog whose extension matches the
+ * bytes: a matching one stays, another image extension is replaced, and any
+ * other dotted ending ("diagram.v2") gets the type's extension appended.
+ */
 function imageSaveName(name, mime) {
   const base = sanitizeAttachmentName(name) ?? 'image';
   const ext = imageExtensionForMime(mime);
-  if (!ext || /\.[a-z0-9]{2,5}$/i.test(base)) return base;
-  return `${base}.${ext}`;
+  if (!ext) return base;
+  const namedMime = imageMimeForPath(base);
+  if (namedMime === mime) return base;
+  const stem = namedMime ? base.slice(0, base.lastIndexOf('.')) : base;
+  return `${stem}.${ext}`;
 }
 
 module.exports = { imageSaveName, readImageResponse, saveableImageProtocol };

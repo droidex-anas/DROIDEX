@@ -52,8 +52,11 @@ test('readImageResponse stops reading a body with no length as soon as it passes
   assert.ok(chunksPulled <= 4, `read ${String(chunksPulled)} chunks past a 10-byte cap`);
 });
 
-test('imageSaveName keeps a usable name, strips path parts, and adds the type extension', () => {
+test('imageSaveName keeps a usable name, strips path parts, and gives it the extension of its type', () => {
   assert.equal(imageSaveName('shot.png', 'image/png'), 'shot.png');
+  assert.equal(imageSaveName('photo.JPEG', 'image/jpeg'), 'photo.JPEG');
+  assert.equal(imageSaveName('photo.jpg', 'image/png'), 'photo.png');
+  assert.equal(imageSaveName('Mermaid diagram.v2', 'image/svg+xml'), 'Mermaid diagram.v2.svg');
   assert.equal(imageSaveName('Mermaid diagram', 'image/svg+xml'), 'Mermaid diagram.svg');
   assert.equal(imageSaveName('photo', 'image/jpeg'), 'photo.jpg');
   assert.equal(imageSaveName('../../etc/evil', 'image/png'), 'evil.png');

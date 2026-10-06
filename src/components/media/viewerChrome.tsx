@@ -30,7 +30,7 @@ export function ViewerCloseButton({ onClose }: { onClose: () => void }) {
 export function ViewerToolbar({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div
-      role="toolbar"
+      role="group"
       aria-label={label}
       onClick={stopBackdropClose}
       onDoubleClick={stopBackdropClose}

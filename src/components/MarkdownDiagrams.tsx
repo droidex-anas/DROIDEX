@@ -153,7 +153,9 @@ function DiagramCard({
 }
 
 export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
-  const [svg, setSvg] = useState<string>('');
+  // Tagged with its source: a changed fence keeps showing the last drawing while
+  // the new one renders, but Expand must never open a diagram of other code.
+  const [rendered, setRendered] = useState<{ code: string; svg: string } | null>(null);
   const [error, setError] = useState<string>('');
   const idRef = useRef(`mmd-${String(++mermaidSeq)}`);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -180,7 +182,7 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
       })
       .then(({ svg }) => {
         if (!cancelled) {
-          setSvg(svg);
+          setRendered({ code, svg });
           setError('');
         }
       })
@@ -194,18 +196,19 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
 
   if (error) return <CodeCard code={code} className="language-mermaid" />;
 
+  const currentSvg = rendered?.code === code ? rendered.svg : null;
   return (
     <DiagramCard
       kind="Mermaid"
       source={code}
       viewLabel="Mermaid diagram"
-      imageSrc={svg ? () => mermaidImageSrc(svg) : null}
+      imageSrc={currentSvg ? () => mermaidImageSrc(currentSvg) : null}
       hostRef={hostRef}
     >
-      {svg ? (
+      {rendered ? (
         <div
           className="flex w-full animate-fade-in justify-center [&_svg]:h-auto [&_svg]:max-w-full"
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={{ __html: rendered.svg }}
         />
       ) : (
         <span className="text-[12px] text-droid-text-muted/70">Rendering diagram…</span>

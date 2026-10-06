@@ -186,7 +186,11 @@ function CodeCardControls({
   return (
     <>
       {collapsible && (
-        <button onClick={onToggleCollapse} className={CARD_CONTROL_CLASS}>
+        <button
+          onClick={onToggleCollapse}
+          className={CARD_CONTROL_CLASS}
+          aria-expanded={!collapsed}
+        >
           {collapsed ? 'Show all' : 'Collapse'}
         </button>
       )}
@@ -269,6 +273,7 @@ export function CodeCard({
               onClick={() => {
                 setCollapsed(false);
               }}
+              aria-expanded={false}
               className="flex h-7 items-center gap-1 rounded-full bg-droid-raised px-3 text-[11.5px] font-medium text-droid-text-secondary shadow-droid-sm transition-colors duration-150 hover:text-droid-text focus-visible:text-droid-text focus-visible:outline-none"
             >
               <ChevronDown className="h-3 w-3" />
