@@ -27,7 +27,7 @@ const design: PersistedDesign = {
 };
 
 /** These cases are about the ledger, where nothing has been built yet. */
-const unbuilt = { stateOf: (): CanvasBuildState => ({ status: 'pending' }) };
+const unbuilt = { stateOf: (): CanvasBuildState => ({ status: 'pending', generation: 0 }) };
 
 const createInput = {
   mutationId: 'create-hey',

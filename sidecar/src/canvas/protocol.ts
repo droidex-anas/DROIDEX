@@ -82,9 +82,10 @@ export interface SourceElement {
   editability: 'literal' | 'computed' | 'shared';
 }
 
-export type CanvasBuildState =
+/** What one design's build is doing, on its own. */
+export type CanvasBuildOutcome =
   | { status: 'pending' }
-  | { status: 'building'; revisionId: string; generation: number }
+  | { status: 'building'; revisionId: string }
   | { status: 'ready'; revisionId: string; artifactId: string }
   | {
       status: 'failed';
@@ -93,6 +94,14 @@ export type CanvasBuildState =
       lastWorkingRevisionId: string | null;
     }
   | { status: 'cancelled'; revisionId: string | null };
+
+/**
+ * One design's build state and the attempt it belongs to. `generation` is the
+ * per-design attempt counter, which only ever increases, so a reader can tell a
+ * build that actually moved from a frame that was merely re-sent: an arrange
+ * re-sends every frame it touches with its build untouched.
+ */
+export type CanvasBuildState = CanvasBuildOutcome & { generation: number };
 
 /**
  * One built revision's preview document and the ID of that document. A preview

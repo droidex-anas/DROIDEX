@@ -67,12 +67,15 @@ type ArtifactRead =
 const LOADING: ArtifactRead = { state: 'loading' };
 
 /**
- * The artifact for one revision, read again whenever the frame points somewhere
- * else or its build moves at all. The build object is the signal rather than the
- * artifact ID, because a rebuild of identical source is content-addressed to the
- * same ID: that read has to happen because the document came back, not because
- * its name changed. `applyCanvasChange` keeps an unchanged frame's identity, so
- * this reads once per change to this design and not once per snapshot.
+ * The artifact for one revision, read again whenever that revision's build
+ * actually moves. The signal is `generation` — the registry's per-design attempt
+ * counter — and the status, never the build object's identity: an arrange
+ * re-sends every frame it touches with a fresh object and an unchanged build, and
+ * re-reading there would tear down a loaded preview and lose its state.
+ *
+ * It is not the artifact ID either, because a rebuild of identical source is
+ * content-addressed to the same ID: a recovered document arrives under a new
+ * attempt, not under a new name.
  */
 function useArtifact(
   canvasId: string,
@@ -99,7 +102,8 @@ function useArtifact(
     return () => {
       wanted = false;
     };
-  }, [canvasId, designId, revisionId, build, readArtifact]);
+    // Values, not the build object: see the note above.
+  }, [canvasId, designId, revisionId, build.generation, build.status, readArtifact]);
 
   return read;
 }

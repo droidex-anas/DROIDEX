@@ -111,7 +111,7 @@ const wire: SidecarWire = {
         layoutVersion: 0,
         revisionId: null,
         designSystem,
-        build: { status: 'pending' },
+        build: { status: 'pending', generation: 0 },
       },
     ],
   },
@@ -147,7 +147,7 @@ const wire: SidecarWire = {
         layoutVersion: 2,
         revisionId: 'rev_02',
         designSystem,
-        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02' },
+        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02', generation: 1 },
       },
       {
         designId: 'dsg_reserved',
@@ -156,7 +156,7 @@ const wire: SidecarWire = {
         layoutVersion: 1,
         revisionId: null,
         designSystem,
-        build: { status: 'pending' },
+        build: { status: 'pending', generation: 0 },
       },
     ],
   },
@@ -173,6 +173,7 @@ const wire: SidecarWire = {
         designSystem,
         build: {
           status: 'failed',
+          generation: 2,
           revisionId: 'rev_03',
           diagnostics: [
             {

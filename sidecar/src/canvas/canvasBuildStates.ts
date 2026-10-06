@@ -5,35 +5,40 @@
 // lets a published result prove it was the attempt the frame still wanted.
 
 import type { RestoredBuild } from './canvasBuildCache.js';
-import type { CanvasBuildState } from './protocol.js';
+import type { CanvasBuildOutcome, CanvasBuildState } from './protocol.js';
 
-const PENDING: CanvasBuildState = { status: 'pending' };
+/** Nothing has been attempted for a design this registry has never heard of. */
+const UNKNOWN: CanvasBuildState = { status: 'pending', generation: 0 };
 
 interface DesignBuild {
-  state: CanvasBuildState;
+  outcome: CanvasBuildOutcome;
   generation: number;
 }
 
 export class CanvasBuildStates {
   private readonly byDesign = new Map<string, DesignBuild>();
 
-  /** The state every frame projection reads; an unknown design is pending. */
+  /**
+   * The state every frame projection reads, carrying the attempt it belongs to;
+   * an unknown design is pending on attempt zero.
+   */
   stateOf(canvasId: string, designId: string): CanvasBuildState {
-    return this.byDesign.get(designKey(canvasId, designId))?.state ?? PENDING;
+    const held = this.byDesign.get(designKey(canvasId, designId));
+    return held ? { ...held.outcome, generation: held.generation } : UNKNOWN;
   }
 
-  /** Records a state against the attempt the design is already on. */
-  set(canvasId: string, designId: string, state: CanvasBuildState): void {
+  /** Records an outcome against the attempt the design is already on. */
+  set(canvasId: string, designId: string, outcome: CanvasBuildOutcome): void {
     const key = designKey(canvasId, designId);
     const generation = this.byDesign.get(key)?.generation ?? 0;
-    this.byDesign.set(key, { generation, state });
+    this.byDesign.set(key, { generation, outcome });
   }
 
   /** Opens the next attempt on a revision, records it, and names it. */
   nextAttempt(canvasId: string, designId: string, revisionId: string): number {
     const key = designKey(canvasId, designId);
     const generation = (this.byDesign.get(key)?.generation ?? 0) + 1;
-    this.byDesign.set(key, { generation, state: { status: 'building', revisionId, generation } });
+    this.byDesign.set(key, { generation, outcome: { status: 'building', revisionId } });
     return generation;
   }
 
@@ -42,11 +47,15 @@ export class CanvasBuildStates {
     this.byDesign.delete(designKey(canvasId, designId));
   }
 
-  /** Installs what the derived cache proved when the workspace opened. */
+  /**
+   * Installs what the derived cache proved when the workspace opened. A restored
+   * outcome is attempt zero: nothing has been built in this session, so the first
+   * rebuild of that design takes attempt one and a reader sees the move.
+   */
   install(restored: readonly RestoredBuild[]): void {
     for (const entry of restored) {
       this.byDesign.set(designKey(entry.canvasId, entry.designId), {
-        state: entry.state,
+        outcome: entry.outcome,
         generation: 0,
       });
     }

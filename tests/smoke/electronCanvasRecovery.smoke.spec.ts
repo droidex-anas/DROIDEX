@@ -43,8 +43,13 @@ function sidecarEsbuild(): BrowserBundler {
 const PROBE = `
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
+import { applyCanvasChange } from '../../src/features/canvas/applyCanvasChange';
 import { DesignPreview } from '../../src/features/canvas/DesignPreview';
-import type { CanvasBuildState, CanvasFrame } from '../../src/features/canvas/protocol';
+import type {
+  CanvasBuildState,
+  CanvasFrame,
+  CanvasSnapshot,
+} from '../../src/features/canvas/protocol';
 
 const probe = { reads: 0, available: false };
 
@@ -73,13 +78,34 @@ const frameFor = (build: CanvasBuildState): CanvasFrame => ({
   build,
 });
 
+// The projection the board holds, extended the way the client extends it.
+let snapshot: CanvasSnapshot = { canvasId: 'cv_recover', sequence: 1, frames: [] };
+
+const show = () => {
+  const [frame] = snapshot.frames;
+  root.render(createElement(DesignPreview, { canvasId: snapshot.canvasId, frame, readArtifact }));
+};
+
 Object.assign(window, {
   __canvasRecovery: {
     probe,
     renderBuild(build: CanvasBuildState) {
-      root.render(
-        createElement(DesignPreview, { canvasId: 'cv_recover', frame: frameFor(build), readArtifact }),
-      );
+      snapshot = { ...snapshot, frames: [frameFor(build)] };
+      show();
+    },
+    /**
+     * An arrange response: the sidecar re-sends the frame it moved, with a fresh
+     * frame object and the build exactly as it was.
+     */
+    arrange(rect: { x: number; y: number; width: number; height: number }) {
+      const [held] = snapshot.frames;
+      snapshot = applyCanvasChange(snapshot, {
+        canvasId: snapshot.canvasId,
+        sequence: snapshot.sequence + 1,
+        frames: [{ ...held, rect, layoutVersion: held.layoutVersion + 1, build: { ...held.build } }],
+        removedDesignIds: [],
+      });
+      show();
     },
   },
 });
@@ -134,7 +160,7 @@ test('[C9] a build transition after a lost artifact reads again and mounts it', 
       const recovery = Reflect.get(window, '__canvasRecovery') as {
         renderBuild: (build: unknown) => void;
       };
-      recovery.renderBuild({ status: 'ready', revisionId: 'r', artifactId });
+      recovery.renderBuild({ status: 'ready', revisionId: 'r', artifactId, generation: 1 });
     }, ARTIFACT_ID);
 
     await expect
@@ -154,7 +180,7 @@ test('[C9] a build transition after a lost artifact reads again and mounts it', 
       };
       recovery.probe.available = true;
       recovery.renderBuild({ status: 'building', revisionId: 'r', generation: 2 });
-      recovery.renderBuild({ status: 'ready', revisionId: 'r', artifactId });
+      recovery.renderBuild({ status: 'ready', revisionId: 'r', artifactId, generation: 2 });
     }, ARTIFACT_ID);
 
     await expect
@@ -177,5 +203,59 @@ test('[C9] a build transition after a lost artifact reads again and mounts it', 
       'droidex-canvas-preview://preview/guest',
     );
     console.log(JSON.stringify({ artifactRecovery: { ...recovered, artifactId: ARTIFACT_ID } }));
+  });
+});
+
+test('[C10] arranging a loaded frame keeps its preview and its state', async () => {
+  await withCanvasHost(async (_app, page) => {
+    await installProbe(page);
+
+    // A frame whose document is there from the start, so the preview mounts.
+    await page.evaluate((artifactId) => {
+      const recovery = Reflect.get(window, '__canvasRecovery') as {
+        probe: { available: boolean };
+        renderBuild: (build: unknown) => void;
+      };
+      recovery.probe.available = true;
+      recovery.renderBuild({ status: 'ready', revisionId: 'r', artifactId, generation: 1 });
+    }, ARTIFACT_ID);
+
+    await expect
+      .poll(async () => (await readProbe(page)).guests, { timeout: 20_000, intervals: [50] })
+      .toBe(1);
+    const mounted = await readProbe(page);
+    assert.equal(mounted.reads, 1);
+    // The guest element itself, so a replacement is visible as a different node.
+    const before = await page.evaluate(() => {
+      const guest = document.getElementById('canvas-recovery-probe')?.querySelector('webview');
+      Object.assign(window, { __canvasGuestNode: guest });
+      return guest?.isConnected ?? false;
+    });
+    assert.equal(before, true);
+
+    // An arrange: a new frame object, a new layout version, a build whose values
+    // did not move. Nothing about the preview has changed.
+    await page.evaluate(() => {
+      const recovery = Reflect.get(window, '__canvasRecovery') as {
+        arrange: (rect: { x: number; y: number; width: number; height: number }) => void;
+      };
+      recovery.arrange({ x: 120, y: 90, width: 400, height: 300 });
+    });
+
+    // Settle anything the arrange could have scheduled before reading.
+    for (let turn = 0; turn < 10; turn += 1) await readProbe(page);
+    const arranged = await readProbe(page);
+    assert.equal(arranged.reads, 1, 'an arrange re-read the artifact');
+    assert.equal(arranged.guests, 1);
+    assert.equal(
+      await page.evaluate(() => {
+        const held = Reflect.get(window, '__canvasGuestNode') as Element | undefined;
+        const guest = document.getElementById('canvas-recovery-probe')?.querySelector('webview');
+        return held === guest && (guest?.isConnected ?? false);
+      }),
+      true,
+      'the arrange replaced the guest, so a mounted preview lost its state',
+    );
+    console.log(JSON.stringify({ arrangeKeptPreview: arranged }));
   });
 });

@@ -134,12 +134,13 @@ function isDesignSystem(value: unknown): boolean {
 }
 
 function isBuild(value: unknown): boolean {
-  if (!record(value)) return false;
+  // Every state names the attempt it belongs to, whatever the attempt produced.
+  if (!record(value) || !count(value.generation)) return false;
   switch (value.status) {
     case 'pending':
       return true;
     case 'building':
-      return id(value.revisionId) && count(value.generation);
+      return id(value.revisionId);
     case 'ready':
       return id(value.revisionId) && id(value.artifactId);
     case 'failed':

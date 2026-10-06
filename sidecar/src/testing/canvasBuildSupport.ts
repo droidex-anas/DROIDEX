@@ -2,13 +2,20 @@
 // is handed to the test, which decides when and how it answers; every build
 // deadline fires only when the test says so; and the derived cache's own writes
 // can be held open or refused. No timers and no real compiler.
+//
+// `board` is the harness those suites run against: one scratch root, a real
+// workspace and build registry over it, and the compiler under the test's hand.
 
 import assert from 'node:assert/strict';
-import type {
-  BuildDeadline,
-  BuildTarget,
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { TestContext } from 'node:test';
+import {
   CanvasBuilds,
-  CanvasBuildHost,
+  type BuildDeadline,
+  type BuildTarget,
+  type CanvasBuildHost,
 } from '../canvas/CanvasBuilds.js';
 import {
   CompileCancelledError,
@@ -19,12 +26,23 @@ import {
 } from '../canvas/compiler.js';
 import type { DesignCompiler } from '../canvas/canvasCompilerProcesses.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
+import { CanvasScopes } from '../canvas/canvasScopes.js';
+import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
+import type {
+  CanvasBuildState,
+  CanvasChange,
+  CanvasFrame,
+  CanvasScope,
+  WriteReceipt,
+} from '../canvas/protocol.js';
 import { deferred, observedFileSystem } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */
 export const COMPILE_FAILED = 'The design did not compile.';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+/** The chat every harness canvas is attached to. */
+const APP = 'app-1';
 
 /** One compile the test holds open until it decides what the compiler answers. */
 export interface HeldCompile {
@@ -291,5 +309,163 @@ export function holdOutcomeWrite(options: { refuseRemoval?: boolean } = {}) {
     },
     reached: reached.promise,
     release: released.resolve,
+  };
+}
+
+export interface Board {
+  store: Storage;
+  canvasId: string;
+  workspace: CanvasWorkspace;
+  builds: CanvasBuilds;
+  fleet: CompilerFleet;
+  deadlines: ReturnType<typeof fakeDeadlines>;
+  changes: CanvasChange[];
+  frame(designId: string): CanvasFrame;
+  create(...names: string[]): Promise<string[]>;
+  /** A frame seeded from a saved revision, which arrives with source. */
+  createSeeded(name: string, designId: string, revisionId: string): Promise<string>;
+  write(designId: string, expected: string | null, text: string): Promise<WriteReceipt>;
+  /** Resolves once a change published from now on reports that state. */
+  reported(designId: string, status: CanvasBuildState['status']): Promise<void>;
+}
+
+/**
+ * One scratch root and every registry opened over it. Builds settle in the
+ * background, so each registry is closed before the storage disappears; a
+ * removal that raced one would fail on the files it was still writing.
+ */
+export interface Storage {
+  root: string;
+  closing: (() => Promise<void>)[];
+}
+
+export async function storage(t: TestContext): Promise<Storage> {
+  const directory = await mkdtemp(join(tmpdir(), 'droidex-canvas-'));
+  const store: Storage = { root: join(directory, 'canvases'), closing: [] };
+  t.after(async () => {
+    for (const close of store.closing) await close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  return store;
+}
+
+export interface BoardOptions {
+  store?: Storage;
+  fs?: CanvasFileSystem;
+}
+
+/** A real workspace over scratch storage, with the compiler under test control. */
+export async function board(t: TestContext, options: BoardOptions = {}): Promise<Board> {
+  const store = options.store ?? (await storage(t));
+  const root = store.root;
+  const fleet = new CompilerFleet();
+  const deadlines = fakeDeadlines();
+  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
+  const scopes = new CanvasScopes();
+  const workspace = await CanvasWorkspace.open(root, builds, {
+    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
+    bindScopeCanvas: () => undefined,
+    ...(options.fs ? { fs: options.fs } : {}),
+  });
+  store.closing.push(async () => {
+    await builds.close();
+    await workspace.close();
+  });
+  const changes: CanvasChange[] = [];
+  const waiters = new Set<() => void>();
+  workspace.changes.subscribe((change) => {
+    changes.push(change);
+    for (const waiter of [...waiters]) waiter();
+  });
+  const canvasId = workspace.attachedCanvasId(APP) ?? (await workspace.createCanvas(APP)).canvasId;
+  let scopeCount = 0;
+  const under = async <T>(work: (scope: CanvasScope) => Promise<T>): Promise<T> => {
+    scopeCount += 1;
+    const scope: CanvasScope = {
+      origin: 'user',
+      scopeId: `user-${String(scopeCount)}`,
+      appSessionId: APP,
+      canvasId,
+      allowedDesignIds: 'canvas',
+    };
+    scopes.register(scope);
+    try {
+      return await work(scope);
+    } finally {
+      scopes.revoke(scope.scopeId);
+    }
+  };
+  const seen = (designId: string, status: CanvasBuildState['status'], from: number): boolean =>
+    changes
+      .slice(from)
+      .some((change) =>
+        change.frames.some((frame) => frame.designId === designId && frame.build.status === status),
+      );
+  return {
+    store,
+    canvasId,
+    workspace,
+    builds,
+    fleet,
+    deadlines,
+    changes,
+    frame: (designId) => {
+      const frame = workspace
+        .snapshot(canvasId)
+        .frames.find((entry) => entry.designId === designId);
+      assert.ok(frame, 'the frame is on the canvas');
+      return frame;
+    },
+    create: async (...names) => {
+      const created = await under((scope) =>
+        workspace.create(scope, {
+          mutationId: `create-${names.join('-')}`,
+          frames: names.map((name) => ({ name, width: 720, height: 720, designSystem })),
+        }),
+      );
+      return created.frames.map((frame) => frame.designId);
+    },
+    createSeeded: async (name, designId, revisionId) => {
+      const created = await under((scope) =>
+        workspace.create(scope, {
+          mutationId: `seed-${name}`,
+          frames: [
+            {
+              name,
+              width: 720,
+              height: 720,
+              designSystem,
+              seed: { kind: 'revision', canvasId, revision: { designId, revisionId } },
+            },
+          ],
+        }),
+      );
+      const seeded = created.frames[0]?.designId;
+      assert.ok(seeded, 'the seeded frame was created');
+      return seeded;
+    },
+    write: (designId, expected, text) =>
+      under((scope) =>
+        workspace.write(scope, {
+          mutationId: `write-${designId}-${text}`,
+          designId,
+          expectedRevisionId: expected,
+          files: { 'main.tsx': text },
+          deletedPaths: [],
+        }),
+      ),
+    reported: (designId, status) => {
+      // From here on: a design reaches the same state more than once.
+      const from = changes.length;
+      if (seen(designId, status, from)) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const waiter = (): void => {
+          if (!seen(designId, status, from)) return;
+          waiters.delete(waiter);
+          resolve();
+        };
+        waiters.add(waiter);
+      });
+    },
   };
 }
