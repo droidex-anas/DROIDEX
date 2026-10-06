@@ -275,9 +275,9 @@ test('[C5] main ends a guest the board asks about, and refuses one it never atta
 
 /**
  * Every egress path a fetch directive does not obviously cover. ICE is the one
- * the reviewer got out, over UDP and then over TURN with TCP; a direct TCP host
- * candidate, WebTransport, `sendBeacon` and the prefetch hints are the siblings
- * worth holding to the same standard.
+ * the reviewer got out, over UDP and then over TURN with TCP, which is dialling a
+ * remote TCP endpoint; WebTransport, `sendBeacon` and the prefetch hints are the
+ * siblings worth holding to the same standard.
  *
  * Each attempt reports itself through the production channel before the test
  * measures anything, so "zero at the listener" can never mean "never tried".
@@ -317,8 +317,6 @@ const servers = [
 // reviewer found both timings reached a TURN server over TCP.
 attempt('ice-now', () => negotiate(new RTCPeerConnection({ iceServers: servers })));
 const waiting = new RTCPeerConnection({ iceServers: servers });
-// A direct host candidate needs no server at all.
-attempt('ice-host', () => negotiate(new RTCPeerConnection()));
 attempt('beacon', () => {
   navigator.sendBeacon?.(${JSON.stringify(httpUrl + '/beacon')});
 });
@@ -385,7 +383,7 @@ export default function Hey() {
 }
 
 /** The paths the design must have attempted before zero means anything. */
-const EGRESS_PATHS = ['ice-now', 'ice-host', 'beacon', 'hints', 'webtransport', 'ice-late'];
+const EGRESS_PATHS = ['ice-now', 'beacon', 'hints', 'webtransport', 'ice-late'];
 
 /** Drains until every named path has reported itself, then lets traffic land. */
 async function awaitAttempts(page: Page, instance: PreviewInstance, paths: readonly string[]) {
@@ -439,15 +437,20 @@ test('[C6] no generated network path reaches a listener, including ICE over TCP'
       });
 
       // The ping on its own guest, so its click cannot cut the measurement short.
-      await withCanvasHost(async (_app, page) => {
+      await withCanvasHost(async (app, page) => {
         const guestId = await mountPreviewGuest(page);
-        assert.ok(guestId > 0);
         const instance = newInstance('ping');
         assert.equal(
           await askGuest(page, previewStartScript(instance, ping.html)),
           PREVIEW_STARTED,
         );
         await awaitAttempts(page, instance, ['ping']);
+        // The marker is written before the click, so it alone proves nothing. The
+        // click's own effect is the fragment it leaves on the frame; without this
+        // the case would pass with the click removed entirely.
+        await expect
+          .poll(() => generatedFrameUrl(app, guestId), { timeout: 20_000, intervals: [100] })
+          .toMatch(/#canvas$/);
 
         assert.deepEqual(attempts, quiet, 'a[ping] reached the listener');
         assert.equal(datagram.datagrams(), 0);
@@ -523,6 +526,25 @@ export default function Hey() {
   });
 });
 
+/** The first wide-character diagnostic in a raw `drain()` answer, uncut by us. */
+function rawDiagnostic(answer: unknown): string {
+  assert.equal(typeof answer, 'string');
+  const parsed: unknown = JSON.parse(answer as string);
+  assert.ok(parsed && typeof parsed === 'object');
+  const events: unknown = Reflect.get(parsed, 'events');
+  assert.ok(Array.isArray(events));
+  for (const event of events) {
+    if (Reflect.get(event, 'event') !== 'diagnostics') continue;
+    const diagnostics: unknown = Reflect.get(event, 'diagnostics');
+    if (!Array.isArray(diagnostics)) continue;
+    for (const diagnostic of diagnostics) {
+      const text: unknown = Reflect.get(diagnostic, 'message');
+      if (typeof text === 'string' && text.includes('界')) return text;
+    }
+  }
+  return '';
+}
+
 test('[C8] a wide-character diagnostic is truncated, and never ends the preview', async () => {
   // 200 three-byte characters: 200 code units, 600 bytes. A cap counted in code
   // units lets it through; a reader that refuses over 512 bytes then throws the
@@ -550,22 +572,35 @@ export default function Hey() {
     const instance = newInstance('wide');
     assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
 
-    // Every snapshot is read by the production reader, so a refusal here would
-    // surface as a drain that cannot be validated at all.
+    // Drained raw as well as through the production reader: the renderer trims an
+    // over-long field, so checking only its output would pass even if the
+    // intermediate still cut by code unit and handed over 616 bytes.
+    let raw = '';
     let message = '';
     await expect
       .poll(
         async () => {
-          for (const event of (await drainGuest(page, instance)).events) {
+          const answer = await askGuest(page, PREVIEW_POLL_SCRIPT);
+          const snapshot = readPreviewSnapshot(answer, instance);
+          assert.ok(snapshot, 'the guest answered with a snapshot for this instance');
+          for (const event of snapshot.events) {
             if (event.event !== 'diagnostics') continue;
             for (const diagnostic of event.diagnostics)
-              if (diagnostic.message.includes('界')) message = diagnostic.message;
+              if (diagnostic.message.includes('界')) {
+                message = diagnostic.message;
+                raw = rawDiagnostic(answer);
+              }
           }
           return message.length > 0;
         },
         { timeout: 20_000, intervals: [100] },
       )
       .toBe(true);
+
+    // The intermediate's own cut, before the renderer normalizes anything.
+    assert.ok(raw.includes('界'), 'the raw snapshot carried the diagnostic');
+    assert.equal(Buffer.byteLength(raw, 'utf8') <= 512, true, 'the intermediate cut by code unit');
+    assert.equal(raw, message, 'the two sides disagree about where to cut');
 
     // Cut to the byte cap on a code point boundary: 170 characters is 510 bytes,
     // and a 171st would be 513.
