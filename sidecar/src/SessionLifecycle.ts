@@ -1183,6 +1183,8 @@ export class SessionLifecycle {
         });
         return;
       }
+      // Its rows are all in: anything later is noise, as after a typed turn's end.
+      this.dependencies.eventFlow.apply(appSessionId, appSessionId, 'primary', { done: true });
       // The chat stays busy until the turn's last words are written, so what
       // reads its reply as it settles (a project report) has them, and until
       // Send now's interrupt settles, so nothing new starts under it.
