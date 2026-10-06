@@ -61,7 +61,6 @@ const RUNTIME_SPECIFIERS = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
-  'lucide-react',
   'lucide-react/dist/esm/lucide-react.js',
 ];
 

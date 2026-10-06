@@ -56,7 +56,6 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
-  'lucide-react',
   'lucide-react/dist/esm/lucide-react.js',
 ];
 

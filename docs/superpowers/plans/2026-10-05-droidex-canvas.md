@@ -1136,16 +1136,21 @@ Settled by 07a (`canvas/07a-design-kits`):
   (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
   Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
   Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
-  `title`, `children`) using native modal focus containment, Escape and focus restoration.
+  `title`, `children`, optional `returnFocusId`) using native modal behavior, explicit
+  focus cycling at the preview-frame edge, Escape and visible-destination restoration.
   Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
   Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
 - Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
   for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
   SIL OFL files both in the repository and the kit's virtual source files. Provenance is
   in `presets/fonts/README.md`; other scripts use the local font stack.
+  Inline fonts are accepted for 07a: 64 KB of Inter, or 115 KB of Inter plus Lora,
+  per artifact is within every current limit. 07d owns serving each immutable font
+  once through a preview-host asset URL and changing the matching `font-src`/CSS allowlist.
 - `lucide-react` is pinned to 0.460.0, the app's existing version, staged with its ISC
-  licence, and verified by the owned-runtime gate. The flat import allowlist names only
-  `lucide-react`; its internal pinned ESM entry is resolved through the same owned anchor
+  licence, and verified by the owned-runtime gate. Its unused CJS build is pruned. The
+  flat import allowlist names only `lucide-react`; its internal pinned ESM entry is
+  resolved through the same owned anchor
   so unused icons are removed. Public deep imports remain refused. No chart entry is
   changed. `designStylesheet.ts` already scans the complete snapshot with Tailwind 3 and
   needed no replacement path or dynamic-class guessing.

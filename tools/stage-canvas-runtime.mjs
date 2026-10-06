@@ -73,7 +73,8 @@ const PRUNED = {
   // React's NODE_ENV switch still resolve.
   'react-dom': (path) => /server|static|profiling|test-utils/.test(path),
   react: (path) => /react-server|profiling/.test(path),
-  'lucide-react': (path) => path.startsWith('dist/umd/') || path.startsWith('dynamicIconImports'),
+  'lucide-react': (path) =>
+    path.startsWith('dist/cjs/') || path.startsWith('dist/umd/') || path.startsWith('dynamicIconImports'),
   scheduler: (path) => /native|unstable_mock|unstable_post_task/.test(path),
 };
 
