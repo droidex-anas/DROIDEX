@@ -427,8 +427,14 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   Both go through `canvasFiles.ts`'s flushed write-and-rename, `removeTemporaries` now sweeps
   `builds/*.tmp`, and a build superseded while it was saving can leave an orphan entry: spec §7
   keeps derived-cache cleanup bounded and out of this release.
-- `load` reads those outcomes when the workspace opens and projects `ready` only when the artifact
-  document is present; anything else stays `pending`. `requestRebuilds(snapshot)` is the on-demand
+- **The cache never decides whether an outcome is valid; the manifest does.** On restore a `ready`
+  outcome is served only when the design's `lastWorkingRevisionId` is that same revision and the
+  artifact document is there, and a `failed` one only for the revision the frame currently holds;
+  a published `ready` set that pointer in the same commit, so an outcome whose commit never
+  happened can never match it however the cleanup of its file went. Taking an abandoned outcome
+  file back stays best-effort hygiene rather than something publication correctness rests on.
+- `load` reads those outcomes when the workspace opens; anything the manifest does not vouch for
+  leaves the frame `pending`. `requestRebuilds(snapshot)` is the on-demand
   recovery, which any read may call (`canvas.subscribe` today, after it has confirmed the page is
   still there, so a refused subscription schedules nothing). It queues the `pending` and
   `cancelled` frames that still have source, checked against the head. Missing cache is never an
