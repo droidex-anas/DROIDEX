@@ -411,6 +411,11 @@ export class ProjectService {
     let project = this.membership.get(source);
     if (project && requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the chat that leads a project keeps its plan.');
+    // Named before anything changes: a name the chat refuses leaves no project
+    // half made and no plan replaced; Droid keeps the title itself and can refuse it.
+    const name = title?.slice(0, LEDGER_LIMITS.title);
+    if (name && name !== project?.title && (project || steps.length))
+      await this.sessions.rename(source, name);
     if (!project) {
       // With no project there is no plan to clear.
       if (!steps.length) return 0;
@@ -423,8 +428,10 @@ export class ProjectService {
       project = this.adoption(source, owner);
       this.commitAdoption(source, project);
     }
-    // Renamed first, so a name the chat refuses leaves the plan as it was.
-    if (title) await this.rename(project, source, title);
+    if (name) {
+      project.title = name;
+      requireThread(project, source).title = name;
+    }
     const members = new Set(project.threads.map((thread) => thread.appSessionId));
     project.plan = planFromSteps(steps, (id) => members.has(id));
     // A step of the chat's own that is not done, stated or not, means work remains.
@@ -433,16 +440,6 @@ export class ProjectService {
     this.settleAdoption(project);
     await this.save();
     return project.plan.length;
-  }
-
-  /** The lead's name for the project, which its own chat takes too. */
-  private async rename(project: Project, lead: string, title: string): Promise<void> {
-    const name = title.slice(0, LEDGER_LIMITS.title);
-    if (name === project.title) return;
-    // Droid keeps the title itself and can refuse it; the ledger follows the chat.
-    await this.sessions.rename(lead, name);
-    project.title = name;
-    requireThread(project, lead).title = name;
   }
 
   /** The lead's word that the goal is achieved. Spawning again reopens the project. */
