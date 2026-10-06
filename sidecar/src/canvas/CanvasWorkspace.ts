@@ -94,21 +94,16 @@ export class CanvasWorkspace {
     return this.heads.attachedCanvasId(appSessionId);
   }
 
-  /**
-   * Every committed change, in sequence. Agent tools mutate this workspace
-   * directly, so this is the only way the pane learns about their work.
-   */
+  /** Every committed change, in sequence; agent tools mutate this directly. */
   onChange(listener: (change: CanvasChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
   /**
-   * A new canvas, attached to the chat that asked for it. Spec §6: explicit
-   * Create commits the canvas and the attachment together, so a lost response
-   * leaves either nothing or this chat's canvas. The chat leaves its previous
-   * canvas first, because a crash between those two writes must leave it
-   * unattached rather than attached twice.
+   * A new canvas, attached in the same commit so explicit Create leaves either
+   * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
+   * first: a crash between the two writes must leave it unattached, not twice.
    */
   createCanvas(appSessionId: string): Promise<CanvasSnapshot> {
     return this.admit(() =>
@@ -380,8 +375,7 @@ export class CanvasWorkspace {
   /**
    * A commit that may publish a change. Listeners run once the lock has moved
    * on, so a subscriber cannot stall the next commit, and still in sequence,
-   * because the queue hands the lock on in an earlier microtask. A retry
-   * answers its original receipt and publishes nothing new.
+   * because the queue hands the lock on in an earlier microtask.
    */
   private commitChange<T>(work: () => Promise<Committed<T>>): Promise<T> {
     return this.commit(work).then(({ value, change }) => {
