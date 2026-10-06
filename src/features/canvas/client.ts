@@ -2,7 +2,6 @@
 // feature-local projection of each canvas a caller is watching. The sidecar
 // owns canonical state; nothing here is stored in the root store.
 
-import { bridge } from '../../lib/bridge';
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import { applyCanvasChange } from './applyCanvasChange';
 import type {
@@ -36,7 +35,7 @@ export interface CanvasTransport {
 }
 
 /** A failure the sidecar reported, with the stable code from spec §8. */
-export class CanvasRequestError extends Error {
+class CanvasRequestError extends Error {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
@@ -362,8 +361,6 @@ export class CanvasClient {
     }
   }
 }
-
-export const canvasClient = new CanvasClient(bridge);
 
 function requestId(): string {
   return crypto.randomUUID();

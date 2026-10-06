@@ -59,21 +59,14 @@ export const designSystemRefSchema = z
   })
   .strict();
 
-export const designRefSchema = z
-  .object({
-    designId: canvasIdentifierSchema,
-    revisionId: canvasIdentifierSchema.nullable(),
-  })
-  .strict();
-
-export const revisionRefSchema = z
+const revisionRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
   })
   .strict();
 
-export const canvasSeedSchema = z.discriminatedUnion('kind', [
+const canvasSeedSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('revision'),
@@ -207,9 +200,11 @@ export function mergedRevisionViolation(files: ReadonlyMap<string, string>): str
 }
 
 export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
-export type DesignRef = z.infer<typeof designRefSchema>;
+export interface DesignRef {
+  designId: string;
+  revisionId: string | null;
+}
 export type RevisionRef = z.infer<typeof revisionRefSchema>;
-export type CanvasSeed = z.infer<typeof canvasSeedSchema>;
 export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;

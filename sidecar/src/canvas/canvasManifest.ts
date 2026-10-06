@@ -20,7 +20,7 @@ import {
   frameRectSchema,
 } from './schema.js';
 
-export const CANVAS_MANIFEST_VERSION = 1;
+const CANVAS_MANIFEST_VERSION = 1;
 
 /**
  * How many retries one canvas answers. A retry can only be authorized while the
