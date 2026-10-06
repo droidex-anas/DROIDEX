@@ -7,6 +7,7 @@ import { extname, join } from 'node:path';
 
 import { providerSessionsDir } from '../../droidexPaths.js';
 import { errMsg } from '../../errors.js';
+import { imageExtension } from '../../imageSignature.js';
 import { resetAtMillis, UsageLimitError } from '../usageLimit.js';
 
 export interface GeneratedImage {
@@ -17,18 +18,6 @@ export interface GeneratedImage {
 }
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
-// The first bytes of the formats Codex can return, so a `result` that is not an
-// image is reported instead of written out as a file nothing can open. A RIFF
-// container is only WebP when it says so at offset 8; the same header fronts
-// WAV and AVI.
-const SIGNATURES: { extension: string; bytes: number[]; at?: number }[] = [
-  { extension: '.png', bytes: [0x89, 0x50, 0x4e, 0x47] },
-  { extension: '.jpg', bytes: [0xff, 0xd8, 0xff] },
-  { extension: '.gif', bytes: [0x47, 0x49, 0x46, 0x38] },
-  { extension: '.webp', bytes: [0x52, 0x49, 0x46, 0x46] },
-  { extension: '.webp', bytes: [0x57, 0x45, 0x42, 0x50], at: 8 },
-];
-
 // The saved file's path, or the line to show in its place when there is no
 // image to show.
 export function generatedImage(appSessionId: string, item: GeneratedImage): string {
@@ -62,19 +51,6 @@ function decoded(appSessionId: string, item: GeneratedImage): string {
   return target;
 }
 
-// The extension the bytes themselves call for, or undefined when they are not
-// an image this build can show.
-function imageExtension(bytes: Buffer): string | undefined {
-  const matches = (signature: (typeof SIGNATURES)[number]) =>
-    signature.bytes.every((byte, index) => bytes[(signature.at ?? 0) + index] === byte);
-  const riff = SIGNATURES.find((signature) => signature.at === undefined && matches(signature));
-  if (riff?.extension !== '.webp') return riff?.extension;
-  // RIFF alone is a container, not a picture.
-  return SIGNATURES.some((signature) => signature.at === 8 && matches(signature))
-    ? '.webp'
-    : undefined;
-}
-
 function imagePath(appSessionId: string, itemId: string, extension: string): string {
   const directory = join(providerSessionsDir(), 'images');
   mkdirSync(directory, { recursive: true });
@@ -89,7 +65,8 @@ function safe(value: string): string {
 
 export function imageUsageLimit(failure: GeneratedImage['failure']): UsageLimitError | undefined {
   if (failure?.type !== 'usageLimitExceeded') return undefined;
-  return new UsageLimitError(failureText(failure.type), resetAtMillis(failure.resetsAt));
+  const resetsAt = resetAtMillis(failure.resetsAt);
+  return new UsageLimitError(failureText(failure.type), resetsAt === undefined ? {} : { resetsAt });
 }
 
 function failureText(type: string): string {

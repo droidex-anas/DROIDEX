@@ -1,16 +1,15 @@
 import type {
-  NativeBrowserAgentAction,
-  NativeBrowserAgentResult,
-  NativeBrowserBounds,
-  NativeBrowserBox,
-  NativeBrowserCaptureOptions,
-  NativeBrowserDesignPrompt,
+  NativeBrowserDesignEvent,
+  NativeBrowserDesignState,
   NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
-  NativeBrowserSelection,
+  NativeBrowserAgentPoint,
+  NativeBrowserFrame,
+  NativeBrowserWorking,
 } from './nativeBrowser';
 import type { NativeBrowserChord } from './shortcuts';
+import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
 import type {
@@ -302,41 +301,30 @@ interface DroidControlApi {
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
-  nativeBrowserOpen: (
+  nativeBrowserReserve: (
     browserSessionId: string,
-    url: string,
-    bounds?: NativeBrowserBounds,
-    viewport?: { width: number; height: number; deviceScaleFactor: number },
-  ) => Promise<void>;
-  nativeBrowserAttach: (
-    browserSessionId: string,
-    bounds: NativeBrowserBounds,
-    url?: string,
-  ) => Promise<void>;
-  nativeBrowserDetach: (browserSessionId?: string) => Promise<void>;
-  nativeBrowserSetBounds: (browserSessionId: string, bounds: NativeBrowserBounds) => Promise<void>;
-  nativeBrowserSetVisible: (browserSessionId: string, visible: boolean) => Promise<void>;
-  nativeBrowserClose: (browserSessionId: string) => Promise<void>;
-  nativeBrowserReload: (browserSessionId: string) => Promise<void>;
+    savedUrl?: string,
+    savedMode?: BrowserViewportMode,
+  ) => Promise<{ src: string; generation: number }>;
+  nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
+  nativeBrowserWorkingSessions: () => Promise<string[]>;
+  nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
+  nativeBrowserWatch: (browserSessionId: string, watching: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
-  nativeBrowserSetDesignMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserSetPencilMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserAgentAction: (
-    request: NativeBrowserAgentAction,
-  ) => Promise<NativeBrowserAgentResult | undefined>;
-  nativeBrowserCapture: (
+  nativeBrowserSetDesignState: (
     browserSessionId: string,
-    box?: NativeBrowserBox,
-    options?: NativeBrowserCaptureOptions,
-  ) => Promise<string | undefined>;
+    state: NativeBrowserDesignState,
+  ) => Promise<void>;
   nativeBrowserSetShortcuts: (chords: NativeBrowserChord[]) => Promise<void>;
   onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
-  onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
-  onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;
+  onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
-  onNativeBrowserAgentResult: (handler: (result: NativeBrowserAgentResult) => void) => () => void;
+  onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
+  onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
+  onNativeBrowserFrame: (handler: (event: NativeBrowserFrame) => void) => () => void;
+  onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
 
 declare global {
@@ -349,15 +337,7 @@ interface DesktopPerformanceMetrics {
   timestamp: number;
   webContentsTotal: number;
   ptys: number;
-  nativeBrowsers?: {
-    total: number;
-    live: number;
-    attached: number;
-    warm: number;
-    serialized: number;
-    maxLive: number;
-    idleMs: number;
-  };
+  nativeBrowsers?: { sessions: number; live: number };
   terminals?: { live: number; retained: number; total: number };
   powerTier?: 'interactive' | 'hidden' | 'low-power';
   memory: { rssBytes: number; heapUsedBytes: number; heapTotalBytes: number };

@@ -45,6 +45,12 @@ class FakeElement {
   get innerText() {
     return this.textContent;
   }
+  get isContentEditable() {
+    return this.getAttribute('contenteditable') !== null;
+  }
+  closest() {
+    return null;
+  }
   get outerHTML() {
     const tag = this.tagName.toLowerCase();
     const attributes = this.attributes.map((attr) => ` ${attr.name}="${attr.value}"`).join('');
@@ -98,6 +104,7 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
     el('iframe', { srcdoc: '<script>steal()</script>' }),
     el('input', { name: 'q', value: 'hunter2' }),
     el('meta', { 'http-equiv': 'refresh', content: '0;url=/elsewhere' }),
+    el('div', { 'data-authorization': 'Bearer abc', 'data-author': 'Ada' }),
   ]);
 
   assert.equal(
@@ -108,16 +115,12 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
       '<iframe srcdoc="[redacted]"></iframe>' +
       '<input name="q" value="[redacted]"></input>' +
       '<meta http-equiv="refresh" content="[redacted]"></meta>' +
+      '<div data-authorization="[redacted]" data-author="Ada"></div>' +
       '</form>',
   );
 });
 
-test('select option matching accepts the option label', () => {
-  const select = Object.assign(new preload.HTMLSelectElement(), {
-    options: [{ value: 'us', label: 'United States', textContent: 'US' }],
-    dispatchEvent() {},
-  });
-  preload.document.querySelector = () => select;
-  preload.selectOption('#country', 'United States');
-  assert.equal(select.value, 'us');
+test('the hover label never shows what an editable element holds', () => {
+  assert.equal(preload.hoverName(el('h1', { contenteditable: '' }, [], 'sk-live-secret')), 'h1');
+  assert.equal(preload.hoverName(el('h1', {}, [], 'Pricing')), 'Pricing');
 });

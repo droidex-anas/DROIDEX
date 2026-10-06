@@ -104,18 +104,30 @@ export function claudeDefaultModel(
   const wanted = configured === RECOMMENDED ? recommendation : (configured ?? recommendation);
   if (!wanted) return undefined;
   const named = withoutExtendedContext(wanted);
-  const row = catalog.find(
-    (model) =>
-      model.value !== RECOMMENDED &&
-      (withoutExtendedContext(model.value) === named ||
-        withoutExtendedContext(model.resolvedModel) === named),
-  );
+  const row = catalogRow(catalog, wanted);
   return {
     modelId: row?.value ?? wanted,
     launchModelId: wanted,
     ...(row === undefined && FAMILY_ALIASES.includes(named) ? { aliasFamily: named } : {}),
     ...(hasExtendedContext(wanted) ? { contextWindowTokens: 1_000_000 as const } : {}),
   };
+}
+
+// The catalog row a model the CLI names by alias or by wire id is listed under.
+function catalogRow(catalog: ClaudeModelInfo[], id: string): ClaudeModelInfo | undefined {
+  const named = withoutExtendedContext(id);
+  return catalog.find(
+    (model) =>
+      model.value !== RECOMMENDED &&
+      (withoutExtendedContext(model.value) === named ||
+        withoutExtendedContext(model.resolvedModel) === named),
+  );
+}
+
+// A model the CLI reports, named the way the picker names it. An id no row
+// covers is kept as it is.
+export function claudeCatalogModelId(id: string, catalog: ClaudeModelInfo[]): string {
+  return catalogRow(catalog, id)?.value ?? id;
 }
 
 // The id that reaches the CLI. A chat on the default model that pins no window

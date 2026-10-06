@@ -4,3 +4,4 @@ reviews:
     enabled: true
     base_branches:
       - providers/.*
+      - browser/.*

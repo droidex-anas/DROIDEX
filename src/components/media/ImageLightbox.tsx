@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Download, ImageOff, Minus, Plus } from 'lucide-react';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { wrapTabFocus } from '../../lib/focusTrap';
 import { downloadImage } from './downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
@@ -76,10 +75,6 @@ function ImageLightboxContent({ src, label, vector = false, onClose }: ImageLigh
     maxScale: MAX_PIXEL_ZOOM / fitRatio,
   });
   const { zoomBy, reset } = zoom;
-
-  // The browser pane's native view is painted above the DOM by the OS; hide it
-  // while this covers the window, or it shows straight through the image.
-  useObscuresNativeSurfaces();
 
   useEffect(() => {
     const opener = document.activeElement;

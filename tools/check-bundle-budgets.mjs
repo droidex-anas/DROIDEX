@@ -114,9 +114,29 @@ import { join } from 'node:path';
 // tile chrome, drop zones) are ~3.9KB, too little to be worth a skeleton in the
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
+//
+// Raised from 1_434_000 to 1_443_000 for usage limits. Against main at
+// b1a4f45c (1_431_240) the entry measures 1_434_484 with the usage slot (/usage,
+// the limit tab, the pace warning: ~6.6KB) already loaded lazily. The ~3.2KB
+// left must paint with the chat: the limit a chat is held on gates its queue,
+// the model-switch divider renders in the transcript, and the composer shows
+// the effort a fallback model actually runs. The headroom is again ~8.5KB.
+//
+// Raised from 1_443_000 to 1_459_000 for the rewritten Browser on top of tabs
+// and tiles. The browser host mounts every chat's <webview> page from the app
+// frame, the composer carries design marks, and the transcript draws the
+// Browser card. Main at 64949712 measures 1_435_466, the rewrite alone
+// 1_452_985 on main at b1a4f45c, and the two together 1_457_268, which leaves
+// ~1.7KB of headroom.
+//
+// initialCssBytes raised from 101_500 to 103_500 for the redesigned Browser
+// pane: its toolbar, omnibox, loading bar and shared compact composer add ~2.3KB
+// of utility classes to the app frame (100_269 before, 102_538 after), leaving
+// ~1KB of headroom as past CSS raises have. On main at 64949712 (100_614) the
+// two together measure 102_602.
 const BUDGETS = {
-  initialRendererJsBytes: 1_434_000,
-  initialCssBytes: 101_500,
+  initialRendererJsBytes: 1_459_000,
+  initialCssBytes: 103_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

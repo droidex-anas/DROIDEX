@@ -3,7 +3,6 @@ import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Check, Crop, Download } from 'lucide-react';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { downloadImage } from '../media/downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from '../media/imageViewerMotion';
 import {
@@ -47,10 +46,6 @@ function ImageViewerModalContent({
   const imgRef = useRef<HTMLImageElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
-
-  // The browser pane's native view is painted above the DOM by the OS; hide it
-  // while this covers the window, or it shows straight through the image.
-  useObscuresNativeSurfaces();
 
   // Modal focus boundary: without it, keyboard and AT users keep reaching the
   // composer controls behind this full-screen overlay. Move focus inside on

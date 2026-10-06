@@ -1,4 +1,5 @@
 import { extractFileChange, type FileChange } from '../lib/diff';
+import { browserToolOf } from '../lib/browserTools';
 import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
 import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
@@ -22,6 +23,15 @@ export function isCompactionCompleteStatus(text?: string): boolean {
 
 export function isSettingsStatus(event: TranscriptEvent): boolean {
   return event.modelSwitch !== undefined;
+}
+
+// A prompt or a settings change opens a new turn of the chat. A switch the
+// harness made by itself can land mid-reply, so only the user's own switch
+// opens a turn.
+export function startsTurn(event: TranscriptEvent): boolean {
+  return (
+    event.author === 'user' || (isSettingsStatus(event) && event.modelSwitch?.cause === undefined)
+  );
 }
 
 // Whether `next` is the tool_result produced by the `call` event. Result events
@@ -60,6 +70,10 @@ export type FeedItem =
   // folded into the tool run, so the generating state is visible while it runs.
   | { type: 'generated_image'; key: string; event: TranscriptEvent; result?: TranscriptEvent }
   | { type: 'tools'; key: string; events: TranscriptEvent[] }
+  // The page a turn worked on in the browser: one card for the turn, holding
+  // its browser calls and their results. The calls stay in their tool rows.
+  // `ended` once a later turn has begun: the card's work is over then.
+  | { type: 'browser'; key: string; events: TranscriptEvent[]; ended: boolean }
   | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
   | TurnChangesItem;
 
@@ -103,6 +117,13 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   }
   if (a.type === 'child_sessions' && b.type === 'child_sessions') {
     return a.events.length === b.events.length && a.events.every((e, i) => e === b.events[i]);
+  }
+  if (a.type === 'browser' && b.type === 'browser') {
+    return (
+      a.ended === b.ended &&
+      a.events.length === b.events.length &&
+      a.events.every((e, i) => e === b.events[i])
+    );
   }
   if (a.type === 'worked' && b.type === 'worked') {
     return (
@@ -175,6 +196,12 @@ export interface BuildFeedOptions {
   groupChildSessions?: boolean;
 }
 
+// A turn's browser calls and their results, and whether a later turn has begun.
+interface BrowserTurn {
+  events: TranscriptEvent[];
+  ended: boolean;
+}
+
 export function buildFeed(
   events: TranscriptEvent[],
   { childSessionCards = false, groupChildSessions = false }: BuildFeedOptions = {},
@@ -232,6 +259,32 @@ export function buildFeed(
     if (!e.isError) resultById.set(e.toolUseId, e);
   }
   const claimed = new Set<TranscriptEvent>();
+  // Each turn's browser calls and their results, in transcript order, under the
+  // turn's first browser call. A result carries no tool name and can land in a
+  // later turn, so it joins its call's turn by id; one with no id belongs to
+  // the call right before it. A model switch ends a turn as a prompt does.
+  const browserTurns = new Map<TranscriptEvent, BrowserTurn>();
+  const browserTurnOfCall = new Map<string, BrowserTurn>();
+  let browserTurn: BrowserTurn | null = null;
+  let previous: TranscriptEvent | undefined;
+  for (const e of events) {
+    if (startsTurn(e)) {
+      if (browserTurn) browserTurn.ended = true;
+      browserTurn = null;
+    } else if (e.kind === 'tool_call' && browserToolOf(e.toolName)) {
+      if (!browserTurn) {
+        browserTurn = { events: [], ended: false };
+        browserTurns.set(e, browserTurn);
+      }
+      browserTurn.events.push(e);
+      if (e.toolUseId) browserTurnOfCall.set(e.toolUseId, browserTurn);
+    } else if (e.kind === 'tool_result') {
+      const idless = previous?.kind === 'tool_call' && browserToolOf(previous.toolName);
+      const turn = e.toolUseId ? browserTurnOfCall.get(e.toolUseId) : idless ? browserTurn : null;
+      turn?.events.push(e);
+    }
+    previous = e;
+  }
   let i = 0;
   while (i < events.length) {
     const ev = events[i];
@@ -447,6 +500,11 @@ export function buildFeed(
         }
       }
       items.push({ type: 'tools', key: group[0].id, events: dedupePlanUpdates(group) });
+      // The turn's Browser card appears where the turn first used the browser.
+      for (const call of group) {
+        const turn = browserTurns.get(call);
+        if (turn) items.push({ type: 'browser', key: `browser-${call.id}`, ...turn });
+      }
     } else i++;
     continue;
   }

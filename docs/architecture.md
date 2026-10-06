@@ -10,6 +10,8 @@ flowchart LR
   Renderer --> Preload[Electron preload API]
   Preload --> Main[Electron main process]
   Main --> Sidecar[Node sidecar WebSocket bridge]
+  Sidecar -. browser requests over private IPC .-> Main
+  Main --> Pages[Browser pages in webview guests]
   Sidecar --> DroidSDK[Factory Droid SDK]
   Sidecar --> DroidCLI[Droid CLI child processes]
   Sidecar --> HistoryWriter[History persistence worker]
@@ -26,7 +28,7 @@ flowchart LR
 | Area | Path | Responsibility |
 | --- | --- | --- |
 | Renderer | `src/` | React UI, local state, settings, onboarding, session and Mission Control views |
-| Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, native browser lifecycle, downloads, update checks |
+| Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, browser pages and the agent's browser requests (`electron/nativeBrowser*.cjs`), downloads, update checks |
 | Electron preload | `electron/preload.cjs` | Narrow API boundary between renderer and Electron main process |
 | Native browser preload | `electron/nativeBrowserPreload.cjs` | Browser automation bridge for embedded native browser flows |
 | Sidecar | `sidecar/src/` | Local WebSocket bridge, Droid SDK session lifecycle, Mission Control integration, CLI discovery |
@@ -36,6 +38,7 @@ flowchart LR
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
+- Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not. A page is laid out at its session's viewport: Fit follows the pane, and a standard size (desktop, laptop, tablet, mobile) keeps its own CSS size in the pane, drawn scaled down with a CSS transform, so the user sees what the agent reads. Agents read pages from Chromium's accessibility tree, cross-site frames included through their own debugger sessions (`electron/browserReading.cjs`, `electron/browserFrames.cjs`), and screenshots have sensitive fields painted over in main before the image leaves (`electron/browserScreenshot.cjs`, `electron/browserMasking.cjs`). Agent actions are trusted CDP input sent from main (`electron/browserActions.cjs`, `electron/browserKeys.cjs`), keys to the frame that holds the focus. Actions that move a page on, and waits, run one at a time per page, in the order they came, while reads run alongside; `browser_wait` is checked in main as the page changes (`electron/browserWait.cjs`). The page script is called only in the preload's isolated world (`electron/browserPageScript.cjs`), never through the page's own world.
 - The sidecar owns Droid SDK calls and child process environment shaping. It removes `FACTORY_API_KEY` unless a key is explicitly configured.
 - Live canonical session state stays in the sidecar. A bounded write-behind queue sends lossless event rows and latest-wins summary/child snapshots to the history worker in ordered transactions.
 - Packaged builds require a bridge token. Development builds may allow local no-token access with `BRIDGE_ALLOW_LOCAL_NO_TOKEN=1`.
@@ -44,7 +47,7 @@ flowchart LR
 
 - `appSessionId` is the stable top-level application identity. `childSessionId` is the stable logical child identity within its `parentAppSessionId`; `providerSessionId` is reserved for the backing Factory session.
 - `SessionManager` is the composition root and public command coordinator. It retains public dispatch, cross-module routing, and shutdown ordering.
-- `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter.
+- `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter. A Droid steer is `add_user_message` with a caller-minted `messageId`, delivered when the user message carrying that id arrives and dropped on discard, acknowledged Stop or close. Slash-command candidates use ordinary delivery. `DroidTurn` keeps the app turn open across Droid's follow-on loops and an in-flight interrupt, observing an active loop through its terminal idle before emitting one final result. The SDK owns main-loop conversion; only late-loop notifications are buffered and converted here. Child sessions still queue.
 - `SessionRegistry` owns top-level sessions only: the live parent map, stable application identity, provider aliases, canonical parent summary persistence, and projected summary reads. Children never enter `SessionRegistry` or `sessions.list`.
 - Ordinary chats enter durable `sessions.list` history only after the provider file contains both a user message and an assistant response. In-progress first turns remain visible through the live registry; abandoned or unanswered provider files never become permanent sidebar rows.
 - `ChildSessions` is the one stateful generic owner of parent-child membership, canonical child identity, provider replacement, admission, capacity, queues, turns, settings, cleanup, exact context/compaction targets, and child persistence/hydration. Spawn ownership is indexed during hydration, admission, and link changes so child deltas do not scan historical siblings.
@@ -221,7 +224,7 @@ non-replaceable event. Approvals, questions, sidebar requests, errors,
 lifecycle boundaries, history responses, and turn settlement flush immediately.
 Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
-Renderers must advertise bridge protocol 8, apply one wire batch as one
+Renderers must advertise bridge protocol 9, apply one wire batch as one
 ordered store transition, and reconnect with the last fully applied generation
 and sequence. Same-generation reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
