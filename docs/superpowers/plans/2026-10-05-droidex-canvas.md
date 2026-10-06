@@ -369,6 +369,77 @@ Settled by 03a (landed in `sidecar/src/canvas/{compiler.ts,compilerWorker.ts,des
 - Indirect `require`, `require.resolve`, `import.meta.resolve`, `new Function` and `globalThis['require']` are runtime behaviour inside the sandboxed preview, not compiler concerns: the allowlist bounds what is bundled and which paths the resolver may touch, and the webview CSP and the no-network boundary own what can be loaded at run time. esbuild's `__require` shim throws in a browser. Task 3c must not put `unsafe-eval` in the preview CSP. A design importing its own `./x.css` stays inside the tree and remains supported.
 - CSS resources are reviewed on the parsed value rather than on its text, both as authored and with CSS escapes decoded, and once more over Tailwind's generated CSS, because a utility with an arbitrary value is written in the TSX and appears nowhere else. Only `data:` resources are accepted until Task 7 adds owned image references.
 
+Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.ts,canvasCommits.ts}`):
+
+- `CanvasBuilds` is the only owner of a design's build state. `canvasManifest.ts` projects
+  `CanvasFrame.build` from it through the one-method `BuildStates` port, so there is no second copy
+  to keep in step, and a design the registry has never heard of is `pending`. `CanvasWorkspace`
+  implements `CanvasBuildHost` (`buildTarget`, `readFiles`, `noteBuild`); nothing else reaches in.
+- `CANVAS_LIMITS` did not carry the build limits after 02a, so 03b added them where the other
+  spec §5 contracts live: `buildSlots: 2` and `buildDeadlineMs: 15_000`. Nothing hard-codes either.
+- `write` enqueues inside the commit that makes the revision durable, right after `heads.install`.
+  That is what lets the change it publishes already say `pending` or `building` for the new
+  revision instead of the previous revision's `ready` artifact (spec §4), and it is why `enqueue`
+  publishes no change of its own. Every other transition publishes exactly one.
+- A build transition commits the manifest to take the next change sequence. The renderer drops a
+  change whose sequence is at or below its projection (`client.ts`), so an in-memory sequence would
+  make build changes invisible; the commit is also where `ready` persists the last-working pointer.
+  A commit refused because the workspace is closing is the expected shutdown path and is not logged.
+- `PersistedDesign` gained a required `lastWorkingRevisionId` (spec §7). `CANVAS_MANIFEST_VERSION`
+  stays 1: Canvas has never shipped, so there is no old manifest to read and no migration to add.
+  `failed` reports that pointer; `ready` advances it; nothing else writes it.
+- `canPublish` is the plan's predicate verbatim. Its `job` parameter is typed as the three fields it
+  reads (`designId`, `revisionId`, `generation`), which `CompileInput` satisfies, so the running job
+  can be passed directly. `generation` is a per-design attempt counter owned by this registry.
+  Beside the predicate, every publication revalidates the lifecycle after each await: the registry
+  is open, the job still holds its slot, and the canvas and frame are still there.
+- Diagnostic codes 03a did not need, all produced by the queue rather than the compiler:
+  `build_timeout` (the overdue message names `CANVAS_LIMITS.buildDeadlineMs`), `compiler_unavailable`
+  (one fixed recovery message, never the worker's own text) and `storage_failed` (canonical source
+  that cannot be read, or an artifact that cannot be saved). A failed build keeps at most
+  `MAX_BUILD_DIAGNOSTICS` (64) of them, which is also the bound the cache schema enforces.
+- Derived cache layout per canvas: `builds/<artifactId>.html` and one outcome per revision at
+  `builds/<revisionId>.json` (`{version, designId, revisionId, result}`, revalidated on read).
+  Both go through `canvasFiles.ts`'s flushed write-and-rename, `removeTemporaries` now sweeps
+  `builds/*.tmp`, and a build superseded while it was saving can leave an orphan entry: spec §7
+  keeps derived-cache cleanup bounded and out of this release.
+- `load` reads those outcomes when the workspace opens and projects `ready` only when the artifact
+  document is present; anything else stays `pending`. `requestRebuilds(snapshot)` is the on-demand
+  recovery, called once per canvas when a reader first opens it (`canvas.subscribe` today), and it
+  queues `pending` and `cancelled` frames that still have source. Missing cache is never an error.
+- Each slot owns its own `CompilerWorker`, forked on that slot's first build, so the second process
+  exists only once two builds overlap. An overdue build aborts its signal and then ends its own
+  slot's process, which may be wedged inside single-threaded Tailwind where no signal is read; the
+  build on the other slot is untouched, and the overdue slot forks a fresh process for its next
+  build. A process that dies on its own rejects with `CompilerUnavailableError`, which fails that
+  one job as `compiler_unavailable` and nothing else: 03a's client forks a replacement itself, so
+  the slot keeps it. Nothing shared means no build is ever blamed for another design's hog.
+- `cancelCanvas` drops that canvas's queued jobs, abandons its running ones, reports `cancelled`
+  with the revision each was building, and clears the canvas's sweep mark so a later reader asks
+  for the work again. A superseded or cancelled compile never flashes `cancelled`: its rejection
+  publishes nothing, because the state that replaced it is already the frame's.
+- `shutdownCanvas` closes builds before the workspace, so a settling build still reports through the
+  workspace and the workspace then waits for that commit. `close()` is idempotent.
+- What 3c and Task 5 consume: `CanvasBuilds.readArtifact(canvasId, artifactId)` returns one ready
+  artifact's HTML document or null when the cache has lost it; `frame.build` carries the
+  `artifactId` to ask for, the diagnostics to show, and the `lastWorkingRevisionId` whose artifact
+  is still on disk; `requestRebuilds` is what a new reader calls. How a preview receives that
+  document is 3c's problem.
+- A build transition commits only the manifest fields it owns. It records no mutation receipt and
+  never touches the retry ledger, because a build is not a mutation and nothing can retry one; a
+  commit it cannot make leaves the last-working pointer, the change sequence and the ledger exactly
+  as they were on disk, and `canvasHeads.recover` rereads the head so memory follows disk (02b's
+  rule). The frame keeps its derived state in memory and the pane reads it on the next snapshot.
+- Keeping `CanvasWorkspace.ts` under 500 lines took two extractions, both cohesive owners rather
+  than forwarding layers: `canvasCommits.ts` owns admission, one-at-a-time commits and publication
+  after the lock moves on, and `canvasFrames.stageRevision` owns the revision tree a write stages,
+  beside the `stageFrames` a create already staged there. `canvasBuildCache.ts` likewise owns the
+  projection from its own files to a build state (`restoreStates`, `builtState`), which is where
+  Task 8's element output belongs too. The slot scheduler was examined as a third owner and
+  rejected: its members are all thin accessors over a two-element array, and splitting it from the
+  state registry would give one invariant two owners with a callback seam between them.
+
+
 
 - [ ] Add compile fixtures for working React state, CSS, relative modules, bad TSX, unsupported import and attempts to read outside the virtual tree. Reject undeclared packages, URL imports, Node builtins and filesystem escapes in the resolver. Never invoke generated source in the sidecar process.
 - [ ] Implement versioned kit persistence and the initial DROIDEX tokens plus Button/Card primitives using the Task 7 signatures/example. Resolve the pinned `@droidex/design-system` virtual module in the worker now. Test version immutability and a compiled stateful example; Task 7 extends this working owner with the complete presets, picker and image workflow, not a replacement path.
