@@ -140,7 +140,9 @@ export class HarnessCliUpdater {
       // An updater's last output line usually names why it stopped.
       this.updateErrors.set(provider, lastLine ?? `Updater exited with code ${String(exitCode)}.`);
     }
-    const version = await installedVersion(install.path);
+    // An update can move where the CLI resolves: one run through the version
+    // store writes the launcher back.
+    const version = await installedVersion(resolveHarnessPath(provider) ?? install.path);
     this.emit({
       type: 'harness.cli.update.done',
       provider,
