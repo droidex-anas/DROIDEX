@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowUp } from 'lucide-react';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { onNativeBrowserDesignEvent } from '../../lib/nativeBrowser';
 import type { BrowserBox, DesignReference } from '../../types/bridge';
+import { CompactComposer } from '../composer/CompactComposer';
 import type { Size } from './browserGeometry';
 import { useElementSize } from './useElementSize';
 
@@ -256,7 +256,7 @@ function QuickPromptBox({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, transition: { duration: 0.1 } }}
       transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
-      className="absolute z-20 flex items-end gap-1.5 rounded-[14px] border border-droid-border bg-droid-raised py-1 pl-3 pr-1 shadow-droid"
+      className="absolute z-20"
       style={{ left, top, width, visibility: shown ? 'visible' : 'hidden' }}
       inert={!shown}
       onSubmit={(event) => {
@@ -264,37 +264,20 @@ function QuickPromptBox({
         quick.send();
       }}
     >
-      <textarea
-        ref={inputRef}
-        rows={1}
+      <CompactComposer
+        textareaRef={inputRef}
         value={prompt.text}
-        aria-label="Prompt for the selection"
+        onChange={quick.setText}
+        onSend={quick.send}
+        onEscape={close}
+        canSend={prompt.text.trim().length > 0}
         placeholder={`Describe the change to @${String(quick.number ?? '')}`}
-        onChange={(event) => {
-          quick.setText(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          // Keys that pick or cancel an IME candidate are the IME's.
-          if (event.nativeEvent.isComposing || event.key === 'Process') return;
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            close();
-          } else if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            quick.send();
-          }
-        }}
-        className="max-h-24 min-w-0 flex-1 resize-none bg-transparent py-1 text-[13px] leading-5 text-droid-text outline-none [field-sizing:content] placeholder:text-droid-text-muted"
+        label="Prompt for the selection"
+        sendLabel="Send prompt"
+        maxHeight={96}
+        // Over the page it floats, so it takes a rim and a deeper shadow.
+        className="border border-droid-border shadow-droid"
       />
-      <button
-        type="submit"
-        disabled={!prompt.text.trim()}
-        aria-label="Send prompt"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:opacity-40"
-      >
-        <ArrowUp className="h-3.5 w-3.5" />
-      </button>
     </motion.form>
   );
 }
