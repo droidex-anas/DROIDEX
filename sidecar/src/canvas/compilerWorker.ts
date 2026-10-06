@@ -10,6 +10,7 @@ import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './
 import {
   CompileCancelledError,
   CompileFailedError,
+  RUNTIME_UNAVAILABLE,
   type CompileInput,
   type CompiledDesign,
   type CompilerRequest,
@@ -21,7 +22,6 @@ import { readDesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
-const RUNTIME_RECOVERY = 'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
 /**
  * Compiles one revision into a document the preview host can load in an
@@ -116,7 +116,7 @@ process.on('message', (request: CompilerRequest) => {
     return;
   }
   if (runtimeFault !== null) {
-    send({ requestId: request.requestId, status: 'unavailable', message: RUNTIME_RECOVERY });
+    send({ requestId: request.requestId, status: 'unavailable', message: RUNTIME_UNAVAILABLE });
     return;
   }
   const controller = new AbortController();

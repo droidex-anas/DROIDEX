@@ -9,6 +9,7 @@ import {
   CompileFailedError,
   CompilerUnavailableError,
   CompilerWorker,
+  RUNTIME_UNAVAILABLE,
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
@@ -245,7 +246,14 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     const compiling = withOwnedRuntime(runtime, () =>
       worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
     );
-    await assert.rejects(compiling, CompilerUnavailableError, reason);
+    // The reason reaches a caller, so it is the one curated sentence and
+    // carries no machine path, exactly like a design's own diagnostics.
+    await assert.rejects(compiling, (error: unknown) => {
+      assert.ok(error instanceof CompilerUnavailableError, reason);
+      assert.equal(error.message, RUNTIME_UNAVAILABLE, reason);
+      assert.equal(machinePath(error.message), null, reason);
+      return true;
+    });
 
     // Shutdown is the other way into the loader, so a refused worker still has
     // to stop cleanly rather than be killed on the grace timeout.

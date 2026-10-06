@@ -81,6 +81,10 @@ interface PendingCompile {
 // to show: a worker's own failure text carries its absolute module path.
 const UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
 
+/** What a compiler whose runtime is not what the app staged reports instead. */
+export const RUNTIME_UNAVAILABLE =
+  'The design compiler is not installed correctly. Reinstall DROIDEX.';
+
 // How long a shutdown may take before the thread is ended anyway. This is
 // cleanup, not the build deadline Task 3b owns.
 const SHUTDOWN_GRACE_MS = 2_000;
