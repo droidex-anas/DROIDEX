@@ -411,7 +411,10 @@ const appendedTexts = (h: SessionManagerTestContext, appSessionId: string): stri
       : [],
   );
 
-test('a turn, an open browser, or an unapplied model choice keeps a session from retiring', async () => {
+test('a turn, an open browser, or an unapplied model choice keeps a session from retiring', async (t) => {
+  // Only the explicit sweeps below may retire: with a zero budget the real
+  // timer would fire on its own between steps, as soon as the chat settles.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
     const session = await openIdleSession(h, 'held');
