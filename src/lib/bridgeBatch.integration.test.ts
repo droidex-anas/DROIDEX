@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
-import { Bridge } from './bridge';
+import { Bridge, BridgeQueueFullError } from './bridge';
 import { adaptEvent, initialState, reducer } from '../hooks/useStore';
 import type { ServerEvent, ServerEventBatch } from '../types/bridge';
 
@@ -138,26 +138,34 @@ test('a full offline queue flushes whole and in order on the next socket', async
     Array.from({ length: QUEUE_CAP }, (_, index) => `app-${String(index)}`),
   );
 
-  // A queue already at the cap drops its oldest intent, and says so.
+  // A queue already at the cap refuses what comes next rather than evicting
+  // what is already in it: a queued Stop outranks a newer status request.
   second.close();
   const warnings: string[] = [];
   const previousWarn = console.warn;
   console.warn = (message: string) => warnings.push(message);
   try {
-    for (let index = 0; index <= QUEUE_CAP; index += 1)
+    for (let index = 0; index < QUEUE_CAP; index += 1)
       bridge.send({ type: 'session.interrupt', appSessionId: `late-${String(index)}` });
+    assert.throws(
+      () => bridge.send({ type: 'runtime.status' }),
+      (error: unknown) =>
+        error instanceof BridgeQueueFullError && error.commandType === 'runtime.status',
+    );
+    assert.throws(() => bridge.send({ type: 'env.detect' }), BridgeQueueFullError);
   } finally {
     console.warn = previousWarn;
   }
+  // Once per full queue, not once per refusal.
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0] ?? '', /dropped an offline session\.interrupt/);
+  assert.match(warnings[0] ?? '', /holding 256 commands/);
 
   const third = await reconnect();
   third.open();
   const flushed = third.sent.map(interruptedSession);
   assert.equal(flushed.length, QUEUE_CAP);
-  assert.equal(flushed.at(0), 'late-1');
-  assert.equal(flushed.at(-1), `late-${String(QUEUE_CAP)}`);
+  assert.equal(flushed.at(0), 'late-0');
+  assert.equal(flushed.at(-1), `late-${String(QUEUE_CAP - 1)}`);
 });
 
 function interruptedSession(sent: string): string {

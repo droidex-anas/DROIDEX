@@ -37,9 +37,11 @@ function fakeBridge() {
   const sent: CanvasCommand[] = [];
   let receive: ((event: ServerEvent) => void) | null = null;
   let readmitted: (() => void) | null = null;
+  let connected = true;
   const transport: CanvasTransport = {
     sendIfConnected(command: ClientCommand) {
       assert.ok(isCanvasCommand(command), 'the Canvas client sent a command it does not own');
+      if (!connected) return false;
       sent.push(command);
       return true;
     },
@@ -62,6 +64,10 @@ function fakeBridge() {
     reconnect(): void {
       assert.ok(readmitted, 'the client is not watching for reconnections');
       readmitted();
+    },
+    /** The transport refusing a command, as it does when nothing is connected. */
+    offline(): void {
+      connected = false;
     },
     deliver(event: ServerEvent): void {
       assert.ok(receive, 'the client has not subscribed yet');
@@ -303,4 +309,23 @@ test('a reconnected page watches its boards again and catches them up', async ()
   });
   await flush();
   assert.equal(client.snapshotOf(CANVAS)?.sequence, 12);
+});
+
+test('a refused send rejects its request instead of waiting for the timeout', async () => {
+  const bridge = fakeBridge();
+  const client = new CanvasClient(bridge.transport);
+  bridge.offline();
+
+  // A Canvas command is never queued for later: it carries a mutation ID and a
+  // revision the runtime may have moved past by the time a queue drains. The
+  // caller is told now, and this file exiting proves no timer was left behind.
+  await assert.rejects(client.listCanvases(), /not connected/);
+  await assert.rejects(
+    client.createFrames('app-1', CANVAS, {
+      mutationId: 'm-create',
+      frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+    }),
+    /not connected/,
+  );
+  assert.equal(bridge.sent.length, 0);
 });

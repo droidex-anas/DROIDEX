@@ -25,6 +25,19 @@ type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
  */
 const MAX_QUEUED_COMMANDS = 256;
 
+/**
+ * A command the bridge would not queue because it is offline and already
+ * holding `MAX_QUEUED_COMMANDS`. Nothing already queued is ever dropped to make
+ * room: a Stop the user asked for outranks whatever was asked for after it, so
+ * the new command is refused where its caller can see it instead.
+ */
+export class BridgeQueueFullError extends Error {
+  constructor(readonly commandType: string) {
+    super(`DROIDEX is offline and its command queue is full; ${commandType} was not sent.`);
+    this.name = 'BridgeQueueFullError';
+  }
+}
+
 interface TurnBaselineAdopter {
   gitAdoptTurnBaseline: (dir: string, clientRef: string, appSessionId: string) => Promise<unknown>;
 }
@@ -42,6 +55,7 @@ export class Bridge {
   /** Whether a socket has ever been admitted, so the first open is not a reconnect. */
   private admitted = false;
   private queue: ClientCommand[] = [];
+  private queueFull = false;
   private backoff = 500;
   private url = '';
   private started = false;
@@ -103,6 +117,7 @@ export class Bridge {
       setTransportHealth('connected');
       const pending = this.queue;
       this.queue = [];
+      this.queueFull = false;
       pending.forEach((command) => {
         ws.send(JSON.stringify(command));
       });
@@ -249,16 +264,22 @@ export class Bridge {
     this.backoff = Math.min(this.backoff * 2, 5_000);
   }
 
+  /** Throws `BridgeQueueFullError` when offline with a full queue. */
   send(command: ClientCommand): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(command));
       return;
     }
-    // Offline for long enough to fill the queue: the oldest intent is the one
-    // worth losing, and the bound is what keeps a reconnect well-behaved.
     if (this.queue.length >= MAX_QUEUED_COMMANDS) {
-      const dropped = this.queue.shift();
-      console.warn(`Bridge queue is full; dropped an offline ${dropped?.type ?? 'command'}.`);
+      // Once per full queue, not once per refusal: a UI that keeps trying while
+      // the runtime is down would otherwise bury everything else in the log.
+      if (!this.queueFull) {
+        this.queueFull = true;
+        console.warn(
+          `Bridge is offline and holding ${String(MAX_QUEUED_COMMANDS)} commands; refusing more until it reconnects.`,
+        );
+      }
+      throw new BridgeQueueFullError(command.type);
     }
     this.queue.push(command);
   }
