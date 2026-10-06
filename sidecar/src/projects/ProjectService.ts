@@ -108,7 +108,7 @@ export interface ThreadReadout {
   replies: string[];
   /** Older replies DROIDEX still holds, for an owner that wants more context. */
   moreReplies: number;
-  /** Messages to it not yet seen taken: waiting, or handed over and not acknowledged. */
+  /** Messages to it not yet seen taken: queued, handed over, or steered and unread. */
   queued: number;
   /** False when no runtime is open for it: released while idle, or reopening. */
   live?: boolean;
@@ -455,6 +455,8 @@ export class ProjectService {
         (thread.ask !== undefined || this.sessions.awaitingApproval(thread.appSessionId)),
     );
     if (waiting) throw new Error(`${waiting.title} is still waiting on an answer or an approval.`);
+    if (project.delivery || project.pending.some((message) => message.to !== source))
+      throw new Error('Messages to its threads are still on their way.');
     const working = project.threads.filter(
       (thread) =>
         thread.appSessionId !== source && this.sessions.get(thread.appSessionId)?.streaming,
@@ -533,7 +535,13 @@ export class ProjectService {
     // place of the rest of that turn. A thread with no turn running gets it as
     // its next turn, which the wake queue starts.
     requireMessageText(text);
-    if (delivery !== 'queue' && this.sessions.get(target)?.streaming) {
+    // Work sent to a thread means the goal is open again.
+    if (project.done) {
+      delete project.done;
+      await this.save();
+    }
+    // A held project holds its main chat's messages too: they queue for Resume.
+    if (delivery !== 'queue' && !project.paused && this.sessions.get(target)?.streaming) {
       const message = {
         id: randomUUID(),
         from: source,
@@ -544,7 +552,8 @@ export class ProjectService {
       const prompt = wakePrompt(project, target, [message]);
       // Only this thread leaving the project withdraws it. A Stop on the
       // thread drops it with the rest of that chat's queue, as it would the user's.
-      const isCurrent = () => !this.closed && this.membership.get(target) === project;
+      const isCurrent = () =>
+        !this.closed && !project.paused && this.membership.get(target) === project;
       if (await this.sessions.steer(target, prompt, isCurrent, delivery === 'now'))
         return delivery === 'now' ? 'sent-now' : 'steered';
       // Its turn ended, or was stopped, while this was on its way. Starting a
@@ -577,9 +586,10 @@ export class ProjectService {
       state: threadState(thread, session),
       replies: kept.slice(-wanted),
       moreReplies: Math.max(kept.length - wanted, 0),
-      queued: [...project.pending, ...(project.delivery?.messages ?? [])].filter(
-        (message) => message.to === target,
-      ).length,
+      queued:
+        [...project.pending, ...(project.delivery?.messages ?? [])].filter(
+          (message) => message.to === target,
+        ).length + (session?.pendingSteers?.length ?? 0),
       ...(session ? { live: this.sessions.isLive(target) } : {}),
       ...(thread.repliesShed
         ? {

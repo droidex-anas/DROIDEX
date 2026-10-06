@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { HoverTooltip } from '../../components/HoverTooltip';
 import { useStoreSelector } from '../../hooks/useStore';
+import { sessionAttention } from '../../lib/sessionAttention';
 import { sessionIsLive } from '../../lib/sessions';
 import { useProjects } from './client';
 import { plural } from './threadGreeting';
@@ -10,12 +11,12 @@ import { plural } from './threadGreeting';
    threads on hover. Nothing shows once none of them is working. */
 export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
   const { projects } = useProjects();
+  const project = projects.find((candidate) =>
+    candidate.threads.some((thread) => thread.appSessionId === appSessionId),
+  );
   const threads = useMemo(
-    () =>
-      projects
-        .find((project) => project.threads.some((thread) => thread.appSessionId === appSessionId))
-        ?.threads.filter((thread) => thread.ownerAppSessionId === appSessionId) ?? [],
-    [projects, appSessionId],
+    () => project?.threads.filter((thread) => thread.ownerAppSessionId === appSessionId) ?? [],
+    [project, appSessionId],
   );
   // Serialised, so the selector's value compares equal while nothing changed.
   const working = useStoreSelector((state) =>
@@ -25,13 +26,19 @@ export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
           const session = Object.hasOwn(state.sessions, thread.appSessionId)
             ? state.sessions[thread.appSessionId]
             : undefined;
-          return session !== undefined && sessionIsLive(session);
+          // One stopped on an approval or a question needs someone, not time.
+          return (
+            session !== undefined &&
+            sessionIsLive(session) &&
+            !sessionAttention(thread.appSessionId, state.pendingPermissions, state.pendingQuestions)
+          );
         })
         .map((thread) => thread.title),
     ),
   );
   const names = JSON.parse(working) as string[];
-  if (names.length === 0) return null;
+  // A held project moves only when the user resumes it.
+  if (names.length === 0 || project?.paused) return null;
   return (
     <HoverTooltip label={names.join(', ')}>
       <span
