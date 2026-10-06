@@ -23,12 +23,11 @@ export const VIEWPORT_LABELS: Record<BrowserViewportMode, string> = {
   mobile: 'Phone',
 };
 
-export function viewportFromFrame(size: Size, edgeToEdge = false): BrowserViewport {
+export function viewportFromFrame(size: Size): BrowserViewport {
   if (size.width <= 1 || size.height <= 1) return FIT_FALLBACK_VIEWPORT;
-  const inset = edgeToEdge ? 0 : 36;
   return {
-    width: pixels(size.width - inset),
-    height: pixels(size.height - inset),
+    width: pixels(size.width),
+    height: pixels(size.height),
     deviceScaleFactor: 2,
   };
 }
@@ -43,27 +42,22 @@ export function viewportForMode(
 const PAGE_PADDING = 18;
 
 /**
- * Where the page sits in the pane. Fit fills it (edge to edge when
- * expanded); a standard size keeps its own CSS size, scaled down to fit and
+ * Where the page sits in the pane. Fit fills it edge to edge; a standard size keeps its own CSS size, scaled down to fit and
  * centred, so the page lays out exactly as the agent sees it.
  */
 export function pageLayout(
   frame: Size,
   viewport: BrowserViewport,
   mode: BrowserViewportMode,
-  expanded = false,
 ): Size & { left: number; top: number; scale?: number } {
-  if (expanded && mode === 'fit') {
+  if (mode === 'fit') {
     return { width: pixels(frame.width), height: pixels(frame.height), left: 0, top: 0 };
   }
   const availableWidth = Math.max(1, frame.width - PAGE_PADDING * 2);
   const availableHeight = Math.max(1, frame.height - PAGE_PADDING * 2);
-  const scale =
-    mode === 'fit'
-      ? undefined
-      : Math.min(1, availableWidth / viewport.width, availableHeight / viewport.height);
-  const width = scale === undefined ? availableWidth : viewport.width * scale;
-  const height = scale === undefined ? availableHeight : viewport.height * scale;
+  const scale = Math.min(1, availableWidth / viewport.width, availableHeight / viewport.height);
+  const width = viewport.width * scale;
+  const height = viewport.height * scale;
   return {
     width: Math.round(width),
     height: Math.round(height),
@@ -79,6 +73,9 @@ export function sameViewport(a: BrowserViewport, b: BrowserViewport): boolean {
   );
 }
 
+/** Where text typed in the address bar that is not an address is searched. */
+export const SEARCH_URL = 'https://www.google.com/search?q=';
+
 export function normalizeUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return 'about:blank';
@@ -88,7 +85,28 @@ export function normalizeUrl(value: string): string {
   if (ipv6Loopback) return ipv6Loopback;
   if (/^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?(\/|$)/i.test(trimmed))
     return `http://${trimmed}`;
-  return `https://${trimmed}`;
+  // As in a browser's address bar, the part before the first /, ? or # decides,
+  // read by the URL parser itself. With a space in it, it is a search, as in
+  // Chromium. A login makes the input a site, so it is never sent to a search;
+  // so does a host with a dot (a number-only one only as a whole IPv4), an IP
+  // or a typed port. Anything else, an @handle included, is a search.
+  const authority = trimmed.split(/[/?#]/, 1)[0];
+  if (!/\s/.test(authority) && URL.canParse(`https://${authority}`)) {
+    const { hostname, username, password } = new URL(`https://${authority}`);
+    const local = hostname === 'localhost' || hostname === '127.0.0.1';
+    // The host as typed: the parser reads 1.2 as the IPv4 1.0.0.2.
+    const typedHost = authority.replace(/:\d+$/, '');
+    const numberOnly = /^[\d.]+$/.test(typedHost);
+    const site =
+      local ||
+      Boolean(username || password) ||
+      (!authority.includes('@') &&
+        ((hostname.includes('.') && (!numberOnly || /^\d+(\.\d+){3}$/.test(typedHost))) ||
+          hostname.startsWith('[') ||
+          /:\d+$/.test(authority)));
+    if (site) return `${local ? 'http' : 'https'}://${trimmed}`;
+  }
+  return `${SEARCH_URL}${encodeURIComponent(trimmed)}`;
 }
 
 function normalizeBareIpv6Loopback(value: string): string | null {

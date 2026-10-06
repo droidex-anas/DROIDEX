@@ -127,9 +127,14 @@ import { join } from 'node:path';
 // frame, the composer carries design marks, and the transcript draws the
 // Browser card. Main at b1a4f45c measures 1_431_242, the rewrite alone 1_404_693 on
 // its older base, and the two together 1_449_988, leaving ~9KB of headroom.
+//
+// initialCssBytes raised from 101_500 to 103_500 for the redesigned Browser
+// pane: its toolbar, omnibox, loading bar and shared compact composer add ~2.3KB
+// of utility classes to the app frame (100_269 before, 102_538 after), leaving
+// ~1KB of headroom as past CSS raises have.
 const BUDGETS = {
   initialRendererJsBytes: 1_459_000,
-  initialCssBytes: 101_500,
+  initialCssBytes: 103_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

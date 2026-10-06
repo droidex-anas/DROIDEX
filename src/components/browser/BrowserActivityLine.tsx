@@ -16,6 +16,7 @@ import { buildFeed, startsTurn, type FeedItem } from '../chatFeed';
 import { PendingSteers } from '../transcript/PendingSteers';
 import { WorkingIndicator } from '../transcript/primitives';
 import { summarizeTools } from '../transcript/rows';
+import { OVER_PAGE_CHIP } from './overPageChip';
 
 const NO_EVENTS: TranscriptEvent[] = [];
 // The panel draws the turn's latest steps and leaves the rest to the chat,
@@ -178,7 +179,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
           atBottomRef.current = true;
           setOpen((value) => !value);
         }}
-        className="group flex h-8 max-w-full items-center gap-2 rounded-md border border-droid-border bg-droid-bg/90 pl-2.5 pr-2 shadow-droid-sm backdrop-blur transition-colors hover:border-droid-border-hover"
+        className={`${OVER_PAGE_CHIP} group max-w-full gap-2 pl-3 pr-2.5 backdrop-blur`}
       >
         <ActivityStatusGlyph status={status} decorative />
         <span className="min-w-0 truncate">

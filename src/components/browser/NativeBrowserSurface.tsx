@@ -56,12 +56,13 @@ export function NativeBrowserSurface({
   // While the pane animates out, the page must not linger over what replaces it.
   const leaving = !useIsPresent();
   const surface = useMemo(
-    () => pageLayout(frameSize, viewport, viewportMode, expanded),
-    [expanded, frameSize, viewport, viewportMode],
+    () => pageLayout(frameSize, viewport, viewportMode),
+    [frameSize, viewport, viewportMode],
   );
+  const radius = pageCorners(viewportMode, expanded);
   const anchor = useBrowserSlot(native ? visibleBrowserSessionId : undefined, {
     hidden: leaving || !surfaceReady,
-    rounded: !expanded,
+    radius,
     scale: surface.scale,
     url,
     viewportMode,
@@ -130,9 +131,10 @@ export function NativeBrowserSurface({
     <div className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg">
       <div
         className={`absolute overflow-hidden bg-white ${
-          expanded ? 'rounded-none' : 'rounded-[6px] shadow-droid ring-1 ring-droid-border-hover'
+          viewportMode === 'fit' ? '' : 'shadow-droid ring-1 ring-droid-border-hover'
         }`}
         style={{
+          borderRadius: radius,
           left: surface.left,
           top: surface.top,
           width: surface.width,
@@ -147,6 +149,13 @@ export function NativeBrowserSurface({
       )}
     </div>
   );
+}
+
+// A page on Fit fills the pane, its top corners softened under the toolbar
+// when docked and square in full screen; a standard size is a card.
+function pageCorners(mode: BrowserViewportMode, expanded: boolean): string {
+  if (mode !== 'fit') return '8px';
+  return expanded ? '0' : '8px 8px 0 0';
 }
 
 // The page cannot read the app's CSS, so its design overlay gets the token

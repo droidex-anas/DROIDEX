@@ -27,7 +27,8 @@ interface BrowserSlot {
   browserSessionId: string;
   /** CSS anchor name of the pane's slot element. */
   anchor: string;
-  rounded: boolean;
+  /** The page's corners, as a CSS border radius. */
+  radius: string;
   /** A standard-size page drawn at this scale; Fit pages fill the slot. */
   scale?: number;
 }
@@ -217,28 +218,28 @@ export function useBrowserSlot(
   browserSessionId: string | undefined,
   {
     hidden,
-    rounded,
+    radius,
     scale,
     url,
     viewportMode,
   }: {
     hidden: boolean;
-    rounded: boolean;
+    radius: string;
     scale?: number;
     url: string;
     viewportMode: BrowserViewportMode;
   },
 ): string {
   const anchor = `--browser-slot-${useId().replace(/[^\w-]/g, '')}`;
-  const latest = useRef({ rounded, scale, url, viewportMode });
-  latest.current = { rounded, scale, url, viewportMode };
+  const latest = useRef({ radius, scale, url, viewportMode });
+  latest.current = { radius, scale, url, viewportMode };
   useLayoutEffect(() => {
     if (!browserSessionId || hidden) return;
     void ensureBrowserPage(browserSessionId, latest.current.url, latest.current.viewportMode).catch(
       () => undefined,
     );
-    const { rounded: corners, scale: drawnAt } = latest.current;
-    setSlot({ browserSessionId, anchor, rounded: corners, scale: drawnAt });
+    const { radius: corners, scale: drawnAt } = latest.current;
+    setSlot({ browserSessionId, anchor, radius: corners, scale: drawnAt });
     return () => {
       if (state.slot?.anchor === anchor) setSlot(null);
     };
@@ -247,8 +248,8 @@ export function useBrowserSlot(
   // the page to sleep for a frame.
   useLayoutEffect(() => {
     const slot = state.slot;
-    if (slot?.anchor === anchor && (slot.rounded !== rounded || slot.scale !== scale))
-      update({ slot: { ...slot, rounded, scale } });
-  }, [anchor, rounded, scale]);
+    if (slot?.anchor === anchor && (slot.radius !== radius || slot.scale !== scale))
+      update({ slot: { ...slot, radius, scale } });
+  }, [anchor, radius, scale]);
   return anchor;
 }
