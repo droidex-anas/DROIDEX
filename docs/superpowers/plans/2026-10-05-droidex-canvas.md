@@ -479,8 +479,9 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   rejected: its members are all thin accessors over a two-element array, and splitting it from the
   state registry would give one invariant two owners with a callback seam between them.
 
-Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`, `tools/stage-canvas-runtime.mjs`,
-`tools/canvas-compiler-probe.ts`, `electron-builder.config.cjs`, `electron/{main.cjs,sidecar.cjs}`):
+Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
+`tools/{stage-canvas-runtime.mjs,verifyCanvasRuntime.mjs,canvas-compiler-probe.ts}`,
+`electron-builder.config.cjs`, `electron/{main.cjs,sidecar.cjs}`):
 
 - **One owner for "where is the Canvas runtime": the Electron host, through one variable.**
   `electron/main.cjs` derives `resources/sidecar/canvas-runtime` from `process.resourcesPath` when
@@ -489,9 +490,42 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`, `tools/stage-ca
   it anchors the compiler's `require` at that directory or, unset, at its own
   (`sidecar/src/canvas` under tsx, `sidecar/dist` built), and derives
   `ESBUILD_BINARY_PATH` as `<dir>/node_modules/@esbuild/<platform>-<arch>/bin/esbuild`. The fork in
-  `compiler.ts` states `ELECTRON_RUN_AS_NODE=1` and that binary. The variable is app-private, so
-  both `childEnv` lists strip it from agent children. There is no third case and no fallback: a
-  packaged runtime that cannot be loaded fails as `compiler_unavailable`.
+  `compiler.ts` states `ELECTRON_RUN_AS_NODE=1` and that binary, and deletes `NODE_PATH` and
+  `NODE_OPTIONS`, either of which would let a module or a loader from outside the runtime in. The
+  variable is app-private, so both `childEnv` lists strip it from agent children. There is no third
+  case and no fallback: a packaged runtime that cannot be loaded fails as `compiler_unavailable`.
+- **The boundary is completeness, not interception.** Pointing `require` at the runtime is not a
+  sandbox: node resolution is nearest-first but also walks ancestor `node_modules`, `NODE_PATH` and
+  the user's own global folders (`~/.node_modules`, `~/.node_libraries`, `$PREFIX/lib/node`), a
+  transitive `require` inside a package cannot be intercepted, and esbuild's `generateBinPath()`
+  warns and falls back to ordinary resolution when `ESBUILD_BINARY_PATH` names a file that is not
+  there. Review cycle 1 measured every consequence: with the checkout above a packaged layout, a
+  runtime missing Tailwind, missing React, missing one transitive package (`picocolors`), empty,
+  unconfigured, or without its binary all returned `ready` with the normal artifact hash, and
+  an inherited `NODE_PATH` alone did it with no ancestor at all.
+  So staging writes `canvas-runtime/manifest.json` — every file it placed with its size — and
+  `verifyCanvasRuntime` checks it once, in the compiler child, before any request is accepted:
+  every listed file present at its listed size, the binary present and executable, and each of the
+  seven specifiers a compile resolves landing inside `<dir>/node_modules` (read through its links,
+  because node answers with a real path). Any miss and the worker answers every request
+  `unavailable` and logs the first path at fault; nothing is ever a diagnostic. Once the runtime is
+  whole, nearest-first resolution means the owned copy always wins for the transitive graph too.
+  Sizes rather than digests, because the risk is an incomplete or damaged install rather than
+  tampering and this runs on every compiler start; the binary carries no size because code signing
+  rewrites it while packaging (9,750,242 staged, 9,712,896 shipped).
+  The check also refuses a built worker that finds a manifest beside it with nothing configured, so
+  a host that loses the variable compiles nothing instead of resolving from a global folder.
+  `tools/verifyCanvasRuntime.mjs` is the one reader of that manifest for packaged trees, shared by
+  `release:verify:mac` and `canvas:probe`.
+- **A damaged runtime is never the design's fault.** esbuild reports a plugin's thrown error as a
+  message detail, and 03a's mapping read that detail's `code` as a curated diagnostic code: a
+  runtime without React answered a valid design `failed`, with `MODULE_NOT_FOUND` and the
+  compiler's own absolute require stack in diagnostics that 3b persists and shows, and a missing
+  Tailwind preflight asset arrived as `css_error`. Only the seven codes 03a defined are a
+  diagnostic now; anything else esbuild attached, and any stylesheet failure that is not PostCSS's
+  own `CssSyntaxError`, is rethrown so the worker reports an unavailable compiler. Invalid design
+  CSS still reports `css_error`. `compiler.test.ts`'s diagnostic helper now refuses an absolute or
+  `node_modules` path in every diagnostic, which is where that rule belongs for every future case.
 - The worker loads `esbuild`, `tailwindcss`, `postcss` and `postcss-value-parser` through that one
   anchor instead of importing them, so `build:compiler-worker` needs no `--external` flags at all
   and the bundled entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only
@@ -516,19 +550,28 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`, `tools/stage-ca
   `app-builder-lib/out/util/filter.js`), which silently produced an app with no Canvas runtime at
   all. The file set therefore names `sidecar/canvas-runtime/${arch}/node_modules` as its source.
   `${arch}` is expanded in a file set's `from` and `to`, so one entry covers both architectures.
-- npm skips an optional dependency whose cpu does not match and refuses an explicit install of one
-  without `--force`, so the other architecture's esbuild binary is fetched into
-  `sidecar/canvas-runtime/.npm` while packaging, pinned to the installed esbuild version. Packaging
-  may reach the registry; a design compile may not, and does not.
-- **Offline packaged probe, run from inside the produced app.** `npm run canvas:probe --
-  release/mac-arm64/DROIDEX.app` forked
+- **The cross-architecture binary is fetched against the reviewed lockfile, without npm.** npm
+  skips an optional dependency whose cpu does not match, and `npm install --force` pinned only a
+  version: review cycle 1 replaced the `darwin-x64` SRI in `sidecar/package-lock.json` with an
+  all-zero value and staging still succeeded, with lifecycle scripts permitted and npm writing its
+  cache and logs to `HOME`. Staging now fetches the tarball the lockfile resolves, verifies it
+  against that lockfile's integrity before extracting, unpacks it into an empty directory inside
+  `sidecar/canvas-runtime/.tarballs` and copies only the files found under it, then checks the
+  staged binary is executable and this architecture's. A verified tarball is kept, so a repeat
+  build is offline: cross-architecture packaging needs the registry once per esbuild version. A
+  design compile needs it never.
+- **Offline packaged probe, run from inside the produced app, with negatives.** `npm run
+  canvas:probe -- release/mac-arm64/DROIDEX.app` forked
   `Contents/Resources/sidecar/dist/compilerWorker.mjs` with `Contents/MacOS/DROIDEX` as `execPath`,
   `ELECTRON_RUN_AS_NODE=1`, the owned runtime and binary, `PATH=/usr/bin:/bin`, an empty `HOME`, and
   `net.connect`/`dns.lookup`/`http(s).request`/`fetch` replaced by throws in the child. It compiled
   the kit's own `Hey.tsx` to artifact
   `64dd3d94797e60278aa967ed683c5f26beac49a31477d1323f6427f3b8b2bd7b` (209,916 bytes) — byte for byte
-  the artifact the checkout produces. The probe also asserts every owned specifier resolves inside
-  the runtime, so a missing package fails instead of silently falling back.
+  the artifact the checkout produces. The probe then verifies the packaged tree through the shared
+  manifest reader and damages four copies of the runtime in turn — a transitive package, the
+  esbuild binary, Tailwind's preflight, and the variable itself — each with the checkout's own
+  `node_modules` symlinked above it, and requires each to compile nothing. Every one of those cases
+  returned the normal artifact before this boundary existed.
 - **x64 was verified by inspection only, never executed**, on this arm64 machine: the x64 `--dir`
   pack's resource tree, binary architecture, mode and the absence of the arm64 binary were checked
   on disk. `release:verify:mac` makes the same assertions for both architectures and runs the probe
