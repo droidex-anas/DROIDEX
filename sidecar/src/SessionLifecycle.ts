@@ -1179,6 +1179,7 @@ export class SessionLifecycle {
         liveSession.delegatedTurns = (liveSession.delegatedTurns ?? 0) + 1;
         liveSession.delegatedTurnOpen = true;
         usageLimitAtStart = liveSession.summary.usageLimit;
+        resolveDelegatedTurn?.();
         liveSession.delegatedTurnSettled = new Promise<void>((resolve) => {
           resolveDelegatedTurn = resolve;
         });
@@ -1245,11 +1246,21 @@ export class SessionLifecycle {
     usageLimitAtStart: SessionSummary['usageLimit'],
   ): Promise<void> {
     if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
-    // The chat closed, or the provider started another turn, meanwhile.
-    if (isCurrent() && liveSession.delegatedTurns === turn) {
+    if (!isCurrent()) return;
+    if (liveSession.delegatedTurns === turn) {
       liveSession.delegatedTurnSettled = undefined;
       this.settleDelegatedTurn(liveSession, end, usageLimitAtStart);
     }
+    // A newer turn owns the chat now, but a refusal still holds it.
+    else if (end?.status === 'failed' && end.error instanceof UsageLimitError)
+      this.holdOnRefusal(liveSession, end.error);
+  }
+
+  private holdOnRefusal(liveSession: LiveSession, refusal: UsageLimitError): void {
+    const appSessionId = liveSession.summary.appSessionId;
+    this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(refusal));
+    // A refusal leaves no row of its own; the typed path writes this notice too.
+    this.dependencies.appendError(appSessionId, refusal.message, usageLimitDetails(refusal));
   }
 
   private settleDelegatedTurn(
@@ -1264,14 +1275,8 @@ export class SessionLifecycle {
     // A finished reply can lift an existing hold, but never a refusal that
     // arrived while it ran, including from an overlapping typed turn.
     if (end?.status === 'failed') {
-      this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
-      // A refusal leaves no row of its own; the typed path writes this notice too.
-      if (end.error instanceof UsageLimitError)
-        this.dependencies.appendError(
-          appSessionId,
-          end.error.message,
-          usageLimitDetails(end.error),
-        );
+      if (end.error instanceof UsageLimitError) this.holdOnRefusal(liveSession, end.error);
+      else this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
     } else if (
       end?.status === 'completed' &&
       !stopped &&
@@ -1508,8 +1513,6 @@ export class SessionLifecycle {
       });
       await turn;
     } finally {
-      // A provider-started turn that ended meanwhile may have started the next one.
-      if (liveSession.turnPromise === turn) liveSession.turnPromise = undefined;
       // This turn's rows are all in. One the provider started meanwhile, and
       // still running, keeps the source open; one that ended left it to us,
       // unless the next typed turn it started already owns the source.
@@ -1518,10 +1521,12 @@ export class SessionLifecycle {
         !liveSession.closeMode &&
         !d.isShutdownStarted() &&
         !liveSession.delegatedTurnOpen &&
-        !liveSession.turnPromise
+        liveSession.turnPromise === turn
       )
         d.eventFlow.apply(stableAppSessionId, stableAppSessionId, 'primary', { done: true });
       if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
+      // Keep the reservation through the interrupt so delegated settlement cannot also drain.
+      if (liveSession.turnPromise === turn) liveSession.turnPromise = undefined;
       // Only the last owner advances the queue, after both streams have flushed.
       if (!liveSession.delegatedTurnSettled && !liveSession.turnPromise)
         await this.settleTypedTurn(liveSession, stableAppSessionId);

@@ -1621,6 +1621,10 @@ test('typed preparation waits for delegated flush without losing its prompt or d
   const stored = turnGate();
   const flushed = turnGate();
   const rows: string[] = [];
+  const recordPrompt = (_id: string, prompt: string) => {
+    rows.push(prompt);
+    return stored.promise;
+  };
   let providerRunning = false;
   let delegated: (running: boolean, end?: DelegatedTurnEnd) => void = () =>
     assert.fail('no listener');
@@ -1637,11 +1641,8 @@ test('typed preparation waits for delegated flush without losing its prompt or d
             refresh: () => Promise.resolve(),
           },
           timeline: {
-            recordPrompt: (_id, prompt) => {
-              rows.push(prompt);
-              return stored.promise;
-            },
-            announcePrompt: () => assert.fail('unexpected announcement'),
+            recordPrompt,
+            announcePrompt: recordPrompt,
             settleStreaming: () => Promise.resolve(),
             appendStatus: () => undefined,
             appendError: () => undefined,
@@ -1683,7 +1684,7 @@ test('typed preparation waits for delegated flush without losing its prompt or d
   await new Promise((resolve) => setImmediate(resolve));
   providerRunning = true;
   delegated(true);
-  await h.lifecycle.send('overlap', 'queued');
+  await h.lifecycle.send('overlap', 'queued', undefined, 'queued');
   stored.resolve();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(fake.prompts, []);
@@ -1699,12 +1700,26 @@ test('typed preparation waits for delegated flush without losing its prompt or d
     requireLive(h, 'overlap').pendingSends.map((prompt) => prompt.text),
     ['queued'],
   );
+  await h.lifecycle.send('overlap', 'second');
+  await h.lifecycle.send('overlap', 'third');
+  const next = fake.deferNextStream();
+  const interrupt = fake.deferNextInterrupt();
+  const sendingNow = h.lifecycle.sendNow('overlap', 'queued');
+  delegated(true);
+  delegated(false, { status: 'interrupted' });
   typed.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(fake.prompts, ['typed']);
+  interrupt.resolve();
+  await sendingNow;
   await sending;
   await fake.waitForPrompts(2);
-  await requireLive(h, 'overlap').turnPromise;
   assert.deepEqual(fake.prompts, ['typed', 'queued']);
-  assert.deepEqual(rows, ['typed', 'queued']);
+  next.resolve();
+  await fake.waitForPrompts(4);
+  await requireLive(h, 'overlap').turnPromise;
+  assert.deepEqual(fake.prompts, ['typed', 'queued', 'second', 'third']);
+  assert.deepEqual(rows, ['typed', 'queued', 'second', 'third']);
   assert.equal(requireLive(h, 'overlap').streaming, false);
   await h.lifecycle.closeAll();
 });

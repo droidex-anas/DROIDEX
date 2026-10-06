@@ -72,6 +72,12 @@ export async function runPrimaryTurn(
     delivery.declined(isCurrent() && delivery.isCurrent() ? 'failed' : 'stale');
     return;
   }
+  // A provider-started turn is running: the delivery goes back to its project
+  // and comes again, rather than holding the project's claim while it waits.
+  if (delivery && liveSession.delegatedTurnSettled) {
+    delivery.declined('stale');
+    return;
+  }
   // Checked before the prompt row is written, so a retry never writes it twice.
   if (delivery && stoppedBeforeStart()) {
     delivery.declined('stale');
@@ -99,6 +105,9 @@ export async function runPrimaryTurn(
       preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
     // Preparation can yield to a provider-started turn. Keep this prompt's row
     // and queue reservation, but wait for that turn's final rows before sending.
+    // A delivery whose row is written counts as taken, so its project's claim
+    // is released while it waits: that turn may need the project's answer.
+    if (liveSession.delegatedTurnSettled) delivery?.accepted();
     while (isCurrent() && !stoppedBeforeStart() && liveSession.delegatedTurnSettled) {
       await liveSession.delegatedTurnSettled;
     }
