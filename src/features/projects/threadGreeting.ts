@@ -15,7 +15,12 @@ const LINES: Record<Mood, readonly string[]> = {
   empty: ['No threads yet.', 'Nothing running.', 'An empty bench.'],
 };
 
+const MINUTE = 60_000;
 const HOUR = 3_600_000;
+
+function elapsed(ms: number): string {
+  return ms < MINUTE ? 'under a minute' : formatDuration(ms);
+}
 
 export function threadGreeting(
   rows: readonly ThreadRow[],
@@ -43,9 +48,12 @@ export function projectTimeline(
   now: number,
 ): string {
   const parts: string[] = [];
-  if (done && startedAt) parts.push(`Done in ${formatDuration(done.at - startedAt)}`);
+  if (done && startedAt) parts.push(`Done in ${elapsed(done.at - startedAt)}`);
   else if (done) parts.push('Done');
-  else if (startedAt) parts.push(`Started ${formatDuration(now - startedAt)} ago`);
+  else if (startedAt) {
+    const age = now - startedAt;
+    parts.push(age < MINUTE ? 'Started just now' : `Started ${formatDuration(age)} ago`);
+  }
   if (cwd) parts.push(workspaceName(cwd));
   return parts.join(' · ');
 }

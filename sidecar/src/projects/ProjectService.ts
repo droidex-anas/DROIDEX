@@ -421,9 +421,10 @@ export class ProjectService {
   private async rename(project: Project, lead: string, title: string): Promise<void> {
     const name = title.slice(0, LEDGER_LIMITS.title);
     if (name === project.title) return;
+    // Droid keeps the title itself and can refuse it; the ledger follows the chat.
+    await this.sessions.rename(lead, name);
     project.title = name;
     requireThread(project, lead).title = name;
-    await this.sessions.rename(lead, name);
   }
 
   /** The lead's word that the goal is achieved. Spawning again reopens the project. */
@@ -432,6 +433,7 @@ export class ProjectService {
     const project = this.requireProjectFor(source);
     if (requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the chat that leads a project can mark it done.');
+    if (project.launching > 0) throw new Error('A thread of this project is still starting.');
     const working = project.threads.filter(
       (thread) =>
         thread.appSessionId !== source && this.sessions.get(thread.appSessionId)?.streaming,
@@ -509,7 +511,8 @@ export class ProjectService {
     // A running turn takes it at the harness's next step, or, sent now, in
     // place of the rest of that turn. A thread with no turn running gets it as
     // its next turn, which the wake queue starts.
-    if (delivery !== 'queue') {
+    requireMessageText(text);
+    if (delivery !== 'queue' && this.sessions.get(target)?.streaming) {
       const message = {
         id: randomUUID(),
         from: source,
@@ -518,9 +521,16 @@ export class ProjectService {
         text,
       };
       const prompt = wakePrompt(project, target, [message]);
-      const isCurrent = this.wakes.guard(project);
+      // Only this thread leaving the project withdraws it. A Stop on the
+      // thread drops it with the rest of that chat's queue, as it would the user's.
+      const isCurrent = () => !this.closed && this.membership.get(target) === project;
       if (await this.sessions.steer(target, prompt, isCurrent, delivery === 'now'))
         return delivery === 'now' ? 'sent-now' : 'steered';
+      // Its turn ended, or was stopped, while this was on its way. Starting a
+      // new turn could undo a Stop, so the lead decides.
+      throw new Error(
+        `${thread.title}'s turn ended before it took this message. Read it with thread_read, and send again if the message still applies.`,
+      );
     }
     this.enqueue(project, { from: source, to: target, kind: 'message', text });
     await this.save();

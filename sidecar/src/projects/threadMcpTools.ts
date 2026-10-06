@@ -173,8 +173,10 @@ const stopInput = z.object({ threadId });
 
 // What happened to a message, so the lead never takes a queued one for a delivered one.
 const DELIVERY_NOTES: Partial<Record<string, string>> = {
-  steered: 'The thread takes it at its next step, inside the turn it is running.',
-  'sent-now': 'Its running turn was stopped, and this message runs next.',
+  steered:
+    'The thread takes it at its next step in the turn it is running, or right after that turn when the harness cannot take it sooner. Its report still wakes you.',
+  'sent-now':
+    'It runs next: DROIDEX asks the turn the thread is running to stop first. Its report wakes you.',
   queued:
     'It starts the thread now if it is idle, or waits for the turn it is running. Its report wakes you; end your turn.',
 };

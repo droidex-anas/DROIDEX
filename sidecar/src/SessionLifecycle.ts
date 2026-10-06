@@ -652,7 +652,11 @@ export class SessionLifecycle {
     if (now) {
       admitted.liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(admitted.liveSession);
-      await this.sendNow(appSessionId, steerId);
+      // Not awaited: a turn that ended meanwhile runs this one at once, and the
+      // caller may be the chat that turn needs an answer from.
+      void this.sendNow(appSessionId, steerId).catch((error: unknown) => {
+        this.dependencies.emitError({ appSessionId, message: errMsg(error) });
+      });
       return true;
     }
     void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
