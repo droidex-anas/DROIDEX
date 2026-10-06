@@ -12,13 +12,14 @@ import type {
   SideChatDefaultPlacement,
 } from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
 import { ModelIcon, providerOf } from './ModelIcon';
 import type { ModelInfo, VoiceNarration } from '../types/bridge';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { Switch } from './Switch';
-import { getAppVersion, type AppUpdateInfo } from '../lib/onboarding';
+import { getAppVersion, openExternal, type AppUpdateInfo } from '../lib/onboarding';
+import cursorDesign from './browser/browserAgentCursorDesign.json';
 import { refreshAppUpdate, requestAppUpdate } from '../lib/appUpdate';
 import { hasActiveSessionWork } from '../lib/sessions';
 import { applyTheme } from '../lib/theme';
@@ -41,6 +42,7 @@ import {
   type SettingsSearchHit,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
+import { usePopover } from './environment/usePopover';
 
 interface NavItem {
   label: string;
@@ -129,94 +131,27 @@ function TokenLimitSelect({
   onSelect: (n?: number) => void;
   width?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const label = value === undefined ? 'Factory default' : formatTokenLimit(value);
-
-  const choose = (n?: number) => {
-    onSelect(n);
-    setOpen(false);
-  };
-
-  const Row = ({ n, l, sub }: { n?: number; l: string; sub?: string }) => {
-    const active = value === n;
-    return (
-      <button
-        onClick={() => {
-          choose(n);
-        }}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-          active ? 'bg-droid-elevated' : 'hover:bg-droid-elevated/50'
-        }`}
-      >
-        <span className="flex-1 text-[13px] tabular-nums text-droid-text">{l}</span>
-        {sub && <span className="text-[11px] text-droid-text-muted">{sub}</span>}
-        {active && (
-          <Check
-            className="w-3.5 h-3.5 shrink-0"
-            style={{ color: 'var(--droid-accent)' }}
-            strokeWidth={3}
-          />
-        )}
-      </button>
-    );
-  };
+  const limits =
+    value === undefined || TOKEN_PRESETS.includes(value)
+      ? TOKEN_PRESETS
+      : [value, ...TOKEN_PRESETS];
 
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button
-        onClick={() => {
-          setOpen((v) => !v);
-        }}
-        className={`${width} flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
-          open
-            ? 'bg-droid-active text-droid-text'
-            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
-        }`}
-      >
-        <span className="truncate tabular-nums">{label}</span>
-        <ChevronDown
-          className={`w-3.5 h-3.5 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-droid-border bg-droid-surface p-2 shadow-droid">
-          <div className="max-h-72 overflow-y-auto space-y-0.5">
-            <Row l="Factory default" sub="model-dependent" />
-            {TOKEN_PRESETS.map((n) => (
-              <Row
-                key={n}
-                n={n}
-                l={formatTokenLimit(n)}
-                sub={n === RECOMMENDED_LIMIT ? 'recommended' : undefined}
-              />
-            ))}
-          </div>
-          <p className="mt-2 border-t border-droid-border px-1.5 pt-2 text-[11px] leading-[1.5] text-droid-text-muted">
-            If a model&apos;s context window is lower than the selected value, the session starts
-            with the lower effective limit.
-          </p>
-        </div>
-      )}
-    </div>
+    <Dropdown
+      ariaLabel="Compaction token limit"
+      value={value === undefined ? '' : String(value)}
+      width={width}
+      options={[
+        { value: '', label: 'Factory default' },
+        ...limits.map((limit) => ({
+          value: String(limit),
+          label: `${formatTokenLimit(limit)}${limit === RECOMMENDED_LIMIT ? ' (recommended)' : ''}`,
+        })),
+      ]}
+      onChange={(next) => {
+        onSelect(next === '' ? undefined : Number(next));
+      }}
+    />
   );
 }
 
@@ -232,23 +167,10 @@ function CompactionModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const close = useCallback(() => {
+    setOpen(false);
+  }, []);
+  const ref = usePopover(open, close);
 
   const isCurrent = selected === 'current-model';
   const selModel = isCurrent ? undefined : models.find((m) => m.id === selected);
@@ -554,7 +476,7 @@ function GeneralSection() {
         </SettingRow>
         <SettingRow
           label="Token limit"
-          description="Compact once a conversation passes this size. Empty uses Factory's model-dependent default."
+          description="Compact once a conversation passes this size. Factory default follows the model. Limits cannot exceed the model's context window."
         >
           <TokenLimitSelect value={state.compactionTokenLimit} onSelect={setGlobalLimit} />
         </SettingRow>
@@ -769,6 +691,16 @@ function SetupSection({ onClose }: { onClose: () => void }) {
             checked={appAuto}
             onChange={(v) => void onboard.patch({ appAutoUpdate: v })}
           />
+        </SettingRow>
+        <SettingRow label="Credits" description={cursorDesign.attribution}>
+          <button
+            onClick={() => {
+              void openExternal(cursorDesign.attributionUrl);
+            }}
+            className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors"
+          >
+            Flaticon
+          </button>
         </SettingRow>
       </div>
 

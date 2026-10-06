@@ -49,9 +49,9 @@ dedicated hardware is understood.
 | Live primary sessions after soak cleanup | 0 | 12 create/close cycles must release every session. |
 | History worker third-party modules | 0 | `historyWorkerBundle.test.ts`. Both worker isolates compile this graph; a value import of the Droid SDK once cost ~83 MiB of sidecar RSS. |
 | History worker bundle | 200_000 bytes | Same test, ~2× the 98 KiB the workers actually need. |
-| Initial renderer JS | 1_280_000 bytes | `tools/check-bundle-budgets.mjs`, measured post-split with modest headroom. |
-| Initial CSS | 95_000 bytes | Same bundle check. |
-| Largest lazy JS chunk | 680_000 bytes | Same bundle check. |
+| Initial renderer JS | 1_434_000 bytes | `tools/check-bundle-budgets.mjs`, which records why each raise was needed. |
+| Initial CSS | 101_500 bytes | Same bundle check. |
+| Largest lazy JS chunk | 700_000 bytes | Same bundle check. |
 
 ## Timing (warn, not CI-fail)
 

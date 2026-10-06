@@ -30,18 +30,64 @@ function automation(now: number, overrides: Partial<AutomationInput> = {}) {
   );
 }
 
-test('a store written by another version is refused instead of guessed at', () => {
+test('a store from another version or missing a list is refused, and invalid records in it are dropped and logged', (t) => {
   assert.throws(
     () => parseAutomationStore({ version: 2, automations: [], runs: [] }, Date.now()),
     /Unsupported automations store version 2/,
   );
-});
-
-test('a store missing proposals is refused instead of silently discarding them', () => {
+  // Silently defaulting the proposals would discard them on the next write.
   assert.throws(
     () => parseAutomationStore({ version: 1, automations: [], runs: [] }, Date.now()),
     /missing its automations, runs, or proposals list/,
   );
+
+  // An unknown schedule kind is as invalid as a missing title.
+  const messages: string[] = [];
+  t.mock.method(console, 'error', (message?: unknown) => {
+    messages.push(String(message));
+  });
+  const store = parseAutomationStore(
+    {
+      version: 1,
+      automations: [
+        {
+          id: 'automation-1',
+          title: '',
+          prompt: 'Do the task.',
+          schedule: { kind: 'daily', time: '23:59' },
+        },
+        {
+          id: 'automation-2',
+          title: 'Task',
+          prompt: 'Do the task.',
+          schedule: { kind: 'monthly', time: '23:59' },
+          timezone: 'UTC',
+          modelId: 'model-a',
+          reasoningEffort: 'high',
+        },
+      ],
+      runs: [],
+      proposals: [
+        {
+          id: 'proposal-1',
+          sourceAppSessionId: 'session-1',
+          draft: {
+            title: '',
+            prompt: 'Do the task.',
+            schedule: { kind: 'daily', time: '23:59' },
+          },
+        },
+      ],
+    },
+    Date.now(),
+  );
+  assert.deepEqual(store.automations, []);
+  assert.deepEqual(store.proposals, []);
+  assert.deepEqual(messages, [
+    'Dropped an invalid automation record',
+    'Dropped an invalid automation record',
+    'Dropped an invalid automation proposal',
+  ]);
 });
 
 test('saved definitions, run history and proposal drafts default additive target and file fields', () => {
@@ -73,84 +119,7 @@ test('saved definitions, run history and proposal drafts default additive target
   }
 });
 
-test('a stored automation with an unknown schedule kind is dropped', () => {
-  const messages: string[] = [];
-  const original = console.error;
-  console.error = (message?: unknown) => {
-    messages.push(String(message));
-  };
-  try {
-    const store = parseAutomationStore(
-      {
-        version: 1,
-        automations: [
-          {
-            id: 'automation-1',
-            title: 'Task',
-            prompt: 'Do the task.',
-            schedule: { kind: 'monthly', time: '23:59' },
-            timezone: 'UTC',
-            modelId: 'model-a',
-            reasoningEffort: 'high',
-          },
-        ],
-        runs: [],
-        proposals: [],
-      },
-      Date.now(),
-    );
-    assert.deepEqual(store.automations, []);
-    assert.deepEqual(messages, ['Dropped an invalid automation record']);
-  } finally {
-    console.error = original;
-  }
-});
-
-test('invalid stored records are dropped and logged', () => {
-  const messages: string[] = [];
-  const original = console.error;
-  console.error = (message?: unknown) => {
-    messages.push(String(message));
-  };
-  try {
-    const store = parseAutomationStore(
-      {
-        version: 1,
-        automations: [
-          {
-            id: 'automation-1',
-            title: '',
-            prompt: 'Do the task.',
-            schedule: { kind: 'daily', time: '23:59' },
-          },
-        ],
-        runs: [],
-        proposals: [
-          {
-            id: 'proposal-1',
-            sourceAppSessionId: 'session-1',
-            draft: {
-              title: '',
-              prompt: 'Do the task.',
-              schedule: { kind: 'daily', time: '23:59' },
-            },
-          },
-        ],
-      },
-      Date.now(),
-    );
-    assert.deepEqual(store.automations, []);
-    assert.deepEqual(store.proposals, []);
-    assert.deepEqual(messages, [
-      'Dropped an invalid automation record',
-      'Dropped an invalid automation proposal',
-    ]);
-  } finally {
-    console.error = original;
-  }
-});
-
-test('trim keeps a review worktree until its chat origin is dropped', () => {
+test('trim keeps in-flight and review-worktree origins, and every unconfirmed proposal while capping confirmed ones', () => {
   const now = Date.now();
   const busy = automation(now, { title: 'Busy' });
   const isolated = automation(now, {
@@ -159,33 +128,33 @@ test('trim keeps a review worktree until its chat origin is dropped', () => {
     executionMode: 'worktree',
   });
   const store = emptyAutomationStore();
-  const runs = [];
+  const origin = (automationId: string, runId: string) => ({
+    automationId,
+    automationTitle: 'Task',
+    runId,
+    trigger: 'manual' as const,
+  });
   for (let index = 0; index < 160; index += 1) {
     const run = newQueuedRun(busy, now + index, now + index, 'manual');
     run.status = 'completed';
     run.finishedAt = now + index;
-    runs.push(run);
+    store.runs.push(run);
   }
+  // A completed run whose review chat still holds its worktree.
   const review = newQueuedRun(isolated, now, now, 'manual');
   review.status = 'completed';
   review.finishedAt = now;
   review.appSessionId = 'session-review';
   review.resolvedCwd = '/repo/.worktrees/isolated/repo';
-  runs.push(review);
-  store.runs = runs;
-  store.sessionOrigins['session-review'] = {
-    automationId: isolated.id,
-    automationTitle: isolated.title,
-    runId: review.id,
-    trigger: 'manual',
-  };
+  store.runs.push(review);
+  store.sessionOrigins['session-review'] = origin(isolated.id, review.id);
+  const live = newQueuedRun(busy, now, now, 'manual');
+  live.status = 'running';
+  live.appSessionId = 'session-live';
+  store.runs.push(live);
+  store.sessionOrigins['session-live'] = origin(busy.id, live.id);
   for (let index = 0; index < 210; index += 1) {
-    store.sessionOrigins[`old-${String(index)}`] = {
-      automationId: busy.id,
-      automationTitle: busy.title,
-      runId: `old-run-${String(index)}`,
-      trigger: 'manual',
-    };
+    store.sessionOrigins[`old-${String(index)}`] = origin(busy.id, `old-run-${String(index)}`);
   }
 
   trimAutomationStore(store);
@@ -195,40 +164,9 @@ test('trim keeps a review worktree until its chat origin is dropped', () => {
     true,
   );
   assert.ok(store.sessionOrigins['session-review']);
-});
-
-test('trim keeps the origin of an in-flight run', () => {
-  const now = Date.now();
-  const definition = automation(now);
-  const store = emptyAutomationStore();
-  const run = newQueuedRun(definition, now, now, 'manual');
-  run.status = 'running';
-  run.appSessionId = 'session-live';
-  store.runs = [run];
-  store.sessionOrigins['session-live'] = {
-    automationId: definition.id,
-    automationTitle: definition.title,
-    runId: run.id,
-    trigger: 'manual',
-  };
-  for (let index = 0; index < 210; index += 1) {
-    store.sessionOrigins[`old-${String(index)}`] = {
-      automationId: definition.id,
-      automationTitle: definition.title,
-      runId: `old-run-${String(index)}`,
-      trigger: 'manual',
-    };
-  }
-
-  trimAutomationStore(store);
-
   assert.ok(store.sessionOrigins['session-live']);
-});
 
-test('trim keeps every unconfirmed proposal while capping confirmed history', () => {
-  const now = Date.now();
   const definition = automation(now);
-  const store = emptyAutomationStore();
   store.automations = [definition];
   store.proposals = Array.from(
     { length: 60 },

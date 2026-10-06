@@ -3,9 +3,28 @@
 // than a timestamp.
 let seedSequence = 0;
 
-export function createComposerSeed(text: string, replace = false) {
+export type ComposerSeed = ReturnType<typeof createComposerSeed>;
+
+// A seed goes to the composer of its chat, or with a null chat to the new-chat
+// draft in the tile `draftTileId`. One from the browser's prompt box leaves the
+// focus where it is, and one it sends goes out as that composer's own prompt.
+export function createComposerSeed(
+  text: string,
+  replace = false,
+  {
+    appSessionId = null,
+    draftTileId = null,
+    send = false,
+    focus = true,
+  }: {
+    appSessionId?: string | null;
+    draftTileId?: string | null;
+    send?: boolean;
+    focus?: boolean;
+  } = {},
+) {
   seedSequence += 1;
-  return { text, id: seedSequence, replace };
+  return { text, id: seedSequence, replace, appSessionId, draftTileId, send, focus };
 }
 
 /**

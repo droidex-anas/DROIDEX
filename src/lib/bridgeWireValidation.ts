@@ -15,6 +15,7 @@ import {
   isModelInfo,
   isProviderKind,
   isProviderStatus,
+  isProviderUsage,
   isSkillInfo,
 } from '../features/providers/wireValidation';
 
@@ -267,6 +268,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return value.catalog === 'tools';
     case 'provider.status':
       return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
+    case 'usage.updated':
+      return isProviderUsage(value.usage);
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':
@@ -316,8 +319,6 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return Array.isArray(value.sessions) && value.sessions.every(isSessionHistoryEntry);
     case 'browser.updated':
       return isBrowserState(value.state);
-    case 'browser.native.request':
-      return isBrowserNativeRequest(value.request);
     case 'sidebar.request':
       return isSidebarRequest(value.request);
     case 'mcp.authRequested':
@@ -397,7 +398,23 @@ function isSessionSummary(value: unknown): boolean {
         value.pendingSteers.every(
           (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
         ))) &&
-    (value.lineage === undefined || isSessionLineage(value.lineage))
+    (value.lineage === undefined || isSessionLineage(value.lineage)) &&
+    (value.usageLimit === undefined || isUsageLimit(value.usageLimit))
+  );
+}
+
+// As strict as the sidecar that writes it: one bad summary rejects the whole
+// session list.
+function isUsageLimit(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.window === undefined ||
+      value.window === 'five_hour' ||
+      value.window === 'daily' ||
+      value.window === 'weekly' ||
+      value.window === 'monthly') &&
+    isOptionalString(value.model) &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 
@@ -433,7 +450,14 @@ function isChildSessionSummary(value: unknown): boolean {
 function isTranscriptEvent(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const switched = value.modelSwitch;
-  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+  if (
+    switched !== undefined &&
+    (!isRecord(switched) ||
+      !hasStrings(switched, ['from', 'to']) ||
+      (switched.cause !== undefined &&
+        switched.cause !== 'harness' &&
+        switched.cause !== 'usage_limit'))
+  )
     return false;
   return (
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
@@ -638,15 +662,7 @@ function isBrowserState(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['browserSessionId', 'url', 'viewportMode']) &&
     isRecord(value.viewport) &&
-    isRecord(value.scroll) &&
-    recordArray(value.refs)
-  );
-}
-
-function isBrowserNativeRequest(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    hasStrings(value, ['requestId', 'appSessionId', 'browserSessionId', 'action'])
+    isRecord(value.scroll)
   );
 }
 

@@ -6,7 +6,7 @@ const {
   redactBrowserDiagnosticUrl,
 } = require('./browserDiagnostics.cjs');
 
-test('browser console diagnostics redact structured credentials', () => {
+test('browser console diagnostics redact structured credentials and stay bounded on adversarial input', () => {
   assert.equal(
     redactBrowserDiagnosticText(
       '{"password":"hunter2 with spaces","access_token":"secret-token","safe":"visible"}',
@@ -25,6 +25,13 @@ test('browser console diagnostics redact structured credentials', () => {
     redactBrowserDiagnosticText('Cookie: session_id="private value"; Bearer "quoted secret"'),
     'Cookie: [redacted]; Bearer [redacted]',
   );
+
+  const value = `password="${'\\\\'.repeat(20_000)}secret" safe=visible`;
+  const redacted = redactBrowserDiagnosticText(value);
+
+  assert.ok(redacted.length <= 1000);
+  assert.doesNotMatch(redacted, /secret/);
+  assert.match(redacted, /^password="\[redacted\]/);
 });
 
 test('browser network diagnostics remove URL credentials and sensitive parameters', () => {
@@ -44,15 +51,12 @@ test('browser network diagnostics remove URL credentials and sensitive parameter
     redactBrowserDiagnosticUrl('/callback?auth_code=secret&safe=yes', 'https://example.com/page'),
     'https://example.com/callback?auth_code=%5Bredacted%5D&safe=yes',
   );
-});
-
-test('browser console redaction stays bounded on adversarial quoted input', () => {
-  const value = `password="${'\\\\'.repeat(20_000)}secret" safe=visible`;
-  const redacted = redactBrowserDiagnosticText(value);
-
-  assert.ok(redacted.length <= 1000);
-  assert.doesNotMatch(redacted, /secret/);
-  assert.match(redacted, /^password="\[redacted\]/);
+  assert.doesNotMatch(
+    redactBrowserDiagnosticUrl(
+      `https://example.com/login?next=${encodeURIComponent('https://other.test/cb?token=secret')}`,
+    ),
+    /secret/,
+  );
 });
 
 test('browser console diagnostics use the Electron details object', () => {

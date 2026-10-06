@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { pushEscapeLayer } from './usePopover';
+import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 
 // The app scales its UI with a CSS zoom on #root (the UI font size setting),
 // but this panel portals to <body>, outside that zoom. Anchor rects are
@@ -92,9 +93,7 @@ export function Popover({
     // is trapped. Otherwise focus stays on the trigger and Tab escapes the
     // portal, bypassing the onKeyDown trap which only fires inside the panel.
     if (!focusInsideRef.current && panelRef.current) {
-      const focusables = panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
+      const focusables = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       if (focusables.length > 0) focusables[0].focus();
       else panelRef.current.focus();
       track();
@@ -191,29 +190,7 @@ export function Popover({
   // The portal escapes the trigger's DOM order, so Tab would otherwise walk
   // out of the open panel into whatever follows <body>; wrap focus instead.
   const trapTab = (e: ReactKeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const focusables = panel.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusables.length === 0) {
-      // Every row can be disabled (e.g. subagent placeholders awaiting
-      // registration); focus then rests on the panel itself and Tab must not
-      // walk out of the open dialog into the page.
-      e.preventDefault();
-      return;
-    }
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || !panel.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
-      e.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(e, panelRef.current);
   };
 
   if (!open || !pos) return null;

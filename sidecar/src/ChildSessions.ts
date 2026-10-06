@@ -59,7 +59,6 @@ import {
   takeNextQueuedChild,
 } from './childRuntimeBudget.js';
 import {
-  CHILD_RUNTIME_RETIRED_STATUS,
   nextChildRuntimeRetirementAt,
   parentHasUnsettledChildren,
   retirableChildRuntimes,
@@ -586,7 +585,8 @@ export class ChildSessions {
 
   // Release the provider process behind every child that has been settled and
   // untouched past the idle budget. The child, its transcript, and its history
-  // all survive; opening it again reloads the provider session.
+  // all survive, and nothing is written to them; opening it again reloads the
+  // provider session.
   async retireIdleRuntimes(): Promise<void> {
     for (const { parent, child } of retirableChildRuntimes(
       this.parents.values(),
@@ -594,13 +594,6 @@ export class ChildSessions {
       this.d.childRuntimeIdleMs,
       (candidate) => this.childrenAwaitingDurability.has(childDurabilityKey(candidate.identity)),
     )) {
-      this.d.timeline.appendStatus(
-        parent.parentAppSessionId,
-        CHILD_RUNTIME_RETIRED_STATUS,
-        undefined,
-        child.identity.childSessionId,
-        child.role,
-      );
       await this.closeRuntime(parent, child, true);
     }
     this.armRetirement();

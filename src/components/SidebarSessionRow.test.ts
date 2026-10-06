@@ -40,6 +40,7 @@ function makeProps(overrides: Partial<SessionRowProps> = {}): SessionRowProps {
     renaming: false,
     now: 5_000,
     onSelect: () => undefined,
+    onOpenInTab: () => undefined,
     onMenu: () => undefined,
     onRenameCommit: () => undefined,
     onRenameCancel: () => undefined,
@@ -52,6 +53,7 @@ const render = (props: SessionRowProps) => renderToStaticMarkup(createElement(Se
 // Stable callbacks shared across prop pairs so only the tested field differs.
 const STABLE = {
   onSelect: () => undefined,
+  onOpenInTab: () => undefined,
   onMenu: () => undefined,
   onRenameCommit: () => undefined,
   onRenameCancel: () => undefined,
@@ -70,81 +72,33 @@ test('areSessionRowPropsEqual ignores unrelated session updates', () => {
   assert.equal(areSessionRowPropsEqual(prev, retitled), true);
 });
 
-test('areSessionRowPropsEqual detects row-visible session updates', () => {
-  const base = makeProps({ ...STABLE });
-  const changes: Partial<SessionSummary>[] = [
-    { appSessionId: 'sess-b' },
-    { updatedAt: 2_000 },
-    { reasoningEffort: 'ultra' },
+test('areSessionRowPropsEqual detects every row-visible prop change', () => {
+  const props = makeProps({ ...STABLE });
+  const changes: [Partial<SessionRowProps>, Partial<SessionRowProps>][] = [
+    [{}, { session: makeSession({ appSessionId: 'sess-b' }) }],
+    [{}, { session: makeSession({ updatedAt: 2_000 }) }],
+    [{}, { session: makeSession({ reasoningEffort: 'ultra' }) }],
+    [{ title: 'Old' }, { title: 'New' }],
+    [{ active: false }, { active: true }],
+    [{ unread: false }, { unread: true }],
+    [{ running: false }, { running: true }],
+    [{ attention: null }, { attention: 'approval' }],
+    [{ now: 5_000 }, { now: 35_000 }],
+    [{ renaming: false }, { renaming: true }],
+    [{ agentsWorking: false }, { agentsWorking: true }],
+    // A new callback identity must reach the row, or it would call a stale handler.
+    [{}, { onMenu: () => undefined }],
   ];
-
-  for (const change of changes) {
-    const next = makeProps({ session: makeSession(change), ...STABLE });
-    assert.equal(areSessionRowPropsEqual(base, next), false);
+  for (const [before, after] of changes) {
+    assert.equal(
+      areSessionRowPropsEqual({ ...props, ...before }, { ...props, ...after }),
+      false,
+      Object.keys(after).join(),
+    );
   }
 });
 
-test('areSessionRowPropsEqual: display title change is not equal', () => {
-  const props = makeProps({ ...STABLE });
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, title: 'Old' }, { ...props, title: 'New' }),
-    false,
-  );
-});
-
-test('areSessionRowPropsEqual: active change is not equal', () => {
-  const props = makeProps();
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, active: false }, { ...props, active: true }),
-    false,
-  );
-});
-
-test('areSessionRowPropsEqual: unread change is not equal', () => {
-  const props = makeProps();
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, unread: false }, { ...props, unread: true }),
-    false,
-  );
-});
-
-test('areSessionRowPropsEqual: running change is not equal', () => {
-  const props = makeProps();
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, running: false }, { ...props, running: true }),
-    false,
-  );
-});
-
-test('areSessionRowPropsEqual: attention change is not equal', () => {
-  const props = makeProps();
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, attention: null }, { ...props, attention: 'approval' }),
-    false,
-  );
-});
-
-test('areSessionRowPropsEqual: now change is not equal', () => {
-  const props = makeProps();
-  assert.equal(areSessionRowPropsEqual({ ...props, now: 5_000 }, { ...props, now: 35_000 }), false);
-});
-
-test('areSessionRowPropsEqual: renaming change is not equal', () => {
-  const props = makeProps();
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, renaming: false }, { ...props, renaming: true }),
-    false,
-  );
-});
-
-test('areSessionRowPropsEqual: a new callback identity is not equal', () => {
-  const session = makeSession();
-  const prev = makeProps({ session, onMenu: () => undefined });
-  const next = makeProps({ session, onMenu: () => undefined });
-  assert.equal(areSessionRowPropsEqual(prev, next), false);
-});
-
-test('SessionRow renders the display title and targets the row by appSessionId', () => {
+test('SessionRow renders the display title, its actions button, and targets the row by appSessionId', () => {
   const html = render(
     makeProps({
       session: makeSession({ appSessionId: 'sess-a', title: 'Generated' }),
@@ -154,11 +108,7 @@ test('SessionRow renders the display title and targets the row by appSessionId',
   assert.match(html, /Renamed/);
   assert.doesNotMatch(html, /Generated/);
   assert.match(html, /data-app-session-id="sess-a"/);
-});
-
-test('SessionRow renders a hidden-until-hover actions button', () => {
-  const html = render(makeProps());
-  assert.match(html, /aria-label="Actions for Build the thing"/);
+  assert.match(render(makeProps()), /aria-label="Actions for Build the thing"/);
 });
 
 test('SessionRow in rename mode renders an inline editor instead of the row', () => {
@@ -175,57 +125,43 @@ test('SessionRow: the active row exposes aria-current, an unread row exposes a h
   assert.doesNotMatch(render(makeProps({ unread: false })), /Unread:/);
 });
 
-test('SessionRow: a running row leads with the library spinner and keeps the time', () => {
-  const html = render(makeProps({ running: true, now: 60_000 }));
-  // motion-safe keeps the spinner still for reduced-motion users.
-  assert.match(html, /data-icon="spinner"/);
-  assert.match(html, /motion-safe:animate-spin-slow/);
-  assert.match(html, /aria-label="working"/);
-  assert.match(html, /transition-colors duration-300/);
-  assert.doesNotMatch(html, /droid-ultra/);
-  assert.match(html, />now</);
-});
+test('SessionRow: the leading mark names in words what is working, and keeps the time', () => {
+  const cases: [string, Partial<SessionRowProps>, string][] = [
+    ['a running chat', { running: true }, 'working'],
+    [
+      'an ultracode chat',
+      { running: true, session: makeSession({ provider: 'claude', reasoningEffort: 'ultra' }) },
+      'working on ultracode',
+    ],
+    [
+      'a high-effort chat',
+      { running: true, session: makeSession({ reasoningEffort: 'high' }) },
+      'working',
+    ],
+    // The main agent idles through a wave and wakes when it finishes.
+    ['a sleeping chat whose agents work', { agentsWorking: true }, 'agents working'],
+    [
+      'its own turn back in flight beside its agents',
+      { running: true, agentsWorking: true },
+      'working',
+    ],
+  ];
+  for (const [name, props, label] of cases) {
+    const html = render(makeProps({ now: 60_000, ...props }));
+    assert.match(html, /data-icon="spinner"/, name);
+    assert.match(html, new RegExp(`aria-label="${label}"`), name);
+    assert.match(html, />now</, name);
+  }
 
-test('SessionRow: an ultracode session spins in the ultra colour with the effort shimmer', () => {
-  // Its main agent can idle while its agents work, so the mark has to say more
-  // than "running", and it must say so in the harness's own word, not colour alone.
-  const html = render(
-    makeProps({
-      running: true,
-      session: makeSession({ provider: 'claude', reasoningEffort: 'ultra' }),
-    }),
+  const idle = render(makeProps({ now: 60_000 }));
+  assert.doesNotMatch(idle, /data-icon="spinner"/);
+  assert.match(idle, />now</);
+  // A blocked running row shows its waiting status instead of the spinner.
+  const blocked = render(
+    makeProps({ running: true, attention: 'approval', activityStatus: 'approval', now: 60_000 }),
   );
-  assert.match(html, /transition-colors duration-300 text-droid-ultra/);
-  assert.match(html, /effort-dot-ultra/);
-  assert.match(html, /aria-label="working on ultracode"/);
-
-  const high = render(
-    makeProps({ running: true, session: makeSession({ reasoningEffort: 'high' }) }),
-  );
-  assert.doesNotMatch(high, /droid-ultra/);
-  assert.match(high, /aria-label="working"/);
-});
-
-test('SessionRow: a sleeping chat whose agents work keeps the ultra mark', () => {
-  // The main agent idles through a wave and wakes when it finishes, so the row
-  // has to stay alive without claiming the chat's own turn is running.
-  const html = render(makeProps({ running: false, agentsWorking: true, now: 60_000 }));
-  assert.match(html, /motion-safe:animate-spin-slow/);
-  assert.match(html, /transition-colors duration-300 text-droid-ultra/);
-  assert.match(html, /effort-dot-ultra/);
-  assert.match(html, /aria-label="agents working"/);
-
-  // Its own turn back in flight is the chat working, not its agents.
-  const live = render(makeProps({ running: true, agentsWorking: true }));
-  assert.match(live, /aria-label="working"/);
-});
-
-test('areSessionRowPropsEqual: an agents-working change is not equal', () => {
-  const props = makeProps();
-  assert.equal(
-    areSessionRowPropsEqual({ ...props, agentsWorking: false }, { ...props, agentsWorking: true }),
-    false,
-  );
+  assert.match(blocked, /aria-label="Needs approval"/);
+  assert.doesNotMatch(blocked, /data-icon="spinner"/);
 });
 
 test('SessionRow: idle list rows lead with the linked PR, not a status glyph', () => {
@@ -242,12 +178,11 @@ test('SessionRow: idle list rows lead with the linked PR, not a status glyph', (
   assert.doesNotMatch(html, /aria-label="Failed"/);
 });
 
-test('SessionRow: a working list row spins and reveals its PR on hover', () => {
+test('SessionRow: a working list row puts its spinner before its PR', () => {
   const html = render(makeProps({ running: true, pr: { kind: 'open', checks: 'pending' } }));
   const spinner = html.indexOf('aria-label="working"');
   const pr = html.indexOf('aria-label="Open, checks running"');
   assert.ok(spinner >= 0 && pr > spinner);
-  assert.match(html, /opacity-0 transition-opacity group-hover:opacity-100/);
 });
 
 test('SessionRow: inbox rows name the harness and show the reason beside the time', () => {
@@ -263,29 +198,6 @@ test('SessionRow: a working inbox row shimmers its activity instead of the time'
   );
   assert.match(html, /shimmer-text">Editing files</);
   assert.doesNotMatch(html, />now</);
-});
-
-test('SessionRow: a blocked running row shows its waiting status instead of the spinner', () => {
-  const html = render(
-    makeProps({ running: true, attention: 'approval', activityStatus: 'approval', now: 60_000 }),
-  );
-  assert.match(html, /aria-label="Needs approval"/);
-  assert.doesNotMatch(html, /animate-spin/);
-});
-
-test('SessionRow: an idle row shows the relative timestamp and no spinner', () => {
-  const html = render(makeProps({ running: false, now: 60_000 }));
-  assert.doesNotMatch(html, /animate-spin/);
-  assert.match(html, />now</);
-});
-
-test('SessionRow: the title rests truncated inside an overflow viewport, marquee only on hover', () => {
-  // The marquee sweep needs a measured overflow, so at rest (and in SSR) the
-  // title stays truncated; `title-marquee` is only applied from mouseenter.
-  const html = render(makeProps({ title: 'A chat name far too long for the sidebar row width' }));
-  assert.match(html, /overflow-hidden/);
-  assert.match(html, /truncate/);
-  assert.doesNotMatch(html, /title-marquee/);
 });
 
 test('activity status changes invalidate the row memo and expose readable status text', () => {

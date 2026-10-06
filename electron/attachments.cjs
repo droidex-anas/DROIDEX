@@ -334,7 +334,6 @@ module.exports = {
   save,
   saveFile,
   discard,
-  decodeImageDataUrl,
   sanitizeAttachmentName,
   writeExclusive,
   evictToBudget,

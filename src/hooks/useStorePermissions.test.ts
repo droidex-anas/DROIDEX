@@ -30,34 +30,27 @@ function makeQuestion(appSessionId: string) {
   return action;
 }
 
-test('permission requests stay scoped to the session that asked', () => {
-  const withFirst = reducer(initialState, makePermission('app-1'));
-  const withBoth = reducer(withFirst, makePermission('app-2'));
-
+test('permission requests stay scoped to the session that asked and clear only there', () => {
+  const withBoth = reducer(reducer(initialState, makePermission('app-1')), makePermission('app-2'));
   assert.equal(withBoth.pendingPermissions['app-1']?.[0]?.requestId, 'req-app-1');
   assert.equal(withBoth.pendingPermissions['app-2']?.[0]?.requestId, 'req-app-2');
-});
 
-test('answering a permission clears only that sessions request', () => {
-  const withBoth = reducer(reducer(initialState, makePermission('app-1')), makePermission('app-2'));
-  const next = reducer(withBoth, {
+  const answered = reducer(withBoth, {
     type: 'CLEAR_PERMISSION',
     appSessionId: 'app-1',
     requestId: 'req-app-1',
   });
+  assert.equal(answered.pendingPermissions['app-1'], undefined);
+  assert.equal(answered.pendingPermissions['app-2']?.[0]?.requestId, 'req-app-2');
 
-  assert.equal(next.pendingPermissions['app-1'], undefined);
-  assert.equal(next.pendingPermissions['app-2']?.[0]?.requestId, 'req-app-2');
-});
-
-test('clearing a permission that is not pending leaves other sessions intact', () => {
+  // Clearing a permission that is not pending leaves other sessions intact.
   const withOne = reducer(initialState, makePermission('app-1'));
-  const next = reducer(withOne, {
+  const notPending = reducer(withOne, {
     type: 'CLEAR_PERMISSION',
     appSessionId: 'app-2',
     requestId: 'req-app-2',
   });
-  assert.equal(next.pendingPermissions['app-1']?.[0]?.requestId, 'req-app-1');
+  assert.equal(notPending.pendingPermissions['app-1']?.[0]?.requestId, 'req-app-1');
 });
 
 test('two permissions settle by request id and reveal the oldest unanswered request', () => {
@@ -102,22 +95,6 @@ test('two permissions settle by request id and reveal the oldest unanswered requ
   assert.equal(secondSettled.pendingPermissions['app-1'], undefined);
 });
 
-test('questions stay scoped to the session that asked', () => {
-  const withFirst = reducer(initialState, makeQuestion('app-1'));
-  const withBoth = reducer(withFirst, makeQuestion('app-2'));
-
-  assert.equal(withBoth.pendingQuestions['app-1']?.[0]?.requestId, 'req-app-1');
-  assert.equal(withBoth.pendingQuestions['app-2']?.[0]?.requestId, 'req-app-2');
-
-  const answered = reducer(withBoth, {
-    type: 'CLEAR_QUESTION',
-    appSessionId: 'app-2',
-    requestId: 'req-app-2',
-  });
-  assert.equal(answered.pendingQuestions['app-2'], undefined);
-  assert.equal(answered.pendingQuestions['app-1']?.[0]?.requestId, 'req-app-1');
-});
-
 test('closing a session drops its pending permission and question', () => {
   const withPermission = reducer(initialState, makePermission('app-1'));
   const withBoth = reducer(withPermission, makeQuestion('app-1'));
@@ -125,28 +102,6 @@ test('closing a session drops its pending permission and question', () => {
 
   assert.equal(next.pendingPermissions['app-1'], undefined);
   assert.equal(next.pendingQuestions['app-1'], undefined);
-});
-
-test('a spec permission still seeds the session spec while pending', () => {
-  const action = adaptEvent({
-    type: 'approval.requested' as const,
-    request: {
-      appSessionId: 'app-1',
-      requestId: 'req-spec',
-      kind: 'spec' as const,
-      title: 'Plan ready for review',
-      detail: '# Plan',
-      plan: '# Plan',
-      canAlwaysAllow: true,
-      raw: {},
-    },
-  });
-  assert.ok(action);
-  const next = reducer(initialState, action);
-
-  assert.equal(next.pendingPermissions['app-1']?.[0]?.kind, 'spec');
-  assert.equal(next.sessionSpecs['app-1']?.content, '# Plan');
-  assert.equal(next.specPlans['app-1'], '# Plan');
 });
 
 test('queued questions survive out-of-order cancellation and duplicate delivery', () => {
@@ -173,7 +128,7 @@ test('queued questions survive out-of-order cancellation and duplicate delivery'
   assert.equal(settled.pendingQuestions['app-1'], undefined);
 });
 
-test('the spec reader shows the plan of the approval the bar answers', () => {
+test('a pending spec approval seeds the spec reader with the plan the bar answers', () => {
   const plan = (requestId: string, content: string) => {
     const action = adaptEvent({
       type: 'approval.requested',
@@ -192,16 +147,26 @@ test('the spec reader shows the plan of the approval the bar answers', () => {
     return action;
   };
   const both = reducer(reducer(initialState, plan('a', 'plan A')), plan('b', 'plan B'));
+  assert.equal(both.pendingPermissions['app-1']?.[0]?.kind, 'spec');
   assert.equal(both.pendingPermissions['app-1']?.[0]?.requestId, 'a');
   assert.equal(both.sessionSpecs['app-1']?.content, 'plan A');
+  assert.equal(both.specPlans['app-1'], 'plan A');
 
   const next = reducer(both, { type: 'CLEAR_PERMISSION', appSessionId: 'app-1', requestId: 'a' });
   assert.equal(next.sessionSpecs['app-1']?.content, 'plan B');
   assert.equal(next.specPlans['app-1'], 'plan B');
 });
 
-test('a question another chat answered stops asking, and only that request clears', () => {
+test('a question answered here or in another chat stops asking, and only that request clears', () => {
   const asked = reducer(reducer(initialState, makeQuestion('app-1')), makeQuestion('app-2'));
+  const answeredHere = reducer(asked, {
+    type: 'CLEAR_QUESTION',
+    appSessionId: 'app-2',
+    requestId: 'req-app-2',
+  });
+  assert.equal(answeredHere.pendingQuestions['app-2'], undefined);
+  assert.equal(answeredHere.pendingQuestions['app-1']?.[0]?.requestId, 'req-app-1');
+
   const stale = adaptEvent({ type: 'question.answered', appSessionId: 'app-1', requestId: 'old' });
   assert.ok(stale);
   assert.equal(reducer(asked, stale).pendingQuestions['app-1']?.[0]?.requestId, 'req-app-1');

@@ -48,13 +48,11 @@ function event(
   };
 }
 
-test('terminal tab shortcut requires Ctrl+backtick', () => {
+test('the terminal tab shortcut is Ctrl+backtick and terminal shortcut targets stay owned by xterm', () => {
   assert.equal(isTerminalTabShortcut({ ctrlKey: true, key: '`' }), true);
   assert.equal(isTerminalTabShortcut({ ctrlKey: false, key: '`' }), false);
   assert.equal(isTerminalTabShortcut({ ctrlKey: true, key: 'r' }), false);
-});
 
-test('terminal shortcut targets stay owned by xterm', () => {
   const terminalTarget = {
     closest(selector: string) {
       return selector === '[data-terminal-input]' ? {} : null;
@@ -67,7 +65,7 @@ test('terminal shortcut targets stay owned by xterm', () => {
   assert.equal(isTerminalInputTarget(null), false);
 });
 
-test('transcript find uses Cmd/Ctrl+F and does not collide with existing app bindings', () => {
+test('transcript find and its next/previous chords use unbound keys that do not collide with app bindings', () => {
   assert.equal(isTranscriptFindShortcut(event({ ctrlKey: true, key: 'f' })), true);
   assert.equal(isTranscriptFindShortcut(event({ metaKey: true, key: 'F' })), true);
   for (const binding of existingAppBindings) {
@@ -87,9 +85,7 @@ test('transcript find uses Cmd/Ctrl+F and does not collide with existing app bin
       `${binding.name} must not be find previous`,
     );
   }
-});
 
-test('find next and previous use unbound G/F3 chords', () => {
   assert.equal(isTranscriptFindNextShortcut(event({ ctrlKey: true, key: 'g' })), true);
   assert.equal(isTranscriptFindNextShortcut(event({ key: 'F3' })), true);
   assert.equal(

@@ -1,4 +1,4 @@
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { Children, createContext, isValidElement, useContext, memo, type ReactNode } from 'react';
@@ -86,25 +86,32 @@ function appFenceIsFinished(
   return fences.find((fence) => fence.startLine === startLine)?.complete ?? !streaming;
 }
 
+type HastElement = NonNullable<ExtraProps['node']>;
+
+function hastText(node: HastElement['children'][number]): string {
+  if (node.type === 'text') return node.value;
+  return 'children' in node ? node.children.map(hastText).join('') : '';
+}
+
+// The markdown parser ends every fence body with a newline the author never
+// typed; keeping it would add a blank gutter line and a stray newline on copy.
+function fenceText(code: HastElement): string {
+  return code.children.map(hastText).join('').replace(/\n$/, '');
+}
+
 function MarkdownFence({
   className,
   specMode,
   startLine,
-  children,
+  codeText,
 }: {
   className?: string;
   specMode: boolean;
   startLine?: number;
-  children?: ReactNode;
+  codeText: string;
 }) {
   const { allowGeneratedContent, buildingAppBlocks, cutOffAppBlocks, appFences } =
     useContext(FenceOptionsContext);
-  const inline = !className;
-  // Inline code owns its own pill, and inside a transcript a mention that names
-  // a file opens it in Review.
-  if (inline) return <InlineCode>{children}</InlineCode>;
-
-  const codeText = typeof children === 'string' ? children : '';
 
   if (allowGeneratedContent && isAppLang(className)) {
     const isComplete = appFenceIsFinished(appFences, startLine, buildingAppBlocks);
@@ -323,31 +330,25 @@ function createMarkdownComponents(specMode: boolean): Components {
     img: ({ src, alt, title }) =>
       typeof src === 'string' ? <TranscriptImage reference={src} alt={alt} title={title} /> : null,
     hr: () => <hr className={`border-0 h-px bg-droid-border/25 ${specMode ? 'my-8' : 'my-4'}`} />,
-    // Every fenced renderer below owns its frame and preformatted region.
-    // Removing react-markdown's wrapper avoids invalid <pre><div> nesting.
+    // A fence is the only markdown that produces <pre>, so <pre> owns block
+    // code and <code> is always inline. A fence without a language therefore
+    // still gets a code card instead of an inline pill on every line, and each
+    // fenced renderer owns its frame, avoiding invalid <pre><div> nesting.
     pre: ({ children, node }) => {
-      const child = node?.children.at(0);
-      const className = child && 'properties' in child ? child.properties.className : undefined;
-      const hasFenceLanguage = Array.isArray(className)
-        ? className.length > 0
-        : typeof className === 'string' && className.length > 0;
-      return hasFenceLanguage ? (
-        <>{children}</>
-      ) : (
-        <pre className="my-2.5 overflow-x-auto rounded-xl border border-droid-border bg-droid-elevated/40 p-3.5 whitespace-pre">
-          {children}
-        </pre>
+      const fence = node?.children.at(0);
+      if (fence?.type !== 'element' || fence.tagName !== 'code') return <pre>{children}</pre>;
+      const classNames = hastClassNames(fence);
+      return (
+        <MarkdownFence
+          className={classNames.length > 0 ? classNames.join(' ') : undefined}
+          specMode={specMode}
+          startLine={fence.position?.start.line}
+          codeText={fenceText(fence)}
+        />
       );
     },
-    code: ({ className, children, node }) => (
-      <MarkdownFence
-        className={className}
-        specMode={specMode}
-        startLine={node?.position?.start.line}
-      >
-        {children}
-      </MarkdownFence>
-    ),
+    // Inside a transcript, an inline mention that names a file opens it in Review.
+    code: ({ children }) => <InlineCode>{children}</InlineCode>,
     ...markdownTableComponents(specMode),
   };
 }

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import type { RequestBrowser } from '../browser/desktopBrowserChannel.js';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -21,6 +23,7 @@ import {
   type StreamGate,
 } from './fakeFactoryRuntime.js';
 import { FakeHistoryIndex } from './historyCharacterizationSupport.js';
+import { sessionSummary } from './sessionSummaryFixture.js';
 
 /* eslint-disable @typescript-eslint/dot-notation -- ProcessEnv requires indexed access under strict TypeScript. */
 
@@ -294,7 +297,89 @@ export function createSessionManagerTestContext(
   };
 }
 
-export function createNativeBrowserTestContext(): NativeBrowserTestContext {
+export type SessionCreateInput = Parameters<SessionManagerTestContext['create']>[0];
+export type ErrorEvent = Extract<Protocol.ServerEvent, { type: 'error' }>;
+
+export function chatCommand(
+  clientRef: string,
+  patch: Partial<SessionCreateInput> = {},
+): SessionCreateInput {
+  return {
+    sessionPurpose: 'chat',
+    clientRef,
+    title: clientRef,
+    goal: 'hello',
+    interactionMode: 'auto',
+    autonomy: 'low',
+    ...patch,
+  };
+}
+
+/** A stored primary chat that is not live, as the history index returns it. */
+export function historicalSummary(
+  appSessionId: string,
+  providerSessionId: string,
+): Protocol.SessionSummary {
+  return sessionSummary({
+    appSessionId,
+    providerSessionId,
+    title: `Historical ${appSessionId}`,
+    goal: '',
+    workspaceKind: 'none',
+    streaming: false,
+    queuedSends: 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+}
+
+export const errorEvents = (events: Protocol.ServerEvent[]): ErrorEvent[] =>
+  events.filter((event): event is ErrorEvent => event.type === 'error');
+
+export const sessionUpdates = (events: Protocol.ServerEvent[], appSessionId?: string) =>
+  events.flatMap((event) =>
+    event.type === 'session.updated' &&
+    (appSessionId === undefined || event.session.appSessionId === appSessionId)
+      ? [event.session]
+      : [],
+  );
+
+export const providerCloses = (h: SessionManagerTestContext, providerSessionId?: string) =>
+  h.calls
+    .filter(
+      (call) =>
+        call.target === 'cleanup' &&
+        call.method === 'session.close' &&
+        (providerSessionId === undefined || call.args[0] === providerSessionId),
+    )
+    .map((call) => String(call.args[0]));
+
+export function notifyDaemonCompaction(
+  h: SessionManagerTestContext,
+  providerSessionId: string,
+  kind: 'started' | 'completed',
+  summaryId: string = randomUUID(),
+): void {
+  h.provider.emitNotification(providerSessionId, {
+    jsonrpc: '2.0',
+    method: 'droid.session_notification',
+    params: {
+      notification:
+        kind === 'started'
+          ? { type: 'droid_working_state_changed', newState: 'compacting_conversation' }
+          : {
+              type: 'session_compacted',
+              summaryId,
+              removedCount: 1,
+              visibleBoundaryMessageId: null,
+            },
+    },
+  });
+}
+
+export function createNativeBrowserTestContext(
+  requestBrowser: RequestBrowser,
+): NativeBrowserTestContext {
   const events: Protocol.ServerEvent[] = [];
   const recordEvent = (event: Protocol.ServerEvent): void => {
     events.push(event);
@@ -316,6 +401,7 @@ export function createNativeBrowserTestContext(): NativeBrowserTestContext {
     manager = new SessionManager(recordEvent, {
       initialModels: INITIAL_MODELS,
       providerProbes: NO_PROVIDER_PROBES,
+      requestBrowser,
     });
   } catch (error) {
     unpinTestHome();

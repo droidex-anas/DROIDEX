@@ -172,11 +172,6 @@ export function sanitizeDocxPreview(container: ParentNode): void {
   });
 }
 
-/** Maximum payload size the backend will return for a text-classified file. */
-export const TEXT_PREVIEW_CAP_BYTES = 5 * 1024 * 1024; // 5 MiB
-/** Maximum payload size the backend will return for binary-classified files. */
-export const BINARY_PREVIEW_CAP_BYTES = 25 * 1024 * 1024; // 25 MiB
-
 const TEXT_EXTENSIONS = new Set([
   // plain text
   'txt',
@@ -320,39 +315,6 @@ export function classifyByName(name: string): PreviewCategory {
   if (DOCX_EXTENSIONS.has(ext)) return 'docx';
   if (XLSX_EXTENSIONS.has(ext)) return 'xlsx';
   return 'external';
-}
-
-export function previewSizeCapBytes(category: PreviewCategory): number {
-  return category === 'text' ? TEXT_PREVIEW_CAP_BYTES : BINARY_PREVIEW_CAP_BYTES;
-}
-
-export function isPreviewable(category: PreviewCategory): boolean {
-  return category !== 'external';
-}
-
-export interface PreviewClassification {
-  category: PreviewCategory;
-  previewable: boolean;
-  sizeCapBytes: number;
-}
-
-export function classifyPreview(name: string): PreviewClassification {
-  const category = classifyByName(name);
-  return {
-    category,
-    previewable: isPreviewable(category),
-    sizeCapBytes: previewSizeCapBytes(category),
-  };
-}
-
-/**
- * Returns a short label suitable for a size badge. Centralised so the renderer
- * and any future empty-state copy stay consistent.
- */
-export function previewSizeLabel(category: PreviewCategory): string {
-  if (category === 'text') return '5 MiB text';
-  if (category === 'external') return 'Open externally';
-  return '25 MiB binary';
 }
 
 export async function loadPdfDocumentForPreview(

@@ -11,28 +11,7 @@ import {
   saveSessionNotes,
   type SessionNotesMap,
 } from './sessionNotes';
-
-function fakeStorage() {
-  const data = new Map<string, string>();
-  const storage: Storage = {
-    get length() {
-      return data.size;
-    },
-    clear: () => {
-      data.clear();
-    },
-    getItem: (key: string) => data.get(key) ?? null,
-    key: (index: number) => [...data.keys()][index] ?? null,
-    removeItem: (key: string) => {
-      data.delete(key);
-    },
-    setItem: (key: string, value: string) => {
-      data.set(key, value);
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
-  return data;
-}
+import { withLocalStorageMap } from '../test/localStorage';
 
 test('addSessionNote trims, prepends newest first, and rejects blank input', () => {
   const first = addSessionNote({}, 's1', '  remember the migration  ');
@@ -124,39 +103,38 @@ test('removeSessionNote drops the note and prunes empty sessions', () => {
 });
 
 test('session notes round-trip through localStorage, including used state', () => {
-  fakeStorage();
   const added = addSessionNote(addSessionNote({}, 's1', 'first') ?? {}, 's1', 'second') ?? {};
   const map = markSessionNoteUsed(added, 's1', added.s1[1].id) ?? added;
-  saveSessionNotes(map);
-  const loaded = loadSessionNotes();
-  assert.deepEqual(
-    loaded.s1.map((note) => note.text),
-    ['second', 'first'],
-  );
-  assert.equal(loaded.s1[1].usedAt, map.s1[1].usedAt);
-  assert.equal(loaded.s1[0].usedAt, null);
+  withLocalStorageMap({}, () => {
+    saveSessionNotes(map);
+    const loaded = loadSessionNotes();
+    assert.deepEqual(
+      loaded.s1.map((note) => note.text),
+      ['second', 'first'],
+    );
+    assert.equal(loaded.s1[1].usedAt, map.s1[1].usedAt);
+    assert.equal(loaded.s1[0].usedAt, null);
+  });
 });
 
 test('loadSessionNotes sanitizes corrupt payloads', () => {
-  const data = fakeStorage();
-  data.set(
-    'droid-session-notes',
-    JSON.stringify({
-      ok: [{ id: 'n1', text: 'keep me', createdAt: 1, usedAt: 42 }],
-      junkUsedAt: [{ id: 'n3', text: 'valid text', createdAt: 3, usedAt: 'yesterday' }],
-      blanks: [{ id: 'n2', text: '   ', createdAt: 2 }],
-      malformed: [{ id: 3, text: 4 }, 'junk', null],
-      notArray: 'nope',
-    }),
-  );
-  const loaded = loadSessionNotes();
-  assert.deepEqual(Object.keys(loaded).sort(), ['junkUsedAt', 'ok']);
-  assert.deepEqual(loaded.ok, [{ id: 'n1', text: 'keep me', createdAt: 1, usedAt: 42 }]);
-  // A non-numeric usedAt degrades to "unused" instead of breaking the note.
-  assert.equal(loaded.junkUsedAt[0].usedAt, null);
-
-  data.set('droid-session-notes', 'not json{');
-  assert.deepEqual(loadSessionNotes(), {});
-  data.set('droid-session-notes', '[1,2]');
-  assert.deepEqual(loadSessionNotes(), {});
+  const stored = JSON.stringify({
+    ok: [{ id: 'n1', text: 'keep me', createdAt: 1, usedAt: 42 }],
+    junkUsedAt: [{ id: 'n3', text: 'valid text', createdAt: 3, usedAt: 'yesterday' }],
+    blanks: [{ id: 'n2', text: '   ', createdAt: 2 }],
+    malformed: [{ id: 3, text: 4 }, 'junk', null],
+    notArray: 'nope',
+  });
+  withLocalStorageMap({ 'droid-session-notes': stored }, () => {
+    const loaded = loadSessionNotes();
+    assert.deepEqual(Object.keys(loaded).sort(), ['junkUsedAt', 'ok']);
+    assert.deepEqual(loaded.ok, [{ id: 'n1', text: 'keep me', createdAt: 1, usedAt: 42 }]);
+    // A non-numeric usedAt degrades to "unused" instead of breaking the note.
+    assert.equal(loaded.junkUsedAt[0].usedAt, null);
+  });
+  for (const corrupt of ['not json{', '[1,2]']) {
+    withLocalStorageMap({ 'droid-session-notes': corrupt }, () => {
+      assert.deepEqual(loadSessionNotes(), {});
+    });
+  }
 });

@@ -41,38 +41,84 @@ function fakeChild() {
   return child;
 }
 
-test('resolves Homebrew gh under a Finder-style PATH', async () => {
-  const probes = [];
-  const executable = await resolveGhExecutable({
-    env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', SHELL: '/bin/zsh' },
-    access: async (candidate) => {
-      if (candidate !== '/opt/homebrew/bin/gh') {
-        throw Object.assign(new Error('missing'), { code: 'ENOENT' });
-      }
-    },
-    runFile: async (file, args) => {
-      probes.push([file, args]);
-      return ghResult({ stdout: 'gh version 2.78.0' });
-    },
+// A child that ignores SIGTERM and closes only on SIGKILL.
+function stubbornChild() {
+  const child = fakeChild();
+  child.signals = [];
+  child.kill = (signal) => {
+    child.signals.push(signal ?? 'SIGTERM');
+    if (signal === 'SIGKILL') queueMicrotask(() => child.emit('close', null, 'SIGKILL'));
+    return true;
+  };
+  return child;
+}
+
+// gh writes these lines to stderr and exits successfully.
+function ghThatPrints(child, ...lines) {
+  return () => {
+    queueMicrotask(() => {
+      for (const line of lines) child.stderr.write(line);
+      child.emit('close', 0, null);
+    });
+    return child;
+  };
+}
+
+// A verification step that the test finishes by hand once it has started.
+function heldStep() {
+  let markStarted;
+  let finish;
+  const started = new Promise((resolve) => {
+    markStarted = resolve;
   });
+  const run = () => {
+    markStarted();
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  };
+  return { started, run, finish: (value) => finish(value) };
+}
 
-  assert.equal(executable, '/opt/homebrew/bin/gh');
-  assert.deepEqual(probes, [['/opt/homebrew/bin/gh', ['--version']]]);
-});
-
-test('prefers PATH and validates the executable before common locations', async () => {
-  const candidates = [];
-  const executable = await resolveGhExecutable({
-    env: { PATH: '/custom/bin:/usr/bin', SHELL: '/bin/zsh' },
-    access: async (candidate) => {
-      candidates.push(candidate);
-      if (candidate !== '/custom/bin/gh') throw new Error('unexpected candidate');
+// Timers the test fires by hand: timers[0] is the deadline, timers[1] the SIGKILL grace.
+function manualTimers() {
+  const timers = [];
+  return {
+    timers,
+    setTimer: (callback, timeoutMs) => {
+      const timer = { callback, timeoutMs, unref() {} };
+      timers.push(timer);
+      return timer;
     },
-    runFile: async () => ghResult({ stdout: 'gh version 2.78.0' }),
-  });
+    clearTimer: () => undefined,
+  };
+}
 
-  assert.equal(executable, '/custom/bin/gh');
-  assert.deepEqual(candidates, ['/custom/bin/gh']);
+test('resolves gh from PATH first, then from Homebrew under a Finder-style PATH', async () => {
+  const resolveFrom = async (PATH, installed) => {
+    const accessed = [];
+    const versionProbes = [];
+    const executable = await resolveGhExecutable({
+      env: { PATH, SHELL: '/bin/zsh' },
+      access: async (candidate) => {
+        accessed.push(candidate);
+        if (candidate !== installed) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      },
+      runFile: async (file, args) => {
+        versionProbes.push([file, args]);
+        return ghResult({ stdout: 'gh version 2.78.0' });
+      },
+    });
+    return { executable, accessed, versionProbes };
+  };
+
+  const fromPath = await resolveFrom('/custom/bin:/usr/bin', '/custom/bin/gh');
+  assert.equal(fromPath.executable, '/custom/bin/gh');
+  assert.deepEqual(fromPath.accessed, ['/custom/bin/gh']);
+
+  const fromHomebrew = await resolveFrom('/usr/bin:/bin:/usr/sbin:/sbin', '/opt/homebrew/bin/gh');
+  assert.equal(fromHomebrew.executable, '/opt/homebrew/bin/gh');
+  assert.deepEqual(fromHomebrew.versionProbes, [['/opt/homebrew/bin/gh', ['--version']]]);
 });
 
 test('uses the fixed login-shell lookup last and returns null when it is invalid', async () => {
@@ -92,25 +138,7 @@ test('uses the fixed login-shell lookup last and returns null when it is invalid
   assert.deepEqual(shellCalls, [['/bin/zsh', ['-lc', 'command -v gh']]]);
 });
 
-test('discovers gh from the configured login shell after common paths fail', async () => {
-  const executable = await resolveGhExecutable({
-    env: { PATH: '/usr/bin:/bin', SHELL: '/bin/zsh' },
-    access: async (candidate) => {
-      if (candidate !== '/custom/login/bin/gh') throw new Error('missing');
-    },
-    runFile: async (file, args) => {
-      if (file === '/bin/zsh') {
-        assert.deepEqual(args, ['-lc', 'command -v gh']);
-        return ghResult({ stdout: '/custom/login/bin/gh\n' });
-      }
-      return ghResult({ stdout: 'gh version 2.78.0' });
-    },
-  });
-
-  assert.equal(executable, '/custom/login/bin/gh');
-});
-
-test('discovers gh through the macOS login shell when Finder omits SHELL', async () => {
+test('discovers gh through the macOS login shell when Finder omits SHELL, ignoring banners', async () => {
   const executable = await resolveGhExecutable({
     platform: 'darwin',
     env: { PATH: '/usr/bin:/bin' },
@@ -120,23 +148,6 @@ test('discovers gh through the macOS login shell when Finder omits SHELL', async
     runFile: async (file, args) => {
       if (file === '/bin/zsh') {
         assert.deepEqual(args, ['-lc', 'command -v gh']);
-        return ghResult({ stdout: '/custom/login/bin/gh\n' });
-      }
-      return ghResult({ stdout: 'gh version 2.78.0' });
-    },
-  });
-
-  assert.equal(executable, '/custom/login/bin/gh');
-});
-
-test('ignores login-shell banner lines when discovering gh', async () => {
-  const executable = await resolveGhExecutable({
-    env: { PATH: '/usr/bin:/bin', SHELL: '/bin/zsh' },
-    access: async (candidate) => {
-      if (candidate !== '/custom/login/bin/gh') throw new Error('missing');
-    },
-    runFile: async (file) => {
-      if (file === '/bin/zsh') {
         return ghResult({ stdout: 'Welcome to this shell\n/custom/login/bin/gh\n' });
       }
       return ghResult({ stdout: 'gh version 2.78.0' });
@@ -147,53 +158,37 @@ test('ignores login-shell banner lines when discovering gh', async () => {
 });
 
 test('availability reports the supported recovery path when gh is missing', async () => {
-  const homebrew = await available({
-    runGh: async () => ghResult({ code: 1, spawnFailed: true }),
-    resolveBrew: async () => '/opt/homebrew/bin/brew',
-  });
-  assert.deepEqual(homebrew, {
-    installed: false,
-    authenticated: false,
-    installMethod: 'homebrew',
-  });
-
-  const manual = await available({
-    runGh: async () => ghResult({ code: 1, spawnFailed: true }),
-    resolveBrew: async () => null,
-  });
-  assert.deepEqual(manual, {
-    installed: false,
-    authenticated: false,
-    installMethod: 'manual',
-  });
+  for (const [brew, installMethod] of [
+    ['/opt/homebrew/bin/brew', 'homebrew'],
+    [null, 'manual'],
+  ]) {
+    const status = await available({
+      runGh: async () => ghResult({ code: 1, spawnFailed: true }),
+      resolveBrew: async () => brew,
+    });
+    assert.deepEqual(status, { installed: false, authenticated: false, installMethod });
+  }
 });
 
-test('resolves Apple Silicon Homebrew under a Finder-style PATH', async () => {
-  const executable = await resolveBrewExecutable({
-    env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', SHELL: '/bin/zsh' },
-    access: async (candidate) => {
-      if (candidate !== '/opt/homebrew/bin/brew') throw new Error('missing');
-    },
-    runFile: async (file, args) => {
-      assert.equal(file, '/opt/homebrew/bin/brew');
-      assert.deepEqual(args, ['--version']);
-      return ghResult({ stdout: 'Homebrew 4.6.0' });
-    },
-  });
+test('resolves Apple Silicon Homebrew first and Intel Homebrew when it is absent', async () => {
+  const resolveWith = (installed) =>
+    resolveBrewExecutable({
+      env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', SHELL: '/bin/zsh' },
+      access: async (candidate) => {
+        if (!installed.includes(candidate)) throw new Error('missing');
+      },
+      runFile: async (file, args) => {
+        assert.equal(file, installed[0]);
+        assert.deepEqual(args, ['--version']);
+        return ghResult({ stdout: 'Homebrew 4.6.0' });
+      },
+    });
 
-  assert.equal(executable, '/opt/homebrew/bin/brew');
-});
-
-test('resolves Intel Homebrew after the Apple Silicon location is absent', async () => {
-  const executable = await resolveBrewExecutable({
-    env: { PATH: '/usr/bin:/bin', SHELL: '/bin/zsh' },
-    access: async (candidate) => {
-      if (candidate !== '/usr/local/bin/brew') throw new Error('missing');
-    },
-    runFile: async () => ghResult({ stdout: 'Homebrew 4.6.0' }),
-  });
-
-  assert.equal(executable, '/usr/local/bin/brew');
+  assert.equal(
+    await resolveWith(['/opt/homebrew/bin/brew', '/usr/local/bin/brew']),
+    '/opt/homebrew/bin/brew',
+  );
+  assert.equal(await resolveWith(['/usr/local/bin/brew']), '/usr/local/bin/brew');
 });
 
 test('installs gh with a fixed Homebrew argument vector and verifies gh', async () => {
@@ -211,33 +206,20 @@ test('installs gh with a fixed Homebrew argument vector and verifies gh', async 
   assert.deepEqual(calls, [['/opt/homebrew/bin/brew', ['install', 'gh']]]);
 });
 
-test('installation reports a missing supported package manager', async () => {
-  const result = await install({ resolveBrew: async () => null });
-
-  assert.deepEqual(result, {
-    ok: false,
-    reason: 'installer_missing',
-    message: 'Homebrew is not installed.',
-  });
-});
-
 test('cancelling during Homebrew discovery never starts installation', async () => {
-  let finishDiscovery;
+  const discovery = heldStep();
   let installationStarted = false;
   const pending = install({
-    resolveBrew: async () =>
-      new Promise((resolve) => {
-        finishDiscovery = resolve;
-      }),
+    resolveBrew: discovery.run,
     execute: async () => {
       installationStarted = true;
       return { code: 0, timedOut: false };
     },
   });
-  await Promise.resolve();
+  await discovery.started;
 
   cancelSetup();
-  finishDiscovery('/opt/homebrew/bin/brew');
+  discovery.finish('/opt/homebrew/bin/brew');
 
   assert.deepEqual(await pending, {
     ok: false,
@@ -262,25 +244,16 @@ test('installation verifies gh even when Homebrew exits successfully', async () 
 });
 
 test('cancelling during post-install verification cannot report success', async () => {
-  let verificationStarted;
-  const started = new Promise((resolve) => {
-    verificationStarted = resolve;
-  });
-  let finishVerification;
+  const verification = heldStep();
   const pending = install({
     resolveBrew: async () => '/opt/homebrew/bin/brew',
     execute: async () => ({ code: 0, timedOut: false }),
-    resolveGh: async () => {
-      verificationStarted();
-      return new Promise((resolve) => {
-        finishVerification = resolve;
-      });
-    },
+    resolveGh: verification.run,
   });
-  await started;
+  await verification.started;
 
   cancelSetup();
-  finishVerification('/opt/homebrew/bin/gh');
+  verification.finish('/opt/homebrew/bin/gh');
 
   assert.deepEqual(await pending, {
     ok: false,
@@ -289,7 +262,13 @@ test('cancelling during post-install verification cannot report success', async 
   });
 });
 
-test('installation reports Homebrew failure and timeout without raw output', async () => {
+test('installation reports a missing Homebrew, its failure, and its timeout without raw output', async () => {
+  assert.deepEqual(await install({ resolveBrew: async () => null }), {
+    ok: false,
+    reason: 'installer_missing',
+    message: 'Homebrew is not installed.',
+  });
+
   const failed = await install({
     resolveBrew: async () => '/opt/homebrew/bin/brew',
     execute: async () => ({ code: 1, timedOut: false, stderr: 'private package details' }),
@@ -314,11 +293,11 @@ test('installation reports Homebrew failure and timeout without raw output', asy
 test('timed-out installation stays active until the child exits and escalates termination', async () => {
   const child = new EventEmitter();
   const killSignals = [];
-  const timers = [];
   child.kill = (signal) => {
     killSignals.push(signal ?? 'SIGTERM');
     return true;
   };
+  const { timers, ...timerOptions } = manualTimers();
   const operation = { child: null };
   let settled = false;
 
@@ -327,12 +306,7 @@ test('timed-out installation stays active until the child exits and escalates te
     terminationGraceMs: 25,
     operation,
     spawnProcess: () => child,
-    setTimer: (callback, timeoutMs) => {
-      const timer = { callback, timeoutMs, unref() {} };
-      timers.push(timer);
-      return timer;
-    },
-    clearTimer: () => undefined,
+    ...timerOptions,
   }).then((result) => {
     settled = true;
     return result;
@@ -356,17 +330,8 @@ test('timed-out installation stays active until the child exits and escalates te
 });
 
 test('cancelling installation escalates when Homebrew ignores SIGTERM', async () => {
-  const child = new EventEmitter();
-  const killSignals = [];
-  const timers = [];
-  child.kill = (signal) => {
-    const normalizedSignal = signal ?? 'SIGTERM';
-    killSignals.push(normalizedSignal);
-    if (normalizedSignal === 'SIGKILL') {
-      queueMicrotask(() => child.emit('close', null, normalizedSignal));
-    }
-    return true;
-  };
+  const child = stubbornChild();
+  const { timers, ...timerOptions } = manualTimers();
   const pending = install({
     resolveBrew: async () => '/opt/homebrew/bin/brew',
     execute: (file, args, options) =>
@@ -374,23 +339,18 @@ test('cancelling installation escalates when Homebrew ignores SIGTERM', async ()
         ...options,
         terminationGraceMs: 25,
         spawnProcess: () => child,
-        setTimer: (callback, timeoutMs) => {
-          const timer = { callback, timeoutMs, unref() {} };
-          timers.push(timer);
-          return timer;
-        },
-        clearTimer: () => undefined,
+        ...timerOptions,
       }),
     resolveGh: async () => '/opt/homebrew/bin/gh',
   });
   await Promise.resolve();
 
   cancelSetup();
-  assert.deepEqual(killSignals, ['SIGTERM']);
+  assert.deepEqual(child.signals, ['SIGTERM']);
   assert.equal(timers[1].timeoutMs, 25);
   timers[1].callback();
 
-  assert.deepEqual(killSignals, ['SIGTERM', 'SIGKILL']);
+  assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL']);
   assert.deepEqual(await pending, {
     ok: false,
     reason: 'cancelled',
@@ -399,16 +359,13 @@ test('cancelling installation escalates when Homebrew ignores SIGTERM', async ()
 });
 
 test('only one GitHub setup operation runs at a time', async () => {
-  let finishInstall;
+  const installation = heldStep();
   const first = install({
     resolveBrew: async () => '/opt/homebrew/bin/brew',
-    execute: async () =>
-      new Promise((resolve) => {
-        finishInstall = () => resolve({ code: 0, timedOut: false });
-      }),
+    execute: installation.run,
     resolveGh: async () => '/opt/homebrew/bin/gh',
   });
-  await Promise.resolve();
+  await installation.started;
 
   const second = await install({ resolveBrew: async () => '/opt/homebrew/bin/brew' });
   assert.deepEqual(second, {
@@ -417,7 +374,7 @@ test('only one GitHub setup operation runs at a time', async () => {
     message: 'GitHub setup is already running.',
   });
 
-  finishInstall();
+  installation.finish({ code: 0, timedOut: false });
   assert.deepEqual(await first, { ok: true });
 });
 
@@ -429,95 +386,41 @@ test('accepts only the exact GitHub device-login URL', () => {
   assert.equal(isGithubDeviceUrl('not a URL'), false);
 });
 
-test('browser authentication lets gh open its emitted device URL exactly once', async () => {
-  const deviceCodes = [];
-  const child = fakeChild();
-  const pending = authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: (file, args, options) => {
-      assert.equal(file, '/opt/homebrew/bin/gh');
-      assert.deepEqual(args, [
-        'auth',
-        'login',
-        '--hostname',
-        'github.com',
-        '--git-protocol',
-        'https',
-        '--web',
-        '--clipboard',
-        '--skip-ssh-key',
-      ]);
-      assert.deepEqual(options.stdio, ['ignore', 'pipe', 'pipe']);
-      queueMicrotask(() => {
-        child.stderr.write('First copy your one-time code: ABCD-7HJK\n');
-        child.stderr.write('Open this URL to continue: https://github.com/login/');
-        child.stderr.write('device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    onDeviceCode: (code) => deviceCodes.push(code),
-    verifyAuth: async () => true,
-  });
+test('browser authentication lets gh open its device URL and exposes only well-formed codes', async () => {
+  const command =
+    'auth login --hostname github.com --git-protocol https --web --clipboard --skip-ssh-key';
+  for (const [codeLine, expectedCodes] of [
+    ['First copy your one-time code: ABCD-7HJK\n', ['ABCD-7HJK']],
+    ['First copy your one-time code: not-a-code\n', []],
+  ]) {
+    const deviceCodes = [];
+    // The URL arrives split across two writes, as a pipe may deliver it.
+    const printDeviceLogin = ghThatPrints(
+      fakeChild(),
+      codeLine,
+      'Open this URL to continue: https://github.com/login/',
+      'device\n',
+    );
+    const result = await authenticate({
+      resolveGh: async () => '/opt/homebrew/bin/gh',
+      spawnProcess: (file, args, options) => {
+        assert.equal(file, '/opt/homebrew/bin/gh');
+        assert.deepEqual(args, command.split(' '));
+        assert.deepEqual(options.stdio, ['ignore', 'pipe', 'pipe']);
+        return printDeviceLogin();
+      },
+      onDeviceCode: (code) => deviceCodes.push(code),
+      verifyAuth: async () => true,
+    });
 
-  assert.deepEqual(await pending, { ok: true });
-  assert.deepEqual(deviceCodes, ['ABCD-7HJK']);
-});
-
-test('browser authentication never exposes malformed device codes', async () => {
-  const deviceCodes = [];
-  const child = fakeChild();
-  const result = await authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      queueMicrotask(() => {
-        child.stderr.write('First copy your one-time code: not-a-code\n');
-        child.stderr.write('https://github.com/login/device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    onDeviceCode: (code) => deviceCodes.push(code),
-    verifyAuth: async () => true,
-  });
-
-  assert.deepEqual(result, { ok: true });
-  assert.deepEqual(deviceCodes, []);
-});
-
-test('browser authentication rejects a non-GitHub verification URL', async () => {
-  const child = fakeChild();
-  const result = await authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      queueMicrotask(() => {
-        child.stderr.write('Open this URL: https://github.com.evil.test/login/device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    verifyAuth: async () => true,
-  });
-
-  assert.deepEqual(result, {
-    ok: false,
-    reason: 'browser_failed',
-    message: 'GitHub CLI did not provide a trusted sign-in page.',
-  });
+    assert.deepEqual(result, { ok: true }, codeLine);
+    assert.deepEqual(deviceCodes, expectedCodes, codeLine);
+  }
 });
 
 test('browser URL rejection stays owned until bounded termination closes the child', async () => {
-  const child = fakeChild();
-  const killSignals = [];
-  const timers = [];
-  child.kill = (signal) => {
-    const normalizedSignal = signal ?? 'SIGTERM';
-    killSignals.push(normalizedSignal);
-    if (normalizedSignal === 'SIGKILL') {
-      queueMicrotask(() => child.emit('close', null, normalizedSignal));
-    }
-    return true;
-  };
+  const child = stubbornChild();
+  const { timers, ...timerOptions } = manualTimers();
   let settled = false;
   const pending = authenticate({
     resolveGh: async () => '/opt/homebrew/bin/gh',
@@ -525,12 +428,7 @@ test('browser URL rejection stays owned until bounded termination closes the chi
     verifyAuth: async () => true,
     authTimeoutMs: 1_000,
     terminationGraceMs: 25,
-    setTimer: (callback, timeoutMs) => {
-      const timer = { callback, timeoutMs, unref() {} };
-      timers.push(timer);
-      return timer;
-    },
-    clearTimer: () => undefined,
+    ...timerOptions,
   }).then((result) => {
     settled = true;
     return result;
@@ -541,11 +439,11 @@ test('browser URL rejection stays owned until bounded termination closes the chi
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(settled, false);
-  assert.deepEqual(killSignals, ['SIGTERM']);
+  assert.deepEqual(child.signals, ['SIGTERM']);
   assert.equal(timers[1].timeoutMs, 25);
   timers[1].callback();
 
-  assert.deepEqual(killSignals, ['SIGTERM', 'SIGKILL']);
+  assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL']);
   assert.deepEqual(await pending, {
     ok: false,
     reason: 'browser_failed',
@@ -553,206 +451,71 @@ test('browser URL rejection stays owned until bounded termination closes the chi
   });
 });
 
-test('browser authentication requires final gh auth verification', async () => {
-  const child = fakeChild();
-  const result = await authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      queueMicrotask(() => {
-        child.stderr.write('https://github.com/login/device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    verifyAuth: async () => false,
-  });
-
-  assert.deepEqual(result, {
-    ok: false,
-    reason: 'auth_failed',
-    message: 'GitHub CLI could not verify the signed-in account.',
-  });
-});
-
-test('browser authentication handles verification rejection and releases the setup lock', async () => {
-  const child = fakeChild();
-  const result = await authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      queueMicrotask(() => {
-        child.stderr.write('https://github.com/login/device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    verifyAuth: async () => {
+test('browser authentication requires final gh auth verification and releases the setup lock', async () => {
+  for (const verifyAuth of [
+    async () => false,
+    async () => {
       throw new Error('verification failed');
     },
-  });
+  ]) {
+    const child = fakeChild();
+    const result = await authenticate({
+      resolveGh: async () => '/opt/homebrew/bin/gh',
+      spawnProcess: ghThatPrints(child, 'https://github.com/login/device\n'),
+      verifyAuth,
+    });
 
-  assert.deepEqual(result, {
-    ok: false,
-    reason: 'auth_failed',
-    message: 'GitHub CLI could not verify the signed-in account.',
-  });
+    assert.deepEqual(result, {
+      ok: false,
+      reason: 'auth_failed',
+      message: 'GitHub CLI could not verify the signed-in account.',
+    });
+  }
   assert.notEqual((await authenticate({ resolveGh: async () => null })).reason, 'busy');
 });
 
-test('browser authentication times out and terminates its child', async () => {
-  const child = fakeChild();
-  const result = await authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      setImmediate(() => child.emit('close', 1, null));
-      return child;
-    },
-    verifyAuth: async () => true,
-    authTimeoutMs: 25,
-    setTimer: (callback, timeoutMs) => {
-      assert.ok(timeoutMs === 25 || timeoutMs === 5_000);
-      if (timeoutMs === 25) queueMicrotask(callback);
-      return { unref() {} };
-    },
-    clearTimer: () => undefined,
-  });
+test('a timed-out or cancelled browser authentication escalates when its child ignores SIGTERM', async () => {
+  const outcomes = [
+    ['timeout', (timers) => timers[0].callback(), 'GitHub sign-in timed out.'],
+    ['cancelled', () => cancelSetup(), 'GitHub sign-in was cancelled.'],
+  ];
+  for (const [reason, interrupt, message] of outcomes) {
+    const child = stubbornChild();
+    const { timers, ...timerOptions } = manualTimers();
+    const pending = authenticate({
+      resolveGh: async () => '/opt/homebrew/bin/gh',
+      spawnProcess: () => child,
+      verifyAuth: async () => true,
+      authTimeoutMs: 100,
+      terminationGraceMs: 25,
+      ...timerOptions,
+    });
+    await Promise.resolve();
 
-  assert.equal(child.killed, true);
-  assert.deepEqual(result, {
-    ok: false,
-    reason: 'timeout',
-    message: 'GitHub sign-in timed out.',
-  });
-});
+    assert.equal(timers[0].timeoutMs, 100, reason);
+    interrupt(timers);
+    await Promise.resolve();
+    assert.deepEqual(child.signals, ['SIGTERM'], reason);
 
-test('timed-out browser authentication escalates when its child ignores SIGTERM', async () => {
-  const child = fakeChild();
-  const killSignals = [];
-  const timers = [];
-  child.kill = (signal) => {
-    const normalizedSignal = signal ?? 'SIGTERM';
-    killSignals.push(normalizedSignal);
-    if (normalizedSignal === 'SIGKILL') {
-      queueMicrotask(() => child.emit('close', null, normalizedSignal));
-    }
-    return true;
-  };
-
-  const pending = authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => child,
-    verifyAuth: async () => true,
-    authTimeoutMs: 100,
-    terminationGraceMs: 25,
-    setTimer: (callback, timeoutMs) => {
-      const timer = { callback, timeoutMs, unref() {} };
-      timers.push(timer);
-      return timer;
-    },
-    clearTimer: () => undefined,
-  });
-  await Promise.resolve();
-
-  assert.equal(timers[0].timeoutMs, 100);
-  timers[0].callback();
-  await Promise.resolve();
-  assert.deepEqual(killSignals, ['SIGTERM']);
-
-  assert.equal(timers[1].timeoutMs, 25);
-  timers[1].callback();
-  assert.deepEqual(killSignals, ['SIGTERM', 'SIGKILL']);
-  assert.deepEqual(await pending, {
-    ok: false,
-    reason: 'timeout',
-    message: 'GitHub sign-in timed out.',
-  });
-});
-
-test('cancelling browser authentication terminates its child process', async () => {
-  const child = fakeChild();
-  const pending = authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => child,
-    verifyAuth: async () => true,
-  });
-  await Promise.resolve();
-
-  cancelSetup();
-
-  assert.equal(child.killed, true);
-  assert.deepEqual(await pending, {
-    ok: false,
-    reason: 'cancelled',
-    message: 'GitHub sign-in was cancelled.',
-  });
-});
-
-test('cancelling browser authentication escalates when its child ignores SIGTERM', async () => {
-  const child = fakeChild();
-  const killSignals = [];
-  const timers = [];
-  child.kill = (signal) => {
-    const normalizedSignal = signal ?? 'SIGTERM';
-    killSignals.push(normalizedSignal);
-    if (normalizedSignal === 'SIGKILL') {
-      queueMicrotask(() => child.emit('close', null, normalizedSignal));
-    }
-    return true;
-  };
-  const pending = authenticate({
-    resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => child,
-    verifyAuth: async () => true,
-    authTimeoutMs: 1_000,
-    terminationGraceMs: 25,
-    setTimer: (callback, timeoutMs) => {
-      const timer = { callback, timeoutMs, unref() {} };
-      timers.push(timer);
-      return timer;
-    },
-    clearTimer: () => undefined,
-  });
-  await Promise.resolve();
-
-  cancelSetup();
-  assert.deepEqual(killSignals, ['SIGTERM']);
-  assert.equal(timers[1].timeoutMs, 25);
-  timers[1].callback();
-
-  assert.deepEqual(killSignals, ['SIGTERM', 'SIGKILL']);
-  assert.deepEqual(await pending, {
-    ok: false,
-    reason: 'cancelled',
-    message: 'GitHub sign-in was cancelled.',
-  });
+    assert.equal(timers[1].timeoutMs, 25, reason);
+    timers[1].callback();
+    assert.deepEqual(child.signals, ['SIGTERM', 'SIGKILL'], reason);
+    assert.deepEqual(await pending, { ok: false, reason, message });
+  }
 });
 
 test('cancelling during final authentication verification cannot report success', async () => {
   const child = fakeChild();
-  let verificationStarted;
-  const started = new Promise((resolve) => {
-    verificationStarted = resolve;
-  });
-  let finishVerification;
+  const verification = heldStep();
   const pending = authenticate({
     resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      queueMicrotask(() => {
-        child.stderr.write('https://github.com/login/device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    verifyAuth: async () => {
-      verificationStarted();
-      return new Promise((resolve) => {
-        finishVerification = resolve;
-      });
-    },
+    spawnProcess: ghThatPrints(child, 'https://github.com/login/device\n'),
+    verifyAuth: verification.run,
   });
 
-  await started;
+  await verification.started;
   cancelSetup();
-  finishVerification(true);
+  verification.finish(true);
 
   assert.deepEqual(await pending, {
     ok: false,
@@ -765,26 +528,11 @@ test('authentication cannot report success when its deadline expires during veri
   const child = fakeChild();
   child.killed = true;
   let timeoutCallback;
-  let verificationStarted;
-  const started = new Promise((resolve) => {
-    verificationStarted = resolve;
-  });
-  let finishVerification;
+  const verification = heldStep();
   const pending = authenticate({
     resolveGh: async () => '/opt/homebrew/bin/gh',
-    spawnProcess: () => {
-      queueMicrotask(() => {
-        child.stderr.write('https://github.com/login/device\n');
-        child.emit('close', 0, null);
-      });
-      return child;
-    },
-    verifyAuth: async () => {
-      verificationStarted();
-      return new Promise((resolve) => {
-        finishVerification = resolve;
-      });
-    },
+    spawnProcess: ghThatPrints(child, 'https://github.com/login/device\n'),
+    verifyAuth: verification.run,
     setTimer: (callback) => {
       timeoutCallback = callback;
       return { unref() {} };
@@ -792,9 +540,9 @@ test('authentication cannot report success when its deadline expires during veri
     clearTimer: () => undefined,
   });
 
-  await started;
+  await verification.started;
   timeoutCallback();
-  finishVerification(true);
+  verification.finish(true);
 
   assert.deepEqual(await pending, {
     ok: false,
@@ -803,11 +551,25 @@ test('authentication cannot report success when its deadline expires during veri
   });
 });
 
-test('PR selectors accept only bare positive digit strings', () => {
+test('PR selectors accept only bare non-negative digit strings', () => {
   assert.equal(prSelector(78), '78');
   assert.equal(prSelector('078'), '078');
-  assert.equal(prSelector('--repo=other/repo'), null);
-  assert.equal(prSelector('https://github.com/example/repo/pull/78'), null);
+  assert.equal(prSelector(0), '0');
+  for (const value of [
+    null,
+    undefined,
+    '',
+    '-1',
+    '--repo=other/repo',
+    '12abc',
+    '1.5',
+    'feature/foo',
+    'https://github.com/example/repo/pull/78',
+    ' 12',
+    '12 ',
+  ]) {
+    assert.equal(prSelector(value), null, String(value));
+  }
 });
 
 test('listPrs returns normalized rows and the viewer login', async () => {
@@ -848,29 +610,25 @@ test('listPrs returns normalized rows and the viewer login', async () => {
   assert.ok(runGh.calls[0].includes('--json'));
 });
 
-test('listPrs failed gh keeps no invented rows', async () => {
-  const runGh = async (_cwd, args) => {
-    if (args[0] === 'api') return ghResult({ stdout: 'octocat\n' });
-    return ghResult({ code: 1, stderr: 'boom' });
-  };
-  const result = await listPrs('/repo', {}, runGh);
-  assert.equal(result.ok, false);
-  assert.deepEqual(result.prs, []);
-  assert.equal(result.viewerLogin, null);
-});
+test('listPrs failures keep no invented rows and name an unresolved repository', async () => {
+  const failed = await listPrs('/repo', {}, async (_cwd, args) =>
+    args[0] === 'api' ? ghResult({ stdout: 'octocat\n' }) : ghResult({ code: 1, stderr: 'boom' }),
+  );
+  assert.equal(failed.ok, false);
+  assert.deepEqual(failed.prs, []);
+  assert.equal(failed.viewerLogin, null);
 
-test('listPrs classifies an unresolved GitHub repository without raw GraphQL', async () => {
-  const runGh = async () =>
+  const unresolved = await listPrs('/clinic', {}, async () =>
     ghResult({
       code: 1,
       stderr:
         "GraphQL: Could not resolve to a Repository with the name 'evilfps/dr-koshley-skin-clinic'. (repository)",
-    });
-  const result = await listPrs('/clinic', {}, runGh);
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'unresolved_repository');
-  assert.equal(result.message, 'GitHub could not find evilfps/dr-koshley-skin-clinic.');
-  assert.deepEqual(result.prs, []);
+    }),
+  );
+  assert.equal(unresolved.ok, false);
+  assert.equal(unresolved.reason, 'unresolved_repository');
+  assert.equal(unresolved.message, 'GitHub could not find evilfps/dr-koshley-skin-clinic.');
+  assert.deepEqual(unresolved.prs, []);
 });
 
 test('viewPr rejects a non-integer selector before spawning gh', async () => {
@@ -886,30 +644,7 @@ test('viewPr rejects a non-integer selector before spawning gh', async () => {
   assert.equal(spawned, false);
 });
 
-test('viewPr returns body on the detail payload', async () => {
-  const runGh = async () =>
-    ghResult({
-      stdout: JSON.stringify({
-        number: 12,
-        title: 'Add inbox',
-        state: 'OPEN',
-        url: 'https://example.test/pull/12',
-        isDraft: false,
-        headRefName: 'feat',
-        baseRefName: 'main',
-        body: 'Hello',
-        author: { login: 'ana' },
-        reviewRequests: [],
-        reviews: [],
-      }),
-    });
-  const result = await viewPr('/repo', { prNumber: 12 }, runGh);
-  assert.equal(result.ok, true);
-  assert.equal(result.pr.body, 'Hello');
-  assert.deepEqual(result.pr.reviewRequests, []);
-});
-
-test('viewPr returns the head branch commits with their GitHub authors', async () => {
+test('viewPr returns the body and head branch commits with their GitHub authors', async () => {
   const runGh = async (_cwd, args) => {
     assert.match(args[3], /,commits$/);
     return ghResult({
@@ -917,7 +652,7 @@ test('viewPr returns the head branch commits with their GitHub authors', async (
         number: 12,
         title: 'Add inbox',
         state: 'OPEN',
-        body: '',
+        body: 'Hello',
         author: { login: 'ana' },
         reviewRequests: [],
         reviews: [],
@@ -940,6 +675,9 @@ test('viewPr returns the head branch commits with their GitHub authors', async (
     });
   };
   const result = await viewPr('/repo', { prNumber: 12 }, runGh);
+  assert.equal(result.ok, true);
+  assert.equal(result.pr.body, 'Hello');
+  assert.deepEqual(result.pr.reviewRequests, []);
   assert.deepEqual(result.pr.commits, [
     {
       oid: '1111111111111111',
@@ -956,7 +694,7 @@ test('viewPr returns the head branch commits with their GitHub authors', async (
   ]);
 });
 
-test('mergePr requires a known strategy and a bare PR number before spawning gh', async () => {
+test('mergePr requires a known own strategy and a bare PR number before spawning gh', async () => {
   let spawned = false;
   const runGh = async () => {
     spawned = true;
@@ -964,24 +702,20 @@ test('mergePr requires a known strategy and a bare PR number before spawning gh'
   };
   const badSelector = await mergePr('/repo', { prNumber: '--repo=evil', method: 'squash' }, runGh);
   assert.deepEqual(badSelector, { ok: false, reason: 'missing_pr' });
-  const badMethod = await mergePr('/repo', { prNumber: 12, method: 'fast-forward' }, runGh);
-  assert.deepEqual(badMethod, { ok: false, reason: 'invalid_method' });
-  const noMethod = await mergePr('/repo', { prNumber: 12 }, runGh);
-  assert.deepEqual(noMethod, { ok: false, reason: 'invalid_method' });
-  assert.equal(spawned, false);
-});
-
-test('mergePr rejects inherited Object.prototype names as merge strategies', async () => {
-  let spawned = false;
-  const runGh = async () => {
-    spawned = true;
-    return ghResult();
-  };
-  for (const method of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+  // Inherited Object.prototype names must not resolve to a merge flag.
+  const badMethods = [
+    'fast-forward',
+    undefined,
+    'toString',
+    'constructor',
+    'hasOwnProperty',
+    '__proto__',
+  ];
+  for (const method of badMethods) {
     assert.deepEqual(
       await mergePr('/repo', { prNumber: 12, method }, runGh),
       { ok: false, reason: 'invalid_method' },
-      `${method} must not resolve to a merge flag`,
+      String(method),
     );
   }
   assert.equal(spawned, false);

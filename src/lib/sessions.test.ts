@@ -52,31 +52,32 @@ test('sessionIsUnread flags only newer settled activity on background sessions',
   assert.equal(sessionIsUnread(row({ streaming: false }), null, 1_000), true);
 });
 
-test('activeSessionCwds includes the draft, active chat, and live sessions only', () => {
+test('activeSessionCwds includes the draft, chats on screen, and live sessions only', () => {
   const sessions = [
     session({ appSessionId: 'active', cwd: '/repo/a', phase: 'completed' }),
     session({ appSessionId: 'live', cwd: '/repo/b', phase: 'orchestrator_turn' }),
     session({ appSessionId: 'idle', cwd: '/repo/c', phase: 'completed' }),
     session({ appSessionId: 'nocwd', cwd: '', phase: 'orchestrator_turn' }),
+    session({ appSessionId: 'tile', cwd: '/repo/d', phase: 'completed' }),
   ];
   const cwds = activeSessionCwds({
     sessions,
-    activeAppSessionId: 'active',
+    selectedAppSessionIds: ['active', 'tile'],
     draftCwd: '/repo/draft',
   });
-  assert.deepEqual(cwds.sort(), ['/repo/a', '/repo/b', '/repo/draft']);
+  assert.deepEqual(cwds.sort(), ['/repo/a', '/repo/b', '/repo/d', '/repo/draft']);
   // an idle historical chat does not pin its worktree
   assert.equal(cwds.includes('/repo/c'), false);
 });
 
-test('activeSessionCwds pins an idle session that still has a running worker', () => {
+test('activeSessionCwds pins live child workers and embedded terminals, not historical status', () => {
   const sessions = [
     session({ appSessionId: 'idle', cwd: '/repo/idle', phase: 'completed' }),
     session({ appSessionId: 'done', cwd: '/repo/done', phase: 'completed' }),
   ];
   const cwds = activeSessionCwds({
     sessions,
-    activeAppSessionId: null,
+    selectedAppSessionIds: [],
     childSessions: {
       idle: [{ status: 'completed' }, { status: 'running' }],
       done: [{ status: 'completed' }, { status: 'paused' }],
@@ -91,59 +92,24 @@ test('activeSessionCwds pins an idle session that still has a running worker', (
   assert.equal(cwds.includes('/repo/idle'), true);
   // no running worker (only completed/paused) leaves the worktree removable
   assert.equal(cwds.includes('/repo/done'), false);
-});
 
-test('activeSessionCwds ignores historical running status without a live child runtime', () => {
-  const cwds = activeSessionCwds({
+  // A historical running status without a live child runtime pins nothing.
+  const historical = activeSessionCwds({
     sessions: [session({ appSessionId: 'closed', cwd: '/repo/closed', phase: 'completed' })],
-    activeAppSessionId: null,
-    childSessions: {
-      closed: {
-        child: { status: 'running' },
-      },
-    },
+    selectedAppSessionIds: [],
+    childSessions: { closed: { child: { status: 'running' } } },
   });
+  assert.deepEqual(historical, []);
 
-  assert.deepEqual(cwds, []);
-});
-
-test('activeSessionCwds includes directories pinned by embedded terminals', () => {
-  const cwds = activeSessionCwds({
+  const terminal = activeSessionCwds({
     sessions: [],
-    activeAppSessionId: null,
+    selectedAppSessionIds: [],
     pinnedCwds: ['/repo/terminal'],
   });
-  assert.deepEqual(cwds, ['/repo/terminal']);
+  assert.deepEqual(terminal, ['/repo/terminal']);
 });
 
-test('update restart protection sees primary turns and live child sessions as active work', () => {
-  assert.equal(
-    hasActiveSessionWork({
-      sessions: { primary: session({ phase: 'running', streaming: true }) },
-      childSessions: {},
-      childRuntime: {},
-    }),
-    true,
-  );
-  assert.equal(
-    hasActiveSessionWork({
-      sessions: { parent: session({ phase: 'completed', streaming: false }) },
-      childSessions: { parent: { worker: { status: 'running' } } },
-      childRuntime: { parent: { worker: { available: true } } },
-    }),
-    true,
-  );
-  assert.equal(
-    hasActiveSessionWork({
-      sessions: { done: session({ phase: 'completed', streaming: false }) },
-      childSessions: { done: { worker: { status: 'running' } } },
-      childRuntime: {},
-    }),
-    false,
-  );
-});
-
-test('active work follows immutable session and child runtime changes between transcript revisions', () => {
+test('update restart protection counts primary turns and live child runtimes as active work', () => {
   const idle = {
     sessions: { parent: session({ phase: 'completed', streaming: false }) },
     childSessions: { parent: { worker: { status: 'running' as const } } },
@@ -168,4 +134,6 @@ test('active work follows immutable session and child runtime changes between tr
     false,
   );
   assert.equal(hasActiveSessionWork(idle), false);
+  // A running child status with no runtime entry at all is not active work.
+  assert.equal(hasActiveSessionWork({ ...idle, childRuntime: {} }), false);
 });

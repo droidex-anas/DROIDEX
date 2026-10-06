@@ -25,84 +25,45 @@ function env(partial: Partial<EnvironmentReport>): EnvironmentReport {
   };
 }
 
-test('shouldShowOnboarding only when not completed', () => {
+test('onboarding shows until completed, and a missing CLI or sign-in without a key blocks setup', () => {
   assert.equal(shouldShowOnboarding(null), false);
   assert.equal(shouldShowOnboarding({ completed: false }), true);
   assert.equal(shouldShowOnboarding({ completed: true }), false);
-});
 
-test('hasSetupBlocker flags a missing CLI', () => {
   assert.equal(hasSetupBlocker(env({ cli: { present: false, path: 'droid' } })), true);
-});
-
-test('hasSetupBlocker flags missing auth when no api key', () => {
-  assert.equal(
-    hasSetupBlocker(env({ auth: { apiKeyConfigured: false, loginPresent: false } })),
-    true,
-  );
-});
-
-test('no blocker when signed in or api key configured', () => {
-  assert.equal(
-    hasSetupBlocker(env({ auth: { apiKeyConfigured: false, loginPresent: true } })),
-    false,
-  );
-  assert.equal(
-    hasSetupBlocker(env({ auth: { apiKeyConfigured: true, loginPresent: false } })),
-    false,
-  );
+  const auth = (apiKeyConfigured: boolean, loginPresent: boolean) =>
+    hasSetupBlocker(env({ auth: { apiKeyConfigured, loginPresent } }));
+  assert.equal(auth(false, false), true);
+  assert.equal(auth(false, true), false);
+  assert.equal(auth(true, false), false);
   assert.equal(hasSetupBlocker(null), false);
 });
 
-test('scheduleEnvDetect runs immediately when not deferred', () => {
+test('scheduleEnvDetect probes now, or on idle unless cancelled first', () => {
   let calls = 0;
-  const cancel = scheduleEnvDetect(
-    false,
-    () => {
-      calls += 1;
-    },
-    () => {
-      throw new Error('idle scheduler must not be used when not deferring');
-    },
-  );
+  const probe = () => {
+    calls += 1;
+  };
+  scheduleEnvDetect(false, probe, () => {
+    throw new Error('idle scheduler must not be used when not deferring');
+  })();
   assert.equal(calls, 1);
-  cancel();
-  assert.equal(calls, 1);
-});
 
-test('scheduleEnvDetect defers until the idle callback fires', () => {
-  let calls = 0;
   let pending: (() => void) | undefined;
-  scheduleEnvDetect(
-    true,
-    () => {
-      calls += 1;
-    },
-    (callback) => {
-      pending = callback;
-      return () => {};
-    },
-  );
-  assert.equal(calls, 0, 'no probe before idle');
+  scheduleEnvDetect(true, probe, (callback) => {
+    pending = callback;
+    return () => {};
+  });
+  assert.equal(calls, 1, 'no probe before idle');
   pending?.();
-  assert.equal(calls, 1);
-});
+  assert.equal(calls, 2);
 
-test('cancelling a deferred scheduleEnvDetect prevents the probe', () => {
-  let calls = 0;
   let cancelled = false;
-  const cancel = scheduleEnvDetect(
-    true,
-    () => {
-      calls += 1;
-    },
-    () => () => {
-      cancelled = true;
-    },
-  );
-  cancel();
+  scheduleEnvDetect(true, probe, () => () => {
+    cancelled = true;
+  })();
   assert.equal(cancelled, true);
-  assert.equal(calls, 0);
+  assert.equal(calls, 2);
 });
 
 test('onboarding preference changes notify every mounted controller', () => {

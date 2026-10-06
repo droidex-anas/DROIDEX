@@ -7,7 +7,7 @@ import {
   shouldAutoApproveAutomationTool,
 } from './permissionPolicy.js';
 
-test('direct mutations auto-approve only for High autonomy while delete always asks', () => {
+test('direct mutations auto-approve only for attended High autonomy while delete always asks', () => {
   assert.equal(
     shouldAutoApproveAutomationTool('droidex-automations', 'automation_create', 'medium'),
     false,
@@ -24,9 +24,7 @@ test('direct mutations auto-approve only for High autonomy while delete always a
     shouldAutoApproveAutomationTool(AUTOMATION_MCP_SERVER_NAME, 'vendor_automation_create', 'high'),
     false,
   );
-});
-
-test('unattended High runs do not auto-approve automation mutations', () => {
+  // Nobody watches an unattended run, so High asks there too; reads stay free.
   assert.equal(
     shouldAutoApproveAutomationTool('droidex-automations', 'automation_create', 'high', true),
     false,

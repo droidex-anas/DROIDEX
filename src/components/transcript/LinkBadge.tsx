@@ -25,18 +25,27 @@ function GitHubMark() {
   );
 }
 
-export function LinkBadge({ link }: { link: LinkPresentation }) {
+// The browser's address bar shows the same mark at its own size.
+export function LinkBadge({
+  link,
+  className = MARK,
+}: {
+  link: LinkPresentation;
+  className?: string;
+}) {
   const [missing, setMissing] = useState(() => !canLoadIcons || missingIcons.has(link.host));
 
   if (link.isGitHub) {
     return (
-      <span className={`${MARK} text-droid-text-secondary`}>
+      <span className={`${className} text-droid-text-secondary`}>
         <GitHubMark />
       </span>
     );
   }
   if (missing) {
-    return <Globe aria-hidden strokeWidth={1.75} className={`${MARK} text-droid-text-muted`} />;
+    return (
+      <Globe aria-hidden strokeWidth={1.75} className={`${className} text-droid-text-muted`} />
+    );
   }
   return (
     <img
@@ -48,7 +57,7 @@ export function LinkBadge({ link }: { link: LinkPresentation }) {
       loading="lazy"
       decoding="async"
       draggable={false}
-      className={`${MARK} rounded-[3px] object-contain`}
+      className={`${className} rounded-[3px] object-contain`}
       onError={() => {
         missingIcons.add(link.host);
         setMissing(true);

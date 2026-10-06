@@ -3,20 +3,10 @@ import test from 'node:test';
 
 import { resolveBackgroundWorkTier } from './backgroundWork';
 
-test('visible documents stay interactive even on battery', () => {
-  assert.equal(
-    resolveBackgroundWorkTier({ documentVisible: true, windowVisible: true, onBattery: true }),
-    'interactive',
-  );
-});
-
-test('hidden windows pause informational work; battery deepens the tier', () => {
-  assert.equal(
-    resolveBackgroundWorkTier({ documentVisible: false, windowVisible: true, onBattery: false }),
-    'hidden',
-  );
-  assert.equal(
-    resolveBackgroundWorkTier({ documentVisible: true, windowVisible: false, onBattery: true }),
-    'low-power',
-  );
+test('visible documents stay interactive; hidden windows pause work and battery deepens it', () => {
+  const tier = (documentVisible: boolean, windowVisible: boolean, onBattery: boolean) =>
+    resolveBackgroundWorkTier({ documentVisible, windowVisible, onBattery });
+  assert.equal(tier(true, true, true), 'interactive');
+  assert.equal(tier(false, true, false), 'hidden');
+  assert.equal(tier(true, false, true), 'low-power');
 });

@@ -10,10 +10,12 @@ import { resolveScenario } from './scenario.js';
 // wiring end to end without turning the suite into a benchmark.
 test('replay run drives the real sidecar pipeline and reports measurements', async () => {
   const report = await runReplay({
+    // Named long-history, so the report also carries its half-to-half drift.
     spec: resolveScenario('smoke', {
-      seed: 7,
-      deltasPerTurn: 25,
-      eventsPerSecond: 50,
+      seed: 13,
+      name: 'long-history',
+      deltasPerTurn: 40,
+      eventsPerSecond: 80,
       coalesceMs: 10,
     }),
   });
@@ -54,106 +56,37 @@ test('replay run drives the real sidecar pipeline and reports measurements', asy
   );
   assert.equal(latencySection.includes('coalesce merged'), false);
   assert.equal(distributionSection.includes('coalesce merged'), true);
-});
-
-test('long-history runs include first/second half drift comparison', async () => {
-  const report = await runReplay({
-    spec: resolveScenario('smoke', {
-      seed: 13,
-      name: 'long-history',
-      deltasPerTurn: 40,
-      eventsPerSecond: 80,
-      coalesceMs: 10,
-    }),
-  });
 
   assert.ok(report.drift);
   assert.ok(report.drift.firstHalfToReceiveMs.count > 0);
   assert.ok(report.drift.secondHalfToReceiveMs.count > 0);
 });
 
-test('replay client rejects generation changes and non-contiguous batches', () => {
-  const cursor = { generation: null, lastSeq: 0 };
-  const first = acceptReplayWireMessage(
-    {
-      type: 'events.batch',
-      generation: 'generation-1',
-      firstSeq: 1,
-      lastSeq: 2,
-      events: [
-        { seq: 1, event: { type: 'connection', status: 'connected' } },
-        { seq: 2, event: { type: 'connection', status: 'connected' } },
-      ],
-    },
-    cursor,
-  );
+test('the replay client takes its baseline from the first batch and rejects gaps, generation changes and reordering', () => {
+  const connected = { type: 'connection', status: 'connected' } as const;
+  const batch = (generation: string, seqs: number[]) => ({
+    type: 'events.batch' as const,
+    generation,
+    firstSeq: Math.min(...seqs),
+    lastSeq: Math.max(...seqs),
+    events: seqs.map((seq) => ({ seq, event: connected })),
+  });
 
-  assert.equal(first.length, 2);
+  // The first batch establishes the live sequence baseline, wherever it starts.
+  const late = { generation: null, lastSeq: 0 };
+  assert.equal(acceptReplayWireMessage(batch('generation-1', [7]), late).length, 1);
+  assert.deepEqual(late, { generation: 'generation-1', lastSeq: 7 });
+
+  const cursor = { generation: null, lastSeq: 0 };
+  assert.equal(acceptReplayWireMessage(batch('generation-1', [1, 2]), cursor).length, 2);
   assert.deepEqual(cursor, { generation: 'generation-1', lastSeq: 2 });
+  assert.throws(() => acceptReplayWireMessage(batch('generation-1', [4]), cursor), /sequence gap/);
   assert.throws(
-    () =>
-      acceptReplayWireMessage(
-        {
-          type: 'events.batch',
-          generation: 'generation-1',
-          firstSeq: 4,
-          lastSeq: 4,
-          events: [{ seq: 4, event: { type: 'connection', status: 'connected' } }],
-        },
-        cursor,
-      ),
-    /sequence gap/,
-  );
-  assert.throws(
-    () =>
-      acceptReplayWireMessage(
-        {
-          type: 'events.batch',
-          generation: 'generation-2',
-          firstSeq: 3,
-          lastSeq: 3,
-          events: [{ seq: 3, event: { type: 'connection', status: 'connected' } }],
-        },
-        cursor,
-      ),
+    () => acceptReplayWireMessage(batch('generation-2', [3]), cursor),
     /generation changed/,
   );
-});
-
-test('replay client rejects reordered entries inside a batch', () => {
   assert.throws(
-    () =>
-      acceptReplayWireMessage(
-        {
-          type: 'events.batch',
-          generation: 'generation-1',
-          firstSeq: 1,
-          lastSeq: 2,
-          events: [
-            { seq: 2, event: { type: 'connection', status: 'connected' } },
-            { seq: 1, event: { type: 'connection', status: 'connected' } },
-          ],
-        },
-        { generation: null, lastSeq: 0 },
-      ),
+    () => acceptReplayWireMessage(batch('generation-1', [2, 1]), { generation: null, lastSeq: 0 }),
     /entry order/,
   );
-});
-
-test('the first replay batch establishes the live sequence baseline', () => {
-  const cursor = { generation: null, lastSeq: 0 };
-
-  const events = acceptReplayWireMessage(
-    {
-      type: 'events.batch',
-      generation: 'generation-1',
-      firstSeq: 7,
-      lastSeq: 7,
-      events: [{ seq: 7, event: { type: 'connection', status: 'connected' } }],
-    },
-    cursor,
-  );
-
-  assert.equal(events.length, 1);
-  assert.deepEqual(cursor, { generation: 'generation-1', lastSeq: 7 });
 });

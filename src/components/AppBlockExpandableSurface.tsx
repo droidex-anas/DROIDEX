@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { HoverTooltip } from './HoverTooltip';
-import { addNativeSurfaceObscurer } from '../hooks/useObscuresNativeSurfaces';
 
 export interface AppExpansion {
   // The transcript row keeps the inline height while the App sits in the top
@@ -39,7 +38,6 @@ export function ExpandableAppSurface({
     const expandButton = expandButtonRef.current;
     if (!surface.matches(':popover-open')) surface.showPopover();
     collapseButtonRef.current?.focus();
-    const releaseNativeSurfaces = addNativeSurfaceObscurer();
     // Capture phase, so Escape leaves the expanded view before the chat's own
     // Escape shortcuts can act on the conversation hidden behind it.
     const onKeyDown = (event: KeyboardEvent) => {
@@ -57,7 +55,6 @@ export function ExpandableAppSurface({
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
       document.removeEventListener('focusin', onFocusIn);
-      releaseNativeSurfaces();
       const focused = document.activeElement;
       if (focused === null || focused === document.body || surface.contains(focused)) {
         expandButton?.focus();

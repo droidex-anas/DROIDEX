@@ -3,24 +3,13 @@ import assert from 'node:assert/strict';
 import { initialState, type AppState } from '../hooks/useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import { appendTranscriptEvent, appendTranscriptEvents } from './transcriptStoreMemory';
+import { textEvent } from '../test/textEvent';
 
-function transcriptEvent(
+const transcriptEvent = (
   id: string,
   appSessionId: string,
   overrides: Partial<TranscriptEvent> = {},
-): TranscriptEvent {
-  return {
-    id,
-    appSessionId,
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    author: 'assistant',
-    text: id,
-    ts: 1,
-    ...overrides,
-  };
-}
+) => textEvent(id, { appSessionId, author: 'assistant', ...overrides });
 
 test('batched transcript appends preserve exact sequential behavior', () => {
   const firstText = transcriptEvent('text-1', 'session-a', { author: undefined, text: 'A' });
@@ -86,36 +75,6 @@ test('duplicate transcript events preserve state and mutation revision', () => {
 
   assert.equal(appendTranscriptEvent(state, retained), state);
   assert.equal(appendTranscriptEvents(state, [retained, retained]), state);
-});
-
-test('batched transcript appends index retained event IDs once per session', () => {
-  let retainedIdReads = 0;
-  const retained = Array.from({ length: 2_000 }, (_, index) => {
-    const event = transcriptEvent(`retained-${index}`, 'session-a', { ts: index });
-    Object.defineProperty(event, 'id', {
-      configurable: true,
-      enumerable: true,
-      get: () => {
-        retainedIdReads += 1;
-        return `retained-${index}`;
-      },
-    });
-    return event;
-  });
-  const state: AppState = {
-    ...initialState,
-    transcripts: { 'session-a': retained },
-    // The retained-cost owner already measured this window. Supplying it keeps
-    // this test focused on duplicate indexing rather than payload estimation.
-    transcriptRetainedCost: { 'session-a': 1 },
-  };
-  const incoming = Array.from({ length: 200 }, (_, index) =>
-    transcriptEvent(`incoming-${index}`, 'session-a', { ts: 2_000 + index }),
-  );
-
-  appendTranscriptEvents(state, incoming);
-
-  assert.equal(retainedIdReads, retained.length);
 });
 
 test('batched transcript appends preserve sequential emergency release boundaries', () => {

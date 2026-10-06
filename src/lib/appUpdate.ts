@@ -24,10 +24,6 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
-export function getAppUpdate(): AppUpdateInfo | null {
-  return info;
-}
-
 export function isAppUpdateInstalling(): boolean {
   return downloading;
 }
@@ -43,7 +39,7 @@ export async function refreshAppUpdate(
   return next;
 }
 
-export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
+async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
   if (checking || downloading) return info;
   checking = true;
   emit();

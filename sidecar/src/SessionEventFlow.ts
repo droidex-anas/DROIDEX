@@ -124,7 +124,8 @@ export class SessionEventFlow {
     if (normalized.tokens)
       this.dependencies.recordUsage(appSessionId, sourceProviderSessionId, normalized.tokens);
 
-    const sideEffects = normalizedSideEffects(normalized);
+    const primaryScope = role === 'primary' && !childSessionId && !owned;
+    const sideEffects = normalizedSideEffects(normalized, primaryScope);
     if (hasSideEffects(sideEffects)) {
       try {
         const sourceSessionId =
@@ -202,11 +203,16 @@ function hasSideEffects(sideEffects: NormalizedSideEffects): boolean {
     sideEffects.progress ??
     sideEffects.missionState ??
     sideEffects.missionChild ??
-    sideEffects.childSession,
+    sideEffects.childSession ??
+    sideEffects.harnessModelSwitch,
   );
 }
 
-function normalizedSideEffects(normalized: NormalizedEvent): NormalizedSideEffects {
+// A model switch belongs to the chat itself, never to an agent working in it.
+function normalizedSideEffects(
+  normalized: NormalizedEvent,
+  primaryScope: boolean,
+): NormalizedSideEffects {
   let childSession = normalized.childSession;
   // Admission and the UI must share the exact accepted spawn event identity.
   const spawnId =
@@ -220,5 +226,8 @@ function normalizedSideEffects(normalized: NormalizedEvent): NormalizedSideEffec
     ...(normalized.missionState ? { missionState: normalized.missionState } : {}),
     ...(normalized.missionChild ? { missionChild: normalized.missionChild } : {}),
     ...(childSession ? { childSession } : {}),
+    ...(normalized.harnessModelSwitch && primaryScope
+      ? { harnessModelSwitch: normalized.harnessModelSwitch }
+      : {}),
   };
 }

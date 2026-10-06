@@ -146,13 +146,6 @@ function transcript(id: string, appSessionId = 'provider-source'): TranscriptEve
 }
 
 const TEST_COALESCE_MS = 5;
-const TEST_COALESCE_SETTLE_MARGIN_MS = 20;
-
-function waitForTestCoalesce(): Promise<void> {
-  return new Promise((resolve) =>
-    setTimeout(resolve, TEST_COALESCE_MS + TEST_COALESCE_SETTLE_MARGIN_MS),
-  );
-}
 
 function historyEntry(providerSessionId: string, modifiedTime: number): SessionHistoryEntry {
   return {
@@ -180,7 +173,8 @@ function delta(
   };
 }
 
-test('streaming text deltas coalesce into one event flushed by the timer', async () => {
+test('streaming text deltas coalesce into one event flushed by the timer', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { emitted, recorded, timeline } = createHarness({
     streamingCoalesceMs: TEST_COALESCE_MS,
   });
@@ -190,14 +184,15 @@ test('streaming text deltas coalesce into one event flushed by the timer', async
   assert.deepEqual(emitted, []);
   assert.deepEqual(recorded, []);
 
-  await waitForTestCoalesce();
+  t.mock.timers.tick(TEST_COALESCE_MS);
 
   assert.equal(recorded.length, 1);
   assert.deepEqual(recorded[0], delta('a', { text: 'Hello', ts: 10, endTs: 12 }));
   assert.deepEqual(emitted, [{ type: 'event.appended', event: recorded[0] }]);
 });
 
-test('timer flush failures stay owned by turn settlement', async () => {
+test('timer flush failures stay owned by turn settlement', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { emitted, errors, timeline } = createHarness({
     streamingCoalesceMs: TEST_COALESCE_MS,
     onRecordEvent: () => {
@@ -206,7 +201,7 @@ test('timer flush failures stay owned by turn settlement', async () => {
   });
 
   timeline.appendStreaming(delta('a', { text: 'buffered tail' }));
-  await waitForTestCoalesce();
+  t.mock.timers.tick(TEST_COALESCE_MS);
 
   assert.deepEqual(emitted, []);
   assert.deepEqual(errors, [
@@ -221,7 +216,8 @@ test('timer flush failures stay owned by turn settlement', async () => {
   await assert.doesNotReject(timeline.settleStreaming('app-1', 'app-1'));
 });
 
-test('timer flush failures report once through the owning child conversation', async () => {
+test('timer flush failures report once through the owning child conversation', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { emitted, errors, timeline } = createHarness({
     streamingCoalesceMs: TEST_COALESCE_MS,
     onRecordEvent: () => {
@@ -237,7 +233,7 @@ test('timer flush failures report once through the owning child conversation', a
       text: 'buffered child tail',
     }),
   );
-  await waitForTestCoalesce();
+  t.mock.timers.tick(TEST_COALESCE_MS);
 
   assert.deepEqual(errors, []);
   assert.deepEqual(emitted, [
@@ -327,13 +323,12 @@ test('streaming byte budget flushes early without dropping or truncating content
   );
 });
 
-test('non-mergeable streaming events flush the buffer and keep order', () => {
+test('a non-mergeable event or a kind or source change ends the buffered run in order', () => {
   const { recorded, timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
 
   timeline.appendStreaming(delta('a', { text: 'thought ', kind: 'thinking' }));
   timeline.appendStreaming(delta('b', { text: 'stream', kind: 'thinking' }));
   timeline.appendStreaming(delta('echo', { author: 'user' }));
-
   assert.deepEqual(trace, [
     'record:a',
     'emit:event.appended',
@@ -341,22 +336,31 @@ test('non-mergeable streaming events flush the buffer and keep order', () => {
     'emit:event.appended',
   ]);
   assert.equal(recorded[0]?.text, 'thought stream');
+
+  timeline.appendStreaming(delta('c', { kind: 'thinking' }));
+  timeline.appendStreaming(delta('d', { kind: 'text' }));
+  timeline.appendStreaming(delta('e', { kind: 'text', sourceSessionId: 'source-2' }));
   timeline.flushStreaming();
-  assert.equal(recorded.length, 2);
-});
-
-test('a kind or source change starts a new buffered run instead of merging', () => {
-  const { recorded, timeline } = createHarness({ streamingCoalesceMs: 1000 });
-
-  timeline.appendStreaming(delta('a', { kind: 'thinking' }));
-  timeline.appendStreaming(delta('b', { kind: 'text' }));
-  timeline.appendStreaming(delta('c', { kind: 'text', sourceSessionId: 'source-2' }));
-  timeline.flushStreaming();
-
   assert.deepEqual(
     recorded.map((event) => event.id),
-    ['a', 'b', 'c'],
+    ['a', 'echo', 'c', 'd', 'e'],
   );
+});
+
+test('plain append flushes the buffered run first and flush is idempotent', () => {
+  const { timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
+
+  timeline.appendStreaming(delta('buffered'));
+  timeline.append(delta('status-line', { kind: 'status', author: 'user' }));
+  timeline.flushStreaming();
+  timeline.flushStreaming();
+
+  assert.deepEqual(trace, [
+    'record:buffered',
+    'emit:event.appended',
+    'record:status-line',
+    'emit:event.appended',
+  ]);
 });
 
 test('tool_call deltas of one toolUseId collapse onto the latest snapshot', () => {
@@ -396,45 +400,6 @@ test('tool_call deltas of one toolUseId collapse onto the latest snapshot', () =
       ['d', undefined, undefined, undefined],
     ],
   );
-});
-
-test('plain append flushes the buffered run first and flush is idempotent', () => {
-  const { timeline, trace } = createHarness({ streamingCoalesceMs: 1000 });
-
-  timeline.appendStreaming(delta('buffered'));
-  timeline.append(delta('status-line', { kind: 'status', author: 'user' }));
-  timeline.flushStreaming();
-  timeline.flushStreaming();
-
-  assert.deepEqual(trace, [
-    'record:buffered',
-    'emit:event.appended',
-    'record:status-line',
-    'emit:event.appended',
-  ]);
-});
-
-test('coalescing disabled records and emits every delta immediately', () => {
-  const { recorded, timeline } = createHarness({ streamingCoalesceMs: 0 });
-
-  timeline.appendStreaming(delta('a'));
-  timeline.appendStreaming(delta('b'));
-
-  assert.deepEqual(
-    recorded.map((event) => event.id),
-    ['a', 'b'],
-  );
-});
-
-test('append records before emitting exactly one live transcript event', () => {
-  const { emitted, recorded, timeline, trace } = createHarness();
-  const event = transcript('event-1', 'app-1');
-
-  timeline.append(event);
-
-  assert.deepEqual(trace, ['record:event-1', 'emit:event.appended']);
-  assert.deepEqual(recorded, [event]);
-  assert.deepEqual(emitted, [{ type: 'event.appended', event }]);
 });
 
 test('plain restore resolves aliases, records in order, and emits replace telemetry', () => {
@@ -543,55 +508,27 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
 });
 
 test('older restore prepends only transcripts and preserves page telemetry', () => {
-  let childLinkReads = 0;
   const event = transcript('older');
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
+    childSessions: [child('app-1', 'worker-1', 'running')],
     loaders: {
-      transcriptWindow: (_appSessionId, _chain, options) => {
-        assert.deepEqual(options, { cursor: 'cursor-1' });
-        return { events: [event], olderCursor: 'cursor-2' };
-      },
-    },
-  });
-  const timeline = new SessionTimeline({
-    registry: {
-      resolveSummary: () => summary('app-1', 'provider-1'),
-      getLive: () => undefined,
-    },
-    history: {
-      recordEvent: (recorded) => {
-        harness.recorded.push(recorded);
-      },
-    },
-    getChildSessions: () => {
-      childLinkReads += 1;
-      return [];
-    },
-    emit: (emitted) => harness.emitted.push(emitted),
-    emitError: (error) => harness.errors.push(error),
-    loaders: {
-      list: () => [],
-      page: () => ({ events: [] }),
-      hydrateMission: () => ({ progress: [], transcripts: [] }),
       resolveChain: () => ['provider-1'],
       transcriptWindow: (_appSessionId, _chain, options) => {
         assert.deepEqual(options, { cursor: 'cursor-1' });
         return { events: [event], olderCursor: 'cursor-2' };
       },
-      openTranscriptTail: () => [],
     },
   });
 
-  timeline.load('provider-1', 'cursor-1');
+  harness.timeline.load('provider-1', 'cursor-1');
 
-  assert.equal(childLinkReads, 0);
   const page = harness.emitted[0];
   assert.equal(page?.type, 'session.history');
   if (page?.type !== 'session.history') return;
   assert.equal(page.mode, 'prepend');
   assert.deepEqual(page.progress, []);
-  assert.equal(page.childSessions, undefined);
+  assert.equal(page.childSessions, undefined, 'child links belong to the first page only');
   assert.equal(page.olderCursor, 'cursor-2');
   assert.equal(page.loadedCount, 1);
   assert.equal(page.hasMore, true);

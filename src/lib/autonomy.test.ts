@@ -3,8 +3,6 @@ import { loadDefaultPermissionMode } from './permissionSemantics';
 import assert from 'node:assert/strict';
 
 import {
-  AUTONOMY_DESCRIPTIONS,
-  AUTONOMY_LABELS,
   AUTONOMY_LEVELS,
   FIRST_RUN_DEFAULT_AUTONOMY,
   loadDefaultAutonomy,
@@ -12,6 +10,7 @@ import {
   normalizeAutonomy,
   saveDefaultAutonomy,
 } from './autonomy';
+import { withLocalStorageMap } from '../test/localStorage';
 
 test('normalizeAutonomy accepts only the four canonical levels', () => {
   assert.deepEqual(AUTONOMY_LEVELS, ['off', 'low', 'medium', 'high']);
@@ -20,13 +19,6 @@ test('normalizeAutonomy accepts only the four canonical levels', () => {
   assert.equal(normalizeAutonomy(''), undefined);
   assert.equal(normalizeAutonomy(undefined), undefined);
   assert.equal(normalizeAutonomy(42), undefined);
-});
-
-test('every level has a label and a consequence description', () => {
-  for (const level of AUTONOMY_LEVELS) {
-    assert.ok(AUTONOMY_LABELS[level].length > 0, `label for ${level}`);
-    assert.ok(AUTONOMY_DESCRIPTIONS[level].length > 0, `description for ${level}`);
-  }
 });
 
 test('first run defaults to medium and persisted values round-trip', () => {
@@ -50,35 +42,6 @@ test('only high autonomy allows a mission to start', () => {
   assert.equal(missionStartAllowed('low'), false);
   assert.equal(missionStartAllowed('off'), false);
 });
-
-function withLocalStorageMap(seed: Record<string, string>, fn: () => void): void {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const values = new Map(Object.entries(seed));
-  const mock: Storage = {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, next) => {
-      values.set(key, next);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: mock });
-  try {
-    fn();
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete (globalThis as { localStorage?: Storage }).localStorage;
-  }
-}
-
 test('permission semantics reset the saved default once and new installs start supervised', () => {
   withLocalStorageMap({ 'droid-default-autonomy': 'high' }, () => {
     assert.equal(loadDefaultPermissionMode(), 'off');

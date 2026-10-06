@@ -7,7 +7,7 @@ import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 // tinted from the text colour so it still reads on a message bubble, and cloned
 // across a line break so a wrapped pill keeps both ends.
 const PILL =
-  'rounded-[5px] bg-droid-text/[0.08] px-[5px] py-px font-mono text-[0.86em] text-droid-text [box-decoration-break:clone] break-words';
+  'rounded-[0.35em] bg-droid-text/[0.07] px-[0.38em] py-[0.12em] font-mono text-[0.86em] text-droid-text [box-decoration-break:clone] break-words';
 
 // A reply names files constantly ("check `docs/architecture.md`"), and those
 // mentions open in Review exactly like a tool row's path. The handler reaches

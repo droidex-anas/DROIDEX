@@ -20,19 +20,6 @@ export type ContentType =
   | 'status'
   | 'spec_content';
 
-// Chat content must always render as a top-level transcript message and can
-// never be nested inside a Worked/Thought/tool/compaction activity group.
-const CHAT_CONTENT: ReadonlySet<ContentType> = new Set<ContentType>(['user', 'assistant_chat']);
-
-// Internal orchestration that belongs only inside an optional activity
-// disclosure, never as a standalone chat row.
-const DIAGNOSTIC_CONTENT: ReadonlySet<ContentType> = new Set<ContentType>([
-  'thought',
-  'tool_activity',
-  'file_edit',
-  'plan_update',
-]);
-
 export function classifyEvent(ev: TranscriptEvent): ContentType {
   if (ev.author === 'user') return 'user';
   // A failed tool result or explicit error surfaces regardless of tool family.
@@ -56,14 +43,6 @@ export function classifyEvent(ev: TranscriptEvent): ContentType {
     default:
       return 'status';
   }
-}
-
-export function isChatContent(type: ContentType): boolean {
-  return CHAT_CONTENT.has(type);
-}
-
-export function isDiagnosticContent(type: ContentType): boolean {
-  return DIAGNOSTIC_CONTENT.has(type);
 }
 
 // Narrow a session transcript to the agent whose progress the UI is showing:

@@ -31,6 +31,7 @@ import {
 } from './primitives';
 import { CommandCard, CommandLine, ToolCallCard } from './commandCard';
 import { LinkBadge } from './LinkBadge';
+import { TranscriptImage } from '../media/TranscriptImage';
 import { useToolSourceMark } from './toolSourceMark';
 import { WebFetchCard, WebSearchCard } from './webCards';
 
@@ -294,6 +295,7 @@ function ToolTarget({
 function ToolLine({
   event,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
@@ -302,6 +304,7 @@ function ToolLine({
 }: {
   event: TranscriptEvent;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -309,13 +312,16 @@ function ToolLine({
   onOpenReviewFile?: OpenReviewFileHandler;
 }) {
   const call = describeToolCall(event.toolName, event.toolArgs);
+  // A call made with no arguments shows none, not an empty "{}".
+  const argsText = safeJson(event.toolArgs);
+  const args = argsText === '{}' ? '' : argsText;
   const out = output ? stripAnsi(output).trimEnd() : '';
   const [open, setOpen] = useState(false);
   const expanded = open || forceOpen;
-  // Only a row with output can be collapsed again; detailed density still
-  // opens every call to its arguments, result or not.
-  const collapsible = out.length > 0;
-  const hasBody = collapsible || forceOpen;
+  // Only a row with output, text or pictures, can be collapsed again; detailed
+  // density still opens every call to its arguments, result or not.
+  const collapsible = out.length > 0 || Boolean(images?.length);
+  const hasBody = collapsible || (forceOpen && args.length > 0);
   // An MCP tool wears its server's mark instead of spelling its source.
   const mark = useToolSourceMark(call.source);
   const verb = (
@@ -361,11 +367,12 @@ function ToolLine({
           <div className="mt-1.5 pl-[18px]">
             <ToolCallCard
               heading={
-                <pre className="whitespace-pre-wrap break-words text-droid-text">
-                  {safeJson(event.toolArgs)}
-                </pre>
+                args ? (
+                  <pre className="whitespace-pre-wrap break-words text-droid-text">{args}</pre>
+                ) : null
               }
               output={out}
+              images={images}
               error={error}
             />
           </div>
@@ -497,6 +504,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -510,6 +518,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -530,6 +539,7 @@ export function renderToolEvents(
               key={e.id}
               command={command}
               output={result?.text}
+              images={result?.images}
               error={isError}
               interrupted={interrupted}
               running={running}
@@ -539,6 +549,7 @@ export function renderToolEvents(
               key={e.id}
               command={command}
               output={result?.text}
+              images={result?.images}
               error={isError}
               interrupted={interrupted}
               running={running}
@@ -552,6 +563,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -565,6 +577,9 @@ export function renderToolEvents(
     // A result already shown as its call's inline output (or a silently consumed
     // plan result) must not also render as raw activity.
     if (e.kind === 'tool_result' && consumed.has(e)) continue;
+    // A result whose call is out of view still shows the pictures it carried.
+    for (const [index, image] of (e.images ?? []).entries())
+      nodes.push(<TranscriptImage key={`${e.id}-${String(index)}-${image}`} reference={image} />);
     const body = stripAnsi(e.text ?? safeJson(e.toolArgs)).trimEnd();
     if (!body) continue;
     // A failed result with no call to fold into (e.g. a failed edit that broke

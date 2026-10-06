@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Markdown } from './Markdown';
+import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
 import { LayoutTemplate } from 'lucide-react';
 
 type Segment =
@@ -11,12 +12,12 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 
 function parseSpecSegments(markdown: string): Segment[] {
   const segments: Segment[] = [];
-  const matches: Array<{
+  const matches: {
     start: number;
     end: number;
     content: string;
     kind: 'svg' | 'mermaid' | 'inline';
-  }> = [];
+  }[] = [];
 
   // Pattern 1: fenced code blocks ```svg or ```mermaid
   const codeRegex = /```(?:svg|mermaid)\n([\s\S]*?)```/g;
@@ -74,26 +75,13 @@ function parseSpecSegments(markdown: string): Segment[] {
 }
 
 function SvgVisualCard({ svgContent, index }: { svgContent: string; index: number }) {
-  const safeSvg = useMemo(() => {
-    let raw = svgContent.trim();
-
-    // If the extracted content from a code block is just inner SVG markup,
-    // wrap it in a proper <svg> root so it renders.
-    if (!raw.startsWith('<svg')) {
-      raw = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="100%">${raw}</svg>`;
-    }
-
-    // Strip any fixed pixel widths so the SVG scales to its container.
-    raw = raw.replace(/width="\d+(?:px)?"/gi, 'width="100%"');
-    raw = raw.replace(/height="\d+(?:px)?"/gi, '');
-
-    // Ensure xmlns is present.
-    if (!raw.includes('xmlns=')) {
-      raw = raw.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-
-    return raw;
-  }, [svgContent]);
+  const image = useMemo(
+    () => ({
+      src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(svgContent))}`,
+      alt: svgImageAlternative(svgContent),
+    }),
+    [svgContent],
+  );
 
   return (
     <motion.div
@@ -113,10 +101,7 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
 
       {/* Rendered SVG */}
       <div className="pt-9 pb-5 px-5 flex items-center justify-center min-h-[100px]">
-        <div
-          className="w-full flex items-center justify-center [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:block"
-          dangerouslySetInnerHTML={{ __html: safeSvg }}
-        />
+        <img className="block w-full h-auto" src={image.src} alt={image.alt} />
       </div>
     </motion.div>
   );

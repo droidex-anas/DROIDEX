@@ -435,6 +435,36 @@ export class FakeFactoryRuntime implements FactoryRuntime {
     return { mode: 'cli_auth', droidPath: '/test/droid', apiKeyConfigured: this.apiKey.length > 0 };
   }
 
+  // Never the test key: a Droid turn would otherwise read usage from Factory.
+  factoryApiKey(): undefined {
+    return undefined;
+  }
+
+  steer(session: FactorySession, text: string): Promise<boolean> {
+    this.calls.push({ target: 'runtime', method: 'steer', args: [session.sessionId, text] });
+    return Promise.resolve(false);
+  }
+
+  streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined> {
+    return session.stream(prompt, options);
+  }
+
+  observeNotification(): void {
+    // Scripted streams have no raw notification tail.
+  }
+
+  stopTurn(): void {
+    // Scripted iterators settle through their session interrupt/close.
+  }
+
+  interruptTurn(session: FactorySession): Promise<void> {
+    return session.interrupt();
+  }
+
   readContextBreakdown(session: FactorySession): Promise<unknown> {
     const error = this.contextBreakdownErrors.get(session.sessionId);
     if (error) return Promise.reject(error);
@@ -585,5 +615,11 @@ export function fakeProviderSession(
   return new DroidProviderSession(appSessionId, session, {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
+    factoryApiKey: () => undefined,
+    steer: () => Promise.resolve(false),
+    streamTurn: (droid, prompt, options) => droid.stream(prompt, options),
+    observeNotification: () => undefined,
+    interruptTurn: (droid) => droid.interrupt(),
+    stopTurn: () => undefined,
   });
 }

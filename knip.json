@@ -6,12 +6,14 @@
   "entry": [
     "src/main.tsx",
     "vite.config.ts",
+    "playwright*.config.ts",
     "electron/*.cjs",
     "src/**/*.test.ts",
     "src/**/*.test.tsx"
   ],
   "project": ["src/**/*.{ts,tsx}", "electron/**/*.cjs", "*.config.{js,ts}"],
   "ignore": ["sidecar/**"],
+  "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "ignoreBinaries": ["iconutil", "xdotool"],
   "ignoreDependencies": [
     "@types/react",

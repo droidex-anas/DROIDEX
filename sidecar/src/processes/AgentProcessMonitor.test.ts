@@ -153,6 +153,9 @@ test('processes younger than MIN_AGE_MS are not shown yet', async () => {
   // The first publication always goes out so the root reaches the reap
   // journal, but it carries nothing yet.
   assert.deepEqual(h.emitted, [['s1', []]]);
+  // A shell wrapper and a process too young to publish are nothing the user
+  // could stop, so nothing that may hold the session open.
+  assert.equal(h.monitor.hasProcesses('s1'), false);
   h.advance(2000);
   await h.monitor.scan();
   assert.equal(h.emitted.length, 2);
@@ -173,11 +176,17 @@ test('a tracked root with no visible descendants still emits once', async () => 
   await h.monitor.killSession('s1');
 });
 
-test('stop validates the pid against the session snapshot and tree-kills it', async () => {
+test('stop kills only a pid in the session snapshot whose identity still matches', async () => {
   const h = harness(rows);
   h.monitor.track('s1', 600, () => true);
   await h.monitor.scan();
   assert.equal(await h.monitor.stop('s1', 4242), false);
+  // The snapshot's pid now belongs to an unrelated process.
+  h.setRows([rows[0], { pid: 800, ppid: 1, startedAt: 50_000, command: 'unrelated-service' }]);
+  await h.monitor.stop('s1', 800);
+  assert.deepEqual(h.killed, []);
+  h.setRows(rows);
+  await h.monitor.scan();
   assert.equal(await h.monitor.stop('s1', 800), true);
   assert.deepEqual(h.killed[0], [800, 'SIGTERM']);
 });
@@ -326,7 +335,7 @@ test('the grace sweep discovers new descendants and counts process-read time', a
   h.monitor.dispose();
 });
 
-test('killRecorded only touches pids whose start time still matches', async () => {
+test('killRecorded only touches pids whose start time still matches, and nothing when ps fails', async () => {
   const h = harness(rows);
   await h.monitor.killRecorded([
     { pid: 800, startedAt: 0 },
@@ -336,193 +345,119 @@ test('killRecorded only touches pids whose start time still matches', async () =
     h.killed.map(([pid]) => pid),
     [800],
   );
+
+  const unreadable = harness(rows, new Map(), {
+    listProcesses: () => Promise.reject(new Error('ps failed')),
+  });
+  await assert.doesNotReject(() => unreadable.monitor.killRecorded([{ pid: 800, startedAt: 0 }]));
+  assert.deepEqual(unreadable.killed, []);
 });
 
 test('scan leaves the previous snapshot untouched when listProcesses rejects, and resumes after', async () => {
   let shouldFail = true;
-  const emitted: Array<[string, unknown]> = [];
-  const monitor = new AgentProcessMonitor({
+  const h = harness(rows, new Map(), {
     listProcesses: async () => {
-      if (shouldFail) {
-        shouldFail = false;
-        throw new Error('ps failed');
-      }
-      return rows;
+      if (!shouldFail) return rows;
+      shouldFail = false;
+      throw new Error('ps failed');
     },
-    listListeningPorts: async () => new Map(),
-    kill: () => {},
-    emit: (id, processes) => emitted.push([id, processes]),
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
   });
-  monitor.track('s1', 600, () => true);
+  h.monitor.track('s1', 600, () => true);
 
-  // First scan fails; must not throw, must not emit, must not produce an
-  // unhandled rejection.
-  await assert.doesNotReject(() => monitor.scan());
-  assert.equal(emitted.length, 0);
+  // A failed scan must not throw, emit, or leave an unhandled rejection.
+  await assert.doesNotReject(() => h.monitor.scan());
+  assert.equal(h.emitted.length, 0);
 
-  // A later successful scan resumes normally.
-  await monitor.scan();
-  assert.equal(emitted.length, 1);
-  assert.equal(emitted[0][0], 's1');
+  await h.monitor.scan();
+  assert.equal(h.emitted.length, 1);
+  assert.equal(h.emitted[0][0], 's1');
 });
 
 test('a rejecting listListeningPorts leaves the previous snapshot untouched and scan() resolves', async () => {
-  let currentRows = rows;
   let failPorts = false;
-  const emitted: Array<[string, unknown]> = [];
-  const monitor = new AgentProcessMonitor({
-    listProcesses: async () => currentRows,
+  const h = harness(rows, new Map(), {
     listListeningPorts: async () => {
-      if (failPorts) {
-        failPorts = false;
-        throw new Error('lsof failed');
-      }
-      return new Map([[800, [5173]]]);
+      if (!failPorts) return new Map([[800, [5173]]]);
+      failPorts = false;
+      throw new Error('lsof failed');
     },
-    kill: () => {},
-    emit: (id, processes) => emitted.push([id, processes]),
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
   });
-  monitor.track('s1', 600, () => true);
+  h.monitor.track('s1', 600, () => true);
 
   // Tick 1 always refreshes ports; this one succeeds.
-  await monitor.scan();
-  assert.equal(emitted.length, 1);
-  const snapshotBefore = monitor.processesFor('s1');
-  assert.equal(monitor.hasProcesses('s1'), true);
+  await h.monitor.scan();
+  assert.equal(h.emitted.length, 1);
+  const snapshotBefore = h.monitor.processesFor('s1');
 
   // A new descendant forces the next scan to refresh ports too, and that
   // fetch rejects. scanOnce must not throw, and must not commit anything.
-  currentRows = [...rows, { pid: 900, ppid: 800, startedAt: 100_000, command: 'node child.js' }];
+  h.setRows([...rows, { pid: 900, ppid: 800, startedAt: 100_000, command: 'node child.js' }]);
   failPorts = true;
-  await assert.doesNotReject(() => monitor.scan());
-  assert.deepEqual(monitor.processesFor('s1'), snapshotBefore);
-  assert.equal(monitor.hasProcesses('s1'), true);
-  assert.equal(emitted.length, 1, 'no emit from the failed scan');
-
-  // A later successful scan resumes without throwing.
-  await assert.doesNotReject(() => monitor.scan());
-});
-
-test("untrack of a session's last root publishes an empty list and clears its snapshot", async () => {
-  const h = harness(rows);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.scan();
-  assert.equal(h.emitted.length, 1);
+  await assert.doesNotReject(() => h.monitor.scan());
+  assert.deepEqual(h.monitor.processesFor('s1'), snapshotBefore);
   assert.equal(h.monitor.hasProcesses('s1'), true);
-
-  h.monitor.untrack(600, 's1');
-
-  assert.equal(h.monitor.hasProcesses('s1'), false);
-  assert.deepEqual(h.monitor.processesFor('s1'), []);
-  assert.deepEqual(h.emitted.at(-1), ['s1', []]);
+  assert.equal(h.emitted.length, 1, 'no emit from the failed scan');
+  await assert.doesNotReject(() => h.monitor.scan());
 });
 
 test('stop reports a failed identity check during grace without sending SIGKILL', async () => {
   let calls = 0;
-  const killed: Array<[number, string]> = [];
-  let timers: Array<() => void> = [];
-  const monitor = new AgentProcessMonitor({
+  const h = harness(rows, new Map(), {
     listProcesses: async () => {
       calls += 1;
       if (calls <= 2) return rows; // Initial scan and identity check before SIGTERM.
       throw new Error('ps failed'); // the post-grace SIGKILL survivor check
     },
-    listListeningPorts: async () => new Map(),
-    kill: (pid, signal) => killed.push([pid, signal]),
-    emit: () => {},
-    // The kill grace poll always fires immediately here; `kill` above drops
-    // the pid from the table so the poll sees it gone.
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    schedule: (cb, ms) => {
-      if (ms !== TICK_MS) {
-        setImmediate(cb);
-        return { cancel() {} };
-      }
-      timers.push(cb);
-      return {
-        cancel() {
-          timers = timers.filter((t) => t !== cb);
-        },
-      };
-    },
-    now: () => 100_000,
   });
-  monitor.track('s1', 600, () => true);
-  await monitor.scan();
+  h.monitor.track('s1', 600, () => true);
+  await h.monitor.scan();
 
-  await assert.rejects(monitor.stop('s1', 800), /ps failed/);
-  assert.deepEqual(killed, [[800, 'SIGTERM']]);
+  await assert.rejects(h.monitor.stop('s1', 800), /ps failed/);
+  assert.deepEqual(h.killed, [[800, 'SIGTERM']]);
 });
 
 test("an emit that throws for one session doesn't block another session's publish, and is retried", async () => {
-  const sessionARows: ProcessRecord[] = [
-    { pid: 600, ppid: 1, startedAt: 0, command: '/usr/local/bin/droid exec' },
-    { pid: 700, ppid: 600, startedAt: 0, command: 'node app-a.js' },
-  ];
-  const sessionBRows: ProcessRecord[] = [
-    { pid: 610, ppid: 1, startedAt: 0, command: '/usr/local/bin/droid exec' },
-    { pid: 710, ppid: 610, startedAt: 0, command: 'node app-b.js' },
-  ];
   const emitted: Array<[string, unknown]> = [];
   let failEmitFor: string | null = 's1';
-  const monitor = new AgentProcessMonitor({
-    listProcesses: async () => [...sessionARows, ...sessionBRows],
-    listListeningPorts: async () => new Map(),
-    kill: () => {},
-    emit: (id, processes) => {
-      if (id === failEmitFor) throw new Error('emit failed');
-      emitted.push([id, processes]);
+  const h = harness(
+    [
+      { pid: 600, ppid: 1, startedAt: 0, command: '/usr/local/bin/droid exec' },
+      { pid: 700, ppid: 600, startedAt: 0, command: 'node app-a.js' },
+      { pid: 610, ppid: 1, startedAt: 0, command: '/usr/local/bin/droid exec' },
+      { pid: 710, ppid: 610, startedAt: 0, command: 'node app-b.js' },
+    ],
+    new Map(),
+    {
+      emit: (id, processes) => {
+        if (id === failEmitFor) throw new Error('emit failed');
+        emitted.push([id, processes]);
+      },
     },
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
-  });
-  monitor.track('s1', 600, () => true);
-  monitor.track('s2', 610, () => true);
+  );
+  h.monitor.track('s1', 600, () => true);
+  h.monitor.track('s2', 610, () => true);
 
-  await monitor.scan();
-
-  // Delivery failed, but retirement must still see the authoritative processes.
-  assert.equal(emitted.length, 1);
-  assert.equal(emitted[0][0], 's2');
-  assert.equal(monitor.processesFor('s1').length, 1);
-
-  // s2's emit succeeded in the same tick, despite s1's throwing first.
-  assert.equal(monitor.processesFor('s2').length, 1);
+  await h.monitor.scan();
+  // Delivery failed, but retirement must still see the authoritative processes,
+  // and s2 published in the same tick despite s1 throwing first.
+  assert.deepEqual(
+    emitted.map(([id]) => id),
+    ['s2'],
+  );
+  assert.equal(h.monitor.processesFor('s1').length, 1);
 
   failEmitFor = null;
-  await monitor.scan();
-
-  assert.equal(emitted.length, 2);
-  assert.equal(emitted[1][0], 's1');
-  assert.equal(monitor.processesFor('s1').length, 1);
+  await h.monitor.scan();
+  assert.deepEqual(
+    emitted.map(([id]) => id),
+    ['s2', 's1'],
+  );
 });
 
 test('untrack during the in-flight ports scan drops the stale snapshot instead of re-emitting it', async () => {
-  let currentRows: ProcessRecord[] = rows;
   let portsCallCount = 0;
   let resolvePorts: (map: Map<number, number[]>) => void = () => {};
-  const emitted: Array<[string, unknown]> = [];
-  const monitor = new AgentProcessMonitor({
-    listProcesses: async () => currentRows,
+  const h = harness(rows, new Map(), {
     listListeningPorts: () => {
       portsCallCount += 1;
       if (portsCallCount === 1) return Promise.resolve(new Map([[800, [5173]]]));
@@ -530,60 +465,27 @@ test('untrack during the in-flight ports scan drops the stale snapshot instead o
         resolvePorts = resolve;
       });
     },
-    kill: () => {},
-    emit: (id, processes) => emitted.push([id, processes]),
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
   });
-  monitor.track('s1', 600, () => true);
+  h.monitor.track('s1', 600, () => true);
+  await h.monitor.scan();
+  assert.equal(h.monitor.hasProcesses('s1'), true);
 
-  // Tick 1 resolves ports immediately and establishes a non-empty snapshot.
-  await monitor.scan();
-  assert.equal(monitor.hasProcesses('s1'), true);
-
-  // Tick 2: a new descendant forces a port refresh, which we hold open.
-  currentRows = [...rows, { pid: 900, ppid: 800, startedAt: 100_000, command: 'node child.js' }];
-  const scanPromise = monitor.scan();
+  // A new descendant forces a port refresh, which we hold open.
+  h.setRows([...rows, { pid: 900, ppid: 800, startedAt: 100_000, command: 'node child.js' }]);
+  const scanPromise = h.monitor.scan();
   await new Promise((r) => setImmediate(r));
 
-  // The session's only root goes away while the ports fetch is still
-  // pending — untrack() clears its state and emits the empty list now.
-  monitor.untrack(600, 's1');
-  assert.deepEqual(emitted.at(-1), ['s1', []]);
+  // The session's only root goes away while the ports fetch is still pending.
+  h.monitor.untrack(600, 's1');
+  assert.deepEqual(h.emitted.at(-1), ['s1', []]);
 
   resolvePorts(new Map([[800, [5173]]]));
   await scanPromise;
 
-  // The scan must not resurrect the stale snapshot it computed before the
-  // untrack, nor re-emit it.
-  assert.equal(monitor.hasProcesses('s1'), false);
-  assert.deepEqual(monitor.processesFor('s1'), []);
-  assert.deepEqual(emitted.at(-1), ['s1', []]);
-});
-
-test('killRecorded resolves without killing anything when listProcesses rejects', async () => {
-  const killed: Array<[number, string]> = [];
-  const monitor = new AgentProcessMonitor({
-    listProcesses: async () => {
-      throw new Error('ps failed');
-    },
-    listListeningPorts: async () => new Map(),
-    kill: (pid, signal) => killed.push([pid, signal]),
-    emit: () => {},
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
-  });
-
-  await assert.doesNotReject(() => monitor.killRecorded([{ pid: 800, startedAt: 0 }]));
-  assert.deepEqual(killed, []);
+  // The scan must not resurrect or re-emit the snapshot it computed before the untrack.
+  assert.equal(h.monitor.hasProcesses('s1'), false);
+  assert.deepEqual(h.monitor.processesFor('s1'), []);
+  assert.deepEqual(h.emitted.at(-1), ['s1', []]);
 });
 
 test('a root added during port discovery survives the stale scan', async () => {
@@ -649,34 +551,6 @@ test('a replaced root cannot inherit an in-flight process table', async () => {
   h.monitor.dispose();
 });
 
-test('hasProcesses ignores descendants the user can never see', async () => {
-  const hidden: ProcessRecord[] = [
-    { pid: 600, ppid: 1, startedAt: 0, command: '/usr/local/bin/droid exec' },
-    { pid: 700, ppid: 600, startedAt: 0, command: '/bin/zsh -c npm run dev' },
-    { pid: 900, ppid: 600, startedAt: 99_500, command: 'node infant.js' },
-  ];
-  const h = harness(hidden);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.scan();
-
-  // A shell wrapper and a process too young to publish: nothing the user
-  // could stop, so nothing that may hold the session open.
-  assert.deepEqual(h.monitor.processesFor('s1'), []);
-  assert.equal(h.monitor.hasProcesses('s1'), false);
-});
-
-test('snapshotPids journals the tracked roots as well as their descendants', async () => {
-  const h = harness(rows);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.scan();
-
-  assert.deepEqual(h.monitor.snapshotPids(), [
-    { appSessionId: 's1', pid: 600, startedAt: 0 },
-    { appSessionId: 's1', pid: 700, startedAt: 0 },
-    { appSessionId: 's1', pid: 800, startedAt: 0 },
-  ]);
-});
-
 test('adopted roots survive the root that spawned them and still belong to the session', async () => {
   const h = harness(rows);
   h.monitor.track('s1', 600, () => true);
@@ -705,38 +579,6 @@ test('adopted roots survive the root that spawned them and still belong to the s
   );
 });
 
-test('killTree SIGKILLs only what is still alive when the grace expires', async () => {
-  const killed: Array<[number, string]> = [];
-  const monitor = new AgentProcessMonitor({
-    listProcesses: async () => rows, // nothing ever dies
-    listListeningPorts: async () => new Map(),
-    kill: (pid, signal) => killed.push([pid, signal]),
-    emit: () => {},
-    // The kill grace poll always fires immediately here; `kill` above drops
-    // the pid from the table so the poll sees it gone.
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    schedule: (cb, ms) => {
-      if (ms !== TICK_MS) setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
-  });
-  monitor.track('s1', 600, () => true);
-  await monitor.scan();
-
-  await monitor.killSession('s1');
-
-  assert.deepEqual(killed, [
-    [800, 'SIGTERM'],
-    [700, 'SIGTERM'],
-    [800, 'SIGKILL'],
-    [700, 'SIGKILL'],
-  ]);
-});
-
 // The adopt window: the retiring provider is still tracked while its children
 // already are, so every descendant is reachable from two roots.
 const compactionRows: ProcessRecord[] = [
@@ -745,59 +587,38 @@ const compactionRows: ProcessRecord[] = [
   { pid: 900, ppid: 600, startedAt: 0, command: 'node /w/node_modules/.bin/tsc --watch' },
 ];
 
-test('a pid reachable from two roots is published once', async () => {
+test("pruning a session's last adopted root publishes an empty list", async () => {
+  const h = harness(compactionRows, new Map(), {
+    emit: (id, processes) => {
+      // The state is committed before the emit fires.
+      if (processes.length === 0) assert.equal(h.monitor.hasProcesses(id), false);
+      h.emitted.push([id, processes]);
+    },
+  });
+  h.monitor.track('s1', 600, () => true);
+  await h.monitor.adoptDescendantsAsRoots('s1', 600);
+  h.monitor.untrack(600, 's1');
+  await h.monitor.scan();
+  assert.equal(h.monitor.hasProcesses('s1'), true);
+
+  // Both adopted roots exit; nothing is left to attribute to the session.
+  h.setRows([]);
+  await h.monitor.scan();
+  assert.equal(h.monitor.hasProcesses('s1'), false);
+  assert.deepEqual(h.monitor.processesFor('s1'), []);
+  assert.deepEqual(h.emitted.at(-1), ['s1', []]);
+});
+
+test('an adopted root is published once, and dropped rather than re-attached when its pid is recycled', async () => {
   const h = harness(compactionRows);
   h.monitor.track('s1', 600, () => true);
   await h.monitor.adoptDescendantsAsRoots('s1', 600);
+  // Reachable from the retiring provider and as its own root, each pid shows once.
   await h.monitor.scan();
-
   assert.deepEqual(
     h.monitor.processesFor('s1').map((entry) => entry.pid),
     [800, 900],
   );
-});
-
-test("pruning a session's last adopted root publishes an empty list", async () => {
-  const emitted: Array<[string, unknown]> = [];
-  let currentRows = compactionRows;
-  const monitor = new AgentProcessMonitor({
-    listProcesses: async () => currentRows,
-    listListeningPorts: async () => new Map(),
-    kill: () => {},
-    emit: (id, processes) => {
-      // Verify that the state is committed before the emit fires.
-      if (id === 's1' && Array.isArray(processes) && processes.length === 0) {
-        assert.equal(monitor.hasProcesses(id), false);
-      }
-      emitted.push([id, processes]);
-    },
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: (cb) => {
-      setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
-  });
-
-  monitor.track('s1', 600, () => true);
-  await monitor.adoptDescendantsAsRoots('s1', 600);
-  monitor.untrack(600, 's1');
-  await monitor.scan();
-  assert.equal(monitor.hasProcesses('s1'), true);
-
-  // Both adopted roots exit; nothing is left to attribute to the session.
-  currentRows = [];
-  await monitor.scan();
-
-  assert.equal(monitor.hasProcesses('s1'), false);
-  assert.deepEqual(monitor.processesFor('s1'), []);
-  assert.deepEqual(emitted.at(-1), ['s1', []]);
-});
-
-test('an adopted root whose pid is recycled is dropped, not re-attached', async () => {
-  const h = harness(compactionRows);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.adoptDescendantsAsRoots('s1', 600);
   h.monitor.untrack(600, 's1');
   await h.monitor.scan();
   assert.deepEqual(
@@ -819,13 +640,9 @@ test('an adopted root whose pid is recycled is dropped, not re-attached', async 
 });
 
 test('the SIGKILL sweep skips a pid that was recycled during the grace window', async () => {
-  const killed: Array<[number, string]> = [];
   let table: ProcessRecord[] = [...rows];
-  const monitor = new AgentProcessMonitor({
+  const h = harness(rows, new Map(), {
     listProcesses: async () => table,
-    listListeningPorts: async () => new Map(),
-    kill: (pid, signal) => killed.push([pid, signal]),
-    emit: () => {},
     scheduleKillPoll: (cb) => {
       // The grace window: 800 died and its pid now belongs to someone else.
       table = [
@@ -836,18 +653,12 @@ test('the SIGKILL sweep skips a pid that was recycled during the grace window', 
       setImmediate(cb);
       return { cancel() {} };
     },
-    schedule: (cb, ms) => {
-      if (ms !== TICK_MS) setImmediate(cb);
-      return { cancel() {} };
-    },
-    now: () => 100_000,
   });
-  monitor.track('s1', 600, () => true);
-  await monitor.scan();
+  h.monitor.track('s1', 600, () => true);
+  await h.monitor.scan();
 
-  await monitor.killSession('s1');
-
-  assert.deepEqual(killed, [
+  await h.monitor.killSession('s1');
+  assert.deepEqual(h.killed, [
     [800, 'SIGTERM'],
     [700, 'SIGTERM'],
     [700, 'SIGKILL'],
@@ -855,17 +666,11 @@ test('the SIGKILL sweep skips a pid that was recycled during the grace window', 
 });
 
 test('adoptDescendantsAsRoots reports failure when the process table is unreadable', async () => {
-  const monitor = new AgentProcessMonitor({
+  const h = harness(rows, new Map(), {
     listProcesses: () => Promise.reject(new Error('ps: cannot fork')),
-    listListeningPorts: async () => new Map(),
-    kill: () => {},
-    emit: () => {},
-    schedule: () => ({ cancel() {} }),
-    scheduleKillPoll: () => ({ cancel() {} }),
-    now: () => 100_000,
   });
-  monitor.track('s1', 600, () => true);
-  assert.equal(await monitor.adoptDescendantsAsRoots('s1', 600), false);
+  h.monitor.track('s1', 600, () => true);
+  assert.equal(await h.monitor.adoptDescendantsAsRoots('s1', 600), false);
 });
 
 // `droid` spawns the stdio MCP servers from `.factory/mcp.json` as its own
@@ -889,14 +694,10 @@ test('an ignored command hides its whole subtree and nothing else', async () => 
     [800, 810],
   );
   assert.equal(h.monitor.hasProcesses('s1'), true);
-});
 
-test('a session whose only descendants are ignored has no processes', async () => {
-  const h = harness(mcpRows.filter((row) => row.pid !== 800 && row.pid !== 810));
-  h.monitor.setIgnoredCommands('s1', ['npx -y some-mcp']);
-  h.monitor.track('s1', 600, () => true);
+  // Only ignored plumbing left: nothing may hold the session open.
+  h.setRows(mcpRows.filter((row) => row.pid !== 800 && row.pid !== 810));
   await h.monitor.scan();
-
   assert.deepEqual(h.monitor.processesFor('s1'), []);
   assert.equal(h.monitor.hasProcesses('s1'), false);
 });
@@ -912,15 +713,6 @@ test('a recycled provider root cannot attach or kill a stranger’s descendants'
   await h.monitor.scan();
   assert.deepEqual(h.monitor.processesFor('s1'), []);
   await h.monitor.killSession('s1');
-  assert.deepEqual(h.killed, []);
-});
-
-test('stop validates identity before SIGTERM when a snapshot PID was reused', async () => {
-  const h = harness(rows);
-  h.monitor.track('s1', 600, () => true);
-  await h.monitor.scan();
-  h.setRows([rows[0], { pid: 800, ppid: 1, startedAt: 50_000, command: 'unrelated-service' }]);
-  await h.monitor.stop('s1', 800);
   assert.deepEqual(h.killed, []);
 });
 

@@ -5,7 +5,11 @@ import { startBridgeServer } from '../sidecar/src/bridgeServer.ts';
 import { DroidMcpConfiguration } from '../sidecar/src/DroidMcpConfiguration.ts';
 import { loadFactoryMcpServers } from '../sidecar/src/FactoryMcpConfig.ts';
 import { HistoryPersistence } from '../sidecar/src/HistoryPersistence.ts';
-import { buildReplayPlan, resolveScenario, type ReplayTurnPlan } from '../sidecar/src/perf/scenario.ts';
+import {
+  buildReplayPlan,
+  groupTurnsBySession,
+  resolveScenario,
+} from '../sidecar/src/perf/scenario.ts';
 import { ReplayFactoryRuntime, ReplayFactorySession } from '../sidecar/src/perf/replayRuntime.ts';
 import type { FactoryRuntime, RuntimeHandlers } from '../sidecar/src/DroidRuntime.ts';
 import { SessionManager, type SessionManagerDependencies } from '../sidecar/src/SessionManager.ts';
@@ -14,24 +18,12 @@ import { hotPathMetrics } from '../sidecar/src/telemetry/hotPathMetrics.ts';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
-const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 const SCENARIO = process.env.GUI_BENCH_REPLAY_SCENARIO ?? 'streaming';
 
 const spec = resolveScenario(SCENARIO);
 const plan = buildReplayPlan(spec);
-const turnsBySession = new Map<number, ReplayTurnPlan[]>();
-for (const turn of plan.turns) {
-  const existing = turnsBySession.get(turn.sessionIndex) ?? [];
-  existing.push(turn);
-  turnsBySession.set(turn.sessionIndex, existing);
-}
-for (const [index, turns] of turnsBySession) {
-  turnsBySession.set(
-    index,
-    turns.toSorted((a, b) => a.turn - b.turn),
-  );
-}
+const turnsBySession = groupTurnsBySession(plan);
 
 const hooks = {
   onYield: () => undefined,
@@ -54,7 +46,6 @@ const runtime = new GuiBenchReplayRuntime(turnsBySession, hooks);
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
-  assetToken: ASSET_TOKEN,
   onCommand: async (command) => {
     await manager.handle(command);
   },
@@ -63,7 +54,6 @@ const server = startBridgeServer({
 
 const history = new HistoryPersistence();
 const browsers = new BrowserSessionManager({
-  assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
   emit: (event) => {
     server.broadcast(event);
   },
@@ -131,7 +121,7 @@ function stubMcpResource() {
   };
 }
 
-function requiredSecret(name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN'): string {
+function requiredSecret(name: 'BRIDGE_TOKEN'): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

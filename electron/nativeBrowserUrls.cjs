@@ -123,23 +123,6 @@ function createNativeBrowserUrlPolicy({ appName, getHostAppUrl }) {
     }
   }
 
-  function normalizeBounds(bounds) {
-    return {
-      x: Math.round(bounds?.x ?? 0),
-      y: Math.round(bounds?.y ?? 0),
-      width: Math.max(1, Math.round(bounds?.width ?? 1)),
-      height: Math.max(1, Math.round(bounds?.height ?? 1)),
-    };
-  }
-
-  function normalizeBrowserViewport(viewport) {
-    return {
-      width: Math.max(1, Math.round(Number(viewport?.width) || 1200)),
-      height: Math.max(1, Math.round(Number(viewport?.height) || 800)),
-      deviceScaleFactor: Math.max(0.1, Number(viewport?.deviceScaleFactor) || 2),
-    };
-  }
-
   return {
     normalizeNativeBrowserSessionId,
     nativeBrowserUrlsMatch,
@@ -152,8 +135,6 @@ function createNativeBrowserUrlPolicy({ appName, getHostAppUrl }) {
     isHostAppUrl,
     httpFallbackUrl,
     validateUrl,
-    normalizeBounds,
-    normalizeBrowserViewport,
   };
 }
 

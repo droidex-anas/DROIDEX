@@ -50,72 +50,52 @@ function readCharsOrNull(): number | null {
   }
 }
 
-test('a session head read reports the start and a completed exchange', () => {
+test('a session head read reports the start, and a reply or crash row completes the exchange', () => {
   const path = writeSessionFile('complete.jsonl', 4);
-
   const head = readSessionFileHead(path, statSync(path).size);
-
   assert.equal(head.start?.type, 'session_start');
   assert.equal(head.start?.cwd, '/repo/app');
   assert.equal(head.start?.sessionTitle, 'Head test');
   assert.equal(head.hasCompletedConversation, true);
-});
 
-test('a session with no model reply is not a completed conversation', () => {
-  const path = join(workspace, 'unanswered.jsonl');
-  writeFileSync(
-    path,
-    `${[
-      JSON.stringify({ type: 'session_start', cwd: '/repo/app', sessionTitle: 'Unanswered' }),
+  const crashRow = JSON.stringify({
+    type: 'error',
+    id: 'error-1',
+    timestamp: '2026-08-09T00:00:01.000Z',
+    text: 'Session process was killed (SIGKILL).',
+  });
+  for (const [name, answer, completed] of [
+    ['unanswered.jsonl', undefined, false],
+    ['crashed.jsonl', crashRow, true],
+  ] as const) {
+    const file = join(workspace, name);
+    const lines = [
+      JSON.stringify({ type: 'session_start', cwd: '/repo/app', sessionTitle: name }),
       messageLine('user', 'hello'),
-    ].join('\n')}\n`,
-  );
-
-  const head = readSessionFileHead(path, statSync(path).size);
-
-  assert.equal(head.start?.sessionTitle, 'Unanswered');
-  assert.equal(head.hasCompletedConversation, false);
+      ...(answer ? [answer] : []),
+    ];
+    writeFileSync(file, `${lines.join('\n')}\n`);
+    const result = readSessionFileHead(file, statSync(file).size);
+    assert.equal(result.start?.sessionTitle, name);
+    assert.equal(result.hasCompletedConversation, completed, name);
+  }
 });
 
-test('a prompt answered only by a crash row is still a completed conversation', () => {
-  const path = join(workspace, 'crashed.jsonl');
-  writeFileSync(
-    path,
-    `${[
-      JSON.stringify({ type: 'session_start', cwd: '/repo/app', sessionTitle: 'Crashed' }),
-      messageLine('user', 'hello'),
-      JSON.stringify({
-        type: 'error',
-        id: 'error-1',
-        timestamp: '2026-08-09T00:00:01.000Z',
-        text: 'Session process was killed (SIGKILL).',
-      }),
-    ].join('\n')}\n`,
-  );
-
-  const head = readSessionFileHead(path, statSync(path).size);
-
-  assert.equal(head.hasCompletedConversation, true);
-});
-
-test('an empty session file yields no start rather than throwing', () => {
-  const path = join(workspace, 'empty.jsonl');
-  writeFileSync(path, '');
-
-  assert.deepEqual(readSessionFileHead(path, 0), {
+test('an empty file, or a session_start past the first few lines, yields no start', () => {
+  const empty = join(workspace, 'empty.jsonl');
+  writeFileSync(empty, '');
+  assert.deepEqual(readSessionFileHead(empty, 0), {
     start: undefined,
     hasCompletedConversation: false,
   });
-  assert.deepEqual(readSessionStart(path, 0), {});
-});
+  assert.deepEqual(readSessionStart(empty, 0), {});
 
-test('a session_start beyond the first few lines is not searched for forever', () => {
-  const path = join(workspace, 'no-start.jsonl');
+  // A session_start is not searched for forever.
+  const late = join(workspace, 'no-start.jsonl');
   const lines = Array.from({ length: 40 }, (_, index) => messageLine('user', String(index)));
   lines.push(JSON.stringify({ type: 'session_start', sessionTitle: 'Too late' }));
-  writeFileSync(path, `${lines.join('\n')}\n`);
-
-  assert.deepEqual(readSessionStart(path, statSync(path).size), {});
+  writeFileSync(late, `${lines.join('\n')}\n`);
+  assert.deepEqual(readSessionStart(late, statSync(late).size), {});
 });
 
 test(

@@ -1,18 +1,34 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import type * as Protocol from '../protocol.js';
 import type { SessionFileChange } from '../sessionFileCache.js';
 import type { SessionManagerDependencies } from '../SessionManager.js';
 import {
   applyCachedSummary,
-  loadHistoricalSessions,
+  createHistorySessionFileCache,
+  HistoryIndex,
   type HistoricalSession,
   type HistoricalSummaryFilter,
   type PersistedChildSession,
 } from '../history.js';
 import type { RecordedCall } from './fakeFactoryRuntime.js';
 import { providerSessionJsonl } from './providerSessionFixtures.js';
+
+export function reconciledHistorySessions(): HistoricalSession[] {
+  const db = new DatabaseSync(':memory:');
+  const index = new HistoryIndex();
+  try {
+    const cache = createHistorySessionFileCache(db);
+    cache.reconcileChanges();
+    index.replaceSessionFileSnapshot(cache.snapshot());
+    return index.listHistoricalSessions();
+  } finally {
+    index.close();
+    db.close();
+  }
+}
 
 type SessionHistoryDependencies = SessionManagerDependencies['history'];
 
@@ -110,17 +126,10 @@ export class FakeHistoryIndex implements SessionHistoryDependencies {
     return { patches, hiddenProviderSessionIds };
   }
 
-  // SessionManager tests pin a temp HOME and write provider session files into
-  // it, so the fake delegates to the real disk scan for the on-disk rows. But
-  // unlike production, the fake persists app-session patches only in memory
-  // (summariesByAppId), never to the sqlite the real scan reads. Filtering
-  // inside loadHistoricalSessions would therefore use the on-disk cwd, not the
-  // patched cwd a test seeded, so a session moved between workspaces by a
-  // patch could be filtered out before the patch is applied. To stay faithful
-  // to production (which applies its patches before filtering), the fake loads
-  // every row, overlays its own patches, then filters.
+  // Apply the fake's in-memory patches before workspace filtering, just as
+  // production applies its persisted patches before filtering cached rows.
   listHistoricalSessions(options: HistoricalSummaryFilter = {}): HistoricalSession[] {
-    const rows = loadHistoricalSessions();
+    const rows = reconciledHistorySessions();
     if (!options.workspaceCwds && options.includePlainChats === undefined) return rows;
     const { patches } = this.summaryPatchesAndHidden();
     const workspaceCwds = new Set(options.workspaceCwds ?? []);

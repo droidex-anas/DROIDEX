@@ -473,7 +473,6 @@ module.exports = {
   createDiagnostics,
   createEventId,
   createReportId,
-  createTechnicalDiagnostics,
   createPseudonymousUserId,
   deliverFeedbackEvent,
   filterBreadcrumb,

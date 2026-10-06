@@ -5,6 +5,7 @@ import { Popover } from '../environment/Popover';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
 import { useStoreSelector } from '../../hooks/useStore';
 import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
+import { viewRowHoldsWindowControls } from '../../features/tabs/tabStrip';
 import { PaneResizeHandle } from './PaneResizeHandle';
 import { UtilityToolPicker } from './UtilityToolPicker';
 import { UTILITY_TOOL_OPTIONS, utilityToolOption } from './utilityToolOptions';
@@ -33,15 +34,15 @@ export function UtilityPane({
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tab: UtilityTab) => void;
   onClosePane: () => void;
-  renderTab: (tab: UtilityTab, context: { overlayOpen: boolean }) => ReactNode;
+  renderTab: (tab: UtilityTab) => ReactNode;
   expanded?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
-  // Expanded, the pane owns the window's top row; with the sidebar collapsed
-  // the traffic lights and the sidebar toggle sit there too.
-  const sidebarCollapsed = useStoreSelector((current) => current.sidebarCollapsed);
-  const leadPx = expanded && sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : undefined;
+  // Expanded, the pane owns the view's top row, where the traffic lights and
+  // the sidebar toggle may sit too.
+  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const leadPx = expanded && holdsWindowControls ? WINDOW_CONTROLS_LEAD_PX : undefined;
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId) ?? null;
   const openSingletons = new Set(panel.tabs.map((tab) => tab.tool));
   const availableTools = UTILITY_TOOL_OPTIONS.map((option) => option.tool).filter(
@@ -180,7 +181,7 @@ export function UtilityPane({
 
       <div role="tabpanel" className="min-h-0 flex-1 overflow-hidden">
         {activeTab ? (
-          <Fragment key={activeTab.id}>{renderTab(activeTab, { overlayOpen: menuOpen })}</Fragment>
+          <Fragment key={activeTab.id}>{renderTab(activeTab)}</Fragment>
         ) : (
           <div className="flex h-full items-center justify-center px-3 pb-[8vh]">
             <div className="w-full max-w-[320px]">

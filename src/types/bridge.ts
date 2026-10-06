@@ -17,7 +17,7 @@ export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } fro
 export const PROVIDER_KINDS = ['droid', 'claude', 'codex'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
-export type SessionPhase =
+type SessionPhase =
   | 'intake'
   | 'planning'
   | 'awaiting_plan_approval'
@@ -29,8 +29,8 @@ export type SessionPhase =
   | 'completed'
   | 'failed';
 
-export type FeatureStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
-export type SessionRole = 'primary' | 'worker' | 'validator';
+type FeatureStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+type SessionRole = 'primary' | 'worker' | 'validator';
 export type SessionPurpose = 'chat' | 'design' | 'mission-control';
 export type SessionInteractionMode = 'auto' | 'spec' | 'agi';
 export type ResponseFormat = 'app-create' | 'app-followup';
@@ -76,7 +76,7 @@ export interface ProgressEntry {
   workerChildSessionId?: string;
 }
 
-export type ChildRole = 'worker' | 'validator';
+type ChildRole = 'worker' | 'validator';
 // 'failed' is terminal like 'completed': the agent stopped, but it did not
 // deliver. Never fold the two together in a count, a label, or a tint.
 export type ChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
@@ -90,7 +90,7 @@ export interface ChildSpawnLink {
 // Live activity of an autonomous child, as observed by polling its background
 // task from the parent: the task's status ("Running", "Completed") and the last
 // line it had produced at that moment.
-export interface ChildActivity {
+interface ChildActivity {
   phase?: string;
   preview?: string;
 }
@@ -137,6 +137,56 @@ export interface SessionLineage {
   kind: 'fork' | 'side';
   sourceAppSessionId: string;
   forkedAt: number;
+}
+
+export type UsageWindow = 'five_hour' | 'daily' | 'weekly' | 'monthly';
+
+// A usage limit as the harness reported it. `model` names the one model family
+// the limit covers ('Opus'); `resetsAt` is epoch ms, set only while still ahead.
+export interface UsageLimit {
+  window?: UsageWindow;
+  model?: string;
+  resetsAt?: number;
+}
+
+// One limit window of a harness account, as the harness reported it. `id` is
+// the adapter's stable key for the window, so an update that carries one window
+// lands on the row a full read drew. `durationMs` is the window's length, and
+// `updatedAt` (epoch ms) when this window was last read or pushed.
+export interface UsageMeter {
+  id: string;
+  window?: UsageWindow;
+  model?: string;
+  usedPercent: number;
+  resetsAt?: number;
+  durationMs?: number;
+  updatedAt: number;
+}
+
+// What an account holds beside its windows, shown and never spent: Codex limit
+// resets, Claude extra usage, a Factory extra-usage balance.
+export type UsageExtra =
+  | { kind: 'limit_resets'; available: number }
+  | { kind: 'extra_usage'; usedPercent?: number }
+  | { kind: 'extra_balance'; cents: number };
+
+// A harness account's usage. `stale` marks a latest read that failed: meters,
+// if any, are the last good ones; `unavailable` says why an account has no
+// meters at all.
+export interface ProviderUsage {
+  provider: ProviderKind;
+  meters: UsageMeter[];
+  extra?: UsageExtra;
+  unavailable?: 'no_api_key' | 'no_plan_limits';
+  stale?: boolean;
+}
+
+// A model change the transcript records. `cause` is set when the harness made
+// the change by itself: 'usage_limit' when it said the limit was why.
+export interface ModelSwitch {
+  from: string;
+  to: string;
+  cause?: 'harness' | 'usage_limit';
 }
 
 export interface SessionSummary {
@@ -188,6 +238,9 @@ export interface SessionSummary {
   contextAccuracy?: 'exact' | 'estimated';
   contextUpdatedAt?: string;
   maxContextTokens?: number;
+  // Live-only: the limit this chat's last turn was refused on. The turn runner
+  // is its only writer; the next turn that ends without an error clears it.
+  usageLimit?: UsageLimit;
   // The auto-compaction trigger the sidecar last armed on the daemon for this
   // session (already clamped below the model window), cleared when arming
   // failed. Recorded as diagnostic/persisted truth; compaction itself is
@@ -238,6 +291,9 @@ export interface TranscriptEvent {
   // turn, with Stop or Send now. Reported by the harness, not inferred from the
   // text: it is not a failure and must not read as one.
   interrupted?: true;
+  // The pictures a 'tool_result' carried (a screenshot, an image file the agent
+  // read), as files saved in the profile. Their bytes are never in `text`.
+  images?: string[];
   // For a 'compaction' divider: how many messages the compaction summarized away.
   removedCount?: number;
   author?: 'user';
@@ -251,12 +307,12 @@ export interface TranscriptEvent {
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';
-  modelSwitch?: { from: string; to: string };
+  modelSwitch?: ModelSwitch;
   errorKind?: 'usage_limit';
   resetsAt?: number;
   // A 'status' row that only says what the app is doing right now (booting a
-  // CLI, stopping a turn to send now, releasing an idle runtime). It is shown live and never
-  // stored, so reopening the session does not replay stale progress.
+  // CLI, stopping a turn to send now). It is shown live and never stored, so
+  // reopening the session does not replay stale progress.
   transient?: true;
 }
 
@@ -458,7 +514,7 @@ export interface FactoryDefaultSettings {
 
 export type InstallChannel = 'script' | 'brew' | 'npm';
 
-export interface PackageManagers {
+interface PackageManagers {
   brew: boolean;
   npm: boolean;
   curl: boolean;
@@ -500,7 +556,7 @@ interface ContextBreakdownCategory {
   colorKey?: string;
 }
 
-export interface ContextBreakdownSnapshot {
+interface ContextBreakdownSnapshot {
   modelId?: string;
   modelDisplayName?: string;
   contextBudget: number;
@@ -509,7 +565,7 @@ export interface ContextBreakdownSnapshot {
   categories: ContextBreakdownCategory[];
 }
 
-export interface SessionHistoryEntry {
+interface SessionHistoryEntry {
   providerSessionId: string;
   title: string;
   cwd?: string;
@@ -529,7 +585,7 @@ export interface SessionSearchMatch {
 
 // A session whose transcript matched the query. Title matching itself happens
 // over the local session list; the sidecar only reports content hits.
-export interface SessionSearchResult {
+interface SessionSearchResult {
   appSessionId: string;
   matches: SessionSearchMatch[];
 }
@@ -540,27 +596,13 @@ export interface BrowserViewport {
   deviceScaleFactor: number;
 }
 
-export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
-export type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
+export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile';
 
 export interface BrowserBox {
   x: number;
   y: number;
   width: number;
   height: number;
-}
-
-export interface BrowserElementRef {
-  ref: string;
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes?: Record<string, string>;
-  className?: string;
-  box: BrowserBox;
-  computedStyles?: Record<string, string>;
 }
 
 export interface BrowserState {
@@ -570,109 +612,9 @@ export interface BrowserState {
   title?: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
-  screenshotPath?: string;
-  screenshotUrl?: string;
   scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
   canGoBack?: boolean;
   canGoForward?: boolean;
-  agentCursor?: { x: number; y: number };
-  error?: string;
-}
-
-export interface BrowserNativeSnapshot {
-  url: string;
-  title?: string;
-  scroll: { x: number; y: number };
-  refs: BrowserElementRef[];
-  canGoBack?: boolean;
-  canGoForward?: boolean;
-}
-
-export interface BrowserElementInspection {
-  selector: string;
-  tagName: string;
-  role?: string;
-  name?: string;
-  text?: string;
-  attributes: Record<string, string>;
-  box: BrowserBox;
-  html: string;
-  iframe?: {
-    src?: string;
-    accessible: boolean;
-  };
-}
-
-export interface BrowserNetworkEvent {
-  timestamp: number;
-  method: string;
-  url: string;
-  resourceType?: string;
-  status?: number;
-  error?: string;
-}
-
-export interface BrowserConsoleEvent {
-  timestamp: number;
-  level: number;
-  message: string;
-  line?: number;
-  source?: string;
-}
-
-export type BrowserNativeAction =
-  | 'open'
-  | 'reload'
-  | 'goBack'
-  | 'goForward'
-  | 'snapshot'
-  | 'click'
-  | 'hover'
-  | 'selectOption'
-  | 'type'
-  | 'keypress'
-  | 'scroll'
-  | 'resize'
-  | 'inspect'
-  | 'network'
-  | 'console'
-  | 'capture'
-  | 'close'
-  | 'fillCredentials';
-
-export interface BrowserNativeRequest {
-  requestId: string;
-  appSessionId: string;
-  browserSessionId: string;
-  action: BrowserNativeAction;
-  url?: string;
-  viewport?: BrowserViewport;
-  viewportMode?: BrowserViewportMode;
-  x?: number;
-  y?: number;
-  selector?: string;
-  text?: string;
-  key?: string;
-  direction?: BrowserScrollDirection;
-  pixels?: number;
-  box?: BrowserBox;
-  fullPage?: boolean;
-  deviceScaleFactor?: number;
-  clearNetworkLog?: boolean;
-  clearConsoleLog?: boolean;
-}
-
-export interface BrowserNativeResult {
-  requestId: string;
-  appSessionId: string;
-  browserSessionId: string;
-  ok: boolean;
-  snapshot?: BrowserNativeSnapshot;
-  inspection?: BrowserElementInspection;
-  networkEvents?: BrowserNetworkEvent[];
-  consoleEvents?: BrowserConsoleEvent[];
-  image?: string;
   error?: string;
 }
 
@@ -714,6 +656,8 @@ export interface DesignAnchor {
   source?: ElementSource;
   screenshotPath?: string;
   strokes?: DesignStrokePoint[][];
+  /** The mark's number in the composer, which the user writes as @1, @2. */
+  mark?: number;
 }
 
 export interface DesignAnchorDetail {
@@ -781,6 +725,11 @@ export type ClientCommand =
   | { type: 'droidproxy.factoryModels.apply' }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
+  // Asks for a harness's account usage, answered by `usage.updated`. With
+  // `panelOpen`, /usage shows it: the read may start a short-lived harness
+  // process when no session of the harness is live. `immediate` skips the
+  // pause kept between automatic reads.
+  | { type: 'usage.refresh'; provider: ProviderKind; panelOpen: boolean; immediate: boolean }
   | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
@@ -902,7 +851,9 @@ export type ClientCommand =
   | {
       type: 'app.backgroundWork';
       tier: 'interactive' | 'hidden' | 'low-power';
-      focusedAppSessionId?: string | null;
+      // The chat the user is working in, and every chat on screen including it.
+      focusedAppSessionId: string | null;
+      visibleAppSessionIds: string[];
     }
   | {
       type: 'child.open';
@@ -971,46 +922,38 @@ export type ClientCommand =
     }
   | { type: 'browser.close'; appSessionId: string }
   | { type: 'browser.reload'; appSessionId: string }
-  | { type: 'browser.refresh'; appSessionId: string }
+  | {
+      // The browsers the app kept from its last run, sent on each connection.
+      // The sidecar takes up any it lacks under the same id, leaving the page.
+      type: 'browser.restore';
+      browsers: {
+        appSessionId: string;
+        browserSessionId: string;
+        url: string;
+        viewport: BrowserViewport;
+        viewportMode: BrowserViewportMode;
+      }[];
+    }
   | {
       type: 'browser.resizeViewport';
       appSessionId: string;
       viewport: BrowserViewport;
       viewportMode: BrowserViewportMode;
+      /** The pane's size for Fit, taken only while the page is on Fit. */
+      follow?: boolean;
     }
-  | {
-      type: 'browser.click';
-      appSessionId: string;
-      ref?: string;
-      x?: number;
-      y?: number;
-      source?: 'agent' | 'user';
-    }
-  | { type: 'browser.type'; appSessionId: string; text: string }
-  | { type: 'browser.keypress'; appSessionId: string; key: string }
-  | {
-      type: 'browser.scroll';
-      appSessionId: string;
-      direction: BrowserScrollDirection;
-      pixels?: number;
-      ref?: string;
-      source?: 'agent' | 'user';
-    }
-  | {
-      type: 'browser.screenshot';
-      appSessionId: string;
-      fullPage?: boolean;
-      deviceScaleFactor?: number;
-    }
-  | { type: 'browser.inspectPoint'; appSessionId: string; x: number; y: number }
   | { type: 'browser.design.addReference'; appSessionId: string; reference: DesignReference }
+  /** Marks the user took away or picked again, so design-mode reads only live ones. */
+  | { type: 'browser.design.removeReferences'; appSessionId: string; ids: string[] }
   | {
       type: 'browser.design.sendPrompt';
       appSessionId: string;
       instruction: string;
-      referenceIds: string[];
+      /** The prompt's own snapshots of its marks, each under an id no other pick has. */
+      references: DesignReference[];
+      mentions?: ProviderMention[];
+      responseFormat?: ResponseFormat;
     }
-  | { type: 'browser.native.result'; result: BrowserNativeResult }
   | { type: 'sidebar.result'; result: SidebarResult };
 
 type ChildUpdatedEvent =
@@ -1180,6 +1123,7 @@ export type ServerEvent =
       providerSessionId?: string | null;
     }
   | { type: 'provider.status'; statuses: ProviderStatus[] }
+  | { type: 'usage.updated'; usage: ProviderUsage }
   | { type: 'settings.defaults'; defaults: FactoryDefaultSettings }
   | {
       type: 'error';
@@ -1239,14 +1183,18 @@ export type ServerEvent =
   | { type: 'history.persistenceRecovered' }
   | { type: 'history.list'; sessions: SessionHistoryEntry[] }
   | { type: 'browser.updated'; state: BrowserState }
-  | { type: 'browser.native.request'; request: BrowserNativeRequest }
   | { type: 'sidebar.request'; request: SidebarRequest }
-  | { type: 'browser.closed'; appSessionId: string }
+  | {
+      type: 'browser.closed';
+      appSessionId: string;
+      /** Closed with the chat's runtime, not by the user: the pane stays open for a new page. */
+      keepPane?: boolean;
+    }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 8 as const;
+export const BRIDGE_PROTOCOL_VERSION = 9 as const;
 
-export interface SequencedServerEvent {
+interface SequencedServerEvent {
   seq: number;
   event: ServerEvent;
 }

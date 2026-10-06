@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarWorkspaceRow, WorkspaceContextMenuPanel } from './SidebarWorkspaceRow';
 
-test('a workspace row keeps Remove off the heading until a context menu opens', () => {
-  const html = renderToStaticMarkup(
+test('a workspace row keeps Remove off the heading; its context menu offers it', () => {
+  const heading = renderToStaticMarkup(
     createElement(
       SidebarWorkspaceRow,
       {
@@ -19,13 +19,11 @@ test('a workspace row keeps Remove off the heading until a context menu opens', 
       null,
     ),
   );
-  assert.match(html, /droid-control/);
-  assert.match(html, /New chat here/);
-  assert.doesNotMatch(html, /Remove workspace/);
-});
+  assert.match(heading, /droid-control/);
+  assert.match(heading, /New chat here/);
+  assert.doesNotMatch(heading, /Remove workspace/);
 
-test('the workspace menu offers Remove workspace', () => {
-  const html = renderToStaticMarkup(
+  const menu = renderToStaticMarkup(
     createElement(WorkspaceContextMenuPanel, {
       x: 40,
       y: 40,
@@ -34,6 +32,6 @@ test('the workspace menu offers Remove workspace', () => {
       onClose: () => undefined,
     }),
   );
-  assert.match(html, /Remove workspace/);
-  assert.match(html, /role="menu"/);
+  assert.match(menu, /role="menu"/);
+  assert.match(menu, /Remove workspace/);
 });

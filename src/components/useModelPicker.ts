@@ -36,17 +36,18 @@ import { categoryOf, categoryOptions, type ModelCategory } from './modelCategori
  * layout, rows, effort control — stays with the popover.
  */
 export default function useModelPicker({
+  appSessionId,
   singleAgent,
   childTarget,
 }: {
+  // The chat the picker's composer writes into; null while drafting one.
+  appSessionId: string | null;
   singleAgent: boolean;
   childTarget?: ExactChildSettingsTarget;
 }) {
   const dispatch = useStoreDispatch();
   const state = useStoreSelector((current) => {
-    const activeSession = current.activeAppSessionId
-      ? current.sessions[current.activeAppSessionId]
-      : undefined;
+    const activeSession = appSessionId ? current.sessions[appSessionId] : undefined;
     const activeSettings = activeSession
       ? displayedModelSettings(
           activeSession,

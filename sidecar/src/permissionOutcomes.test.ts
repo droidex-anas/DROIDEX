@@ -6,26 +6,19 @@ import {
   normalizePermissionOutcome,
 } from './permissionOutcomes.js';
 
-test('always-allow uses the canonical outcome', () => {
-  assert.equal(normalizePermissionOutcome('proceed_always'), 'proceed_always');
-  assert.equal(isAlwaysOutcome('proceed_always'), true);
-  assert.equal(isApprovalOutcome('proceed_always'), true);
-});
-
-test('cancel and refuse are not approvals', () => {
-  assert.equal(normalizePermissionOutcome('cancel'), 'cancel');
-  assert.equal(isApprovalOutcome('cancel'), false);
-  assert.equal(isAlwaysOutcome('cancel'), false);
-  assert.equal(normalizePermissionOutcome('refuse'), 'refuse');
-  assert.equal(isApprovalOutcome('refuse'), false);
-  assert.equal(isAlwaysOutcome('refuse'), false);
-});
-
-test('rejects unknown permission outcomes before they reach a provider', () => {
-  assert.throws(() => normalizePermissionOutcome('always_yes'), /Unsupported permission outcome/);
-  assert.equal(isAlwaysOutcome('always_yes'), false);
-  assert.throws(
-    () => normalizePermissionOutcome('proceed_always_tools'),
-    /Unsupported permission outcome/,
-  );
+test('only the canonical outcomes pass, and only proceed_always is an always-allow', () => {
+  for (const [outcome, approval, always] of [
+    ['proceed_always', true, true],
+    ['cancel', false, false],
+    ['refuse', false, false],
+  ] as const) {
+    assert.equal(normalizePermissionOutcome(outcome), outcome);
+    assert.equal(isApprovalOutcome(outcome), approval, outcome);
+    assert.equal(isAlwaysOutcome(outcome), always, outcome);
+  }
+  // Unknown outcomes are rejected before they reach a provider.
+  for (const unknown of ['always_yes', 'proceed_always_tools']) {
+    assert.throws(() => normalizePermissionOutcome(unknown), /Unsupported permission outcome/);
+    assert.equal(isAlwaysOutcome(unknown), false);
+  }
 });

@@ -1,22 +1,14 @@
 // GitHub pull-request integration for the Context panel, driven by the `gh`
 // CLI so it reuses the user's existing authentication and works on every OS.
 // Every method degrades gracefully when `gh` is missing or unauthenticated.
-const os = require('node:os');
-const path = require('node:path');
 const { resolveExecutable, runFile } = require('./executable.cjs');
+const { expandHome } = require('./git.cjs');
 const githubSetup = require('./githubSetup.cjs');
 
 const DEFAULT_TIMEOUT = 15000;
 const COMMON_GH_PATHS = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/opt/local/bin/gh'];
 
 let cachedGhExecutablePromise;
-
-function expandHome(value) {
-  const str = String(value || '');
-  if (str === '~') return os.homedir();
-  if (str.startsWith('~/') || str.startsWith('~\\')) return path.join(os.homedir(), str.slice(2));
-  return str;
-}
 
 function resolveGhExecutable(options = {}) {
   return resolveExecutable({ binaryName: 'gh', commonPaths: COMMON_GH_PATHS }, options);

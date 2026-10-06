@@ -22,17 +22,13 @@ const AUTONOMY: { value: Autonomy; outcome: PermissionOutcome }[] = [
 // (propose_mission) is ready. Replaces the old full-screen popover: the plan
 // itself lives in the inline chat card / wiki reader, this only drives the
 // decision (implement vs keep iterating) plus an optional steered comment.
-export default function PlanApprovalInline({ appSessionId }: { appSessionId?: string }) {
+export default function PlanApprovalInline({ appSessionId }: { appSessionId: string }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion();
   const { downloading: appUpdateInstalling } = useAppUpdate();
   // Plan approvals are session-scoped: only surface the one belonging to the
-  // chat the user is looking at, or to the side chat given. A session waiting
-  // on more than one answers its oldest first.
-  const req = useStoreSelector((current) => {
-    const id = appSessionId ?? current.activeAppSessionId;
-    return id ? current.pendingPermissions[id]?.[0] : undefined;
-  });
+  // chat given. A session waiting on more than one answers its oldest first.
+  const req = useStoreSelector((current) => current.pendingPermissions[appSessionId]?.[0]);
   const [autonomy, setAutonomy] = useState<Autonomy>('high');
   const [comment, setComment] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);

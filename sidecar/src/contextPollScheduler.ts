@@ -7,15 +7,13 @@ export type BackgroundWorkTier = 'interactive' | 'hidden' | 'low-power';
 export interface ContextPollCadenceInput {
   tier: BackgroundWorkTier;
   isChild: boolean;
-  focusedAppSessionId?: string | null;
-  appSessionId: string;
+  // Whether the session's chat is on screen, in any tile.
+  isOnScreen: boolean;
 }
 
 export function contextPollIntervalMs(input: ContextPollCadenceInput): number {
   if (input.tier !== 'interactive') return 0;
-  const focused =
-    input.focusedAppSessionId == null || input.focusedAppSessionId === input.appSessionId;
-  if (!focused) return CONTEXT_POLL_INACTIVE_MS;
+  if (!input.isOnScreen) return CONTEXT_POLL_INACTIVE_MS;
   if (input.isChild) return CONTEXT_POLL_BACKGROUND_MS;
   return CONTEXT_POLL_ACTIVE_MS;
 }

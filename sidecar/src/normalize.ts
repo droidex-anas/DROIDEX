@@ -14,11 +14,14 @@ import type {
   SessionRole,
   BridgeFeature,
   ChildSpawnLink,
+  ModelSwitch,
   PermissionKind,
   PermissionRequest,
   ProgressEntry,
+  ReasoningEffort,
   TranscriptEvent,
 } from './protocol.js';
+import { toolResultParts } from './toolResultImages.js';
 import { trimmedString as str } from './values.js';
 import {
   detectChildSession,
@@ -96,7 +99,15 @@ export interface NormalizedEvent {
     // instead of in its model catalog.
     maxContextTokens?: number;
   };
+  // Only ever the primary conversation's own.
+  harnessModelSwitch?: HarnessModelSwitch;
   done?: boolean;
+}
+
+// A model the harness moved the chat to by itself, with the effort it reported
+// for that model when it reported one.
+export interface HarnessModelSwitch extends Required<ModelSwitch> {
+  reasoningEffort?: ReasoningEffort;
 }
 
 function toolUseIdFrom(...values: unknown[]): string | undefined {
@@ -223,7 +234,7 @@ export function normalizeStreamEvent(
       const resultTranscript = () =>
         transcript(appSessionId, sourceProviderSessionId, role, 'tool_result', {
           toolName: ev.toolName,
-          text: typeof ev.content === 'string' ? ev.content : JSON.stringify(ev.content),
+          ...toolResultParts(ev.content),
           isError: ev.isError,
           ...(toolUseId ? { toolUseId } : {}),
         });
@@ -394,7 +405,7 @@ function backgroundTaskCompletionProviderSessionIdFrom(raw: unknown): string | u
   return backgroundTaskCompletionProviderSessionId(text);
 }
 
-function extractNotification(notification: Record<string, unknown>): unknown {
+export function extractNotification(notification: Record<string, unknown>): unknown {
   const params =
     notification.params &&
     typeof notification.params === 'object' &&

@@ -76,22 +76,39 @@ test('streamed text reaches the transcript once, not again from the snapshot', (
   );
 });
 
-test('a message that streamed nothing is reported from its snapshot', () => {
-  const events = transcripts([
-    message({
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: 'Usage limit reached' }] },
-      parent_tool_use_id: null,
-      error: 'rate_limit',
-    }),
-  ]);
+const failedRequest = (text: string): SDKMessage =>
+  message({
+    type: 'assistant',
+    message: { content: [{ type: 'text', text }] },
+    parent_tool_use_id: null,
+    error: 'rate_limit',
+  });
+
+test('a failed request that streamed nothing is one error row in its own words', () => {
+  const capacity = 'API Error: Request rejected (429) · this may be a temporary capacity issue';
+  const events = transcripts([failedRequest(capacity)]);
   assert.deepEqual(
     events.map((event) => [event.kind, event.text, event.errorKind]),
-    [
-      ['text', 'Usage limit reached', undefined],
-      ['error', 'rate_limit', 'usage_limit'],
-    ],
+    [['error', capacity, undefined]],
   );
+});
+
+test('a usage refusal adds no row and fails the turn with the window it hit', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+  const refused = "You've hit your session limit · resets 7pm";
+  const events = [
+    message({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt },
+    }),
+    failedRequest(refused),
+  ].flatMap((entry) => mapper.map(entry));
+
+  assert.deepEqual(events, []);
+  const refusal = mapper.takeRefusal();
+  assert.equal(refusal?.message, refused);
+  assert.deepEqual(refusal?.limit, { window: 'five_hour', resetsAt: resetsAt * 1000 });
 });
 
 test('a tool call carries its streamed input and pairs with its result by id', () => {

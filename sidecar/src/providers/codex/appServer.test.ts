@@ -81,35 +81,28 @@ test('refuses a line that is not a request, notification or response', async () 
 
 // A chat records a runtime that died; one that ended on its own terms leaves
 // nothing behind, even though every pending request still has to reject.
-test('reports whether the process ended on its own terms', async () => {
-  const clean = connect();
-  const cleanExit = new Promise<boolean>((resolve) => {
-    clean.onClose((_error, ended) => {
-      resolve(ended);
-    });
-  });
-  clean.notify('quit');
-  assert.equal(await cleanExit, true);
-
-  const crashed = connect();
-  const crashExit = new Promise<boolean>((resolve) => {
-    crashed.onClose((_error, ended) => {
-      resolve(ended);
-    });
-  });
-  crashed.notify('crash');
-  assert.equal(await crashExit, false);
-});
-
-test('delivers an unterminated final line and fails pending requests on exit', async () => {
+test('delivers an unterminated final line, fails pending requests on exit, and reports how the process ended', async () => {
   const client = connect();
   const tail = new Promise<void>((resolve) => {
     client.onNotification('tail', () => {
       resolve();
     });
   });
+  const ended = (connection: AppServerClient) =>
+    new Promise<boolean>((resolve) => {
+      connection.onClose((_error, onItsOwnTerms) => {
+        resolve(onItsOwnTerms);
+      });
+    });
+  const cleanExit = ended(client);
   const pending = client.request('never/answered', {});
   client.notify('quit');
   await tail;
   await assert.rejects(pending, /exited with code 0/);
+  assert.equal(await cleanExit, true);
+
+  const crashed = connect();
+  const crashExit = ended(crashed);
+  crashed.notify('crash');
+  assert.equal(await crashExit, false);
 });

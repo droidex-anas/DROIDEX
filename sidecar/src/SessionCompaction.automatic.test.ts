@@ -301,7 +301,7 @@ test(
 );
 
 test(
-  'idle cannot finish compaction and duplicate completion stays effect-free',
+  'idle and summary-less completions cannot finish compaction, and a duplicate completion stays effect-free',
   { concurrency: false },
   (t) => {
     const h = createHarness();
@@ -327,7 +327,10 @@ test(
     assert.equal(h.compaction.handleChildNotification(child.target, idleNotification()), false);
     assert.equal(child.child.autoCompacting, true);
     assert.deepEqual(h.trace, []);
-    h.trace.length = 0;
+    // A completion without a summaryId is effect-free.
+    assert.equal(h.compaction.handleChildNotification(child.target, anonymousCompletion()), true);
+    assert.equal(child.child.autoCompacting, true);
+    assert.deepEqual(h.trace, []);
     assert.equal(h.compaction.handleChildNotification(child.target, completedNotification()), true);
     assert.equal(child.child.autoCompacting, false);
     assert.deepEqual(h.trace, [
@@ -356,22 +359,6 @@ test(
   },
 );
 
-test('a completion without a summaryId is effect-free', { concurrency: false }, (t) => {
-  const h = createHarness();
-  const timers = observeTimers(h.trace);
-  t.after(() => {
-    h.compaction.clearAll();
-    timers.restore();
-  });
-  const child = addChild(h, 'parent', 'worker');
-  h.compaction.handleChildNotification(child.target, startedNotification());
-  h.trace.length = 0;
-
-  assert.equal(h.compaction.handleChildNotification(child.target, anonymousCompletion()), true);
-  assert.equal(child.child.autoCompacting, true);
-  assert.deepEqual(h.trace, []);
-});
-
 test('session_compacted is authoritative when the start notification was missed', () => {
   const h = createHarness();
   const primary = addPrimary(h, 'app-1');
@@ -385,7 +372,7 @@ test('session_compacted is authoritative when the start notification was missed'
   assert.deepEqual(h.trace, ['compaction:app-1:12', 'record:p:app-1', 'refresh:p:app-1']);
 });
 
-test('closed primary and child resources release completed-summary dedupe state', () => {
+test('completed summaries dedupe per resource until the closed resource releases them', () => {
   const h = createHarness();
   const primary = addPrimary(h, 'app-1');
   const child = addChild(h, 'app-1', 'worker-1');
@@ -393,6 +380,10 @@ test('closed primary and child resources release completed-summary dedupe state'
   h.compaction.handleChildNotification(child.target, completedNotification());
   h.compaction.handleChildNotification(child.target, completedNotification());
   assert.equal(h.generations.get('c:app-1/worker-1'), 1);
+  // A newer summary records once more; replaying the older one stays deduplicated.
+  h.compaction.handleChildNotification(child.target, completedNotification('summary-2'));
+  h.compaction.handleChildNotification(child.target, completedNotification('summary-1'));
+  assert.equal(h.generations.get('c:app-1/worker-1'), 2);
 
   h.compaction.subscribePrimary(primary.target);
   primary.session.emitNotification(completedNotification());
@@ -404,7 +395,7 @@ test('closed primary and child resources release completed-summary dedupe state'
   h.compaction.handleChildNotification(child.target, completedNotification());
   primary.session.emitNotification(completedNotification());
 
-  assert.equal(h.generations.get('c:app-1/worker-1'), 2);
+  assert.equal(h.generations.get('c:app-1/worker-1'), 3);
   assert.equal(h.generations.get('p:app-1'), 2);
 });
 
@@ -423,18 +414,6 @@ test('automatic completion retries synchronous lifecycle persistence before dedu
     assert.equal(h.generations.get(`c:parent/${failure}`), 1);
     assert.equal(h.trace.filter((entry) => entry === `compaction:${failure}:12`).length, 1);
   }
-});
-
-test('an older completed summary replay remains deduplicated', () => {
-  const h = createHarness();
-  const child = addChild(h, 'parent', 'worker');
-
-  h.compaction.handleChildNotification(child.target, completedNotification('summary-1'));
-  h.compaction.handleChildNotification(child.target, completedNotification('summary-2'));
-  h.compaction.handleChildNotification(child.target, completedNotification('summary-1'));
-
-  assert.equal(h.generations.get('c:parent/worker'), 2);
-  assert.equal(h.trace.filter((entry) => entry === 'compaction:worker:12').length, 2);
 });
 
 test(

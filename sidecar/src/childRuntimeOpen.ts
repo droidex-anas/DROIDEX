@@ -84,7 +84,7 @@ export function beginOpenAttempt(
   return attempt;
 }
 
-export function isCurrentOpenAttempt(
+function isCurrentOpenAttempt(
   parent: ParentChildSessions,
   child: ChildSessionState,
   attempt: ChildOpenAttempt,
@@ -99,7 +99,7 @@ export function isCurrentOpenAttempt(
   );
 }
 
-export function finishOpenAttempt(
+function finishOpenAttempt(
   parent: ParentChildSessions,
   childSessionId: string,
   attempt: ChildOpenAttempt,

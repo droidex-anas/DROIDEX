@@ -29,29 +29,52 @@ afterEach(() => {
   delete g.window;
 });
 
-test('action wrappers fail with not_desktop outside the desktop shell', async () => {
+test('action wrappers report no_dir, not_desktop, and IPC rejections as failed results, never rejecting', async () => {
+  assert.deepEqual(await gitFetch(''), { ok: false, reason: 'no_dir' });
   assert.deepEqual(await checkoutGitBranch('/repo', { ref: 'main' }), {
     ok: false,
     reason: 'not_desktop',
   });
-});
-
-test('gitFetch reports no_dir before the desktop check', async () => {
-  assert.deepEqual(await gitFetch(''), { ok: false, reason: 'no_dir' });
-});
-
-test('action wrappers convert IPC rejections into failed results', async () => {
-  withBridge({ gitCheckout: () => Promise.reject(new Error('bridge down')) });
+  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
+    ok: false,
+    reason: 'not_desktop',
+    message: 'Merging a pull request is available in the desktop app.',
+  });
+  const bridgeDown = () => Promise.reject(new Error('bridge down'));
+  withBridge({
+    gitCheckout: bridgeDown,
+    githubCreatePr: bridgeDown,
+    githubPostComment: bridgeDown,
+    githubMergePr: bridgeDown,
+  });
   assert.deepEqual(await checkoutGitBranch('/repo', { ref: 'main' }), {
     ok: false,
     reason: 'ipc_error',
   });
+  assert.deepEqual(await createPullRequest('/repo', { title: 't' }), {
+    ok: false,
+    reason: 'error',
+  });
+  assert.deepEqual(await postPrComment('/repo', 12, 'hello'), { ok: false, reason: 'error' });
+  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
+    ok: false,
+    reason: 'error',
+    message: 'Could not merge pull request',
+  });
 });
 
-test('action wrappers pass successful results through untouched', async () => {
+test('wrappers pass successful bridge answers through untouched', async () => {
   const result = { ok: true };
-  withBridge({ gitCheckout: () => Promise.resolve(result) });
+  const detected = { ok: true, pr: { number: 12, title: 'x' } };
+  const listed = { ok: true, viewerLogin: 'octocat', prs: [] };
+  withBridge({
+    gitCheckout: () => Promise.resolve(result),
+    githubDetectPr: () => Promise.resolve(detected),
+    githubListPrs: () => Promise.resolve(listed),
+  });
   assert.equal(await checkoutGitBranch('/repo', { ref: 'main' }), result);
+  assert.equal(await detectPullRequest('/repo', 'feature/foo'), detected);
+  assert.equal(await listPullRequests('/repo'), listed);
 });
 
 test('chat worktrees are created from the Git-owned main repository', async () => {
@@ -118,7 +141,7 @@ test('main checkout selection waits when a linked checkout has no worktree snaps
   );
 });
 
-test('local chat preparation never invokes Git', async () => {
+test('local and folderless chat preparation keep their directory and never invoke Git', async () => {
   let gitCalls = 0;
   const unexpectedGitCall = () => {
     gitCalls += 1;
@@ -136,6 +159,10 @@ test('local chat preparation never invokes Git', async () => {
     }),
     { ok: true, path: '/repo' },
   );
+  assert.deepEqual(await prepareChatWorkingDirectory('', { executionMode: 'local', name: 'c-2' }), {
+    ok: true,
+    path: '',
+  });
   assert.equal(gitCalls, 0);
 });
 
@@ -169,15 +196,6 @@ test('linked checkout preparation waits for the main worktree discovery', async 
   assert.equal(createCalls, 0);
 });
 
-test('folderless chat preparation preserves the successful empty directory', async () => {
-  const result = await prepareChatWorkingDirectory('', {
-    executionMode: 'local',
-    name: 'chat-c-1',
-  });
-
-  assert.deepEqual(result, { ok: true, path: '' });
-});
-
 test('chat worktree preparation rejects a successful response without a path', async () => {
   withBridge({
     gitEnvironment: () => Promise.resolve({ isRepo: true, repoRoot: '/repo', branch: 'main' }),
@@ -197,23 +215,14 @@ test('chat worktree preparation rejects a successful response without a path', a
   });
 });
 
-test('detectPullRequest treats non-desktop and missing dir as an authoritative empty answer', async () => {
-  // { ok: true, pr: null } may clear a previously shown PR ...
+test('detectPullRequest separates an authoritative empty answer from an IPC failure', async () => {
+  // { ok: true, pr: null } may clear a previously shown PR, while { ok: false }
+  // must keep the last-known PR in usePullRequest.
   assert.deepEqual(await detectPullRequest('/repo'), { ok: true, pr: null });
   withBridge({ githubDetectPr: () => Promise.resolve({ ok: true, pr: null }) });
   assert.deepEqual(await detectPullRequest(''), { ok: true, pr: null });
-});
-
-test('detectPullRequest reports IPC failure as non-authoritative', async () => {
-  // ... while { ok: false } must keep the last-known PR in usePullRequest.
   withBridge({ githubDetectPr: () => Promise.reject(new Error('bridge down')) });
   assert.deepEqual(await detectPullRequest('/repo'), { ok: false, pr: null });
-});
-
-test('detectPullRequest passes the bridge answer through untouched', async () => {
-  const answer = { ok: true, pr: { number: 12, title: 'x' } };
-  withBridge({ githubDetectPr: () => Promise.resolve(answer) });
-  assert.equal(await detectPullRequest('/repo', 'feature/foo'), answer);
 });
 
 test('listPullRequests never reports an empty list it could not load', async () => {
@@ -227,47 +236,12 @@ test('listPullRequests never reports an empty list it could not load', async () 
   });
   withBridge({ githubListPrs: () => Promise.resolve({ ok: true, viewerLogin: null, prs: [] }) });
   assert.equal((await listPullRequests('')).ok, false);
-});
-
-test('listPullRequests reports an IPC rejection as a failure', async () => {
   withBridge({ githubListPrs: () => Promise.reject(new Error('bridge down')) });
   assert.deepEqual(await listPullRequests('/repo'), {
     ok: false,
     reason: 'error',
     viewerLogin: null,
     prs: [],
-  });
-});
-
-test('listPullRequests passes the bridge answer through untouched', async () => {
-  const answer = { ok: true, viewerLogin: 'octocat', prs: [] };
-  withBridge({ githubListPrs: () => Promise.resolve(answer) });
-  assert.equal(await listPullRequests('/repo'), answer);
-});
-
-test('createPullRequest and postPrComment convert IPC rejections into failed results', async () => {
-  withBridge({
-    githubCreatePr: () => Promise.reject(new Error('bridge down')),
-    githubPostComment: () => Promise.reject(new Error('bridge down')),
-  });
-  assert.deepEqual(await createPullRequest('/repo', { title: 't' }), {
-    ok: false,
-    reason: 'error',
-  });
-  assert.deepEqual(await postPrComment('/repo', 12, 'hello'), { ok: false, reason: 'error' });
-});
-
-test('mergePullRequest reports a bridge failure instead of rejecting', async () => {
-  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
-    ok: false,
-    reason: 'not_desktop',
-    message: 'Merging a pull request is available in the desktop app.',
-  });
-  withBridge({ githubMergePr: () => Promise.reject(new Error('bridge down')) });
-  assert.deepEqual(await mergePullRequest('/repo', 12, 'squash'), {
-    ok: false,
-    reason: 'error',
-    message: 'Could not merge pull request',
   });
 });
 

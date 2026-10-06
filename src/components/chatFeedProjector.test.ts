@@ -39,6 +39,28 @@ function user(id: string, ts: number): TranscriptEvent {
   return event(id, { sourceSessionId: 'user', author: 'user', text: id, ts });
 }
 
+function toolCall(
+  id: string,
+  toolUseId: string,
+  toolName: string,
+  toolArgs: Record<string, unknown> = {},
+  ts = 1,
+): TranscriptEvent {
+  return event(id, {
+    kind: 'tool_call',
+    author: undefined,
+    text: undefined,
+    toolUseId,
+    toolName,
+    toolArgs,
+    ts,
+  });
+}
+
+function toolResult(id: string, toolUseId: string, text = id, ts = 1): TranscriptEvent {
+  return event(id, { kind: 'tool_result', author: undefined, toolUseId, text, ts });
+}
+
 function appendMutation(
   revision: number,
   previousLength: number,
@@ -107,28 +129,14 @@ function assertMatchesFullBuild(
 test('incremental projection rebuilds one safe turn and preserves completed prefix items', () => {
   const project = createChatFeedProjector();
   const firstTurn = [user('user-1', 1), event('answer-1', { ts: 2 })];
-  const toolCall = event('tool-call', {
-    kind: 'tool_call',
-    author: undefined,
-    text: undefined,
-    toolUseId: 'tool-use-1',
-    toolName: 'Read',
-    toolArgs: { path: '/tmp/file' },
-    ts: 4,
-  });
-  const initialEvents = [...firstTurn, user('user-2', 3), toolCall];
+  const readCall = toolCall('tool-call', 'tool-use-1', 'Read', { path: '/tmp/file' }, 4);
+  const initialEvents = [...firstTurn, user('user-2', 3), readCall];
   const initialInput = input(initialEvents, undefined);
   const initial = project(initialInput);
   assert.equal(initial.mode, 'full');
   assertMatchesFullBuild(initial, initialInput);
 
-  const result = event('tool-result', {
-    kind: 'tool_result',
-    author: undefined,
-    toolUseId: 'tool-use-1',
-    text: 'contents',
-    ts: 5,
-  });
+  const result = toolResult('tool-result', 'tool-use-1', 'contents', 5);
   const resultEvents = [...initialEvents, result];
   const resultInput = input(resultEvents, appendMutation(1, initialEvents.length, 4));
   const withResult = project(resultInput);
@@ -168,15 +176,7 @@ test('incremental projection rebuilds one safe turn and preserves completed pref
 
 test('cross-turn tool results rewind to the correlated call before rebuilding', () => {
   const project = createChatFeedProjector();
-  const call = event('grep-call', {
-    kind: 'tool_call',
-    author: undefined,
-    text: undefined,
-    toolUseId: 'grep-1',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'needle' },
-    ts: 2,
-  });
+  const call = toolCall('grep-call', 'grep-1', 'Grep', { pattern: 'needle' }, 2);
   const initialEvents = [
     user('user-1', 1),
     call,
@@ -185,13 +185,7 @@ test('cross-turn tool results rewind to the correlated call before rebuilding', 
     event('answer-2', { ts: 5 }),
   ];
   project(input(initialEvents, undefined));
-  const result = event('grep-result', {
-    kind: 'tool_result',
-    author: undefined,
-    toolUseId: 'grep-1',
-    text: 'needle:1',
-    ts: 6,
-  });
+  const result = toolResult('grep-result', 'grep-1', 'needle:1', 6);
   const resultEvents = [...initialEvents, result];
   const resultInput = input(
     resultEvents,
@@ -207,15 +201,7 @@ test('cross-turn tool results rewind to the correlated call before rebuilding', 
 
 test('tool-call tail replacement and grouped orchestration stay full-build equivalent', () => {
   const project = createChatFeedProjector();
-  const partialTask = event('task-call', {
-    kind: 'tool_call',
-    author: undefined,
-    text: undefined,
-    toolUseId: 'task-1',
-    toolName: 'Task',
-    toolArgs: { subagent_type: 'worker' },
-    ts: 2,
-  });
+  const partialTask = toolCall('task-call', 'task-1', 'Task', { subagent_type: 'worker' }, 2);
   const firstPrompt = user('user-1', 1);
   const initialEvents = [firstPrompt, partialTask];
   project(input(initialEvents, undefined));
@@ -232,40 +218,22 @@ test('tool-call tail replacement and grouped orchestration stay full-build equiv
   assertMatchesFullBuild(projection, projectorInput);
 
   const appended = [
-    event('todo-call', {
-      kind: 'tool_call',
-      author: undefined,
-      text: undefined,
-      toolUseId: 'todo-1',
-      toolName: 'TodoWrite',
-      toolArgs: { todos: '1. [in_progress] inspect' },
-      ts: 4,
-    }),
-    event('write-call', {
-      kind: 'tool_call',
-      author: undefined,
-      text: undefined,
-      toolUseId: 'write-1',
-      toolName: 'Write',
-      toolArgs: { file_path: '/tmp/result.ts', content: 'export {}' },
-      ts: 5,
-    }),
-    event('task-call-2', {
-      kind: 'tool_call',
-      author: undefined,
-      text: undefined,
-      toolUseId: 'task-2',
-      toolName: 'Task',
-      toolArgs: { subagent_type: 'validator', description: 'Validate the result' },
-      ts: 6,
-    }),
-    event('write-result', {
-      kind: 'tool_result',
-      author: undefined,
-      toolUseId: 'write-1',
-      text: 'wrote file',
-      ts: 7,
-    }),
+    toolCall('todo-call', 'todo-1', 'TodoWrite', { todos: '1. [in_progress] inspect' }, 4),
+    toolCall(
+      'write-call',
+      'write-1',
+      'Write',
+      { file_path: '/tmp/result.ts', content: 'export {}' },
+      5,
+    ),
+    toolCall(
+      'task-call-2',
+      'task-2',
+      'Task',
+      { subagent_type: 'validator', description: 'Validate the result' },
+      6,
+    ),
+    toolResult('write-result', 'write-1', 'wrote file', 7),
     event('answer', { text: 'Done', ts: 8 }),
   ];
 
@@ -418,31 +386,7 @@ test('uncertain provenance and semantic option changes use the full-build oracle
   assertMatchesFullBuild(withSpec, specInput);
 });
 
-test('recent conversations restore their exact derived feed from the warm cache', () => {
-  const project = createChatFeedProjector();
-  const sessionA = input([user('user-a', 1), event('answer-a', { ts: 2 })], undefined);
-  const sessionB = input(
-    [user('user-b', 1), event('answer-b', { appSessionId: 'session-b', text: 'B', ts: 2 })],
-    undefined,
-    { conversationKey: 'session-b:primary' },
-  );
-  const sessionC = input(
-    [user('user-c', 1), event('answer-c', { appSessionId: 'session-c', text: 'C', ts: 2 })],
-    undefined,
-    { conversationKey: 'session-c:primary' },
-  );
-  const firstA = project(sessionA);
-  project(sessionB);
-  project(sessionC);
-
-  const restoredA = project(sessionA);
-
-  assert.equal(restoredA.visibleTranscript, firstA.visibleTranscript);
-  assert.equal(restoredA.feedItems, firstA.feedItems);
-  assert.deepEqual(restoredA.feedItems.map(feedRowId), firstA.feedItems.map(feedRowId));
-});
-
-test('warm conversation caching is count- and transcript-bounded', () => {
+test('the warm cache restores recent conversations exactly and is count- and transcript-bounded', () => {
   const project = createChatFeedProjector();
   const forSession = (id: string, count = 2) =>
     input(
@@ -458,12 +402,18 @@ test('warm conversation caching is count- and transcript-bounded', () => {
       { conversationKey: `${id}:primary` },
     );
 
-  const firstA = project(forSession('session-a'));
-  project(forSession('session-b'));
-  project(forSession('session-c'));
-  project(forSession('session-d'));
-  const evictedA = project(forSession('session-a'));
-  assert.notEqual(evictedA.feedItems, firstA.feedItems);
+  const [sessionA, sessionB, sessionC, sessionD] = ['a', 'b', 'c', 'd'].map((id) =>
+    forSession(`session-${id}`),
+  );
+  const firstA = project(sessionA);
+  project(sessionB);
+  const firstC = project(sessionC);
+  project(sessionD);
+  // Two conversations stay warm beside the open one; the oldest is evicted.
+  assert.notEqual(project(sessionA).feedItems, firstA.feedItems);
+  const restoredC = project(sessionC);
+  assert.equal(restoredC.visibleTranscript, firstC.visibleTranscript);
+  assert.equal(restoredC.feedItems, firstC.feedItems);
 
   const large = forSession('large', CHAT_FEED_WARM_CACHE_MAX_VISIBLE_EVENTS + 1);
   const firstLarge = project(large);
@@ -572,87 +522,49 @@ test('long-history prepends build only the older page and retain the existing fe
   assertMatchesFullBuild(next, nextInput);
 });
 
-test('a visible prepend without a safe user-turn boundary falls back to the full oracle', () => {
-  const project = createChatFeedProjector();
-  const existing = [
-    event('tool-call', {
-      kind: 'tool_call',
-      author: undefined,
-      text: undefined,
-      toolName: 'Read',
-      toolUseId: 'read-1',
-    }),
-    event('tool-result', {
-      kind: 'tool_result',
-      author: undefined,
-      toolUseId: 'read-1',
-    }),
+test('a prepend reuses the suffix only across a safe user-turn boundary', () => {
+  const cases = [
+    {
+      name: 'no user-turn boundary',
+      existing: [toolCall('tool-call', 'read-1', 'Read'), toolResult('tool-result', 'read-1')],
+      older: [event('older-status', { kind: 'status', author: undefined })],
+      mode: 'full',
+    },
+    {
+      name: 'tool correlation across the reuse boundary',
+      existing: [
+        user('recent-user', 3),
+        toolResult('read-result', 'cross-page-read', 'read-result', 4),
+        event('recent-answer', { ts: 5 }),
+      ],
+      older: [user('older-user', 1), toolCall('read-call', 'cross-page-read', 'Read', {}, 2)],
+      mode: 'full',
+    },
+    {
+      // Lookahead keeps the thinking duration at the retained user boundary.
+      name: 'thinking before the retained boundary',
+      existing: [user('recent-user', 10), event('recent-answer', { ts: 11 })],
+      older: [
+        user('older-user', 1),
+        event('older-thinking', { kind: 'thinking', author: undefined, ts: 4 }),
+      ],
+      mode: 'incremental',
+    },
   ];
-  project(input(existing, undefined, { pending: false }));
-  const older = [event('older-status', { kind: 'status', author: undefined })];
-  const nextInput = input(
-    [...older, ...existing],
-    prependMutation(1, existing.length, older.length),
-    { pending: false },
-  );
+  for (const { name, existing, older, mode } of cases) {
+    const project = createChatFeedProjector();
+    project(input(existing, undefined, { pending: false }));
+    const nextInput = input(
+      [...older, ...existing],
+      prependMutation(1, existing.length, older.length),
+      { pending: false },
+    );
 
-  const next = project(nextInput);
+    const next = project(nextInput);
 
-  assert.equal(next.mode, 'full');
-  assertMatchesFullBuild(next, nextInput);
-});
-
-test('a prepend with tool correlation across the reuse boundary falls back to the full oracle', () => {
-  const project = createChatFeedProjector();
-  const result = event('read-result', {
-    kind: 'tool_result',
-    author: undefined,
-    toolUseId: 'cross-page-read',
-    ts: 4,
-  });
-  const existing = [user('recent-user', 3), result, event('recent-answer', { ts: 5 })];
-  project(input(existing, undefined, { pending: false }));
-  const older = [
-    user('older-user', 1),
-    event('read-call', {
-      kind: 'tool_call',
-      author: undefined,
-      text: undefined,
-      toolName: 'Read',
-      toolUseId: 'cross-page-read',
-      ts: 2,
-    }),
-  ];
-  const nextInput = input(
-    [...older, ...existing],
-    prependMutation(1, existing.length, older.length),
-    { pending: false },
-  );
-
-  const next = project(nextInput);
-
-  assert.equal(next.mode, 'full');
-  assertMatchesFullBuild(next, nextInput);
-});
-
-test('prepend lookahead preserves thinking duration at the retained user boundary', () => {
-  const project = createChatFeedProjector();
-  const existing = [user('recent-user', 10), event('recent-answer', { ts: 11 })];
-  project(input(existing, undefined, { pending: false }));
-  const older = [
-    user('older-user', 1),
-    event('older-thinking', { kind: 'thinking', author: undefined, ts: 4 }),
-  ];
-  const nextInput = input(
-    [...older, ...existing],
-    prependMutation(1, existing.length, older.length),
-    { pending: false },
-  );
-
-  const next = project(nextInput);
-
-  assert.equal(next.mode, 'incremental');
-  assertMatchesFullBuild(next, nextInput);
+    assert.equal(next.mode, mode, name);
+    assertMatchesFullBuild(next, nextInput);
+  }
 });
 
 test('plain text growth reuses tool rows and preserves settlement and final-response controls', () => {

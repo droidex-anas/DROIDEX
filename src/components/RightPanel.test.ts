@@ -60,37 +60,31 @@ function renderPanel(
   );
 }
 
-test('model row shows the session-pinned reasoning effort, never autonomy', () => {
-  const html = renderPanel({ autonomy: 'medium', reasoningEffort: 'xhigh', modelId: 'm1' }, [
+test('the model row shows only a session-pinned effort the model supports', () => {
+  const pinned = renderPanel({ autonomy: 'medium', reasoningEffort: 'xhigh', modelId: 'm1' }, [
     model({ supportedReasoningEfforts: ['low', 'xhigh'] }),
   ]);
-  assert.match(html, /Model Alpha/);
-  assert.match(html, />xhigh</);
-  assert.doesNotMatch(html, />medium</);
-});
+  assert.match(pinned, /Model Alpha/);
+  assert.match(pinned, />xhigh</);
+  assert.doesNotMatch(pinned, />medium</, 'autonomy is not an effort');
 
-test('model row leaves unset effort provider-managed instead of using the global default', () => {
-  const html = renderPanel(
+  // Unset effort stays provider-managed instead of using the global default.
+  const unset = renderPanel(
     { modelId: 'm1' },
     [model({ supportedReasoningEfforts: ['max'], defaultReasoningEffort: 'max' })],
     'max',
   );
-  assert.match(html, /Model Alpha/);
-  assert.doesNotMatch(html, />max</);
-});
+  assert.doesNotMatch(unset, />max</);
 
-test('model row hides the pill for a known model without reasoning support', () => {
-  const html = renderPanel({ reasoningEffort: 'xhigh', modelId: 'm1' }, [
+  const unsupported = renderPanel({ reasoningEffort: 'xhigh', modelId: 'm1' }, [
     model({ supportedReasoningEfforts: [] }),
   ]);
-  assert.match(html, /Model Alpha/);
-  assert.doesNotMatch(html, />xhigh</);
-});
+  assert.doesNotMatch(unsupported, />xhigh</);
 
-test('model row keeps the pill while the model list has not loaded', () => {
-  const html = renderPanel({ reasoningEffort: 'xhigh', modelId: 'unlisted' }, []);
-  assert.match(html, />unlisted</);
-  assert.match(html, />xhigh</);
+  // Before the model list loads, the pinned effort still shows.
+  const unlisted = renderPanel({ reasoningEffort: 'xhigh', modelId: 'unlisted' }, []);
+  assert.match(unlisted, />unlisted</);
+  assert.match(unlisted, />xhigh</);
 });
 
 test('folderless chats skip the git rows and never show a loading state', () => {

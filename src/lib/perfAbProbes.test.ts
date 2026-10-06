@@ -29,20 +29,21 @@ test('A/B probes emit labelled metrics without requiring a GUI', async () => {
   try {
     const result = await runAbProbes(treeRoot);
     const byId = new Map(result.metrics.map((metric) => [metric.id, metric]));
-    assert.equal(byId.get('feed.mountedRowsAt10k')?.id, 'feed.mountedRowsAt10k');
-    assert.ok((byId.get('feed.mountedRowsAt10k')?.value ?? 0) < 80);
-    assert.equal(byId.get('feed.eventsRebuiltPerDelta')?.id, 'feed.eventsRebuiltPerDelta');
-    assert.ok((byId.get('feed.eventsRebuiltPerDelta')?.value ?? 99) <= 8);
-    assert.equal(
-      byId.get('feed.rowVisitsPerTailDeltaAt10k')?.id,
+    for (const id of [
+      'feed.mountedRowsAt10k',
+      'feed.eventsRebuiltPerDelta',
       'feed.rowVisitsPerTailDeltaAt10k',
-    );
-    assert.equal(byId.get('terminal.deliveriesPerFlood')?.id, 'terminal.deliveriesPerFlood');
+      'terminal.deliveriesPerFlood',
+      'markdown.perDeltaRenderMs',
+      'sidecar.readyMs',
+      'sidecar.firstSessionsListMs',
+    ]) {
+      assert.ok(byId.has(id), `missing metric ${id}`);
+    }
+    assert.ok((byId.get('feed.mountedRowsAt10k')?.value ?? 0) < 80);
+    assert.ok((byId.get('feed.eventsRebuiltPerDelta')?.value ?? 99) <= 8);
     assert.ok((byId.get('terminal.deliveriesPerFlood')?.value ?? 99) < TERMINAL_FLOOD_CHUNKS);
-    assert.equal(byId.get('markdown.perDeltaRenderMs')?.id, 'markdown.perDeltaRenderMs');
     assert.ok((byId.get('markdown.perDeltaRenderMs')?.value ?? -1) >= 0);
-    assert.equal(byId.get('sidecar.readyMs')?.id, 'sidecar.readyMs');
-    assert.equal(byId.get('sidecar.firstSessionsListMs')?.id, 'sidecar.firstSessionsListMs');
     if (existsSync(join(treeRoot, 'sidecar/dist/sidecar.mjs'))) {
       assert.ok((byId.get('sidecar.readyMs')?.value ?? -1) > 0);
       assert.ok((byId.get('sidecar.firstSessionsListMs')?.value ?? -1) > 0);

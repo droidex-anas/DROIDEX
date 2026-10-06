@@ -7,19 +7,26 @@ import {
   normalizeTranscriptUpdate,
 } from './transcriptIngestion';
 import { estimateTranscriptCost } from './transcriptWindow';
+import { textEvent } from '../test/textEvent';
 
-function transcriptEvent(id: string, overrides: Partial<TranscriptEvent> = {}): TranscriptEvent {
-  return {
-    id,
-    appSessionId: 'session-a',
-    sourceSessionId: 'primary',
-    role: 'primary',
-    kind: 'text',
-    author: 'assistant',
-    text: id,
-    ts: 1,
+const transcriptEvent = (id: string, overrides: Partial<TranscriptEvent> = {}) =>
+  textEvent(id, { appSessionId: 'session-a', author: 'assistant', ...overrides });
+
+/** A streamed tool-call snapshot: no author or text, merged by `toolUseId`. */
+function toolCall(
+  id: string,
+  toolUseId: string,
+  toolArgs: Record<string, unknown>,
+  overrides: Partial<TranscriptEvent> = {},
+): TranscriptEvent {
+  return transcriptEvent(id, {
+    author: undefined,
+    kind: 'tool_call',
+    text: undefined,
+    toolUseId,
+    toolArgs,
     ...overrides,
-  };
+  });
 }
 
 test('ingestion preserves literal text-delta dedupe and retained identity semantics', () => {
@@ -71,31 +78,14 @@ test('ingestion reports the first changed index and leaves duplicate-only runs u
 });
 
 test('ingestion merges one streamed tool call and keeps distinct calls separate', () => {
-  const retained = transcriptEvent('tool-call', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-1',
-    toolName: 'Read',
-    toolArgs: { path: '/tmp/file' },
-  });
-  const partial = transcriptEvent('tool-partial', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-1',
-    toolArgs: { line: 12 },
-    ts: 2,
-  });
-  const distinct = transcriptEvent('tool-call-2', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-2',
-    toolName: 'Read',
-    toolArgs: { path: '/tmp/other' },
-    ts: 3,
-  });
+  const retained = toolCall('tool-call', 'tool-use-1', { path: '/tmp/file' }, { toolName: 'Read' });
+  const partial = toolCall('tool-partial', 'tool-use-1', { line: 12 }, { ts: 2 });
+  const distinct = toolCall(
+    'tool-call-2',
+    'tool-use-2',
+    { path: '/tmp/other' },
+    { toolName: 'Read', ts: 3 },
+  );
 
   const result = ingestTranscriptEvents([retained], estimateTranscriptCost([retained]), [
     partial,
@@ -119,23 +109,18 @@ test('ingestion merges one streamed tool call and keeps distinct calls separate'
 });
 
 test('interleaved snapshots of parallel tool calls merge by id instead of duplicating', () => {
-  const callA1 = transcriptEvent('call-a-1', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-a',
-    toolName: 'Bash',
-    toolArgs: { command: 'git branch' },
-  });
-  const callB1 = transcriptEvent('call-b-1', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-b',
-    toolName: 'Read',
-    toolArgs: { path: '/tmp/file' },
-    ts: 2,
-  });
+  const callA1 = toolCall(
+    'call-a-1',
+    'tool-use-a',
+    { command: 'git branch' },
+    { toolName: 'Bash' },
+  );
+  const callB1 = toolCall(
+    'call-b-1',
+    'tool-use-b',
+    { path: '/tmp/file' },
+    { toolName: 'Read', ts: 2 },
+  );
   const thought = transcriptEvent('thought', {
     author: undefined,
     kind: 'thinking',
@@ -144,22 +129,8 @@ test('interleaved snapshots of parallel tool calls merge by id instead of duplic
   });
   const seeded = ingestTranscriptEvents([], estimateTranscriptCost([]), [callA1, callB1, thought]);
 
-  const callA2 = transcriptEvent('call-a-2', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-a',
-    toolArgs: { description: 'list branches' },
-    ts: 4,
-  });
-  const callB2 = transcriptEvent('call-b-2', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-b',
-    toolArgs: { line: 12 },
-    ts: 5,
-  });
+  const callA2 = toolCall('call-a-2', 'tool-use-a', { description: 'list branches' }, { ts: 4 });
+  const callB2 = toolCall('call-b-2', 'tool-use-b', { line: 12 }, { ts: 5 });
   const result = ingestTranscriptEvents(seeded.events, seeded.estimatedCost, [callA2, callB2]);
 
   assert.equal(result.events.length, 3);
@@ -183,26 +154,15 @@ test('interleaved snapshots of parallel tool calls merge by id instead of duplic
 });
 
 test('a tool-call snapshot never merges into another source\u2019s call', () => {
-  const call = transcriptEvent('call-1', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-a',
-    toolName: 'Bash',
-    toolArgs: { command: 'git branch' },
-  });
+  const call = toolCall('call-1', 'tool-use-a', { command: 'git branch' }, { toolName: 'Bash' });
   const seeded = ingestTranscriptEvents([], estimateTranscriptCost([]), [call]);
 
-  const foreign = transcriptEvent('call-foreign', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    sourceSessionId: 'child-1',
-    toolUseId: 'tool-use-a',
-    toolName: 'Bash',
-    toolArgs: { command: 'git status' },
-    ts: 2,
-  });
+  const foreign = toolCall(
+    'call-foreign',
+    'tool-use-a',
+    { command: 'git status' },
+    { sourceSessionId: 'child-1', toolName: 'Bash', ts: 2 },
+  );
   const result = ingestTranscriptEvents(seeded.events, seeded.estimatedCost, [foreign]);
 
   assert.deepEqual(result.events, [call, foreign]);
@@ -214,14 +174,7 @@ test('a tool-call snapshot never merges into another source\u2019s call', () => 
 });
 
 test('a prepended history page shifts streamed tool-call merge targets', () => {
-  const call = transcriptEvent('call-1', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-a',
-    toolName: 'Bash',
-    toolArgs: { command: 'git log' },
-  });
+  const call = toolCall('call-1', 'tool-use-a', { command: 'git log' }, { toolName: 'Bash' });
   const tail = transcriptEvent('tail', { ts: 2 });
   const seeded = ingestTranscriptEvents([], estimateTranscriptCost([]), [call, tail]);
 
@@ -233,14 +186,7 @@ test('a prepended history page shifts streamed tool-call merge targets', () => {
     insertedCount: 1,
   });
 
-  const snapshot = transcriptEvent('call-1-later', {
-    author: undefined,
-    kind: 'tool_call',
-    text: undefined,
-    toolUseId: 'tool-use-a',
-    toolArgs: { description: 'later args' },
-    ts: 3,
-  });
+  const snapshot = toolCall('call-1-later', 'tool-use-a', { description: 'later args' }, { ts: 3 });
   const result = ingestTranscriptEvents(normalized, estimateTranscriptCost(normalized), [snapshot]);
 
   assert.equal(result.events.length, 3);

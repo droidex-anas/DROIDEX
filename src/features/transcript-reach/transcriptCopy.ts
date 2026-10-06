@@ -1,4 +1,5 @@
 import type { FeedItem } from '../../components/chatFeed';
+import { browserPageOf } from '../../lib/browserTools';
 import type { FileChange } from '../../lib/diff';
 import { childSessionInfo } from '../../lib/childSessionEvents';
 import { parseTruncatedTail, stripAnsi, toolMeta } from '../../lib/tools';
@@ -8,7 +9,7 @@ export function copyTextForMessage(text: string): string {
   return parseTruncatedTail(text).body;
 }
 
-export function copyTextForCommand(command: string, output?: string): string {
+function copyTextForCommand(command: string, output?: string): string {
   const out = output ? stripAnsi(output).trimEnd() : '';
   return out ? `${command}\n\n${out}` : command;
 }
@@ -42,6 +43,8 @@ export function copyTextForFeedItem(item: FeedItem): string {
       // The file path, or the reason there is none; the prompt is already in the
       // chat as the user's own message.
       return item.result?.text ?? '';
+    case 'browser':
+      return browserPageOf(item.events)?.url ?? '';
     case 'turnChanges':
       return item.files.map((file) => file.path).join('\n');
   }

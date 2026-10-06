@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { createPowerTier, resolvePowerTier } = require('./powerTier.cjs');
 
-test('visible windows stay interactive even on battery', () => {
+test('visibility and battery resolve the power tier, and changes notify listeners', () => {
   assert.equal(
     resolvePowerTier({ windowVisible: true, documentVisible: true, onBattery: true }),
     'interactive',
@@ -20,9 +20,7 @@ test('visible windows stay interactive even on battery', () => {
     resolvePowerTier({ windowVisible: false, documentVisible: true, onBattery: false }),
     'hidden',
   );
-});
 
-test('window hide and battery combine into the low-background-work tier', () => {
   const events = [];
   const power = createPowerTier();
   power.onChange((tier) => events.push(tier));
