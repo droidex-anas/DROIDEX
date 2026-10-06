@@ -122,6 +122,48 @@ async function startBridge() {
   return { bridge, socket, seen, seenTypes, reconnect };
 }
 
+test('a full offline queue flushes whole and in order on the next socket', async () => {
+  // The sidecar admits strictly more frames than this (MAX_HELD_CLIENT_MESSAGES
+  // in sidecar/src/bridgeServer.ts), so a full flush is never a flood.
+  const QUEUE_CAP = 256;
+  const { bridge, socket: first, reconnect } = await startBridge();
+  first.close();
+  for (let index = 0; index < QUEUE_CAP; index += 1)
+    bridge.send({ type: 'session.interrupt', appSessionId: `app-${String(index)}` });
+
+  const second = await reconnect();
+  second.open();
+  assert.deepEqual(
+    second.sent.map(interruptedSession),
+    Array.from({ length: QUEUE_CAP }, (_, index) => `app-${String(index)}`),
+  );
+
+  // A queue already at the cap drops its oldest intent, and says so.
+  second.close();
+  const warnings: string[] = [];
+  const previousWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    for (let index = 0; index <= QUEUE_CAP; index += 1)
+      bridge.send({ type: 'session.interrupt', appSessionId: `late-${String(index)}` });
+  } finally {
+    console.warn = previousWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? '', /dropped an offline session\.interrupt/);
+
+  const third = await reconnect();
+  third.open();
+  const flushed = third.sent.map(interruptedSession);
+  assert.equal(flushed.length, QUEUE_CAP);
+  assert.equal(flushed.at(0), 'late-1');
+  assert.equal(flushed.at(-1), `late-${String(QUEUE_CAP)}`);
+});
+
+function interruptedSession(sent: string): string {
+  return (JSON.parse(sent) as { appSessionId: string }).appSessionId;
+}
+
 function commandType(sent: string): string {
   return (JSON.parse(sent) as { type: string }).type;
 }

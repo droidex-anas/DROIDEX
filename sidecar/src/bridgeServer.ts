@@ -32,8 +32,14 @@ const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
 const HARD_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
 const CLIENT_CLOSE_DRAIN_MS = 250;
-/** Commands one socket may send while it is still being admitted. */
-const MAX_HELD_CLIENT_MESSAGES = 256;
+/**
+ * Frames one socket may send while it is still being admitted. A renderer
+ * flushes at most `MAX_QUEUED_COMMANDS` (256, in `src/lib/bridge.ts`) the moment
+ * its socket opens, so this is that cap plus room for the commands a reconnect
+ * sends live, such as re-watching each open canvas. Keep the two coupled:
+ * nothing a well-behaved renderer does may reach this bound.
+ */
+const MAX_HELD_CLIENT_MESSAGES = 320;
 
 export interface BridgeServer {
   readonly port: number;
@@ -183,11 +189,12 @@ export function startBridgeServer(options: {
         void handleMessage(ws, raw, pageId);
         return;
       }
-      // A command dropped silently is the failure this exists to prevent, so an
-      // overflow closes the socket and the renderer reconnects with its queue.
+      // No renderer can reach this bound, so a client that does is misbehaving
+      // rather than unlucky: 1008 says so, where a retry code would invite it to
+      // send the same flood again.
       if (held.length >= MAX_HELD_CLIENT_MESSAGES) {
         held.length = 0;
-        ws.close(1013, 'too many commands during admission');
+        ws.close(1008, 'too many commands during admission');
         return;
       }
       held.push(raw);

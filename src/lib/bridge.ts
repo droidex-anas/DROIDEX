@@ -16,6 +16,15 @@ type BatchListener = (events: readonly ServerEvent[]) => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
 type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
 
+/**
+ * How many commands this bridge holds while it is disconnected. The sidecar
+ * holds strictly more frames than this while it admits a socket
+ * (`MAX_HELD_CLIENT_MESSAGES` in `sidecar/src/bridgeServer.ts`), so flushing a
+ * full queue on reconnect can never be mistaken for a flood. Keep the two
+ * coupled: raising this one requires raising that one.
+ */
+const MAX_QUEUED_COMMANDS = 256;
+
 interface TurnBaselineAdopter {
   gitAdoptTurnBaseline: (dir: string, clientRef: string, appSessionId: string) => Promise<unknown>;
 }
@@ -241,8 +250,17 @@ export class Bridge {
   }
 
   send(command: ClientCommand): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
-    else this.queue.push(command);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(command));
+      return;
+    }
+    // Offline for long enough to fill the queue: the oldest intent is the one
+    // worth losing, and the bound is what keeps a reconnect well-behaved.
+    if (this.queue.length >= MAX_QUEUED_COMMANDS) {
+      const dropped = this.queue.shift();
+      console.warn(`Bridge queue is full; dropped an offline ${dropped?.type ?? 'command'}.`);
+    }
+    this.queue.push(command);
   }
 
   sendIfConnected(command: ClientCommand): boolean {
