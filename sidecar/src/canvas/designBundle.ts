@@ -1,0 +1,277 @@
+// Bundles one design's virtual source tree into a single browser script. The
+// tree is text and stays text: esbuild parses and concatenates it, so nothing
+// here executes generated source (spec §6). Only the four supported packages
+// resolve, and only from the runtime directory this module ships in.
+
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
+import { KIT_ENTRY } from './designSystems.js';
+import type { CanvasDiagnostic } from './protocol.js';
+import type { SourceFiles } from './schema.js';
+
+/** The file a design's component is compiled from. */
+const DESIGN_ENTRY = 'main.tsx';
+
+/** The one package specifier that resolves to the pinned kit's own files. */
+export const KIT_SPECIFIER = '@droidex/design-system';
+
+/** The element `main.tsx`'s default export is mounted into. */
+export const ROOT_ELEMENT_ID = 'canvas-root';
+
+// Task 6 adds recharts and Task 7 adds lucide-react; nothing else resolves.
+const SUPPORTED_IMPORTS: readonly string[] = [
+  'react',
+  'react/jsx-runtime',
+  'react-dom/client',
+  KIT_SPECIFIER,
+];
+
+export interface DesignSources {
+  /** The revision's own files, already validated by `sourceFilesSchema`. */
+  files: SourceFiles;
+  /** The pinned kit's files, keyed the same way and rooted at `KIT_ENTRY`. */
+  kitFiles: SourceFiles;
+}
+
+export type DesignBundleResult =
+  | { ok: true; js: string; warnings: CanvasDiagnostic[] }
+  | { ok: false; diagnostics: CanvasDiagnostic[] };
+
+const DESIGN_NAMESPACE = 'canvas-design';
+const KIT_NAMESPACE = 'canvas-kit';
+const BOOT_NAMESPACE = 'canvas-boot';
+const VIRTUAL_NAMESPACES = new Set([DESIGN_NAMESPACE, KIT_NAMESPACE, BOOT_NAMESPACE]);
+
+// `build.resolve` re-enters this plugin, so a delegated lookup is marked and
+// falls through to ordinary node resolution on the second pass.
+const DELEGATED = 'canvas-runtime-import';
+
+const DESIGN_SPECIFIER = 'canvas:design';
+
+// react and react-dom resolve from the directory this module ships in, which is
+// `sidecar/src/canvas` in development and `sidecar/dist` once built. Task 3d
+// points it at the packaged Canvas runtime instead of a checkout's node_modules.
+const runtimeDirectory = dirname(fileURLToPath(import.meta.url));
+
+const BOOT_SOURCE = `import { createRoot } from 'react-dom/client';
+import Design from '${DESIGN_SPECIFIER}';
+
+const root = document.getElementById('${ROOT_ELEMENT_ID}');
+if (root) createRoot(root).render(<Design />);
+`;
+
+const SUPPORTED_LIST = SUPPORTED_IMPORTS.join(', ');
+const ESCAPE_MESSAGE = 'A relative import must stay inside the design.';
+const BUNDLE_RECOVERY = 'The design could not be compiled. Check main.tsx and retry.';
+const MISSING_ENTRY_MESSAGE = `A design needs ${DESIGN_ENTRY}, which default-exports its component.`;
+
+export async function bundleDesign(sources: DesignSources): Promise<DesignBundleResult> {
+  if (!Object.hasOwn(sources.files, DESIGN_ENTRY))
+    return { ok: false, diagnostics: [{ code: 'missing_module', message: MISSING_ENTRY_MESSAGE }] };
+
+  let build: esbuild.BuildResult;
+  try {
+    build = await esbuild.build({
+      entryPoints: [DESIGN_ENTRY],
+      bundle: true,
+      write: false,
+      format: 'iife',
+      jsx: 'automatic',
+      platform: 'browser',
+      target: 'es2022',
+      minify: true,
+      legalComments: 'none',
+      logLevel: 'silent',
+      // React's CommonJS entry branches on this; defining it picks the
+      // production build and leaves no `process` reference in the artifact.
+      define: { 'process.env.NODE_ENV': '"production"' },
+      plugins: [virtualTreePlugin(sources)],
+    });
+  } catch (error) {
+    return bundleFailure(diagnosticsFrom(buildFailureMessages(error), 'error'));
+  }
+  const js = build.outputFiles?.[0]?.text;
+  if (js === undefined) return bundleFailure([]);
+  return { ok: true, js, warnings: diagnosticsFrom(build.warnings, 'warning') };
+}
+
+/** Never an empty failure: the caller has to have something to show. */
+function bundleFailure(diagnostics: CanvasDiagnostic[]): DesignBundleResult {
+  if (diagnostics.length > 0) return { ok: false, diagnostics };
+  return { ok: false, diagnostics: [{ code: 'compile_failed', message: BUNDLE_RECOVERY }] };
+}
+
+// esbuild rejects with a BuildFailure carrying the messages; anything else is a
+// bug in this module, which the caller turns into one generic diagnostic.
+function buildFailureMessages(error: unknown): readonly esbuild.Message[] {
+  if (typeof error === 'object' && error !== null && 'errors' in error) {
+    const errors: unknown = error.errors;
+    if (isMessageArray(errors)) return errors;
+  }
+  console.error('Canvas bundler failure:', error);
+  return [];
+}
+
+function isMessageArray(value: unknown): value is esbuild.Message[] {
+  return Array.isArray(value);
+}
+
+function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
+  const treeFor = (namespace: string): SourceFiles =>
+    namespace === KIT_NAMESPACE ? sources.kitFiles : sources.files;
+
+  return {
+    name: 'canvas-virtual-tree',
+    setup(build) {
+      build.onResolve({ filter: /.*/ }, async (args) => {
+        if (args.pluginData === DELEGATED) return undefined;
+        if (args.kind === 'entry-point') return { path: 'boot', namespace: BOOT_NAMESPACE };
+        // Imports inside the resolved runtime packages are theirs to make.
+        if (!VIRTUAL_NAMESPACES.has(args.namespace)) return undefined;
+        if (args.namespace === BOOT_NAMESPACE) {
+          if (args.path === DESIGN_SPECIFIER)
+            return { path: DESIGN_ENTRY, namespace: DESIGN_NAMESPACE };
+          return await delegate(build, args.path);
+        }
+        if (args.path === KIT_SPECIFIER) return { path: KIT_ENTRY, namespace: KIT_NAMESPACE };
+        if (args.path.startsWith('./') || args.path.startsWith('../')) {
+          const resolved = resolveRelative(treeFor(args.namespace), args.importer, args.path);
+          if (resolved.kind === 'escapes') return refuse('unsupported_import', ESCAPE_MESSAGE);
+          if (resolved.kind === 'missing')
+            return refuse('missing_module', `No file in this design matches "${args.path}".`);
+          return { path: resolved.path, namespace: args.namespace };
+        }
+        if (SUPPORTED_IMPORTS.includes(args.path)) return await delegate(build, args.path);
+        return refuse(
+          'unsupported_import',
+          `"${args.path}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design.`,
+        );
+      });
+
+      build.onLoad({ filter: /.*/, namespace: BOOT_NAMESPACE }, () => ({
+        contents: BOOT_SOURCE,
+        loader: 'tsx',
+      }));
+      for (const namespace of [DESIGN_NAMESPACE, KIT_NAMESPACE]) {
+        build.onLoad({ filter: /.*/, namespace }, (args) => loadVirtual(treeFor(namespace), args));
+      }
+    },
+  };
+}
+
+async function delegate(
+  build: esbuild.PluginBuild,
+  path: string,
+): Promise<esbuild.OnResolveResult> {
+  return await build.resolve(path, {
+    resolveDir: runtimeDirectory,
+    kind: 'import-statement',
+    pluginData: DELEGATED,
+  });
+}
+
+function refuse(code: string, message: string): esbuild.OnResolveResult {
+  return { errors: [{ text: message, detail: { code } }] };
+}
+
+// Only a path the resolver found in `tree` reaches here. Stylesheets are
+// collected by `designStylesheet.ts` and emitted once for the whole document,
+// so importing one contributes nothing to the script.
+function loadVirtual(tree: SourceFiles, args: esbuild.OnLoadArgs): esbuild.OnLoadResult {
+  if (args.path.endsWith('.css')) return { contents: '', loader: 'js' };
+  return { contents: tree[args.path], loader: 'tsx' };
+}
+
+type RelativeResolution =
+  | { kind: 'file'; path: string }
+  | { kind: 'missing' }
+  | { kind: 'escapes' };
+
+/** Walks a relative specifier inside `tree`, refusing to climb above its root. */
+function resolveRelative(
+  tree: SourceFiles,
+  importer: string,
+  specifier: string,
+): RelativeResolution {
+  const segments = importer.includes('/')
+    ? importer.slice(0, importer.lastIndexOf('/')).split('/')
+    : [];
+  for (const segment of specifier.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length === 0) return { kind: 'escapes' };
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  const base = segments.join('/');
+  const candidates = [base, `${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`];
+  const found = candidates.find((candidate) => Object.hasOwn(tree, candidate));
+  return found === undefined ? { kind: 'missing' } : { kind: 'file', path: found };
+}
+
+function diagnosticsFrom(
+  messages: readonly esbuild.Message[],
+  severity: 'error' | 'warning',
+): CanvasDiagnostic[] {
+  return messages.map((message) => diagnosticFrom(message, severity));
+}
+
+function diagnosticFrom(message: esbuild.Message, severity: 'error' | 'warning'): CanvasDiagnostic {
+  const code = pluginCode(message);
+  const location = designLocation(message.location);
+  if (code !== null) return { code, message: message.text, ...location };
+  // The bootstrap is ours, so the only failure it can report is the contract it
+  // depends on: `main.tsx` has to default-export a component.
+  if (message.location?.file.startsWith(`${BOOT_NAMESPACE}:`)) return missingDefaultExport(message);
+  if (!location.file) {
+    // A failure inside a resolved runtime package would carry its real path.
+    console.error(`Canvas compile ${severity} outside design source:`, message.text);
+    return { code: 'compile_failed', message: BUNDLE_RECOVERY };
+  }
+  return { code: 'syntax_error', message: message.text, ...location };
+}
+
+function missingDefaultExport(message: esbuild.Message): CanvasDiagnostic {
+  if (!message.text.includes('for import "default"')) {
+    console.error('Canvas compile error in the preview bootstrap:', message.text);
+    return { code: 'compile_failed', message: BUNDLE_RECOVERY };
+  }
+  return {
+    code: 'missing_default_export',
+    message: `${DESIGN_ENTRY} must default-export a React component.`,
+    file: DESIGN_ENTRY,
+  };
+}
+
+function pluginCode(message: esbuild.Message): string | null {
+  const detail: unknown = message.detail;
+  if (typeof detail !== 'object' || detail === null || !('code' in detail)) return null;
+  return typeof detail.code === 'string' ? detail.code : null;
+}
+
+/**
+ * The design-relative location of a message, or nothing when it points outside
+ * the virtual tree. esbuild reports a virtual module as `<namespace>:<path>`
+ * and a real one by filesystem path, and diagnostics reach the model and the
+ * user, so only the two virtual prefixes ever become a `file` (spec §8).
+ * `column` is esbuild's own 0-based UTF-8 byte offset into the line.
+ */
+function designLocation(
+  location: esbuild.Location | null,
+): Pick<CanvasDiagnostic, 'file' | 'line' | 'column'> {
+  if (!location) return {};
+  const file = virtualFile(location.file);
+  if (file === null) return {};
+  return { file, line: location.line, column: location.column };
+}
+
+function virtualFile(reported: string): string | null {
+  if (reported.startsWith(`${DESIGN_NAMESPACE}:`))
+    return reported.slice(DESIGN_NAMESPACE.length + 1);
+  if (reported.startsWith(`${KIT_NAMESPACE}:`))
+    return `${KIT_SPECIFIER}/${reported.slice(KIT_NAMESPACE.length + 1)}`;
+  return null;
+}
