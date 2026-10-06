@@ -374,7 +374,7 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
 - `CanvasBuilds` is the only owner of a design's build state. `canvasManifest.ts` projects
   `CanvasFrame.build` from it through the one-method `BuildStates` port, so there is no second copy
   to keep in step, and a design the registry has never heard of is `pending`. `CanvasWorkspace`
-  implements `CanvasBuildHost` (`buildTarget`, `readFiles`, `noteBuild`); nothing else reaches in.
+  implements `CanvasBuildHost` (`buildTarget`, `readFiles`, `commitBuild`); nothing else reaches in.
 - `CANVAS_LIMITS` did not carry the build limits after 02a, so 03b added them where the other
   spec §5 contracts live: `buildSlots: 2` and `buildDeadlineMs: 15_000`. Nothing hard-codes either.
 - `write` enqueues inside the commit that makes the revision durable, right after `heads.install`,
@@ -386,9 +386,13 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   runs on the workspace's own commit queue beside `write` and `arrange`. Inside that one step, and
   nowhere else: the `canPublish` and lifecycle gate against the head as the commit finds it, the
   outcome file `builds/<revisionId>.json`, the recorded state, the `lastWorkingRevisionId` read
-  from that same head, and the published frame. An attempt that lost its frame while it was saving
-  therefore writes nothing at all, so no restart can resurrect it. Only the content-addressed
+  from that same head, and the published frame. Only the content-addressed
   `builds/<artifactId>.html` is written beforehand; an orphan there is harmless and unreferenced.
+- The gate runs again after the outcome file is written, because `cancelCanvas`, `requestRebuilds`
+  and `close` all run outside the commit queue and any of them can take the frame while that write
+  is in flight. A result that has lost it unlinks the file it just placed and settles silently: the
+  replacement's own commit is already behind this one in the queue and writes its own outcome. That
+  is the only way a restart cannot be handed an abandoned success.
 - **The deadline bounds compilation only.** It starts when the compile does and is released the
   moment the compile settles, so saving and publishing — bounded by storage failure handling like
   every other workspace write — can never be read as an overdue build, and no process is ever ended
@@ -425,8 +429,10 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   keeps derived-cache cleanup bounded and out of this release.
 - `load` reads those outcomes when the workspace opens and projects `ready` only when the artifact
   document is present; anything else stays `pending`. `requestRebuilds(snapshot)` is the on-demand
-  recovery, called once per canvas when a reader first opens it (`canvas.subscribe` today), and it
-  queues `pending` and `cancelled` frames that still have source. Missing cache is never an error.
+  recovery, which any read may call (`canvas.subscribe` today, after it has confirmed the page is
+  still there, so a refused subscription schedules nothing). It queues the `pending` and
+  `cancelled` frames that still have source, checked against the head. Missing cache is never an
+  error.
 - Each slot owns its own `CompilerWorker`, forked on that slot's first build, so the second process
   exists only once two builds overlap. An overdue build aborts its signal and then ends its own
   slot's process, which may be wedged inside single-threaded Tailwind where no signal is read; the
@@ -434,10 +440,10 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   build. A process that dies on its own rejects with `CompilerUnavailableError`, which fails that
   one job as `compiler_unavailable` and nothing else: 03a's client forks a replacement itself, so
   the slot keeps it. Nothing shared means no build is ever blamed for another design's hog.
-- `cancelCanvas` drops that canvas's queued jobs, abandons its running ones, reports `cancelled`
-  with the revision each was building, and clears the canvas's sweep mark so a later reader asks
-  for the work again. A superseded or cancelled compile never flashes `cancelled`: its rejection
-  publishes nothing, because the state that replaced it is already the frame's.
+- `cancelCanvas` drops that canvas's queued jobs, abandons its running ones and reports `cancelled`
+  with the revision each was building, so a later reader's sweep asks for the work again. A
+  superseded or cancelled compile never flashes `cancelled`: its rejection publishes nothing,
+  because the state that replaced it is already the frame's.
 - `shutdownCanvas` closes builds before the workspace, so a settling build still reports through the
   workspace and the workspace then waits for that commit. `close()` is idempotent, and it waits for
   the compiler terminations it has already started, including one an overdue build began.
