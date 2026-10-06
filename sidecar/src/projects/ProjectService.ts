@@ -296,13 +296,9 @@ export class ProjectService {
         throw new Error('This chat has started no threads to share a checkout with.');
       const project = joined ?? this.adoption(source, owner);
       try {
-        const started = await this.startThread(project, spawn, owner, input, requested);
-        // New work means the goal is not met after all; a refused spawn is no new work.
-        if (project.done) {
-          delete project.done;
-          await this.save();
-        }
-        return started;
+        // Its first turn reopens a finished project (reopenOnWork); a refused
+        // spawn starts none, so it reopens nothing.
+        return await this.startThread(project, spawn, owner, input, requested);
       } finally {
         if (this.settleAdoption(project)) await this.save();
       }
