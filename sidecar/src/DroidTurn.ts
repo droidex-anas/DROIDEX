@@ -68,8 +68,12 @@ export class DroidTurn {
       this.busy = raw.newState !== 'idle';
       if (wasBusy && !this.busy) this.mainEnded = true;
     }
-    // The SDK owns the main loop. Buffer later notices even before its iterator drains.
-    if (!wasMainEnded) return;
+    // The SDK owns the main loop. Buffer later notices even before its iterator
+    // drains. The main loop's own idle still wakes a tail already waiting on it.
+    if (!wasMainEnded) {
+      this.wake?.();
+      return;
+    }
     this.tail.push(raw);
     this.wake?.();
   }
