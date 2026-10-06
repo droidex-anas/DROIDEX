@@ -34,13 +34,13 @@ any `*-fast` variant.
   Opus subagents with `Agent` (`model: "opus"`) for independent slices.
 - **6.1 Sol writes when there is more parallel work than Claude usage should
   carry.** Give it independent, well-specified slices through a Codex `task`
-  with `--write`: sidecar fixes, provider seams, test coverage, refactors,
+  with `--write --effort high`: sidecar fixes, provider seams, test coverage, refactors,
   tooling, docs. Opus keeps the frontend. Sol runs on the Codex plan, so it does
   not spend the Claude 5-hour window. Choose it deliberately, not by default,
   and keep one owner per file at a time.
 - **6.1 Sol also takes over a fix that is not landing.** After two failed
-  attempts on Claude, hand the exact failing case to a Codex `task` with a brief
-  that states what was tried and what the expected behaviour is.
+  attempts on Claude, hand the exact failing case to a Codex `task --write` with
+  a brief that states what was tried and what the expected behaviour is.
 
 ### Who reviews the code
 
