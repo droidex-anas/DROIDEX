@@ -98,6 +98,7 @@ export function normalizeUrl(value: string): string {
     const typedHost = authority.replace(/:\d+$/, '');
     const numberOnly = /^[\d.]+$/.test(typedHost);
     const site =
+      local ||
       Boolean(username || password) ||
       (!authority.includes('@') &&
         ((hostname.includes('.') && (!numberOnly || /^\d+(\.\d+){3}$/.test(typedHost))) ||

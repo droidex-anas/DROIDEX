@@ -64,6 +64,8 @@ test('normalizeUrl opens sites and searches for everything else', () => {
   assert.equal(normalizeUrl('@alice:secret@example.com/p'), 'https://@alice:secret@example.com/p');
   assert.equal(normalizeUrl('1.2/45'), 'https://www.google.com/search?q=1.2%2F45');
   assert.equal(normalizeUrl('1.2.3.4/x'), 'https://1.2.3.4/x');
+  assert.equal(normalizeUrl('localhost?x=1'), 'http://localhost?x=1');
+  assert.equal(normalizeUrl('localhost#app'), 'http://localhost#app');
   assert.equal(
     normalizeUrl('site:wikipedia.org ch4@zeolite'),
     'https://www.google.com/search?q=site%3Awikipedia.org%20ch4%40zeolite',
