@@ -2,6 +2,9 @@ export const KIT_CSS = `html,
 body {
   min-height: 100%;
 }
+html {
+  scrollbar-gutter: stable;
+}
 body {
   margin: 0;
   background: var(--ds-canvas);
@@ -53,22 +56,13 @@ h2 {
   background: var(--ds-accent);
   color: var(--ds-accent-fg);
 }
-.ds-button-primary:hover:not(:disabled) {
-  background: var(--ds-accent-strong);
-}
 .ds-button-secondary {
   background: var(--ds-elevated);
   color: var(--ds-fg);
 }
-.ds-button-secondary:hover:not(:disabled) {
-  background: var(--ds-active);
-}
 .ds-button-quiet {
   background: transparent;
   color: var(--ds-fg-muted);
-}
-.ds-button-quiet:hover:not(:disabled) {
-  background: var(--ds-elevated);
 }
 .ds-button:disabled,
 .ds-input:disabled,
@@ -113,9 +107,6 @@ h2 {
   background: var(--ds-elevated);
   color: var(--ds-fg);
 }
-.ds-input:hover:not(:disabled) {
-  background: var(--ds-active);
-}
 .ds-input::placeholder {
   color: var(--ds-fg-muted);
   opacity: 1;
@@ -143,13 +134,20 @@ h2 {
   color: var(--ds-fg-muted);
   background: transparent;
 }
-.ds-tab:hover:not(:disabled) {
-  background: var(--ds-elevated);
-}
 .ds-tab[aria-selected='true'] {
   color: var(--ds-fg);
   background: var(--ds-active);
   font-weight: 600;
+}
+.ds-button:hover:not(:disabled),
+.ds-input:hover:not(:disabled),
+.ds-tab:hover:not(:disabled) {
+  background-image: linear-gradient(var(--ds-lift), var(--ds-lift));
+}
+.ds-button:active:not(:disabled),
+.ds-input:active:not(:disabled),
+.ds-tab:active:not(:disabled) {
+  background-image: linear-gradient(var(--ds-press), var(--ds-press));
 }
 .ds-tabpanel {
   padding-top: var(--ds-space-4);

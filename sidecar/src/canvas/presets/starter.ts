@@ -106,7 +106,9 @@ Give every control a real action, labels, and honest loading/empty/error states.
 Keep the focus, disabled and reduced-motion behavior. Use semantic --ds-* tokens;
 foreground on raised/surface/canvas, muted for secondary text, accent-fg on accent,
 and foreground on accent-soft. Use tone and shadow to separate layers, not nested
-outlines. Reserve a primary action for the next useful step.
+outlines. Use translucent --ds-lift and --ds-press layers over a control's own
+background for hover and press, never a second hard-coded colour. Reserve a primary
+action for the next useful step.
 
 Use complete literal Tailwind 3 classes in every source file; never concatenate
 class fragments. Import named icons from lucide-react, never a dynamic icon map.

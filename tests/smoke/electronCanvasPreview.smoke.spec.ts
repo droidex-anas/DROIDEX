@@ -172,11 +172,18 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
         inDialog: document.querySelector('dialog')?.contains(document.activeElement),
         hasFocus: document.hasFocus(),
       }))()`);
+    const layout = () =>
+      generated(`(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        cardLeft: document.querySelector('.ds-card')?.getBoundingClientRect().left,
+      }))()`);
 
     await click('document.querySelectorAll("[role=tab]")[1]');
+    const layoutBeforeDialog = await layout();
     await click(
       '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
     );
+    assert.deepEqual(await layout(), layoutBeforeDialog);
     assert.deepEqual(await active(), {
       open: true,
       tag: 'BUTTON',

@@ -44,7 +44,6 @@ test('kit text meets AA contrast on every surface the primitives use', () => {
         ]),
         ...['canvas', 'surface', 'raised', 'elevated', 'active'].map((bg) => ['fg-muted', bg]),
         ['accent-fg', 'accent'],
-        ['accent-fg', 'accent-strong'],
         ['danger', 'raised'],
       ];
       for (const [fg, bg] of pairs) {
@@ -57,9 +56,45 @@ test('kit text meets AA contrast on every surface the primitives use', () => {
           kit.id + '/' + mode + ' ' + fg + '/' + bg + ': ' + ratio.toFixed(2),
         );
       }
+      for (const [fg, bg] of [
+        ['accent-fg', 'accent'],
+        ['fg', 'elevated'],
+        ['fg-muted', 'raised'],
+        ['fg', 'active'],
+      ]) {
+        for (const layer of ['lift', 'press']) {
+          const ratio = contrast(
+            tokens['--ds-' + fg],
+            layerColor(tokens['--ds-' + bg], tokens['--ds-' + layer]),
+          );
+          assert.ok(
+            ratio >= 4.5,
+            kit.id + '/' + mode + ' ' + fg + '/' + bg + '+' + layer + ': ' + ratio.toFixed(2),
+          );
+        }
+      }
     }
   }
 });
+
+function layerColor(background: string, layer: string): string {
+  const parts = /^rgb\((0|255) \1 \1 \/ (0\.\d+)\)$/.exec(layer);
+  assert.ok(parts, 'a translucent black or white layer');
+  const channel = Number(parts[1]);
+  const opacity = Number(parts[2]);
+  return (
+    '#' +
+    [1, 3, 5]
+      .map((start) =>
+        Math.round(
+          parseInt(background.slice(start, start + 2), 16) * (1 - opacity) + channel * opacity,
+        )
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  );
+}
 
 function contrast(foreground: string, background: string): number {
   function luminance(hex: string): number {

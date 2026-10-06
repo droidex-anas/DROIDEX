@@ -1141,6 +1141,10 @@ Settled by 07a (`canvas/07a-design-kits`):
   visible-destination restoration.
   Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
   Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
+- Each light/dark kit provides translucent `--ds-lift` and `--ds-press` layers for
+  control hover and press over its own background; hover-only accent colours are gone.
+  The guest stylesheet reserves a stable scrollbar gutter so opening a dialog does
+  not move the card, and primitives do not lock `body` scrolling.
 - Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
   for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
   SIL OFL files both in the repository and the kit's virtual source files. Provenance is
