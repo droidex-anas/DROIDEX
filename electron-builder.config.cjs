@@ -116,6 +116,13 @@ module.exports = {
       to: 'sidecar/canvas-runtime/node_modules',
       filter: ['**/*'],
     },
+    // The manifest the compiler checks before it accepts a request. It sits
+    // beside that node_modules rather than inside it, so it needs a file set of
+    // its own; the one above cannot reach it.
+    {
+      from: 'sidecar/canvas-runtime/${arch}/manifest.json',
+      to: 'sidecar/canvas-runtime/manifest.json',
+    },
   ],
   npmRebuild: true,
   mac: {
