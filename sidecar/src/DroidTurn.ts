@@ -133,9 +133,10 @@ export class DroidTurn {
     }
   }
 
-  // Whether this SDK event is the idle that ends a main loop the SDK will never
-  // settle. Counted as the SDK yields, since raw notices run ahead of it.
-  endsOpenMainLoop(event: DroidStreamEvent): boolean {
+  // Counts this SDK event if it is an idle, and says whether that idle ends a
+  // main loop the SDK will never settle. Raw notices run ahead of the SDK, so
+  // idles are counted as it yields them: once per event, in order.
+  consumeIdleEndsOpenLoop(event: DroidStreamEvent): boolean {
     if (event.type !== 'working_state_changed' || event.state !== DroidWorkingState.Idle)
       return false;
     this.consumedMainIdles += 1;
@@ -206,13 +207,15 @@ export class DroidTurn {
   stop(): void {
     this.stopped = true;
     this.dropSteers();
-    this.wake?.();
   }
 
+  // Wakes the tail even with no waiter left to settle: an owed loop may have
+  // been all it was waiting for.
   private dropSteers(): void {
     this.acceptingSteers = false;
     this.loopOwed = false;
     for (const messageId of this.deliveries.keys()) this.settle(messageId, false);
+    this.wake?.();
   }
 
   private settle(messageId: string, delivered: boolean): void {

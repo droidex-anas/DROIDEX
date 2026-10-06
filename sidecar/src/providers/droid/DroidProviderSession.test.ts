@@ -199,6 +199,9 @@ async function droidOverMemory() {
     answer: (text: string) => {
       notify({ type: 'assistant_text_delta', messageId: text, blockIndex: 0, textDelta: text });
     },
+    discardQueuedMessages: () => {
+      notify({ type: 'queued_messages_discarded', text: '' });
+    },
     showUserMessage: (id: unknown, text: string) => {
       notify({
         type: 'create_message',
@@ -324,6 +327,31 @@ test(
         );
       await h.session.close();
     }
+  },
+);
+
+test(
+  'a steer Droid discards after a failed loop leaves it owed ends the turn',
+  { timeout: 2000 },
+  async () => {
+    const h = await droidOverMemory();
+    const prompt = h.nextRequest('droid.add_user_message', () => {
+      h.state('streaming_assistant_message');
+    });
+    const events = turnEvents(h.session.stream('hello'));
+    await prompt;
+    const steer = h.nextRequest('droid.add_user_message', ({ messageId }) => {
+      h.showUserMessage(messageId, 'try again');
+      h.fail();
+      h.state('idle');
+    });
+    const steered = h.session.steer('try again');
+    await steer;
+    assert.equal(await steered, true);
+    await turnCatchesUp();
+    h.discardQueuedMessages();
+    assert.deepEqual(texts(await events), ['Model connection failed']);
+    await h.session.close();
   },
 );
 
