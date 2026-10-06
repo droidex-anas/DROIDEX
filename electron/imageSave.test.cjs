@@ -33,6 +33,25 @@ test('readImageResponse returns image bytes and refuses failures, non-images, an
   await assert.rejects(readImageResponse(huge), /size limit/);
 });
 
+test('readImageResponse stops reading a body with no length as soon as it passes the cap', async () => {
+  let chunksPulled = 0;
+  let cancelled = false;
+  const endless = new ReadableStream({
+    pull(controller) {
+      chunksPulled += 1;
+      controller.enqueue(new Uint8Array(4));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const response = new Response(endless, { headers: { 'content-type': 'image/png' } });
+
+  await assert.rejects(readImageResponse(response, 10), /size limit/);
+  assert.equal(cancelled, true);
+  assert.ok(chunksPulled <= 4, `read ${String(chunksPulled)} chunks past a 10-byte cap`);
+});
+
 test('imageSaveName keeps a usable name, strips path parts, and adds the type extension', () => {
   assert.equal(imageSaveName('shot.png', 'image/png'), 'shot.png');
   assert.equal(imageSaveName('Mermaid diagram', 'image/svg+xml'), 'Mermaid diagram.svg');

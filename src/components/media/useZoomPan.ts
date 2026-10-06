@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { useReducedMotion } from 'framer-motion';
 
 const MIN_SCALE = 0.25;
 const DOUBLE_CLICK_SCALE = 2;
@@ -126,6 +127,7 @@ export function useZoomPan({
     null,
   );
   const [dragging, setDragging] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -170,6 +172,18 @@ export function useZoomPan({
       window.removeEventListener('resize', onResize);
     };
   }, [contentRef, enabled, maxScale, stageRef]);
+
+  // A larger window shrinks how far the image is scaled down to fit, which
+  // lowers the ceiling relative to the fit; bring a deeper zoom back under it.
+  useEffect(() => {
+    const layout = measureLayout(stageRef, contentRef);
+    if (!layout) return;
+    setView((current) =>
+      current.scale <= maxScale
+        ? current
+        : zoomAbout(current, maxScale, viewportCenter(layout), layout, false),
+    );
+  }, [contentRef, maxScale, stageRef]);
 
   const zoomBy = (factor: number) => {
     const layout = measureLayout(stageRef, contentRef);
@@ -248,7 +262,8 @@ export function useZoomPan({
     contentCursor: cursor,
     contentStyle: {
       transform: `translate(${String(view.x)}px, ${String(view.y)}px) scale(${String(view.scale)})`,
-      transition: view.eased ? 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
+      transition:
+        view.eased && !reduceMotion ? 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
     },
   };
 }

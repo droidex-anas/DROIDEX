@@ -1,4 +1,13 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import { Maximize2 } from 'lucide-react';
 import type { Mermaid } from 'mermaid';
 
@@ -39,6 +48,19 @@ async function loadMermaid(scheme: ColorScheme): Promise<Mermaid> {
 function currentColorScheme(): ColorScheme {
   const canvas = getComputedStyle(document.documentElement).getPropertyValue('--droid-bg');
   return appColorScheme(canvas.trim());
+}
+
+// applyTheme writes the palette onto the root element's style, so a change
+// there is the moment a drawn diagram may need the other scheme.
+function subscribeToThemeChanges(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+  });
+  return () => {
+    observer.disconnect();
+  };
 }
 
 let mermaidSeq = 0;
@@ -136,12 +158,18 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
   const idRef = useRef(`mmd-${String(++mermaidSeq)}`);
   const hostRef = useRef<HTMLDivElement>(null);
   const visible = useVisibleOnce(hostRef);
+  const scheme = useSyncExternalStore<ColorScheme>(
+    subscribeToThemeChanges,
+    currentColorScheme,
+    // A static render draws no diagram, so its scheme is never used.
+    () => 'dark',
+  );
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     const raw = code.trim();
-    loadMermaid(currentColorScheme())
+    loadMermaid(scheme)
       .then(async (mermaid) => {
         try {
           return await mermaid.render(idRef.current, raw);
@@ -162,7 +190,7 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
     return () => {
       cancelled = true;
     };
-  }, [code, visible]);
+  }, [code, scheme, visible]);
 
   if (error) return <CodeCard code={code} className="language-mermaid" />;
 
