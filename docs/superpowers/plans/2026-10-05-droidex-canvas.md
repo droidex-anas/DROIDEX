@@ -269,7 +269,7 @@ export default defineConfig({
   Done: One serialized-fixture test passes against both boundaries, including rejected invalid inputs.
 - [x] `canvas/02b-canvas-workspace`: Implement `CanvasWorkspace.ts` and `canvasFiles.ts` with atomic commits, CAS and persisted mutation IDs.
   Done: Fault-injection and reopen tests preserve complete heads and reject stale or revoked writes.
-- [ ] `canvas/02c-canvas-bridge-commands`: Wire `canvas.*` commands/events through sidecar protocol, bridgeServer, droidexPaths and `src/types/bridge.ts`, including attachments and renderer sequence handling.
+- [x] `canvas/02c-canvas-bridge-commands`: Wire `canvas.*` commands/events through sidecar protocol, bridgeServer, droidexPaths and `src/types/bridge.ts`, including attachments and renderer sequence handling.
   Done: Correlated commands persist attachments; duplicate events are ignored and gaps request a snapshot.
 
 **Files:** Create `sidecar/src/canvas/{protocol.ts,schema.ts,CanvasWorkspace.ts,canvasFiles.ts,CanvasWorkspace.test.ts,canvasFiles.test.ts}` and `src/features/canvas/protocol.ts`. Modify `sidecar/src/{protocol.ts,bridgeServer.ts,droidexPaths.ts}` and `src/types/bridge.ts` at their existing command/event boundaries. There is no current `sidecar/src/schema.ts`; Canvas input validation belongs in the new feature schema and its dispatch boundary. Keep all wire consumers in the same change.
@@ -719,6 +719,8 @@ Noted during execution; not in any task's scope. Each needs its own change and r
 - Canvas storage leaves an empty canvas directory or a stray `.tmp` behind when a bootstrap crashes between `mkdir` and the first manifest rename. Nothing serves or reads it, but `CanvasWorkspace.open` only cleans staging under canvases that have a manifest. Sweep manifest-less canvas directories at open (02b review, accepted as a follow-up).
 - The 4096 unsettled-receipt ceiling in `canvasManifest.ts` is enforced and documented but exercised only through a fixture-built ledger, never through real commits. Acceptable while no lease can realistically issue that many mutations; revisit if Task 5 board interactions mint long-lived UI leases.
 - `sidecar/src/canvas/CanvasWorkspace.test.ts` sits at 798 effective lines against the 800 cap. The next behavior that needs a workspace-level test must first move an existing contract to its module's owner suite (`canvasHeads`, `canvasLeases`, `canvasFrames`, `canvasManifest`) rather than grow this one.
+- `Bridge.send` now returns `false` when the renderer's offline queue holds `MAX_QUEUED_COMMANDS`, and the sidecar holds up to `MAX_HELD_CLIENT_MESSAGES` frames while admitting a socket (02c). Nothing presents a refused command to the user yet, and the 64-frame headroom for live commands sent during admission is not enforced on callers (voice sends freely). Surface refusals in the UI and bound live admission traffic as one bridge-level change.
+- The Canvas renderer client logs a failed gap-recovery resync and retries on the next change; it has no error channel. Task 5 surfaces it in the pane.
 
 ## Plan self-review and handoff checklist
 
