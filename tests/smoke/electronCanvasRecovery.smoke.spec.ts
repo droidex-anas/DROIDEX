@@ -2,11 +2,13 @@
 // contract no server render can reach: after a read misses, the next build
 // transition has to read again.
 //
-// A rebuild of identical source is content-addressed to the same `artifactId`,
-// so the component cannot key that re-read on the artifact's name. React commits
-// only the final props of a batched pair of renders, so `building` → `ready` for
-// one revision arrives as a single commit whose revision and artifact ID are
-// exactly what the frame already had: only the build object itself differs.
+// A rebuild of identical source is content-addressed to the same `artifactId`, so
+// the component cannot key that re-read on the artifact's name. React commits only
+// the final props of a batched pair of renders, so `building` → `ready` for one
+// revision arrives as a single commit whose revision, status and artifact ID are
+// exactly what the frame already had — and whose `generation` is the attempt that
+// produced the recovered document. That counter is the signal; `[C10]` holds the
+// other side of it, where an arrange re-sends a frame with its build unmoved.
 //
 // Nothing here is added to production code. The probe is bundled from source with
 // the esbuild the sidecar declares, and evaluated in the page.
@@ -171,8 +173,8 @@ test('[C9] a build transition after a lost artifact reads again and mounts it', 
     assert.equal(missed.guests, 0);
 
     // The runtime finishes the rebuild. `building` and `ready` arrive in one task,
-    // so React commits only the second: same revision, same content hash, and a
-    // frame whose build object is the only thing that moved.
+    // so React commits only the second: same revision, same status, same content
+    // hash, and a `generation` of 2 where the frame had 1.
     await page.evaluate((artifactId) => {
       const recovery = Reflect.get(window, '__canvasRecovery') as {
         probe: { available: boolean };

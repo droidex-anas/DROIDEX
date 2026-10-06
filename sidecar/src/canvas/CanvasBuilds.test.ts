@@ -260,13 +260,15 @@ test('a lost artifact for the current revision is rebuilt, not just reported', a
   assert.deepEqual(canvas.frame(designId).build, {
     status: 'ready',
     revisionId: head.revisionId,
+    // This compiler is under the test's hand and was told to answer with a second
+    // ID; the real one is content-addressed and would repeat the first for the
+    // same source. Either way the attempt is what moved, and that is what a
+    // mounted preview reads.
     artifactId: 'artifact-two',
-    // The rebuild is a second attempt on the same revision, and that is the move
-    // a mounted preview reads: the document's own ID is unchanged.
     generation: 2,
   });
-  // The replacement carries a new artifact ID, which is the change a mounted
-  // preview needs in order to mount the document that now exists.
+  // The document the frame now names is on disk, which is what the read that
+  // queued this rebuild could not find.
   const rebuilt = await canvas.builds.readArtifact(canvas.canvasId, designId, head.revisionId);
   assert.equal(rebuilt?.artifactId, 'artifact-two');
 });
