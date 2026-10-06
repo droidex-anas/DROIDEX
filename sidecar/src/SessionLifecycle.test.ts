@@ -821,6 +821,26 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await rejectingProvider.waitForPrompts(2);
 });
 
+test('a turn that ends while send-now is stopping it waits for the interrupt before the next prompt', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'racing');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('racing', 'urgent', undefined, 'urgent');
+  const interrupt = provider.deferNextInterrupt();
+  const sending = h.lifecycle.sendNow('racing', 'urgent');
+  // The turn finishes on its own before the harness acknowledges the
+  // interrupt, which would otherwise land on the turn started next.
+  turn.resolve();
+  for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(provider.prompts, ['first']);
+  interrupt.resolve();
+  await sending;
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'urgent']);
+});
+
 test('a steer is pending until the harness delivers it, and one refused late still runs', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'steer');
