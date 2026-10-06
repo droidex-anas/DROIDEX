@@ -204,7 +204,9 @@ export class CanvasBuilds {
       if (frame.revisionId === null) continue;
       if (this.queued.has(key(snapshot.canvasId, frame.designId))) continue;
       if (this.slotOf(snapshot.canvasId, frame.designId)) continue;
-      const status = frame.build.status;
+      const current = this.owner.host.buildTarget(snapshot.canvasId, frame.designId)?.frame;
+      if (current?.revisionId !== frame.revisionId) continue;
+      const status = current.build.status;
       if (status !== 'pending' && status !== 'cancelled') continue;
       for (const job of this.queue(snapshot.canvasId, frame.designId, frame.revisionId))
         this.announce(job);
@@ -493,5 +495,5 @@ const realDeadline: BuildDeadline = (onOverdue) => {
 
 /** Build state belongs to a design on a canvas: two canvases may share an ID. */
 function key(canvasId: string, designId: string): string {
-  return designId;
+  return `${canvasId}/${designId}`;
 }

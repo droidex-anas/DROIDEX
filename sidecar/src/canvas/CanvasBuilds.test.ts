@@ -784,6 +784,58 @@ test('closing waits for a termination it has already started', async (t) => {
   assert.deepEqual(canvas.fleet.ended, ['client-1', 'closed']);
 });
 
+test('a frame seeded from a saved revision is built like a write', async (t) => {
+  const canvas = await board(t);
+  const [source] = await canvas.create('Source');
+  assert.ok(source);
+  const receipt = await canvas.write(source, null, 'v1');
+  (await canvas.fleet.compile(1)).ready('artifact-source');
+  await canvas.reported(source, 'ready');
+
+  const seeded = await canvas.createSeeded('Copy', source, receipt.revisionId);
+  const copy = await canvas.fleet.compile(2);
+  assert.equal(copy.input.designId, seeded);
+  assert.notEqual(copy.input.revisionId, receipt.revisionId, 'the copy owns its own revision');
+  copy.ready('artifact-copy');
+  await canvas.reported(seeded, 'ready');
+  assert.deepEqual(canvas.frame(seeded).build, {
+    status: 'ready',
+    revisionId: copy.input.revisionId,
+    artifactId: 'artifact-copy',
+  });
+});
+
+test('a rebuild sweep from an old projection leaves the current state alone', async (t) => {
+  const canvas = await board(t);
+  const [one, two, three] = await canvas.create('One', 'Two', 'Three');
+  assert.ok(one && two && three);
+  // Both slots are busy, so the third frame is published as pending.
+  await canvas.write(one, null, 'v1');
+  await canvas.write(two, null, 'v1');
+  const queued = await canvas.write(three, null, 'v1');
+  const stale = canvas.workspace.snapshot(canvas.canvasId);
+  assert.deepEqual(canvas.frame(three).build, { status: 'pending' });
+
+  // Let it build, then move it on to a revision that projection never saw.
+  (await canvas.fleet.compile(1)).ready('artifact-one');
+  (await canvas.fleet.compile(3)).ready('artifact-three');
+  await canvas.reported(three, 'ready');
+  const current = await canvas.write(three, queued.revisionId, 'v2');
+  (await canvas.fleet.compile(4)).ready('artifact-current');
+  await canvas.reported(three, 'ready');
+  // A frame publishes its outcome before it releases its slot, so the sweep
+  // below has to meet a frame that is only holding its revision.
+  await drained();
+
+  canvas.builds.requestRebuilds(stale);
+  assert.deepEqual(canvas.frame(three).build, {
+    status: 'ready',
+    revisionId: current.revisionId,
+    artifactId: 'artifact-current',
+  });
+  assert.equal(canvas.fleet.held.length, 4, 'nothing was rebuilt for a revision that is gone');
+});
+
 /**
  * A stand-in for the canvas, for the cases a real workspace cannot reach: a
  * design that leaves its frame mid-build, and one design ID on two canvases.
@@ -867,4 +919,37 @@ test('a design that leaves its canvas mid-build publishes nothing', async (t) =>
   assert.deepEqual(builds.stateOf('cv_01', 'one'), { status: 'pending' });
   assert.deepEqual([...(await files.listBuildOutputs('cv_01'))], []);
   assert.equal(deadlines.live(), 2, 'the orphaned build released its slot and its deadline');
+});
+
+test('one design ID on two canvases keeps two build states', async (t) => {
+  const fleet = new CompilerFleet();
+  const deadlines = fakeDeadlines();
+  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
+  t.after(() => builds.close());
+  const files = new CanvasFiles((await storage(t)).root);
+  await files.createRoot();
+  const canvas = standIn(builds);
+  canvas.revisions.set('cv_01/dsg_hey', 'rev_01');
+  canvas.revisions.set('cv_02/dsg_hey', 'rev_02');
+  await builds.load(canvas.host, files, []);
+
+  builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
+  builds.enqueue('cv_02', 'dsg_hey', 'rev_02');
+  (await fleet.compile(1)).ready('artifact-one');
+  (await fleet.compile(2)).failed('syntax_error');
+  await canvas.settled('cv_01/dsg_hey:ready');
+  await canvas.settled('cv_02/dsg_hey:failed');
+
+  // Each canvas kept its own state and its own outcome.
+  assert.deepEqual(builds.stateOf('cv_01', 'dsg_hey'), {
+    status: 'ready',
+    revisionId: 'rev_01',
+    artifactId: 'artifact-one',
+  });
+  assert.equal(builds.stateOf('cv_02', 'dsg_hey').status, 'failed');
+  assert.deepEqual([...(await files.listBuildOutputs('cv_01'))].sort(), [
+    'artifact-one.html',
+    'rev_01.json',
+  ]);
+  assert.match((await files.readBuildOutput('cv_02', 'rev_02.json')) ?? '', /"status":"failed"/);
 });

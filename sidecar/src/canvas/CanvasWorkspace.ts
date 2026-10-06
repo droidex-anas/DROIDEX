@@ -219,6 +219,11 @@ export class CanvasWorkspace {
           throw error;
         }
         if (scope.canvasId === null) this.leases.claim(scope, canvasId);
+        // A seeded frame arrives with source, so it is built like a write's.
+        for (const design of designs) {
+          if (design.revisionId !== null)
+            this.builds.enqueue(canvasId, design.designId, design.revisionId);
+        }
         return {
           value: {
             canvasId,
