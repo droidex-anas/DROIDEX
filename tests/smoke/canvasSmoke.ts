@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createSocket } from 'node:dgram';
+import { createServer } from 'node:http';
+import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -33,6 +37,97 @@ export async function bounded<T>(
     ]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** A loopback listener that counts everything that reaches it. */
+export interface NetworkListener {
+  url: string;
+  attempts: { connections: number; requests: number; upgrades: number };
+  openSockets: () => number;
+}
+
+/**
+ * A loopback UDP listener, because ICE never becomes a TCP connection: CSP's
+ * `connect-src` does not govern WebRTC, so "no network" has to be measured on a
+ * datagram socket as well as on a stream one.
+ */
+export interface DatagramListener {
+  url: string;
+  datagrams: () => number;
+}
+
+export async function withDatagramListener(
+  use: (listener: DatagramListener) => Promise<void>,
+): Promise<void> {
+  const socket = createSocket('udp4');
+  let datagrams = 0;
+  socket.on('message', () => {
+    datagrams += 1;
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('error', reject);
+      socket.bind(0, '127.0.0.1', resolve);
+    });
+    await use({
+      url: `127.0.0.1:${String(socket.address().port)}`,
+      datagrams: () => datagrams,
+    });
+  } finally {
+    await new Promise<void>((resolve) => socket.close(resolve));
+  }
+}
+
+/**
+ * Runs `use` with a real HTTP/WebSocket listener, so "no network" is measured
+ * at a socket rather than inferred from an error message.
+ */
+export async function withNetworkListener(
+  use: (listener: NetworkListener) => Promise<void>,
+): Promise<void> {
+  const sockets = new Set<Socket>();
+  const attempts = { connections: 0, requests: 0, upgrades: 0 };
+  const server = createServer((_request, response) => {
+    attempts.requests += 1;
+    response.writeHead(200, { 'Access-Control-Allow-Origin': '*', Connection: 'close' });
+    response.end('reachable');
+  });
+  server.on('connection', (socket) => {
+    attempts.connections += 1;
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  server.on('upgrade', (request, socket) => {
+    attempts.upgrades += 1;
+    const key = request.headers['sec-websocket-key'];
+    assert.equal(typeof key, 'string');
+    const accept = createHash('sha1')
+      .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
+      .digest('base64');
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    socket.on('data', () => socket.destroy());
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    await use({
+      url: `http://127.0.0.1:${String(address.port)}`,
+      attempts,
+      openSockets: () => sockets.size,
+    });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
   }
 }
 

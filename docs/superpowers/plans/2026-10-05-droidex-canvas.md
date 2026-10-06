@@ -343,7 +343,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
   Done: Fixtures compile working stateful React and reject bad source, unsupported imports and path escapes.
 - [x] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
-- [ ] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
+- [x] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
   Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
 - [ ] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
   Done: Offline packaged tests verify arm64/x64 resources and a working saved design; run `docs:generate` when scripts change.
@@ -478,6 +478,268 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   Task 8's element output belongs too. The slot scheduler was examined as a third owner and
   rejected: its members are all thin accessors over a two-element array, and splitting it from the
   state registry would give one invariant two owners with a callback seam between them.
+
+Settled by 03c (landed in `electron/{canvasPreview.cjs,main.cjs,preload.cjs}` and
+`src/features/canvas/{previewDocument.ts,previewRuntime.ts,DesignPreview.tsx}`):
+
+- **The host contract.** `electron/canvasPreview.cjs` owns the guest end-to-end, the way
+  `favicons.cjs` owns its scheme, and is free of `require('electron')`. It exports the scheme
+  (`droidex-canvas-preview`, `standard` and `secure`, no `supportFetchAPI`), the one URL
+  (`droidex-canvas-preview://preview/guest`), the CSP, the document, and the registry of guests main
+  attached. `main.cjs` registers the scheme before `app.whenReady`, serves that one URL from the
+  default session and answers 403 to every other, sets `webviewTag: true` on the app window only,
+  and installs `will-attach-webview`/`did-attach-webview` before the window loads anything.
+- **The CSP** is `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';
+  img-src data:; font-src data:; frame-src about:; connect-src 'none'; worker-src 'none';
+  object-src 'none'; base-uri 'none'; form-action 'none'`. It travels as a response header rather
+  than a `<meta>`, so no document surgery can drop it, and an `about:srcdoc` frame inherits it
+  either way. Inline script and style are allowed because 03a's artifact is one
+  inline-everything document; there is no `unsafe-eval`, per 03a's ruling.
+- The guest keeps the **default session**. A dedicated in-memory partition was considered and left
+  out: `connect-src 'none'` with no fetchable scheme is what bounds the network, the generated frame
+  is opaque-origin and has no storage at all, and forcing a partition through
+  `will-attach-webview` is not part of the measured decision in spec §6.
+- **Who owns what inside the guest.** The intermediate's receiver, its bounded queue, and the
+  reporter that runs inside the generated frame are all main-owned literals in
+  `canvasPreview.cjs`: everything inside the guest arrives through the privileged scheme under the
+  policy that document declares. The renderer owns only the two pull-channel literals in
+  `previewDocument.ts`. The reporter is appended to the artifact as a trailing script element
+  written with JS escapes, so the compiler's document stays byte-identical to the one its
+  `artifactId` names.
+- **The pull channel.** `globalThis.__droidexCanvasPreview.start({nonce, designId, revisionId,
+  generation, html})` answers `'started'`, `'already_started'` or `'invalid_request'`; `drain()`
+  answers one JSON snapshot and throws when the document was never started, which the runtime reads
+  as a guest it no longer owns. Payloads are JSON arguments to fixed strings with `<` escaped to
+  `\u003c`, so nothing the compiler or a design produced is interpolated as code. `start` validates
+  the nonce against `^[0-9a-f]{32}$` because it is the one value embedded in script text.
+- **Bounds.** Queue cap 64 events (a full queue drops and counts, never grows); message cap 4,096
+  bytes of JSON; 8 diagnostics per message and 512 characters of text each. The renderer refuses a
+  snapshot over 64 events or 64 KiB outright rather than trimming it. Poll cadence 100 ms with
+  exactly one poll in flight per guest; poll deadline 3,000 ms, above the 1,906 ms a flooding guest
+  measured in Task 1, so a guest over it is wedged rather than busy; ready deadline 10,000 ms, since
+  the artifact is already built and only generated code that never finishes running takes longer.
+- **The watchdog is two paths, both main's.** `canvas-preview-terminate` is a narrow preload IPC
+  (`assertMainRenderer`, one safe integer): main ends the guest through the `webContents` it
+  attached with `forcefullyCrashRenderer()`, which is synchronous and waits for no guest reply, and
+  refuses an ID it never attached. Independently, main ends a guest on that guest's own
+  `unresponsive` event with no renderer involved. Crashing the guest takes the generated frame's
+  process with it, which is spec §6's requirement that main end the queue owner rather than only the
+  generated sender. The renderer's cheap path is still removing the element, measured at 27.99 ms.
+- **The event schema** is `ready`, `resize {width, height}`, `diagnostics [{code, message}]`, and the
+  `selection {elementId, instancePath}` / `interaction {kind}` shapes Task 8 fills. The intermediate
+  rebuilds each event field by field, so no getter, prototype or extra property from generated code
+  travels, and `previewRuntime` drops `selection`/`interaction` until Task 8 owns them.
+- **`canvas.readArtifact { canvasId, designId, revisionId }` → `{ artifactId, html } | null`** is the
+  new bridge command, authorized like `canvas.subscribe` by the page asking rather than by a chat's
+  attachment: an artifact is a projection of a canvas any page may watch. `CanvasBuilds.readArtifact`
+  is rekeyed from `(canvasId, artifactId)` to `(canvasId, designId, revisionId)` and
+  `canvasBuildCache.readRevisionArtifact` resolves it from `builds/<revisionId>.json`. The old shape
+  could not serve a fallback at all: a `failed` frame carries `lastWorkingRevisionId` and no
+  artifact ID, so one revision-keyed read now serves both a `ready` frame's own revision and a
+  `failed` frame's fallback. A missing or superseded entry stays a miss, never an error.
+- **Transport.** A realistic artifact was measured rather than assumed: the kit's stateful Hey
+  design compiles to 209,305 bytes, and the `canvas.result` event carrying it is 214,401 bytes.
+  That is under the batcher's 512 KiB flush threshold, far under the 8 MiB hard client-buffer
+  disconnect, and four live previews hold 858 KB of the 32 MiB replay buffer, so no transport change
+  was needed. One artifact can briefly put a client over the 512 KiB soft pressure mark, which is a
+  reason Task 5's four-slot cap should not fetch four artifacts on one tick.
+- **What Task 5 consumes:** `DesignPreview` takes one `canvasId`, one `CanvasFrame`, a
+  `readArtifact` reader, an `onRefresh` that re-subscribes (which is what makes the sidecar's
+  `requestRebuilds` run), and an optional `onResize(designId, size)`. It reports nothing else
+  upward and never a session or provider object. Its Retry is the minimum that works; Task 5 owns
+  the real one, the slot allocation, the board transform and the Select-mode overlay.
+- **What Task 8 consumes:** the reporter is where a selection or interaction message is produced,
+  the intermediate already accepts and bounds both shapes, and `previewRuntime.report` is the one
+  switch that has to grow a case.
+- **Verification.** The renderer's cadence, deadlines, staleness and validation are `node:test`
+  suites with an injected clock and a fake webview whose `executeJavaScript` calls are controlled
+  promises (`previewRuntime.test.ts`, `previewDocument.test.ts`); `electron/canvasPreview.test.cjs`
+  holds the registry, the refusals and the CSP with fake `webContents`. The Electron smoke runs
+  through the production boundary: `[C4]` mounts a deliberately unsafe `<webview>` in the production
+  window, asserts the stripped preferences and three processes, starts a really compiled design with
+  the production start script, clicks its button with a real pointer event through the guest's own
+  widget and sees the resize come back, and watches the intermediate refuse an oversized message, a
+  wrong nonce, an unknown shape and a message from the guest's own window while a loopback listener
+  stays untouched; `[C5]` wedges a design, keeps polling the guest for 25 answers to show the guest
+  is fine, and has main end it through the production IPC, releasing both processes.
+  `withNetworkListener` moved into `canvasSmoke.ts` so `[C1]` and `[C4]` share one listener.
+- **Not covered.** The board's own composition, transformed input and the Select-mode overlay are
+  Task 5's (spec §4), and the smoke drives the guest from page-level scripts because no board exists
+  to mount `DesignPreview` yet; the runtime's own deadline arithmetic is therefore proven by its
+  unit suite rather than by the smoke.
+
+Settled by 03c's first review cycle (Astra xhigh, adversarial, against `0b370915`):
+
+- **ICE is not a fetch, and `connect-src` never governed it.** The reviewer reached a loopback STUN
+  server from the production sandbox and received a datagram. `attach` calls
+  `contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`, which closed that datagram path.
+  `webrtc 'block'` was added to the CSP at the same time and **was never a second layer**: see the
+  second cycle below, where it was removed. `[C6]` measures on a real `udp4` socket beside the stream
+  listener, because a TCP-only listener cannot see ICE at all.
+- The other non-CSP egress paths were checked in the same probe and all reach nothing: `<a ping>`
+  (`ping-to` is a fetch directive, and `default-src 'none'` covers it), `navigator.sendBeacon`
+  (`connect-src`), and `<link rel=dns-prefetch|preconnect|prefetch>` (a prefetch is `default-src`,
+  and a bare DNS or connect hint carries no request the listener can count). WebTransport is a
+  `connect-src` fetch. Speculation rules need a `script-src` nonce or hash this document never
+  issues, and they can only name HTTP(S) documents, which `default-src 'none'` already refuses.
+- **A design that stops running after it reported `ready` escaped both watchdogs.** The renderer's
+  polls measure the intermediate, which stays responsive, and the design is a separate process, so
+  neither the poll deadline nor `unresponsive` ever fires. Main now owns the design's liveness:
+  `attach` probes `mainFrame.frames[0]` with the literal `'0'` every **2,000 ms** with one probe in
+  flight and a **3,000 ms** deadline, and a probe that misses it ends the guest through the same
+  `end(...)`. The question is a literal evaluated in the frame, never a heartbeat the design emits:
+  that code is the attacker's. Probe timers are released on `render-process-gone`, `destroyed` and
+  every `end`.
+- **A lost `ready` artifact is the queue's problem, not a button's.** `requestRebuilds` sweeps only
+  `pending` and `cancelled` frames, so a `ready` frame whose cached document was removed had nothing
+  that would ever ask for it again. `CanvasBuilds.readArtifact` now queues that design when the miss
+  is for the revision the head currently holds as `ready`, gated on the head exactly as
+  `requestRebuilds` is, and the frame publishes `building` and then `ready` with a new `artifactId` —
+  which is the change a mounted preview needs, because `DesignPreview` keys its guest by that ID. A
+  miss for a `lastWorkingRevisionId` fallback the frame has moved past queues nothing; rebuilding a
+  non-current revision stays Task 5's follow-up. `DesignPreview` lost its Retry control: there is
+  nothing left for it to do, and the placeholder says the preview is being built again.
+- **The byte caps were counting UTF-16 code units.** An 11,024-byte event and an 80,222-byte
+  snapshot passed caps named in bytes. The intermediate and the renderer validator both measure with
+  `TextEncoder` now, and the suites assert a four-byte-character string that is under the cap in code
+  units and over it in bytes.
+- **A mounted fallback names its revision** beside the diagnostics (spec §5), in
+  `--droid-text-muted` with no new palette.
+- Not reachable without a DOM test harness, and therefore not faked: the renderer's `null`-artifact
+  placeholder and the remount a new `artifactId` causes both sit behind an effect that server
+  rendering never runs. The sidecar half of that contract — the part that was broken — has its own
+  regression, and `PreviewGuestFrame` is tested directly for the fallback label.
+- Clicking an `a[ping]` at module scope ends the srcdoc document before the design mounts, so the
+  probe does it from an effect instead; measured that way the ping reaches the listener zero times.
+Settled by 03c's second review cycle (Astra xhigh, adversarial, against `0790088b`):
+
+- **The CSP `webrtc` directive does not exist.** Chromium never shipped it and logs
+  `Unrecognized Content-Security-Policy directive 'webrtc'`, so the first cycle's "both layers" was
+  one layer and a comment. It is removed, and the CSP's own docblock now says plainly that it does
+  not bound WebRTC at all. Never claim a layer the engine does not implement.
+- **TURN over TCP is closed at the socket, in the guest's own session.** UDP was shut but TCP was
+  not: the reviewer opened two connections and sent Allocate requests, from an immediate negotiation
+  and from a peer created 500 ms before `setLocalDescription`. The guest now attaches into an owned
+  in-memory partition (`droidex-canvas-preview`, deliberately not `persist:`), forced from
+  `will-attach-webview` rather than trusted from the element, and that session is configured once at
+  startup: the owned scheme is served on it — required anyway, since a partitioned guest cannot see
+  the default session's handlers — every permission is refused, and `setProxy` points every TCP
+  connection at `http://127.0.0.1:1` with `proxyBypassRules: '<-loopback>'`. The bypass rule is the
+  whole point: Chromium bypasses a proxy for loopback by default, which is exactly where a probe's
+  listener lives. Chromium's P2P TCP sockets resolve through the proxy, so TURN-TCP goes nowhere.
+  Measured: pre-fix `connections: 2`, post-fix `0`.
+- **Checked egress paths, all zero at a real listener:** ICE over UDP (STUN), ICE over TURN with
+  `?transport=tcp` at both of the reviewer's timings, WebTransport, `navigator.sendBeacon`,
+  `<link rel=dns-prefetch|preconnect|prefetch>`, and `<a ping>`. Each reports itself through the
+  production channel before anything is measured, and the one whose marker could precede its own
+  effect — the ping — is additionally checked by the fragment its click leaves on the frame; without
+  that the case passed with the click removed. See the third cycle for the host candidate.
+- **Clicking an `a[ping]` stops the generated document from running**, even with a fragment `href`,
+  and afterwards `frames[0].url` is the intermediate's URL plus the fragment rather than
+  `about:srcdoc`. A design that tries that path ends its own preview. It therefore gets its own
+  guest in `[C6]`, measured alone, because anything after it in the same document is measuring a
+  dead frame.
+- **Text fields are display data, so they are cut, not grounds for refusal.** `throw
+  Error('界'.repeat(200))` is 200 code units and 600 bytes: it passed a character cap in the
+  intermediate and then failed a byte cap in the reader, which refused the snapshot and ended the
+  guest over a diagnostic. Both sides now cut to 512 bytes on a code point boundary, so they agree by
+  construction and drift cannot terminate a guest. The structural bounds — event count, total
+  snapshot bytes, shape, identity — stay strict, because those are what a guest should be ended over.
+- **A guest the element reports gone is lost at once.** With a poll in flight, `render-process-gone`
+  used to be followed by 2.95 s of silence until the poll deadline. `previewRuntime` now listens for
+  `render-process-gone`, `destroyed` and `crashed` on the element and settles `onLost` from them;
+  `lose` is idempotent, so the deadline stays as the fallback for a guest that stops answering
+  without dying.
+- **A re-read is keyed on the build object, not the artifact ID.** The production compiler is
+  content-addressed, so a rebuild of identical source lands on the *same* `artifactId` — the first
+  cycle's comment claiming a new one was wrong and is corrected. `applyCanvasChange` keeps an
+  unchanged frame's identity, so depending the read on `frame.build` reads once per change to this
+  design and not once per snapshot, and a batched `building` → `ready` for the same revision is a new
+  build object and therefore a new read.
+- **A frame with no document says which of the three it is:** being rebuilt (a miss for the revision
+  the frame holds as `ready`, which is the read that queued the work), no longer available (a miss
+  for a `failed` frame's fallback, which queues nothing), or unreadable (the read threw). Promising a
+  rebuild in the second case was a lie.
+- The re-read **is** covered, in the renderer rather than in Node: `[C9]` bundles a probe from source
+  with the esbuild the sidecar declares, evaluates it in the built app's page, and drives the real
+  `DesignPreview` with a `readArtifact` whose identity never changes. It renders `ready` for a
+  revision whose document is gone, waits for the miss and its label, then in one task flips the
+  artifact to available and renders `building` and `ready` back to back. React commits only the
+  second, so the commit carries the same revision and the same `artifactId` the frame already had and
+  the build object is the only thing that moved — which is why keying on the artifact ID cannot work.
+  With `build` removed from the deps the read count stays at 1 and the label stays; with it, the
+  second read lands and the guest mounts. No DOM library and no production export were needed; the
+  probe is inline in the spec, and esbuild is resolved from the sidecar's declared copy so the root's
+  dependency list is unchanged.
+
+Settled by 03c's third review cycle (Astra xhigh, adversarial, against `7e2c90cb`):
+
+- **`activate` could create a window before the preview session existed.** `app.on('activate')`
+  called `createMainWindow()` directly, so a guest could attach into a session that still routed
+  `DIRECT` — measured as one TURN-TCP connection and 56 bytes to loopback — and releasing setup then
+  made a second window. Two owners now: the security invariant is at the attach point, where
+  `will-attach-webview` refuses any guest for a session `canvasPreview.cjs` has not finished
+  configuring; and the ordering is one promise in main that every window-creation path
+  (`whenReady`, `activate`, the notification open) goes through, so an early click waits for setup
+  instead of racing it and `focusMainWindow` no longer creates anything. Readiness is keyed on the
+  session object in a `WeakSet`, not a module flag: that is what the configuring produced, and it
+  does not leak between tests.
+- **Arranging a loaded frame reset its preview.** The re-read was keyed on the build object's
+  identity, and an arrange re-sends every frame it touches with a fresh object and an unchanged
+  build, so a mounted preview was torn down and its state lost. Object identity is not a signal.
+  `generation` — the per-design attempt counter `canvasBuildStates.ts` already keeps monotonic — now
+  travels on **every** `CanvasBuildState`, projected by `stateOf`, through both `protocol.ts` mirrors
+  and the renderer validator, and `useArtifact` keys on `revisionId` + `generation` + `status` by
+  value. Shape: `CanvasBuildState = CanvasBuildOutcome & { generation: number }`, so the union says
+  what the build is doing and the intersection says which attempt it belongs to, in one place.
+- The three cases triangulate, and no single wrong answer passes all of them: keying on the object
+  fails `[C10]` (arrange re-reads), keying on nothing fails `[C9]` (a recovered artifact never
+  arrives), and keying on the artifact ID fails `[C9]` too because an identical rebuild is
+  content-addressed to the same ID.
+- **A restored outcome is attempt zero.** The derived cache does not record a generation, and nothing
+  has been built in the session that just opened, so `install` restores on 0 and the first rebuild of
+  that design takes 1 — which a mounted preview reads as the move it is. A design the registry has
+  never heard of is also `{ status: 'pending', generation: 0 }`.
+- **The host-candidate path is not covered, and is no longer claimed.** A hand-built remote passive
+  TCP candidate was tried; Chromium refused it (`addIceCandidate` threw) and the positive control
+  with the proxy removed produced zero connections, so the probe proved nothing and would have been
+  worse than its absence. It is dropped rather than kept as decoration. TURN over `?transport=tcp` at
+  both timings already covers dialling a remote TCP endpoint, which is the path that actually
+  escaped; a direct host candidate with a real remote peer remains unmeasured here.
+- **`[C8]` now checks the intermediate, not just the reader.** The renderer trims an over-long field,
+  so restoring the old character-based cut in the intermediate still passed: the case now drains the
+  raw `drain()` answer and asserts that snapshot is already within 512 bytes and identical to what
+  the reader produced, so the two sides cannot drift apart unnoticed.
+
+Settled by 03c's fourth review cycle (Astra xhigh, adversarial, against `f0ddc906`):
+
+- **`[C2]`'s receipt check was a race, and it is the one thing that keeps the case honest.** The
+  retained probe reported guest receipt only at 10,000-message checkpoints, while the poll waited on
+  the *sender's* count — which the generated frame reaches in its own process long before the guest
+  has drained anything — and then asserted receipt afterwards. Under load the guest had received 1
+  message when the window closed, so the assertion failed with nothing wrong in the code. The probe
+  now reports the first message immediately as well, and the poll waits on receipt rather than on
+  `sent`. Without that fact `direct === 0` would hold just as well for a flood that never happened.
+- **The 3,000 ms chat bound was a property of the machine, not of the code, so it is reported rather
+  than asserted.** Measured on one Apple M4, the chat's p95 during the flood is 11–34 ms while its
+  single worst sample ranges over 1.1–3.3 s: maxima of 1,102 and 1,239 ms on early idle runs
+  (matching Task 1's 1,178/1,219), but 3,135 ms on a later idle run and 2,600/3,320 ms under ten busy
+  cores. The old bound therefore failed on an idle machine too, and it failed under that load at the
+  base commit `243b9ba5`, which is what settles it: the number being asserted was one outlier sample,
+  not the chat's responsiveness. Calls made while the flood is in flight now use a 30,000 ms bound that guards against a
+  hang, and `[C2]` asserts containment instead: nothing reached the chat, the guest did receive the
+  flood, no renderer died, both processes answered repeatedly throughout the window, and both child
+  processes were released. The latencies are in the case's own output for whoever wants to compare
+  them. Timing belongs to the replay harness, not to a smoke gate (AGENTS.md).
+- `[C1]` and `[C3]` were left alone; they were not observed flaking, and widening bounds nobody has
+  seen fail would be guessing.
+
+- Adding the repair took `CanvasBuilds.ts` to 514 lines. The two queueing paths were folded into one
+  `queueFromHead` (the head rule had been written twice), and `canvasCompilerProcesses.ts` now owns
+  the compiler child processes: a slot's process is forked on its first build, ended at most once,
+  and every termination is awaited before the registry closes. That is deliberately not the slot
+  scheduler 03b examined and rejected — a process outlives the build that ended it, since an overdue
+  build's kill is still settling while its slot has taken the next job. `CanvasBuilds.ts` is 490.
 
 
 

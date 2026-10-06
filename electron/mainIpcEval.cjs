@@ -36,9 +36,11 @@ const BROWSER_PANE_CHANNELS = [
 
 function createBrowserWindowStub() {
   const created = Promise.withResolvers();
+  const windows = [];
   class BrowserWindow extends EventEmitter {
     constructor() {
       super();
+      windows.push(this);
       this.webContents = new EventEmitter();
       this.webContents.mainFrame = {};
       this.webContents.send = () => {};
@@ -56,9 +58,12 @@ function createBrowserWindowStub() {
     isMinimized() {
       return false;
     }
+    show() {}
+    focus() {}
+    restore() {}
     setIcon() {}
   }
-  return { BrowserWindow, created: created.promise };
+  return { BrowserWindow, created: created.promise, windows };
 }
 
 // Guards run before a handler's first await, so even an async handler has
@@ -104,7 +109,6 @@ function observeMain(electron) {
   electron.session.defaultSession.protocol = {
     handle: (scheme, handler) => boot.protocolHandlers.set(scheme, handler),
   };
-  electron.session.fromPartition = () => ({ protocol: { handle() {} } });
 
   const github = require('./github.cjs');
   const conversation = require('./githubPrConversation.cjs');
@@ -128,7 +132,36 @@ function observeMain(electron) {
   return { calls, boot };
 }
 
-async function bootMain() {
+/**
+ * The guest session every preview attaches into. Memoized the way Electron
+ * memoizes a partition, because readiness is a property of that one session
+ * object, and `setProxy` is held until a test releases it.
+ */
+function createGuestSessionStub() {
+  const proxy = Promise.withResolvers();
+  const calls = { proxy: 0 };
+  const guestSession = {
+    protocol: { handle() {} },
+    setProxy() {
+      calls.proxy += 1;
+      return proxy.promise;
+    },
+    setPermissionRequestHandler() {},
+    setPermissionCheckHandler() {},
+  };
+  return { guestSession, release: proxy.resolve, calls };
+}
+
+/** Lets the main module's startup chain run until `done()` or the turns run out. */
+async function settle(done, label) {
+  for (let turn = 0; turn < 200; turn += 1) {
+    if (done()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.fail(`timed out waiting for ${label}`);
+}
+
+async function bootMain(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'droidex-ipc-eval-'));
   process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));
   const userData = path.join(root, 'profile');
@@ -153,14 +186,52 @@ async function bootMain() {
   const register = (channel, handler) => channels.set(channel, handler);
   electron.ipcMain.handle = register;
   electron.ipcMain.on = register;
-  const { BrowserWindow, created } = createBrowserWindowStub();
+  const { BrowserWindow, created, windows } = createBrowserWindowStub();
   electron.BrowserWindow = BrowserWindow;
   electron.Menu = { buildFromTemplate: () => ({ popup() {} }), setApplicationMenu() {} };
   electron.session.defaultSession.getUserAgent = () => 'DROIDEX';
   const observed = observeMain(electron);
+  // Owned here rather than in `observeMain`: a startup check holds its `setProxy`.
+  const guest = options.guestSession ?? createGuestSessionStub();
+  if (!options.guestSession) guest.release();
+  electron.session.fromPartition = () => guest.guestSession;
   installElectronStub(electron, path.join(root, 'resources'));
   require('./main.cjs');
-  return { electron, channels, mainWindow: await created, root, ...observed };
+  if (options.deferWindow) return { electron, channels, windows, guest, root, ...observed };
+  return { electron, channels, mainWindow: await created, windows, guest, root, ...observed };
+}
+
+/**
+ * A window — and therefore a guest — must not exist before the preview session's
+ * network is off, and an `activate` that arrives during startup must wait for the
+ * same setup rather than race it into a second window.
+ */
+async function checkStartupOrder() {
+  const guest = createGuestSessionStub();
+  const booted = await bootMain({ guestSession: guest, deferWindow: true });
+
+  await settle(() => guest.calls.proxy === 1, 'the preview session to be configured');
+  assert.deepEqual(
+    booted.windows,
+    [],
+    'a window existed before the preview session was configured',
+  );
+
+  booted.electron.app.emit('activate');
+  await settle(() => true, 'activate');
+  assert.deepEqual(
+    booted.windows,
+    [],
+    'activate opened a window before the session was configured',
+  );
+
+  guest.release();
+  await settle(() => booted.windows.length > 0, 'the app window');
+  assert.equal(booted.windows.length, 1, 'startup and activate both opened a window');
+
+  booted.electron.app.emit('activate');
+  await settle(() => true, 'activate after startup');
+  assert.equal(booted.windows.length, 1, 'activate opened a second window');
 }
 
 async function checkSenders({ channels, mainWindow }) {
@@ -256,19 +327,18 @@ async function checkMainWindow({ electron, channels, mainWindow, root, calls, bo
 module.exports = { SENTINEL };
 
 if (require.main === module) {
-  const check = process.argv[2] === 'window' ? checkMainWindow : checkSenders;
+  const checks = { window: checkMainWindow, startup: checkStartupOrder };
+  const check = checks[process.argv[2]] ?? checkSenders;
   // Exit once the checks settle: the sidecar stub holds the event loop open, and
   // a handler that got past its sender guard must not reach its I/O.
-  bootMain()
-    .then(check)
-    .then(
-      () => {
-        process.stdout.write(`${SENTINEL}\n`);
-        process.exit(0);
-      },
-      (error) => {
-        console.error(error);
-        process.exit(1);
-      },
-    );
+  (process.argv[2] === 'startup' ? check() : bootMain().then(check)).then(
+    () => {
+      process.stdout.write(`${SENTINEL}\n`);
+      process.exit(0);
+    },
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
 }

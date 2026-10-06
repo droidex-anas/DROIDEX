@@ -42,6 +42,15 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
   z
     .object({ type: z.literal('canvas.unsubscribe'), ...request, canvasId: canvasIdentifierSchema })
     .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readArtifact'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+    })
+    .strict(),
   z.object({ type: z.literal('canvas.createCanvas'), ...request, ...session }).strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
   z.object({ type: z.literal('canvas.detach'), ...request, ...session }).strict(),
@@ -230,6 +239,17 @@ class CanvasDispatch {
       case 'canvas.detach':
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
+      case 'canvas.readArtifact': {
+        // A derived read: the frame the renderer holds already names the revision
+        // the manifest vouches for, and a cache that has lost it answers null so
+        // the pane can ask for a rebuild.
+        const artifact = await this.builds.readArtifact(
+          command.canvasId,
+          command.designId,
+          command.revisionId,
+        );
+        return { kind: 'artifact', artifact };
+      }
       default:
         return this.mutate(workspace, command);
     }

@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
-import type { CanvasBuildState } from './protocol.js';
+import type { CanvasBuildOutcome, PreviewArtifact } from './protocol.js';
 import { CANVAS_LIMITS, canvasIdentifierSchema } from './schema.js';
 
 const BUILD_OUTCOME_VERSION = 1;
@@ -59,11 +59,15 @@ interface CachedOutcome {
   result: BuildResult;
 }
 
-/** One design's build state as this cache can still prove it. */
+/**
+ * One design's build outcome as this cache can still prove it. The attempt it
+ * belongs to is not cached: nothing has been built in this session, so the
+ * registry restores it on attempt zero.
+ */
 export interface RestoredBuild {
   canvasId: string;
   designId: string;
-  state: CanvasBuildState;
+  outcome: CanvasBuildOutcome;
 }
 
 export class CanvasBuildCache {
@@ -98,9 +102,28 @@ export class CanvasBuildCache {
     return this.files.removeBuildOutput(canvasId, outcomeName(revisionId));
   }
 
-  /** One ready artifact's document, or null once the cache has lost it. */
-  async readArtifact(canvasId: string, artifactId: string): Promise<string | null> {
-    return this.files.readBuildOutput(canvasId, artifactName(artifactId));
+  /**
+   * What one revision's build produced, or null when this cache cannot serve it.
+   * Reading by revision rather than by artifact ID is what lets a `ready`
+   * frame's own revision and a `failed` frame's `lastWorkingRevisionId` be asked
+   * for the same way: the second carries no artifact ID at all.
+   *
+   * A missing, damaged or superseded entry is a miss, never an error, and the
+   * manifest still decides which revision is worth asking about (spec §7).
+   */
+  async readRevisionArtifact(
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+  ): Promise<PreviewArtifact | null> {
+    const outcome = await this.readOutcome(canvasId, outcomeName(revisionId));
+    if (outcome?.designId !== designId || outcome.revisionId !== revisionId) return null;
+    if (outcome.result.status !== 'ready') return null;
+    const { artifactId } = outcome.result;
+    const html = await this.files
+      .readBuildOutput(canvasId, artifactName(artifactId))
+      .catch(() => null);
+    return html === null ? null : { artifactId, html };
   }
 
   /**
@@ -123,9 +146,9 @@ export class CanvasBuildCache {
         if (revisionId === null || !present.has(outcomeName(revisionId))) continue;
         const outcome = await this.readOutcome(manifest.canvasId, outcomeName(revisionId));
         if (outcome?.designId !== design.designId || outcome.revisionId !== revisionId) continue;
-        const state = vouchedState(design, revisionId, outcome.result, present);
-        if (!state) continue;
-        restored.push({ canvasId: manifest.canvasId, designId: design.designId, state });
+        const vouched = vouchedState(design, revisionId, outcome.result, present);
+        if (!vouched) continue;
+        restored.push({ canvasId: manifest.canvasId, designId: design.designId, outcome: vouched });
       }
     }
     return restored;
@@ -167,7 +190,7 @@ function vouchedState(
   revisionId: string,
   result: BuildResult,
   present: ReadonlySet<string>,
-): CanvasBuildState | null {
+): CanvasBuildOutcome | null {
   if (result.status === 'ready') {
     if (design.lastWorkingRevisionId !== revisionId) return null;
     if (!present.has(artifactName(result.artifactId))) return null;
@@ -180,7 +203,7 @@ export function builtState(
   revisionId: string,
   result: BuildResult,
   lastWorkingRevisionId: string | null,
-): CanvasBuildState {
+): CanvasBuildOutcome {
   if (result.status === 'ready')
     return { status: 'ready', revisionId, artifactId: result.artifactId };
   return { status: 'failed', revisionId, diagnostics: result.diagnostics, lastWorkingRevisionId };

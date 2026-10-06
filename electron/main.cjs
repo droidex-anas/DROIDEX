@@ -35,6 +35,7 @@ const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
+const canvasPreview = require('./canvasPreview.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -117,6 +118,9 @@ const appUpdater = createAppUpdater({
   logError: (message, error) => console.error('[update] %s:', message, error),
 });
 const rendererOomRecovery = createRendererOomRecovery();
+const canvasPreviewHosts = canvasPreview.createCanvasPreviewHosts({
+  log: (message) => console.warn('[canvas-preview] %s', message),
+});
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via
 // nativeTheme; 'light'/'dark' pin a specific artwork.
@@ -174,6 +178,12 @@ protocol.registerSchemesAsPrivileged([
     scheme: favicons.FAVICON_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
   },
+  // The trusted intermediate a Canvas live preview loads (see canvasPreview.cjs).
+  // No `supportFetchAPI`: nothing in that guest may fetch anything.
+  {
+    scheme: canvasPreview.CANVAS_PREVIEW_SCHEME,
+    privileges: { standard: true, secure: true },
+  },
 ]);
 // Overridable so a second dev instance (e.g. a feature worktree) can run beside
 // the main one without fighting over the Chromium profile lock.
@@ -198,6 +208,26 @@ if (
 // Before diagnostics writes into userData, or a new install looks like an old one.
 usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
+/**
+ * Resolves once the preview guest session's network is off. Every path that can
+ * create the app window goes through `openMainWindow`, so no window — and
+ * therefore no guest — can exist before that, and an `activate` that arrives
+ * during startup waits here instead of racing it into a second window.
+ */
+const previewSessionReady = app.whenReady().then(() => registerCanvasPreviewProtocol());
+
+function openMainWindow() {
+  return previewSessionReady.then(
+    () => {
+      if (!mainWindow) createMainWindow();
+      else focusMainWindow();
+    },
+    (error) => {
+      console.error('Canvas preview session setup failed; no window was opened:', error);
+    },
+  );
+}
+
 app.whenReady().then(async () => {
   await diagnosticsInitialization;
   installApplicationMenu({
@@ -213,7 +243,7 @@ app.whenReady().then(async () => {
   registerLocalImageProtocol();
   registerMediaPermissions();
   registerFaviconProtocol();
-  createMainWindow();
+  await openMainWindow();
   powerTier.start();
   const metricsTimer = setInterval(() => performanceMetrics.collect(), 30_000);
   metricsTimer.unref?.();
@@ -252,10 +282,10 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
-  if (!mainWindow) createMainWindow();
-  else focusMainWindow();
+  void openMainWindow().then(() => {
+    deliverPendingNotificationOpen();
+  });
   void sidecarSupervisor.start().catch((error) => console.error(error));
-  deliverPendingNotificationOpen();
 });
 
 app.on('child-process-gone', (_event, details) => {
@@ -287,9 +317,14 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Canvas live previews are `<webview>` guests in the board's DOM flow
+      // (spec §6). Only this window may create one, and only under the
+      // hardening installed below, before any renderer content loads.
+      webviewTag: true,
     },
   });
 
+  installCanvasPreviewAttachment(mainWindow.webContents);
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
   );
@@ -328,6 +363,46 @@ function createMainWindow() {
     mainWindow = null;
   });
   powerTier.attachWindow(mainWindow);
+}
+
+/**
+ * The attachment boundary for Canvas preview guests (spec §6). It is installed
+ * before the window loads anything, so renderer content can never create a guest
+ * that was not hardened here: only the owned source is allowed, any requested
+ * preload is deleted, and Node, nested Node and nested guests stay off while
+ * context isolation, the guest sandbox and web security stay on.
+ */
+function installCanvasPreviewAttachment(contents) {
+  contents.on('will-attach-webview', (event, preferences, params) => {
+    // Before the guest session is configured it routes DIRECT, so a guest that
+    // attached then would have a live network however correct its partition is.
+    if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
+      console.warn('[canvas-preview] Refused a guest before its session was configured');
+      event.preventDefault();
+      return;
+    }
+    if (params.src !== canvasPreview.CANVAS_PREVIEW_URL) {
+      console.warn('[canvas-preview] Refused a guest for %s', params.src);
+      event.preventDefault();
+      return;
+    }
+    delete preferences.preload;
+    delete params.preload;
+    // The guest's own in-memory session: no storage, every TCP connection to a
+    // dead proxy, no permissions. A `<webview>` may name any partition, so this
+    // is forced here rather than trusted from the element.
+    params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+    preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+    preferences.nodeIntegration = false;
+    preferences.nodeIntegrationInSubFrames = false;
+    preferences.contextIsolation = true;
+    preferences.sandbox = true;
+    preferences.webSecurity = true;
+    preferences.webviewTag = false;
+  });
+  contents.on('did-attach-webview', (_event, guest) => {
+    canvasPreviewHosts.attach(guest);
+  });
 }
 
 // Voice mode records only while the user holds a conversation open, and only
@@ -437,6 +512,37 @@ function registerFaviconProtocol() {
   });
 }
 
+// Serves the one trusted intermediate a Canvas preview guest loads (see
+// canvasPreview.cjs). The policy travels as a header, so no document surgery can
+// drop it, and the generated frame inherits it through `srcdoc`.
+/** The one session every preview guest attaches into (see canvasPreview.cjs). */
+function previewGuestSession() {
+  return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
+}
+
+function registerCanvasPreviewProtocol() {
+  const document = canvasPreview.canvasPreviewDocument();
+  const serve = (request) => {
+    if (request.url !== canvasPreview.CANVAS_PREVIEW_URL) {
+      console.warn('Refused a Canvas preview request for %s', request.url);
+      return new Response('Forbidden', { status: 403, headers: { 'content-type': 'text/plain' } });
+    }
+    return new Response(document, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': canvasPreview.CANVAS_PREVIEW_CSP,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  };
+  // Guests live in their own in-memory partition, which is where the preview's
+  // network is shut off; the default session serves the scheme too, so a
+  // mis-partitioned guest fails to attach rather than failing to load.
+  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, serve);
+  return canvasPreview.configureCanvasPreviewSession(previewGuestSession(), serve);
+}
+
 function registerIpc() {
   ipcMain.handle('bridge-info', (event) => {
     assertMainRenderer(event);
@@ -538,6 +644,13 @@ function registerIpc() {
   ipcMain.handle('system-idle-time', (event) => {
     assertMainRenderer(event);
     return powerMonitor.getSystemIdleTime();
+  });
+  // The board asks main to end one preview guest. Main ends it through the
+  // `webContents` it attached and refuses an ID it never attached; it never asks
+  // the guest for anything (spec §6).
+  ipcMain.handle('canvas-preview-terminate', (event, { guestId }) => {
+    assertMainRenderer(event);
+    return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
   });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);
@@ -1016,9 +1129,7 @@ function applyAppIcon() {
 }
 
 function focusMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    createMainWindow();
-  }
+  // Never creates one: `openMainWindow` owns that, behind the preview session.
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -1028,16 +1139,17 @@ function focusMainWindow() {
 
 function queueNotificationSessionOpen(appSessionId) {
   if (!appSessionId) {
-    focusMainWindow();
+    void openMainWindow();
     return;
   }
   pendingNotificationOpen = {
     appSessionId,
     expiresAt: Date.now() + PENDING_NOTIFICATION_OPEN_MS,
   };
-  focusMainWindow();
   // Immediate attempt; focus/show/did-finish-load will retry until ack.
-  deliverPendingNotificationOpen();
+  void openMainWindow().then(() => {
+    deliverPendingNotificationOpen();
+  });
 }
 
 function pendingNotificationPayload() {

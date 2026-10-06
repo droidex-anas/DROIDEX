@@ -61,6 +61,9 @@ function loadApi(invokeResult) {
       }
     },
     require(name) {
+      // The preview guest's owned source has one owner; the preload reads it
+      // from there rather than repeating the URL.
+      if (name === './canvasPreview.cjs') return require('./canvasPreview.cjs');
       if (name !== 'electron') throw new Error(`Unexpected preload dependency: ${name}`);
       return {
         contextBridge: {
@@ -79,6 +82,12 @@ function loadApi(invokeResult) {
   });
   return { api, calls, listeners, removedListeners, posts, channels };
 }
+
+test('the preview guest URL comes from the module that serves it', () => {
+  const { api } = loadApi();
+
+  assert.equal(api.canvasPreviewUrl, require('./canvasPreview.cjs').CANVAS_PREVIEW_URL);
+});
 
 // Each row is one exposed method: the channel it invokes and the exact payload
 // it sends. Methods that take no renderer input must send no payload at all.

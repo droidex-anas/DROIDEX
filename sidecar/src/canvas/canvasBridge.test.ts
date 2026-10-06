@@ -256,6 +256,32 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
   assert.equal(okReply(canvas, 'r'.repeat(128)).kind, 'summaries');
 });
 
+test('reading an artifact is a derived read with no cache miss to report', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+
+  // Nothing has built this frame, so the derived cache has nothing to serve and
+  // the pane is told so rather than being handed an error.
+  await canvas.handle({
+    type: 'canvas.readArtifact',
+    requestId: 'req-artifact',
+    canvasId,
+    designId,
+    revisionId: 'rev_missing',
+  });
+  assert.deepEqual(okReply(canvas, 'req-artifact'), { kind: 'artifact', artifact: null });
+
+  // A derived read needs no attachment, and an incomplete one never reaches it.
+  await canvas.handle(
+    { type: 'canvas.readArtifact', requestId: 'req-no-page', canvasId, designId, revisionId: 'r1' },
+    null,
+  );
+  assert.deepEqual(okReply(canvas, 'req-no-page'), { kind: 'artifact', artifact: null });
+  await canvas.handle({ type: 'canvas.readArtifact', requestId: 'req-bad', canvasId, designId });
+  assert.equal(errorOf(canvas, 'req-bad').code, 'invalid_input');
+});
+
 test('one request identity cannot carry two different requests', async (t) => {
   const canvas = await harness(t);
   await createCanvas(canvas);

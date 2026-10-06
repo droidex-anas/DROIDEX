@@ -111,7 +111,7 @@ const wire: SidecarWire = {
         layoutVersion: 0,
         revisionId: null,
         designSystem,
-        build: { status: 'pending' },
+        build: { status: 'pending', generation: 0 },
       },
     ],
   },
@@ -147,7 +147,7 @@ const wire: SidecarWire = {
         layoutVersion: 2,
         revisionId: 'rev_02',
         designSystem,
-        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02' },
+        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02', generation: 1 },
       },
       {
         designId: 'dsg_reserved',
@@ -156,7 +156,7 @@ const wire: SidecarWire = {
         layoutVersion: 1,
         revisionId: null,
         designSystem,
-        build: { status: 'pending' },
+        build: { status: 'pending', generation: 0 },
       },
     ],
   },
@@ -173,6 +173,7 @@ const wire: SidecarWire = {
         designSystem,
         build: {
           status: 'failed',
+          generation: 2,
           revisionId: 'rev_03',
           diagnostics: [
             {
@@ -298,6 +299,21 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       requestId: 'req_01',
       ok: true,
       reply: { kind: 'arranged', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: {
+        kind: 'artifact',
+        artifact: { artifactId: 'a'.repeat(64), html: '<!doctype html><body>Hey</body>' },
+      },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'artifact', artifact: null },
     },
     wire.event,
     { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },

@@ -206,6 +206,8 @@ interface DroidControlApi {
   setApiKey: (key: string) => Promise<void>;
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
+  canvasPreviewUrl: string;
+  canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -678,4 +680,20 @@ export async function editorIcon(editor: EditorId): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** The owned source every Canvas live preview guest loads (spec §6). */
+export function canvasPreviewUrl(): string | null {
+  return desktopApi()?.canvasPreviewUrl ?? null;
+}
+
+/**
+ * Asks main to end one preview guest. Main owns the registry of guests it
+ * attached, so it refuses an ID it does not recognise and never consults the
+ * guest; false means nothing was ended.
+ */
+export async function terminateCanvasPreviewGuest(guestId: number): Promise<boolean> {
+  const api = desktopApi();
+  if (!api) return false;
+  return api.canvasPreviewTerminate(guestId);
 }

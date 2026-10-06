@@ -312,6 +312,57 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas live previews
+
+A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
+crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
+the privileged `droidex-canvas-preview` scheme, the single URL it serves, the
+restrictive CSP it serves it under, the trusted intermediate document, and the
+registry of guests main attached. `electron/main.cjs` sets `webviewTag` on the
+app window alone and installs `will-attach-webview` before that window loads
+anything, so renderer content can only ever attach the owned source, with any
+requested preload deleted and Node, nested Node and nested guests off.
+
+The intermediate holds the compiled design in an opaque-origin
+`sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the
+intermediate rather than the chat renderer and the three documents hold three
+processes. Generated code gets no preload and no Electron API. The board drives
+a preview through the webview element's `executeJavaScript` with two audited
+literals in `src/features/canvas/previewDocument.ts`: one hands over the
+artifact and the instance identity, the other drains a bounded queue of
+`ready`/`resize`/`diagnostics` events as one validated JSON snapshot.
+`previewRuntime.ts` keeps exactly one poll in flight per guest on a bounded
+cadence and revalidates the instance after every await, so a replaced preview
+can never be reached by the guest it replaced.
+
+Guests live in their own in-memory session, not the app's. CSP cannot bound
+WebRTC — `connect-src` does not govern ICE and Chromium never shipped the
+`webrtc` directive — so that session is where the network is closed: every TCP
+connection resolves through a proxy at `127.0.0.1:1` with `<-loopback>` so
+loopback is not bypassed, non-proxied UDP is refused, and every permission is
+denied. The partition is forced at attachment rather than trusted from the
+element, and `will-attach-webview` refuses any guest while that session is still
+being configured, because an unconfigured session routes directly. Every path
+that can create the app window waits on the same setup, so no guest can exist
+before it.
+
+Main owns termination, through three paths that each wait for no guest reply:
+the renderer asks through a narrow `canvas-preview-terminate` IPC; main ends a
+guest on its own `unresponsive` event; and main probes the generated frame with
+a literal every two seconds, ending the guest when a probe misses a three-second
+deadline. That last one is the only thing that sees a design which stops running
+after it reported ready, since the intermediate stays responsive and the design
+is a process of its own. The renderer, for its part, settles its own lifecycle
+from the element's `render-process-gone`, `destroyed` and `crashed` events rather
+than waiting out a poll deadline.
+
+The artifact itself travels over the ordinary bridge: `canvas.readArtifact`
+answers one revision's document, read from the derived build cache by
+`sidecar/src/canvas/canvasBuildCache.ts`. Every build state carries the
+registry's per-design `generation`, so a board can tell a build that moved from a
+frame an arrange merely re-sent, and a rebuild of identical source — which is
+content-addressed to the same artifact ID — still reads as a new attempt.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and

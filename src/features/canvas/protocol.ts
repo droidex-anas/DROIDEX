@@ -44,6 +44,15 @@ export interface CanvasTurnContext {
   designSystem: DesignSystemRef;
 }
 
+/**
+ * One built revision's preview document and the ID of that document. A preview
+ * loads this in its guest; nothing else reads it.
+ */
+export interface PreviewArtifact {
+  artifactId: string;
+  html: string;
+}
+
 export interface FrameRect {
   x: number;
   y: number;
@@ -70,9 +79,10 @@ export interface SourceElement {
   editability: 'literal' | 'computed' | 'shared';
 }
 
-export type CanvasBuildState =
+/** What one design's build is doing, on its own. */
+export type CanvasBuildOutcome =
   | { status: 'pending' }
-  | { status: 'building'; revisionId: string; generation: number }
+  | { status: 'building'; revisionId: string }
   | { status: 'ready'; revisionId: string; artifactId: string }
   | {
       status: 'failed';
@@ -81,6 +91,14 @@ export type CanvasBuildState =
       lastWorkingRevisionId: string | null;
     }
   | { status: 'cancelled'; revisionId: string | null };
+
+/**
+ * One design's build state and the attempt it belongs to. `generation` is the
+ * per-design attempt counter, which only ever increases, so a reader can tell a
+ * build that actually moved from a frame that was merely re-sent: an arrange
+ * re-sends every frame it touches with its build untouched.
+ */
+export type CanvasBuildState = CanvasBuildOutcome & { generation: number };
 
 export interface CanvasFrame {
   designId: string;
@@ -178,6 +196,15 @@ export type CanvasCommand =
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
+  // A derived read, authorized like `canvas.subscribe` by the page asking: the
+  // artifact is a projection of a canvas any renderer page may watch.
+  | {
+      type: 'canvas.readArtifact';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    }
   | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
@@ -210,7 +237,8 @@ export type CanvasReply =
   | { kind: 'attachment'; canvasId: string | null }
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  | { kind: 'arranged'; change: CanvasChange };
+  | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'artifact'; artifact: PreviewArtifact | null };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

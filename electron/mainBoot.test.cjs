@@ -58,3 +58,12 @@ test('the main window guards navigation and requests and tears down with its ren
   assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
 });
+
+test('no window exists before the Canvas preview session is configured', () => {
+  // A guest can only attach to a window, and before that session is configured it
+  // routes DIRECT. `activate` arriving during startup must wait for the same
+  // setup rather than race it into a second window.
+  const result = runEval('mainIpcEval.cjs', ['startup']);
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
+});

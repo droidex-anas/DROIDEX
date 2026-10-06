@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import {
+  board,
   COMPILE_FAILED,
   CompilerFleet,
   failNextManifestWrite,
@@ -12,180 +12,13 @@ import {
   holdOutcomeWrite,
   refuseOutcomeReads,
   standIn,
+  storage,
+  type Board,
 } from '../testing/canvasBuildSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
-import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
-import { CanvasScopes } from './canvasScopes.js';
-import { CanvasWorkspace } from './CanvasWorkspace.js';
+import { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
-import type {
-  CanvasBuildState,
-  CanvasChange,
-  CanvasFrame,
-  CanvasScope,
-  WriteReceipt,
-} from './protocol.js';
-
-const APP = 'app-1';
-const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
-
-interface Board {
-  store: Storage;
-  canvasId: string;
-  workspace: CanvasWorkspace;
-  builds: CanvasBuilds;
-  fleet: CompilerFleet;
-  deadlines: ReturnType<typeof fakeDeadlines>;
-  changes: CanvasChange[];
-  frame(designId: string): CanvasFrame;
-  create(...names: string[]): Promise<string[]>;
-  /** A frame seeded from a saved revision, which arrives with source. */
-  createSeeded(name: string, designId: string, revisionId: string): Promise<string>;
-  write(designId: string, expected: string | null, text: string): Promise<WriteReceipt>;
-  /** Resolves once a change published from now on reports that state. */
-  reported(designId: string, status: CanvasBuildState['status']): Promise<void>;
-}
-
-/**
- * One scratch root and every registry opened over it. Builds settle in the
- * background, so each registry is closed before the storage disappears; a
- * removal that raced one would fail on the files it was still writing.
- */
-interface Storage {
-  root: string;
-  closing: Array<() => Promise<void>>;
-}
-
-async function storage(t: TestContext): Promise<Storage> {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-canvas-'));
-  const store: Storage = { root: join(directory, 'canvases'), closing: [] };
-  t.after(async () => {
-    for (const close of store.closing) await close();
-    await rm(directory, { recursive: true, force: true });
-  });
-  return store;
-}
-
-interface BoardOptions {
-  store?: Storage;
-  fs?: CanvasFileSystem;
-}
-
-/** A real workspace over scratch storage, with the compiler under test control. */
-async function board(t: TestContext, options: BoardOptions = {}): Promise<Board> {
-  const store = options.store ?? (await storage(t));
-  const root = store.root;
-  const fleet = new CompilerFleet();
-  const deadlines = fakeDeadlines();
-  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
-  const scopes = new CanvasScopes();
-  const workspace = await CanvasWorkspace.open(root, builds, {
-    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
-    bindScopeCanvas: () => undefined,
-    ...(options.fs ? { fs: options.fs } : {}),
-  });
-  store.closing.push(async () => {
-    await builds.close();
-    await workspace.close();
-  });
-  const changes: CanvasChange[] = [];
-  const waiters = new Set<() => void>();
-  workspace.changes.subscribe((change) => {
-    changes.push(change);
-    for (const waiter of [...waiters]) waiter();
-  });
-  const canvasId = workspace.attachedCanvasId(APP) ?? (await workspace.createCanvas(APP)).canvasId;
-  let scopeCount = 0;
-  const under = async <T>(work: (scope: CanvasScope) => Promise<T>): Promise<T> => {
-    scopeCount += 1;
-    const scope: CanvasScope = {
-      origin: 'user',
-      scopeId: `user-${String(scopeCount)}`,
-      appSessionId: APP,
-      canvasId,
-      allowedDesignIds: 'canvas',
-    };
-    scopes.register(scope);
-    try {
-      return await work(scope);
-    } finally {
-      scopes.revoke(scope.scopeId);
-    }
-  };
-  const seen = (designId: string, status: CanvasBuildState['status'], from: number): boolean =>
-    changes
-      .slice(from)
-      .some((change) =>
-        change.frames.some((frame) => frame.designId === designId && frame.build.status === status),
-      );
-  return {
-    store,
-    canvasId,
-    workspace,
-    builds,
-    fleet,
-    deadlines,
-    changes,
-    frame: (designId) => {
-      const frame = workspace
-        .snapshot(canvasId)
-        .frames.find((entry) => entry.designId === designId);
-      assert.ok(frame, 'the frame is on the canvas');
-      return frame;
-    },
-    create: async (...names) => {
-      const created = await under((scope) =>
-        workspace.create(scope, {
-          mutationId: `create-${names.join('-')}`,
-          frames: names.map((name) => ({ name, width: 720, height: 720, designSystem })),
-        }),
-      );
-      return created.frames.map((frame) => frame.designId);
-    },
-    createSeeded: async (name, designId, revisionId) => {
-      const created = await under((scope) =>
-        workspace.create(scope, {
-          mutationId: `seed-${name}`,
-          frames: [
-            {
-              name,
-              width: 720,
-              height: 720,
-              designSystem,
-              seed: { kind: 'revision', canvasId, revision: { designId, revisionId } },
-            },
-          ],
-        }),
-      );
-      const seeded = created.frames[0]?.designId;
-      assert.ok(seeded, 'the seeded frame was created');
-      return seeded;
-    },
-    write: (designId, expected, text) =>
-      under((scope) =>
-        workspace.write(scope, {
-          mutationId: `write-${designId}-${text}`,
-          designId,
-          expectedRevisionId: expected,
-          files: { 'main.tsx': text },
-          deletedPaths: [],
-        }),
-      ),
-    reported: (designId, status) => {
-      // From here on: a design reaches the same state more than once.
-      const from = changes.length;
-      if (seen(designId, status, from)) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        const waiter = (): void => {
-          if (!seen(designId, status, from)) return;
-          waiters.delete(waiter);
-          resolve();
-        };
-        waiters.add(waiter);
-      });
-    },
-  };
-}
+import type { CanvasBuildState } from './protocol.js';
 
 /** A yield to the event loop, so a premature resolution becomes visible. */
 function drained(): Promise<void> {
@@ -234,7 +67,12 @@ test('an older build that finishes under a newer one publishes nothing', async (
   newer.ready('artifact-newer');
   await canvas.reported(designId, 'ready');
 
-  const ready = { status: 'ready', revisionId: second.revisionId, artifactId: 'artifact-newer' };
+  const ready = {
+    status: 'ready',
+    revisionId: second.revisionId,
+    artifactId: 'artifact-newer',
+    generation: 2,
+  };
   assert.deepEqual(canvas.frame(designId).build, ready);
   // One settlement for this design, and never the revision that was replaced.
   assert.deepEqual(
@@ -353,6 +191,7 @@ test('an overdue build takes down only its own slot', async (t) => {
     status: 'ready',
     revisionId: healthy.revisionId,
     artifactId: 'artifact-two',
+    generation: 1,
   });
   assert.equal(second.signal.aborted, false, 'the healthy build was never cancelled');
   assert.equal(canvas.fleet.terminated, 1, "only the overdue slot's process was ended");
@@ -375,7 +214,9 @@ test('a build whose commit fails leaves memory and disk agreeing', async (t) => 
   // its next snapshot. The artifact is cached too: it was written before the
   // commit that would have published the frame.
   assert.equal(canvas.frame(designId).build.status, 'ready');
-  assert.match((await canvas.builds.readArtifact(canvas.canvasId, 'artifact-one')) ?? '', /<html>/);
+  const cached = await canvas.builds.readArtifact(canvas.canvasId, designId, receipt.revisionId);
+  assert.equal(cached?.artifactId, 'artifact-one');
+  assert.match(cached?.html ?? '', /<html>/);
   // Closing waits for the refused commit to reconcile the head from disk.
   await canvas.workspace.close();
 
@@ -391,6 +232,70 @@ test('a build whose commit fails leaves memory and disk agreeing', async (t) => 
   assert.equal(head.sequence, after.sequence);
   assert.equal(head.frames[0]?.revisionId, receipt.revisionId);
   assert.deepEqual(canvas.workspace.damagedCanvasIds(), []);
+});
+
+test('a lost artifact for the current revision is rebuilt, not just reported', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const head = await canvas.write(designId, null, 'v1');
+  (await canvas.fleet.compile(1)).ready('artifact-one');
+  await canvas.reported(designId, 'ready');
+
+  // The derived cache loses a document the manifest still vouches for. Nothing
+  // else would ask for this design again: the sweep only takes `pending` and
+  // `cancelled` frames, and this frame is `ready`.
+  await rm(join(canvas.store.root, canvas.canvasId, 'builds', 'artifact-one.html'));
+  assert.equal(await canvas.builds.readArtifact(canvas.canvasId, designId, head.revisionId), null);
+
+  // Queued by the read itself, so the frame is already building for the same
+  // revision under a later generation.
+  assert.deepEqual(canvas.frame(designId).build, {
+    status: 'building',
+    revisionId: head.revisionId,
+    generation: 2,
+  });
+  (await canvas.fleet.compile(2)).ready('artifact-two');
+  await canvas.reported(designId, 'ready');
+  assert.deepEqual(canvas.frame(designId).build, {
+    status: 'ready',
+    revisionId: head.revisionId,
+    // This compiler is under the test's hand and was told to answer with a second
+    // ID; the real one is content-addressed and would repeat the first for the
+    // same source. Either way the attempt is what moved, and that is what a
+    // mounted preview reads.
+    artifactId: 'artifact-two',
+    generation: 2,
+  });
+  // The document the frame now names is on disk, which is what the read that
+  // queued this rebuild could not find.
+  const rebuilt = await canvas.builds.readArtifact(canvas.canvasId, designId, head.revisionId);
+  assert.equal(rebuilt?.artifactId, 'artifact-two');
+});
+
+test('a lost fallback revision is a placeholder, never a rebuild', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const working = await canvas.write(designId, null, 'v1');
+  (await canvas.fleet.compile(1)).ready('artifact-working');
+  await canvas.reported(designId, 'ready');
+  const broken = await canvas.write(designId, working.revisionId, 'v2');
+  (await canvas.fleet.compile(2)).failed('syntax_error');
+  await canvas.reported(designId, 'failed');
+  const failed = canvas.frame(designId).build;
+
+  // The frame has moved past this revision, so asking for its lost artifact
+  // queues nothing: rebuilding a revision that is not the head is Task 5's.
+  await rm(join(canvas.store.root, canvas.canvasId, 'builds', 'artifact-working.html'));
+  assert.equal(
+    await canvas.builds.readArtifact(canvas.canvasId, designId, working.revisionId),
+    null,
+  );
+
+  assert.deepEqual(canvas.frame(designId).build, failed);
+  assert.equal(canvas.fleet.held.length, 2, 'no third compile was queued');
+  assert.equal(broken.revisionId, canvas.frame(designId).revisionId);
 });
 
 test('a failed revision keeps the last working artifact and its revision', async (t) => {
@@ -409,18 +314,24 @@ test('a failed revision keeps the last working artifact and its revision', async
     revisionId: broken.revisionId,
     diagnostics: [{ code: 'syntax_error', message: COMPILE_FAILED }],
     lastWorkingRevisionId: working.revisionId,
+    generation: 2,
   };
   assert.deepEqual(canvas.frame(designId).build, failed);
   // The fallback the frame names is the one the manifest committed.
   assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, working.revisionId);
-  // The working artifact is still there to show beside the diagnostics.
-  assert.match(
-    (await canvas.builds.readArtifact(canvas.canvasId, 'artifact-working')) ?? '',
-    /<html>/,
+  // The working artifact is still there to show beside the diagnostics, and the
+  // revision that failed has none of its own to offer.
+  const fallback = await canvas.builds.readArtifact(canvas.canvasId, designId, working.revisionId);
+  assert.equal(fallback?.artifactId, 'artifact-working');
+  assert.match(fallback?.html ?? '', /<html>/);
+  assert.equal(
+    await canvas.builds.readArtifact(canvas.canvasId, designId, broken.revisionId),
+    null,
   );
 
   const reopened = await board(t, { store: canvas.store });
-  assert.deepEqual(reopened.frame(designId).build, failed);
+  // The same outcome, restored on attempt zero: this session has built nothing.
+  assert.deepEqual(reopened.frame(designId).build, { ...failed, generation: 0 });
 });
 
 test('a restart serves a cached artifact and rebuilds one that is gone', async (t) => {
@@ -445,6 +356,8 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
     status: 'ready',
     revisionId: receipt.revisionId,
     artifactId: 'artifact-one',
+    // A restored outcome is attempt zero: nothing was built in this session.
+    generation: 0,
   });
   // Nothing is rebuilt, because the cache can still serve this revision.
   reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
@@ -452,7 +365,7 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
 
   await rm(join(canvas.store.root, canvas.canvasId, 'builds', 'artifact-one.html'));
   const recovered = await board(t, { store: canvas.store });
-  assert.deepEqual(recovered.frame(designId).build, { status: 'pending' });
+  assert.deepEqual(recovered.frame(designId).build, { status: 'pending', generation: 0 });
   // On demand, when a reader first asks for the canvas, and not before.
   assert.equal(recovered.fleet.held.length, 0);
   recovered.builds.requestRebuilds(recovered.workspace.snapshot(recovered.canvasId));
@@ -475,8 +388,16 @@ test('cancelling a canvas releases its slots and reports its frames', async (t) 
   assert.equal(running.signal.aborted, true);
   await canvas.reported(one, 'cancelled');
   assert.equal(canvas.deadlines.live(), 0, 'both slots were released');
-  assert.deepEqual(canvas.frame(one).build, { status: 'cancelled', revisionId: first.revisionId });
-  assert.deepEqual(canvas.frame(two).build, { status: 'cancelled', revisionId: second.revisionId });
+  assert.deepEqual(canvas.frame(one).build, {
+    status: 'cancelled',
+    revisionId: first.revisionId,
+    generation: 1,
+  });
+  assert.deepEqual(canvas.frame(two).build, {
+    status: 'cancelled',
+    revisionId: second.revisionId,
+    generation: 1,
+  });
 
   // The pane asking for the canvas again is what starts the work over: the
   // reserved frame, the write, the cancellation, then building once more.
@@ -583,6 +504,7 @@ test('an outcome that loses its frame while it writes takes its file back', asyn
     revisionId: receipt.revisionId,
     diagnostics: [{ code: 'syntax_error', message: COMPILE_FAILED }],
     lastWorkingRevisionId: null,
+    generation: 2,
   });
   assert.equal(
     reportedStates(canvas, designId).some((build) => build.status === 'ready'),
@@ -658,7 +580,7 @@ test('an outcome the manifest never vouched for is not restored', async (t) => {
 
   // The manifest decides, so no pointer means no preview, whatever is on disk.
   const reopened = await board(t, { store: canvas.store });
-  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
   reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
   assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
 });
@@ -674,7 +596,7 @@ test('an outcome that cannot be read is a cache miss, not a failed open', async 
 
   // The outcome is saved and vouched for, and unreadable when it is wanted.
   const reopened = await board(t, { store: canvas.store, fs: refuseOutcomeReads() });
-  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
   reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
   assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
 });
@@ -695,7 +617,7 @@ test('a failure of the attempt rather than the design is retried on restart', as
   const files = new CanvasFiles(canvas.store.root);
   assert.deepEqual([...(await files.listBuildOutputs(canvas.canvasId))], []);
   const reopened = await board(t, { store: canvas.store });
-  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
   reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
   assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
 });
@@ -718,7 +640,7 @@ test('an outcome for a revision the frame has moved past is ignored', async (t) 
   );
 
   const reopened = await board(t, { store: canvas.store });
-  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
   assert.equal(reopened.frame(designId).revisionId, second.revisionId);
 });
 
@@ -788,6 +710,7 @@ test('a frame seeded from a saved revision is built like a write', async (t) => 
     status: 'ready',
     revisionId: copy.input.revisionId,
     artifactId: 'artifact-copy',
+    generation: 1,
   });
 });
 
@@ -800,7 +723,7 @@ test('a rebuild sweep from an old projection leaves the current state alone', as
   await canvas.write(two, null, 'v1');
   const queued = await canvas.write(three, null, 'v1');
   const stale = canvas.workspace.snapshot(canvas.canvasId);
-  assert.deepEqual(canvas.frame(three).build, { status: 'pending' });
+  assert.deepEqual(canvas.frame(three).build, { status: 'pending', generation: 0 });
 
   // Let it build, then move it on to a revision that projection never saw.
   (await canvas.fleet.compile(1)).ready('artifact-one');
@@ -818,6 +741,7 @@ test('a rebuild sweep from an old projection leaves the current state alone', as
     status: 'ready',
     revisionId: current.revisionId,
     artifactId: 'artifact-current',
+    generation: 2,
   });
   assert.equal(canvas.fleet.held.length, 4, 'nothing was rebuilt for a revision that is gone');
 });
@@ -850,7 +774,7 @@ test('a design that leaves its canvas mid-build publishes nothing', async (t) =>
     false,
     'nothing was published for the design that left',
   );
-  assert.deepEqual(builds.stateOf('cv_01', 'one'), { status: 'pending' });
+  assert.deepEqual(builds.stateOf('cv_01', 'one'), { status: 'pending', generation: 0 });
   assert.deepEqual([...(await files.listBuildOutputs('cv_01'))], []);
   assert.equal(deadlines.live(), 2, 'the orphaned build released its slot and its deadline');
 });
@@ -879,6 +803,7 @@ test('one design ID on two canvases keeps two build states', async (t) => {
     status: 'ready',
     revisionId: 'rev_01',
     artifactId: 'artifact-one',
+    generation: 1,
   });
   assert.equal(builds.stateOf('cv_02', 'dsg_hey').status, 'failed');
   assert.deepEqual([...(await files.listBuildOutputs('cv_01'))].sort(), [

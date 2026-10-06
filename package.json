@@ -31,6 +31,7 @@
     "test:electron": "node --test --test-reporter=spec \"electron/*.test.cjs\"",
     "test:integration": "playwright test",
     "test:smoke:electron-child-sessions": "npm run build && playwright test --config=playwright.child-sessions-smoke.config.ts",
+    "test:smoke:electron-canvas": "npm run build && playwright test --config=playwright.canvas-smoke.config.ts",
     "test:smoke:electron-droid": "npm run build && RUN_AUTHENTICATED_DROID_SMOKE=1 playwright test --config=playwright.droid-smoke.config.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
