@@ -5,9 +5,14 @@
 // its life including a graceful shutdown.
 //
 // It then damages copies of the runtime one way at a time, with the checkout's
-// own node_modules above them, and requires each copy to compile nothing and to
-// load nothing from outside: node resolution would otherwise borrow the missing
-// module from the ancestor and answer with a normal-looking artifact.
+// own node_modules above them, and requires each copy to compile nothing, to
+// say so in the one curated sentence, and to load nothing from outside: node
+// resolution would otherwise borrow the missing module from the ancestor and
+// answer with a normal-looking artifact. Every damaged tree is put to the
+// release verifier as well, which must refuse exactly what the worker refuses:
+// that rule has two implementations, because the sidecar bundle may not import
+// a build tool, and a green release gate may not bless a runtime that will not
+// launch.
 //
 //   npm run canvas:probe                     # the staged runtime, built dist
 //   npm run canvas:probe -- <path-to-.app>   # a packaged app's own resources
@@ -23,12 +28,13 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import process from 'node:process';
-import type {
-  CompileInput,
-  CompilerRequest,
-  CompilerResponse,
+import {
+  RUNTIME_UNAVAILABLE,
+  type CompileInput,
+  type CompilerRequest,
+  type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from '../sidecar/src/canvas/designSystems.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
@@ -40,12 +46,55 @@ const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
 const DAMAGE: [string, (runtime: string) => void][] = [
   ['a transitive package', (runtime) => drop(runtime, 'node_modules/picocolors')],
   ['the esbuild binary', (runtime) => drop(runtime, `node_modules/${PLATFORM_PACKAGE}/bin/esbuild`)],
-  ["Tailwind's preflight", (runtime) => drop(runtime, 'node_modules/tailwindcss/lib/css/preflight.css')],
+  [
+    "Tailwind's preflight",
+    (runtime) => drop(runtime, 'node_modules/tailwindcss/lib/css/preflight.css'),
+  ],
   [
     'a nested package it only links to',
     (runtime) => linkOutside(runtime, 'node_modules/fast-glob/node_modules/glob-parent'),
   ],
-  ['a file it only links to', (runtime) => linkOutside(runtime, 'node_modules/picocolors/picocolors.js')],
+  [
+    'a file it only links to',
+    (runtime) => linkOutside(runtime, 'node_modules/picocolors/picocolors.js'),
+  ],
+  [
+    // No listed file changes, so only comparing the tree to the manifest sees it.
+    'nothing, but carries a node_modules nobody staged',
+    (runtime) =>
+      symlinkSync(
+        resolve('sidecar/node_modules'),
+        join(runtime, 'node_modules/tailwindcss/node_modules'),
+      ),
+  ],
+];
+
+/**
+ * Awkward spellings of a sound runtime, which have to keep working. A root
+ * whose last segment is `node_modules` is the interesting one: node skips that
+ * directory's own packages, so a require anchored on the configured spelling
+ * rather than the canonical root would find the ancestor's instead.
+ */
+const AWKWARD: [string, (layout: string, runtime: string) => string][] = [
+  [
+    'reached as a node_modules directory',
+    (layout, runtime) => {
+      const alias = join(layout, 'alias', 'node_modules');
+      mkdirSync(join(alias, '..'), { recursive: true });
+      symlinkSync(runtime, alias);
+      return alias;
+    },
+  ],
+];
+
+/**
+ * Ways the host can name a sound runtime wrongly. The tree is intact, so the
+ * release verifier accepts it and only the worker refuses; these are left out
+ * of the cross-check for that reason.
+ */
+const MISCONFIGURED: [string, (layout: string, runtime: string) => string | null][] = [
+  ['was never configured', () => null],
+  ['is named relative to nothing in particular', (layout, runtime) => relative(layout, runtime)],
 ];
 
 // Long enough that a cold compile on a loaded machine is never cut short, and
@@ -64,8 +113,14 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 
-const configured = process.env.DROIDEX_CANVAS_RUNTIME_DIR;
-const owned = configured === undefined ? null : realpathSync(configured) + '/';
+// A runtime the worker will refuse may not be a readable directory at all, and
+// with nothing to compare against every absolute resolution counts as outside.
+let owned = null;
+try {
+  owned = realpathSync(process.env.DROIDEX_CANVAS_RUNTIME_DIR) + '/';
+} catch {
+  owned = null;
+}
 const resolveFilename = Module._resolveFilename;
 Module._resolveFilename = function (specifier, ...rest) {
   const resolved = resolveFilename.call(this, specifier, ...rest);
@@ -97,6 +152,7 @@ interface ProbeTarget {
 
 interface WorkerRun {
   compiled: CompilerResponse;
+  answered: boolean;
   stopped: string;
   outside: string[];
 }
@@ -172,6 +228,7 @@ async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promis
     diagnostics += chunk.toString('utf8');
   });
   const answers = new Map<number, CompilerResponse>();
+  let answered = true;
   let waiting: (() => void) | null = null;
   compiler.on('message', (response: CompilerResponse) => {
     answers.set(response.requestId, response);
@@ -195,6 +252,7 @@ async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promis
       // which `CompilerWorker` reports the same way.
       compiler.on('exit', (code, signal) => {
         clearTimeout(deadline);
+        answered = false;
         settle({ requestId, status: 'unavailable', message: `exited ${String(code ?? signal)}` });
       });
       compiler.on('error', reject);
@@ -208,6 +266,7 @@ async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promis
     const stopped = await answer(2, { type: 'shutdown', requestId: 2 });
     return {
       compiled,
+      answered,
       stopped: stopped.status,
       outside: [
         ...new Set(
@@ -276,7 +335,27 @@ function artifactOf(response: CompilerResponse): string {
 function assertClean(run: WorkerRun, what: string): void {
   if (run.stopped !== 'stopped') fail(`${what} did not shut down cleanly (${run.stopped})`);
   if (run.outside.length > 0)
-    fail(`${what} resolved ${String(run.outside.length)} modules outside it, first ${run.outside[0] ?? ''}`);
+    fail(
+      `${what} resolved ${String(run.outside.length)} modules outside it, first ${run.outside[0] ?? ''}`,
+    );
+}
+
+/** What a runtime the app refuses may say to a caller, and nothing else. */
+function assertRefused(run: WorkerRun, what: string): void {
+  if (run.compiled.status !== 'unavailable') fail(`${what} answered ${run.compiled.status}`);
+  if (run.answered && run.compiled.message !== RUNTIME_UNAVAILABLE)
+    fail(`${what} answered with "${run.compiled.message}" rather than the curated sentence`);
+  assertClean(run, what);
+}
+
+/** Whether the release verifier would let this tree ship. */
+function releaseVerifierAccepts(runtimeDir: string): boolean {
+  try {
+    verifyCanvasRuntime(runtimeDir, process.arch);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const target = probeTarget(process.argv[2]);
@@ -301,20 +380,30 @@ rmSync(copied.layout, { recursive: true, force: true });
 assertClean(intact, 'an intact copy');
 process.stdout.write(`An intact copy under a linked path compiled: ${artifactOf(intact.compiled)}\n`);
 
-const refusals: [string, ((runtime: string) => void) | null, boolean][] = [
-  ...DAMAGE.map(([what, damage]): [string, (runtime: string) => void, boolean] => [
-    what,
-    damage,
-    true,
-  ]),
-  ['nothing, but was never configured', null, false],
-];
-for (const [what, damage, configured] of refusals) {
+for (const [what, damage] of DAMAGE) {
   const { layout, target: damaged } = copiedLayout(target, damage);
-  const run = await runWorker(damaged, configured ? damaged.runtimeDir : null);
+  const accepted = releaseVerifierAccepts(damaged.runtimeDir);
+  const run = await runWorker(damaged, damaged.runtimeDir);
   rmSync(layout, { recursive: true, force: true });
-  if (run.compiled.status !== 'unavailable')
-    fail(`a runtime missing ${what} answered ${run.compiled.status}`);
-  assertClean(run, `a runtime missing ${what}`);
-  process.stdout.write(`A runtime missing ${what} compiled nothing and loaded nothing.\n`);
+  assertRefused(run, `a runtime missing ${what}`);
+  if (accepted) fail(`the release verifier would ship a runtime missing ${what}`);
+  process.stdout.write(`A runtime missing ${what} is refused by both, and loaded nothing.\n`);
+}
+
+for (const [how, configure] of AWKWARD) {
+  const { layout, target: sound } = copiedLayout(target, null);
+  const run = await runWorker(sound, configure(layout, sound.runtimeDir));
+  rmSync(layout, { recursive: true, force: true });
+  assertClean(run, `a runtime ${how}`);
+  process.stdout.write(`A runtime ${how} compiled: ${artifactOf(run.compiled)}\n`);
+}
+
+for (const [how, configure] of MISCONFIGURED) {
+  const { layout, target: sound } = copiedLayout(target, null);
+  const run = await runWorker(sound, configure(layout, sound.runtimeDir));
+  const accepted = releaseVerifierAccepts(sound.runtimeDir);
+  rmSync(layout, { recursive: true, force: true });
+  assertRefused(run, `a runtime that ${how}`);
+  if (!accepted) fail(`the release verifier refused a sound runtime that ${how}`);
+  process.stdout.write(`A runtime that ${how} compiled nothing and loaded nothing.\n`);
 }
