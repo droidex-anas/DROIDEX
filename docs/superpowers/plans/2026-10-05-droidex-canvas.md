@@ -504,15 +504,33 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   unconfigured, or without its binary all returned `ready` with the normal artifact hash, and
   an inherited `NODE_PATH` alone did it with no ancestor at all.
   So staging writes `canvas-runtime/manifest.json` — every file it placed with its size — and
-  `startCanvasRuntime` checks it once, in the compiler child, before anything is loaded and before
-  any request is accepted: the runtime root canonicalised once (so a linked app location still
-  works), every listed file present at its listed size, no symbolic link on any path inside the
-  tree, the binary present and executable, and each of the seven specifiers a compile resolves
-  landing inside `<root>/node_modules`. Any miss and the worker answers every request `unavailable`
-  and logs the first path at fault; nothing is ever a diagnostic. A runtime that is whole and
-  link-free is what makes nearest-first resolution enough for the transitive graph as well — the
-  sizes alone would not have been: cycle 2 replaced a nested dependency directory with a link to an
-  outside copy and compiled `ready` while resolving three outside files.
+  `startCanvasRuntime` checks the tree against it once, in the compiler child, before anything is
+  loaded and before any request is accepted. **The tree is compared to the manifest, not the
+  manifest to the tree.** The root is canonicalised once (so a linked app location still works) and
+  then walked: every entry must be a regular file the manifest lists at the staged size, or a
+  directory the manifest has files under, and anything else — a symbolic link, an unlisted file, an
+  unlisted directory, anything that is not a regular file — refuses the runtime. The binary is
+  listed without a size, because signing rewrites it, and must be executable. Finally each of the
+  seven specifiers a compile resolves has to land inside `<root>/node_modules`. Any miss and the
+  worker answers every request with one curated sentence and logs the first path at fault; nothing
+  is ever a diagnostic.
+  Walking only the listed paths was not enough, twice over. Cycle 2 replaced a nested dependency
+  *directory* with a link to an outside copy — no listed file changed, three outside files resolved,
+  `ready`. Cycle 3 then added a `node_modules/tailwindcss/node_modules` link that no listed path
+  traverses at all: 227 outside paths, `ready`. Only an account of what is actually in the tree
+  closes that, which is why the per-component `lstat` walk was replaced rather than extended.
+- **One canonical root for the check, the loader and a design's imports.** The verifier used
+  `realpath(runtimeDir)` while the `require` was built from the configured spelling, and the two are
+  not interchangeable for node's search paths: cycle 3 configured an `alias/node_modules` link to a
+  sound runtime, which made node skip that directory's own packages and resolve esbuild from the
+  ancestor checkout — `ready`, 311 outside paths, with the verifier meanwhile resolving esbuild
+  inside the runtime. The `require` is now created inside `startCanvasRuntime` from the canonical
+  root after the tree check, and it is the same object that resolves the seven specifiers, loads the
+  three packages and answers `canvasRuntime().resolve()` for a design's imports. There is no
+  module-load-time `createRequire`, so an unverified path is never an anchor at all, and that
+  `alias/node_modules` spelling now compiles normally with nothing outside. A relative
+  DROIDEX_CANVAS_RUNTIME_DIR is a malformed host rather than a tree to find from the cwd, and is
+  refused.
 - **One loader, and cleanup is not it.** Cycle 2 also found the other way in: shutdown called
   `stopBundler`, which went through a lazy accessor and loaded esbuild, PostCSS and Tailwind from
   wherever node found them even after startup had refused the runtime — 307 distinct outside module
@@ -526,8 +544,14 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   rewrites it while packaging (9,750,242 staged, 9,712,896 shipped).
   The check also refuses a built worker that finds a manifest beside it with nothing configured, so
   a host that loses the variable compiles nothing instead of resolving from a global folder.
-  `tools/verifyCanvasRuntime.mjs` is the one reader of that manifest for packaged trees, shared by
-  `release:verify:mac` and `canvas:probe`.
+  `tools/verifyCanvasRuntime.mjs` reads that manifest for packaged trees in `release:verify:mac`
+  and `canvas:probe`. **It enforces the same tree-equals-manifest rule, as a second
+  implementation**, because the sidecar bundle may not import a build tool and the tool may not
+  depend on tsx. Sharing one implementation across that boundary was the alternative and was
+  rejected for those two reasons; drift is held off instead by `canvas:probe`, which puts every
+  damaged fixture to both the tool verifier and a real worker and fails if they ever disagree. Cycle
+  3 found the tool accepting three trees the worker refused, which is exactly what that step now
+  prevents: a green release gate may not bless a runtime that will not launch.
 - **A damaged runtime is never the design's fault.** esbuild reports a plugin's thrown error as a
   message detail, and 03a's mapping read that detail's `code` as a curated diagnostic code: a
   runtime without React answered a valid design `failed`, with `MODULE_NOT_FOUND` and the
@@ -539,7 +563,10 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   anywhere in any diagnostic field — `/Users/`, `/home/`, `/private/`, `/tmp/`, `/var/`,
   `node_modules` or the repository root, quoted or not — which is where that rule belongs for every
   future case. Cycle 2 caught the first version recognising a slash only after whitespace, so
-  `could not open "/Users/…"` passed it; the quoted form is now a case of its own.
+  `could not open "/Users/…"` passed it; the quoted form is now a case of its own. Cycle 3 noted it
+  covered only `CompileFailedError`, so the damaged-runtime test asserts the `unavailable` message
+  is the one curated sentence and runs the same rule over it, and the probe requires that sentence
+  from every runtime it refuses.
 - The worker loads `esbuild`, `tailwindcss` and `postcss` through that one anchor instead of
   importing them, so `build:compiler-worker` needs no `--external` flags at all and the bundled
   entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only `react`/`react-dom`
