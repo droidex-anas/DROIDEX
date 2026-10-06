@@ -32,6 +32,8 @@ const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
 const HARD_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
 const CLIENT_CLOSE_DRAIN_MS = 250;
+/** Commands one socket may send while it is still being admitted. */
+const MAX_HELD_CLIENT_MESSAGES = 256;
 
 export interface BridgeServer {
   readonly port: number;
@@ -169,10 +171,32 @@ export function startBridgeServer(options: {
     ws.on('close', disconnect);
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
+    // Admission can await a runtime snapshot, and a renderer that reconnects
+    // sends its queued commands the moment its socket opens. The listener is
+    // installed before that await and holds what arrives, because a socket with
+    // no listener drops its messages and the renderer has no way to know: a
+    // clean replay resume sends it nothing it could wait for.
+    const held: RawData[] = [];
+    let admitting = true;
+    ws.on('message', (raw) => {
+      if (!admitting) {
+        void handleMessage(ws, raw, pageId);
+        return;
+      }
+      // A command dropped silently is the failure this exists to prevent, so an
+      // overflow closes the socket and the renderer reconnects with its queue.
+      if (held.length >= MAX_HELD_CLIENT_MESSAGES) {
+        held.length = 0;
+        ws.close(1013, 'too many commands during admission');
+        return;
+      }
+      held.push(raw);
+    });
     const admitted = await resumeClient(ws, url);
     if (!admitted || ws.readyState !== ws.OPEN) return;
     clients.add(ws);
-    ws.on('message', (raw) => void handleMessage(ws, raw, pageId));
+    admitting = false;
+    for (const raw of held.splice(0)) void handleMessage(ws, raw, pageId);
   }
 
   async function resumeClient(ws: WebSocket, url: URL): Promise<boolean> {

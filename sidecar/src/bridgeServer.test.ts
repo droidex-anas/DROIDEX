@@ -394,6 +394,65 @@ test('fast mode rejects non-booleans before command dispatch', async (t) => {
   await waitFor(() => commands === 1);
 });
 
+test('a command sent while a slow resume is admitting still reaches the sidecar', async (t) => {
+  const commands: ClientCommand[] = [];
+  const release = deferred();
+  const harness = await bridgeServer(
+    t,
+    async (command) => {
+      commands.push(command);
+    },
+    async () => {
+      // A runtime snapshot that takes its time is all it takes: the renderer
+      // flushes its queue the moment its socket opens, long before this resolves.
+      await release.promise;
+      return emptySnapshot();
+    },
+  );
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
+
+  // A cursor from another generation, so admission goes through the snapshot.
+  const socket = new WebSocket(bridgeUrl(harness, '&resumeGeneration=gone&resumeSeq=0'));
+  t.after(() => closeSocket(socket));
+  await socketOpen(socket);
+  socket.send(JSON.stringify({ type: 'canvas.subscribe', requestId: 'req-1', canvasId: 'cv_01' }));
+  // Nothing is admitted yet, so nothing has been dispatched either.
+  await waitFor(() => true);
+  assert.equal(commands.length, 0);
+
+  release.resolve();
+  await waitFor(() => commands.length === 1);
+  assert.deepEqual(commands.at(0), {
+    type: 'canvas.subscribe',
+    requestId: 'req-1',
+    canvasId: 'cv_01',
+  });
+
+  // Admission is over; the socket carries commands directly from here.
+  socket.send(JSON.stringify({ type: 'runtime.status' }));
+  await waitFor(() => commands.length === 2);
+  assert.equal(commands.at(1)?.type, 'runtime.status');
+});
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function emptySnapshot(): BridgeRuntimeSnapshot {
+  return {
+    runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
+    sessions: [],
+    children: [],
+    processes: {},
+    persistence: { durable: true, hadUnflushedWork: false },
+    interrupted: [],
+  };
+}
+
 function socketOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     socket.once('open', () => resolve());

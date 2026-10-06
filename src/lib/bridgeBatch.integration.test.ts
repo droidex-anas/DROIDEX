@@ -122,6 +122,10 @@ async function startBridge() {
   return { bridge, socket, seen, seenTypes, reconnect };
 }
 
+function commandType(sent: string): string {
+  return (JSON.parse(sent) as { type: string }).type;
+}
+
 function resumeCursor(socket: FakeWebSocket) {
   const params = new URL(socket.url).searchParams;
   return { generation: params.get('resumeGeneration'), seq: params.get('resumeSeq') };
@@ -350,7 +354,12 @@ test('every readmitted socket reports a reconnection, and the first one does not
   const { bridge, socket: first, seenTypes, reconnect } = await startBridge();
   // Subscribed after the first socket opened, the way a lazily started feature
   // subscribes: the count below is what a reconnect alone adds.
-  const stop = bridge.onReconnected(() => reconnected.push(reconnected.length + 1));
+  const stop = bridge.onReconnected(() => {
+    reconnected.push(reconnected.length + 1);
+    // A listener's command goes out on the socket that was just readmitted, not
+    // into the offline queue; the sidecar holds it until admission finishes.
+    assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
+  });
   first.message(batch('generation-1', 1, 1, [CONNECTED]));
   assert.deepEqual(reconnected, []);
   first.close();
@@ -361,6 +370,7 @@ test('every readmitted socket reports a reconnection, and the first one does not
   assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
   second.open();
   assert.deepEqual(reconnected, [1]);
+  assert.deepEqual(second.sent.map(commandType), ['runtime.status']);
   second.message(batch('generation-1', 2, 2, [{ type: 'history.persistenceRecovered' }]));
   assert.deepEqual(seenTypes(), ['connection', 'history.persistenceRecovered']);
 
