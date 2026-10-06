@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
+import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
@@ -212,6 +213,35 @@ test('[C4] the production host runs a compiled design and refuses every spoof', 
         }),
       );
     });
+  });
+});
+
+test('the production preview host renders a compiled chart offline', async () => {
+  const design = await compileDesign(CHART_DESIGN);
+  await withCanvasHost(async (app, page) => {
+    const guestId = await mountPreviewGuest(page);
+    const instance = newInstance('chart');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () =>
+          (await drainGuest(page, instance)).events.some((event) => event.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          app.evaluate(({ webContents }, id) => {
+            const frame = webContents.fromId(id)?.mainFrame.frames[0];
+            return frame?.executeJavaScript(
+              `({ title: document.querySelector('h1')?.textContent,
+                  bars: document.querySelectorAll('.recharts-bar-rectangle').length })`,
+            );
+          }, guestId),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toEqual({ title: 'Weekly visits', bars: 3 });
   });
 });
 

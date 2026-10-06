@@ -26,11 +26,20 @@ import process from 'node:process';
 export const CANVAS_RUNTIME_MANIFEST = 'manifest.json';
 
 const EXECUTABLE_ARCH = { arm64: 'arm64', x64: 'x86_64' };
-const LICENSED = ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'scheduler'];
+const LICENSED = [
+  'esbuild',
+  'tailwindcss',
+  'postcss',
+  'react',
+  'react-dom',
+  'scheduler',
+  'react-is',
+  'recharts',
+];
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
-// needs, so the gate resolves all seven and loads the three the compiler calls
+// needs, so the gate resolves all eight and loads the three the compiler calls
 // into: resolving a package says nothing about whether its own dependencies are
 // there. `postcss-value-parser` arrives through Tailwind, and the React a design
 // imports is read as files by esbuild rather than required.
@@ -53,6 +62,7 @@ const RUNTIME_SPECIFIERS = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'recharts/es6/index.js',
 ];
 
 /**
@@ -95,6 +105,11 @@ export function verifyCanvasRuntime(runtimePath, arch) {
     if (!['LICENSE', 'LICENSE.md'].some((file) => existsSync(join(modulesPath, licensed, file))))
       fail(`${licensed} ships without its license`);
   }
+  if (
+    !existsSync(join(modulesPath, 'victory-vendor', 'README.md')) ||
+    !existsSync(join(modulesPath, 'victory-vendor', 'lib-vendor', 'd3-array', 'LICENSE'))
+  )
+    fail('victory-vendor ships without its license notices');
 
   // Code signing rewrites the binary while packaging, so the manifest records
   // no size for it; being there, executable and this architecture's is the

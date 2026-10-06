@@ -1083,6 +1083,12 @@ assert.deepEqual(screenToCanvas(zoomAtPoint(before, pointer, 1.6), pointer), scr
 - [ ] Run create/build/Open from an ordinary chat on Droid, Claude Code and Codex. Confirm the existing `/visualize` AppBlock stays exactly as is and its tests are unchanged and passing.
 - [ ] Run focused activity/card/row-boundary tests, unchanged AppBlock tests and the offline packaged chart smoke. Inspect light/dark cards and keyboard Open in the running app; record ordinary-chat results separately for all three harnesses.
 
+Settled by 06b (`canvas/06b-chart-runtime`):
+
+- Chose `recharts@3.10.1` ([MIT](https://github.com/recharts/recharts/blob/v3.10.1/LICENSE)) with its React 19 peer `react-is@19.2.7` (MIT). The lock adds 39 package entries: 26 MIT, 11 ISC, one BSD-3-Clause and one MIT AND ISC (`victory-vendor`). Recharts' own npm tarball is 7,452,998 unpacked bytes; staging keeps its ESM files, package metadata and license (1,302,733 bytes), not its CommonJS/UMD/types copies. `victory-vendor` has no top-level license file, so staging retains its README license statement and the vendored libraries' license files. The Sonatype Guide MCP was unavailable for this review; local `npm audit` reported 13 sidecar findings, none in the 39 added packages.
+- A design may import exactly `recharts`; the bundler resolves `recharts/es6/index.js` through `canvasRuntime().resolve()` so esbuild drops unused chart exports. The internal subpath itself is not design-allowlisted. Staging includes Recharts, `react-is` and their dependency closure; both runtime validators pin the ESM entry and check the complete tree against the manifest. The arm64 stage has 116 packages, 5,179 files and 24,165,540 bytes including the native esbuild binary. No chart asset is fetched at preview time.
+- The real compiler worker produced a 528,390-byte offline bar-chart document, 318,474 bytes above the kit example's 209,916 bytes. The packaged probe compiled the same chart from an isolated copy with no ancestor `node_modules`, refused a runtime missing `victory-vendor` in both validators and recorded zero outside module resolutions. A Playwright smoke compiled the fixture independently, loaded it in the production preview guest and observed three rendered bars. x64 packaging was not exercised in this subtask.
+
 ## Task 7: Executable design systems and owned image references
 
 **Subtasks (one branch and PR each, merged in order):**

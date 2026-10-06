@@ -1,7 +1,7 @@
 // Stages the Canvas compiler runtime that electron-builder ships as
 // resources/sidecar/canvas-runtime (spec §6): esbuild's Node API with the
 // selected architecture's native binary, Tailwind's PostCSS plugin, PostCSS and
-// React, each with its own license file. The packages are copied as they are
+// React and Recharts, each with its own license file. The packages are copied as they are
 // installed, so Tailwind's preflight loader still finds its CSS beside itself
 // and node resolution inside the runtime works unchanged.
 //
@@ -41,6 +41,8 @@ const RUNTIME_ROOTS = [
   'postcss-value-parser',
   'react',
   'react-dom',
+  'react-is',
+  'recharts',
 ];
 
 // No runtime path reads these, and a packaged app may not carry source maps.
@@ -73,6 +75,8 @@ const PRUNED = {
   'react-dom': (path) => /server|static|profiling|test-utils/.test(path),
   react: (path) => /react-server|profiling/.test(path),
   scheduler: (path) => /native|unstable_mock|unstable_post_task/.test(path),
+  // The compiler imports this ESM entry so esbuild can discard unused charts.
+  recharts: (path) => !['package.json', 'LICENSE'].includes(path) && !path.startsWith('es6/'),
 };
 
 function fail(message) {
@@ -145,7 +149,11 @@ function copyPackage({ dir, name }, archDir) {
   const prune = PRUNED[name];
   for (const file of packageFiles(dir)) {
     const packagePath = relative(dir, file).split(sep).join('/');
-    if (isSkipped(packagePath) || prune?.(packagePath)) continue;
+    // victory-vendor has no top-level LICENSE; its README states its MIT/ISC
+    // terms and its vendored libraries carry their own LICENSE files.
+    if (isSkipped(packagePath) && !(name === 'victory-vendor' && packagePath === 'README.md'))
+      continue;
+    if (prune?.(packagePath)) continue;
     const destination = join(archDir, relative(sidecarDir, dir), packagePath);
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(file, destination);
