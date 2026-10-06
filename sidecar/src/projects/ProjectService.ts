@@ -416,8 +416,11 @@ export class ProjectService {
     // Named before anything changes: a name the chat refuses leaves no project
     // half made and no plan replaced; Droid keeps the title itself and can refuse it.
     const name = title?.slice(0, LEDGER_LIMITS.title);
-    if (name && name !== project?.title && (project || steps.length))
+    if (name && name !== project?.title && (project || steps.length)) {
       await this.sessions.rename(source, name);
+      // Another plan for this chat may have made its project meanwhile.
+      project = this.membership.get(source);
+    }
     if (!project) {
       // With no project there is no plan to clear.
       if (!steps.length) return 0;
@@ -734,6 +737,8 @@ export class ProjectService {
     if (this.closed) return;
     // Read before any wait, so a slow save cannot reorder a turn's start and end.
     const settled = event.type === 'session.updated' && this.noteStreaming(event.session);
+    if (event.type === 'session.updated' && event.session.streaming)
+      await this.reopenOnWork(event.session.appSessionId);
     await this.turns.observe(event);
     // A delivered turn that stops on the user's approval frees its slot.
     if (event.type === 'approval.requested') {
@@ -754,6 +759,14 @@ export class ProjectService {
     // the capacity hook fires for a resume that produced no runtime, not for a
     // session that closed.
     this.capacityChanged();
+  }
+
+  /** A thread working again means its finished project's goal is open after all. */
+  private async reopenOnWork(appSessionId: string): Promise<void> {
+    const project = this.membership.get(appSessionId);
+    if (!project?.done || !requireThread(project, appSessionId).ownerAppSessionId) return;
+    delete project.done;
+    await this.save();
   }
 
   /** True when this update ends a turn the session was last seen running. */

@@ -128,8 +128,9 @@ wherever the project is read.
 project and its main chat in place of the opening prompt. Once the goal is
 achieved and no thread is working or starting, the main chat calls
 `project_done` with what the project achieved. Projects then shows it as done,
-with that outcome and how long the project took. A new thread, or a plan with a
-step still planned, doing or blocked, reopens it. A project records when it
+with that outcome and how long the project took. Any work after that reopens
+it: a new thread, a message to a thread, a thread starting a turn, or a plan
+with a step of the main chat's own that is not done. A project records when it
 started; one from before that shows its main chat's start.
 
 ## The Threads panel
