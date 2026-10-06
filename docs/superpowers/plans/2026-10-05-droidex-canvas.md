@@ -504,12 +504,23 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   unconfigured, or without its binary all returned `ready` with the normal artifact hash, and
   an inherited `NODE_PATH` alone did it with no ancestor at all.
   So staging writes `canvas-runtime/manifest.json` — every file it placed with its size — and
-  `verifyCanvasRuntime` checks it once, in the compiler child, before any request is accepted:
-  every listed file present at its listed size, the binary present and executable, and each of the
-  seven specifiers a compile resolves landing inside `<dir>/node_modules` (read through its links,
-  because node answers with a real path). Any miss and the worker answers every request
-  `unavailable` and logs the first path at fault; nothing is ever a diagnostic. Once the runtime is
-  whole, nearest-first resolution means the owned copy always wins for the transitive graph too.
+  `startCanvasRuntime` checks it once, in the compiler child, before anything is loaded and before
+  any request is accepted: the runtime root canonicalised once (so a linked app location still
+  works), every listed file present at its listed size, no symbolic link on any path inside the
+  tree, the binary present and executable, and each of the seven specifiers a compile resolves
+  landing inside `<root>/node_modules`. Any miss and the worker answers every request `unavailable`
+  and logs the first path at fault; nothing is ever a diagnostic. A runtime that is whole and
+  link-free is what makes nearest-first resolution enough for the transitive graph as well — the
+  sizes alone would not have been: cycle 2 replaced a nested dependency directory with a link to an
+  outside copy and compiled `ready` while resolving three outside files.
+- **One loader, and cleanup is not it.** Cycle 2 also found the other way in: shutdown called
+  `stopBundler`, which went through a lazy accessor and loaded esbuild, PostCSS and Tailwind from
+  wherever node found them even after startup had refused the runtime — 307 distinct outside module
+  paths for a missing Tailwind with an ancestor, 308 for an empty or unconfigured one. The runtime
+  is now loaded in exactly one place, `startCanvasRuntime`, after verification; `canvasRuntime()`
+  returns what it loaded and `stopCanvasRuntime()` releases only a service that was started. The
+  probe asks for a graceful shutdown and requires zero outside resolutions across the whole life of
+  every refused worker, which is what the earlier probe missed by killing its children.
   Sizes rather than digests, because the risk is an incomplete or damaged install rather than
   tampering and this runs on every compiler start; the binary carries no size because code signing
   rewrites it while packaging (9,750,242 staged, 9,712,896 shipped).
@@ -524,28 +535,36 @@ Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`,
   Tailwind preflight asset arrived as `css_error`. Only the seven codes 03a defined are a
   diagnostic now; anything else esbuild attached, and any stylesheet failure that is not PostCSS's
   own `CssSyntaxError`, is rethrown so the worker reports an unavailable compiler. Invalid design
-  CSS still reports `css_error`. `compiler.test.ts`'s diagnostic helper now refuses an absolute or
-  `node_modules` path in every diagnostic, which is where that rule belongs for every future case.
-- The worker loads `esbuild`, `tailwindcss`, `postcss` and `postcss-value-parser` through that one
-  anchor instead of importing them, so `build:compiler-worker` needs no `--external` flags at all
-  and the bundled entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only
-  `react`/`react-dom` move is therefore superseded: a bundled ESM external would have resolved from
-  `resources/sidecar/node_modules`, which does not exist.
+  CSS still reports `css_error`. `compiler.test.ts`'s diagnostic helper refuses a machine path
+  anywhere in any diagnostic field — `/Users/`, `/home/`, `/private/`, `/tmp/`, `/var/`,
+  `node_modules` or the repository root, quoted or not — which is where that rule belongs for every
+  future case. Cycle 2 caught the first version recognising a slash only after whitespace, so
+  `could not open "/Users/…"` passed it; the quoted form is now a case of its own.
+- The worker loads `esbuild`, `tailwindcss` and `postcss` through that one anchor instead of
+  importing them, so `build:compiler-worker` needs no `--external` flags at all and the bundled
+  entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only `react`/`react-dom`
+  move is therefore superseded: a bundled ESM external would have resolved from
+  `resources/sidecar/node_modules`, which does not exist. `postcss-value-parser` keeps its plain
+  import and is bundled: it has no `__dirname` and no native part, so bundling keeps the
+  per-declaration CSS resource review free of an accessor. Tailwind's own copy is still staged and
+  listed, and the specifier is still checked.
 - **As-is copy, pruned of what a compile cannot reach.** `npm run canvas:runtime` stages one
   complete tree per architecture at `sidecar/canvas-runtime/<arch>/node_modules`, closing over
   `dependencies` only and keeping nested duplicates where their dependent reads them, so Tailwind's
   `__dirname` preflight loader and node resolution both work untouched. Dropping esbuild's own
   binary copy, Tailwind's CLI and prebundled `peers`, Tailwind's `src` ESM mirror, and React's
   server/profiling builds takes the staged tree from **36.75 MiB (1,443 files)** to **16.09 MiB
-  (903 files)** arm64. A dedicated bundle was not built: §6's bundled estimate for arm64 was
+  (902 staged files)** arm64. A dedicated bundle was not built: §6's bundled estimate for arm64 was
   12,339,334 bytes (11.77 MiB), so the as-is copy costs 4,497,134 bytes more and keeps Tailwind's
   preflight loader and node resolution working as installed.
-- **Measured packaged resources.** arm64 `resources/sidecar/canvas-runtime`: 902 files,
-  16,836,468 bytes (16.06 MiB), with `@esbuild/darwin-arm64/bin/esbuild` at 9,712,896 bytes, mode
-  755, Mach-O arm64 (electron-builder re-signs it, so it is 37,346 bytes smaller than the 9,750,242
-  npm ships). x64: 902 files, 17,656,684 bytes (16.84 MiB), binary 10,533,120 bytes, mode 755,
-  Mach-O x86_64. Each app carries only its own architecture's binary; the only staged file
-  electron-builder drops is `resolve`'s `.gitkeep` test fixture.
+- **Measured packaged resources.** arm64 `resources/sidecar/canvas-runtime`: 903 files,
+  16,889,391 bytes (16.11 MiB) — 901 listed files, a 52,923-byte manifest and the binary — with
+  `@esbuild/darwin-arm64/bin/esbuild` at 9,712,896 bytes, mode 755, Mach-O arm64 (electron-builder
+  re-signs it, so it is 37,346 bytes smaller than the 9,750,242 npm ships). x64: 903 files,
+  17,709,603 bytes (16.89 MiB), 52,919-byte manifest, binary 10,533,120 bytes, mode 755, Mach-O
+  x86_64. Each app carries only its own architecture's binary, and the packaged tree matches the
+  manifest exactly: staging drops the names electron-builder would have dropped (`.gitkeep` among
+  them), so nothing is lost between staging and the app.
 - **electron-builder drops a copied directory's own top-level `node_modules`** (`createFilter` in
   `app-builder-lib/out/util/filter.js`), which silently produced an app with no Canvas runtime at
   all. The file set therefore names `sidecar/canvas-runtime/${arch}/node_modules` as its source.
