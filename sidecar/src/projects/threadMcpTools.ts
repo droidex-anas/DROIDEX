@@ -291,7 +291,7 @@ export function threadTools(appSessionId: () => string) {
         `Read one of this chat's threads: its latest final replies (the last ${String(LEDGER_LIMITS.text)} characters of each; an old thread may keep only its final one), the question it is waiting on, and its settings.`,
         'A report is an excerpt, so read the rest here before acting on it or telling the user.',
         'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
-        'queued counts your messages that have not reached it yet; released means its runtime was closed while it sat idle, and your next message reopens it.',
+        'queued counts your messages it has not been seen to take yet, waiting or handed over and unacknowledged, so do not send them again. live is false when no runtime is open for it, because DROIDEX released it while idle or is reopening it; a message opens one.',
       ].join(' '),
       readInput.shape,
       safeTool(async (input: z.infer<typeof readInput>) => {

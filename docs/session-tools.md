@@ -12,7 +12,7 @@ in it runs until a tool is called.
 | --- | --- | --- | --- |
 | `thread_spawn` | Starts a chat that carries one task; `reportBack` is required | asks | one kind: threads or chats |
 | `thread_send` | Sends one of this chat's threads a message, or `answers` to the question `questionId` names; `delivery` picks steer (the default), now or queue | runs | never asks |
-| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings, how many messages are still queued for it, and whether its idle runtime was released | runs | never asks |
+| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings, how many messages it has not been seen to take, and whether a runtime is open for it | runs | never asks |
 | `thread_configure` | Changes a thread's model, reasoning effort or autonomy | runs | never asks |
 | `thread_stop` | Ends a thread's turn and drops its queued messages | runs | never asks |
 | `plan_set` | Writes the plan the chat shows in Projects; `title` names the project and the chat | runs | never asks |

@@ -108,10 +108,10 @@ export interface ThreadReadout {
   replies: string[];
   /** Older replies DROIDEX still holds, for an owner that wants more context. */
   moreReplies: number;
-  /** Messages to it that have not reached it yet. */
+  /** Messages to it not yet seen taken: waiting, or handed over and not acknowledged. */
   queued: number;
-  /** Its runtime was released while it sat idle; the next message reopens it. */
-  released?: true;
+  /** False when no runtime is open for it: released while idle, or reopening. */
+  live?: boolean;
   /** Why replies is empty when the thread did reply. */
   note?: string;
   error?: string;
@@ -565,7 +565,7 @@ export class ProjectService {
       queued: [...project.pending, ...(project.delivery?.messages ?? [])].filter(
         (message) => message.to === target,
       ).length,
-      ...(session && !this.sessions.isLive(target) ? { released: true as const } : {}),
+      ...(session ? { live: this.sessions.isLive(target) } : {}),
       ...(thread.repliesShed
         ? {
             note: 'DROIDEX dropped its replies to keep the project ledger small. Its whole conversation stays in its own transcript, which the user can open.',
