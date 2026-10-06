@@ -362,9 +362,14 @@ test('coalesced sequence gaps inside one batch advance the resume cursor safely'
 });
 
 test('a generation-changed snapshot restores the cursor without a hard resync error', async () => {
-  const { socket: first, seenTypes, reconnect } = await startBridge();
+  const { bridge, socket: first, seenTypes, reconnect } = await startBridge();
+  // The store drops pending setting changes here: the process that would have
+  // answered them is gone.
+  const eventsWhenReplaced: string[][] = [];
+  bridge.subscribeRuntimeReplaced(() => eventsWhenReplaced.push(seenTypes()));
   first.message(snapshotMessage('generation-2', 42, 'generation_changed'));
 
+  assert.deepEqual(eventsWhenReplaced, [[]]);
   assert.deepEqual(seenTypes(), ['connection', 'runtime.updated', 'sessions.processes']);
   first.close();
   assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-2', seq: '42' });
@@ -383,6 +388,11 @@ test('late messages from a replaced socket are ignored', async () => {
 
 test('recovery snapshots replace process lists, including sessions that disappeared', async () => {
   const { bridge, socket } = await startBridge();
+  // A snapshot from the same sidecar abandons nothing; one from a new one does.
+  let replaced = 0;
+  bridge.subscribeRuntimeReplaced(() => {
+    replaced += 1;
+  });
   let state = initialState;
   bridge.subscribe((event) => {
     const action = adaptEvent(event);
@@ -408,8 +418,10 @@ test('recovery snapshots replace process lists, including sessions that disappea
     }),
   );
   assert.deepEqual(state.agentProcesses, { 'live-session': [process] });
+  assert.equal(replaced, 0);
   socket.message(snapshotMessage('generation-2', 42, 'generation_changed'));
   assert.deepEqual(state.agentProcesses, {});
+  assert.equal(replaced, 1);
 });
 
 test('duplicate replay batches are ignored and sequence gaps reconnect', async () => {
