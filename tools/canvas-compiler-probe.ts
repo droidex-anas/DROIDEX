@@ -19,6 +19,7 @@
 
 import { execFileSync, fork } from 'node:child_process';
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -26,6 +27,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -382,6 +384,35 @@ function linkOutside(runtime: string, relative: string): void {
   symlinkSync(outside, join(runtime, relative));
 }
 
+/**
+ * A package that never finishes loading, put to the release gate alone: the
+ * bound is the gate's own property, and the worker would load this same tree
+ * and compile, because an interval does not stop a build. The handler is the
+ * point — SIGTERM is catchable, so only an unignorable kill bounds the wait —
+ * and the case costs the gate's full timeout once.
+ */
+function assertBoundedGate(target: ProbeTarget): void {
+  const { layout, target: hanging } = copiedLayout(target, (runtime) => {
+    const entry = 'node_modules/tailwindcss/lib/index.js';
+    appendFileSync(
+      join(runtime, entry),
+      "\nprocess.on('SIGTERM', () => {});\nsetInterval(() => {}, 1000);\n",
+    );
+    const bytes = statSync(join(runtime, entry)).size;
+    rewriteManifest(runtime, (manifest) => {
+      manifest.files[entry] = bytes;
+    });
+  });
+  const started = performance.now();
+  const accepted = releaseVerifierAccepts(hanging.runtimeDir);
+  const elapsed = performance.now() - started;
+  rmSync(layout, { recursive: true, force: true });
+  if (accepted) fail('the release verifier would ship a runtime whose packages never load');
+  process.stdout.write(
+    `A runtime whose packages never load is refused in ${(elapsed / 1000).toFixed(1)}s.\n`,
+  );
+}
+
 /** The artifact a preview host could load: self-contained, and the kit's own. */
 function artifactOf(response: CompilerResponse): string {
   if (response.status !== 'ready') fail(`the compiler answered ${response.status}`);
@@ -441,6 +472,8 @@ assertClean(shipped, target.label);
 process.stdout.write(
   `Compiled the design kit's example offline from the ${target.label}: ${artifactOf(shipped.compiled)}\n`,
 );
+
+assertBoundedGate(target);
 
 const copied = copiedLayout(target, null);
 const intact = await runWorker(copied.target, copied.target.runtimeDir);

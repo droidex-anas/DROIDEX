@@ -37,8 +37,8 @@ const LICENSED = ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'sc
 const ANCHOR_FILE = 'canvas-runtime.js';
 const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss'];
 
-// Long enough for a cold load of a 16 MiB runtime, short enough that a package
-// that hangs fails the gate rather than holding it.
+// Long enough for a cold load of a 16 MiB runtime, and the point at which a
+// package that never finishes loading is killed rather than waited for.
 const LOAD_TIMEOUT_MS = 60_000;
 
 // FINDER_METADATA in sidecar/src/canvas/canvasRuntime.ts: Finder writes it into
@@ -113,21 +113,28 @@ export function verifyCanvasRuntime(runtimePath, arch) {
 
 /**
  * Resolves every specifier and loads the three the compiler calls into, in a
- * child: a package that throws or hangs cannot take the gate down, and the
- * gate's own module cache stays clean. The runtime's JavaScript is the same for
- * both architectures — only `@esbuild/<platform>-<arch>` differs, and its
- * Mach-O check is separate — so naming the staged binary outright keeps esbuild
- * from looking for a platform package by name. None of the three starts a
- * process at load, so the foreign binary is never run.
+ * child: a package that throws cannot take the gate down and one that never
+ * finishes is killed, and the gate's own module cache stays clean. The
+ * runtime's JavaScript is the same for both architectures — only
+ * `@esbuild/<platform>-<arch>` differs, and its Mach-O check is separate — so
+ * naming the staged binary outright keeps esbuild from looking for a platform
+ * package by name. None of the three starts a process at load, so the foreign
+ * binary is never run.
  */
 function proveLoadable(root, binary) {
   const probe = spawnSync(process.execPath, ['--input-type=module', '--eval', LOAD_PROBE, root], {
     encoding: 'utf8',
     timeout: LOAD_TIMEOUT_MS,
+    // SIGTERM is catchable and `spawnSync` waits for the child after sending
+    // it, so a package that handles the signal and keeps its loop alive would
+    // hold the gate open for as long as it liked. This child is disposable.
+    killSignal: 'SIGKILL',
     // Nothing ambient may add a module path or a loader to this child.
     env: { PATH: '/usr/bin:/bin', ESBUILD_BINARY_PATH: join(root, binary) },
   });
   if (probe.status === 0) return;
+  if (probe.error?.code === 'ETIMEDOUT')
+    fail(`its packages did not load within ${String(LOAD_TIMEOUT_MS)}ms`);
   const reason =
     probe.stderr?.trim() || `the load probe ended as ${String(probe.status ?? probe.signal)}`;
   fail(reason.split('\n')[0]);
