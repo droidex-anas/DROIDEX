@@ -737,9 +737,10 @@ export class ProjectService {
     if (this.closed) return;
     // Read before any wait, so a slow save cannot reorder a turn's start and end.
     const settled = event.type === 'session.updated' && this.noteStreaming(event.session);
+    await this.turns.observe(event);
+    // After the turn is recorded, so waiting on this save cannot reorder turns.
     if (event.type === 'session.updated' && event.session.streaming)
       await this.reopenOnWork(event.session.appSessionId);
-    await this.turns.observe(event);
     // A delivered turn that stops on the user's approval frees its slot.
     if (event.type === 'approval.requested') {
       if (this.membership.has(event.request.appSessionId)) this.wakes.waitingChanged();
