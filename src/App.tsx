@@ -303,7 +303,6 @@ export default function App() {
       bindLazySurfaceIntent('files', toggle),
       bindLazySurfaceIntent('terminal', toggle),
       bindLazySurfaceIntent('review', toggle),
-      bindLazySurfaceIntent('canvas', toggle),
     ];
     return () => {
       for (const cleanup of cleanups) cleanup();

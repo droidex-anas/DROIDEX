@@ -19,7 +19,14 @@ export interface UtilityTab {
   agentId?: string;
   // The threads pane: the thread it is showing, absent while it shows the list.
   threadId?: string;
+  // The Canvas pane: the frame an Open asked it to focus, absent until one does.
+  frameId?: string;
 }
+
+// The ids that point a singleton pane at one thing. Opening the tool again with
+// a different one re-points the pane that is already open.
+const TARGET_KEYS = ['agentId', 'threadId', 'frameId'] as const;
+type TargetKey = (typeof TARGET_KEYS)[number];
 
 export interface UtilityPanelState {
   open: boolean;
@@ -60,19 +67,19 @@ export function openUtilityTool(
   panel: UtilityPanelState | undefined,
   tool: UtilityTool,
   createId: () => string,
-  details: Partial<
-    Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId' | 'threadId'>
-  > = {},
+  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | TargetKey>> = {},
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const existing = SINGLETON_TOOLS.has(tool)
     ? current.tabs.find((tab) => tab.tool === tool)
     : undefined;
   if (existing) {
-    // Opening another agent or thread points the one pane at it.
-    const retarget =
-      (details.agentId !== undefined && details.agentId !== existing.agentId) ||
-      (details.threadId !== undefined && details.threadId !== existing.threadId);
+    const target = Object.fromEntries(
+      TARGET_KEYS.filter((key) => details[key] !== undefined).map((key) => [key, details[key]]),
+    );
+    const retarget = TARGET_KEYS.some(
+      (key) => details[key] !== undefined && details[key] !== existing[key],
+    );
     if (!retarget && current.open && current.activeTabId === existing.id) return current;
     return {
       ...current,
@@ -80,15 +87,7 @@ export function openUtilityTool(
       activeTabId: existing.id,
       ...(retarget
         ? {
-            tabs: current.tabs.map((tab) =>
-              tab.id === existing.id
-                ? {
-                    ...tab,
-                    ...(details.agentId === undefined ? {} : { agentId: details.agentId }),
-                    ...(details.threadId === undefined ? {} : { threadId: details.threadId }),
-                  }
-                : tab,
-            ),
+            tabs: current.tabs.map((tab) => (tab.id === existing.id ? { ...tab, ...target } : tab)),
           }
         : {}),
     };

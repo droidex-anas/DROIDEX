@@ -665,12 +665,15 @@ export type Action =
   | {
       type: 'OPEN_UTILITY_TOOL';
       tool: UtilityTool;
+      // The chat the pane belongs to, when it is not the one on screen.
+      appSessionId?: string;
       tabId?: string;
       terminalId?: string;
       cwd?: string;
       filePath?: string;
       agentId?: string;
       threadId?: string;
+      frameId?: string;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -2024,7 +2027,7 @@ export function reducer(state: AppState, action: Action): AppState {
         : { ...state, rightPanelOpen: false };
 
     case 'OPEN_UTILITY_TOOL': {
-      const appSessionId = state.activeAppSessionId;
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
       if (!appSessionId) return state;
       const panel = openUtilityTool(
         state.utilityPanels[appSessionId],
@@ -2036,6 +2039,7 @@ export function reducer(state: AppState, action: Action): AppState {
           filePath: action.filePath,
           agentId: action.agentId,
           threadId: action.threadId,
+          frameId: action.frameId,
         },
       );
       return {
