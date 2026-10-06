@@ -41,6 +41,7 @@ export async function deliverScheduledMessage(
   if (!live) {
     if (!context.canResume()) {
       // At the runtime cap, an idle runtime that is safe to release makes room.
+      if (!available()) return refusal();
       await context.makeRoom(appSessionId);
       if (!available()) return refusal();
       if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };

@@ -40,6 +40,7 @@ import {
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
 import { failedTurnSummary, type PrimaryTurnRequest } from './providers/primaryTurn.js';
+import { UsageLimitError, usageLimitDetails } from './providers/usageLimit.js';
 import {
   droidLaunchSettings,
   requireDroidReasoningSupported,
@@ -205,7 +206,11 @@ export interface SessionLifecycleDependencies {
   // A live progress row while a turn stops to send now; it is not stored.
   appendProgress: (appSessionId: string, text: string) => void;
   // The transcript row a crashed runtime leaves behind, stored with the chat.
-  appendError: (appSessionId: string, message: string) => void;
+  appendError: (
+    appSessionId: string,
+    message: string,
+    details?: ReturnType<typeof usageLimitDetails>,
+  ) => void;
   // A steer the harness has just delivered into the running turn: the row that
   // marks where the model took it in, and what the transcript stores.
   appendSteer: (appSessionId: string, text: string) => void | Promise<void>;
@@ -1182,25 +1187,43 @@ export class SessionLifecycle {
       // reads its reply as it settles (a project report) has them, and until
       // Send now's interrupt settles, so nothing new starts under it.
       const turn = liveSession.delegatedTurns;
-      const written = this.dependencies
-        .settleStreaming(appSessionId, appSessionId)
-        .catch((error: unknown) => {
+      void this.dependencies.settleStreaming(appSessionId, appSessionId).then(
+        () => this.afterDelegatedFlush(liveSession, turn, isCurrent, end),
+        (error: unknown) => {
           this.dependencies.emitError({
             appSessionId,
             message: `Could not settle the session transcript: ${errMsg(error)}`,
           });
-        });
-      void Promise.all([written, liveSession.sendNowInterrupt]).then(() => {
-        // The chat closed, or the provider started another turn, meanwhile.
-        if (isCurrent() && liveSession.delegatedTurns === turn)
-          this.settleDelegatedTurn(liveSession, end);
-      });
+          // A reply that was not written did not complete, as for a typed turn.
+          const failed = error instanceof Error ? error : new Error(errMsg(error));
+          return this.afterDelegatedFlush(
+            liveSession,
+            turn,
+            isCurrent,
+            end?.status === 'completed' ? { status: 'failed', error: failed } : end,
+          );
+        },
+      );
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
         events?.();
         delegated?.();
       };
+  }
+
+  // Send now can begin while the transcript flushes, so its interrupt is read
+  // only once the flush is done.
+  private async afterDelegatedFlush(
+    liveSession: LiveSession,
+    turn: number | undefined,
+    isCurrent: () => boolean,
+    end: DelegatedTurnEnd | undefined,
+  ): Promise<void> {
+    if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
+    // The chat closed, or the provider started another turn, meanwhile.
+    if (isCurrent() && liveSession.delegatedTurns === turn)
+      this.settleDelegatedTurn(liveSession, end);
   }
 
   private settleDelegatedTurn(liveSession: LiveSession, end: DelegatedTurnEnd | undefined): void {
@@ -1213,9 +1236,16 @@ export class SessionLifecycle {
     liveSession.interruptingToSend = false;
     // A spoken turn settles as a typed one does: a failure fails the chat,
     // holding it on a refusal, and a finished turn is an answer that lifts a hold.
-    if (end?.status === 'failed')
+    if (end?.status === 'failed') {
       this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
-    else if (end?.status === 'completed' && !stopped && liveSession.summary.usageLimit)
+      // A refusal leaves no row of its own; the typed path writes this notice too.
+      if (end.error instanceof UsageLimitError)
+        this.dependencies.appendError(
+          appSessionId,
+          end.error.message,
+          usageLimitDetails(end.error),
+        );
+    } else if (end?.status === 'completed' && !stopped && liveSession.summary.usageLimit)
       this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
     this.publishTurnSettled(liveSession);
     if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);

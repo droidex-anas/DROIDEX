@@ -74,6 +74,11 @@ export async function runPrimaryTurn(
     delivery.declined(isCurrent() && delivery.isCurrent() ? 'failed' : 'stale');
     return;
   }
+  // Checked before the prompt row is written, so a retry never writes it twice.
+  if (delivery && stoppedBeforeStart()) {
+    delivery.declined('stale');
+    return;
+  }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
   if (notice) d.timeline.appendStatus(appSessionId, notice);
   else {

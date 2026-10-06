@@ -19,7 +19,7 @@ import type {
   SessionInteractionMode,
 } from '../../protocol.js';
 import { errMsg } from '../../errors.js';
-import type { UsageLimitError } from '../usageLimit.js';
+import { UsageLimitError } from '../usageLimit.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type {
@@ -327,7 +327,13 @@ export class ClaudeSession implements ProviderSession {
       // the chat stopped reading before its end is still the CLI's: the rest of
       // it, up to its result, is dropped as it was.
       if (ended || resultTaken) this.continueAfterTurn(unread);
-      else this.discardUntilResult = !unread.some(({ message }) => message.type === 'result');
+      else {
+        // The rest of the stopped turn ends at its result; what follows that
+        // is a turn Claude Code started itself.
+        const result = unread.findIndex(({ message }) => message.type === 'result');
+        this.discardUntilResult = result < 0;
+        if (result >= 0) this.continueAfterTurn(unread.slice(result + 1));
+      }
       await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
   }
@@ -460,7 +466,8 @@ export class ClaudeSession implements ProviderSession {
   private endDelegatedTurn(error?: Error, showError = false): void {
     const stopped = this.interruptedTurnId === DELEGATED_TURN;
     if (stopped) this.interruptedTurnId = undefined;
-    if (stopped) {
+    // A refusal holds the chat however the turn ended, as a typed turn's does.
+    if (stopped && !(error instanceof UsageLimitError)) {
       this.setDelegatedTurn(false, { status: 'interrupted' });
       return;
     }
