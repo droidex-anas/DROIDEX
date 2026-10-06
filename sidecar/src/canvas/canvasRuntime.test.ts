@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { startCanvasRuntime } from './canvasRuntime.js';
 
@@ -14,6 +14,15 @@ const SIDECAR_MODULES = resolve(import.meta.dirname, '../../node_modules');
 
 test('a checkout only has to resolve', () => {
   assert.equal(startCanvasRuntime(null), null);
+});
+
+test('a relative runtime is a malformed host, not a tree to look for', (t) => {
+  const absolute = fixture(t, {}).path;
+
+  assert.equal(
+    startCanvasRuntime(relative(process.cwd(), absolute)),
+    `${relative(process.cwd(), absolute)} is not an absolute path`,
+  );
 });
 
 test('an incomplete or damaged runtime names the first file at fault', (t) => {
@@ -44,51 +53,73 @@ test('the esbuild binary has to be there and executable', (t) => {
   );
 
   const plain = fixture(t, {});
-  plain.write('binary', 'not executable\n');
   chmodSync(join(plain.path, 'binary'), 0o644);
   assert.equal(startCanvasRuntime(plain.path), 'binary is not executable');
 });
 
-test('a symbolic link anywhere inside the runtime is refused', (t) => {
-  // Staging never makes one, so a link inside is a file from outside wearing an
-  // owned path — which a size check cannot see at all for a replaced directory.
-  const linkedFile = fixture(t, { files: { 'node_modules/a/index.js': 12 } });
-  linkedFile.write('outside.js', 'module.exports = 1;\n');
-  mkdirSync(join(linkedFile.path, 'node_modules/a'), { recursive: true });
-  symlinkSync(
-    join(linkedFile.path, 'outside.js'),
-    join(linkedFile.path, 'node_modules/a/index.js'),
-  );
-  assert.equal(startCanvasRuntime(linkedFile.path), 'node_modules/a/index.js is a symbolic link');
+test('nothing staging did not place is part of the runtime', (t) => {
+  // An entry nobody listed changes resolution without touching a listed file,
+  // so the tree is compared to the manifest rather than the other way around.
+  const stage = (): Fixture => {
+    const staged = fixture(t, { files: { 'node_modules/a/index.js': 20 } });
+    staged.write('node_modules/a/index.js', 'module.exports = 1;\n');
+    return staged;
+  };
 
-  const linkedDirectory = fixture(t, { files: { 'node_modules/a/index.js': 12 } });
-  mkdirSync(join(linkedDirectory.path, 'elsewhere'));
-  linkedDirectory.write('elsewhere/index.js', 'module.exports = 1;\n');
-  mkdirSync(join(linkedDirectory.path, 'node_modules'));
-  symlinkSync(
-    join(linkedDirectory.path, 'elsewhere'),
-    join(linkedDirectory.path, 'node_modules/a'),
-  );
+  const linked = stage();
+  symlinkSync(SIDECAR_MODULES, join(linked.path, 'node_modules/tailwindcss'));
+  assert.equal(startCanvasRuntime(linked.path), 'node_modules/tailwindcss is a symbolic link');
+
+  const extraFile = stage();
+  extraFile.write('node_modules/a/extra.js', 'module.exports = 2;\n');
   assert.equal(
-    startCanvasRuntime(linkedDirectory.path),
-    'node_modules/a/index.js is reached through a symbolic link',
+    startCanvasRuntime(extraFile.path),
+    'node_modules/a/extra.js is not part of the runtime',
+  );
+
+  const extraDirectory = stage();
+  mkdirSync(join(extraDirectory.path, 'node_modules/a/node_modules'));
+  assert.equal(
+    startCanvasRuntime(extraDirectory.path),
+    'node_modules/a/node_modules is not part of the runtime',
   );
 });
 
 test("a module an ancestor supplies is not the runtime's own", (t) => {
-  // A runtime whose own node_modules is empty: every specifier then comes from
-  // the ancestor, which is the escape to refuse. The link is outside the
-  // runtime, where links are the machine's business.
+  // A runtime whose own node_modules holds only staged files: every specifier
+  // then comes from the ancestor, which is the escape to refuse. The link is
+  // outside the runtime, where links are the machine's business.
   const parent = scratch(t, 'canvas-runtime-parent-');
   symlinkSync(SIDECAR_MODULES, join(parent, 'node_modules'));
-  const borrowed = fixture(t, {}, join(parent, 'runtime'));
-  mkdirSync(join(borrowed.path, 'node_modules'));
+  const borrowed = fixture(
+    t,
+    { files: { 'node_modules/a/index.js': 20 } },
+    join(parent, 'runtime'),
+  );
+  borrowed.write('node_modules/a/index.js', 'module.exports = 1;\n');
 
   assert.equal(startCanvasRuntime(borrowed.path), 'esbuild resolves outside the runtime');
 });
 
 test('a runtime with no node_modules at all resolves nothing', (t) => {
   assert.equal(startCanvasRuntime(fixture(t, {}).path), 'esbuild does not resolve');
+});
+
+test('one spelling of a runtime cannot resolve what another verified', (t) => {
+  // A root whose last segment is `node_modules` makes node skip that
+  // directory's own packages, so a require anchored at the configured spelling
+  // and a check run against the canonical one disagreed about where esbuild
+  // comes from. One canonical root for both means the ancestor is seen for what
+  // it is.
+  const above = scratch(t, 'canvas-runtime-above-');
+  symlinkSync(SIDECAR_MODULES, join(above, 'node_modules'));
+  const layout = join(above, 'layout');
+  const staged = fixture(t, { files: { 'node_modules/a/index.js': 20 } }, join(layout, 'runtime'));
+  staged.write('node_modules/a/index.js', 'module.exports = 1;\n');
+  const alias = join(layout, 'node_modules');
+  symlinkSync(staged.path, alias);
+
+  assert.equal(startCanvasRuntime(alias), 'esbuild resolves outside the runtime');
 });
 
 interface Fixture {
@@ -104,9 +135,9 @@ function fixture(
 ): Fixture {
   const path = at ?? scratch(t, 'canvas-runtime-');
   mkdirSync(path, { recursive: true });
-  const write = (relative: string, contents: string): void => {
-    mkdirSync(dirname(join(path, relative)), { recursive: true });
-    writeFileSync(join(path, relative), contents);
+  const write = (entry: string, contents: string): void => {
+    mkdirSync(dirname(join(path, entry)), { recursive: true });
+    writeFileSync(join(path, entry), contents);
   };
   writeFileSync(join(path, 'manifest.json'), `${JSON.stringify({ binary, files })}\n`);
   if (binary === 'binary') {

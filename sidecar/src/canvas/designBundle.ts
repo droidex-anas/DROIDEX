@@ -8,7 +8,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
-import { canvasRuntime, canvasRuntimeRequire } from './canvasRuntime.js';
+import { canvasRuntime } from './canvasRuntime.js';
 import { KIT_ENTRY } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -206,7 +206,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
  * package from a real directory, which is its own business.
  */
 function runtimePath(specifier: string): string {
-  return canvasRuntimeRequire.resolve(specifier);
+  return canvasRuntime().resolve(specifier);
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {

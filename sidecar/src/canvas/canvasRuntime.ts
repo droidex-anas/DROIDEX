@@ -10,31 +10,24 @@
 // Node resolution is nearest-first but not bounded: it also walks ancestor
 // node_modules, NODE_PATH and the user's own global folders, and a transitive
 // `require` inside a package cannot be intercepted. The boundary is therefore
-// completeness: an owned runtime has to carry every file its manifest lists, at
-// the staged size, with no symbolic link anywhere inside it, before anything is
-// loaded from it. `startCanvasRuntime` is the only place that loads, so a
-// worker that refused its runtime holds none, and `stopCanvasRuntime` releases
-// only what was started. A runtime that is whole and link-free is what makes
-// nearest-first resolution enough for the transitive graph as well.
+// that the tree is exactly what staging produced — every entry in it listed in
+// the manifest at the staged size, and nothing else, because an entry nobody
+// listed changes resolution without touching a listed file. `startCanvasRuntime`
+// checks that, then loads, and is the only place that does either; the require
+// it loads through is the one the check resolved with, and the one a design
+// resolves through, so no two anchors can disagree about where a package comes
+// from.
 
-import { existsSync, lstatSync, readFileSync, realpathSync, type Stats } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
 import type * as postcssModule from 'postcss';
 import type * as tailwindModule from 'tailwindcss';
 
-const configuredRuntimeDir = process.env.DROIDEX_CANVAS_RUNTIME_DIR;
-
-/**
- * The runtime the app owns, or null when a checkout resolves its own. Made
- * absolute, because `createRequire` refuses a relative anchor and the host's
- * mistake belongs in the refusal below rather than in a module that throws as
- * it loads.
- */
-export const ownedCanvasRuntimeDir =
-  configuredRuntimeDir === undefined ? null : resolve(configuredRuntimeDir);
+/** The runtime the app owns, or null when a checkout resolves its own. */
+export const ownedCanvasRuntimeDir = process.env.DROIDEX_CANVAS_RUNTIME_DIR ?? null;
 
 /** Written by tools/stage-canvas-runtime.mjs; tools/verifyCanvasRuntime.mjs reads it too. */
 const MANIFEST_FILE = 'manifest.json';
@@ -60,42 +53,48 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
   'react-dom/client',
 ];
 
-/**
- * Loads and resolves the packages a design compile needs. A caller names the
- * module type, because `require` is untyped.
- */
-export const canvasRuntimeRequire = createRequire(
-  join(ownedCanvasRuntimeDir ?? moduleDirectory(), ANCHOR_FILE),
-);
-
-/** The packages the compiler itself calls into. */
+/** The packages the compiler calls into, and the resolver a design gets. */
 export interface CanvasCompilerRuntime {
   esbuild: typeof esbuild;
   postcss: typeof postcssModule.default;
   tailwindcss: typeof tailwindModule.default;
+  /** The absolute file one supported import resolves to, inside this runtime. */
+  resolve(specifier: string): string;
 }
 
 let started: CanvasCompilerRuntime | null = null;
 
 /**
- * Verifies the runtime and loads it, returning what is wrong with it or null.
- * The compiler worker calls this before it accepts a request, so a design never
+ * Checks the runtime and loads it, returning what is wrong with it or null. The
+ * compiler worker calls this before it accepts a request, so a design never
  * meets a missing package and nothing is loaded from a runtime that was
  * refused. `null` is a checkout, which only has to resolve.
  */
 export function startCanvasRuntime(runtimeDir: string | null): string | null {
-  const fault = verifyCanvasRuntime(runtimeDir);
-  if (fault !== null) return fault;
-  try {
-    started = {
-      esbuild: canvasRuntimeRequire('esbuild') as typeof esbuild,
-      postcss: canvasRuntimeRequire('postcss') as typeof postcssModule.default,
-      tailwindcss: canvasRuntimeRequire('tailwindcss') as typeof tailwindModule.default,
-    };
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+  if (runtimeDir === null) {
+    const stranded = strandedRuntime();
+    return stranded ?? load(createRequire(join(moduleDirectory(), ANCHOR_FILE)), null);
   }
-  return null;
+  // The host derives this from its own resources, so anything relative is a
+  // malformed host rather than a tree to go looking for from the cwd.
+  if (!isAbsolute(runtimeDir)) return `${runtimeDir} is not an absolute path`;
+
+  let root;
+  try {
+    // Canonical once, and used for everything after: a runtime under a linked
+    // path still works, and the check and the loader cannot pick different
+    // search paths from two spellings of the same place.
+    root = realpathSync(runtimeDir);
+  } catch {
+    return `${MANIFEST_FILE} could not be read`;
+  }
+
+  const manifest = readManifest(root);
+  if (typeof manifest === 'string') return manifest;
+  const fault = unstagedEntry(root, manifest) ?? unexecutableBinary(root, manifest.binary);
+  if (fault !== null) return fault;
+
+  return load(createRequire(join(root, ANCHOR_FILE)), join(root, RUNTIME_MODULES));
 }
 
 /** The started runtime. Only a compiler that started one compiles. */
@@ -116,7 +115,9 @@ export async function stopCanvasRuntime(): Promise<void> {
 /**
  * The esbuild binary the app owns, or null when esbuild finds the one beside
  * its own package. The compiler receives it as `ESBUILD_BINARY_PATH`, so a
- * packaged compile never consults a checkout path and never downloads one.
+ * packaged compile never consults a checkout path and never downloads one. It
+ * is an argument to a spawn rather than a resolution anchor, and the compiler
+ * refuses to start at all if the runtime it names is not sound.
  */
 export function ownedEsbuildBinary(): string | null {
   if (ownedCanvasRuntimeDir === null) return null;
@@ -124,60 +125,100 @@ export function ownedEsbuildBinary(): string | null {
   return join(ownedCanvasRuntimeDir, RUNTIME_MODULES, platformPackage, 'bin', 'esbuild');
 }
 
-function verifyCanvasRuntime(runtimeDir: string | null): string | null {
-  if (runtimeDir === null)
-    return strandedRuntime() ?? unresolvableSpecifier(canvasRuntimeRequire, null);
-
-  // Canonical once, so a runtime under a linked path (`/tmp`, a mounted
-  // volume) still works while every path below it is compared as it really is.
-  let root;
+/** Resolves every specifier through one require, then loads through the same. */
+function load(runtimeRequire: NodeJS.Require, modules: string | null): string | null {
+  for (const specifier of RUNTIME_SPECIFIERS) {
+    let resolved;
+    try {
+      resolved = runtimeRequire.resolve(specifier);
+    } catch {
+      return `${specifier} does not resolve`;
+    }
+    // A checkout resolves into `sidecar/node_modules`, which is where it lives.
+    if (modules !== null && !resolved.startsWith(`${modules}${sep}`))
+      return `${specifier} resolves outside the runtime`;
+  }
   try {
-    root = realpathSync(runtimeDir);
-  } catch {
-    return `${MANIFEST_FILE} could not be read`;
+    started = {
+      esbuild: runtimeRequire('esbuild') as typeof esbuild,
+      postcss: runtimeRequire('postcss') as typeof postcssModule.default,
+      tailwindcss: runtimeRequire('tailwindcss') as typeof tailwindModule.default,
+      resolve: (specifier) => runtimeRequire.resolve(specifier),
+    };
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
-
-  const manifest = readManifest(root);
-  if (typeof manifest === 'string') return manifest;
-  const checked = new Set<string>();
-  for (const [path, bytes] of Object.entries(manifest.files)) {
-    // A damaged manifest is as much an incomplete install as a damaged file.
-    if (typeof bytes !== 'number') return `${path} has no staged size`;
-    const entry = ownedEntry(root, path, checked);
-    if (typeof entry === 'string') return entry;
-    if (entry.size !== bytes) return `${path} is ${String(entry.size)} bytes, not ${String(bytes)}`;
-  }
-
-  // Code signing rewrites the binary while packaging, so the manifest records
-  // no size for it; being there and executable is the contract.
-  const binary = ownedEntry(root, manifest.binary, checked);
-  if (typeof binary === 'string') return binary;
-  if (!binary.isFile()) return `${manifest.binary} is missing`;
-  if ((binary.mode & 0o111) === 0) return `${manifest.binary} is not executable`;
-
-  return unresolvableSpecifier(createRequire(join(root, ANCHOR_FILE)), join(root, RUNTIME_MODULES));
+  return null;
 }
 
 /**
- * One manifest entry's own stats, or what is wrong with the path leading to it.
- * Staging never produces a symbolic link, so a link anywhere inside the runtime
- * is a file from outside it wearing an owned path — which the sizes would not
- * notice for a replaced directory. Each directory is checked once.
+ * The first entry in the tree that staging did not put there, or the first
+ * staged file that is not there. The tree is compared to the manifest rather
+ * than the manifest to the tree: an entry nobody listed — a nested
+ * `node_modules` link, say — changes resolution without touching a listed file,
+ * so walking only the listed paths cannot establish what the tree is.
  */
-function ownedEntry(root: string, path: string, checked: Set<string>): Stats | string {
-  let walked = root;
-  const segments = path.split('/');
-  for (const segment of segments.slice(0, -1)) {
-    walked = join(walked, segment);
-    if (checked.has(walked)) continue;
-    const directory = linkFreeStats(walked);
-    if (directory === null) return `${path} is missing`;
-    if (directory.isSymbolicLink()) return `${path} is reached through a symbolic link`;
-    checked.add(walked);
+function unstagedEntry(root: string, manifest: RuntimeManifest): string | null {
+  // The manifest and the binary are staged but carry no size: the first
+  // describes the rest, and code signing rewrites the second while packaging.
+  const sizes = new Map<string, number | null>([
+    [MANIFEST_FILE, null],
+    [manifest.binary, null],
+  ]);
+  for (const [path, bytes] of Object.entries(manifest.files)) {
+    if (typeof bytes !== 'number') return `${path} has no staged size`;
+    sizes.set(path, bytes);
   }
-  const stats = linkFreeStats(join(walked, segments[segments.length - 1] ?? ''));
-  if (stats === null) return `${path} is missing`;
-  return stats.isSymbolicLink() ? `${path} is a symbolic link` : stats;
+  const directories = new Set<string>();
+  for (const path of sizes.keys())
+    for (let cut = path.indexOf('/'); cut !== -1; cut = path.indexOf('/', cut + 1))
+      directories.add(path.slice(0, cut));
+
+  const found = new Set<string>();
+  const fault = walkRuntime(root, '', sizes, directories, found);
+  if (fault !== null) return fault;
+  const absent = [...sizes.keys()].find((path) => !found.has(path));
+  return absent === undefined ? null : `${absent} is missing`;
+}
+
+function walkRuntime(
+  root: string,
+  within: string,
+  sizes: Map<string, number | null>,
+  directories: ReadonlySet<string>,
+  found: Set<string>,
+): string | null {
+  let entries;
+  try {
+    entries = readdirSync(join(root, within), { withFileTypes: true });
+  } catch {
+    return `${within || RUNTIME_MODULES} could not be read`;
+  }
+  for (const entry of entries) {
+    const path = within === '' ? entry.name : `${within}/${entry.name}`;
+    // A directory entry is described as it is, not as what it points at, so a
+    // link is a link here whatever it leads to.
+    if (entry.isSymbolicLink()) return `${path} is a symbolic link`;
+    if (entry.isDirectory()) {
+      if (!directories.has(path)) return `${path} is not part of the runtime`;
+      const nested = walkRuntime(root, path, sizes, directories, found);
+      if (nested !== null) return nested;
+      continue;
+    }
+    if (!entry.isFile()) return `${path} is not a regular file`;
+    const bytes = sizes.get(path);
+    if (bytes === undefined) return `${path} is not part of the runtime`;
+    found.add(path);
+    if (bytes === null) continue;
+    const size = statSync(join(root, path)).size;
+    if (size !== bytes) return `${path} is ${String(size)} bytes, not ${String(bytes)}`;
+  }
+  return null;
+}
+
+function unexecutableBinary(root: string, binary: string): string | null {
+  // The walk has already found it, as a regular file inside the runtime.
+  return (statSync(join(root, binary)).mode & 0o111) === 0 ? `${binary} is not executable` : null;
 }
 
 interface RuntimeManifest {
@@ -186,11 +227,9 @@ interface RuntimeManifest {
 }
 
 function readManifest(root: string): RuntimeManifest | string {
-  const path = join(root, MANIFEST_FILE);
-  if (linkFreeStats(path)?.isSymbolicLink() ?? true) return `${MANIFEST_FILE} could not be read`;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
+    parsed = JSON.parse(readFileSync(join(root, MANIFEST_FILE), 'utf8'));
   } catch {
     return `${MANIFEST_FILE} could not be read`;
   }
@@ -199,28 +238,6 @@ function readManifest(root: string): RuntimeManifest | string {
   if (typeof binary !== 'string' || typeof files !== 'object' || files === null)
     return `${MANIFEST_FILE} is not a runtime`;
   return { binary, files: files as Record<string, unknown> };
-}
-
-/**
- * The first specifier a compile could not resolve, or — when `modules` names the
- * runtime the app owns — the first that resolved outside it. A checkout passes
- * no `modules`, because resolving into `sidecar/node_modules` is what it does.
- */
-function unresolvableSpecifier(
-  runtimeRequire: NodeJS.Require,
-  modules: string | null,
-): string | null {
-  for (const specifier of RUNTIME_SPECIFIERS) {
-    let resolved;
-    try {
-      resolved = runtimeRequire.resolve(specifier);
-    } catch {
-      return `${specifier} does not resolve`;
-    }
-    if (modules !== null && !resolved.startsWith(`${modules}${sep}`))
-      return `${specifier} resolves outside the runtime`;
-  }
-  return null;
 }
 
 /**
@@ -236,7 +253,7 @@ function strandedRuntime(): string | null {
   const stranded = [
     join(directory, 'canvas-runtime', MANIFEST_FILE),
     join(directory, '..', 'canvas-runtime', MANIFEST_FILE),
-  ].find((path) => existsSync(path));
+  ].find((path) => statIfPresent(path) !== null);
   return stranded === undefined ? null : `${stranded} was never configured`;
 }
 
@@ -244,9 +261,9 @@ function moduleDirectory(): string {
   return dirname(fileURLToPath(import.meta.url));
 }
 
-function linkFreeStats(path: string): Stats | null {
+function statIfPresent(path: string): { isFile(): boolean } | null {
   try {
-    return lstatSync(path);
+    return statSync(path);
   } catch {
     return null;
   }
