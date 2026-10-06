@@ -36,6 +36,7 @@ async function harness(
   const events: ServerEvent[] = [];
   const builds = options.builds ?? quietBuilds();
   const workspace = await CanvasWorkspace.open(directory, builds, {
+    isChatKnown: (appSessionId) => appSessionId === APP || appSessionId === 'agent-1',
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: (scopeId, canvasId) => {
       scopes.bindScopeCanvas(scopeId, canvasId);
@@ -147,6 +148,27 @@ test('a lost Create reply replays its durable canvas while the first commit is i
   );
   assert.equal(canvas.workspace.attachedCanvasId(APP), firstReply.canvasId);
   assert.equal((await readdir(canvas.root)).length, 1);
+});
+
+test('attachment mutations refuse a chat the sidecar does not know', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const commands = [
+    {
+      type: 'canvas.createCanvas',
+      requestId: 'unknown-create',
+      appSessionId: 'missing',
+      mutationId: 'missing-create',
+    },
+    { type: 'canvas.attach', requestId: 'unknown-attach', appSessionId: 'missing', canvasId },
+    { type: 'canvas.detach', requestId: 'unknown-detach', appSessionId: 'missing' },
+  ];
+  for (const command of commands) {
+    await canvas.handle(command);
+    assert.equal(errorOf(canvas, command.requestId).code, 'unknown_chat');
+  }
+  assert.equal(canvas.workspace.attachedCanvasId('missing'), null);
+  assert.equal(canvas.workspace.listCanvases().length, 1);
 });
 
 async function createFrame(

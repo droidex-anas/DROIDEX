@@ -149,6 +149,7 @@ async function openWorkspace(t: TestContext, options: Options = {}) {
   const root = await canvasRoot(t);
   const boundCanvasIds: string[] = [];
   const deps: CanvasWorkspaceDeps = {
+    isChatKnown: () => true,
     isScopeActive: options.isScopeActive ?? (() => true),
     bindScopeCanvas: (scopeId, canvasId) => {
       if (options.bindScopeCanvas) options.bindScopeCanvas(scopeId, canvasId);
@@ -719,6 +720,7 @@ test('a chat on a damaged canvas waits for recovery instead of getting another',
 
   // Reopening finds one manifest, attaching this chat exactly once.
   const reopened = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: () => true,
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });
@@ -756,6 +758,7 @@ test('a canvas full of unsettled receipts refuses a mutation and keeps the old o
     () => undefined,
   );
   const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: () => true,
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });

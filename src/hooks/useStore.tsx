@@ -2029,6 +2029,12 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'OPEN_UTILITY_TOOL': {
       const appSessionId = action.appSessionId ?? state.activeAppSessionId;
       if (!appSessionId) return state;
+      if (
+        action.tool === 'canvas' &&
+        state.listConfirmedSessionIds !== null &&
+        !(appSessionId in state.sessions)
+      )
+        return state;
       const panel = openUtilityTool(
         state.utilityPanels[appSessionId],
         action.tool,
@@ -2125,6 +2131,7 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_CANVAS_ATTACHMENT': {
       const { appSessionId, canvasId } = action;
+      if (state.listConfirmedSessionIds !== null && !(appSessionId in state.sessions)) return state;
       if (state.canvasAttachments[appSessionId] === canvasId) return state;
       return {
         ...state,

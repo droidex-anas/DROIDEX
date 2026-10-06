@@ -167,6 +167,7 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
+  | 'unknown_chat'
   | 'storage_failed';
 
 export interface CanvasError {

@@ -43,6 +43,7 @@ import type {
 } from './protocol.js';
 
 export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
+  isChatKnown: (appSessionId: string) => boolean;
   fs?: CanvasFileSystem;
 }
 
@@ -58,6 +59,7 @@ export class CanvasWorkspace {
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
+    private readonly isChatKnown: (appSessionId: string) => boolean,
   ) {}
 
   /**
@@ -71,7 +73,13 @@ export class CanvasWorkspace {
   ): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
     const heads = await CanvasHeads.load(files);
-    const workspace = new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads), builds);
+    const workspace = new CanvasWorkspace(
+      files,
+      heads,
+      new CanvasLeases(deps, heads),
+      builds,
+      deps.isChatKnown,
+    );
     await builds.load(workspace, files, heads.all());
     return workspace;
   }
@@ -102,6 +110,7 @@ export class CanvasWorkspace {
   createCanvas(appSessionId: string, mutationId: string): Promise<CanvasSnapshot> {
     return this.commits.admit(() =>
       this.commits.run(async () => {
+        this.requireChat(appSessionId);
         const previous = this.heads.all().find((head) => head.creation?.mutationId === mutationId);
         if (previous) {
           if (previous.creation?.appSessionId !== appSessionId)
@@ -112,7 +121,7 @@ export class CanvasWorkspace {
         const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
         manifest.creation = { mutationId, appSessionId };
         manifest.attachedAppSessionIds.push(appSessionId);
-        await this.heads.install(manifest, this.openGate());
+        await this.heads.install(manifest, this.chatGate(appSessionId));
         return canvasSnapshot(manifest, this.builds);
       }),
     );
@@ -121,6 +130,7 @@ export class CanvasWorkspace {
   attach(appSessionId: string, canvasId: string): Promise<void> {
     return this.commits.admit(() =>
       this.commits.run(async () => {
+        this.requireChat(appSessionId);
         // Refuse an unknown canvas before detaching the chat from its current one.
         this.canvas(canvasId);
         await this.detachFrom(appSessionId, canvasId);
@@ -128,13 +138,18 @@ export class CanvasWorkspace {
         if (next.attachedAppSessionIds.includes(appSessionId)) return;
         next.attachedAppSessionIds.push(appSessionId);
         next.updatedAt = Date.now();
-        await this.heads.install(next, this.openGate());
+        await this.heads.install(next, this.chatGate(appSessionId));
       }),
     );
   }
 
   detach(appSessionId: string): Promise<void> {
-    return this.commits.admit(() => this.commits.run(() => this.detachFrom(appSessionId, null)));
+    return this.commits.admit(() =>
+      this.commits.run(() => {
+        this.requireChat(appSessionId);
+        return this.detachFrom(appSessionId, null);
+      }),
+    );
   }
 
   create(scope: CanvasScope, input: CreateFramesInput): Promise<CreateFramesResult> {
@@ -153,6 +168,7 @@ export class CanvasWorkspace {
       // a later create under it extends that canvas instead of making another.
       const target = this.leases.pinnedCanvas(scope);
       const bootstrapping = target === null;
+      if (bootstrapping) this.requireChat(scope.appSessionId);
       const canvasId = target ?? randomUUID();
       if (!bootstrapping) {
         this.leases.requireAttachment(scope, canvasId);
@@ -185,6 +201,7 @@ export class CanvasWorkspace {
           next.attachedAppSessionIds.push(scope.appSessionId);
           beforeRename = () => {
             this.commits.requireOpen();
+            this.requireChat(scope.appSessionId);
             this.leases.requireActive(scope);
             if (this.attachedCanvasId(scope.appSessionId) !== null)
               throw canvasError('scope_expired', ATTACHED_SINCE);
@@ -422,7 +439,7 @@ export class CanvasWorkspace {
       const next = structuredClone(manifest);
       next.attachedAppSessionIds = next.attachedAppSessionIds.filter((id) => id !== appSessionId);
       next.updatedAt = Date.now();
-      await this.heads.install(next, this.openGate());
+      await this.heads.install(next, this.chatGate(appSessionId));
     }
   }
 
@@ -456,6 +473,21 @@ export class CanvasWorkspace {
     return () => {
       this.commits.requireOpen();
     };
+  }
+
+  private chatGate(appSessionId: string): () => void {
+    return () => {
+      this.commits.requireOpen();
+      this.requireChat(appSessionId);
+    };
+  }
+
+  private requireChat(appSessionId: string): void {
+    if (!this.isChatKnown(appSessionId))
+      throw canvasError(
+        'unknown_chat',
+        'This chat no longer exists. Open a saved chat and try again.',
+      );
   }
 
   /** The final check a leased commit runs, with its replacement manifest ready. */

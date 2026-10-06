@@ -108,12 +108,15 @@ const canvasScopes = new CanvasScopes();
 // Builds are projected into every frame the workspace hands out, so the
 // registry exists before the workspace that reads it.
 const canvasBuilds = new CanvasBuilds();
-const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, canvasScopes).then(
-  (workspace) => {
-    if (shuttingDown) void workspace.close();
-    return workspace;
-  },
-);
+const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
+  isScopeActive: (scopeId) => canvasScopes.isScopeActive(scopeId),
+  bindScopeCanvas: (scopeId, canvasId) => { canvasScopes.bindScopeCanvas(scopeId, canvasId); },
+  isChatKnown: (appSessionId) =>
+    manager.sessionSummary(appSessionId)?.appSessionId === appSessionId,
+}).then((workspace) => {
+  if (shuttingDown) void workspace.close();
+  return workspace;
+});
 void canvasReady.catch((error: unknown) => {
   server.broadcast({
     type: 'error',
