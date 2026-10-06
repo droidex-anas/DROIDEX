@@ -341,7 +341,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
 
 - [x] `canvas/03a-compiler-worker`: Implement `compiler.ts`, `compilerWorker.ts`, initial `designSystems.ts` and `presets/droidex.ts`, with virtual resolution and an import allowlist.
   Done: Fixtures compile working stateful React and reject bad source, unsupported imports and path escapes.
-- [ ] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
+- [x] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
 - [ ] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
   Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
