@@ -810,6 +810,117 @@ These variables are outputs collected by the owning existing harness fixtures, n
 - [ ] Exercise queue→selection-change→send, steer with different selected frames, retry after lost mutation response, provider replacement during a pending write, child scope escape and close during server startup. Verify one shared tool schema and stable canvas IDs across create/resume for all providers. Future providers must pass this same suite through their existing adapter boundary.
 - [ ] Run focused MCP/context/presentation/native-parser/race tests and both typechecks. Perform a real tool-discovery/create/write/inspect/resume smoke for each already authorized harness account using a low-cost available model. If account access or paid smoke authorization is missing, keep the deterministic fixtures and report the live provider row unverified; never mark the release gate passed from mocks alone.
 
+Settled by 04a (landed in `sidecar/src/canvas/{canvasTurnContext.ts,schema.ts,protocol.ts}`,
+`sidecar/src/{SessionLifecycle.ts,SessionManager.ts,sessionCompactionExecution.ts,bridgeServer.ts,protocol.ts,index.ts}`
+and `src/{types/bridge.ts,lib/commands.ts}`):
+
+- **The interfaces, as the real seams took them.** `CanvasTurns` in `canvasTurnContext.ts`
+  composes over the existing `CanvasScopes`; it adds no second registry and keeps only which
+  turn and which provider era minted which lease. `beginCanvasTurn(appSessionId, generation,
+  context)` became `canvasTurns.beginTurn(appSessionId, context)` returning a
+  `CanvasTurnLeases` handle, because the generation is the owner's to assign rather than the
+  lifecycle's to pass: the lifecycle has no per-chat provider-era counter, and mirroring one
+  into Canvas would give one invariant two owners. The handle is also what a steer joins
+  (`addSteer`) and what every settlement path revokes (`revoke`), so a turn's leases are one
+  unit. `revokeCanvasScope(scopeId)` has no caller and was not added; `CanvasScopes.revoke`
+  stays the primitive underneath, and the pane still uses it for its own user scope.
+  `getCanvasScope(scopeId)` is `requireScope(scopeId)`, matching `canvasLeases.ts`'s
+  `require*` convention for a lookup that throws `scope_expired`. 04b additionally gets
+  `activeScope(appSessionId)`.
+- **A lease is registered exactly while it is live, and that is the whole check.** Every
+  settlement path revokes, and a provider replacement revokes the chat, so `requireScope` asks
+  only whether the registry still holds the scope. A `generation !== current` comparison there
+  was written first and removed: nothing can produce a registered turn scope from a past era, so
+  the branch was unreachable, and the one real stale-lease bug review did find (below) never
+  moved the generation, so the belt would not have caught it either. The generation is what the
+  lease records about its era — the field `CanvasScope` already carries, and what spec §6 says
+  04b binds dispatch with — plus the guard that stops an in-flight steer from leasing after its
+  era ended.
+- **A lease exists exactly when a prompt pinned something.** `CanvasTurnContext` requires a
+  design system, so there is nothing honest to mint from a prompt that pinned nothing: that
+  turn gets a handle and no lease, and a Canvas call in it is refused with `scope_expired`
+  (spec §6, "arriving when no turn is active"). Spec §6's unattached-chat rule is about the
+  *attachment*, not the context: a chat with the pane open and no canvas attached mints with
+  `canvasId: null`, and the workspace's first `canvas_create` fills the binding through the
+  existing `CanvasLeases.claim` → `CanvasScopes.bindScopeCanvas` path. Until Task 5 ships a
+  pane, no prompt carries a context, so no turn lease is minted in practice.
+- **`allowedDesignIds`** is every design the chips named, whether as a frame or as an element
+  inside one, and `'canvas'` only when the prompt pinned neither — which is what
+  `CanvasLeases.requireDesigns` already expects (02b). Deriving it from `designs` alone, as the
+  first version did, turned a one-element selection into write authority over every design on
+  the board.
+- **The lease lifecycle, seam by seam.**
+
+  | Seam | Mint | Revoke |
+  | --- | --- | --- |
+  | `SessionLifecycle.runTurn`, at the streaming transition | the turn's lease, from `prompt.canvasContext` | — |
+  | `SessionLifecycle.steer`, once `session.steer` resolved true | the steer's own lease, through the running turn's handle | — |
+  | `subscribeBackgroundEvents`, `onDelegatedTurn(true)`, only when no typed turn runs | handle only (a spoken turn pins nothing) | — |
+  | `runTurn`'s `finally`, first statement | — | the turn and its steers, before anything awaits and before the queue advances |
+  | `onDelegatedTurn(false)`, only when no typed turn runs | — | the same, for a turn the provider started |
+  | `interrupt`, before `await session.interrupt()` | — | the running turn, before the external cleanup await |
+  | `sendNow`, before `await session.interrupt()` | — | the turn being stopped to send now |
+  | `beginClose` (close, relaunch, `closeAll`, shutdown) | — | every lease the chat holds, and the generation advances |
+  | `sessionCompactionExecution.adoptProvider`, before `oldSession.close()` | — | the same, so the replacement starts a new era |
+
+  Revocation is idempotent everywhere, and a handle reaches only the leases it minted (each
+  carries the turn that owns it), so a settlement that lands late cannot revoke a later turn's
+  or a replacement's. Sidecar shutdown needs no seam of its own: `closeAll` begins a close for
+  every live session, and a lease only ever exists for one.
+- **One owner for `liveSession.canvasTurn`.** Codex starts a delegated turn for any
+  `turn/started` whose id differs from the adopted typed one, "however close behind the typed
+  one it arrives" (`codexSession.ts`), so `onDelegatedTurn(true)` can fire while a typed turn is
+  running. Both halves of that handler are therefore guarded on `liveSession.turnPromise`: the
+  typed turn's handle keeps the field, so the delegated turn neither orphans that lease — which
+  would leave a dead turn's pinned designs answering `activeScope`, the retargeting §6 forbids —
+  nor revokes it mid-turn. `turnPromise` is a sound guard because `runTurn` assigns it with only
+  synchronous statements between it and the mint, so no provider notification can land in
+  between.
+- **A Stop or a Send now the provider refuses** leaves its turn running with no lease, and no
+  steer it takes in afterwards leases either. Both revoke before awaiting the interrupt, as spec
+  §6 requires; failing closed is the safe direction, and undoing a revoke would give one lease
+  two lives.
+- **The steer binding rule.** A Canvas call that presents no scope ID binds to the chat's
+  newest live lease, which is a pending steer's while the running turn holds a steer the model
+  took in. Dispatch carries no steer discriminator on Droid (spec §6), and the newest lease is
+  the user's latest instruction for the turn that is running. Every earlier lease stays valid
+  and may still be presented by ID, so a call already in flight is answered rather than
+  retargeted, and a steer the harness delivers after the turn ended leases nothing.
+- **The queued representations that carry a context** are `SessionPrompt`, which is the one
+  shape behind `pendingSends`, `steers`, send-now reordering, `relaunch`'s waiting list,
+  post-compaction `settleAfterCompaction` and `redeliverQueuedSends`. The context rides on the
+  prompt object, so reordering and redelivery move prompts without touching their references,
+  and `sessionPrompt()` omits the field entirely when there is none — a queued prompt either
+  has a context or has none.
+- **The boundary.** `session.send` gained `canvasContext?: CanvasTurnContext`; `bridgeServer`
+  checks it with `assertCanvasTurnContext` beside its existing `assertValid*` checks, and a
+  `CanvasCommandError` now travels as `canvas.<code>` so a refusal keeps its stable code.
+  `canvasTurnContextSchema` lives in `schema.ts` with the other boundary parsers, which also
+  made `DesignRef`, `ElementRef` and `CanvasTurnContext` Zod-inferred there and re-exported
+  from `protocol.ts`; `schema.test.ts`'s mirror check still compares them to the renderer's.
+  New §4/§5 limits: 32 pinned designs, 32 pinned elements, and a 512-character instance path,
+  never tighter than the 512 bytes a preview clamps a reported path to.
+- **The expiry message has one owner.** `EXPIRED_TURN` moved to `canvasError.ts`, which
+  `canvasScopes.ts`, `canvasLeases.ts` and `canvasTurnContext.ts` all already import; the first
+  two held byte-identical copies of a §8 message the model and the user both read.
+- **Nothing is concatenated into the prompt.** `primaryTurn.ts` is untouched: it still streams
+  `prompt.text` alone, and no hidden user message is fabricated (spec §9).
+- **Wiring.** `SessionManager` takes the lease owner as an option; `sidecar/src/index.ts`
+  passes the one the Canvas workspace checks and reads the chat's attachment from the opened
+  workspace, so a chat reads as unattached until Canvas storage opens. A harness that opens no
+  workspace gets its own owner, so turns mint and revoke there exactly as in production.
+- **Verification.** `canvasTurnContext.test.ts` owns the lease contract (pinning, the steer
+  rule, era refusal, the unattached binding against a real `CanvasWorkspace`, and the §8
+  rejection message). `SessionLifecycle.test.ts` owns the seams through the real lifecycle with
+  gated streams: a reordered queue running under each prompt's own references, a delivered
+  steer beside the running turn, Stop revoking before the provider is asked to unwind, a
+  close/resume replacement revoking the old lease while the redelivered prompt mints under the
+  next generation, and a provider-started turn beside a typed one leaving the typed turn's lease
+  alone (that last case fails without the `turnPromise` guard). `bridgeServer.test.ts` holds the boundary refusal, and
+  `src/lib/commands.test.ts` the renderer pass-through.
+- **Not covered.** The pane that composes a context is Task 5's; the six tools, their dispatch
+  and the Claude `PreToolUse` read binding are 04b's; transcript projection is 04c's.
+
 ## Task 5: Persistent Canvas in the utility pane
 
 **Subtasks (one branch and PR each, merged in order):**
