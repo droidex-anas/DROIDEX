@@ -6,14 +6,10 @@
 
 import { randomUUID } from 'node:crypto';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
-import { canvasError, CanvasCommandError } from './canvasError.js';
-import {
-  CanvasFiles,
-  REVISION_METADATA_VERSION,
-  type CanvasFileSystem,
-  type NewRevision,
-} from './canvasFiles.js';
-import { placeFrames, stageFrames } from './canvasFrames.js';
+import { CanvasCommits } from './canvasCommits.js';
+import { canvasError } from './canvasError.js';
+import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
+import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
 import {
@@ -44,27 +40,17 @@ import type {
   WriteFilesInput,
   WriteReceipt,
 } from './protocol.js';
-import { mergedRevisionViolation } from './schema.js';
 
 export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
   fs?: CanvasFileSystem;
 }
 
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
-const CLOSING = 'The Canvas workspace is closing.';
-
-/** A commit's answer and the change it published, if it published one. */
-interface Committed<T> {
-  value: T;
-  change?: CanvasChange;
-}
 
 export class CanvasWorkspace {
-  private commits: Promise<unknown> = Promise.resolve();
-  private readonly running = new Set<Promise<void>>();
   /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
-  private closed = false;
+  private readonly commits = new CanvasCommits(this.changes);
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -102,8 +88,8 @@ export class CanvasWorkspace {
    * first: a crash between the two writes must leave it unattached, not twice.
    */
   createCanvas(appSessionId: string): Promise<CanvasSnapshot> {
-    return this.admit(() =>
-      this.commit(async () => {
+    return this.commits.admit(() =>
+      this.commits.run(async () => {
         await this.detachFrom(appSessionId, null);
         const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
         manifest.attachedAppSessionIds.push(appSessionId);
@@ -114,8 +100,8 @@ export class CanvasWorkspace {
   }
 
   attach(appSessionId: string, canvasId: string): Promise<void> {
-    return this.admit(() =>
-      this.commit(async () => {
+    return this.commits.admit(() =>
+      this.commits.run(async () => {
         // Refuse an unknown canvas before detaching the chat from its current one.
         this.canvas(canvasId);
         await this.detachFrom(appSessionId, canvasId);
@@ -129,12 +115,12 @@ export class CanvasWorkspace {
   }
 
   detach(appSessionId: string): Promise<void> {
-    return this.admit(() => this.commit(() => this.detachFrom(appSessionId, null)));
+    return this.commits.admit(() => this.commits.run(() => this.detachFrom(appSessionId, null)));
   }
 
   create(scope: CanvasScope, input: CreateFramesInput): Promise<CreateFramesResult> {
-    return this.admit(async () => {
-      this.requireOpen();
+    return this.commits.admit(async () => {
+      this.commits.requireOpen();
       // A lease bound to named designs may change those frames, not add more.
       if (scope.allowedDesignIds !== 'canvas')
         throw canvasError('scope_expired', 'This turn may change only the frames it was given.');
@@ -155,7 +141,7 @@ export class CanvasWorkspace {
       }
       const staged = await stageFrames(this.files, canvasId, input);
 
-      return this.commitChange(async () => {
+      return this.commits.publish(async () => {
         let next: CanvasManifest;
         let beforeRename: () => void;
         if (bootstrapping) {
@@ -174,7 +160,7 @@ export class CanvasWorkspace {
           // are one commit, so a half-attached canvas never exists.
           next.attachedAppSessionIds.push(scope.appSessionId);
           beforeRename = () => {
-            this.requireOpen();
+            this.commits.requireOpen();
             this.leases.requireActive(scope);
             if (this.attachedCanvasId(scope.appSessionId) !== null)
               throw canvasError('scope_expired', ATTACHED_SINCE);
@@ -186,7 +172,7 @@ export class CanvasWorkspace {
           if (recorded) return { value: recorded };
           next = structuredClone(live);
           beforeRename = () => {
-            this.requireOpen();
+            this.commits.requireOpen();
             this.leases.requireAttachment(scope, canvasId);
             this.leases.requireCanvas(scope, canvasId);
           };
@@ -225,8 +211,8 @@ export class CanvasWorkspace {
   }
 
   write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
-    return this.admit(async () => {
-      this.requireOpen();
+    return this.commits.admit(async () => {
+      this.commits.requireOpen();
       const manifest = this.leases.requireDesigns(scope, [input.designId]);
       const canvasId = manifest.canvasId;
       const fingerprint = mutationFingerprint(input);
@@ -235,20 +221,9 @@ export class CanvasWorkspace {
 
       const design = this.design(manifest, input.designId);
       requireExpectedRevision(design, input.expectedRevisionId);
-      const merged = mergeSource(await this.currentSource(canvasId, design), input);
-      const violation = mergedRevisionViolation(merged);
-      if (violation) throw canvasError('invalid_input', violation);
-      const revision: NewRevision = {
-        version: REVISION_METADATA_VERSION,
-        designId: input.designId,
-        revisionId: randomUUID(),
-        parentRevisionId: design.revisionId,
-        designSystem: input.designSystem ?? design.designSystem,
-        createdAt: Date.now(),
-      };
-      await this.files.publishRevision(canvasId, revision, merged);
+      const revision = await stageRevision(this.files, canvasId, design, input);
 
-      return this.commitChange(async () => {
+      return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);
         const again = recordedWrite(live, input.mutationId, fingerprint);
         if (again) return { value: again };
@@ -282,15 +257,15 @@ export class CanvasWorkspace {
   }
 
   arrange(scope: CanvasScope, input: ArrangeFramesInput): Promise<CanvasChange> {
-    return this.admit(async () => {
-      this.requireOpen();
+    return this.commits.admit(async () => {
+      this.commits.requireOpen();
       const designIds = input.frames.map((frame) => frame.designId);
       const fingerprint = mutationFingerprint(input);
       const manifest = this.leases.requireDesigns(scope, designIds);
       const recorded = recordedArrange(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
 
-      return this.commitChange(async () => {
+      return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, designIds);
         const again = recordedArrange(live, input.mutationId, fingerprint);
         if (again) return { value: again };
@@ -343,41 +318,9 @@ export class CanvasWorkspace {
 
   /** Resolves once every admitted mutation has settled, staging included. */
   async close(): Promise<void> {
-    this.closed = true;
-    while (this.running.size > 0) await Promise.all([...this.running]);
+    await this.commits.drain();
     this.leases.forget();
     this.changes.clear();
-  }
-
-  /** Admits one mutation, so close() knows what it still has to wait for. */
-  private admit<T>(work: () => Promise<T>): Promise<T> {
-    const running = (async () => work())();
-    const settled = running.then(ignoreOutcome, ignoreOutcome);
-    this.running.add(settled);
-    void settled.then(() => this.running.delete(settled));
-    return running;
-  }
-
-  /** One commit at a time; a failed commit never poisons the queue. */
-  private commit<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.commits.catch(ignoreOutcome).then(() => {
-      this.requireOpen();
-      return work();
-    });
-    this.commits = next.catch(ignoreOutcome);
-    return next;
-  }
-
-  /**
-   * A commit that may publish a change. Listeners run once the lock has moved
-   * on, so a subscriber cannot stall the next commit, and still in sequence,
-   * because the queue hands the lock on in an earlier microtask.
-   */
-  private commitChange<T>(work: () => Promise<Committed<T>>): Promise<T> {
-    return this.commit(work).then(({ value, change }) => {
-      if (change) this.changes.publish(change);
-      return value;
-    });
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */
@@ -393,26 +336,6 @@ export class CanvasWorkspace {
       next.updatedAt = Date.now();
       await this.heads.install(next, this.openGate());
     }
-  }
-
-  /** The manifest points at this revision, so a missing tree is storage damage. */
-  private async currentSource(
-    canvasId: string,
-    design: PersistedDesign,
-  ): Promise<Map<string, string>> {
-    const revisionId = design.revisionId;
-    if (revisionId === null) return new Map<string, string>();
-    try {
-      return await this.files.readRevision(canvasId, { designId: design.designId, revisionId });
-    } catch (error) {
-      if (error instanceof CanvasCommandError && error.code === 'invalid_input')
-        throw canvasError('storage_failed', 'The saved source for that frame is missing.');
-      throw error;
-    }
-  }
-
-  private requireOpen(): void {
-    if (this.closed) throw canvasError('storage_failed', CLOSING);
   }
 
   /**
@@ -443,14 +366,14 @@ export class CanvasWorkspace {
   /** The final check a commit with no lease behind it runs before publishing. */
   private openGate(): () => void {
     return () => {
-      this.requireOpen();
+      this.commits.requireOpen();
     };
   }
 
   /** The final check a leased commit runs, with its replacement manifest ready. */
   private scopedGate(scope: CanvasScope, designIds: readonly string[]): () => void {
     return () => {
-      this.requireOpen();
+      this.commits.requireOpen();
       this.leases.requireDesigns(scope, designIds);
     };
   }
@@ -473,18 +396,10 @@ export class CanvasWorkspace {
   }
 }
 
-const ignoreOutcome = (): void => undefined;
-
 function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
   if (design.revisionId === expected) return;
   throw canvasError(
     'revision_conflict',
     'That frame has a newer revision. Read it and apply your change again.',
   );
-}
-
-function mergeSource(current: Map<string, string>, input: WriteFilesInput): Map<string, string> {
-  for (const path of input.deletedPaths) current.delete(path);
-  for (const [path, content] of Object.entries(input.files)) current.set(path, content);
-  return current;
 }
