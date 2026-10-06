@@ -44,7 +44,9 @@ export class CanvasLeases {
     const canvasId = scope.canvasId;
     if (canvasId === null)
       throw canvasError('invalid_input', 'This chat has no canvas yet. Create a frame first.');
-    return this.requireCanvas(scope, canvasId);
+    const manifest = this.requireCanvas(scope, canvasId);
+    this.requireAttachment(scope, canvasId);
+    return manifest;
   }
 
   /** The named canvas, under a lease that has to be live to touch it. */
@@ -82,14 +84,16 @@ export class CanvasLeases {
   }
 
   /**
-   * A lease with no canvas of its own may only act where its chat still is.
-   * Checked again inside the commit, because a chat can move while a seeded
-   * create is copying its source.
+   * Who may only act where their chat still is: a turn lease that bootstrapped
+   * its canvas, and every pane mutation, whose whole authority is the
+   * attachment. A turn lease pinned to a canvas when it was minted keeps that
+   * canvas wherever its chat goes. Checked again inside the commit, because a
+   * chat can leave while a write is still staging its source.
    */
   requireAttachment(scope: CanvasScope, canvasId: string): void {
-    if (scope.canvasId !== null) return;
+    if (scope.origin === 'turn' && scope.canvasId !== null) return;
     if (this.heads.attachedCanvasId(scope.appSessionId) !== canvasId)
-      throw canvasError('scope_expired', 'That chat has left the canvas this turn created.');
+      throw canvasError('scope_expired', 'That chat has left the canvas this request belongs to.');
   }
 
   /**

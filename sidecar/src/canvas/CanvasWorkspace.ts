@@ -379,9 +379,20 @@ export class CanvasWorkspace {
    */
   private commitChange<T>(work: () => Promise<Committed<T>>): Promise<T> {
     return this.commit(work).then(({ value, change }) => {
-      if (change) for (const listener of this.listeners) listener(change);
+      if (change) this.announce(change);
       return value;
     });
+  }
+
+  /** A subscriber that throws loses its change, not the commit or its siblings. */
+  private announce(change: CanvasChange): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(change);
+      } catch (error) {
+        console.error(`A Canvas ${change.canvasId} change listener failed:`, error);
+      }
+    }
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */
