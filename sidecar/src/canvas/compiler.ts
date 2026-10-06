@@ -52,13 +52,15 @@ export class CompilerUnavailableError extends Error {
 
 export type CompilerRequest =
   | { type: 'compile'; requestId: number; input: CompileInput }
-  | { type: 'cancel'; requestId: number };
+  | { type: 'cancel'; requestId: number }
+  | { type: 'shutdown'; requestId: number };
 
 export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
-  | { requestId: number; status: 'unavailable'; message: string };
+  | { requestId: number; status: 'unavailable'; message: string }
+  | { requestId: number; status: 'stopped' };
 
 interface PendingCompile {
   resolve(design: CompiledDesign): void;
@@ -66,11 +68,18 @@ interface PendingCompile {
   release(): void;
 }
 
-const TERMINATED = 'The design compiler was shut down.';
+// The only thing a user can do about a dead compiler, and the only thing safe
+// to show: a worker's own failure text carries its absolute module path.
+const UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
+
+// How long a shutdown may take before the thread is ended anyway. This is
+// cleanup, not the build deadline Task 3b owns.
+const SHUTDOWN_GRACE_MS = 2_000;
 
 export class CompilerWorker {
   private worker: Worker | null = null;
   private readonly pending = new Map<number, PendingCompile>();
+  private shutdownAck: (() => void) | null = null;
   private nextRequestId = 1;
   private terminated = false;
 
@@ -80,7 +89,7 @@ export class CompilerWorker {
    * `CompilerUnavailableError` when the worker dies under the call.
    */
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
-    if (this.terminated) return Promise.reject(new CompilerUnavailableError(TERMINATED));
+    if (this.terminated) return Promise.reject(new CompilerUnavailableError(UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
 
     const requestId = this.nextRequestId++;
@@ -112,10 +121,31 @@ export class CompilerWorker {
     this.terminated = true;
     const worker = this.worker;
     this.worker = null;
-    this.failAll(new CompilerUnavailableError(TERMINATED));
-    // The worker's esbuild service child exits when the terminated thread's
-    // handles close, so nothing else owns its lifetime.
-    await worker?.terminate();
+    this.failAll(new CompilerUnavailableError(UNAVAILABLE));
+    if (!worker) return;
+    // The worker owns an esbuild service process, so it gets the turn it needs
+    // to stop that service before its thread is ended.
+    await this.awaitShutdown(worker);
+    await worker.terminate();
+  }
+
+  private awaitShutdown(worker: Worker): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const finish = (): void => {
+        clearTimeout(grace);
+        this.shutdownAck = null;
+        resolve();
+      };
+      const grace = setTimeout(finish, SHUTDOWN_GRACE_MS);
+      grace.unref();
+      this.shutdownAck = finish;
+      // A worker that is already gone cannot answer, and neither can one whose
+      // thread dies while stopping.
+      worker.once('exit', finish);
+      worker.once('error', finish);
+      const requestId = this.nextRequestId++;
+      worker.postMessage({ type: 'shutdown', requestId } satisfies CompilerRequest);
+    });
   }
 
   /**
@@ -129,16 +159,20 @@ export class CompilerWorker {
       this.receive(response);
     });
     worker.on('error', (error: Error) => {
-      this.loseWorker(worker, `The design compiler failed: ${error.message}`);
+      this.loseWorker(worker, error);
     });
     worker.on('exit', (code) => {
-      this.loseWorker(worker, `The design compiler stopped with code ${String(code)}.`);
+      this.loseWorker(worker, new Error(`The compiler worker exited with code ${String(code)}.`));
     });
     this.worker = worker;
     return worker;
   }
 
   private receive(response: CompilerResponse): void {
+    if (response.status === 'stopped') {
+      this.shutdownAck?.();
+      return;
+    }
     this.settle(response.requestId, (call) => {
       switch (response.status) {
         case 'ready':
@@ -151,16 +185,20 @@ export class CompilerWorker {
           call.reject(new CompileCancelledError());
           return;
         case 'unavailable':
+          // Already a curated recovery message from the sidecar's own storage
+          // boundary, which never carries a path (spec §8).
           call.reject(new CompilerUnavailableError(response.message));
           return;
       }
     });
   }
 
-  private loseWorker(worker: Worker, message: string): void {
+  /** The cause goes to the sidecar log; the caller learns only what to do. */
+  private loseWorker(worker: Worker, cause: Error): void {
     if (this.worker !== worker) return;
     this.worker = null;
-    this.failAll(new CompilerUnavailableError(message));
+    console.error('Canvas compiler worker lost:', cause);
+    this.failAll(new CompilerUnavailableError(UNAVAILABLE));
   }
 
   private failAll(error: Error): void {

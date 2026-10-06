@@ -13,7 +13,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from './compiler.js';
-import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
+import { ROOT_ELEMENT_ID, bundleDesign, stopBundler } from './designBundle.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
@@ -79,11 +79,12 @@ ${escapeClosingTag(js, 'script')}
 `;
 }
 
-// A closing tag inside inline content would end the element early. The only
-// place the sequence can survive minification is a string or a CSS identifier,
-// where the backslash is an escape for the slash and the value is unchanged.
+// A closing tag inside inline content would end the element early, and HTML
+// matches it without regard to case. The only place the sequence can survive
+// minification is a string or a CSS identifier, where the backslash is an
+// escape for the slash and the value is unchanged.
 function escapeClosingTag(content: string, tag: 'style' | 'script'): string {
-  return content.replaceAll(`</${tag}`, `<\\/${tag}`);
+  return content.replace(new RegExp(`</(${tag})`, 'gi'), '<\\/$1');
 }
 
 // ── Worker transport ─────────────────────────────────────────────────
@@ -99,12 +100,27 @@ port.on('message', (request: CompilerRequest) => {
     running.get(request.requestId)?.abort();
     return;
   }
+  if (request.type === 'shutdown') {
+    void shutdown(request.requestId);
+    return;
+  }
   const controller = new AbortController();
   running.set(request.requestId, controller);
   void runCompile(request.requestId, request.input, controller.signal).finally(() => {
     running.delete(request.requestId);
   });
 });
+
+/** Releases the bundler's service process before the parent ends this thread. */
+async function shutdown(requestId: number): Promise<void> {
+  for (const controller of running.values()) controller.abort();
+  try {
+    await stopBundler();
+  } catch (error) {
+    console.error('Canvas compiler shutdown failed:', error);
+  }
+  port.postMessage({ requestId, status: 'stopped' } satisfies CompilerResponse);
+}
 
 async function runCompile(
   requestId: number,
