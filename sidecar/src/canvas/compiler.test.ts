@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
 import {
   CompileCancelledError,
@@ -162,7 +162,6 @@ export default function Hey() {
     });
     assert.equal(diagnostic?.code, code, `${specifier} is refused as ${code}`);
     assert.equal(diagnostic.file, 'main.tsx');
-    assert.equal(/\/Users\/|node_modules/.test(diagnostic.message), false, 'no path is leaked');
   }
 });
 
@@ -218,6 +217,32 @@ test('terminating rejects every in-flight compile and accepts no more', async ()
     worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
     CompilerUnavailableError,
   );
+});
+
+test('a runtime the app owns but cannot vouch for compiles nothing', async (t) => {
+  // Both cases would otherwise compile: the checkout's own node_modules sits
+  // above this fixture, and esbuild falls back to its own copy of the binary
+  // when ESBUILD_BINARY_PATH names a file that is not there.
+  const damaged: [string, Record<string, unknown>][] = [
+    ['a file its manifest lists is gone', { 'node_modules/absent/index.js': 12 }],
+    ['nothing is wrong but its binary', {}],
+  ];
+
+  for (const [reason, files] of damaged) {
+    const runtime = scratchDirectory(t);
+    symlinkSync(resolve(import.meta.dirname, '../../node_modules'), join(runtime, 'node_modules'));
+    writeFileSync(
+      join(runtime, 'manifest.json'),
+      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files })}\n`,
+    );
+
+    const worker = new CompilerWorker();
+    const compiling = withOwnedRuntime(runtime, () =>
+      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+    );
+    await assert.rejects(compiling, CompilerUnavailableError, reason);
+    await worker.terminate();
+  }
 });
 
 test('CSS cannot make the compiler load a module from disk', async (t) => {
@@ -484,6 +509,22 @@ function shell(command: string): string {
   return execFileSync('/bin/sh', ['-c', command]).toString().trim();
 }
 
+/**
+ * Runs `start` with `runtime` as the directory the app owns. The compiler reads
+ * the variable in the child it forks, and `compile` forks before it returns, so
+ * the mutation lasts exactly that one synchronous call.
+ */
+function withOwnedRuntime<T>(runtime: string, start: () => T): T {
+  const previous = process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+  process.env.DROIDEX_CANVAS_RUNTIME_DIR = runtime;
+  try {
+    return start();
+  } finally {
+    if (previous === undefined) delete process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+    else process.env.DROIDEX_CANVAS_RUNTIME_DIR = previous;
+  }
+}
+
 function scratchDirectory(t: TestContext): string {
   const directory = mkdtempSync(join(tmpdir(), 'droidex-canvas-compile-'));
   t.after(() => {
@@ -511,6 +552,13 @@ async function diagnosticsFor(files: SourceFiles): Promise<CanvasDiagnostic[]> {
     await compile(files);
   } catch (error) {
     assert.ok(error instanceof CompileFailedError, 'bad source fails the build');
+    // A diagnostic reaches the model and the user, so it names design paths
+    // only; a compiler or runtime path means a machine failure is being
+    // reported as the design's fault (spec §8).
+    for (const diagnostic of error.diagnostics) {
+      const text = `${diagnostic.code} ${diagnostic.message} ${diagnostic.file ?? ''}`;
+      assert.equal(/(?:^|\s)\/|node_modules/.test(text), false, `no path in ${text}`);
+    }
     return error.diagnostics;
   }
   assert.fail('expected the compile to fail');

@@ -212,8 +212,6 @@ function shorten(reference: string): string {
 // without naming a file the author could edit.
 const TOKENS_FILE = `${KIT_SPECIFIER}/tokens`;
 
-const CSS_RECOVERY = 'The design stylesheet could not be compiled.';
-
 /**
  * Both modes are emitted, and `data-mode` on the document picks one. Switching
  * mode is then an attribute change rather than a rebuild.
@@ -265,10 +263,11 @@ function countLines(text: string): number {
  * back into a file and a line inside that file.
  */
 function cssDiagnostic(error: unknown, segments: readonly Segment[]): CanvasDiagnostic {
-  if (!isCssSyntaxError(error)) {
-    console.error('Canvas stylesheet failure:', error);
-    return { code: 'css_error', message: CSS_RECOVERY };
-  }
+  // Only PostCSS's own syntax error is about the design's CSS. Anything else is
+  // the runtime or this module failing — a missing Tailwind asset reads as a
+  // filesystem error here — and is rethrown so the worker reports an
+  // unavailable compiler instead of blaming a valid design.
+  if (!isCssSyntaxError(error)) throw error;
   const diagnostic: CanvasDiagnostic = { code: 'css_error', message: error.reason };
   const line = error.line;
   if (line === undefined) return diagnostic;

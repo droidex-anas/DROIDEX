@@ -77,6 +77,19 @@ const LOADER_MESSAGE =
 // esbuild's own ids for the two constructs it cannot resolve at build time.
 const LOADER_MESSAGE_IDS = new Set(['unsupported-dynamic-import', 'unsupported-require-call']);
 
+// The codes a diagnostic may carry (spec §8). esbuild reports a plugin's thrown
+// error as a message detail too, so only these are read as something to show;
+// see `messageDetail`.
+const DIAGNOSTIC_CODES = new Set([
+  'syntax_error',
+  'unsupported_import',
+  'missing_module',
+  'missing_default_export',
+  'css_error',
+  'missing_design_system',
+  'compile_failed',
+]);
+
 // A template-literal dynamic import with a static prefix is turned into a glob
 // by esbuild itself, underneath plugins, and reported as an unresolved import
 // of a pattern. A design can never write that specifier, so the pattern names
@@ -258,9 +271,15 @@ function diagnosticsFrom(
 }
 
 function diagnosticFrom(message: esbuild.Message, severity: 'error' | 'warning'): CanvasDiagnostic {
-  const code = pluginCode(message);
+  const detail = messageDetail(message);
+  // Only this module throws inside a plugin, and only when the runtime cannot
+  // be resolved. That is the compiler failing, not the design, and the error
+  // carries an absolute path, so it is rethrown for the worker to report as an
+  // unavailable compiler rather than mapped to anything showable.
+  if (detail.kind === 'failure') throw detail.error;
   const location = designLocation(message.location);
-  if (code !== null) return { code, message: message.text, ...location };
+  if (detail.kind === 'diagnostic')
+    return { code: detail.code, message: message.text, ...location };
   if (LOADER_MESSAGE_IDS.has(message.id) || EXPANDED_GLOB_IMPORT.test(message.text))
     return { code: 'unsupported_import', message: LOADER_MESSAGE, ...location };
   // The bootstrap is ours, so the only failure it can report is the contract it
@@ -286,10 +305,18 @@ function missingDefaultExport(message: esbuild.Message): CanvasDiagnostic {
   };
 }
 
-function pluginCode(message: esbuild.Message): string | null {
+type MessageDetail =
+  | { kind: 'diagnostic'; code: string }
+  | { kind: 'failure'; error: unknown }
+  | { kind: 'none' };
+
+/** What esbuild attached to a message: this module's code, or a thrown error. */
+function messageDetail(message: esbuild.Message): MessageDetail {
   const detail: unknown = message.detail;
-  if (typeof detail !== 'object' || detail === null || !('code' in detail)) return null;
-  return typeof detail.code === 'string' ? detail.code : null;
+  if (typeof detail !== 'object' || detail === null) return { kind: 'none' };
+  if ('code' in detail && typeof detail.code === 'string' && DIAGNOSTIC_CODES.has(detail.code))
+    return { kind: 'diagnostic', code: detail.code };
+  return { kind: 'failure', error: detail };
 }
 
 /**
