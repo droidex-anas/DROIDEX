@@ -268,7 +268,7 @@ function SavedCanvasList({
                         setError(recoveryMessage(failure));
                       });
                   }}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-droid-elevated disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-droid-accent/15 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
                 >
                   <span className="truncate text-[13px] text-droid-text">{summary.name}</span>
                   <span className="shrink-0 text-[11px] text-droid-text-muted">
@@ -285,13 +285,17 @@ function SavedCanvasList({
   );
 }
 
+// Controls on the card take a low-alpha accent tint rather than the elevated
+// rung: a dark theme resolves `raised` to that same rung, so an elevated fill
+// would leave them looking like plain text.
+
 /** The calm centred card every pane state without a board sits on. */
 function CanvasPlate({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex h-full min-h-0 items-center justify-center px-5 pb-[6vh]">
       <div className="flex w-full max-w-[320px] flex-col gap-3 rounded-2xl bg-droid-raised px-5 py-5 shadow-droid">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-droid-elevated text-droid-text-muted">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-droid-accent/10 text-droid-text-muted">
             <LayoutTemplate className="h-4 w-4" />
           </span>
           <h2 className="min-w-0 text-[13px] font-medium text-droid-text">{title}</h2>
@@ -319,7 +323,7 @@ function CanvasAction({ label, onClick }: { label: string; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="rounded-xl bg-droid-elevated px-3 py-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+      className="rounded-xl bg-droid-accent/15 px-3 py-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
     >
       {label}
     </button>
