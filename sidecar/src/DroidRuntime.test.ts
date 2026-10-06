@@ -42,14 +42,22 @@ const usage = (inputTokens, outputTokens) => notify({
 let heldMessage;
 let heldReply;
 const deliver = ({ messageId, prompt }) => {
-  state('streaming_assistant_message');
-  notify({
+  const message = () => notify({
     type: 'create_message',
     message: {
       id: messageId, role: 'user', createdAt: 0, updatedAt: 0,
       content: [{ type: 'text', text: prompt }],
     },
   });
+  // Droid can show the message while still idle, a moment before its reply
+  // loop starts.
+  if (prompt === 'idle-gap') {
+    message();
+    setTimeout(() => deliver({ messageId: 'shown', prompt: 'reply' }), 50);
+    return;
+  }
+  state('streaming_assistant_message');
+  if (prompt !== 'reply') message();
   notify({ type: 'tool_result', messageId: 'tool-message', toolUseId: 'task', content: 'done', isError: false });
   text('tail');
   usage(20, 10);
@@ -171,6 +179,18 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
         assert.equal(result.tokenUsage?.inputTokens, 20);
         assert.equal(result.tokenUsage?.outputTokens, 10);
         assert.equal(await runtime.steer(droid, 'after settlement'), false);
+      },
+    );
+
+    await t.test(
+      'a steer shown before its loop starts keeps the turn open for its reply',
+      async () => {
+        const stream = start();
+        await readText(stream, 'main');
+        assert.equal(await runtime.steer(droid, 'idle-gap'), true);
+        await readText(stream, 'tail');
+        await finish(stream);
+        assert.equal(events.at(-1)?.type, 'result');
       },
     );
 

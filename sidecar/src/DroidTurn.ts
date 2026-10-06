@@ -15,6 +15,9 @@ export class DroidTurn {
   private wake: (() => void) | undefined;
   private mainEnded = false;
   private busy = false;
+  // A delivered steer whose reply loop has not yet run to idle. Droid can show
+  // the message while still idle, a moment before that loop starts.
+  private loopOwed = false;
   private stopped = false;
   private acceptingSteers = true;
   private interrupting: Promise<void> | undefined;
@@ -66,7 +69,10 @@ export class DroidTurn {
     ) {
       const wasBusy = this.busy;
       this.busy = raw.newState !== 'idle';
-      if (wasBusy && !this.busy) this.mainEnded = true;
+      if (wasBusy && !this.busy) {
+        this.mainEnded = true;
+        this.loopOwed = false;
+      }
     }
     // The SDK owns the main loop. Buffer later notices even before its iterator
     // drains. The main loop's own idle still wakes a tail already waiting on it.
@@ -104,7 +110,8 @@ export class DroidTurn {
     try {
       while (
         this.tail.length > 0 ||
-        (!this.stopped && (this.deliveries.size > 0 || this.busy || this.interrupting))
+        (!this.stopped &&
+          (this.deliveries.size > 0 || this.busy || this.loopOwed || this.interrupting))
       ) {
         if (this.tail.length > 0) {
           yield* this.trackTailNotification(this.tail.shift());
@@ -158,10 +165,12 @@ export class DroidTurn {
 
   private dropSteers(): void {
     this.acceptingSteers = false;
+    this.loopOwed = false;
     for (const messageId of this.deliveries.keys()) this.settle(messageId, false);
   }
 
   private settle(messageId: string, delivered: boolean): void {
+    if (delivered && this.deliveries.has(messageId)) this.loopOwed = true;
     this.deliveries.get(messageId)?.(delivered);
     this.deliveries.delete(messageId);
     this.wake?.();
