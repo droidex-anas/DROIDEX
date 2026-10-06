@@ -345,7 +345,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
 - [ ] `canvas/03c-preview-guest-host`: Enable app-window `webviewTag` and §6 attachment hardening, owned privileged scheme/trusted intermediate, `previewDocument.ts`, `previewRuntime.ts` and `DesignPreview.tsx`.
   Done: Bounded pull polling and main-owned watchdog/termination pass Electron smoke through the production boundary.
-- [ ] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
+- [x] `canvas/03d-compiler-packaging`: Promote the sidecar runtime dependency and package `extraResources` under `sidecar/canvas-runtime` per §6 with `ESBUILD_BINARY_PATH`.
   Done: Offline packaged tests verify arm64/x64 resources and a working saved design; run `docs:generate` when scripts change.
 
 **Files:** Create `sidecar/src/canvas/{CanvasBuilds.ts,compiler.ts,compilerWorker.ts,designSystems.ts,CanvasBuilds.test.ts,compiler.test.ts,designSystems.test.ts}`, the initial `sidecar/src/canvas/presets/droidex.ts`, and `src/features/canvas/{previewDocument.ts,previewRuntime.ts,DesignPreview.tsx}`. Modify `sidecar/package.json`, `electron-builder.config.cjs` and the Task 1 runtime test. Change `electron/main.cjs`/preload only for the proven host's narrow needs; generated code receives no preload.
