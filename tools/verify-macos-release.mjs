@@ -1,6 +1,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -254,6 +255,51 @@ function verifyDistributedApp(appPath, architecture, label) {
   );
 }
 
+/**
+ * The design compiler's own runtime (electron-builder.config.cjs). Only this
+ * architecture's esbuild binary may be here: the app passes the directory to
+ * the sidecar as DROIDEX_CANVAS_RUNTIME_DIR, which derives the binary path from
+ * the architecture it is running as.
+ */
+function verifyCanvasRuntime(resourcesPath, { name, executableArch }) {
+  const runtimePath = join(resourcesPath, 'sidecar', 'canvas-runtime');
+  const modulesPath = join(runtimePath, 'node_modules');
+  for (const owned of [
+    ['esbuild', 'lib', 'main.js'],
+    ['tailwindcss', 'lib', 'index.js'],
+    // Tailwind's preflight plugin reads this beside its own __dirname.
+    ['tailwindcss', 'lib', 'css', 'preflight.css'],
+    ['postcss', 'lib', 'postcss.js'],
+    ['postcss-value-parser', 'lib', 'index.js'],
+    ['react', 'index.js'],
+    ['react-dom', 'client.js'],
+    ['scheduler', 'index.js'],
+  ]) {
+    const path = join(modulesPath, ...owned);
+    assert(statSync(path).isFile(), `${name} Canvas runtime is missing ${owned.join('/')}`);
+  }
+  for (const licensed of ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'scheduler']) {
+    assert(
+      ['LICENSE', 'LICENSE.md'].some((file) => existsSync(join(modulesPath, licensed, file))),
+      `${name} Canvas runtime ships ${licensed} without its license`,
+    );
+  }
+
+  const binaryPath = join(modulesPath, '@esbuild', `darwin-${name}`, 'bin', 'esbuild');
+  const binary = statSync(binaryPath);
+  assert(binary.isFile(), `${name} Canvas esbuild binary is missing`);
+  assert((binary.mode & 0o111) !== 0, `${name} Canvas esbuild binary is not executable`);
+  assert(
+    run('/usr/bin/file', [binaryPath]).includes(executableArch),
+    `${name} Canvas esbuild binary has the wrong architecture`,
+  );
+  const foreign = name === 'arm64' ? 'x64' : 'arm64';
+  assert(
+    !existsSync(join(modulesPath, '@esbuild', `darwin-${foreign}`)),
+    `${name} Canvas runtime also ships the ${foreign} esbuild binary`,
+  );
+}
+
 async function smokePackagedRuntime(architecture) {
   const { appPath, name } = architecture;
   const executablePath = join(appPath, 'Contents', 'MacOS', 'DROIDEX');
@@ -468,6 +514,7 @@ for (const architecture of architectures) {
     `${name} updater cache identity is stale`,
   );
   assert(statSync(sidecarPath).isFile(), `${name} sidecar bundle is missing`);
+  verifyCanvasRuntime(resourcesPath, architecture);
   assert(statSync(sparkleFrameworkPath).isDirectory(), `${name} Sparkle framework is missing`);
   assert(statSync(sparkleAddonPath).isFile(), `${name} Sparkle native bridge is missing`);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', sparkleFrameworkPath]);
@@ -554,6 +601,25 @@ for (const architecture of architectures) {
 }
 
 for (const architecture of architectures) await smokePackagedRuntime(architecture);
+
+// The design compiler is the only packaged resource with its own native binary,
+// so it is exercised where it will run. The other architecture's tree is
+// inspected above and never executed: running it under Rosetta would not be the
+// measurement it looks like.
+for (const { appPath, name } of architectures) {
+  if (name !== process.arch) {
+    process.stdout.write(`Canvas compiler for ${name} verified by inspection only.\n`);
+    continue;
+  }
+  process.stdout.write(
+    runWithDiagnostics(process.execPath, [
+      '--import',
+      'tsx',
+      'tools/canvas-compiler-probe.ts',
+      appPath,
+    ]),
+  );
+}
 
 for (const architecture of architectures) {
   const dmgPath = join(releaseDirectory, `droidex-${architecture.name}.dmg`);
