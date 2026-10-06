@@ -51,9 +51,19 @@ export class CompileCancelledError extends Error {
   }
 }
 
-/** The worker died or was terminated; the compile reached no conclusion. */
+/**
+ * Why a compiler could not answer, which decides what a user can do about it. A
+ * damaged runtime is not something a restart repairs, and the two cases must
+ * not be told apart by matching text.
+ */
+export type CompilerUnavailableReason = 'damaged-runtime' | 'lost-compiler';
+
+/** The worker died, was terminated, or refused the runtime it was given. */
 export class CompilerUnavailableError extends Error {
-  constructor(message: string) {
+  constructor(
+    readonly reason: CompilerUnavailableReason,
+    message: string,
+  ) {
     super(message);
     this.name = 'CompilerUnavailableError';
   }
@@ -68,7 +78,12 @@ export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
-  | { requestId: number; status: 'unavailable'; message: string }
+  | {
+      requestId: number;
+      status: 'unavailable';
+      reason: CompilerUnavailableReason;
+      message: string;
+    }
   | { requestId: number; status: 'stopped' };
 
 interface PendingCompile {
@@ -77,11 +92,10 @@ interface PendingCompile {
   release(): void;
 }
 
-// The only thing a user can do about a dead compiler, and the only thing safe
-// to show: a worker's own failure text carries its absolute module path.
-const UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
-
-/** What a compiler whose runtime is not what the app staged reports instead. */
+// The only two things a user can do about a compiler that cannot answer, and
+// the only text safe to show: a worker's own failure carries module paths.
+// `canvasBuildFailures.ts` picks between them by the reason, never by matching.
+export const COMPILER_UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
 export const RUNTIME_UNAVAILABLE =
   'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
@@ -102,7 +116,8 @@ export class CompilerWorker {
    * `CompilerUnavailableError` when the worker dies under the call.
    */
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
-    if (this.terminated) return Promise.reject(new CompilerUnavailableError(UNAVAILABLE));
+    if (this.terminated)
+      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
 
     const requestId = this.nextRequestId++;
@@ -134,7 +149,7 @@ export class CompilerWorker {
     this.terminated = true;
     const compiler = this.compiler;
     this.compiler = null;
-    this.failAll(new CompilerUnavailableError(UNAVAILABLE));
+    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (!compiler) return;
     // The compiler owns esbuild's service process, so it gets the turn it needs
     // to stop that service while it can still reap it.
@@ -206,7 +221,7 @@ export class CompilerWorker {
         case 'unavailable':
           // Already a curated recovery message from the sidecar's own storage
           // boundary, which never carries a path (spec §8).
-          call.reject(new CompilerUnavailableError(response.message));
+          call.reject(new CompilerUnavailableError(response.reason, response.message));
           return;
       }
     });
@@ -217,7 +232,7 @@ export class CompilerWorker {
     if (this.compiler !== compiler) return;
     this.compiler = null;
     console.error('Canvas compiler lost:', cause);
-    this.failAll(new CompilerUnavailableError(UNAVAILABLE));
+    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
   }
 
   private failAll(error: Error): void {

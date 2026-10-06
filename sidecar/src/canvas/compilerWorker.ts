@@ -116,7 +116,12 @@ process.on('message', (request: CompilerRequest) => {
     return;
   }
   if (runtimeFault !== null) {
-    send({ requestId: request.requestId, status: 'unavailable', message: RUNTIME_UNAVAILABLE });
+    send({
+      requestId: request.requestId,
+      status: 'unavailable',
+      reason: 'damaged-runtime',
+      message: RUNTIME_UNAVAILABLE,
+    });
     return;
   }
   const controller = new AbortController();
@@ -155,19 +160,20 @@ function outcomeOf(
 ):
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { status: 'cancelled' }
-  | { status: 'unavailable'; message: string } {
+  | { status: 'unavailable'; reason: 'lost-compiler'; message: string } {
   if (error instanceof CompileCancelledError) return { status: 'cancelled' };
   if (error instanceof CompileFailedError)
     return { status: 'failed', diagnostics: error.diagnostics };
   // A revision pinning a kit version that is not there is the revision's
   // problem; a storage failure is the machine's.
   if (error instanceof CanvasCommandError) {
-    if (error.code === 'storage_failed') return { status: 'unavailable', message: error.message };
+    if (error.code === 'storage_failed')
+      return { status: 'unavailable', reason: 'lost-compiler', message: error.message };
     return {
       status: 'failed',
       diagnostics: [{ code: 'missing_design_system', message: error.message }],
     };
   }
   console.error('Canvas compile failed unexpectedly:', error);
-  return { status: 'unavailable', message: COMPILER_RECOVERY };
+  return { status: 'unavailable', reason: 'lost-compiler', message: COMPILER_RECOVERY };
 }

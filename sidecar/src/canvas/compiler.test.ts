@@ -250,6 +250,9 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     // carries no machine path, exactly like a design's own diagnostics.
     await assert.rejects(compiling, (error: unknown) => {
       assert.ok(error instanceof CompilerUnavailableError, reason);
+      // The reason, not the text, is what tells the build queue that no restart
+      // will repair this.
+      assert.equal(error.reason, 'damaged-runtime', reason);
       assert.equal(error.message, RUNTIME_UNAVAILABLE, reason);
       assert.equal(machinePath(error.message), null, reason);
       return true;
