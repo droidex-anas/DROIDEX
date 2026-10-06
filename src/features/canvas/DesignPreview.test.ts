@@ -70,8 +70,10 @@ test('a revision with an artifact to load waits for it rather than guessing', ()
 test('a mounted fallback names the older working revision beside its diagnostics', () => {
   const markup = renderToStaticMarkup(
     createElement(PreviewGuestFrame, {
+      canvasId: CANVAS,
       designId: 'dsg_hey',
       revisionId: 'rev_01',
+      generation: 1,
       showingRevisionId: 'rev_01',
       html: '<!doctype html><body>x</body>',
       diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
@@ -86,8 +88,10 @@ test('a mounted fallback names the older working revision beside its diagnostics
   assert.equal(
     renderToStaticMarkup(
       createElement(PreviewGuestFrame, {
+        canvasId: CANVAS,
         designId: 'dsg_hey',
         revisionId: 'rev_02',
+        generation: 1,
         showingRevisionId: null,
         html: '<!doctype html><body>x</body>',
         diagnostics: [],

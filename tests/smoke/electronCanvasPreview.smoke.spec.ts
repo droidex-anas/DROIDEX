@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
 import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
+import { DROIDEX_DESIGN_SYSTEM } from '../../sidecar/src/canvas/presets/droidex';
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
@@ -242,6 +243,161 @@ test('the production preview host renders a compiled chart offline', async () =>
         { timeout: 20_000, intervals: [100] },
       )
       .toEqual({ title: 'Weekly visits', bars: 3 });
+  });
+});
+
+test('[C8] captures the kit starter at its rendered size and refuses a released guest', async () => {
+  const starter = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
+  assert.ok(starter);
+  const design = await compileDesign({ 'main.tsx': starter });
+  await withCanvasHost(async (app, page) => {
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].setContentSize(900, 900);
+    });
+    const guestId = await mountPreviewGuest(page);
+    await page.evaluate(() => {
+      const guest = document.getElementById('canvas-preview-guest');
+      if (!guest) throw new Error('Missing guest');
+      guest.style.width = '720px';
+      guest.style.height = '720px';
+    });
+    const instance: PreviewInstance = {
+      nonce: previewNonce(),
+      designId: 'dsg_capture',
+      revisionId: 'rev_capture',
+      generation: 1,
+    };
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () =>
+          (await drainGuest(page, instance)).events.some((event) => event.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+
+    const scaleFactor = await page.evaluate(() => window.devicePixelRatio);
+    const began = performance.now();
+    const captured = await bounded(
+      page.evaluate(
+        ({ guestId, scaleFactor, generation }) =>
+          window.droidControl?.canvasPreviewCapture({
+            requestId: 'smoke_capture',
+            guestId,
+            canvasId: 'cv_smoke',
+            designId: 'dsg_capture',
+            revisionId: 'rev_capture',
+            generation,
+            width: 720,
+            height: 720,
+            scaleFactor,
+          }),
+        { guestId, scaleFactor, generation: instance.generation },
+      ),
+      'starter capture',
+      10_000,
+    );
+    const captureMs = performance.now() - began;
+    assert.ok(captured?.ok, `capture failed: ${JSON.stringify(captured)}`);
+    const png = Buffer.from(captured.bytes);
+    assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(png.readUInt32BE(16), 720 * scaleFactor);
+    assert.equal(png.readUInt32BE(20), 720 * scaleFactor);
+    const cached = await page.evaluate(() =>
+      window.droidControl?.canvasThumbnailRead('cv_smoke', 'dsg_capture', 'rev_capture'),
+    );
+    assert.deepEqual(Buffer.from(cached ?? []), png);
+    assert.equal(
+      await page.evaluate(() =>
+        window.droidControl?.canvasThumbnailRead('cv_smoke', 'dsg_capture', 'rev_other'),
+      ),
+      null,
+    );
+
+    await page.evaluate((id) => {
+      document.getElementById('canvas-preview-guest')?.remove();
+      return window.droidControl?.canvasPreviewTerminate(id);
+    }, guestId);
+    const unavailable = await page.evaluate(
+      (id) =>
+        window.droidControl?.canvasPreviewCapture({
+          requestId: 'smoke_released',
+          guestId: id,
+          canvasId: 'cv_smoke',
+          designId: 'dsg_capture',
+          revisionId: 'rev_capture',
+          generation: 1,
+          width: 720,
+          height: 720,
+          scaleFactor: window.devicePixelRatio,
+        }),
+      guestId,
+    );
+    assert.deepEqual(unavailable?.ok, false);
+    if (unavailable && !unavailable.ok) assert.equal(unavailable.error.code, 'capture_unavailable');
+    console.log(
+      JSON.stringify({
+        starterCapture: { css: '720x720', scaleFactor, bytes: png.length, captureMs },
+      }),
+    );
+  });
+});
+
+test('a transparent design keeps its alpha in the captured PNG', async () => {
+  const design = await compileDesign({
+    'main.tsx': `export default function Clear() {
+  return <><style>{'html, body, #canvas-root { background: transparent !important; }'}</style>
+    <div style={{ width: 40, height: 40, background: 'rgb(0 0 255 / 50%)' }} />
+  </>;
+}
+`,
+  });
+  await withCanvasHost(async (_app, page) => {
+    const guestId = await mountPreviewGuest(page);
+    const instance: PreviewInstance = {
+      nonce: previewNonce(),
+      designId: 'dsg_clear',
+      revisionId: 'rev_clear',
+      generation: 1,
+    };
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () =>
+          (await drainGuest(page, instance)).events.some((event) => event.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    const alpha = await page.evaluate(
+      async ({ guestId, scaleFactor }) => {
+        const captured = await window.droidControl?.canvasPreviewCapture({
+          requestId: 'smoke_transparent',
+          guestId,
+          canvasId: 'cv_smoke',
+          designId: 'dsg_clear',
+          revisionId: 'rev_clear',
+          generation: 1,
+          width: 400,
+          height: 300,
+          scaleFactor,
+        });
+        if (!captured?.ok) throw new Error(JSON.stringify(captured));
+        const bitmap = await createImageBitmap(new Blob([captured.bytes], { type: 'image/png' }));
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Missing image decoder');
+        context.drawImage(bitmap, 0, 0);
+        return {
+          outside: context.getImageData(bitmap.width - 1, bitmap.height - 1, 1, 1).data[3],
+          inside: context.getImageData(10, 10, 1, 1).data[3],
+        };
+      },
+      { guestId, scaleFactor: await page.evaluate(() => window.devicePixelRatio) },
+    );
+    assert.equal(alpha.outside, 0);
+    assert.ok(alpha.inside > 0 && alpha.inside < 255);
   });
 });
 

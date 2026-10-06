@@ -1234,6 +1234,12 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] Complete shutdown/profile isolation: cancel queues before awaiting external cleanup, terminate compiler workers, stop preview hosts/subscriptions, revoke MCP scopes, and release all waiters. Verify repeated close is harmless and a new session with a reused provider handle cannot accept old writes/events. Run failure cases with locked/unavailable capture, not only a visible happy-path window.
 - [ ] Run focused export, teardown and runtime tests; manually export a stateful design and confirm PNG and source describe the selected revision. Record capture limitations honestly.
 
+Settled by 10b (`thread/canvas-10b-image-capture`):
+
+- Electron main captures the already attached preview guest through `webContents.capturePage`, after reading that guest's mounted design, revision and mount generation from the trusted intermediate. It captures the guest's CSS rectangle at its device scale, refuses more than 4,096 physical pixels on either edge, 16 million pixels total or 8 MiB of PNG, refuses a display Electron reports as locked, and settles after six seconds. Guest destruction, main's watchdog, renderer abort, a resized or replaced preview and canvas-pane unmount cancel pending work. No generated code, source write or agent turn participates in capture.
+- `captureCanvasImage(canvasId, ref, signal)` is the renderer operation over that Electron boundary. A ready preview populates a 32 MiB bounded thumbnail cache keyed by canvas, design and revision; `canvasThumbnailRead` exposes its exact-revision read through the preload bridge. `exportCanvasImage` sends captured PNG bytes to the OS save dialog and writes only its selected path. Unavailable capture returns `capture_unavailable`; a save failure returns `storage_failed`. The kit starter and a transparent design captured in the real Electron host; the starter's 720×720 CSS capture at 2× produced a 1,440×1,440 PNG in 56.02 ms in the final full arm64 smoke.
+- This base (`84480d9a`) has no Canvas board/context actions, artifact card or `canvas_inspect` MCP tool yet. Their controls and model screenshot delivery remain with Tasks 05, 06a and 04 respectively; the capture API and cache read are available for those owners. Task 10's checkbox stays open, as source export and lifecycle recovery are separate subtasks.
+
 ## Task 11: Motion, accessibility and measured performance
 
 **Subtasks (one branch and PR each, merged in order):**

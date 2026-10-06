@@ -36,6 +36,8 @@ const attachments = require('./attachments.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
+const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
+const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -119,8 +121,14 @@ const appUpdater = createAppUpdater({
   logError: (message, error) => console.error('[update] %s:', message, error),
 });
 const rendererOomRecovery = createRendererOomRecovery();
-const canvasPreviewHosts = canvasPreview.createCanvasPreviewHosts({
+const canvasPreviewHosts = createCanvasPreviewHosts({
   log: (message) => console.warn('[canvas-preview] %s', message),
+  canCapture: () => powerMonitor.getSystemIdleState(1) !== 'locked',
+});
+const saveCanvasImage = createCanvasImageSave({
+  dialog,
+  writeFile: (filePath, bytes) => fsp.writeFile(filePath, bytes),
+  getWindow: () => mainWindow,
 });
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via
@@ -652,6 +660,26 @@ function registerIpc() {
   ipcMain.handle('canvas-preview-terminate', (event, { guestId }) => {
     assertMainRenderer(event);
     return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
+  });
+  ipcMain.handle('canvas-preview-capture', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.capture(request);
+  });
+  ipcMain.handle('canvas-preview-cancel-capture', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.cancelCapture(request?.requestId);
+  });
+  ipcMain.handle('canvas-thumbnail-read', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.readThumbnail(
+      request?.canvasId,
+      request?.designId,
+      request?.revisionId,
+    );
+  });
+  ipcMain.handle('canvas-image-save', (event, request) => {
+    assertMainRenderer(event);
+    return saveCanvasImage(request);
   });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);
