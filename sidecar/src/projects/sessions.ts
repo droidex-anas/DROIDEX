@@ -20,6 +20,7 @@ type Host = Pick<
   | 'deliverScheduledMessage'
   | 'providerCatalog'
   | 'answerQuestion'
+  | 'steerRunningTurn'
 >;
 
 /** Correlates session creation and commits membership before the first provider turn. */
@@ -95,6 +96,14 @@ export class ProjectSessions implements ProjectPort {
 
   configure(appSessionId: string, settings: ThreadSettings): Promise<void> {
     return this.host.handle({ type: 'session.updateSettings', appSessionId, ...settings });
+  }
+
+  steer(appSessionId: string, prompt: string, isCurrent: () => boolean, now: boolean) {
+    return this.host.steerRunningTurn(appSessionId, prompt, isCurrent, now);
+  }
+
+  rename(appSessionId: string, title: string): Promise<void> {
+    return this.host.handle({ type: 'session.rename', appSessionId, title });
   }
 
   interrupt(appSessionId: string): Promise<void> {

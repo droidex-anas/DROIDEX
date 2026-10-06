@@ -69,6 +69,8 @@ export async function gitRepository(t: TestContext): Promise<string> {
 export async function harness(t: TestContext, saved: Project[] = [], historyReady = true) {
   const sessions = new Map<string, SessionSummary>();
   const sent: { id: string; prompt: string }[] = [];
+  // What reached a running turn, as the lifecycle's steer would take it.
+  const steered: { id: string; prompt: string; now: boolean }[] = [];
   const launched: ThreadInput[] = [];
   const events: ServerEvent[] = [];
   const state = {
@@ -146,6 +148,16 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
       return { status: 'accepted', settled };
     },
     isAsking: (id, requestId) => asking.get(id) === requestId,
+    steer: (id, prompt, isCurrent, now) => {
+      if (!sessions.get(id)?.streaming || !isCurrent()) return Promise.resolve(false);
+      steered.push({ id, prompt, now });
+      return Promise.resolve(true);
+    },
+    rename: (id, title) => {
+      const session = sessions.get(id);
+      if (session) sessions.set(id, { ...session, title });
+      return Promise.resolve();
+    },
     configure: async (id, settings) => {
       const session = sessions.get(id);
       assert.ok(session);
@@ -220,6 +232,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     projects,
     sessions,
     sent,
+    steered,
     answered,
     asking,
     launched,

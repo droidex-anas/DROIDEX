@@ -10,6 +10,7 @@ const TOOL_TITLES = new Map([
   ['thread_configure', 'Adjust a DROIDEX thread'],
   ['thread_stop', 'Stop a DROIDEX thread'],
   ['plan_set', 'Update the DROIDEX project plan'],
+  ['project_done', 'Mark the DROIDEX project done'],
   ['session_list', 'List DROIDEX chats'],
   ['session_read', 'Read a DROIDEX chat'],
   ['session_send', 'Message a DROIDEX chat'],
@@ -29,6 +30,7 @@ const ALWAYS_ALLOWED = new Set([
   'thread_configure',
   'thread_stop',
   'plan_set',
+  'project_done',
   'session_list',
   'session_read',
 ]);

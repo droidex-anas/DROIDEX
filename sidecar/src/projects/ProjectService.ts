@@ -1,5 +1,5 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
-import { ProjectWakeQueue } from './ProjectWakeQueue.js';
+import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
 import {
   clearAsk,
   ProjectTurns,
@@ -30,6 +30,7 @@ import type {
   ProjectStep,
   ProjectThread,
   ProjectView,
+  ThreadDelivery,
   ThreadInput,
   ThreadMessage,
   ThreadSettings,
@@ -57,6 +58,15 @@ export interface ProjectPort {
   awaitingApproval(appSessionId: string): boolean;
   /** Retunes a live thread, the way the composer's own controls do. */
   configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
+  /** Hands a prompt to the turn a chat is running, as the user's Steer does, or,
+      when `now`, stops that turn so the prompt runs next. False when no turn took it. */
+  steer(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now: boolean,
+  ): Promise<boolean>;
+  rename(appSessionId: string, title: string): Promise<void>;
   /** Answers a question a thread is blocked on; false when it was already settled. */
   answer(
     appSessionId: string,
@@ -196,10 +206,14 @@ export class ProjectService {
 
   private view(project: Project): ProjectView {
     const main = project.threads.find((thread) => !thread.ownerAppSessionId);
-    const cwd = main ? this.sessions.get(main.appSessionId)?.cwd : undefined;
+    const lead = main ? this.sessions.get(main.appSessionId) : undefined;
+    const cwd = lead?.cwd;
+    const startedAt = project.startedAt ?? lead?.createdAt;
     return {
       id: project.id,
       title: project.title,
+      ...(startedAt ? { startedAt } : {}),
+      ...(project.done ? { done: project.done } : {}),
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
       launching: project.launching,
@@ -268,6 +282,8 @@ export class ProjectService {
       if (!joined && requested.workspaceOf)
         throw new Error('This chat has started no threads to share a checkout with.');
       const project = joined ?? this.adoption(source, owner);
+      // New work means the goal is not met after all.
+      delete project.done;
       try {
         return await this.startThread(project, spawn, owner, input, requested);
       } finally {
@@ -369,7 +385,11 @@ export class ProjectService {
    * that leads no project yet becomes one with its first plan, so it can plan
    * first and then spawn a thread for each step.
    */
-  async setPlan(source: string, steps: readonly Omit<ProjectStep, 'id'>[]): Promise<number> {
+  async setPlan(
+    source: string,
+    steps: readonly Omit<ProjectStep, 'id'>[],
+    title?: string,
+  ): Promise<number> {
     this.requireOpen();
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
@@ -390,9 +410,38 @@ export class ProjectService {
     }
     const members = new Set(project.threads.map((thread) => thread.appSessionId));
     project.plan = planFromSteps(steps, (id) => members.has(id));
+    if (project.plan.some((step) => step.state && step.state !== 'done')) delete project.done;
+    if (title) await this.rename(project, source, title);
     this.settleAdoption(project);
     await this.save();
     return project.plan.length;
+  }
+
+  /** The lead's name for the project, which its own chat takes too. */
+  private async rename(project: Project, lead: string, title: string): Promise<void> {
+    const name = title.slice(0, LEDGER_LIMITS.title);
+    if (name === project.title) return;
+    project.title = name;
+    requireThread(project, lead).title = name;
+    await this.sessions.rename(lead, name);
+  }
+
+  /** The lead's word that the goal is achieved. Spawning again reopens the project. */
+  async finish(source: string, outcome: string): Promise<void> {
+    this.requireOpen();
+    const project = this.requireProjectFor(source);
+    if (requireThread(project, source).ownerAppSessionId)
+      throw new Error('Only the chat that leads a project can mark it done.');
+    const working = project.threads.filter(
+      (thread) =>
+        thread.appSessionId !== source && this.sessions.get(thread.appSessionId)?.streaming,
+    );
+    if (working.length)
+      throw new Error(
+        `${working.map((thread) => thread.title).join(', ')} ${working.length === 1 ? 'is' : 'are'} still working. Wait for ${working.length === 1 ? 'its' : 'their'} report, or stop ${working.length === 1 ? 'it' : 'them'}, first.`,
+      );
+    project.done = { at: Date.now(), outcome: outcome.slice(0, LEDGER_LIMITS.outcome) };
+    await this.save();
   }
 
   publish(): void {
@@ -417,7 +466,8 @@ export class ProjectService {
     text: string,
     answers?: string[],
     questionId?: string,
-  ): Promise<'answered' | 'queued' | 'already-answered'> {
+    delivery: ThreadDelivery = 'steer',
+  ): Promise<'answered' | 'already-answered' | 'steered' | 'sent-now' | 'queued'> {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const ask = thread.ask;
@@ -455,6 +505,22 @@ export class ProjectService {
       await this.save();
       this.wakes.kick(project);
       return landed ? 'answered' : 'already-answered';
+    }
+    // A running turn takes it at the harness's next step, or, sent now, in
+    // place of the rest of that turn. A thread with no turn running gets it as
+    // its next turn, which the wake queue starts.
+    if (delivery !== 'queue') {
+      const message = {
+        id: randomUUID(),
+        from: source,
+        to: target,
+        kind: 'message' as const,
+        text,
+      };
+      const prompt = wakePrompt(project, target, [message]);
+      const isCurrent = this.wakes.guard(project);
+      if (await this.sessions.steer(target, prompt, isCurrent, delivery === 'now'))
+        return delivery === 'now' ? 'sent-now' : 'steered';
     }
     this.enqueue(project, { from: source, to: target, kind: 'message', text });
     await this.save();
@@ -803,6 +869,7 @@ export class ProjectService {
     return {
       id,
       title: title.slice(0, LEDGER_LIMITS.title) || 'Project',
+      startedAt: Date.now(),
       paused: false,
       launching: 0,
       plan: [],

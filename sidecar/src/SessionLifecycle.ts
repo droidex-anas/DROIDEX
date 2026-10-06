@@ -629,22 +629,31 @@ export class SessionLifecycle {
    * or the prompt was not taken, so the caller delivers it another way.
    * `isCurrent` turning false withdraws it: this resolves false while the chat
    * has not taken it, and one that went on behind the turn is dropped there.
+   * `now` sends it as Send now does: the turn stops and the prompt runs next.
    */
   async steerRunningTurn(
     appSessionId: string,
     text: string,
     isCurrent: () => boolean,
+    now = false,
   ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
-    const prompt = { ...sessionPrompt(text, undefined, randomUUID()), isCurrent };
+    const steerId = randomUUID();
+    const prompt = { ...sessionPrompt(text, undefined, steerId), isCurrent };
     const admitted = await this.admitPrompt(appSessionId, prompt);
     if (admitted === 'held') return true;
     if (!admitted) return false;
     // A Stop or the caller's guard can change between admission and this line.
     if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) return false;
+    if (now) {
+      admitted.liveSession.pendingSends.push(prompt);
+      this.updateQueuedSends(admitted.liveSession);
+      await this.sendNow(appSessionId, steerId);
+      return true;
+    }
     void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
