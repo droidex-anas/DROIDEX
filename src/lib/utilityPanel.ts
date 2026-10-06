@@ -237,7 +237,13 @@ export function persistUtilityPanels(
 ): Record<string, UtilityPanelState> {
   return Object.fromEntries(
     Object.entries(panels).map(([appSessionId, panel]) => {
-      const tabs = panel.tabs.filter((tab) => isRestoredTool(tab.tool));
+      const tabs = panel.tabs
+        .filter((tab) => isRestoredTool(tab.tool))
+        .map((tab) => {
+          const saved: UtilityTab = { id: tab.id, tool: tab.tool, label: tab.label };
+          if (tab.filePath !== undefined) saved.filePath = tab.filePath;
+          return saved;
+        });
       const activeTabId = tabs.some((tab) => tab.id === panel.activeTabId)
         ? panel.activeTabId
         : (tabs[0]?.id ?? null);

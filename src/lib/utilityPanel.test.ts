@@ -44,7 +44,11 @@ test('Canvas is one expandable pane per chat that an Open can re-point at a fram
   // A canvas reconstructs from durable state, so unlike a terminal it persists.
   // The frame an Open asked for does not: it is a request, not a preference.
   const restored = { id: 'tab-1', tool: 'canvas' as const, label: 'Canvas' };
-  assert.deepEqual(sanitizeUtilityPanels(persistUtilityPanels({ session: opened })), {
+  const persisted = persistUtilityPanels({ session: opened });
+  assert.deepEqual(persisted, {
+    session: { open: true, tabs: [restored], activeTabId: 'tab-1' },
+  });
+  assert.deepEqual(sanitizeUtilityPanels(persisted), {
     session: { open: true, tabs: [restored], activeTabId: 'tab-1' },
   });
 });
