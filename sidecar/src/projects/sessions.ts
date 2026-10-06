@@ -90,6 +90,10 @@ export class ProjectSessions implements ProjectPort {
     return this.host.isQuestionPending(appSessionId, requestId);
   }
 
+  isLive(appSessionId: string): boolean {
+    return this.host.isSessionLive(appSessionId);
+  }
+
   awaitingApproval(appSessionId: string): boolean {
     return this.host.isApprovalPending(appSessionId);
   }

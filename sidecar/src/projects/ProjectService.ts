@@ -56,6 +56,8 @@ export interface ProjectPort {
   isAsking(appSessionId: string, requestId: string): boolean;
   /** Whether the conversation is stopped on a permission request only the user can answer. */
   awaitingApproval(appSessionId: string): boolean;
+  /** Whether its runtime is open; an idle one is released to save memory. */
+  isLive(appSessionId: string): boolean;
   /** Retunes a live thread, the way the composer's own controls do. */
   configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
   /** Hands a prompt to the turn a chat is running, as the user's Steer does, or,
@@ -106,6 +108,10 @@ export interface ThreadReadout {
   replies: string[];
   /** Older replies DROIDEX still holds, for an owner that wants more context. */
   moreReplies: number;
+  /** Messages to it that have not reached it yet. */
+  queued: number;
+  /** Its runtime was released while it sat idle; the next message reopens it. */
+  released?: true;
   /** Why replies is empty when the thread did reply. */
   note?: string;
   error?: string;
@@ -556,6 +562,10 @@ export class ProjectService {
       state: threadState(thread, session),
       replies: kept.slice(-wanted),
       moreReplies: Math.max(kept.length - wanted, 0),
+      queued: [...project.pending, ...(project.delivery?.messages ?? [])].filter(
+        (message) => message.to === target,
+      ).length,
+      ...(session && !this.sessions.isLive(target) ? { released: true as const } : {}),
       ...(thread.repliesShed
         ? {
             note: 'DROIDEX dropped its replies to keep the project ledger small. Its whole conversation stays in its own transcript, which the user can open.',

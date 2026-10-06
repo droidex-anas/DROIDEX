@@ -104,6 +104,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
     awaitingApproval: (id) => state.awaitingApproval.has(id),
+    isLive: (id) => sessions.has(id),
     catalog: async () => {
       if (state.catalogGate) await state.catalogGate;
       return [
