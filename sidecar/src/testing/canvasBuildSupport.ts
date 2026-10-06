@@ -3,7 +3,13 @@
 // deadline fires only when the test says so. No timers and no real compiler.
 
 import assert from 'node:assert/strict';
-import type { DesignCompiler, BuildDeadline } from '../canvas/CanvasBuilds.js';
+import type {
+  BuildDeadline,
+  BuildTarget,
+  CanvasBuilds,
+  CanvasBuildHost,
+  DesignCompiler,
+} from '../canvas/CanvasBuilds.js';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -15,6 +21,8 @@ import { deferred } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */
 export const COMPILE_FAILED = 'The design did not compile.';
+
+const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 
 /** One compile the test holds open until it decides what the compiler answers. */
 export interface HeldCompile {
@@ -151,4 +159,55 @@ export function fakeDeadlines() {
       entry[1]();
     },
   };
+}
+
+/**
+ * A stand-in for the canvas, for the cases a real workspace cannot reach: a
+ * design that leaves its frame mid-build, and one design ID on two canvases.
+ */
+export function standIn(builds: CanvasBuilds) {
+  const revisions = new Map<string, string>();
+  /** One `<canvasId>/<designId>:<status>` per commit this canvas published. */
+  const committed: string[] = [];
+  const waiters = new Set<() => void>();
+  const buildTarget = (canvasId: string, designId: string): BuildTarget | null => {
+    const revisionId = revisions.get(`${canvasId}/${designId}`);
+    if (revisionId === undefined) return null;
+    return {
+      frame: {
+        designId,
+        name: designId,
+        rect: { x: 0, y: 0, width: 720, height: 720 },
+        layoutVersion: 0,
+        revisionId,
+        designSystem,
+        build: builds.stateOf(canvasId, designId),
+      },
+      lastWorkingRevisionId: null,
+    };
+  };
+  const host: CanvasBuildHost = {
+    buildTarget,
+    readFiles: () => Promise.resolve({ 'main.tsx': 'export default () => null' }),
+    commitBuild: async (canvasId, designId, publish) => {
+      // The workspace publishes nothing for a design its head has lost.
+      if (!buildTarget(canvasId, designId)) return;
+      if (!(await publish())) return;
+      committed.push(`${canvasId}/${designId}:${builds.stateOf(canvasId, designId).status}`);
+      for (const waiter of [...waiters]) waiter();
+    },
+  };
+  /** Resolves once one commit has left that frame in that state. */
+  const settled = (entry: string): Promise<void> => {
+    if (committed.includes(entry)) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const waiter = (): void => {
+        if (!committed.includes(entry)) return;
+        waiters.delete(waiter);
+        resolve();
+      };
+      waiters.add(waiter);
+    });
+  };
+  return { host, revisions, committed, settled };
 }

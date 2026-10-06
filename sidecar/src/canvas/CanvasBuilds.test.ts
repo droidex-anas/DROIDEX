@@ -3,9 +3,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { COMPILE_FAILED, CompilerFleet, fakeDeadlines } from '../testing/canvasBuildSupport.js';
+import {
+  COMPILE_FAILED,
+  CompilerFleet,
+  fakeDeadlines,
+  standIn,
+} from '../testing/canvasBuildSupport.js';
 import { deferred, observedFileSystem } from '../testing/canvasStorageSupport.js';
-import { CanvasBuilds, type BuildTarget, type CanvasBuildHost } from './CanvasBuilds.js';
+import { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
@@ -98,14 +103,20 @@ function failNextManifestWrite() {
   };
 }
 
-/** Holds the next outcome file's rename open until the test releases it. */
-function holdOutcomeWrite() {
+/**
+ * Holds the next outcome file's rename open until the test releases it, and
+ * optionally refuses the removal that would take that file back, the way a
+ * read-only cache directory would.
+ */
+function holdOutcomeWrite(options: { refuseRemoval?: boolean } = {}) {
   let armed = false;
   const reached = deferred();
   const released = deferred();
+  const isOutcome = (path: string): boolean => path.includes('/builds/') && path.endsWith('.json');
   const fs = observedFileSystem(async (operation, path) => {
-    if (!armed || operation !== 'rename') return;
-    if (!path.includes('/builds/') || !path.endsWith('.json')) return;
+    if (operation === 'rm' && options.refuseRemoval === true && isOutcome(path))
+      throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    if (!armed || operation !== 'rename' || !isOutcome(path)) return;
     armed = false;
     reached.resolve();
     await released.promise;
@@ -686,6 +697,59 @@ test('an outcome that finishes writing after close publishes nothing', async (t)
   );
 });
 
+test('an outcome the manifest never vouched for is not restored', async (t) => {
+  const storage = holdOutcomeWrite({ refuseRemoval: true });
+  const canvas = await board(t, { fs: storage.fs });
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const receipt = await canvas.write(designId, null, 'v1');
+  const first = await canvas.fleet.compile(1);
+
+  storage.arm();
+  first.ready('artifact-one');
+  await storage.reached;
+  const closing = canvas.builds.close();
+  storage.release();
+  await closing;
+
+  // Nothing published, and the removal that would have taken the file back was
+  // refused, so the cache is left holding an outcome for an unpublished build.
+  assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, null);
+  const files = new CanvasFiles(canvas.store.root);
+  assert.deepEqual(
+    [...(await files.listBuildOutputs(canvas.canvasId))].sort(),
+    ['artifact-one.html', `${receipt.revisionId}.json`].sort(),
+  );
+
+  // The manifest decides, so no pointer means no preview, whatever is on disk.
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
+});
+
+test('an outcome for a revision the frame has moved past is ignored', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const first = await canvas.write(designId, null, 'v1');
+  (await canvas.fleet.compile(1)).failed('syntax_error');
+  await canvas.reported(designId, 'failed');
+  // The next revision is never built, so only the one before it is cached.
+  const second = await canvas.write(designId, first.revisionId, 'v2');
+  await canvas.fleet.compile(2);
+  await canvas.builds.close();
+  const files = new CanvasFiles(canvas.store.root);
+  assert.deepEqual(
+    [...(await files.listBuildOutputs(canvas.canvasId))],
+    [`${first.revisionId}.json`],
+  );
+
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  assert.equal(reopened.frame(designId).revisionId, second.revisionId);
+});
+
 test('the deadline is released the moment a compile settles', async (t) => {
   const storage = holdBuildOutput();
   const canvas = await board(t, { fs: storage.fs });
@@ -785,57 +849,6 @@ test('a rebuild sweep from an old projection leaves the current state alone', as
   });
   assert.equal(canvas.fleet.held.length, 4, 'nothing was rebuilt for a revision that is gone');
 });
-
-/**
- * A stand-in for the canvas, for the cases a real workspace cannot reach: a
- * design that leaves its frame mid-build, and one design ID on two canvases.
- */
-function standIn(builds: CanvasBuilds) {
-  const revisions = new Map<string, string>();
-  /** One `<canvasId>/<designId>:<status>` per commit this canvas published. */
-  const committed: string[] = [];
-  const waiters = new Set<() => void>();
-  const buildTarget = (canvasId: string, designId: string): BuildTarget | null => {
-    const revisionId = revisions.get(`${canvasId}/${designId}`);
-    if (revisionId === undefined) return null;
-    return {
-      frame: {
-        designId,
-        name: designId,
-        rect: { x: 0, y: 0, width: 720, height: 720 },
-        layoutVersion: 0,
-        revisionId,
-        designSystem,
-        build: builds.stateOf(canvasId, designId),
-      },
-      lastWorkingRevisionId: null,
-    };
-  };
-  const host: CanvasBuildHost = {
-    buildTarget,
-    readFiles: () => Promise.resolve({ 'main.tsx': 'export default () => null' }),
-    commitBuild: async (canvasId, designId, publish) => {
-      // The workspace publishes nothing for a design its head has lost.
-      if (!buildTarget(canvasId, designId)) return;
-      if (!(await publish())) return;
-      committed.push(`${canvasId}/${designId}:${builds.stateOf(canvasId, designId).status}`);
-      for (const waiter of [...waiters]) waiter();
-    },
-  };
-  /** Resolves once one commit has left that frame in that state. */
-  const settled = (entry: string): Promise<void> => {
-    if (committed.includes(entry)) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const waiter = (): void => {
-        if (!committed.includes(entry)) return;
-        waiters.delete(waiter);
-        resolve();
-      };
-      waiters.add(waiter);
-    });
-  };
-  return { host, revisions, committed, settled };
-}
 
 test('a design that leaves its canvas mid-build publishes nothing', async (t) => {
   const fleet = new CompilerFleet();

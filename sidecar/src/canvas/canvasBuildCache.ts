@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import type { CanvasFiles } from './canvasFiles.js';
-import type { CanvasManifest } from './canvasManifest.js';
+import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
 import { CANVAS_LIMITS, canvasIdentifierSchema } from './schema.js';
 
@@ -104,58 +104,32 @@ export class CanvasBuildCache {
   }
 
   /**
-   * The build state every design on these canvases can be served with. A design
-   * is absent when this cache cannot prove anything about its current revision,
-   * which leaves the frame `pending` and due a rebuild.
+   * The build state every design on these canvases can be served with. Only the
+   * manifest decides that: an outcome it does not vouch for is ignored, which
+   * leaves the frame `pending` and due a rebuild. A design is read for its own
+   * current revision and no other, so an outcome it has moved past is never
+   * consulted at all.
    */
   async restoreStates(manifests: readonly CanvasManifest[]): Promise<RestoredBuild[]> {
     const restored: RestoredBuild[] = [];
     for (const manifest of manifests) {
-      const revisionIds = manifest.designs.flatMap((design) =>
-        design.revisionId === null ? [] : [design.revisionId],
-      );
       // A cache that cannot be read is a cache that gets rebuilt.
-      const outcomes = await this.read(manifest.canvasId, revisionIds).catch((error: unknown) => {
-        console.error(`Canvas ${manifest.canvasId} build outputs were not read:`, error);
-        return null;
-      });
-      if (!outcomes) continue;
-      for (const design of manifest.designs) {
-        const outcome = design.revisionId === null ? undefined : outcomes.get(design.revisionId);
-        if (outcome?.designId !== design.designId) continue;
-        restored.push({
-          canvasId: manifest.canvasId,
-          designId: design.designId,
-          state: builtState(outcome.revisionId, outcome.result, design.lastWorkingRevisionId),
+      const present = await this.files
+        .listBuildOutputs(manifest.canvasId)
+        .catch((error: unknown) => {
+          console.error(`Canvas ${manifest.canvasId} build outputs were not read:`, error);
+          return null;
         });
+      if (!present) continue;
+      for (const design of manifest.designs) {
+        const revisionId = design.revisionId;
+        if (revisionId === null || !present.has(outcomeName(revisionId))) continue;
+        const outcome = await this.readOutcome(manifest.canvasId, outcomeName(revisionId));
+        if (outcome?.designId !== design.designId || outcome.revisionId !== revisionId) continue;
+        const state = vouchedState(design, revisionId, outcome.result, present);
+        if (!state) continue;
+        restored.push({ canvasId: manifest.canvasId, designId: design.designId, state });
       }
-    }
-    return restored;
-  }
-
-  /**
-   * What this cache can still prove about the named revisions, keyed by
-   * revision. A `ready` outcome whose artifact document is gone is left out:
-   * the frame it belongs to has to be built again.
-   */
-  private async read(
-    canvasId: string,
-    revisionIds: readonly string[],
-  ): Promise<Map<string, CachedOutcome>> {
-    const restored = new Map<string, CachedOutcome>();
-    if (revisionIds.length === 0) return restored;
-    const present = await this.files.listBuildOutputs(canvasId);
-    for (const revisionId of revisionIds) {
-      const name = outcomeName(revisionId);
-      if (!present.has(name)) continue;
-      const outcome = await this.readOutcome(canvasId, name);
-      if (outcome?.revisionId !== revisionId) continue;
-      if (
-        outcome.result.status === 'ready' &&
-        !present.has(artifactName(outcome.result.artifactId))
-      )
-        continue;
-      restored.set(revisionId, outcome);
     }
     return restored;
   }
@@ -183,6 +157,25 @@ function artifactName(artifactId: string): string {
 
 function outcomeName(revisionId: string): string {
   return `${revisionId}.json`;
+}
+
+/**
+ * The state the manifest lets this outcome be served as, or null when it does
+ * not vouch for it. A published `ready` moved the design's last-working pointer
+ * to its own revision in the same commit, so an outcome whose commit never
+ * happened can never match that pointer however the cleanup of its file went.
+ */
+function vouchedState(
+  design: PersistedDesign,
+  revisionId: string,
+  result: BuildResult,
+  present: ReadonlySet<string>,
+): CanvasBuildState | null {
+  if (result.status === 'ready') {
+    if (design.lastWorkingRevisionId !== revisionId) return null;
+    if (!present.has(artifactName(result.artifactId))) return null;
+  }
+  return builtState(revisionId, result, design.lastWorkingRevisionId);
 }
 
 /** The state one outcome describes, which only ever names its own revision. */
