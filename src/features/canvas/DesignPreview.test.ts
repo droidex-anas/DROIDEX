@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DesignPreview, type DesignPreviewProps } from './DesignPreview';
+import { DesignPreview, PreviewGuestFrame, type DesignPreviewProps } from './DesignPreview';
 import type { CanvasBuildState, CanvasFrame } from './protocol';
 
 const CANVAS = 'cv_01';
@@ -25,7 +25,6 @@ function render(build: CanvasBuildState, overrides: Partial<DesignPreviewProps> 
       canvasId: CANVAS,
       frame: frameWith(build),
       readArtifact: () => Promise.resolve(null),
-      onRefresh: () => undefined,
       ...overrides,
     }),
   );
@@ -66,4 +65,35 @@ test('a revision with an artifact to load waits for it rather than guessing', ()
 
   assert.match(ready, /Loading this preview/);
   assert.match(fallback, /Loading this preview/);
+});
+
+test('a mounted fallback names the older working revision beside its diagnostics', () => {
+  const markup = renderToStaticMarkup(
+    createElement(PreviewGuestFrame, {
+      designId: 'dsg_hey',
+      revisionId: 'rev_01',
+      showingRevisionId: 'rev_01',
+      html: '<!doctype html><body>x</body>',
+      diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
+      onResize: undefined,
+    }),
+  );
+
+  // Spec §5: the frame labels the older working preview it is showing.
+  assert.match(markup, /Showing revision rev_01/);
+  assert.match(markup, /Unexpected token/);
+  // The frame's own revision is not a fallback, so it is not labelled.
+  assert.equal(
+    renderToStaticMarkup(
+      createElement(PreviewGuestFrame, {
+        designId: 'dsg_hey',
+        revisionId: 'rev_02',
+        showingRevisionId: null,
+        html: '<!doctype html><body>x</body>',
+        diagnostics: [],
+        onResize: undefined,
+      }),
+    ).includes('Showing revision'),
+    false,
+  );
 });

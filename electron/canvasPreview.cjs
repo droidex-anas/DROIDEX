@@ -29,6 +29,10 @@ const CANVAS_PREVIEW_URL = `${CANVAS_PREVIEW_SCHEME}://preview/guest`;
  * and an `about:srcdoc` frame inherits this policy. There is no `unsafe-eval`:
  * 03a's ruling is that runtime loading is bounded here, and esbuild's `__require`
  * shim throws in a browser.
+ *
+ * `webrtc` is named because ICE is not a fetch and `connect-src` does not govern
+ * it: without this a design could reach a STUN server. `attach` below takes the
+ * guest's UDP path away as well, so neither layer is the only thing holding.
  */
 const CANVAS_PREVIEW_CSP = [
   "default-src 'none'",
@@ -42,6 +46,7 @@ const CANVAS_PREVIEW_CSP = [
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
+  "webrtc 'block'",
 ].join('; ');
 
 /** One message from the generated frame, as JSON. Diagnostics are the largest. */
@@ -53,6 +58,20 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_MESSAGE_CHARS = 512;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
+
+/**
+ * How often main asks the generated frame whether it is still running, and how
+ * long one of those questions may take. The renderer's poll bounds the
+ * intermediate; this bounds the design, which is a process of its own and so is
+ * invisible to those polls once it has reported `ready`.
+ *
+ * The question is a literal no-op evaluated in the frame, never a heartbeat the
+ * design emits: generated code cannot be asked to report on itself.
+ */
+const GENERATED_PROBE_INTERVAL_MS = 2_000;
+const GENERATED_PROBE_DEADLINE_MS = 3_000;
+/** The whole probe: a literal with no reachable identifier. */
+const GENERATED_PROBE = '0';
 
 /**
  * The reporter that runs inside the generated frame: readiness once it has
@@ -110,6 +129,8 @@ const INTERMEDIATE_SCRIPT = `(() => {
   let instance = null;
   let dropped = 0;
 
+  const encoder = new TextEncoder();
+  const bytes = (value) => encoder.encode(value).length;
   const text = (value) =>
     typeof value === 'string' ? value.slice(0, ${String(MAX_PREVIEW_MESSAGE_CHARS)}) : '';
   const size = (value) =>
@@ -153,7 +174,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
     } catch {
       return;
     }
-    if (typeof encoded !== 'string' || encoded.length > ${String(MAX_PREVIEW_EVENT_BYTES)}) {
+    // Bytes, not code units: a string of astral characters is four times its
+    // length and would otherwise pass a cap named in bytes.
+    if (typeof encoded !== 'string' || bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)}) {
       dropped += 1;
       return;
     }
@@ -244,45 +267,113 @@ ${script}
  * queue owner, because killing only the generated sender leaves the intermediate
  * holding a backlog. A guest ID main did not attach is refused.
  */
-function createCanvasPreviewHosts({ log }) {
+function createCanvasPreviewHosts({ log, clock = realClock }) {
   const guests = new Map();
 
-  function end(guestId, contents, reason) {
+  /** Drops a guest that is already gone, releasing its probe timers. */
+  function forget(guestId) {
+    const guest = guests.get(guestId);
+    if (!guest) return;
     guests.delete(guestId);
-    if (contents.isDestroyed()) return;
+    guest.stopProbing();
+  }
+
+  function end(guestId, reason) {
+    const guest = guests.get(guestId);
+    if (!guest) return false;
+    guests.delete(guestId);
+    guest.stopProbing();
+    if (guest.contents.isDestroyed()) return true;
     log(`Ending preview guest ${String(guestId)}: ${reason}`);
     // Synchronous and main-owned: it waits for no guest reply.
-    contents.forcefullyCrashRenderer();
+    guest.contents.forcefullyCrashRenderer();
+    return true;
+  }
+
+  /**
+   * Main's own liveness check on the design. A guest whose intermediate answers
+   * every poll can still hold a design that stopped running after it reported
+   * `ready`: that frame is a separate process, so nothing the renderer measures
+   * sees it. One probe is in flight at a time and a probe that misses its
+   * deadline ends the guest, without waiting for the probe to settle.
+   */
+  function watchGeneratedFrame(guestId, contents) {
+    let releaseDeadline = null;
+    let probing = false;
+
+    const tick = () => {
+      if (probing) return;
+      const frame = generatedFrameOf(contents);
+      // No design mounted yet; the next tick looks again.
+      if (!frame) return;
+      probing = true;
+      releaseDeadline = clock.schedule(() => {
+        releaseDeadline = null;
+        end(guestId, 'its design stopped responding');
+      }, GENERATED_PROBE_DEADLINE_MS);
+      const settle = () => {
+        probing = false;
+        releaseDeadline?.();
+        releaseDeadline = null;
+      };
+      frame.executeJavaScript(GENERATED_PROBE).then(settle, settle);
+    };
+
+    const releaseInterval = clock.repeat(tick, GENERATED_PROBE_INTERVAL_MS);
+    return () => {
+      releaseInterval();
+      releaseDeadline?.();
+      releaseDeadline = null;
+    };
   }
 
   return {
-    /** Registers one attached guest and installs main's own watchdog on it. */
+    /** Registers one attached guest and installs main's own watchdogs on it. */
     attach(contents) {
       const guestId = contents.id;
-      guests.set(guestId, contents);
+      // ICE is not a fetch, so `connect-src 'none'` does not stop it. The CSP
+      // blocks WebRTC and this takes the guest's UDP path away underneath it.
+      contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
       contents.setWindowOpenHandler(() => ({ action: 'deny' }));
       contents.on('will-navigate', (event, url) => {
         if (url !== CANVAS_PREVIEW_URL) event.preventDefault();
       });
-      // Main's independent watchdog: a wedged guest is ended here with no
-      // renderer request and no guest cooperation.
-      contents.on('unresponsive', () => end(guestId, contents, 'unresponsive'));
+      // Main's independent watchdogs: a wedged guest and a wedged design are
+      // both ended here, with no renderer request and no guest cooperation.
+      contents.on('unresponsive', () => end(guestId, 'unresponsive'));
       contents.on('render-process-gone', (_event, details) => {
         log(`Preview guest ${String(guestId)} is gone: ${details.reason}`);
-        guests.delete(guestId);
+        forget(guestId);
       });
-      contents.on('destroyed', () => guests.delete(guestId));
+      contents.on('destroyed', () => forget(guestId));
+      guests.set(guestId, { contents, stopProbing: watchGeneratedFrame(guestId, contents) });
     },
 
     /** Ends a guest the renderer asked about. False when main does not own it. */
     terminate(guestId) {
-      const contents = guests.get(guestId);
-      if (!contents) return false;
-      end(guestId, contents, 'the renderer asked for it');
-      return true;
+      return end(guestId, 'the renderer asked for it');
     },
   };
 }
+
+/** The design's frame inside one guest, once the intermediate has mounted it. */
+function generatedFrameOf(contents) {
+  if (contents.isDestroyed()) return null;
+  return contents.mainFrame.frames[0] ?? null;
+}
+
+const realClock = {
+  schedule(task, delayMs) {
+    const timer = setTimeout(task, delayMs);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  },
+  repeat(task, everyMs) {
+    const timer = setInterval(task, everyMs);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  },
+};
 
 module.exports = {
   CANVAS_PREVIEW_CSP,

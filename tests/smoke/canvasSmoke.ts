@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createSocket } from 'node:dgram';
 import { createServer } from 'node:http';
 import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -44,6 +45,38 @@ export interface NetworkListener {
   url: string;
   attempts: { connections: number; requests: number; upgrades: number };
   openSockets: () => number;
+}
+
+/**
+ * A loopback UDP listener, because ICE never becomes a TCP connection: CSP's
+ * `connect-src` does not govern WebRTC, so "no network" has to be measured on a
+ * datagram socket as well as on a stream one.
+ */
+export interface DatagramListener {
+  url: string;
+  datagrams: () => number;
+}
+
+export async function withDatagramListener(
+  use: (listener: DatagramListener) => Promise<void>,
+): Promise<void> {
+  const socket = createSocket('udp4');
+  let datagrams = 0;
+  socket.on('message', () => {
+    datagrams += 1;
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('error', reject);
+      socket.bind(0, '127.0.0.1', resolve);
+    });
+    await use({
+      url: `127.0.0.1:${String(socket.address().port)}`,
+      datagrams: () => datagrams,
+    });
+  } finally {
+    await new Promise<void>((resolve) => socket.close(resolve));
+  }
 }
 
 /**

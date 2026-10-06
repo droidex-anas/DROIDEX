@@ -8,15 +8,33 @@ const {
   createCanvasPreviewHosts,
 } = require('./canvasPreview.cjs');
 
-function createGuest(id) {
+/** The design's frame, whose every probe is a promise the test settles. */
+function createGeneratedFrame() {
+  const probes = [];
+  return {
+    probes,
+    executeJavaScript(code) {
+      return new Promise((resolve, reject) => {
+        probes.push({ code, settle: resolve, fail: () => reject(new Error('frame gone')) });
+      });
+    },
+  };
+}
+
+function createGuest(id, frames = []) {
   const listeners = new Map();
   return {
     id,
     crashes: 0,
     destroyed: false,
     windowOpenHandler: null,
+    webRtcPolicy: null,
+    mainFrame: { frames },
     isDestroyed() {
       return this.destroyed;
+    },
+    setWebRTCIPHandlingPolicy(policy) {
+      this.webRtcPolicy = policy;
     },
     forcefullyCrashRenderer() {
       this.crashes += 1;
@@ -36,9 +54,46 @@ function createGuest(id) {
   };
 }
 
+/** Timers a test fires itself; nothing here waits on wall-clock time. */
+function createClock() {
+  const intervals = new Set();
+  const deadlines = new Set();
+  return {
+    clock: {
+      schedule(task, delayMs) {
+        const entry = { task, delayMs };
+        deadlines.add(entry);
+        return () => deadlines.delete(entry);
+      },
+      repeat(task, everyMs) {
+        const entry = { task, everyMs };
+        intervals.add(entry);
+        return () => intervals.delete(entry);
+      },
+    },
+    pending: () => ({ intervals: intervals.size, deadlines: deadlines.size }),
+    /** One turn of every live probe interval. */
+    tick() {
+      for (const entry of [...intervals]) entry.task();
+    },
+    /** Fires every deadline that is still waiting. */
+    expire() {
+      for (const entry of [...deadlines]) {
+        deadlines.delete(entry);
+        entry.task();
+      }
+    },
+  };
+}
+
 function createHosts() {
   const logged = [];
-  return { hosts: createCanvasPreviewHosts({ log: (message) => logged.push(message) }), logged };
+  const clock = createClock();
+  return {
+    hosts: createCanvasPreviewHosts({ log: (message) => logged.push(message), clock: clock.clock }),
+    logged,
+    clock,
+  };
 }
 
 test('the intermediate forbids every network source and allows only about: frames', () => {
@@ -148,4 +203,90 @@ test('the guest refuses navigation away from the owned source', () => {
 
   assert.equal(blocked.prevented, true);
   assert.equal(allowed.prevented, false);
+});
+
+test('the CSP blocks WebRTC and the guest loses its UDP path', () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(21);
+
+  hosts.attach(guest);
+
+  // ICE is not a fetch, so `connect-src 'none'` never governed it.
+  assert.match(CANVAS_PREVIEW_CSP, /webrtc 'block'/);
+  assert.equal(guest.webRtcPolicy, 'disable_non_proxied_udp');
+});
+
+test('main ends a guest whose design stops answering, one probe at a time', () => {
+  const { hosts, logged, clock } = createHosts();
+  const frame = createGeneratedFrame();
+  const guest = createGuest(31, [frame]);
+  hosts.attach(guest);
+
+  clock.tick();
+  clock.tick();
+
+  // One probe in flight, and it asks the frame for a literal, not a heartbeat.
+  assert.equal(frame.probes.length, 1);
+  assert.equal(frame.probes[0].code, '0');
+  clock.expire();
+
+  assert.equal(guest.crashes, 1);
+  assert.match(logged.join('\n'), /Ending preview guest 31: its design stopped responding/);
+  // The probe timers went with the guest, and a late answer reaches nothing.
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+  frame.probes[0].settle(0);
+});
+
+test('a design that keeps answering is probed again and never ended', () => {
+  const { hosts, clock } = createHosts();
+  const frame = createGeneratedFrame();
+  const guest = createGuest(32, [frame]);
+  hosts.attach(guest);
+
+  clock.tick();
+  frame.probes[0].settle(0);
+  return Promise.resolve().then(() => {
+    // The answered probe released its deadline rather than ending the guest.
+    assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+    clock.expire();
+    assert.equal(guest.crashes, 0);
+    clock.tick();
+    assert.equal(frame.probes.length, 2);
+  });
+});
+
+test('a guest with no design mounted yet is probed, not ended', () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(33);
+  hosts.attach(guest);
+
+  clock.tick();
+  clock.expire();
+
+  assert.equal(guest.crashes, 0);
+  assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+});
+
+test('a guest that goes away releases its probe timers', () => {
+  const { hosts, clock } = createHosts();
+  const gone = createGuest(34, [createGeneratedFrame()]);
+  const destroyed = createGuest(35, [createGeneratedFrame()]);
+  hosts.attach(gone);
+  hosts.attach(destroyed);
+  clock.tick();
+  assert.deepEqual(clock.pending(), { intervals: 2, deadlines: 2 });
+
+  gone.emit('render-process-gone', {}, { reason: 'killed' });
+  destroyed.emit('destroyed');
+
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+});
+
+test('the intermediate measures its message cap in bytes', () => {
+  const document = canvasPreviewDocument();
+
+  // A code-unit cap would accept four times the bytes it names.
+  assert.match(document, /new TextEncoder\(\)/);
+  assert.match(document, /bytes\(encoded\) > 4096/);
+  assert.equal(/encoded\.length >/.test(document), false);
 });

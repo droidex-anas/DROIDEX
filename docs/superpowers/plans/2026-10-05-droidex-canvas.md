@@ -568,6 +568,56 @@ Settled by 03c (landed in `electron/{canvasPreview.cjs,main.cjs,preload.cjs}` an
   to mount `DesignPreview` yet; the runtime's own deadline arithmetic is therefore proven by its
   unit suite rather than by the smoke.
 
+Settled by 03c's first review cycle (Astra xhigh, adversarial, against `0b370915`):
+
+- **ICE is not a fetch, and `connect-src` never governed it.** The reviewer reached a loopback STUN
+  server from the production sandbox and received a datagram. Both layers now hold: the CSP carries
+  `webrtc 'block'` (CSP3, inherited by the srcdoc frame) and `attach` calls
+  `contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`, so the guest has no UDP path even
+  if the policy string is ever loosened. `[C6]` measures this on a real `udp4` socket beside the
+  stream listener, because a TCP-only listener cannot see ICE at all.
+- The other non-CSP egress paths were checked in the same probe and all reach nothing: `<a ping>`
+  (`ping-to` is a fetch directive, and `default-src 'none'` covers it), `navigator.sendBeacon`
+  (`connect-src`), and `<link rel=dns-prefetch|preconnect|prefetch>` (a prefetch is `default-src`,
+  and a bare DNS or connect hint carries no request the listener can count). WebTransport is a
+  `connect-src` fetch. Speculation rules need a `script-src` nonce or hash this document never
+  issues, and they can only name HTTP(S) documents, which `default-src 'none'` already refuses.
+- **A design that stops running after it reported `ready` escaped both watchdogs.** The renderer's
+  polls measure the intermediate, which stays responsive, and the design is a separate process, so
+  neither the poll deadline nor `unresponsive` ever fires. Main now owns the design's liveness:
+  `attach` probes `mainFrame.frames[0]` with the literal `'0'` every **2,000 ms** with one probe in
+  flight and a **3,000 ms** deadline, and a probe that misses it ends the guest through the same
+  `end(...)`. The question is a literal evaluated in the frame, never a heartbeat the design emits:
+  that code is the attacker's. Probe timers are released on `render-process-gone`, `destroyed` and
+  every `end`.
+- **A lost `ready` artifact is the queue's problem, not a button's.** `requestRebuilds` sweeps only
+  `pending` and `cancelled` frames, so a `ready` frame whose cached document was removed had nothing
+  that would ever ask for it again. `CanvasBuilds.readArtifact` now queues that design when the miss
+  is for the revision the head currently holds as `ready`, gated on the head exactly as
+  `requestRebuilds` is, and the frame publishes `building` and then `ready` with a new `artifactId` —
+  which is the change a mounted preview needs, because `DesignPreview` keys its guest by that ID. A
+  miss for a `lastWorkingRevisionId` fallback the frame has moved past queues nothing; rebuilding a
+  non-current revision stays Task 5's follow-up. `DesignPreview` lost its Retry control: there is
+  nothing left for it to do, and the placeholder says the preview is being built again.
+- **The byte caps were counting UTF-16 code units.** An 11,024-byte event and an 80,222-byte
+  snapshot passed caps named in bytes. The intermediate and the renderer validator both measure with
+  `TextEncoder` now, and the suites assert a four-byte-character string that is under the cap in code
+  units and over it in bytes.
+- **A mounted fallback names its revision** beside the diagnostics (spec §5), in
+  `--droid-text-muted` with no new palette.
+- Not reachable without a DOM test harness, and therefore not faked: the renderer's `null`-artifact
+  placeholder and the remount a new `artifactId` causes both sit behind an effect that server
+  rendering never runs. The sidecar half of that contract — the part that was broken — has its own
+  regression, and `PreviewGuestFrame` is tested directly for the fallback label.
+- Clicking an `a[ping]` at module scope ends the srcdoc document before the design mounts, so the
+  probe does it from an effect instead; measured that way the ping reaches the listener zero times.
+- Adding the repair took `CanvasBuilds.ts` to 514 lines. The two queueing paths were folded into one
+  `queueFromHead` (the head rule had been written twice), and `canvasCompilerProcesses.ts` now owns
+  the compiler child processes: a slot's process is forked on its first build, ended at most once,
+  and every termination is awaited before the registry closes. That is deliberately not the slot
+  scheduler 03b examined and rejected — a process outlives the build that ended it, since an overdue
+  build's kill is still settling while its slot has taken the next job. `CanvasBuilds.ts` is 490.
+
 
 
 - [ ] Add compile fixtures for working React state, CSS, relative modules, bad TSX, unsupported import and attempts to read outside the virtual tree. Reject undeclared packages, URL imports, Node builtins and filesystem escapes in the resolver. Never invoke generated source in the sidecar process.

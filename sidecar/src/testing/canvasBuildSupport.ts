@@ -9,7 +9,6 @@ import type {
   BuildTarget,
   CanvasBuilds,
   CanvasBuildHost,
-  DesignCompiler,
 } from '../canvas/CanvasBuilds.js';
 import {
   CompileCancelledError,
@@ -18,6 +17,7 @@ import {
   type CompiledDesign,
   type CompileInput,
 } from '../canvas/compiler.js';
+import type { DesignCompiler } from '../canvas/canvasCompilerProcesses.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { deferred, observedFileSystem } from './canvasStorageSupport.js';
 

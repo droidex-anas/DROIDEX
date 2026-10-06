@@ -19,7 +19,8 @@ import {
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
-import { CompilerWorker, type CompiledDesign, type CompileInput } from './compiler.js';
+import type { CompiledDesign, CompileInput } from './compiler.js';
+import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesses.js';
 import type { BuildResult } from './canvasBuildCache.js';
 import type {
   CanvasBuildState,
@@ -31,12 +32,6 @@ import type {
   SourceFiles,
 } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
-
-/** The compiler surface one slot drives. A slot's own process, never shared. */
-export interface DesignCompiler {
-  compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign>;
-  terminate(): Promise<void>;
-}
 
 /** Starts one build's deadline and returns the call that cancels it. */
 export type BuildDeadline = (onOverdue: () => void) => () => void;
@@ -117,6 +112,11 @@ interface BuildSlot {
   job: RunningBuild | null;
 }
 
+/** Nothing has been built for the frame's current revision; a reader may ask. */
+const UNBUILT: ReadonlySet<CanvasBuildState['status']> = new Set(['pending', 'cancelled']);
+/** A document the manifest still vouches for has gone from the derived cache. */
+const LOST_ARTIFACT: ReadonlySet<CanvasBuildState['status']> = new Set(['ready']);
+
 /** A publication with nothing new for the manifest to keep. */
 const announceFrame = (): Promise<BuildCommit> => Promise.resolve({ workingRevisionId: null });
 
@@ -131,7 +131,7 @@ const canPublish = (frame: CanvasFrame, job: BuildPin): boolean =>
   frame.build.generation === job.generation;
 
 export class CanvasBuilds {
-  private readonly newCompiler: () => DesignCompiler;
+  private readonly processes: CompilerProcesses;
   private readonly deadline: BuildDeadline;
   private installed: BuildOwner | null = null;
   private readonly states = new CanvasBuildStates();
@@ -142,12 +142,10 @@ export class CanvasBuilds {
     job: null,
   }));
   private readonly settling = new Set<Promise<void>>();
-  /** Compiler processes on their way out, which `close` waits for. */
-  private readonly terminating = new Set<Promise<void>>();
   private closed = false;
 
   constructor(deps: CanvasBuildsDeps = {}) {
-    this.newCompiler = deps.compiler ?? (() => new CompilerWorker());
+    this.processes = new CompilerProcesses(deps.compiler);
     this.deadline = deps.deadline ?? realDeadline;
   }
 
@@ -184,24 +182,11 @@ export class CanvasBuilds {
     }
   }
 
-  /**
-   * Enqueues a rebuild for every frame in this projection that has saved source
-   * and nothing built for it. The head decides, not the projection: a reader may
-   * hold an old snapshot, and a frame that has moved on since is left alone.
-   * Coalescing makes repeated calls cheap, so every read may ask.
-   */
+  /** Rebuilds every frame in this projection that has source and nothing built. */
   requestRebuilds(snapshot: CanvasSnapshot): void {
-    if (this.closed) return;
     for (const frame of snapshot.frames) {
       if (frame.revisionId === null) continue;
-      if (this.queued.has(designKey(snapshot.canvasId, frame.designId))) continue;
-      if (this.slotOf(snapshot.canvasId, frame.designId)) continue;
-      const current = this.owner.host.buildTarget(snapshot.canvasId, frame.designId)?.frame;
-      if (current?.revisionId !== frame.revisionId) continue;
-      const status = current.build.status;
-      if (status !== 'pending' && status !== 'cancelled') continue;
-      for (const job of this.queue(snapshot.canvasId, frame.designId, frame.revisionId))
-        this.announce(job);
+      this.queueFromHead(snapshot.canvasId, frame.designId, frame.revisionId, UNBUILT);
     }
   }
 
@@ -236,16 +221,23 @@ export class CanvasBuilds {
 
   /**
    * What a preview loads: the document one revision's build produced, or null
-   * once the derived cache has lost it. A `failed` frame asks for its
-   * `lastWorkingRevisionId` the same way, which is why this is keyed by revision
-   * rather than by artifact ID.
+   * once the derived cache has lost it. Keyed by revision because a `failed`
+   * frame asks for its `lastWorkingRevisionId` the same way.
+   *
+   * A miss for the revision the frame holds as `ready` means a document the
+   * manifest still vouches for is gone, and nothing else would ever ask for it
+   * again, so the read itself queues the design; the new build publishes a new
+   * `artifactId`, which is the change a mounted preview needs. A miss for a
+   * fallback the frame has moved past queues nothing (Task 5's follow-up).
    */
-  readArtifact(
+  async readArtifact(
     canvasId: string,
     designId: string,
     revisionId: string,
   ): Promise<PreviewArtifact | null> {
-    return this.owner.cache.readRevisionArtifact(canvasId, designId, revisionId);
+    const artifact = await this.owner.cache.readRevisionArtifact(canvasId, designId, revisionId);
+    if (artifact === null) this.queueFromHead(canvasId, designId, revisionId, LOST_ARTIFACT);
+    return artifact;
   }
 
   /** Releases every slot, settles every waiter and ends every process once. */
@@ -254,8 +246,8 @@ export class CanvasBuilds {
     this.queued.clear();
     for (const slot of this.slots) this.abandon(slot);
     while (this.settling.size > 0) await Promise.all([...this.settling]);
-    for (const slot of this.slots) this.endProcess(slot);
-    while (this.terminating.size > 0) await Promise.all([...this.terminating]);
+    for (const slot of this.slots) this.processes.end(slot);
+    await this.processes.drain();
     this.states.clear();
   }
 
@@ -263,6 +255,26 @@ export class CanvasBuilds {
   private get owner(): BuildOwner {
     if (!this.installed) throw new Error('Canvas builds were used before the workspace opened.');
     return this.installed;
+  }
+
+  /**
+   * Queues one design when the head is in a state this caller may build from.
+   * The head decides, never the caller's projection: a frame whose revision has
+   * moved on, that is already queued or building, or whose canvas is gone, is
+   * left alone. Coalescing makes a repeat cheap, so any read may ask.
+   */
+  private queueFromHead(
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+    from: ReadonlySet<CanvasBuildState['status']>,
+  ): void {
+    if (this.closed) return;
+    if (this.queued.has(designKey(canvasId, designId))) return;
+    if (this.slotOf(canvasId, designId)) return;
+    const frame = this.owner.host.buildTarget(canvasId, designId)?.frame;
+    if (frame?.revisionId !== revisionId || !from.has(frame.build.status)) return;
+    for (const job of this.queue(canvasId, designId, revisionId)) this.announce(job);
   }
 
   /** Queues one design and returns the builds the free slots could start. */
@@ -363,7 +375,7 @@ export class CanvasBuilds {
       files,
       designSystem: job.designSystem,
     };
-    const compiler = this.compilerFor(slot);
+    const compiler = this.processes.of(slot);
     job.cancelDeadline = this.deadline(() => {
       this.onOverdue(slot, job);
     });
@@ -458,24 +470,7 @@ export class CanvasBuilds {
     if (slot.job !== job) return;
     job.overdue = true;
     job.abort.abort();
-    this.endProcess(slot);
-  }
-
-  /** Ends one slot's compiler for good; its next build forks a fresh one. */
-  private endProcess(slot: BuildSlot): void {
-    const compiler = slot.compiler;
-    slot.compiler = null;
-    if (!compiler) return;
-    const ending = compiler.terminate().catch((error: unknown) => {
-      console.error('A Canvas compiler process was not stopped cleanly:', error);
-    });
-    this.terminating.add(ending);
-    void ending.then(() => this.terminating.delete(ending));
-  }
-
-  private compilerFor(slot: BuildSlot): DesignCompiler {
-    slot.compiler ??= this.newCompiler();
-    return slot.compiler;
+    this.processes.end(slot);
   }
 
   /** Holds one build's settlement, so `close` can wait for every waiter. */

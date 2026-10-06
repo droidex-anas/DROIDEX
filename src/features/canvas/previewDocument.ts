@@ -80,7 +80,9 @@ export function readPreviewSnapshot(
   value: unknown,
   instance: PreviewInstance,
 ): PreviewSnapshot | null {
-  if (typeof value !== 'string' || value.length > MAX_PREVIEW_SNAPSHOT_BYTES) return null;
+  // Bytes, not code units: a snapshot of astral characters is four times its
+  // length, and this cap is named in bytes.
+  if (typeof value !== 'string' || utf8Bytes(value) > MAX_PREVIEW_SNAPSHOT_BYTES) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
@@ -135,7 +137,7 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   const diagnostics: CanvasDiagnostic[] = [];
   for (const entry of value) {
     if (!record(entry) || !text(entry.code) || typeof entry.message !== 'string') return null;
-    if (entry.message.length > MAX_PREVIEW_TEXT) return null;
+    if (utf8Bytes(entry.message) > MAX_PREVIEW_TEXT) return null;
     diagnostics.push({ code: entry.code, message: entry.message });
   }
   return { event: 'diagnostics', diagnostics };
@@ -150,5 +152,11 @@ function count(value: unknown): value is number {
 }
 
 function text(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= MAX_PREVIEW_TEXT;
+  return typeof value === 'string' && value.length > 0 && utf8Bytes(value) <= MAX_PREVIEW_TEXT;
+}
+
+const encoder = new TextEncoder();
+
+function utf8Bytes(value: string): number {
+  return encoder.encode(value).length;
 }

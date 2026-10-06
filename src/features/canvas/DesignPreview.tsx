@@ -20,8 +20,6 @@ export interface DesignPreviewProps {
     designId: string,
     revisionId: string,
   ) => Promise<PreviewArtifact | null>;
-  /** Asks the runtime to build this board's frames again. */
-  onRefresh: () => void;
   /** The content size a mounted preview reports, so the board can fit it. */
   onResize?: (designId: string, size: { width: number; height: number }) => void;
 }
@@ -32,13 +30,7 @@ let previewMounts = 0;
 /** How many reported diagnostics one preview keeps on screen. */
 const SHOWN_PREVIEW_DIAGNOSTICS = 8;
 
-export function DesignPreview({
-  canvasId,
-  frame,
-  readArtifact,
-  onRefresh,
-  onResize,
-}: DesignPreviewProps) {
+export function DesignPreview({ canvasId, frame, readArtifact, onResize }: DesignPreviewProps) {
   const revisionId = previewRevisionId(frame.build);
   const artifact = useArtifact(canvasId, frame.designId, revisionId, readArtifact);
   const failures = frame.build.status === 'failed' ? frame.build.diagnostics : [];
@@ -47,24 +39,18 @@ export function DesignPreview({
   if (revisionId === null)
     return <PreviewPlacard label={waitingLabel(frame.build)} diagnostics={failures} />;
   if (artifact === 'loading') return <PreviewPlacard label="Loading this preview…" />;
-  if (artifact === null) {
-    return (
-      <PreviewPlacard label="This preview has to be built again." diagnostics={failures}>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="rounded-lg bg-droid-elevated px-3 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-active"
-        >
-          Retry
-        </button>
-      </PreviewPlacard>
-    );
-  }
+  // Reading a lost artifact for the revision a frame is showing is what asks the
+  // runtime to build it again, so there is nothing for a control here to do: the
+  // frame will arrive building and then ready with a document that exists.
+  if (artifact === null)
+    return <PreviewPlacard label="Building this preview again…" diagnostics={failures} />;
   return (
     <PreviewGuestFrame
       key={`${frame.designId}:${artifact.artifactId}`}
       designId={frame.designId}
       revisionId={revisionId}
+      // Spec §5: a failed revision labels the older working preview it is showing.
+      showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
       html={artifact.html}
       diagnostics={failures}
       onResize={onResize}
@@ -131,15 +117,18 @@ function useArtifact(
  * The element is created outside React: the runtime drives it through the webview
  * element API, and removing it on unmount is what releases the guest's processes.
  */
-function PreviewGuestFrame({
+export function PreviewGuestFrame({
   designId,
   revisionId,
+  showingRevisionId,
   html,
   diagnostics,
   onResize,
 }: {
   designId: string;
   revisionId: string;
+  /** Named when this is an older working revision rather than the frame's own. */
+  showingRevisionId: string | null;
   html: string;
   diagnostics: CanvasDiagnostic[];
   onResize: DesignPreviewProps['onResize'];
@@ -197,6 +186,11 @@ function PreviewGuestFrame({
         <div ref={host} className="h-full w-full" hidden={lost !== null} />
         {lost ? <PreviewPlacard label={lostLabel(lost)} /> : null}
       </div>
+      {showingRevisionId ? (
+        <p className="text-[11px] leading-4 text-droid-text-muted">
+          Showing revision {showingRevisionId}
+        </p>
+      ) : null}
       <PreviewDiagnostics diagnostics={[...diagnostics, ...reported]} />
     </div>
   );
