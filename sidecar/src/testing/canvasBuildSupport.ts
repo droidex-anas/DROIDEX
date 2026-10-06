@@ -1,6 +1,7 @@
-// The compiler and deadline doubles the Canvas build suites drive: every compile
-// is handed to the test, which decides when and how it answers, and every build
-// deadline fires only when the test says so. No timers and no real compiler.
+// The doubles and storage fixtures the Canvas build suites drive: every compile
+// is handed to the test, which decides when and how it answers; every build
+// deadline fires only when the test says so; and the derived cache's own writes
+// can be held open or refused. No timers and no real compiler.
 
 import assert from 'node:assert/strict';
 import type {
@@ -17,7 +18,8 @@ import {
   type CompiledDesign,
   type CompileInput,
 } from '../canvas/compiler.js';
-import { deferred } from './canvasStorageSupport.js';
+import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
+import { deferred, observedFileSystem } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */
 export const COMPILE_FAILED = 'The design did not compile.';
@@ -210,4 +212,84 @@ export function standIn(builds: CanvasBuilds) {
     });
   };
   return { host, revisions, committed, settled };
+}
+
+/** Refuses every read of a saved outcome, the way a bad permission would. */
+export function refuseOutcomeReads(): CanvasFileSystem {
+  return observedFileSystem((operation, path) => {
+    if (operation !== 'open' || !isOutcomeFile(path)) return;
+    throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+  });
+}
+
+/** One saved outcome's own file, which is the only `.json` under `builds/`. */
+function isOutcomeFile(path: string): boolean {
+  return path.includes('/builds/') && path.endsWith('.json');
+}
+
+/** Holds the next derived build output write open until the test releases it. */
+export function holdBuildOutput() {
+  let armed = false;
+  const reached = deferred();
+  const released = deferred();
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed || operation !== 'open' || !path.includes('/builds/')) return;
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  });
+  return {
+    fs,
+    arm: (): void => {
+      armed = true;
+    },
+    reached: reached.promise,
+    release: released.resolve,
+  };
+}
+
+/** Fails the next manifest rename once, after the test arms it. */
+export function failNextManifestWrite() {
+  let armed = false;
+  const failed = deferred();
+  const fs = observedFileSystem((operation, path) => {
+    if (!armed || operation !== 'rename' || !path.endsWith('manifest.json')) return;
+    armed = false;
+    failed.resolve();
+    throw new Error('disk full');
+  });
+  return {
+    fs,
+    arm: (): void => {
+      armed = true;
+    },
+    failed: failed.promise,
+  };
+}
+
+/**
+ * Holds the next outcome file's rename open until the test releases it, and
+ * optionally refuses the removal that would take that file back, the way a
+ * read-only cache directory would.
+ */
+export function holdOutcomeWrite(options: { refuseRemoval?: boolean } = {}) {
+  let armed = false;
+  const reached = deferred();
+  const released = deferred();
+  const fs = observedFileSystem(async (operation, path) => {
+    if (operation === 'rm' && options.refuseRemoval === true && isOutcomeFile(path))
+      throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    if (!armed || operation !== 'rename' || !isOutcomeFile(path)) return;
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  });
+  return {
+    fs,
+    arm: (): void => {
+      armed = true;
+    },
+    reached: reached.promise,
+    release: released.resolve,
+  };
 }

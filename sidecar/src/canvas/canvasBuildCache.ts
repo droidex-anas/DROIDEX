@@ -134,9 +134,12 @@ export class CanvasBuildCache {
     return restored;
   }
 
-  /** A cache entry we cannot parse is one we cannot use; the frame rebuilds. */
+  /** A cache entry we cannot read or parse is one we cannot use; it rebuilds. */
   private async readOutcome(canvasId: string, name: string): Promise<CachedOutcome | null> {
-    const text = await this.files.readBuildOutput(canvasId, name);
+    const text = await this.files.readBuildOutput(canvasId, name).catch((error: unknown) => {
+      console.error(`Canvas ${canvasId} build outcome ${name} was not read:`, error);
+      return null;
+    });
     if (text === null) return null;
     let value: unknown;
     try {

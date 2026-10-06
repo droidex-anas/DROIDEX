@@ -6,10 +6,13 @@ import test, { type TestContext } from 'node:test';
 import {
   COMPILE_FAILED,
   CompilerFleet,
+  failNextManifestWrite,
   fakeDeadlines,
+  holdBuildOutput,
+  holdOutcomeWrite,
+  refuseOutcomeReads,
   standIn,
 } from '../testing/canvasBuildSupport.js';
-import { deferred, observedFileSystem } from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
@@ -43,27 +46,6 @@ interface Board {
   reported(designId: string, status: CanvasBuildState['status']): Promise<void>;
 }
 
-/** Holds the next derived build output write open until the test releases it. */
-function holdBuildOutput() {
-  let armed = false;
-  const reached = deferred();
-  const released = deferred();
-  const fs = observedFileSystem(async (operation, path) => {
-    if (!armed || operation !== 'open' || !path.includes('/builds/')) return;
-    armed = false;
-    reached.resolve();
-    await released.promise;
-  });
-  return {
-    fs,
-    arm: (): void => {
-      armed = true;
-    },
-    reached: reached.promise,
-    release: released.resolve,
-  };
-}
-
 /**
  * One scratch root and every registry opened over it. Builds settle in the
  * background, so each registry is closed before the storage disappears; a
@@ -82,53 +64,6 @@ async function storage(t: TestContext): Promise<Storage> {
     await rm(directory, { recursive: true, force: true });
   });
   return store;
-}
-
-/** Fails the next manifest rename once, after the test arms it. */
-function failNextManifestWrite() {
-  let armed = false;
-  const failed = deferred();
-  const fs = observedFileSystem((operation, path) => {
-    if (!armed || operation !== 'rename' || !path.endsWith('manifest.json')) return;
-    armed = false;
-    failed.resolve();
-    throw new Error('disk full');
-  });
-  return {
-    fs,
-    arm: (): void => {
-      armed = true;
-    },
-    failed: failed.promise,
-  };
-}
-
-/**
- * Holds the next outcome file's rename open until the test releases it, and
- * optionally refuses the removal that would take that file back, the way a
- * read-only cache directory would.
- */
-function holdOutcomeWrite(options: { refuseRemoval?: boolean } = {}) {
-  let armed = false;
-  const reached = deferred();
-  const released = deferred();
-  const isOutcome = (path: string): boolean => path.includes('/builds/') && path.endsWith('.json');
-  const fs = observedFileSystem(async (operation, path) => {
-    if (operation === 'rm' && options.refuseRemoval === true && isOutcome(path))
-      throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
-    if (!armed || operation !== 'rename' || !isOutcome(path)) return;
-    armed = false;
-    reached.resolve();
-    await released.promise;
-  });
-  return {
-    fs,
-    arm: (): void => {
-      armed = true;
-    },
-    reached: reached.promise,
-    release: released.resolve,
-  };
 }
 
 interface BoardOptions {
@@ -722,6 +657,43 @@ test('an outcome the manifest never vouched for is not restored', async (t) => {
   );
 
   // The manifest decides, so no pointer means no preview, whatever is on disk.
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
+});
+
+test('an outcome that cannot be read is a cache miss, not a failed open', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const receipt = await canvas.write(designId, null, 'v1');
+  (await canvas.fleet.compile(1)).ready('artifact-one');
+  await canvas.reported(designId, 'ready');
+  await canvas.builds.close();
+
+  // The outcome is saved and vouched for, and unreadable when it is wanted.
+  const reopened = await board(t, { store: canvas.store, fs: refuseOutcomeReads() });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
+});
+
+test('a failure of the attempt rather than the design is retried on restart', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const receipt = await canvas.write(designId, null, 'v1');
+  await canvas.fleet.compile(1);
+  canvas.deadlines.expire();
+  await canvas.reported(designId, 'failed');
+  assert.deepEqual(diagnosticCodes(canvas, designId), ['build_timeout']);
+  await canvas.builds.close();
+
+  // A timeout is this attempt's, not the source's, so the cache keeps nothing
+  // and the advice it gave ("restart DROIDEX") is not still there afterwards.
+  const files = new CanvasFiles(canvas.store.root);
+  assert.deepEqual([...(await files.listBuildOutputs(canvas.canvasId))], []);
   const reopened = await board(t, { store: canvas.store });
   assert.deepEqual(reopened.frame(designId).build, { status: 'pending' });
   reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
