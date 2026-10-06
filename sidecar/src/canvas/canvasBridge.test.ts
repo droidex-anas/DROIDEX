@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
-import type { CanvasBuilds } from './CanvasBuilds.js';
+import { CanvasBuilds } from './CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
+import { CompileCancelledError } from './compiler.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasEvent, CanvasReply, CanvasScope } from './protocol.js';
 
@@ -27,12 +28,12 @@ interface Harness {
 
 async function harness(
   t: TestContext,
-  options: { root?: string; fs?: CanvasFileSystem } = {},
+  options: { root?: string; fs?: CanvasFileSystem; builds?: CanvasBuilds } = {},
 ): Promise<Harness> {
   const directory = options.root ?? (await canvasRoot(t));
   const scopes = new CanvasScopes();
   const events: ServerEvent[] = [];
-  const builds = quietBuilds();
+  const builds = options.builds ?? quietBuilds();
   const workspace = await CanvasWorkspace.open(directory, builds, {
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: (scopeId, canvasId) => {
@@ -527,8 +528,39 @@ test('a change listener that throws loses its change, not the commit', async (t)
 });
 
 test('a page that goes away while the workspace opens installs no watch', async (t) => {
-  const canvas = await harness(t);
+  // A compiler that only answers an abort, so a started build stays started.
+  const builds = new CanvasBuilds({
+    compiler: () => ({
+      compile: (_input, signal) =>
+        new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new CompileCancelledError()), {
+            once: true,
+          });
+        }),
+      terminate: () => Promise.resolve(),
+    }),
+    deadline: () => () => undefined,
+  });
+  const canvas = await harness(t, { builds });
   const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+  await canvas.handle({
+    type: 'canvas.write',
+    requestId: 'req-write-source',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-write-source',
+      designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': HEY },
+      deletedPaths: [],
+    },
+  });
+  // Cancelled leaves saved source with nothing built for it, which is what a
+  // subscription's rebuild sweep picks up.
+  builds.cancelCanvas(canvasId);
+  assert.equal(builds.stateOf(canvasId, designId).status, 'cancelled');
   const opening = deferred();
   const events: ServerEvent[] = [];
   const listeners = new Set<(pageId: string) => void>();
@@ -554,6 +586,11 @@ test('a page that goes away while the workspace opens installs no watch', async 
   const [answer] = events;
   assert.ok(answer?.type === 'canvas.result' && !answer.ok);
   assert.equal(answer.error.code, 'scope_expired');
+  assert.equal(
+    builds.stateOf(canvasId, designId).status,
+    'cancelled',
+    'a refused subscription scheduled no build',
+  );
 
   // Nothing is watching, so a later change is not broadcast to anyone.
   const agent = turnScope(canvasId, 'turn-after-page-gone');

@@ -198,13 +198,14 @@ class CanvasDispatch {
     }
     const page = this.watches.live(pageId);
     const workspace = await this.workspace;
-    // Opening a canvas is when its derived build cache is recovered, so the
-    // projection below already reports the frames that are building again.
-    this.builds.requestRebuilds(workspace.snapshot(command.canvasId));
-    // The snapshot and the watch are one step: a client that holds a projection
-    // is exactly the client that needs the changes extending it.
-    const snapshot = workspace.snapshot(command.canvasId);
+    // The watch goes in first: a page that went away while Canvas storage
+    // opened is handed no projection and has no work scheduled for it.
     if (!this.watches.watch(page, command.canvasId)) throw canvasError('scope_expired', PAGE_GONE);
+    // Opening a canvas is when its derived build cache is recovered, so the
+    // projection below already reports the frames that are building again, and
+    // the client that holds it is exactly the one watching for what extends it.
+    this.builds.requestRebuilds(workspace.snapshot(command.canvasId));
+    const snapshot = workspace.snapshot(command.canvasId);
     return { type: 'canvas.snapshot', requestId: command.requestId, snapshot };
   }
 
