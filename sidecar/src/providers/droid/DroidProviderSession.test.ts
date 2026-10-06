@@ -291,6 +291,43 @@ test(
 );
 
 test(
+  'a steer Droid shows before a thinking loop fails gets its reply loop, answer or refusal',
+  { timeout: 2000 },
+  async () => {
+    const refusal = '429 Too Many Requests: Weekly Limit Exhausted';
+    for (const reply of ['answer', 'refusal']) {
+      const h = await droidOverMemory();
+      const prompt = h.nextRequest('droid.add_user_message', () => {
+        h.state('thinking');
+      });
+      const events = turnEvents(h.session.stream('hello'));
+      await prompt;
+      const steer = h.nextRequest('droid.add_user_message', ({ messageId }) => {
+        h.showUserMessage(messageId, 'try again');
+        h.fail();
+        h.state('idle');
+      });
+      const steered = h.session.steer('try again');
+      await steer;
+      assert.equal(await steered, true);
+      await turnCatchesUp();
+      h.state('streaming_assistant_message');
+      if (reply === 'answer') h.answer('Retried.');
+      else h.fail(refusal);
+      h.state('idle');
+      if (reply === 'answer')
+        assert.deepEqual(texts(await events), ['Model connection failed', 'Retried.']);
+      else
+        await assert.rejects(
+          events,
+          (error) => error instanceof UsageLimitError && error.message === refusal,
+        );
+      await h.session.close();
+    }
+  },
+);
+
+test(
   'a loop whose notices are all buffered before the stream reads them keeps its answer',
   { timeout: 2000 },
   async () => {

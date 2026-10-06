@@ -8,15 +8,14 @@ import {
 } from '@factory/droid-sdk';
 import { extractNotification } from './normalize.js';
 
-// Notices of Droid working on its loop, down to the error that ends it. A busy
-// working state counts too.
+// Notices of Droid working on its loop. A busy working state counts too; an
+// error does not, since a loop can fail before it takes up a steer.
 const LOOP_OUTPUT: ReadonlySet<unknown> = new Set([
   'assistant_text_delta',
   'thinking_text_delta',
   'tool_call',
   'tool_result',
   'tool_progress_update',
-  'error',
 ]);
 
 // The working states the SDK's stream parses. It drops the rest, "thinking"
@@ -39,8 +38,8 @@ export class DroidTurn {
   private openMainLoopIdle: number | undefined;
   private consumedMainIdles = 0;
   // A delivered steer whose reply loop has not yet run to idle. Droid can show
-  // the message before that loop starts: while idle, or after a failed loop's
-  // last output, just before it goes idle.
+  // the message before that loop starts: while idle, or in a loop that then
+  // fails or goes idle without working on it. Stop releases a wait for good.
   private loopOwed = false;
   private outputSinceDelivery = false;
   private stopped = false;
