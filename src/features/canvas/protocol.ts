@@ -168,3 +168,56 @@ export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
 }
+
+// ── Bridge commands and events ───────────────────────────────────────
+// `appSessionId` is the only session identity on the wire. A mutation names the
+// canvas its chat is attached to, and the sidecar refuses one that disagrees.
+
+export type CanvasCommand =
+  | { type: 'canvas.list'; requestId: string }
+  | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
+  | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
+  | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
+  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
+  | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
+  | { type: 'canvas.detach'; requestId: string; appSessionId: string }
+  | {
+      type: 'canvas.create';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: CreateFramesInput;
+    }
+  | {
+      type: 'canvas.write';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: WriteFilesInput;
+    }
+  | {
+      type: 'canvas.arrange';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: ArrangeFramesInput;
+    };
+
+/** What a successful command answers with, one kind per command. */
+export type CanvasReply =
+  | { kind: 'ok' }
+  | { kind: 'summaries'; summaries: CanvasSummary[] }
+  | { kind: 'attachment'; canvasId: string | null }
+  | { kind: 'created'; created: CreateFramesResult }
+  | { kind: 'written'; receipt: WriteReceipt }
+  | { kind: 'arranged'; change: CanvasChange };
+
+export type CanvasEvent =
+  | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }
+  | { type: 'canvas.result'; requestId: string; ok: false; error: CanvasError }
+  // The reply to a subscribe, and the projection every later change extends.
+  | { type: 'canvas.snapshot'; requestId: string; snapshot: CanvasSnapshot }
+  | { type: 'canvas.summaries'; summaries: CanvasSummary[] }
+  // Broadcast with its canvasId, because the bridge server has no per-connection
+  // targeting; a client that does not watch that canvas drops it.
+  | { type: 'canvas.change'; change: CanvasChange };

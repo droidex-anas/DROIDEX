@@ -6,7 +6,10 @@ import type * as Renderer from '../../../src/features/canvas/protocol.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,
+  CanvasCommand,
   CanvasError,
+  CanvasEvent,
+  CanvasReply,
   CanvasSnapshot,
   CanvasSummary,
   CanvasTurnContext,
@@ -42,6 +45,9 @@ type SidecarWire = {
   elementRef: ElementRef;
   element: SourceElement;
   error: CanvasError;
+  command: CanvasCommand;
+  reply: CanvasReply;
+  event: CanvasEvent;
 };
 
 type RendererWire = {
@@ -58,6 +64,9 @@ type RendererWire = {
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
   error: Renderer.CanvasError;
+  command: Renderer.CanvasCommand;
+  reply: Renderer.CanvasReply;
+  event: Renderer.CanvasEvent;
 };
 
 type Equals<A, B> =
@@ -200,6 +209,26 @@ const wire: SidecarWire = {
     editability: 'literal',
   },
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
+  command: {
+    type: 'canvas.write',
+    requestId: 'req_01',
+    appSessionId: 'app_01',
+    canvasId: 'cv_01',
+    input: {
+      mutationId: 'write-hey',
+      designId: 'dsg_hey',
+      expectedRevisionId: 'rev_02',
+      files: { 'main.tsx': 'export default function Hey() {\n  return <h1>Hey</h1>;\n}\n' },
+      deletedPaths: [],
+    },
+  },
+  reply: { kind: 'written', receipt: { designId: 'dsg_hey', revisionId: 'rev_03', sequence: 8 } },
+  event: {
+    type: 'canvas.result',
+    requestId: 'req_01',
+    ok: false,
+    error: { code: 'scope_expired', message: 'This chat is not attached to that canvas.' },
+  },
 };
 
 test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
@@ -217,6 +246,9 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     elementRef: true,
     element: true,
     error: true,
+    command: true,
+    reply: true,
+    event: true,
   };
   assert.ok(Object.values(exact).every((isExact) => isExact));
   assert.deepEqual(JSON.parse(JSON.stringify(wire)), wire);

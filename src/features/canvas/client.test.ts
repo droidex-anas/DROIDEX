@@ -1,0 +1,191 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { ClientCommand, ServerEvent } from '../../types/bridge';
+import { CanvasClient, type CanvasTransport } from './client';
+import type { CanvasChange, CanvasCommand, CanvasFrame, CanvasSnapshot } from './protocol';
+
+const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+const CANVAS = 'cv_01';
+
+function frame(designId: string, revisionId: string | null = null): CanvasFrame {
+  return {
+    designId,
+    name: designId,
+    rect: { x: 0, y: 0, width: 720, height: 720 },
+    layoutVersion: 0,
+    revisionId,
+    designSystem,
+    build: { status: 'pending' },
+  };
+}
+
+function change(sequence: number, frames: CanvasFrame[] = []): CanvasChange {
+  return { canvasId: CANVAS, sequence, frames, removedDesignIds: [] };
+}
+
+function isCanvasCommand(command: ClientCommand): command is CanvasCommand {
+  return command.type.startsWith('canvas.');
+}
+
+/** A transport the test drives directly, standing in for the bridge socket. */
+function fakeBridge() {
+  const sent: CanvasCommand[] = [];
+  let receive: ((event: ServerEvent) => void) | null = null;
+  const transport: CanvasTransport = {
+    sendIfConnected(command: ClientCommand) {
+      assert.ok(isCanvasCommand(command), 'the Canvas client sent a command it does not own');
+      sent.push(command);
+      return true;
+    },
+    subscribe(listener) {
+      receive = listener;
+      return () => {
+        receive = null;
+      };
+    },
+  };
+  return {
+    sent,
+    transport,
+    deliver(event: ServerEvent): void {
+      assert.ok(receive, 'the client has not subscribed yet');
+      receive(event);
+    },
+    /** The last command of a kind, so a test can answer it. */
+    last(type: CanvasCommand['type']): CanvasCommand {
+      const matched = sent.filter((command) => command.type === type);
+      const command = matched.at(-1);
+      assert.ok(command, `no ${type} was sent`);
+      return command;
+    },
+    count(type: CanvasCommand['type']): number {
+      return sent.filter((command) => command.type === type).length;
+    },
+  };
+}
+
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** A watched canvas seeded at `sequence`, plus the projections its listener saw. */
+async function watching(sequence: number) {
+  const bridge = fakeBridge();
+  const client = new CanvasClient(bridge.transport);
+  const seen: CanvasSnapshot[] = [];
+  const stop = client.subscribeCanvas(CANVAS, (snapshot) => seen.push(snapshot));
+  const snapshot: CanvasSnapshot = { canvasId: CANVAS, sequence, frames: [frame('hey')] };
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: bridge.last('canvas.subscribe').requestId,
+    snapshot,
+  });
+  await flush();
+  return { bridge, client, seen, stop };
+}
+
+test('a canvas subscription is seeded by the snapshot its request answers', async () => {
+  const { bridge, client, seen } = await watching(4);
+  assert.equal(bridge.count('canvas.subscribe'), 1);
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);
+  assert.equal(seen.length, 1);
+});
+
+test('an older or duplicate change is ignored, and the next in sequence is applied', async () => {
+  const { bridge, client, seen } = await watching(4);
+  seen.length = 0;
+  bridge.deliver({ type: 'canvas.change', change: change(4) });
+  bridge.deliver({ type: 'canvas.change', change: change(3) });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);
+  assert.deepEqual(seen, []);
+  assert.equal(bridge.count('canvas.subscribe'), 1);
+
+  bridge.deliver({ type: 'canvas.change', change: change(5, [frame('cta')]) });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 5);
+  assert.deepEqual(
+    client.snapshotOf(CANVAS)?.frames.map((entry) => entry.designId),
+    ['hey', 'cta'],
+  );
+  assert.equal(seen.length, 1);
+  assert.equal(bridge.count('canvas.subscribe'), 1);
+});
+
+test('a gap requests one fresh snapshot and drops the changes it supersedes', async () => {
+  const { bridge, client, seen } = await watching(4);
+  seen.length = 0;
+  bridge.deliver({ type: 'canvas.change', change: change(9) });
+  bridge.deliver({ type: 'canvas.change', change: change(10) });
+  bridge.deliver({ type: 'canvas.change', change: change(11) });
+  await flush();
+  // One request in flight, and the projection untouched until it answers.
+  assert.equal(bridge.count('canvas.subscribe'), 2);
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);
+  assert.deepEqual(seen, []);
+
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: bridge.last('canvas.subscribe').requestId,
+    snapshot: { canvasId: CANVAS, sequence: 11, frames: [frame('hey', 'rev_11')] },
+  });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 11);
+  assert.equal(seen.length, 1);
+
+  // Recovered: the client is following sequences again, not resyncing forever.
+  bridge.deliver({ type: 'canvas.change', change: change(12) });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 12);
+  assert.equal(bridge.count('canvas.subscribe'), 2);
+});
+
+test('a change for a canvas this client does not watch is ignored', async () => {
+  const { bridge, client } = await watching(4);
+  bridge.deliver({
+    type: 'canvas.change',
+    change: { canvasId: 'cv_other', sequence: 1, frames: [], removedDesignIds: [] },
+  });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);
+});
+
+test('the last listener to leave stops the canvas and drops the projection', async () => {
+  const { bridge, client, stop } = await watching(4);
+  stop();
+  assert.equal(client.snapshotOf(CANVAS), null);
+  const unsubscribe = bridge.last('canvas.unsubscribe');
+  bridge.deliver({
+    type: 'canvas.result',
+    requestId: unsubscribe.requestId,
+    ok: true,
+    reply: { kind: 'ok' },
+  });
+  await flush();
+  bridge.deliver({ type: 'canvas.change', change: change(5) });
+  await flush();
+  assert.equal(client.snapshotOf(CANVAS), null);
+});
+
+test('a reported failure rejects its own request with the stable code', async () => {
+  const bridge = fakeBridge();
+  const client = new CanvasClient(bridge.transport);
+  const listing = client.listCanvases();
+  bridge.deliver({
+    type: 'canvas.result',
+    requestId: bridge.last('canvas.list').requestId,
+    ok: false,
+    error: { code: 'scope_expired', message: 'This chat is not attached to that canvas.' },
+  });
+  await assert.rejects(listing, { code: 'scope_expired' });
+
+  const mutating = client.arrangeFrames('app-1', CANVAS, {
+    mutationId: 'm-arrange',
+    frames: [{ designId: 'hey', expectedLayoutVersion: 0, rect: frame('hey').rect }],
+  });
+  bridge.deliver({
+    type: 'canvas.result',
+    requestId: bridge.last('canvas.arrange').requestId,
+    ok: true,
+    reply: { kind: 'arranged', change: change(6, [frame('hey')]) },
+  });
+  assert.equal((await mutating).sequence, 6);
+});
