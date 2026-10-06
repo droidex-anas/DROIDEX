@@ -38,3 +38,15 @@ test('normalizeUrl preserves local browser targets', () => {
   assert.equal(normalizeUrl('example.com'), 'https://example.com');
   assert.equal(normalizeUrl('about:blank'), 'about:blank');
 });
+
+test('normalizeUrl opens sites and searches for everything else', () => {
+  assert.equal(normalizeUrl('docs.foo.dev/path'), 'https://docs.foo.dev/path');
+  assert.equal(normalizeUrl('192.168.1.5:3000'), 'https://192.168.1.5:3000');
+  assert.equal(normalizeUrl('devbox:8080/app'), 'https://devbox:8080/app');
+  assert.equal(normalizeUrl('google'), 'https://www.google.com/search?q=google');
+  assert.equal(normalizeUrl('hey there'), 'https://www.google.com/search?q=hey%20there');
+  assert.equal(
+    normalizeUrl('what is 1.5 + 2'),
+    'https://www.google.com/search?q=what%20is%201.5%20%2B%202',
+  );
+});

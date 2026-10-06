@@ -88,7 +88,12 @@ export function normalizeUrl(value: string): string {
   if (ipv6Loopback) return ipv6Loopback;
   if (/^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?(\/|$)/i.test(trimmed))
     return `http://${trimmed}`;
-  return `https://${trimmed}`;
+  // As in a browser's address bar: a name with a dot, or a host and port, is
+  // a site; anything else, a single word or words with spaces, is a search.
+  const site =
+    !/\s/.test(trimmed) && (trimmed.includes('.') || /^[\w-]+:\d+([/?#]|$)/.test(trimmed));
+  if (site) return `https://${trimmed}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 }
 
 function normalizeBareIpv6Loopback(value: string): string | null {
