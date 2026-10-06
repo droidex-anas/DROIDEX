@@ -39,6 +39,15 @@ test('an incomplete or damaged runtime names the first file at fault', (t) => {
 
 test('a runtime with no manifest is refused', (t) => {
   const empty = scratch(t, 'canvas-runtime-empty-');
+  assert.equal(startCanvasRuntime(empty), 'manifest.json is not a regular file');
+
+  // Anything that is not a regular file is refused before it is read: a FIFO
+  // here would block the compiler for as long as nobody wrote to it.
+  mkdirSync(join(empty, 'manifest.json'));
+  assert.equal(startCanvasRuntime(empty), 'manifest.json is not a regular file');
+  rmSync(join(empty, 'manifest.json'), { recursive: true });
+
+  writeFileSync(join(empty, 'manifest.json'), 'not json\n');
   assert.equal(startCanvasRuntime(empty), 'manifest.json could not be read');
 
   writeFileSync(join(empty, 'manifest.json'), '{"files":{}}\n');

@@ -18,7 +18,7 @@
 // resolves through, so no two anchors can disagree about where a package comes
 // from.
 
-import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -227,9 +227,15 @@ interface RuntimeManifest {
 }
 
 function readManifest(root: string): RuntimeManifest | string {
+  // Its type before its contents: reading a FIFO named manifest.json blocks for
+  // as long as nobody writes to it, and the compiler would answer nothing at
+  // all rather than refusing the runtime.
+  const path = join(root, MANIFEST_FILE);
+  if (!lstatSync(path, { throwIfNoEntry: false })?.isFile())
+    return `${MANIFEST_FILE} is not a regular file`;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(join(root, MANIFEST_FILE), 'utf8'));
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch {
     return `${MANIFEST_FILE} could not be read`;
   }

@@ -17,7 +17,7 @@
 //   npm run canvas:probe                     # the staged runtime, built dist
 //   npm run canvas:probe -- <path-to-.app>   # a packaged app's own resources
 
-import { fork } from 'node:child_process';
+import { execFileSync, fork } from 'node:child_process';
 import {
   cpSync,
   existsSync,
@@ -68,6 +68,15 @@ const DAMAGE: [string, (runtime: string) => void][] = [
       rewriteManifest(runtime, (manifest) => {
         delete manifest.files['node_modules/react/jsx-runtime.js'];
       });
+    },
+  ],
+  [
+    // A FIFO blocks a plain read for as long as nobody writes to it, so the
+    // manifest's type is proven before its contents are.
+    'a manifest that can be read at all',
+    (runtime) => {
+      drop(runtime, 'manifest.json');
+      execFileSync('/usr/bin/mkfifo', [join(runtime, 'manifest.json')]);
     },
   ],
   [

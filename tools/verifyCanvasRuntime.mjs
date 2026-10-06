@@ -11,7 +11,14 @@
 // both against every damaged fixture and fails if they ever disagree.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, sep } from 'node:path';
 import process from 'node:process';
@@ -45,7 +52,12 @@ export function verifyCanvasRuntime(runtimePath, arch) {
   const executableArch = EXECUTABLE_ARCH[arch];
   if (!executableArch) fail(`${arch} is not a packaged architecture`);
   const root = realpathSync(runtimePath);
-  const manifest = JSON.parse(readFileSync(join(root, CANVAS_RUNTIME_MANIFEST), 'utf8'));
+  // Its type before its contents: reading a FIFO named manifest.json blocks for
+  // as long as nobody writes to it, and the gate would hang rather than refuse.
+  const manifestPath = join(root, CANVAS_RUNTIME_MANIFEST);
+  if (!lstatSync(manifestPath, { throwIfNoEntry: false })?.isFile())
+    fail(`${CANVAS_RUNTIME_MANIFEST} is not a regular file`);
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 
   // Only these two are exempt from a staged size: the first describes the rest,
   // and code signing rewrites the second while packaging. A `null` anywhere in
