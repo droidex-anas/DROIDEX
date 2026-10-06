@@ -3,7 +3,14 @@
 // src/features/canvas/protocol.ts, and schema.test.ts stops compiling when the
 // two drift.
 
-import type { DesignRef, DesignSystemRef, FrameRect } from './schema.js';
+import type {
+  ArrangeFramesInput,
+  CreateFramesInput,
+  DesignRef,
+  DesignSystemRef,
+  FrameRect,
+  WriteFilesInput,
+} from './schema.js';
 
 export type {
   ArrangeFramesInput,
@@ -34,16 +41,31 @@ export interface CanvasTurnContext {
   designSystem: DesignSystemRef;
 }
 
-export interface CanvasScope {
-  scopeId: string;
-  appSessionId: string;
-  generation: number;
-  // null for an unattached chat's lease (spec §6); the first canvas_create
-  // under that lease fills the binding exactly once.
-  canvasId: string | null;
-  context: CanvasTurnContext;
-  allowedDesignIds: string[] | 'canvas';
-}
+/**
+ * What one mutation is authorized to change. A turn lease pins the references
+ * its request was composed with and expires with the turn (spec §6). A pane
+ * mutation is authorized by the chat's attachment instead: it has no turn
+ * generation and pins nothing, because the request names its own targets.
+ */
+export type CanvasScope =
+  | {
+      origin: 'turn';
+      scopeId: string;
+      appSessionId: string;
+      generation: number;
+      // null for an unattached chat's lease (spec §6); the first canvas_create
+      // under that lease fills the binding exactly once.
+      canvasId: string | null;
+      context: CanvasTurnContext;
+      allowedDesignIds: string[] | 'canvas';
+    }
+  | {
+      origin: 'user';
+      scopeId: string;
+      appSessionId: string;
+      canvasId: string;
+      allowedDesignIds: 'canvas';
+    };
 
 export interface CanvasDiagnostic {
   code: string;
@@ -135,3 +157,58 @@ export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
 }
+
+// ── Bridge commands and events ───────────────────────────────────────
+// The pane's half of the Canvas contract. `appSessionId` is the only session
+// identity on the wire; a mutation names the canvas its chat is attached to, and
+// `canvasBridge.ts` refuses one that disagrees. Every request carries a
+// requestId, and `canvasCommandSchema` in canvasBridge.ts validates this union.
+
+export type CanvasCommand =
+  | { type: 'canvas.list'; requestId: string }
+  | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
+  | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
+  | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
+  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
+  | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
+  | { type: 'canvas.detach'; requestId: string; appSessionId: string }
+  | {
+      type: 'canvas.create';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: CreateFramesInput;
+    }
+  | {
+      type: 'canvas.write';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: WriteFilesInput;
+    }
+  | {
+      type: 'canvas.arrange';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: ArrangeFramesInput;
+    };
+
+/** What a successful command answers with, one kind per command. */
+export type CanvasReply =
+  | { kind: 'ok' }
+  | { kind: 'summaries'; summaries: CanvasSummary[] }
+  | { kind: 'attachment'; canvasId: string | null }
+  | { kind: 'created'; created: CreateFramesResult }
+  | { kind: 'written'; receipt: WriteReceipt }
+  | { kind: 'arranged'; change: CanvasChange };
+
+export type CanvasEvent =
+  | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }
+  | { type: 'canvas.result'; requestId: string; ok: false; error: CanvasError }
+  // The reply to a subscribe, and the projection every later change extends.
+  | { type: 'canvas.snapshot'; requestId: string; snapshot: CanvasSnapshot }
+  | { type: 'canvas.summaries'; summaries: CanvasSummary[] }
+  // Broadcast with its canvasId, because the bridge server has no per-connection
+  // targeting; a client that does not watch that canvas drops it.
+  | { type: 'canvas.change'; change: CanvasChange };
