@@ -50,10 +50,6 @@ test('normalizeUrl opens sites and searches for everything else', () => {
   assert.equal(normalizeUrl('example.com.'), 'https://example.com.');
   assert.equal(normalizeUrl('[::ffff:192.0.2.1]:8080'), 'https://[::ffff:192.0.2.1]:8080');
   assert.equal(normalizeUrl('alice:x@devbox:443/private'), 'https://alice:x@devbox:443/private');
-  assert.equal(
-    normalizeUrl('alice:two words@example.com/p'),
-    'https://alice:two words@example.com/p',
-  );
   assert.equal(normalizeUrl('hello:world'), 'https://www.google.com/search?q=hello%3Aworld');
   assert.equal(
     normalizeUrl('email me at x@y'),
@@ -65,6 +61,13 @@ test('normalizeUrl opens sites and searches for everything else', () => {
   );
   assert.equal(normalizeUrl(':secret@example.com/p'), 'https://:secret@example.com/p');
   assert.equal(normalizeUrl('@handle'), 'https://www.google.com/search?q=%40handle');
+  assert.equal(normalizeUrl('@alice:secret@example.com/p'), 'https://@alice:secret@example.com/p');
+  assert.equal(normalizeUrl('1.2/45'), 'https://www.google.com/search?q=1.2%2F45');
+  assert.equal(normalizeUrl('1.2.3.4/x'), 'https://1.2.3.4/x');
+  assert.equal(
+    normalizeUrl('site:wikipedia.org ch4@zeolite'),
+    'https://www.google.com/search?q=site%3Awikipedia.org%20ch4%40zeolite',
+  );
   assert.equal(
     normalizeUrl('what is 1.5 + 2'),
     'https://www.google.com/search?q=what%20is%201.5%20%2B%202',

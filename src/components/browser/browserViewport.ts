@@ -86,21 +86,22 @@ export function normalizeUrl(value: string): string {
   if (/^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?(\/|$)/i.test(trimmed))
     return `http://${trimmed}`;
   // As in a browser's address bar, the part before the first /, ? or # decides,
-  // its host read by the URL parser itself: a host with a dot, an IP or a typed
-  // port makes the whole input a site, and so does any login, which is never
-  // sent to a search; anything else is a search.
+  // read by the URL parser itself. With a space in it, it is a search, as in
+  // Chromium. A login makes the input a site, so it is never sent to a search;
+  // so does a host with a dot (a number-only one only as a whole IPv4), an IP
+  // or a typed port. Anything else, an @handle included, is a search.
   const authority = trimmed.split(/[/?#]/, 1)[0];
-  const host = authority.slice(authority.lastIndexOf('@') + 1);
-  // A login is a user name without spaces, a password, or both; text with an @
-  // that is no login, such as a sentence with an email in it or a bare @handle,
-  // is a search.
-  const login = /^([^\s:@]+(:[^@]*)?|:[^@]+)@/.test(authority);
-  const atWithoutLogin = authority.includes('@') && !login;
-  if (!atWithoutLogin && host && !/\s/.test(host) && URL.canParse(`https://${host}`)) {
-    const { hostname } = new URL(`https://${host}`);
-    if (hostname === 'localhost' || hostname === '127.0.0.1') return `http://${trimmed}`;
-    if (login || hostname.includes('.') || hostname.startsWith('[') || /:\d+$/.test(host))
-      return `https://${trimmed}`;
+  if (!/\s/.test(authority) && URL.canParse(`https://${authority}`)) {
+    const { hostname, username, password } = new URL(`https://${authority}`);
+    const local = hostname === 'localhost' || hostname === '127.0.0.1';
+    const site =
+      Boolean(username || password) ||
+      (!authority.includes('@') &&
+        ((hostname.includes('.') &&
+          (!/^[\d.]+$/.test(hostname) || /^\d+(\.\d+){3}$/.test(hostname))) ||
+          hostname.startsWith('[') ||
+          /:\d+$/.test(authority)));
+    if (site) return `${local ? 'http' : 'https'}://${trimmed}`;
   }
   return `${SEARCH_URL}${encodeURIComponent(trimmed)}`;
 }
