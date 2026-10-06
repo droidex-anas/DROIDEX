@@ -43,20 +43,15 @@ function childDelta(
   };
 }
 
-function waitTicks(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 5));
-}
-
-function waitWindow(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, WINDOW_MS + SETTLE_MARGIN_MS));
-}
-
-test('a turn opens at tick speed and then coalesces for the full window', async () => {
+test('a turn opens at tick speed and then coalesces for the full window, unless the window is disabled', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const waitTicks = () => t.mock.timers.tick(5);
+  const waitWindow = () => t.mock.timers.tick(WINDOW_MS + SETTLE_MARGIN_MS);
   const { coalescer, delivered } = createCoalescer();
 
   coalescer.accept(childDelta('a1', 'child-1', { text: 'He' }));
   assert.equal(delivered.length, 0, 'nothing is published synchronously');
-  await waitTicks();
+  waitTicks();
   assert.deepEqual(
     delivered.map((event) => event.text),
     ['He'],
@@ -64,9 +59,9 @@ test('a turn opens at tick speed and then coalesces for the full window', async 
 
   coalescer.accept(childDelta('a2', 'child-1', { text: 'llo', ts: 2 }));
   coalescer.accept(childDelta('a3', 'child-1', { text: ' there', ts: 3 }));
-  await waitTicks();
+  waitTicks();
   assert.equal(delivered.length, 1, 'steady-state deltas keep the full coalescing window');
-  await waitWindow();
+  waitWindow();
   assert.deepEqual(
     delivered.map((event) => event.text),
     ['He', 'llo there'],
@@ -74,17 +69,26 @@ test('a turn opens at tick speed and then coalesces for the full window', async 
 
   coalescer.endTurn('parent-1', 'child-1');
   coalescer.accept(childDelta('b1', 'child-1', { text: 'next turn' }));
-  await waitTicks();
+  waitTicks();
   assert.equal(delivered.length, 3, 'the next turn opens at tick speed again');
+
+  const unbuffered = createCoalescer({ windowMs: 0 });
+  unbuffered.coalescer.accept(childDelta('c1', 'child-1'));
+  unbuffered.coalescer.accept(childDelta('c2', 'child-1'));
+  assert.deepEqual(
+    unbuffered.delivered.map((event) => event.id),
+    ['c1', 'c2'],
+  );
 });
 
-test('concurrent children each keep their own coalescing run', async () => {
+test('concurrent children each keep their own coalescing run', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { coalescer, delivered } = createCoalescer();
 
   // Open both turns so both sources are past their first-run flush.
   coalescer.accept(childDelta('a0', 'child-a', { text: 'A' }));
   coalescer.accept(childDelta('b0', 'child-b', { text: 'B' }));
-  await waitTicks();
+  t.mock.timers.tick(5);
   assert.equal(delivered.length, 2);
 
   for (let index = 1; index <= 4; index += 1) {
@@ -92,7 +96,7 @@ test('concurrent children each keep their own coalescing run', async () => {
     coalescer.accept(childDelta(`b${String(index)}`, 'child-b', { text: 'b', ts: index }));
   }
   assert.equal(delivered.length, 2, 'interleaved siblings must not flush each other');
-  await waitWindow();
+  t.mock.timers.tick(WINDOW_MS + SETTLE_MARGIN_MS);
 
   assert.deepEqual(
     delivered.map((event) => [event.sourceSessionId, event.text]),
@@ -156,18 +160,6 @@ test('flushAll delivers every source even when one delivery fails', () => {
     ['a1', 'c1'],
   );
   assert.doesNotThrow(() => coalescer.flushAll());
-});
-
-test('a disabled window delivers every delta immediately', () => {
-  const { coalescer, delivered } = createCoalescer({ windowMs: 0 });
-
-  coalescer.accept(childDelta('a1', 'child-a'));
-  coalescer.accept(childDelta('a2', 'child-a'));
-
-  assert.deepEqual(
-    delivered.map((event) => event.id),
-    ['a1', 'a2'],
-  );
 });
 
 test('streamingEventOwner keys primaries by session and children by child id', () => {

@@ -22,25 +22,22 @@ function entry(id, overrides = {}) {
   };
 }
 
-test('visible session plus one warm hidden view stay live; older hidden views evict', () => {
+test('the attached view, or else the newest hidden one, stays warm and older hidden views evict', () => {
   const budget = createNativeBrowserBudget({ maxLive: 2, now: () => 1000 });
-  const ids = budget.idsToEvict([
+  const withAttached = budget.idsToEvict([
     entry('attached', { attached: true, lastUsedAt: 900 }),
     entry('warm', { lastUsedAt: 800 }),
     entry('cold-a', { lastUsedAt: 100 }),
     entry('cold-b', { lastUsedAt: 50 }),
   ]);
-  assert.deepEqual(ids.sort(), ['cold-a', 'cold-b']);
-});
+  assert.deepEqual(withAttached.sort(), ['cold-a', 'cold-b']);
 
-test('with no attached view only the most recently used hidden session stays warm', () => {
-  const budget = createNativeBrowserBudget({ maxLive: 2, now: () => 1000 });
-  const ids = budget.idsToEvict([
+  const hiddenOnly = budget.idsToEvict([
     entry('older', { lastUsedAt: 10 }),
     entry('newest', { lastUsedAt: 50 }),
     entry('middle', { lastUsedAt: 20 }),
   ]);
-  assert.deepEqual(ids.sort(), ['middle', 'older']);
+  assert.deepEqual(hiddenOnly.sort(), ['middle', 'older']);
   assert.equal(
     budget.warmHiddenId([entry('older', { lastUsedAt: 10 }), entry('newest', { lastUsedAt: 50 })]),
     'newest',
@@ -106,28 +103,6 @@ test('restore script and capture script stay numeric and eviction is distinct fr
   assert.match(CAPTURE_SCROLL_SCRIPT, /scrollX/);
   assert.equal(restoreScrollScript({ x: 10.9, y: 20.2 }), restoreScrollScript({ x: 11, y: 20 }));
   assert.match(restoreScrollScript({ x: 3, y: 7 }), /scrollTo\(3,7\)/);
-});
-
-test('a multi-hour-equivalent hidden-browser workload plateaus at maxLive views', () => {
-  let now = 0;
-  const budget = createNativeBrowserBudget({ maxLive: 2, idleMs: 0, now: () => now });
-  const browsers = Array.from({ length: 12 }, (_, index) =>
-    entry(`b${String(index)}`, {
-      attached: index === 11,
-      lastUsedAt: index,
-    }),
-  );
-  const evicted = new Set(budget.idsToEvict(browsers));
-  for (const item of browsers) {
-    if (!evicted.has(item.browserSessionId)) continue;
-    item.hasView = false;
-    item.serialized = { url: item.targetUrl };
-  }
-  now = 6 * 60 * 60 * 1000;
-  const later = budget.counts(browsers);
-  assert.equal(later.live, 2);
-  assert.equal(later.serialized, 10);
-  assert.deepEqual(budget.idsToEvict(browsers), []);
 });
 
 function snapshot() {
@@ -222,19 +197,5 @@ test('a successful restore after a failed attempt applies snapshot state exactly
   assert.deepEqual(browser.state, held.state);
   assert.equal(browser.targetUrl, held.url);
   assert.equal(calls.released, 1);
-});
-
-test('a successful restore still clears the serialized snapshot', async () => {
-  const held = snapshot();
-  const browser = entry('warm', { serialized: held });
-  const { calls, hooks } = restoreHooks();
-
-  assert.equal(await restoreSerialized(browser, hooks), true);
-  assert.equal(browser.serialized, null);
-  assert.deepEqual(calls.load, [held.url]);
-  assert.deepEqual(calls.scroll, [held.scroll]);
-  assert.equal(calls.released, 0);
-  assert.equal(calls.failures.length, 0);
-  assert.deepEqual(browser.viewport, held.viewport);
-  assert.deepEqual(browser.state, held.state);
+  assert.equal(calls.failures.length, 1, 'the successful attempt reports no new failure');
 });

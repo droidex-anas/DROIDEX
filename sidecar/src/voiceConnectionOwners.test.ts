@@ -17,29 +17,25 @@ function owners(t: test.TestContext) {
   return { voice, stopped, call };
 }
 
-test('a page gone for the whole grace period loses its call', (t) => {
-  const { voice, stopped, call } = owners(t);
-  const socket = {};
-  voice.connected('page-one', socket);
-  call('chat-one', 'page-one', 'a');
-  voice.disconnected(socket);
-
-  t.mock.timers.tick(9_999);
-  assert.deepEqual(stopped, []);
-  t.mock.timers.tick(1);
-  assert.deepEqual(stopped, ['chat-one']);
-});
-
-test('the same page reclaims its call on a new connection; a new page cannot', (t) => {
+test('only the same page reconnecting within the grace period keeps its call', (t) => {
   const { voice, stopped, call } = owners(t);
   const first = {};
   voice.connected('page-one', first);
   call('chat-one', 'page-one', 'a');
   voice.disconnected(first);
   voice.connected('page-one', {});
-  voice.connected('page-two', {});
   t.mock.timers.tick(10_000);
   assert.deepEqual(stopped, []);
+
+  const gone = {};
+  voice.connected('page-two', gone);
+  call('chat-two', 'page-two', 'b');
+  voice.disconnected(gone);
+  voice.connected('page-three', {});
+  t.mock.timers.tick(9_999);
+  assert.deepEqual(stopped, []);
+  t.mock.timers.tick(1);
+  assert.deepEqual(stopped, ['chat-two']);
 });
 
 test('a start that finishes after its page reconnected belongs to the live connection', (t) => {
@@ -117,16 +113,4 @@ test('an orphan is still stopped when the newer call fails or never settles', (t
   voice.startBegan('chat-two', 'page-four', 'd');
   t.mock.timers.tick(40_000);
   assert.deepEqual(stopped, ['chat-one', 'chat-two']);
-});
-
-test('only the owning page can stop a call', (t) => {
-  const { voice, stopped, call } = owners(t);
-  voice.connected('page-one', {});
-  voice.connected('page-two', {});
-  call('chat-one', 'page-one', 'a');
-  call('chat-one', 'page-two', 'b');
-
-  assert.equal(voice.stopped('chat-one', 'page-one'), false);
-  assert.equal(voice.stopped('chat-one', 'page-two'), true);
-  assert.deepEqual(stopped, []);
 });

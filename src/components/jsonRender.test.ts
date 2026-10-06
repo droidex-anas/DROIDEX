@@ -12,71 +12,50 @@ import {
   __statusColorForTest as statusColor,
 } from './JsonRender';
 
-test('plain text yields a single markdown segment', () => {
-  const segs = splitJsonRender('hello world');
-  assert.deepEqual(segs, [{ type: 'markdown', value: 'hello world' }]);
-});
-
-test('interleaves markdown and json-render blocks', () => {
-  const segs = splitJsonRender('before <json-render>{"a":1}</json-render> after');
-  assert.equal(segs.length, 3);
-  assert.equal(segs[0].type, 'markdown');
-  assert.deepEqual(segs[1], { type: 'json-render', value: '{"a":1}' });
-  assert.equal(segs[2].type, 'markdown');
-});
-
-test('handles multiple json-render blocks', () => {
-  const segs = splitJsonRender(
-    '<json-render>{"a":1}</json-render><json-render>{"b":2}</json-render>',
-  );
-  assert.equal(segs.length, 2);
-  assert.equal(segs[0].type, 'json-render');
-  assert.equal(segs[1].type, 'json-render');
-});
-
-test('hides a still-streaming (unclosed) json-render block', () => {
-  const segs = splitJsonRender('done\n<json-render>{"partial": ');
-  assert.deepEqual(segs, [{ type: 'markdown', value: 'done\n' }]);
-});
-
-test('keeps completed prose that merely mentions the json-render tag', () => {
-  const text = 'Use <json-render> tags to render rich UI in the terminal.';
-  assert.deepEqual(splitJsonRender(text), [{ type: 'markdown', value: text }]);
-});
-
-test('keeps prose mentioning the tag after a completed block', () => {
-  const segs = splitJsonRender(
-    '<json-render>{"a":1}</json-render>\nEmit a <json-render> block to draw charts.',
-  );
-  assert.equal(segs.length, 2);
-  assert.deepEqual(segs[0], { type: 'json-render', value: '{"a":1}' });
-  assert.deepEqual(segs[1], {
-    type: 'markdown',
-    value: '\nEmit a <json-render> block to draw charts.',
-  });
-});
-
-test('hasJsonRender detects the opening tag', () => {
+test('closed json-render blocks interleave with prose; an unclosed one and a bare mention do not', () => {
   assert.equal(hasJsonRender('x <json-render>{}</json-render>'), true);
   assert.equal(hasJsonRender('no tags here'), false);
+
+  const segs = splitJsonRender('before <json-render>{"a":1}</json-render> after');
+  assert.deepEqual(
+    segs.map((segment) => segment.type),
+    ['markdown', 'json-render', 'markdown'],
+  );
+  assert.deepEqual(segs[1], { type: 'json-render', value: '{"a":1}' });
+
+  // A still-streaming block stays hidden.
+  assert.deepEqual(splitJsonRender('done\n<json-render>{"partial": '), [
+    { type: 'markdown', value: 'done\n' },
+  ]);
+
+  // Prose that merely mentions the tag, before or after a block, is kept.
+  const mention = 'Use <json-render> tags to render rich UI in the terminal.';
+  assert.deepEqual(splitJsonRender(mention), [{ type: 'markdown', value: mention }]);
+  assert.deepEqual(
+    splitJsonRender(
+      '<json-render>{"a":1}</json-render>\nEmit a <json-render> block to draw charts.',
+    ),
+    [
+      { type: 'json-render', value: '{"a":1}' },
+      { type: 'markdown', value: '\nEmit a <json-render> block to draw charts.' },
+    ],
+  );
 });
 
-test('resolveColor maps themed names and accepts safe literals', () => {
+test('resolveColor maps themed names, accepts safe literals, and rejects CSS function injection', () => {
   assert.equal(resolveColor('green'), 'var(--droid-green)');
   assert.equal(resolveColor('#ff8800'), '#ff8800');
   assert.equal(resolveColor('rgb(10, 20, 30)'), 'rgb(10, 20, 30)');
   assert.equal(resolveColor('red'), 'var(--droid-red)');
   assert.equal(resolveColor('teal'), 'teal');
-});
 
-test('resolveColor rejects CSS function injection', () => {
   assert.equal(resolveColor('url(https://evil.example/x.png)'), undefined);
   assert.equal(resolveColor('var(--secret)'), undefined);
   assert.equal(resolveColor('red;background:url(http://x)'), undefined);
   assert.equal(resolveColor(123), undefined);
 });
 
-test('render budget caps an exponential shared-child DAG', () => {
+test('render budget caps an exponential shared-child DAG and leaves small specs whole', () => {
   // Each level points twice at the next distinct id: a -> [b,b], b -> [c,c]...
   // `seen` only blocks per-path cycles, so without a global budget this fans out
   // to ~2^40 nodes and freezes. The budget must keep it bounded (and finish).
@@ -89,6 +68,17 @@ test('render budget caps an exponential shared-child DAG', () => {
   elements[`n${levels}`] = { type: 'Text', props: { text: 'leaf' } };
   const count = renderBudget({ root: 'n0', elements });
   assert.ok(count <= MAX_NODES, `expanded ${count} nodes, expected <= ${MAX_NODES}`);
+
+  // Small specs stay fully expanded.
+  const small = renderBudget({
+    root: 'r',
+    elements: {
+      r: { type: 'Box', children: ['a', 'b'] },
+      a: { type: 'Text', props: { text: 'a' } },
+      b: { type: 'Text', props: { text: 'b' } },
+    },
+  });
+  assert.equal(small, 3);
 });
 
 test('statusColor resolves real statuses and falls back for prototype keys', () => {
@@ -101,35 +91,16 @@ test('statusColor resolves real statuses and falls back for prototype keys', () 
   }
 });
 
-test('a huge Sparkline data array renders without blowing the call stack', () => {
+test('huge Sparkline and BarChart data arrays render without blowing the call stack', () => {
   // Before the collection cap, SparklineEl's `Math.min(...data)` spread on a
   // 200k-element array threw RangeError and froze the chat. The cap must keep
   // the spec renderable.
-  const data = Array.from({ length: 200_000 }, (_, i) => i % 50);
-  const source = JSON.stringify({
-    root: 'r',
-    elements: { r: { type: 'Sparkline', props: { data } } },
-  });
-  assert.doesNotThrow(() => renderToStaticMarkup(createElement(JsonRender, { source })));
-});
-
-test('a huge BarChart data array renders without blowing the call stack', () => {
-  const data = Array.from({ length: 200_000 }, (_, i) => ({ label: `l${i}`, value: i % 50 }));
-  const source = JSON.stringify({
-    root: 'r',
-    elements: { r: { type: 'BarChart', props: { data } } },
-  });
-  assert.doesNotThrow(() => renderToStaticMarkup(createElement(JsonRender, { source })));
-});
-
-test('render budget leaves small specs fully expanded', () => {
-  const count = renderBudget({
-    root: 'r',
-    elements: {
-      r: { type: 'Box', children: ['a', 'b'] },
-      a: { type: 'Text', props: { text: 'a' } },
-      b: { type: 'Text', props: { text: 'b' } },
-    },
-  });
-  assert.equal(count, 3);
+  const charts = {
+    Sparkline: Array.from({ length: 200_000 }, (_, i) => i % 50),
+    BarChart: Array.from({ length: 200_000 }, (_, i) => ({ label: `l${i}`, value: i % 50 })),
+  };
+  for (const [type, data] of Object.entries(charts)) {
+    const source = JSON.stringify({ root: 'r', elements: { r: { type, props: { data } } } });
+    assert.doesNotThrow(() => renderToStaticMarkup(createElement(JsonRender, { source })), type);
+  }
 });

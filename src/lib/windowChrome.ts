@@ -14,6 +14,9 @@ const SIDEBAR_TOGGLE_PX = 28;
 // Gutter the top rows keep between that chrome and their own first element.
 const TOP_ROW_GUTTER_PX = 16;
 
+// Every view's top row is h-9, and so is the tab strip that stacks above them.
+export const TOP_ROW_HEIGHT_PX = 36;
+
 // Where a view's top row may start once the collapsed sidebar puts the window
 // controls and the sidebar toggle inside it.
 export const WINDOW_CONTROLS_LEAD_PX =

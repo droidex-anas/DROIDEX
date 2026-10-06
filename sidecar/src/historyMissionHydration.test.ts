@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import type { SessionSummary } from './protocol.js';
 import { persistTestChild, persistTestSummaries } from './testing/historyPersistenceFixture.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-mission-history-'));
@@ -86,25 +87,15 @@ test('Mission hydration restores logical child progress beneath the exact parent
 });
 
 function missionSummary(): SessionSummary {
-  return {
+  return sessionSummary({
     appSessionId: 'parent-app',
     providerSessionId: 'parent-provider',
     missionId: 'mission-1',
-    provider: 'droid',
     sessionPurpose: 'mission-control',
     interactionMode: 'agi',
-    role: 'primary',
-    title: 'Mission',
-    goal: 'Ship',
-    cwd: '',
     workspaceKind: 'none',
     autonomy: 'medium',
     phase: 'completed',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
     updatedAt: 2,
-  };
+  });
 }

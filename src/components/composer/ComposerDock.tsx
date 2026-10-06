@@ -14,9 +14,9 @@ import PlanSteps from './PlanSteps';
 
 type OpenDock = 'plan' | 'agents' | null;
 
-export default function ComposerDock() {
+export default function ComposerDock({ appSessionId }: { appSessionId: string | null }) {
   const [open, setOpen] = useState<OpenDock>(null);
-  const agents = useDockedAgents();
+  const agents = useDockedAgents(appSessionId);
   const openAgent = useOpenAgent();
   // Between two waves of one turn the line leaves and returns. It must come back
   // the way a new line arrives, collapsed, rather than wearing the expansion the
@@ -36,7 +36,11 @@ export default function ComposerDock() {
 
   return (
     <>
-      <PlanSteps expanded={open === 'plan'} onExpandedChange={showPlan} />
+      <PlanSteps
+        appSessionId={appSessionId}
+        expanded={open === 'plan'}
+        onExpandedChange={showPlan}
+      />
       <AnimatePresence initial={false}>
         {agents && (
           <AgentDockLine
@@ -69,8 +73,8 @@ function nextOpenDock(
     composer re-renders on every streamed token, and reading the transcript here
     would put a scan of it on that path. Exported so that contract stays
     checkable: appending a transcript event must leave this shallow-equal. */
-export function selectDockedAgents(state: AppState) {
-  const session = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
+export function selectDockedAgents(state: AppState, appSessionId: string | null) {
+  const session = appSessionId ? state.sessions[appSessionId] : null;
   // Keyed renderer maps are typed as always-present; Partial keeps the lookup
   // honest without changing runtime behavior.
   const childrenByParent: Partial<typeof state.childSessions> = state.childSessions;
@@ -83,8 +87,8 @@ export function selectDockedAgents(state: AppState) {
   };
 }
 
-function useDockedAgents() {
-  const source = useStoreSelector(selectDockedAgents, shallowEqual);
+function useDockedAgents(appSessionId: string | null) {
+  const source = useStoreSelector((state) => selectDockedAgents(state, appSessionId), shallowEqual);
 
   return useMemo(() => {
     if (!source.children || source.missionControl) return null;

@@ -9,7 +9,6 @@ import {
   expect,
   test,
   type ElectronApplication,
-  type Page,
 } from '@playwright/test';
 
 type RecordedCommand = {
@@ -172,11 +171,9 @@ test('[E2] parent-scoped agents pane preserves the primary chat', async () => {
   const bootstrapUrl = `data:text/html;charset=utf-8,${encodeURIComponent(
     '<!doctype html><html><body>Child-session smoke bootstrap</body></html>',
   )}`;
-  const {
-    FACTORY_API_KEY: _factoryApiKey,
-    DROID_PATH: _droidPath,
-    ...unauthenticatedEnvironment
-  } = process.env;
+  const unauthenticatedEnvironment = { ...process.env };
+  delete unauthenticatedEnvironment.FACTORY_API_KEY;
+  delete unauthenticatedEnvironment.DROID_PATH;
 
   const resources: SmokeResources = { smokeHome };
   try {
@@ -349,11 +346,9 @@ test('[E2] parent-scoped agents pane preserves the primary chat', async () => {
 test('[E2] pre-ready fixture failure cleans the temporary profile and process', async () => {
   const smokeHome = mkdtempSync(path.join(tmpdir(), 'droid-control-child-startup-failure-'));
   const commandLog = path.join(smokeHome, 'commands.jsonl');
-  const {
-    FACTORY_API_KEY: _factoryApiKey,
-    DROID_PATH: _droidPath,
-    ...unauthenticatedEnvironment
-  } = process.env;
+  const unauthenticatedEnvironment = { ...process.env };
+  delete unauthenticatedEnvironment.FACTORY_API_KEY;
+  delete unauthenticatedEnvironment.DROID_PATH;
   const resources: SmokeResources = { smokeHome };
 
   try {

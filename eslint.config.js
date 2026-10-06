@@ -5,6 +5,21 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import prettierConfig from 'eslint-config-prettier';
 import globals from 'globals';
+import noSleepInTests from './tools/eslint/no-sleep-in-tests.mjs';
+
+const SLEEP_MESSAGE = 'No sleeps in tests. Use controlled promises or mocked timers.';
+const TEST_FILES = ['**/*.{test,spec}.{js,jsx,cjs,mjs,ts,tsx,cts,mts}'];
+
+const electronRestrictedSyntax = [
+  {
+    selector: "MemberExpression[property.name='enableDeviceEmulation']",
+    message: 'Chromium device emulation crashed the Browser pane.',
+  },
+  {
+    selector: "Literal[value='Emulation.setDeviceMetricsOverride']",
+    message: 'Chromium device emulation crashed the Browser pane.',
+  },
+];
 
 export default tseslint.config(
   {
@@ -19,7 +34,9 @@ export default tseslint.config(
       'benchmark-runs/',
       'benchmarks/',
       'public/',
-      'tools/',
+      'tools/**/*',
+      '!tools/**/',
+      ...TEST_FILES.map((pattern) => `!tools/${pattern}`),
       '**/*.png',
       'package-lock.json',
       'sidecar/package-lock.json',
@@ -30,7 +47,7 @@ export default tseslint.config(
 
   {
     files: ['src/**/*.{ts,tsx}', 'sidecar/src/**/*.ts', 'packages/icons/src/**/*.{ts,tsx}'],
-    ignores: ['**/*.test.{ts,tsx}'],
+    ignores: TEST_FILES,
     extends: [...tseslint.configs.strictTypeChecked, ...tseslint.configs.stylisticTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -87,7 +104,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.test.{ts,tsx}', 'tests/integration/automations.spec.ts', 'vite.config.ts'],
+    files: ['**/*.{test,spec}.{ts,tsx,cts,mts}', 'vite.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       globals: {
@@ -130,17 +147,28 @@ export default tseslint.config(
       sourceType: 'commonjs',
     },
     rules: {
-      'no-restricted-syntax': [
+      'no-restricted-syntax': ['error', ...electronRestrictedSyntax],
+    },
+  },
+
+  {
+    // Test budget; see "Verification and tests" in AGENTS.md.
+    files: TEST_FILES,
+    plugins: { 'test-policy': { rules: { 'no-sleep': noSleepInTests } } },
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: {
+      'max-lines': ['error', { max: 800, skipBlankLines: true, skipComments: true }],
+      'test-policy/no-sleep': 'error',
+      'no-restricted-imports': [
         'error',
         {
-          selector: "MemberExpression[property.name='enableDeviceEmulation']",
-          message: 'Chromium device emulation crashed the Browser pane.',
-        },
-        {
-          selector: "Literal[value='Emulation.setDeviceMetricsOverride']",
-          message: 'Chromium device emulation crashed the Browser pane.',
+          paths: ['timers/promises', 'node:timers/promises'].map((name) => ({
+            name,
+            message: SLEEP_MESSAGE,
+          })),
         },
       ],
+      'no-restricted-modules': ['error', { paths: ['timers/promises', 'node:timers/promises'] }],
     },
   },
 

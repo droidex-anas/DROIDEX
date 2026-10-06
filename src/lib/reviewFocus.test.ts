@@ -16,7 +16,7 @@ const change = {
   removed: 0,
 };
 
-test('openReviewAt includes the captured transcript change on OPEN_REVIEW_AT', () => {
+test('a review focus request carries the captured change until the focus is cleared', () => {
   assert.deepEqual(openReviewAt('src/app.ts', change), {
     type: 'OPEN_REVIEW_AT',
     scope: 'last_turn',
@@ -24,26 +24,18 @@ test('openReviewAt includes the captured transcript change on OPEN_REVIEW_AT', (
     change,
   });
   assert.equal(openReviewAt('src/app.ts', change, 'uncommitted').scope, 'uncommitted');
-});
 
-test('applyOpenReviewAt stores the captured change instead of dropping it', () => {
-  const next = applyOpenReviewAt(
+  const opened = applyOpenReviewAt(
     { reviewFocusPath: null, reviewFocusChange: null, reviewFocusRequestId: 0 },
     openReviewAt('src/app.ts', change),
   );
-  assert.equal(next.reviewFocusPath, 'src/app.ts');
-  assert.equal(next.reviewFocusChange, change);
-  assert.equal(next.reviewFocusRequestId, 1);
-});
+  assert.equal(opened.reviewFocusPath, 'src/app.ts');
+  assert.equal(opened.reviewFocusChange, change);
+  assert.equal(opened.reviewFocusRequestId, 1);
 
-test('clearReviewFocus drops both the path and the captured change', () => {
-  const next = clearReviewFocus({
-    reviewFocusPath: 'src/app.ts',
-    reviewFocusChange: change,
-    reviewFocusRequestId: 1,
-  });
-  assert.equal(next.reviewFocusPath, null);
-  assert.equal(next.reviewFocusChange, null);
+  const cleared = clearReviewFocus(opened);
+  assert.equal(cleared.reviewFocusPath, null);
+  assert.equal(cleared.reviewFocusChange, null);
 });
 
 test('exhaustedReviewFocus prefers the captured transcript change over a disk preview', () => {
@@ -55,30 +47,32 @@ test('exhaustedReviewFocus prefers the captured transcript change over a disk pr
   });
 });
 
-test('planReviewFocus shows the captured change while git lists are loading', () => {
-  const plan = planReviewFocus({
+test('planReviewFocus shows a captured change while loading, when listed, and when no scope lists it', () => {
+  const request = {
     focusPath: 'src/app.ts',
     focusChange: change,
-    files: [],
-    loadingList: true,
-    currentScope: 'last_turn',
-    requestId: 1,
-    alreadyTriedKey: null,
-  });
-  assert.deepEqual(plan, { kind: 'detached', focus: { kind: 'change', change } });
-});
-
-test('planReviewFocus preserves the captured edit even when Git lists the file', () => {
-  const plan = planReviewFocus({
-    focusPath: 'src/app.ts',
-    focusChange: change,
-    files: [{ path: 'src/app.ts' }],
+    files: [] as { path: string }[],
     loadingList: false,
-    currentScope: 'last_turn',
+    currentScope: 'last_turn' as const,
     requestId: 1,
-    alreadyTriedKey: null,
-  });
-  assert.deepEqual(plan, { kind: 'detached', focus: { kind: 'change', change } });
+    alreadyTriedKey: null as string | null,
+  };
+  for (const input of [
+    { ...request, loadingList: true },
+    // The captured edit is preserved even when Git lists the file.
+    { ...request, files: [{ path: 'src/app.ts' }] },
+    {
+      ...request,
+      currentScope: 'commit' as const,
+      requestId: 4,
+      alreadyTriedKey: '4:commit→src/app.ts',
+    },
+  ]) {
+    assert.deepEqual(planReviewFocus(input), {
+      kind: 'detached',
+      focus: { kind: 'change', change },
+    });
+  }
 });
 
 test('planReviewFocus advances Git scopes for a path-only request', () => {
@@ -94,17 +88,4 @@ test('planReviewFocus advances Git scopes for a path-only request', () => {
   assert.equal(plan.kind, 'advance');
   if (plan.kind !== 'advance') return;
   assert.equal(plan.scope, 'uncommitted');
-});
-
-test('planReviewFocus uses the captured change when no git scope lists the file', () => {
-  const plan = planReviewFocus({
-    focusPath: 'src/app.ts',
-    focusChange: change,
-    files: [],
-    loadingList: false,
-    currentScope: 'commit',
-    requestId: 4,
-    alreadyTriedKey: '4:commit→src/app.ts',
-  });
-  assert.deepEqual(plan, { kind: 'detached', focus: { kind: 'change', change } });
 });

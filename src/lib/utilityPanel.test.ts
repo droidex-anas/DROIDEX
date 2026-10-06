@@ -12,7 +12,7 @@ import {
   utilityTerminalCwds,
 } from './utilityPanel';
 
-test('singleton tools activate their existing tab', () => {
+test('singleton tools activate their existing tab and unknown tab ids are rejected', () => {
   let id = 0;
   const createId = () => `tab-${++id}`;
   const opened = openUtilityTool(undefined, 'review', createId);
@@ -22,6 +22,7 @@ test('singleton tools activate their existing tab', () => {
   assert.equal(reopened.tabs.length, 2);
   assert.equal(reopened.activeTabId, 'tab-1');
   assert.equal(reopened.open, true);
+  assert.equal(activateUtilityTab(reopened, 'missing'), reopened);
 });
 
 test('terminal tabs are independent and closing the active tab chooses its neighbor', () => {
@@ -40,12 +41,7 @@ test('terminal tabs are independent and closing the active tab chooses its neigh
   assert.equal(closeUtilityTab(closed, 'tab-1').open, false);
 });
 
-test('activation rejects unknown tab ids', () => {
-  const panel = openUtilityTool(undefined, 'files', () => 'files');
-  assert.equal(activateUtilityTab(panel, 'missing'), panel);
-});
-
-test('persisted utility panels are bounded and sanitized', () => {
+test('persisted utility panels are bounded, sanitized, never keep terminal tabs, and drop a removed session', () => {
   assert.deepEqual(
     sanitizeUtilityPanels({
       session: {
@@ -68,26 +64,13 @@ test('persisted utility panels are bounded and sanitized', () => {
       },
     },
   );
-});
 
-test('terminal tabs are never persisted across app restarts', () => {
+  // Terminal tabs are never persisted across app restarts.
   const terminal = openUtilityTool(undefined, 'terminal', () => 'terminal');
   assert.deepEqual(persistUtilityPanels({ session: terminal }), {
     session: { open: false, tabs: [], activeTabId: null },
   });
-});
 
-test('running terminal tabs pin their session worktree', () => {
-  let panel = openUtilityTool(undefined, 'terminal', () => 'terminal', {
-    cwd: '/repo/original-worktree',
-  });
-  panel = updateUtilityTab(panel, 'terminal', { terminalId: 'pty-1' });
-  assert.deepEqual(utilityTerminalCwds({ session: panel }, { session: '/repo/new-worktree' }), [
-    '/repo/original-worktree',
-  ]);
-});
-
-test('removeSessionPanel drops only the given session', () => {
   const panels = {
     a: { open: true, tabs: [], activeTabId: null },
     b: { open: false, tabs: [], activeTabId: null },
@@ -97,7 +80,15 @@ test('removeSessionPanel drops only the given session', () => {
   assert.equal(removeSessionPanel(next, 'zzz'), next);
 });
 
-test('terminal cleanup retains terminal tabs from open and closed session panels in order', () => {
+test('running terminal tabs pin their worktree and terminal cleanup retains every session terminal tab in order', () => {
+  let panel = openUtilityTool(undefined, 'terminal', () => 'terminal', {
+    cwd: '/repo/original-worktree',
+  });
+  panel = updateUtilityTab(panel, 'terminal', { terminalId: 'pty-1' });
+  assert.deepEqual(utilityTerminalCwds({ session: panel }, { session: '/repo/new-worktree' }), [
+    '/repo/original-worktree',
+  ]);
+
   assert.equal(terminalTabIds({}), '');
   assert.equal(
     terminalTabIds({

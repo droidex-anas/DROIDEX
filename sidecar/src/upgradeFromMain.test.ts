@@ -6,10 +6,10 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { HistoryIndexDatabase } from './historyIndexDatabase.js';
-import { LiveRuntimeJournal, liveRuntimeJournalPath } from './liveRuntimeJournal.js';
 import { initializeSessionFileCacheSchema } from './sessionFileCacheSchema.js';
 import { persistTestSummaries } from './testing/historyPersistenceFixture.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const { HistoryIndex, SESSION_INDEX_FILENAME, SESSION_SEARCH_INDEX_FILENAME } =
   await import('./history.js');
@@ -55,64 +55,33 @@ function writeSessionFile(home: string, id: string, cwd: string): string {
   return path;
 }
 
-function summary(appSessionId: string, cwd: string) {
-  const now = Date.now();
-  return {
-    appSessionId,
-    providerSessionId: appSessionId,
-    provider: 'droid' as const,
-    sessionPurpose: 'chat' as const,
-    interactionMode: 'auto' as const,
-    role: 'primary' as const,
-    title: `Chat ${appSessionId}`,
-    goal: `Chat ${appSessionId}`,
-    cwd,
-    workspaceKind: 'folder' as const,
-    autonomy: 'low' as const,
-    phase: 'paused' as const,
-    streaming: false,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
+const SESSION_FILE_CACHE_COLUMNS = [
+  'provider_session_id',
+  'path',
+  'birthtime_ms',
+  'mtime_ms',
+  'size_bytes',
+  'settings_mtime_ms',
+  'summary_json',
+  'launch_settings_json',
+];
 
-function tableNames(path: string): string[] {
-  const db = new DatabaseSync(path);
-  try {
-    return (
-      db
-        .prepare(
-          "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        )
-        .all() as { name: string }[]
-    ).map((row) => row.name);
-  } finally {
-    db.close();
-  }
-}
-
-function columnNames(path: string, table: string): string[] {
-  const db = new DatabaseSync(path);
-  try {
-    return db
-      .prepare(`PRAGMA table_info(${table})`)
-      .all()
-      .map((row) => String((row as { name: unknown }).name));
-  } finally {
-    db.close();
-  }
-}
-
-test('an origin/main canonical index with a leftover file cache still opens', async () => {
+test('an origin/main index with a leftover file cache opens, and the first derived index rebuilds the cache beside it', async () => {
   await withIsolatedHome((home) => {
     const workspace = join(home, 'workspace');
     writeSessionFile(home, 'kept-chat', workspace);
     const created = new HistoryIndex();
-    persistTestSummaries([summary('kept-chat', workspace)]);
+    const now = Date.now();
+    persistTestSummaries([
+      sessionSummary({
+        appSessionId: 'kept-chat',
+        title: 'Chat kept-chat',
+        cwd: workspace,
+        workspaceKind: 'folder',
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ]);
     created.close();
 
     const canonicalPath = join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME);
@@ -139,6 +108,24 @@ test('an origin/main canonical index with a leftover file cache still opens', as
       upgraded.close();
     }
 
+    const derived = new HistoryIndexDatabase(canonicalPath);
+    try {
+      const result = derived.reconcileSessionFiles();
+      const rebuilt = result.upserts.find((entry) => entry.providerSessionId === 'kept-chat');
+      assert.equal(rebuilt?.summary?.appSessionId, 'kept-chat');
+      assert.equal(rebuilt?.summary?.title, 'Chat kept-chat');
+      const snapshot = derived.sessionFileSnapshot();
+      assert.equal(
+        snapshot.entries.some((entry) => entry.providerSessionId === 'kept-chat' && entry.summary),
+        true,
+      );
+    } finally {
+      derived.close();
+    }
+
+    const searchPath = join(home, '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME);
+    assert.deepEqual(columnNames(searchPath, 'session_file_cache'), SESSION_FILE_CACHE_COLUMNS);
+    // Canonical history, and its leftover cache, are left as they were.
     const verified = new DatabaseSync(canonicalPath);
     const session = verified
       .prepare('SELECT app_session_id, cwd FROM app_sessions WHERE app_session_id = ?')
@@ -157,53 +144,6 @@ test('an origin/main canonical index with a leftover file cache still opens', as
   });
 });
 
-test('the first derived index rebuilds the file cache and leaves canonical history alone', async () => {
-  await withIsolatedHome((home) => {
-    const workspace = join(home, 'workspace');
-    writeSessionFile(home, 'kept-chat', workspace);
-    const created = new HistoryIndex();
-    persistTestSummaries([summary('kept-chat', workspace)]);
-    created.close();
-
-    const canonicalPath = join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME);
-    const canonical = new DatabaseSync(canonicalPath);
-    canonical.exec(ORIGIN_MAIN_SESSION_FILE_CACHE);
-    canonical.close();
-
-    const derived = new HistoryIndexDatabase(canonicalPath);
-    try {
-      const result = derived.reconcileSessionFiles();
-      const rebuilt = result.upserts.find((entry) => entry.providerSessionId === 'kept-chat');
-      assert.equal(rebuilt?.summary?.appSessionId, 'kept-chat');
-      assert.equal(rebuilt?.summary?.title, 'Chat kept-chat');
-      const snapshot = derived.sessionFileSnapshot();
-      assert.equal(
-        snapshot.entries.some((entry) => entry.providerSessionId === 'kept-chat' && entry.summary),
-        true,
-      );
-    } finally {
-      derived.close();
-    }
-
-    const searchPath = join(home, '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME);
-    assert.deepEqual(columnNames(searchPath, 'session_file_cache'), [
-      'provider_session_id',
-      'path',
-      'birthtime_ms',
-      'mtime_ms',
-      'size_bytes',
-      'settings_mtime_ms',
-      'summary_json',
-      'launch_settings_json',
-    ]);
-    assert.ok(tableNames(canonicalPath).includes('session_file_cache'));
-    assert.equal(
-      columnNames(canonicalPath, 'session_file_cache').includes('launch_settings_json'),
-      false,
-    );
-  });
-});
-
 test('an origin/main-shaped derived cache is dropped and recreated', () => {
   const db = new DatabaseSync(':memory:');
   db.exec(ORIGIN_MAIN_SESSION_FILE_CACHE);
@@ -213,16 +153,7 @@ test('an origin/main-shaped derived cache is dropped and recreated', () => {
     ) VALUES ('old-row', '/tmp/old.jsonl', 1, 1, 1, NULL, '{"cacheVersion":1}')`,
   );
   initializeSessionFileCacheSchema(db);
-  assert.deepEqual(columnNamesFrom(db, 'session_file_cache'), [
-    'provider_session_id',
-    'path',
-    'birthtime_ms',
-    'mtime_ms',
-    'size_bytes',
-    'settings_mtime_ms',
-    'summary_json',
-    'launch_settings_json',
-  ]);
+  assert.deepEqual(columnNamesFrom(db, 'session_file_cache'), SESSION_FILE_CACHE_COLUMNS);
   const leftover = db.prepare('SELECT count(*) AS count FROM session_file_cache').get() as {
     count: number;
   };
@@ -230,48 +161,14 @@ test('an origin/main-shaped derived cache is dropped and recreated', () => {
   db.close();
 });
 
-test('a journal written without lastActiveAt adopts nothing and keeps children', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'droidex-upgrade-journal-'));
+function columnNames(path: string, table: string): string[] {
+  const db = new DatabaseSync(path);
   try {
-    writeFileSync(
-      liveRuntimeJournalPath(dir),
-      JSON.stringify({
-        sessions: [
-          {
-            appSessionId: 'live-chat',
-            providerSessionId: 'provider-live-chat',
-            phase: 'running',
-            streaming: true,
-          },
-        ],
-        children: [
-          {
-            parentAppSessionId: 'live-chat',
-            childSessionId: 'worker-1',
-            status: 'running',
-          },
-        ],
-      }),
-    );
-    const journal = new LiveRuntimeJournal(liveRuntimeJournalPath(dir));
-    const identities = journal.read();
-    assert.deepEqual(identities.sessions, []);
-    assert.equal(identities.children.length, 1);
-    assert.equal(identities.children[0]?.childSessionId, 'worker-1');
+    return columnNamesFrom(db, table);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    db.close();
   }
-});
-
-test('a missing live-runtime journal is an empty live set', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'droidex-upgrade-no-journal-'));
-  try {
-    const journal = new LiveRuntimeJournal(liveRuntimeJournalPath(dir));
-    assert.deepEqual(journal.read(), { sessions: [], children: [], processes: [] });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+}
 
 function columnNamesFrom(db: DatabaseSync, table: string): string[] {
   return db

@@ -1,19 +1,11 @@
 import { spawn } from 'node:child_process';
 import { childEnv } from './childEnv.js';
-import type { EnvironmentReport, InstallChannel } from './protocol.js';
+import type { InstallChannel } from './protocol.js';
 
 export interface ShellCommand {
   command: string;
   args: string[];
   env?: NodeJS.ProcessEnv;
-}
-
-// Prefer the official script when curl exists, then Homebrew, then npm.
-export function pickInstallChannel(
-  env: Pick<EnvironmentReport, 'availableChannels'>,
-): InstallChannel | null {
-  const order: InstallChannel[] = ['script', 'brew', 'npm'];
-  return order.find((channel) => env.availableChannels.includes(channel)) ?? null;
 }
 
 export function buildInstallCommand(channel: InstallChannel): ShellCommand {

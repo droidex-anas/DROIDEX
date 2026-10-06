@@ -1,5 +1,5 @@
-const crypto = require('node:crypto');
 const path = require('node:path');
+const { writeJsonFile } = require('./preferenceFile.cjs');
 
 const PREFERENCE_VERSION = 1;
 const HARDWARE_ACCELERATION_DEFAULT = true;
@@ -52,23 +52,10 @@ async function saveHardwareAccelerationPreference(options) {
   if (typeof options.enabled !== 'boolean') {
     throw new Error('Hardware acceleration preference must be boolean.');
   }
-  const temporaryPath = `${options.filePath}.${crypto.randomUUID()}.tmp`;
-  await options.fs.mkdir(path.dirname(options.filePath), { recursive: true, mode: 0o700 });
-  try {
-    await options.fs.writeFile(
-      temporaryPath,
-      `${JSON.stringify({ version: PREFERENCE_VERSION, enabled: options.enabled }, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-    await options.fs.rename(temporaryPath, options.filePath);
-  } catch (error) {
-    try {
-      await options.fs.unlink(temporaryPath);
-    } catch {
-      // The temporary file may not have been created.
-    }
-    throw error;
-  }
+  await writeJsonFile(options.fs, options.filePath, {
+    version: PREFERENCE_VERSION,
+    enabled: options.enabled,
+  });
   return { enabled: options.enabled };
 }
 

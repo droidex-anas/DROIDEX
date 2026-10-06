@@ -24,6 +24,7 @@ import {
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
 import { getApiKey, setAppIcon, terminalHasChildren } from './lib/desktop';
+import { forwardNativeBrowserShortcuts } from './lib/nativeBrowser';
 import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import {
@@ -33,8 +34,6 @@ import {
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
-import ChatView from './components/ChatView';
-import PromptInput from './components/PromptInput';
 import RightPanel from './components/RightPanel';
 import EditorOpenMenu from './components/EditorOpenMenu';
 import Toaster from './components/Toaster';
@@ -47,7 +46,22 @@ import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
 import { addNativeSurfaceObscurer } from './hooks/useObscuresNativeSurfaces';
-import { WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
+import {
+  TOP_ROW_HEIGHT_PX,
+  WINDOW_CONTROLS_INSET_PX,
+  WINDOW_CONTROLS_LEAD_PX,
+} from './lib/windowChrome';
+import { HeaderTabs } from './features/tabs/HeaderTabs';
+import { RunningProcessesMenu } from './components/RunningProcessesMenu';
+import { ChatTiles } from './features/tabs/ChatTiles';
+import {
+  activeGrid,
+  adjacentTabId,
+  numberedTabId,
+  showsTabStrip,
+  type TabAction,
+} from './features/tabs/tabStrip';
+import { adjacentTileId, nextSplit, type TileEdge } from './features/tabs/tileGrid';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
@@ -60,11 +74,17 @@ import {
   type UtilityTab,
   type UtilityTool,
 } from './lib/utilityPanel';
-import { isTerminalInputTarget, isTerminalTabShortcut } from './lib/keyboardShortcuts';
+import {
+  isTerminalInputTarget,
+  isTerminalTabShortcut,
+  utilityToolShortcut,
+} from './lib/keyboardShortcuts';
 import {
   SHORTCUT_DEFINITIONS,
   formatChord,
   matchesChord,
+  nativeBrowserChords,
+  tabNumberFromEvent,
   type ShortcutAction,
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
@@ -158,6 +178,7 @@ export default function App() {
       : null;
     return {
       activeSession,
+      activeTabSplit: activeGrid(current.tabStrip) !== null,
       childAccess: current.childAccess,
       commandPaletteOpen: current.commandPaletteOpen,
       customThemes: current.customThemes,
@@ -173,6 +194,7 @@ export default function App() {
         : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
+      tabStripShown: showsTabStrip(current),
       theme: current.theme,
       utilityPanels: current.utilityPanels,
       workspaceCwds: current.workspaceCwds,
@@ -269,7 +291,19 @@ export default function App() {
   const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
   const [contentRowWidth, setContentRowWidth] = useState(0);
-  const utilityPaneToggleRef = useRef<HTMLButtonElement>(null);
+  // The toggle moves between the tab row and the chat header, so its preload
+  // listeners follow the button itself.
+  const bindUtilityToggleIntent = useCallback((toggle: HTMLButtonElement) => {
+    const cleanups = [
+      bindLazySurfaceIntent('browser', toggle),
+      bindLazySurfaceIntent('files', toggle),
+      bindLazySurfaceIntent('terminal', toggle),
+      bindLazySurfaceIntent('review', toggle),
+    ];
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, []);
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
 
@@ -326,20 +360,6 @@ export default function App() {
     composerStartupResolved.current = true;
     noteComposerNotApplicable();
   }, [isMissionControlView, fullContentRoute]);
-
-  useEffect(() => {
-    const toggle = utilityPaneToggleRef.current;
-    if (!toggle || showUtilityPane) return;
-    const cleanups = [
-      bindLazySurfaceIntent('browser', toggle),
-      bindLazySurfaceIntent('files', toggle),
-      bindLazySurfaceIntent('terminal', toggle),
-      bindLazySurfaceIntent('review', toggle),
-    ];
-    return () => {
-      for (const cleanup of cleanups) cleanup();
-    };
-  }, [showUtilityPane]);
 
   const toggleRightPanel = useCallback(() => {
     const open = !state.rightPanelOpen;
@@ -614,7 +634,33 @@ export default function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const run: Record<ShortcutAction, () => void> = {
+    // An embedded copy of the app shows no tabs, so it leaves their chords to
+    // whatever hosts it instead of swallowing them.
+    const tabAction = (action: () => TabAction | null) =>
+      embedded
+        ? null
+        : () => {
+            const next = action();
+            if (next) dispatch(next);
+          };
+    const tabStrip = () => store.getState().tabStrip;
+    const splitNewChat = (preferred: TileEdge) =>
+      tabAction(() => {
+        const grid = activeGrid(tabStrip());
+        const split = grid ? nextSplit(grid, preferred) : null;
+        return {
+          type: 'SPLIT_TILE',
+          targetTileId: split?.targetTileId ?? null,
+          edge: split?.edge ?? preferred,
+          appSessionId: null,
+        };
+      });
+    const focusAdjacentTile = (offset: 1 | -1) =>
+      tabAction(() => {
+        const grid = activeGrid(tabStrip());
+        return grid ? { type: 'FOCUS_TILE', tileId: adjacentTileId(grid, offset) } : null;
+      });
+    const run: Record<ShortcutAction, (() => void) | null> = {
       toggleSidebar: () => {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
       },
@@ -625,19 +671,44 @@ export default function App() {
       openSettings: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
+      newTab: tabAction(() => ({ type: 'OPEN_NEW_CHAT_TAB' })),
+      closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
+      reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
+      nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),
+      previousTab: tabAction(() => ({
+        type: 'ACTIVATE_TAB',
+        tabId: adjacentTabId(tabStrip(), -1),
+      })),
+      splitRight: splitNewChat('right'),
+      splitDown: splitNewChat('bottom'),
+      nextTile: focusAdjacentTile(1),
+      previousTile: focusAdjacentTile(-1),
+      closeTile: tabAction(() => {
+        const grid = activeGrid(tabStrip());
+        return grid ? { type: 'CLOSE_TILE', tileId: grid.focusedTileId } : null;
+      }),
     };
     const handler = (e: KeyboardEvent) => {
       // A saved binding wins over the fixed chords below, so rebinding an
       // action onto one of them takes effect instead of being swallowed.
       for (const { action } of SHORTCUT_DEFINITIONS) {
-        if (!matchesChord(e, state.shortcutBindings[action])) continue;
+        const perform = run[action];
+        if (!perform || !matchesChord(e, state.shortcutBindings[action])) continue;
         // A shell owns its Ctrl chords (Ctrl+\ is SIGQUIT); Cmd chords never
         // reach it, so on macOS they still toggle from inside the terminal.
         if (isTerminalInputTarget(e.target) && !e.metaKey) return;
         e.preventDefault();
         // A held key auto-repeats and would toggle straight back.
         if (e.repeat) return;
-        run[action]();
+        perform();
+        return;
+      }
+      const tabNumber = embedded ? null : tabNumberFromEvent(e);
+      if (tabNumber !== null) {
+        if (isTerminalInputTarget(e.target) && !e.metaKey) return;
+        e.preventDefault();
+        const tabId = numberedTabId(tabStrip(), tabNumber);
+        if (tabId) dispatch({ type: 'ACTIVATE_TAB', tabId });
         return;
       }
       if (isTerminalTabShortcut(e)) {
@@ -647,19 +718,23 @@ export default function App() {
         openUtilityTool('terminal');
         return;
       }
-      const meta = e.metaKey || e.ctrlKey;
-      if (!meta || !e.shiftKey) return;
-      const key = e.key.toLowerCase();
-      if (key === 'b' || key === 'f' || key === 'r') {
+      const tool = utilityToolShortcut(e);
+      if (tool) {
         e.preventDefault();
-        openUtilityTool(key === 'b' ? 'browser' : key === 'f' ? 'files' : 'review');
+        openUtilityTool(tool);
       }
     };
     window.addEventListener('keydown', handler);
+    const stopForwarding = embedded
+      ? null
+      : forwardNativeBrowserShortcuts(nativeBrowserChords(state.shortcutBindings), (press) => {
+          handler(new KeyboardEvent('keydown', press));
+        });
     return () => {
       window.removeEventListener('keydown', handler);
+      stopForwarding?.();
     };
-  }, [dispatch, openUtilityTool, state.shortcutBindings, toggleUtilityPane]);
+  }, [dispatch, embedded, openUtilityTool, state.shortcutBindings, store, toggleUtilityPane]);
 
   const setupBlocker =
     !showWizard &&
@@ -672,6 +747,48 @@ export default function App() {
   // below whatever is showing.
   const bannerStackRef = useRef<HTMLDivElement>(null);
   const bannerStackHeight = useMeasuredHeight(bannerStackRef);
+
+  // A lone chat in a tab has no header of its own: the tab names it, and its
+  // running processes join these controls in the tab row.
+  const listsProcesses =
+    state.tabStripShown && !state.activeTabSplit && !isMissionControlView && !!activeSession;
+  const sessionControls = fullContentRoute ? null : (
+    <>
+      {listsProcesses && <RunningProcessesMenu appSessionId={activeSession.appSessionId} />}
+      {!showUtilityPane && (
+        <>
+          {workingDirectory && (
+            <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
+          )}
+          {canToggleContext && (
+            <button
+              onClick={toggleRightPanel}
+              aria-label="Toggle context panel"
+              aria-pressed={state.rightPanelOpen}
+              // No pressed fill: like the sidebar and utility toggles beside it,
+              // the open panel is its own evidence; the icon only brightens.
+              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
+                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
+              }`}
+              title="Toggle context"
+            >
+              <ContextListIcon className="h-4 w-4" />
+            </button>
+          )}
+          {!!activeSession && (
+            <button
+              ref={bindUtilityToggleIntent}
+              onClick={toggleUtilityPane}
+              className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+              title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
 
   return (
     <div
@@ -717,8 +834,15 @@ export default function App() {
         {/* Every view under `main` owns a drag row as its top row, so a view
             never shifts when the sidebar collapses. Collapsing only moves the
             window controls and the floating sidebar toggle into that row; the
-            chat header reads the collapsed state and leaves them room. */}
+            chat header reads the collapsed state and leaves them room. With a
+            second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
+          {state.tabStripShown && (
+            <HeaderTabs
+              leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
+              controls={sessionControls}
+            />
+          )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
               aria-hidden={paneExpanded}
@@ -755,12 +879,11 @@ export default function App() {
                 </motion.div>
               ) : (
                 <>
-                  <ChatView
+                  <ChatTiles
                     rightInset={rightPanelVisible}
                     isObscured={paneExpanded}
                     besidePane={showUtilityPane}
                   />
-                  <PromptInput rightInset={rightPanelVisible} />
                   {activeSession && state.sideChatPlacement === 'floating' ? (
                     <Suspense fallback={null}>
                       <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
@@ -974,7 +1097,8 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 12 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-none absolute top-0 right-0 h-full w-[312px] z-30"
+              className="pointer-events-none absolute bottom-0 right-0 w-[312px] z-30"
+              style={{ top: state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0 }}
             >
               <RightPanel />
             </motion.div>
@@ -1004,40 +1128,14 @@ export default function App() {
         </button>
       </div>
 
-      {!showUtilityPane && !fullContentRoute && (
+      {/* Without tabs, the session's controls float at the end of the view's own top row. */}
+      {!state.tabStripShown && !showUtilityPane && !fullContentRoute && (
         <div
           data-electron-drag-region
           className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
           style={{ top: bannerStackHeight }}
         >
-          {workingDirectory && (
-            <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
-          )}
-          {canToggleContext && (
-            <button
-              onClick={toggleRightPanel}
-              aria-label="Toggle context panel"
-              aria-pressed={state.rightPanelOpen}
-              // No pressed fill: like the sidebar and utility toggles beside it,
-              // the open panel is its own evidence; the icon only brightens.
-              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
-                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
-              }`}
-              title="Toggle context"
-            >
-              <ContextListIcon className="h-4 w-4" />
-            </button>
-          )}
-          {!!activeSession && (
-            <button
-              ref={utilityPaneToggleRef}
-              onClick={toggleUtilityPane}
-              className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
-              title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
-            >
-              <PanelRight className="h-4 w-4" />
-            </button>
-          )}
+          {sessionControls}
         </div>
       )}
 

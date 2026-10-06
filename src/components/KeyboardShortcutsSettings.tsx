@@ -108,6 +108,14 @@ export function KeyboardShortcutsSettings() {
             </div>
           );
         })}
+        {/* Browser tab numbering is fixed, so it is listed but not rebindable. */}
+        <div className="border-t border-droid-border/50">
+          <SettingRow label="Go to tab 1–9" description="9 always opens the last tab.">
+            <kbd className="min-w-[52px] shrink-0 rounded-md bg-droid-elevated px-2 py-1 text-center font-mono text-[11px] text-droid-text-muted">
+              {formatChord('Meta+1')}–{formatChord('Meta+9')}
+            </kbd>
+          </SettingRow>
+        </div>
       </div>
     </div>
   );

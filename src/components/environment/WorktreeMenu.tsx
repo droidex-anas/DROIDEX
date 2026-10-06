@@ -6,6 +6,7 @@ import { Row, RowCaret } from './primitives';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { createGitWorktree, isWorktreeInUse, removeGitWorktree, worktreeName } from '../../lib/git';
 import { activeSessionCwds } from '../../lib/sessions';
+import { selectedChats } from '../../features/tabs/tabStrip';
 import { utilityTerminalCwds } from '../../lib/utilityPanel';
 import { useBusyAction } from '../../hooks/useBusyAction';
 import { toast } from '../../lib/toast';
@@ -80,7 +81,7 @@ export function WorktreeMenu({
     (state) =>
       activeSessionCwds({
         sessions: Object.values(state.sessions),
-        activeAppSessionId: state.activeAppSessionId,
+        selectedAppSessionIds: selectedChats(state),
         draftCwd: state.draftChat?.cwd,
         childSessions: state.childSessions,
         childRuntime: state.childRuntime,

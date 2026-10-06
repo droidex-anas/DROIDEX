@@ -2,35 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { notify } from './desktop';
 
-function replaceGlobal(name: string, value: unknown): () => void {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
-  Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
-  return () => {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else Reflect.deleteProperty(globalThis, name);
-  };
-}
-
-test('notify returns the desktop bridge delivery result', async () => {
-  const expected = { shown: false, reason: 'timeout' };
-  const restore = replaceGlobal('window', {
-    droidControl: { notify: async () => expected },
+async function notifyWithWindow(window: unknown) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: window,
   });
   try {
-    assert.deepEqual(await notify('DROIDEX', 'Finished'), expected);
+    return await notify('DROIDEX', 'Finished');
   } finally {
-    restore();
+    if (descriptor) Object.defineProperty(globalThis, 'window', descriptor);
+    else Reflect.deleteProperty(globalThis, 'window');
   }
-});
+}
 
-test('notify reports unsupported when the desktop bridge is absent', async () => {
-  const restore = replaceGlobal('window', undefined);
-  try {
-    assert.deepEqual(await notify('DROIDEX', 'Finished'), {
-      shown: false,
-      reason: 'unsupported',
-    });
-  } finally {
-    restore();
-  }
+test('notify returns the desktop bridge delivery result, or unsupported without a bridge', async () => {
+  const expected = { shown: false, reason: 'timeout' };
+  assert.deepEqual(
+    await notifyWithWindow({ droidControl: { notify: async () => expected } }),
+    expected,
+  );
+  assert.deepEqual(await notifyWithWindow(undefined), { shown: false, reason: 'unsupported' });
 });

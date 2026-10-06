@@ -5,6 +5,7 @@ import { Popover } from '../environment/Popover';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
 import { useStoreSelector } from '../../hooks/useStore';
 import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
+import { viewRowHoldsWindowControls } from '../../features/tabs/tabStrip';
 import { PaneResizeHandle } from './PaneResizeHandle';
 import { UtilityToolPicker } from './UtilityToolPicker';
 import { UTILITY_TOOL_OPTIONS, utilityToolOption } from './utilityToolOptions';
@@ -38,10 +39,10 @@ export function UtilityPane({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
-  // Expanded, the pane owns the window's top row; with the sidebar collapsed
-  // the traffic lights and the sidebar toggle sit there too.
-  const sidebarCollapsed = useStoreSelector((current) => current.sidebarCollapsed);
-  const leadPx = expanded && sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : undefined;
+  // Expanded, the pane owns the view's top row, where the traffic lights and
+  // the sidebar toggle may sit too.
+  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const leadPx = expanded && holdsWindowControls ? WINDOW_CONTROLS_LEAD_PX : undefined;
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId) ?? null;
   const openSingletons = new Set(panel.tabs.map((tab) => tab.tool));
   const availableTools = UTILITY_TOOL_OPTIONS.map((option) => option.tool).filter(

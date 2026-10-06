@@ -253,8 +253,8 @@ export interface TranscriptEvent {
   errorKind?: 'usage_limit';
   resetsAt?: number;
   // A 'status' row that only says what the app is doing right now (booting a
-  // CLI, stopping a turn to send now, releasing an idle runtime). It is shown live and never
-  // stored, so reopening the session does not replay stale progress.
+  // CLI, stopping a turn to send now). It is shown live and never stored, so
+  // reopening the session does not replay stale progress.
   transient?: true;
 }
 
@@ -539,14 +539,14 @@ export interface BrowserViewport {
 export type BrowserViewportMode = 'fit' | 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
 type BrowserScrollDirection = 'up' | 'down' | 'left' | 'right';
 
-interface BrowserBox {
+export interface BrowserBox {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-interface BrowserElementRef {
+export interface BrowserElementRef {
   ref: string;
   selector: string;
   tagName: string;
@@ -585,7 +585,7 @@ interface BrowserNativeSnapshot {
   canGoForward?: boolean;
 }
 
-interface BrowserElementInspection {
+export interface BrowserElementInspection {
   selector: string;
   tagName: string;
   role?: string;
@@ -600,7 +600,7 @@ interface BrowserElementInspection {
   };
 }
 
-interface BrowserNetworkEvent {
+export interface BrowserNetworkEvent {
   timestamp: number;
   method: string;
   url: string;
@@ -609,7 +609,7 @@ interface BrowserNetworkEvent {
   error?: string;
 }
 
-interface BrowserConsoleEvent {
+export interface BrowserConsoleEvent {
   timestamp: number;
   level: number;
   message: string;
@@ -693,12 +693,12 @@ interface DesignStrokePoint {
   y: number;
 }
 
-interface DesignSelectionScreenshot {
+export interface DesignSelectionScreenshot {
   base64: string;
   box: BrowserBox;
 }
 
-interface DesignAnchor {
+export interface DesignAnchor {
   id: string;
   kind: 'element' | 'region' | 'text';
   label: string;
@@ -712,7 +712,7 @@ interface DesignAnchor {
   strokes?: DesignStrokePoint[][];
 }
 
-interface DesignAnchorDetail {
+export interface DesignAnchorDetail {
   id: string;
   selector: string;
   selectorVerified: boolean;
@@ -898,7 +898,9 @@ export type ClientCommand =
   | {
       type: 'app.backgroundWork';
       tier: 'interactive' | 'hidden' | 'low-power';
-      focusedAppSessionId?: string | null;
+      // The chat the user is working in, and every chat on screen including it.
+      focusedAppSessionId: string | null;
+      visibleAppSessionIds: string[];
     }
   | {
       type: 'child.open';

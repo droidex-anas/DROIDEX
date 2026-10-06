@@ -85,6 +85,8 @@ export class SessionContext {
   private readonly pollers: ContextPollHost<ContextOperationTarget>;
   private backgroundWorkTier: BackgroundWorkTier = 'interactive';
   private focusedAppSessionId: string | null = null;
+  // Null until the renderer first reports, when every session counts as on screen.
+  private onScreenAppSessionIds: ReadonlySet<string> | null = null;
   private epoch = 0;
 
   constructor(private readonly dependencies: SessionContextDependencies) {
@@ -202,20 +204,38 @@ export class SessionContext {
     this.pollers.stop(contextResourceKey(target), target.session);
   }
 
-  setBackgroundWork(tier: BackgroundWorkTier, focusedAppSessionId?: string | null): void {
-    const nextFocus =
-      focusedAppSessionId === undefined ? this.focusedAppSessionId : focusedAppSessionId;
-    if (this.backgroundWorkTier === tier && this.focusedAppSessionId === nextFocus) return;
+  setBackgroundWork(
+    tier: BackgroundWorkTier,
+    focusedAppSessionId: string | null,
+    visibleAppSessionIds: readonly string[],
+  ): void {
+    const onScreen = this.onScreenAppSessionIds;
+    const nextOnScreen = new Set(visibleAppSessionIds);
+    if (
+      this.backgroundWorkTier === tier &&
+      this.focusedAppSessionId === focusedAppSessionId &&
+      onScreen !== null &&
+      onScreen.size === nextOnScreen.size &&
+      visibleAppSessionIds.every((id) => onScreen.has(id))
+    )
+      return;
+
     this.backgroundWorkTier = tier;
-    this.focusedAppSessionId = nextFocus;
+    this.focusedAppSessionId = focusedAppSessionId;
+    this.onScreenAppSessionIds = nextOnScreen;
     this.pollers.reschedule();
   }
 
-  // The session the renderer reports as on screen. Owned here because poll
+  // What the renderer reports the user is looking at: the chat they are
+  // working in, and every chat on screen including it. Owned here because poll
   // cadence already keys off it; other policies read it rather than tracking
   // their own copy.
   focusedSession(): string | null {
     return this.focusedAppSessionId;
+  }
+
+  onScreenSessions(): ReadonlySet<string> | null {
+    return this.onScreenAppSessionIds;
   }
 
   pollerCounts(): ContextPollerCounts {
@@ -377,8 +397,7 @@ export class SessionContext {
     return contextPollIntervalMs({
       tier: this.backgroundWorkTier,
       isChild: isChildTarget(target),
-      focusedAppSessionId: this.focusedAppSessionId,
-      appSessionId: target.appSessionId,
+      isOnScreen: this.onScreenAppSessionIds?.has(target.appSessionId) ?? true,
     });
   }
 

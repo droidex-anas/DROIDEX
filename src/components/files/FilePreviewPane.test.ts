@@ -13,16 +13,13 @@ test('image previews normalize Electron Buffer payloads without losing bytes', (
   assert.equal(imageMimeType('photo.jpeg'), 'image/jpeg');
 });
 
-test('delimited previews discard columns beyond the visible column limit', () => {
+test('delimited previews cap visible columns and recognize CRLF and CR row endings', () => {
   const firstRow = Array.from({ length: 60 }, (_, index) => `value${index + 1}`).join(',');
   const rows = parseDelimitedText(`${firstRow}\nnext,row`, ',', 500, 50);
-
   assert.equal(rows[0].length, 50);
   assert.equal(rows[0][49], 'value50');
   assert.deepEqual(rows[1], ['next', 'row']);
-});
 
-test('delimited previews recognize CRLF and standalone CR row endings', () => {
   assert.deepEqual(parseDelimitedText('a,b\r\nc,d\re,f', ',', 500, 50), [
     ['a', 'b'],
     ['c', 'd'],

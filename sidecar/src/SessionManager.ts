@@ -735,16 +735,13 @@ export class SessionManager {
     });
     this.runtimeRetirement = new SessionRuntimeRetirement({
       liveSessions: () => this.registry.liveSessionsSnapshot(),
-      focusedAppSessionId: () => this.context.focusedSession(),
+      onScreenAppSessionIds: () => this.context.onScreenSessions(),
       hasUnsettledChildren: (id) => this.childSessions.hasUnsettledChildren(id),
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
       hasPendingSettings: (id) => this.modelSettings.hasPending(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
-      appendProgress: (id, text) => {
-        this.timeline.appendProgress(id, text);
-      },
       emitError: (appSessionId, message) => {
         this.emitError({ appSessionId, message });
       },
@@ -1126,12 +1123,14 @@ export class SessionManager {
         return;
       case 'app.backgroundWork': {
         const previouslyFocused = this.context.focusedSession();
-        this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId);
-        this.runtimeRetirement.noteFocus(previouslyFocused);
+        const previouslyOnScreen = this.context.onScreenSessions();
+        this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId, cmd.visibleAppSessionIds);
+        this.runtimeRetirement.noteOnScreen(previouslyOnScreen);
         // Only a change of chat is a new selection; the tier moves on its own
         // whenever the window is hidden or the machine goes on battery.
-        const focused = this.context.focusedSession();
-        if (focused !== previouslyFocused) this.runtimeWarmUp.selected(focused);
+        if (cmd.focusedAppSessionId !== previouslyFocused) {
+          this.runtimeWarmUp.selected(cmd.focusedAppSessionId);
+        }
         return;
       }
       case 'settings.agent.update':

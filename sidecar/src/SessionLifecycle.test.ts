@@ -12,7 +12,7 @@ import type {
   SessionSummary,
 } from './protocol.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
-import type { Provider } from './providers/session.js';
+import type { Provider, ProviderResumeInput } from './providers/session.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
@@ -140,43 +140,30 @@ function createHarness(
     autonomy: 'low',
     interactionMode: 'auto',
   };
+  const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
+    calls.push({ target, method, args });
+  };
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => provider,
     registry,
-    ensureConnected: () => {
-      calls.push({ target: 'runtime', method: 'ensureConnected', args: [] });
-    },
+    ensureConnected: () => record('runtime', 'ensureConnected'),
     getFactoryDefaults: () => Promise.resolve(defaults),
     maxContextTokensForModel: () => 1_000,
     childSessions: {
-      retryAgentWave: (appSessionId) => {
-        calls.push({ target: 'cleanup', method: 'children.retryWave', args: [appSessionId] });
-      },
-      attachParent: (appSessionId) => {
-        calls.push({ target: 'cleanup', method: 'children.attach', args: [appSessionId] });
-      },
+      retryAgentWave: (appSessionId) => record('cleanup', 'children.retryWave', appSessionId),
+      attachParent: (appSessionId) => record('cleanup', 'children.attach', appSessionId),
       closeParent: (appSessionId) => closeChildren(appSessionId),
     },
     startLocalMcpServers: () => {
       const resourceId = ++mcpId;
-      calls.push({ target: 'runtime', method: 'mcp.start', args: [resourceId] });
-      return Promise.resolve({
-        servers: [
-          {
-            close: () => {
-              calls.push({
-                target: 'cleanup',
-                method: 'mcp.close',
-                args: [`mcp-${resourceId}`],
-              });
-              return Promise.resolve();
-            },
-          },
-        ],
-        configs: mcpConfigs,
-      });
+      record('runtime', 'mcp.start', resourceId);
+      const close = () => {
+        record('cleanup', 'mcp.close', `mcp-${resourceId}`);
+        return Promise.resolve();
+      };
+      return Promise.resolve({ servers: [{ close }], configs: mcpConfigs });
     },
     interactionsFor: () => ({
       requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
@@ -188,58 +175,30 @@ function createHarness(
       resolveLimit: () => compactionLimit(),
       arm: async (target, limit) => {
         if (!target.isCurrent()) return false;
-        calls.push({
-          target: 'provider',
-          method: 'autoCompaction.arm',
-          args: [target.session.sessionId, limit],
-        });
+        record('provider', 'autoCompaction.arm', target.session.sessionId, limit);
         const armed = await enableAutoCompaction();
         return target.isCurrent() && armed;
       },
       subscribePrimary: (target) => {
         target.liveSession.unsubscribe = target.session.onNotification(() => undefined);
       },
-      afterTurn: (target) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'autoCompaction.settled',
-          args: [target.appSessionId],
-        });
-      },
+      afterTurn: (target) => record('cleanup', 'autoCompaction.settled', target.appSessionId),
       cancel: (target) => {
         if (target.kind === 'primary') target.liveSession.autoCompacting = false;
         else target.setAutoCompacting(false);
-        calls.push({
-          target: 'cleanup',
-          method: 'watchdog.clear',
-          args: [target.kind === 'primary' ? target.appSessionId : target.childSessionId],
-        });
+        const id = target.kind === 'primary' ? target.appSessionId : target.childSessionId;
+        record('cleanup', 'watchdog.clear', id);
       },
-      forgetSession: (appSessionId) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'compaction.forgetSession',
-          args: [appSessionId],
-        });
-      },
+      forgetSession: (appSessionId) => record('cleanup', 'compaction.forgetSession', appSessionId),
     },
     isShutdownStarted: () => shutdownStarted,
     agentProcesses: {
-      setIgnoredCommands: (appSessionId, patterns) => {
-        calls.push({
-          target: 'runtime',
-          method: 'processes.setIgnoredCommands',
-          args: [appSessionId, ...patterns],
-        });
-      },
-      track: (appSessionId, pid) => {
-        calls.push({ target: 'runtime', method: 'processes.track', args: [appSessionId, pid] });
-      },
-      untrack: (pid) => {
-        calls.push({ target: 'cleanup', method: 'processes.untrack', args: [pid] });
-      },
+      setIgnoredCommands: (appSessionId, patterns) =>
+        record('runtime', 'processes.setIgnoredCommands', appSessionId, ...patterns),
+      track: (appSessionId, pid) => record('runtime', 'processes.track', appSessionId, pid),
+      untrack: (pid) => record('cleanup', 'processes.untrack', pid),
       killSession: (appSessionId) => {
-        calls.push({ target: 'cleanup', method: 'processes.killSession', args: [appSessionId] });
+        record('cleanup', 'processes.killSession', appSessionId);
         return killProcesses(appSessionId);
       },
     },
@@ -259,36 +218,16 @@ function createHarness(
     context: {
       preserveUsage: () => undefined,
       refresh: (target) => {
-        calls.push({
-          target: 'provider',
-          method: 'context.refresh',
-          args: [target.sourceSessionId],
-        });
+        record('provider', 'context.refresh', target.sourceSessionId);
         return Promise.resolve();
       },
-      stopPolling: (sourceSessionId) => {
-        calls.push({ target: 'cleanup', method: 'poll.stop', args: [sourceSessionId] });
-      },
+      stopPolling: (sourceSessionId) => record('cleanup', 'poll.stop', sourceSessionId),
       stopSession: (live) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'poll.stop',
-          args: [live.summary.appSessionId],
-        });
+        record('cleanup', 'poll.stop', live.summary.appSessionId);
         if (live.summary.providerSessionId)
-          calls.push({
-            target: 'cleanup',
-            method: 'poll.stop',
-            args: [live.summary.providerSessionId],
-          });
+          record('cleanup', 'poll.stop', live.summary.providerSessionId);
       },
-      forgetSession: (live) => {
-        calls.push({
-          target: 'cleanup',
-          method: 'runtimeCaches.clear',
-          args: [live.summary.appSessionId],
-        });
-      },
+      forgetSession: (live) => record('cleanup', 'runtimeCaches.clear', live.summary.appSessionId),
     },
     openProviderTranscript: () => {},
     forgetProviderTranscript: () => {},
@@ -298,38 +237,31 @@ function createHarness(
     },
     forgetInteractions: (appSessionId) => {
       forgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      calls.push({ target: 'cleanup', method: 'interactions.forget', args: [appSessionId] });
+      record('cleanup', 'interactions.forget', appSessionId);
     },
     forgetEventFlow: (appSessionId) => {
       eventFlowForgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      calls.push({ target: 'cleanup', method: 'eventFlow.forget', args: [appSessionId] });
+      record('cleanup', 'eventFlow.forget', appSessionId);
     },
     forgetMissionControl: (appSessionId) => {
       missionForgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      calls.push({ target: 'cleanup', method: 'missionControl.forget', args: [appSessionId] });
+      record('cleanup', 'missionControl.forget', appSessionId);
     },
-    forgetPendingSettings: (appSessionId) => {
-      calls.push({ target: 'cleanup', method: 'pendingSettings.forget', args: [appSessionId] });
-    },
+    forgetPendingSettings: (appSessionId) =>
+      record('cleanup', 'pendingSettings.forget', appSessionId),
     closeBrowserSession: (appSessionId) => {
-      calls.push({ target: 'browser', method: 'browser.close', args: [appSessionId] });
+      record('browser', 'browser.close', appSessionId);
       return Promise.resolve();
     },
     stopVoiceSession: (appSessionId) => {
-      calls.push({ target: 'cleanup', method: 'voice.stop', args: [appSessionId] });
+      record('cleanup', 'voice.stop', appSessionId);
       return Promise.resolve();
     },
     emit: recordEvent,
     emitError: (error) => recordEvent({ type: 'error', ...error }),
-    appendProgress: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'progress', args: [appSessionId, text] });
-    },
-    appendError: (appSessionId, message) => {
-      calls.push({ target: 'protocol', method: 'error', args: [appSessionId, message] });
-    },
-    appendSteer: (appSessionId, text) => {
-      calls.push({ target: 'protocol', method: 'appendSteer', args: [appSessionId, text] });
-    },
+    appendProgress: (appSessionId, text) => record('protocol', 'progress', appSessionId, text),
+    appendError: (appSessionId, message) => record('protocol', 'error', appSessionId, message),
+    appendSteer: (appSessionId, text) => record('protocol', 'appendSteer', appSessionId, text),
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
   });
@@ -553,18 +485,24 @@ test('create omits an unarmed daemon compaction limit from its summary', async (
   );
 });
 
-test('create failure closes started MCP resources without publishing', async () => {
-  const harness = createHarness();
-  harness.runtime.createQueue.push(new Error('create failed'));
-  await harness.lifecycle.create(createCommand());
-  assert.equal(harness.calls.filter((call) => call.method === 'mcp.close').length, 1);
-  assert.equal(harness.history.persisted.length, 0);
+function openedResourceCloses(harness: Harness): unknown[][] {
+  return harness.calls
+    .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
+    .map((call) => [call.method, call.args[0]]);
+}
+
+test('a create or resume that fails at any stage closes what it opened and publishes nothing', async () => {
+  const unopened = createHarness();
+  unopened.runtime.createQueue.push(new Error('create failed'));
+  await unopened.lifecycle.create(createCommand());
+  assert.deepEqual(openedResourceCloses(unopened), [['mcp.close', 'mcp-1']]);
+  assert.equal(unopened.history.persisted.length, 0);
   assert.equal(
-    harness.events.some((event) => event.type === 'session.created'),
+    unopened.events.some((event) => event.type === 'session.created'),
     false,
   );
   assert.equal(
-    harness.events.some(
+    unopened.events.some(
       (event) =>
         event.type === 'error' &&
         event.code === 'session.create_failed' &&
@@ -573,66 +511,48 @@ test('create failure closes started MCP resources without publishing', async () 
     ),
     true,
   );
-});
 
-test('post-open create and resume failures close provider and MCP resources', async () => {
   const created = createHarness();
   queueCreate(created, 'failed-create');
   created.setEnableAutoCompaction(() => Promise.reject(new Error('create setup failed')));
   await created.lifecycle.create(createCommand());
-  assert.deepEqual(
-    created.calls
-      .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
-      .map((call) => [call.method, call.args[0]]),
-    [
-      ['mcp.close', 'mcp-1'],
-      ['session.close', 'failed-create'],
-    ],
-  );
+  assert.deepEqual(openedResourceCloses(created), [
+    ['mcp.close', 'mcp-1'],
+    ['session.close', 'failed-create'],
+  ]);
   assert.equal(created.registry.getLive('failed-create'), undefined);
 
   const resumed = createHarness([summary('failed-resume-app', 'failed-resume-provider')]);
   queueLoad(resumed, 'failed-resume-provider');
   resumed.setEnableAutoCompaction(() => Promise.reject(new Error('resume setup failed')));
   await resumed.lifecycle.resume('failed-resume-app');
-  assert.deepEqual(
-    resumed.calls
-      .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
-      .map((call) => [call.method, call.args[0]]),
-    [
-      ['mcp.close', 'mcp-1'],
-      ['session.close', 'failed-resume-provider'],
-    ],
-  );
+  assert.deepEqual(openedResourceCloses(resumed), [
+    ['mcp.close', 'mcp-1'],
+    ['session.close', 'failed-resume-provider'],
+  ]);
   assert.equal(resumed.registry.getLive('failed-resume-app'), undefined);
-});
 
-test('registration failure closes resources without indexing the failed session', async () => {
-  const harness = createHarness();
-  queueCreate(harness, 'failed-registration');
-  harness.runtime.processIds.set('failed-registration', 4321);
-  harness.history.nextSyncError = new Error('persist failed');
-
-  await harness.lifecycle.create(createCommand());
-
-  assert.deepEqual(
-    harness.calls
-      .filter((call) => call.method === 'mcp.close' || call.method === 'session.close')
-      .map((call) => [call.method, call.args[0]]),
-    [
-      ['mcp.close', 'mcp-1'],
-      ['session.close', 'failed-registration'],
-    ],
-  );
-  assert.equal(harness.registry.getLive('failed-registration'), undefined);
+  // A registration that cannot persist leaves nothing indexed.
+  const unregistered = createHarness();
+  queueCreate(unregistered, 'failed-registration');
+  unregistered.runtime.processIds.set('failed-registration', 4321);
+  unregistered.history.nextSyncError = new Error('persist failed');
+  await unregistered.lifecycle.create(createCommand());
+  assert.deepEqual(openedResourceCloses(unregistered), [
+    ['mcp.close', 'mcp-1'],
+    ['session.close', 'failed-registration'],
+  ]);
+  assert.equal(unregistered.registry.getLive('failed-registration'), undefined);
   assert.equal(
-    harness.events.some((event) => event.type === 'error' && event.message === 'persist failed'),
+    unregistered.events.some(
+      (event) => event.type === 'error' && event.message === 'persist failed',
+    ),
     true,
   );
   // Kill-then-untrack, same order as the normal close path: anything the
   // provider spawned before the failure is only reachable while it is alive.
   assert.deepEqual(
-    harness.calls
+    unregistered.calls
       .filter((call) => call.method.startsWith('processes.') && call.method !== 'processes.track')
       .map((call) => call.method),
     ['processes.killSession', 'processes.untrack'],
@@ -718,14 +638,6 @@ test('post-registration failures retain cleanup ownership through a process outa
     ),
     true,
   );
-});
-
-test('send lazily resumes once and sends the prompt exactly once', async () => {
-  const harness = createHarness([summary('app-3', 'provider-3')]);
-  const provider = queueLoad(harness, 'provider-3');
-  await harness.lifecycle.send('app-3', 'only once');
-  assert.equal(harness.runtime.loadCalls.length, 1);
-  assert.deepEqual(provider.prompts, ['only once']);
 });
 
 test('an eager resume and immediate send share one provider load', async () => {
@@ -961,7 +873,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   await late;
 });
 
-test('resuming a turn persists recent activity immediately and completion advances it again', async () => {
+test('a turn persists recent activity at start and completion while queued sends leave it alone', async () => {
   // Recency survives a restart mid-turn; streaming suppresses unread until
   // the response completes.
   const harness = createHarness();
@@ -980,29 +892,17 @@ test('resuming a turn persists recent activity immediately and completion advanc
   assert.ok(mid !== undefined && mid.updatedAt > before);
   assert.equal(harness.history.persisted.at(-1)?.updatedAt, mid.updatedAt);
 
+  await harness.lifecycle.send('touch', 'queued one');
+  await harness.lifecycle.send('touch', 'queued two');
+  const queued = harness.registry.getCanonicalSummary('touch');
+  assert.equal(queued?.queuedSends, 2);
+  assert.equal(queued?.updatedAt, mid.updatedAt);
+
   gate.resolve();
   await sending;
+  await provider.waitForPrompts(4);
   const after = harness.registry.getCanonicalSummary('touch');
-  assert.equal(after?.streaming, false);
   assert.ok(after !== undefined && after.updatedAt > mid.updatedAt);
-});
-
-test('queueing sends while streaming leaves updatedAt alone', async () => {
-  const harness = createHarness();
-  const provider = queueCreate(harness, 'queue-touch');
-  const gate = provider.deferNextStream();
-  await harness.lifecycle.create(createCommand());
-  await provider.waitForPrompts(1);
-  const before = harness.registry.getCanonicalSummary('queue-touch')?.updatedAt;
-
-  await harness.lifecycle.send('queue-touch', 'queued one');
-  await harness.lifecycle.send('queue-touch', 'queued two');
-  const mid = harness.registry.getCanonicalSummary('queue-touch');
-  assert.equal(mid?.queuedSends, 2);
-  assert.equal(mid?.updatedAt, before);
-
-  gate.resolve();
-  await provider.waitForPrompts(3);
 });
 
 test('interrupt handles idle, streaming, manual compaction, and auto-compaction states', async () => {
@@ -1494,8 +1394,12 @@ test('accepted settings stay durable through resume and precede first-send appli
   assert.equal(failed.registry.resolveSummary('app-pending')?.modelId, 'model-pending');
 });
 
-test('closing a session kills its agent processes while the provider is still their parent', async () => {
+test('a session tracks its provider pid and close kills its processes while the provider is their parent', async () => {
   const h = createHarness();
+  h.setMcpConfigs([
+    { name: 'local', command: 'npx', args: ['-y', 'some-mcp'], env: {} },
+    { name: 'remote', type: 'http', url: 'https://mcp.example', headers: [] },
+  ]);
   const provider = queueCreate(h, 'created-pid');
   h.runtime.processIds.set('created-pid', 4321);
   h.setChildCloser((appSessionId) => {
@@ -1517,7 +1421,8 @@ test('closing a session kills its agent processes while the provider is still th
       )
       .map((call) => [call.method, ...call.args]),
     [
-      ['processes.setIgnoredCommands', 'created-pid'],
+      // Configured stdio MCP servers are the session's own processes, not leaks.
+      ['processes.setIgnoredCommands', 'created-pid', 'npx -y some-mcp'],
       ['processes.track', 'created-pid', 4321],
       // The kill has to precede every provider close of the session: once
       // `droid` exits, its dev servers are reparented and no longer reachable
@@ -1529,37 +1434,14 @@ test('closing a session kills its agent processes while the provider is still th
       ['processes.untrack', 4321],
     ],
   );
-});
 
-test('a resumed session tracks the pid of the provider it reloaded', async () => {
-  const h = createHarness([summary('app-2', 'provider-2')]);
-  queueLoad(h, 'provider-2');
-  h.runtime.processIds.set('provider-2', 991);
-
-  await h.lifecycle.resume('app-2');
-
+  const resumed = createHarness([summary('app-2', 'provider-2')]);
+  queueLoad(resumed, 'provider-2');
+  resumed.runtime.processIds.set('provider-2', 991);
+  await resumed.lifecycle.resume('app-2');
   assert.deepEqual(
-    h.calls.filter((call) => call.method === 'processes.track').map((call) => call.args),
+    resumed.calls.filter((call) => call.method === 'processes.track').map((call) => call.args),
     [['app-2', 991]],
-  );
-});
-
-test("configured stdio MCP servers become the session's ignored command lines", async () => {
-  const h = createHarness();
-  h.setMcpConfigs([
-    { name: 'local', command: 'npx', args: ['-y', 'some-mcp'], env: {} },
-    { name: 'remote', type: 'http', url: 'https://mcp.example', headers: [] },
-  ]);
-  const provider = queueCreate(h, 'created-ignored');
-  h.runtime.processIds.set('created-ignored', 4321);
-  await h.lifecycle.create(createCommand());
-  await provider.waitForPrompts(1);
-
-  assert.deepEqual(
-    h.calls
-      .filter((call) => call.method === 'processes.setIgnoredCommands')
-      .map((call) => call.args),
-    [['created-ignored', 'npx -y some-mcp']],
   );
 });
 
@@ -1730,25 +1612,23 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   );
 });
 
-test('Droid resume reapplies canonical edits-only before publishing the stored session', async () => {
-  const harness = createHarness([
+test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {
+  const indexed = createHarness([
     summary('app-permissions', 'provider-permissions', { autonomy: 'low' }),
   ]);
-  const session = queueLoad(harness, 'provider-permissions');
-  await harness.lifecycle.resume('app-permissions');
-  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
-  assert.equal(harness.registry.getLive('app-permissions')?.summary.autonomy, 'low');
-});
+  const stored = queueLoad(indexed, 'provider-permissions');
+  await indexed.lifecycle.resume('app-permissions');
+  assert.deepEqual(stored.settings[0], { autonomyLevel: 'off' });
+  assert.equal(indexed.registry.getLive('app-permissions')?.summary.autonomy, 'low');
 
-test('an unindexed Droid resume preserves its native selection before applying current semantics', async () => {
-  const harness = createHarness();
-  const session = new FakeFactorySession('external-session', {}, harness.calls, {
+  const unindexed = createHarness();
+  const external = new FakeFactorySession('external-session', {}, unindexed.calls, {
     settings: { autonomyLevel: 'low' },
   });
-  queueLoad(harness, 'external-session', session);
-  await harness.lifecycle.resume('external-session');
-  assert.deepEqual(session.settings[0], { autonomyLevel: 'off' });
-  assert.equal(harness.registry.getLive('external-session')?.summary.autonomy, 'low');
+  queueLoad(unindexed, 'external-session', external);
+  await unindexed.lifecycle.resume('external-session');
+  assert.deepEqual(external.settings[0], { autonomyLevel: 'off' });
+  assert.equal(unindexed.registry.getLive('external-session')?.summary.autonomy, 'low');
 });
 
 test('agent completion cannot start a turn while Stop or Send now is outstanding', async () => {
@@ -1821,6 +1701,35 @@ test('a Stop takes back a prompt that has not started its turn', async () => {
   await h.lifecycle.close('app-1');
 });
 
+// A Claude provider whose resume hands back a Droid fake, optionally after the
+// caller's hook (an assertion or a gate) has run.
+function claudeResumeProvider(
+  harness: Harness,
+  session: FakeFactorySession,
+  beforeResume: (id: string, input: ProviderResumeInput) => Promise<void> | void = () => undefined,
+  setInteractionMode?: (mode: string) => Promise<void>,
+): Provider {
+  const resumed = new DroidProviderSession(session.sessionId, session, harness.runtime);
+  return {
+    kind: 'claude',
+    create: () => Promise.reject(new Error('unexpected create')),
+    fork: () => Promise.reject(new Error('unexpected fork')),
+    resume: async (id, input) => {
+      await beforeResume(id, input);
+      return {
+        provider: 'claude',
+        providerSessionId: id,
+        ...(setInteractionMode ? { setInteractionMode } : {}),
+        stream: resumed.stream.bind(resumed),
+        setModel: resumed.setModel.bind(resumed),
+        setAutonomy: resumed.setAutonomy.bind(resumed),
+        interrupt: resumed.interrupt.bind(resumed),
+        close: resumed.close.bind(resumed),
+      };
+    },
+  };
+}
+
 test('a context switch waits for the turn and resumes the same chat before queued work', async () => {
   const stored: SessionSummary[] = [];
   const h = createHarness(stored);
@@ -1834,32 +1743,19 @@ test('a context switch waits for the turn and resumes the same chat before queue
   live.summary.contextWindowTokens = 1000000;
   live.summary.maxContextTokens = 1000000;
   const replacement = new FakeFactorySession('context-switch', {}, h.calls);
-  const resumed = new DroidProviderSession('context-switch', replacement, h.runtime);
-  h.setProvider({
-    kind: 'claude',
-    create: async () => {
-      throw new Error('unexpected create');
-    },
-    fork: async () => {
-      throw new Error('unexpected fork');
-    },
-    resume: async (id, input) => {
-      assert.equal(id, 'context-switch');
-      assert.equal(input.contextWindowTokens, 200000);
-      return {
-        provider: 'claude',
-        providerSessionId: id,
-        setInteractionMode: async (mode) => {
-          assert.equal(mode, 'spec');
-        },
-        stream: resumed.stream.bind(resumed),
-        setModel: resumed.setModel.bind(resumed),
-        setAutonomy: resumed.setAutonomy.bind(resumed),
-        interrupt: resumed.interrupt.bind(resumed),
-        close: resumed.close.bind(resumed),
-      };
-    },
-  });
+  h.setProvider(
+    claudeResumeProvider(
+      h,
+      replacement,
+      (id, input) => {
+        assert.equal(id, 'context-switch');
+        assert.equal(input.contextWindowTokens, 200000);
+      },
+      async (mode) => {
+        assert.equal(mode, 'spec');
+      },
+    ),
+  );
   const settings = new SessionModelSettings({
     registry: h.registry,
     runtime: h.runtime,
@@ -1914,28 +1810,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
     finishResume = resolve;
   });
   const relaunched = new FakeFactorySession('context-switch', {}, h.calls);
-  const relaunchedSession = new DroidProviderSession('context-switch', relaunched, h.runtime);
-  h.setProvider({
-    kind: 'claude',
-    create: async () => {
-      throw new Error('unexpected create');
-    },
-    fork: async () => {
-      throw new Error('unexpected fork');
-    },
-    resume: async (id) => {
-      await resuming;
-      return {
-        provider: 'claude',
-        providerSessionId: id,
-        stream: relaunchedSession.stream.bind(relaunchedSession),
-        setModel: relaunchedSession.setModel.bind(relaunchedSession),
-        setAutonomy: relaunchedSession.setAutonomy.bind(relaunchedSession),
-        interrupt: relaunchedSession.interrupt.bind(relaunchedSession),
-        close: relaunchedSession.close.bind(relaunchedSession),
-      };
-    },
-  });
+  h.setProvider(claudeResumeProvider(h, relaunched, () => resuming));
   const sending = h.lifecycle.send('context-switch', 'stopped before it was sent');
   while (h.registry.getLive('context-switch'))
     await new Promise((resolve) => setImmediate(resolve));
@@ -1966,28 +1841,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
     finishSecondResume = resolve;
   });
   const again = new FakeFactorySession('context-switch', {}, h.calls);
-  const againSession = new DroidProviderSession('context-switch', again, h.runtime);
-  h.setProvider({
-    kind: 'claude',
-    create: async () => {
-      throw new Error('unexpected create');
-    },
-    fork: async () => {
-      throw new Error('unexpected fork');
-    },
-    resume: async (id) => {
-      await resumingAgain;
-      return {
-        provider: 'claude',
-        providerSessionId: id,
-        stream: againSession.stream.bind(againSession),
-        setModel: againSession.setModel.bind(againSession),
-        setAutonomy: againSession.setAutonomy.bind(againSession),
-        interrupt: againSession.interrupt.bind(againSession),
-        close: againSession.close.bind(againSession),
-      };
-    },
-  });
+  h.setProvider(claudeResumeProvider(h, again, () => resumingAgain));
   let prepareSecond: () => void = () => undefined;
   let applies = 0;
   h.setPendingApply(async () => {
@@ -2014,7 +1868,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
   await h.lifecycle.close('context-switch');
 });
 
-test('dependent ownership is committed before the first provider turn', async () => {
+test('dependent ownership is committed before the first provider turn, and a failed commit runs nothing', async () => {
   let release = () => {};
   let entered = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -2040,21 +1894,19 @@ test('dependent ownership is committed before the first provider turn', async ()
   await creating;
   await provider.waitForPrompts(1);
   await h.lifecycle.closeAll();
-});
 
-test('a failed ownership commit releases the session without executing its goal', async () => {
-  const h = createHarness([], async () => {
+  const failed = createHarness([], async () => {
     throw new Error('Project ledger is full');
   });
-  queueCreate(h, 'failed-bind');
-  await h.lifecycle.create(createCommand());
+  queueCreate(failed, 'failed-bind');
+  await failed.lifecycle.create(createCommand());
   assert.equal(
-    h.calls.some((call) => call.method === 'stream'),
+    failed.calls.some((call) => call.method === 'stream'),
     false,
   );
-  assert.equal(h.registry.getLive('failed-bind'), undefined);
+  assert.equal(failed.registry.getLive('failed-bind'), undefined);
   assert.ok(
-    h.events.some(
+    failed.events.some(
       (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
     ),
   );

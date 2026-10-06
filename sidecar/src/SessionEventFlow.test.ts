@@ -129,32 +129,22 @@ const childRow = (appSessionId: string) => ({
   childOwner: { kind: 'tool-use' as const, id: 'toolu_1' },
 });
 
-test('a row tagged with a spawn is rewritten onto the agent that owns it', () => {
-  const harness = createHarness({ childScope: { childSessionId: 'child-1', role: 'worker' } });
+test('a spawn-tagged row lands on its admitted agent, is dropped before admission, and stays on the parent when ambiguous', () => {
+  const cases = [
+    [{ childSessionId: 'child-1', role: 'worker' }, [['child-1', 'worker']]],
+    [undefined, []],
+    ['ambiguous', [['app-1', 'primary']]],
+  ] as const;
+  for (const [childScope, expected] of cases) {
+    const harness = createHarness(childScope ? { childScope } : {});
 
-  harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
+    harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
 
-  assert.equal(harness.transcripts.length, 1);
-  assert.equal(harness.transcripts[0]?.sourceSessionId, 'child-1');
-  assert.equal(harness.transcripts[0]?.role, 'worker');
-});
-
-test("a row whose agent is not admitted yet is dropped, not shown as the parent's", () => {
-  const harness = createHarness();
-
-  harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
-
-  assert.deepEqual(harness.transcripts, []);
-});
-
-test('a spawn several agents share leaves the row on the parent rather than guessing', () => {
-  const harness = createHarness({ childScope: 'ambiguous' });
-
-  harness.eventFlow.apply('app-1', 'app-1', 'primary', childRow('app-1'));
-
-  assert.equal(harness.transcripts.length, 1);
-  assert.equal(harness.transcripts[0]?.sourceSessionId, 'app-1');
-  assert.equal(harness.transcripts[0]?.role, 'primary');
+    assert.deepEqual(
+      harness.transcripts.map((event) => [event.sourceSessionId, event.role]),
+      expected,
+    );
+  }
 });
 
 test('notification ingress converges on the same transcript gating and side-effect path', () => {
@@ -186,34 +176,6 @@ test('notification ingress converges on the same transcript gating and side-effe
   );
   assert.equal(harness.sideEffects.length, 1);
   assert.equal(harness.sideEffects[0]?.value.childSession?.providerSessionId, 'worker-2');
-});
-
-test('a terminal result drops later generated transcript from only that source', () => {
-  const harness = createHarness();
-
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'primary-1',
-    'primary',
-    successfulResultEvent('primary-1'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'primary-1',
-    'primary',
-    assistantTextDelta('must be dropped'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    assistantTextDelta('worker survives'),
-  );
-
-  assert.deepEqual(
-    harness.transcripts.map((event) => event.text),
-    ['worker survives'],
-  );
 });
 
 test('post-terminal errors plus child, Mission, and token side effects still flow', () => {
@@ -288,131 +250,51 @@ test('primary notifications flush the stable app transcript after provider repla
   assert.deepEqual(harness.trace, ['flush:app-1:app-1', 'side:child']);
 });
 
-test('terminal gates are isolated across sources and app sessions', () => {
+test('terminal gates are per app and source, and reopen only for the source that begins or the app that is forgotten', () => {
   const harness = createHarness();
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'primary-1',
-    'primary',
-    successfulResultEvent('primary-1'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    successfulResultEvent('worker-1'),
-  );
+  const text = (rows: Array<readonly [string, string, 'primary' | 'worker', string]>) => {
+    for (const [app, source, role, value] of rows)
+      harness.eventFlow.applyStreamEvent(app, source, role, assistantTextDelta(value));
+  };
+  for (const [app, source, role] of [
+    ['app-1', 'primary-1', 'primary'],
+    ['app-1', 'worker-1', 'worker'],
+    ['app-2', 'worker-1', 'worker'],
+  ] as const)
+    harness.eventFlow.applyStreamEvent(app, source, role, successfulResultEvent(source));
 
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'primary-1',
-    'primary',
-    assistantTextDelta('primary blocked'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    assistantTextDelta('worker one blocked'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-2',
-    'worker',
-    assistantTextDelta('worker two accepted'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-2',
-    'primary-1',
-    'primary',
-    assistantTextDelta('other app accepted'),
-  );
-
-  assert.deepEqual(
-    harness.transcripts.map((event) => event.text),
-    ['worker two accepted', 'other app accepted'],
-  );
-});
-
-test('beginTurn reopens only the requested source', () => {
-  const harness = createHarness();
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    successfulResultEvent('worker-1'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-2',
-    'worker',
-    successfulResultEvent('worker-2'),
-  );
-
+  text([
+    ['app-1', 'primary-1', 'primary', 'primary blocked'],
+    ['app-1', 'worker-1', 'worker', 'worker one blocked'],
+    ['app-1', 'worker-2', 'worker', 'worker two accepted'],
+    ['app-2', 'primary-1', 'primary', 'other app accepted'],
+  ]);
   harness.eventFlow.beginTurn('app-1', 'worker-1');
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-1',
-    'worker',
-    assistantTextDelta('worker one next turn'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'worker-2',
-    'worker',
-    assistantTextDelta('worker two still blocked'),
-  );
+  harness.eventFlow.forgetSession('app-2');
+  text([
+    ['app-1', 'worker-1', 'worker', 'begun source accepted'],
+    ['app-1', 'primary-1', 'primary', 'other source still blocked'],
+    ['app-2', 'worker-1', 'worker', 'forgotten app accepted'],
+  ]);
 
   assert.deepEqual(
     harness.transcripts.map((event) => event.text),
-    ['worker one next turn'],
+    [
+      'worker two accepted',
+      'other app accepted',
+      'begun source accepted',
+      'forgotten app accepted',
+    ],
   );
 });
 
-test('forgetSession clears only the unregistered app terminal state', () => {
-  const harness = createHarness();
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'provider',
-    'primary',
-    successfulResultEvent('provider'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-2',
-    'provider',
-    'primary',
-    successfulResultEvent('provider'),
-  );
-
-  harness.eventFlow.forgetSession('app-1');
-  harness.eventFlow.applyStreamEvent(
-    'app-1',
-    'provider',
-    'primary',
-    assistantTextDelta('forgotten app accepted'),
-  );
-  harness.eventFlow.applyStreamEvent(
-    'app-2',
-    'provider',
-    'primary',
-    assistantTextDelta('other app remains blocked'),
-  );
-
-  assert.deepEqual(
-    harness.transcripts.map((event) => event.text),
-    ['forgotten app accepted'],
-  );
-});
-
-test('idless Task admission shares the accepted transcript spawn identity', () => {
-  const harness = createHarness();
-  harness.eventFlow.applyStreamEvent('app-1', 'provider-1', 'primary', taskToolCall(''));
-  const event = harness.transcripts[0];
+test('Task admission carries one spawn identity: the transcript id when idless, the provider id across deltas', () => {
+  const idless = createHarness();
+  idless.eventFlow.applyStreamEvent('app-1', 'provider-1', 'primary', taskToolCall(''));
+  const event = idless.transcripts[0];
   assert.ok(event);
-  assert.equal(harness.sideEffects[0]?.value.childSession?.toolUseId, event.id);
-});
+  assert.equal(idless.sideEffects[0]?.value.childSession?.toolUseId, event.id);
 
-test('Task deltas retain their provider spawn identity across updates', () => {
   const harness = createHarness();
   const call = taskToolCall('stable-spawn');
   assert.equal(call.type, 'tool_call');

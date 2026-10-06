@@ -56,9 +56,14 @@ test('history indexing idle samples are ephemeral and use the connected-only lan
 test('background work tier samples are ephemeral and use the connected-only lane', () => {
   const fake = fakeBridge();
   try {
-    assert.equal(setBackgroundWork('hidden', 'app-1'), true);
+    assert.equal(setBackgroundWork('hidden', 'app-1', ['app-1', 'app-2']), true);
     assert.deepEqual(fake.sent, [
-      { type: 'app.backgroundWork', tier: 'hidden', focusedAppSessionId: 'app-1' },
+      {
+        type: 'app.backgroundWork',
+        tier: 'hidden',
+        focusedAppSessionId: 'app-1',
+        visibleAppSessionIds: ['app-1', 'app-2'],
+      },
     ]);
   } finally {
     fake.restore();

@@ -77,6 +77,7 @@ function createBrowser() {
     safeStorage: {},
     budget: createNativeBrowserBudget(),
     getMainWindow: () => mainWindow,
+    onBrowserInput() {},
     preloadPath: 'nativeBrowserPreload.cjs',
     getHostAppUrl: () => 'http://localhost:5173/',
     sendToRenderer: (channel, payload) => {

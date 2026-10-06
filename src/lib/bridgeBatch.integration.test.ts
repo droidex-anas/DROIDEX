@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { afterEach, beforeEach } from 'node:test';
 
 import { Bridge } from './bridge';
 import { adaptEvent, initialState, reducer } from '../hooks/useStore';
@@ -58,507 +58,446 @@ function batch(
   };
 }
 
-function installFakeRuntime(): {
-  oldWindow: Window & typeof globalThis;
-  OldWebSocket: typeof WebSocket;
-} {
-  const oldWindow = globalThis.window;
-  const OldWebSocket = globalThis.WebSocket;
+const RUNTIME = { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false } as const;
+const CONNECTED: ServerEvent = { type: 'connection', status: 'connected' };
+
+function snapshotMessage(generation: string, lastSeq: number, reason: string, snapshot = {}) {
+  return {
+    type: 'bridge.snapshot',
+    generation,
+    lastSeq,
+    reason,
+    snapshot: {
+      runtime: RUNTIME,
+      sessions: [],
+      children: [],
+      processes: {},
+      persistence: { durable: true, hadUnflushedWork: false },
+      interrupted: [],
+      ...snapshot,
+    },
+  };
+}
+
+// The page ID is random per page; the rest of the URL is the contract.
+function withoutPageId(url: string): string {
+  const parsed = new URL(url);
+  assert.match(parsed.searchParams.get('pageId') ?? '', /^[0-9a-f-]{36}$/);
+  parsed.searchParams.delete('pageId');
+  return parsed.toString().replace('/?', '?');
+}
+
+let previousGlobals: { window: Window & typeof globalThis; WebSocket: typeof WebSocket };
+
+beforeEach(() => {
+  previousGlobals = { window: globalThis.window, WebSocket: globalThis.WebSocket };
   FakeWebSocket.instances = [];
-  Object.assign(globalThis, {
-    window: { droidControl: {} },
-    WebSocket: FakeWebSocket,
-  });
-  return { oldWindow, OldWebSocket };
-}
+  Object.assign(globalThis, { window: { droidControl: {} }, WebSocket: FakeWebSocket });
+});
 
-function restoreFakeRuntime(runtime: {
-  oldWindow: Window & typeof globalThis;
-  OldWebSocket: typeof WebSocket;
-}): void {
-  Object.assign(globalThis, {
-    window: runtime.oldWindow,
-    WebSocket: runtime.OldWebSocket,
-  });
-}
+afterEach(() => {
+  Object.assign(globalThis, previousGlobals);
+});
 
-test(
-  'bridge publishes one server batch while preserving per-event subscribers',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43120, token: 'batch-token' }),
-        () => undefined,
-      );
-      const events: string[] = [];
-      const batches: string[][] = [];
-      bridge.subscribe((event) => events.push(event.type));
-      bridge.subscribeBatch((eventsInBatch) =>
-        batches.push(eventsInBatch.map((event) => event.type)),
-      );
-      await bridge.start();
-      const socket = required(FakeWebSocket.instances.at(-1));
-      socket.open();
-      socket.message(
-        batch('generation-1', 1, 2, [
-          { type: 'connection', status: 'connected' },
-          {
-            type: 'runtime.updated',
-            status: {
-              mode: 'cli_auth',
-              droidPath: '/bin/droid',
-              apiKeyConfigured: false,
-            },
-          },
-        ]),
-      );
-
-      assert.deepEqual(events, ['connection', 'runtime.updated']);
-      assert.deepEqual(batches, [['connection', 'runtime.updated']]);
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
-
-test(
-  'bridge accepts direct command errors but ignores unbatched events',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43121, token: 'direct-error-token' }),
-        () => undefined,
-      );
-      const batches: string[][] = [];
-      bridge.subscribeBatch((events) => batches.push(events.map((event) => event.type)));
-      await bridge.start();
-      const socket = required(FakeWebSocket.instances.at(-1));
-      socket.open();
-      socket.message({ type: 'connection', status: 'connected' });
-      socket.message({ type: 'error', message: 'Invalid JSON command' });
-      assert.deepEqual(batches, [['error']]);
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
-
-test(
-  'reconnect carries the last fully applied generation and sequence',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    const reconnects: Array<() => void> = [];
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43122, token: 'resume-token' }),
-        (callback) => reconnects.push(callback),
-      );
-      await bridge.start();
-      const first = required(FakeWebSocket.instances.at(-1));
-      first.open();
-      first.message(batch('generation-1', 1, 1, [{ type: 'connection', status: 'connected' }]));
-      first.close();
-
-      reconnects.shift()?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      const second = required(FakeWebSocket.instances.at(-1));
-      const url = new URL(second.url);
-      const pageId = new URL(first.url).searchParams.get('pageId');
-      assert.equal(url.searchParams.get('bridgeProtocol'), '8');
-      assert.ok(pageId);
-      assert.equal(url.searchParams.get('pageId'), pageId);
-      assert.equal(url.searchParams.get('resumeGeneration'), 'generation-1');
-      assert.equal(url.searchParams.get('resumeSeq'), '1');
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
-
-test(
-  'coalesced sequence gaps inside one batch advance the resume cursor safely',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    const reconnects: Array<() => void> = [];
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43127, token: 'coalesced-token' }),
-        (callback) => reconnects.push(callback),
-      );
-      const seen: string[] = [];
-      bridge.subscribe((event) => seen.push(event.type));
-      await bridge.start();
-      const first = required(FakeWebSocket.instances.at(-1));
-      first.open();
-      first.message({
-        type: 'events.batch',
-        generation: 'generation-1',
-        firstSeq: 1,
-        lastSeq: 3,
-        events: [{ seq: 3, event: { type: 'connection', status: 'connected' } }],
-      });
-
-      assert.deepEqual(seen, ['connection']);
-      assert.equal(first.closeArgs, null);
-      first.close();
-      reconnects.shift()?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      const second = required(FakeWebSocket.instances.at(-1));
-      const url = new URL(second.url);
-      assert.equal(url.searchParams.get('resumeGeneration'), 'generation-1');
-      assert.equal(url.searchParams.get('resumeSeq'), '3');
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
-
-test(
-  'a generation-changed snapshot restores the cursor without a hard resync error',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    const reconnects: Array<() => void> = [];
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43125, token: 'reset-token' }),
-        (callback) => reconnects.push(callback),
-      );
-      const seen: ServerEvent[] = [];
-      bridge.subscribe((event) => seen.push(event));
-      await bridge.start();
-      const first = required(FakeWebSocket.instances.at(-1));
-      first.open();
-      first.message({
-        type: 'bridge.snapshot',
-        generation: 'generation-2',
-        lastSeq: 42,
-        reason: 'generation_changed',
-        snapshot: {
-          runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
-          sessions: [],
-          children: [],
-          processes: {},
-          persistence: { durable: true, hadUnflushedWork: false },
-          interrupted: [],
-        },
-      });
-
-      assert.deepEqual(
-        seen.map((event) => event.type),
-        ['connection', 'runtime.updated', 'sessions.processes'],
-      );
-
-      first.close();
-      reconnects.shift()?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      const second = required(FakeWebSocket.instances.at(-1));
-      const url = new URL(second.url);
-      assert.equal(url.searchParams.get('resumeGeneration'), 'generation-2');
-      assert.equal(url.searchParams.get('resumeSeq'), '42');
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
-
-test('late messages from a replaced socket are ignored', { concurrency: false }, async () => {
-  const runtime = installFakeRuntime();
+/** Starts a bridge on a fake socket, records every published event, and opens the socket. */
+async function startBridge() {
   const reconnects: Array<() => void> = [];
-  try {
-    const bridge = new Bridge(
-      async () => ({ port: 43126, token: 'stale-token' }),
-      (callback) => reconnects.push(callback),
-    );
-    const seen: string[] = [];
-    bridge.subscribe((event) => seen.push(event.type));
-    await bridge.start();
-    const first = required(FakeWebSocket.instances.at(-1));
-    first.open();
-    first.close();
-
+  const bridge = new Bridge(
+    async () => ({ port: 43120, token: 'test-token' }),
+    (callback) => reconnects.push(callback),
+  );
+  const seen: ServerEvent[] = [];
+  bridge.subscribe((event) => seen.push(event));
+  await bridge.start();
+  const socket = required(FakeWebSocket.instances.at(-1));
+  socket.open();
+  /** Runs the scheduled reconnect and returns the replacement socket. */
+  const reconnect = async () => {
     reconnects.shift()?.();
     await Promise.resolve();
     await Promise.resolve();
-    const second = required(FakeWebSocket.instances.at(-1));
-    second.open();
+    return required(FakeWebSocket.instances.at(-1));
+  };
+  const seenTypes = () => seen.map((event) => event.type);
+  return { bridge, socket, seen, seenTypes, reconnect };
+}
 
-    first.message(batch('generation-1', 1, 1, [{ type: 'connection', status: 'connected' }]));
-    second.message(batch('generation-1', 1, 1, [{ type: 'connection', status: 'connected' }]));
-    assert.deepEqual(seen, ['connection']);
-  } finally {
-    restoreFakeRuntime(runtime);
-  }
+function resumeCursor(socket: FakeWebSocket) {
+  const params = new URL(socket.url).searchParams;
+  return { generation: params.get('resumeGeneration'), seq: params.get('resumeSeq') };
+}
+
+test('bridge refreshes sidecar identity before reconnecting', async () => {
+  const reconnects: Array<() => void> = [];
+  const bridgeInfos = [
+    { port: 43001, token: 'first-token' },
+    { port: 43002, token: 'second-token' },
+  ];
+  const bridge = new Bridge(
+    async () => {
+      const info = bridgeInfos.shift();
+      assert.ok(info);
+      return info;
+    },
+    (callback) => reconnects.push(callback),
+  );
+
+  await bridge.start();
+  const first = FakeWebSocket.instances.at(-1);
+  assert.ok(first);
+  assert.equal(withoutPageId(first.url), 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=8');
+  assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), false);
+  assert.deepEqual(first.sent, []);
+  first.close();
+  assert.equal(reconnects.length, 1);
+
+  reconnects.shift()?.();
+  await Promise.resolve();
+  await Promise.resolve();
+  const second = FakeWebSocket.instances.at(-1);
+  assert.ok(second);
+  assert.equal(
+    withoutPageId(second.url),
+    'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=8',
+  );
+  second.open();
+  assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
+  assert.deepEqual(
+    second.sent.map((command) => JSON.parse(command)),
+    [{ type: 'runtime.status' }],
+  );
+});
+
+test('[R1] Renderer command round trip', async () => {
+  const baselineAdoptions: unknown[][] = [];
+  Object.assign(globalThis, {
+    window: {
+      droidControl: {
+        bridgeInfo: async () => ({ port: 43123, token: 'r1-token' }),
+        gitAdoptTurnBaseline: async (...args: unknown[]) => {
+          baselineAdoptions.push(args);
+          return { ok: true };
+        },
+      },
+    },
+  });
+  const {
+    createSession,
+    interruptVisibleSession,
+    loadChildHistory,
+    openChild,
+    reanchorSessionsForWorktreeRemoval,
+    updateChildSettings,
+  } = await import('./commands.js');
+  const { bridge } = await import('./bridge.js');
+  const seen: ServerEvent[] = [];
+  const unsubscribe = bridge.subscribe((event) => seen.push(event));
+
+  createSession({
+    clientRef: 'r1-create',
+    title: 'R1',
+    goal: 'hello',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    autonomy: 'low',
+  });
+  updateChildSettings({
+    parentAppSessionId: 'r1',
+    childSessionId: 'worker-r1',
+    modelId: 'model-r1',
+    reasoningEffort: 'high',
+  });
+  openChild('r1', 'validator-r1', 'open-validator-r1');
+  loadChildHistory('r1', 'validator-r1', 'cursor-r1', 240);
+  interruptVisibleSession('r1', 'worker-r1');
+  interruptVisibleSession('r1');
+  await bridge.start();
+  const socket = required(FakeWebSocket.instances.at(-1));
+  let seq = 0;
+  const deliver = (event: ServerEvent) => {
+    seq += 1;
+    socket.message(batch('test-generation', seq, seq, [event]));
+  };
+
+  assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=8');
+  assert.deepEqual(socket.sent, []);
+  socket.open();
+  assert.equal(socket.sent.length, 6);
+  assert.deepEqual(JSON.parse(socket.sent[0]), {
+    type: 'session.create',
+    clientRef: 'r1-create',
+    title: 'R1',
+    goal: 'hello',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    autonomy: 'low',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[1]), {
+    type: 'child.updateSettings',
+    parentAppSessionId: 'r1',
+    childSessionId: 'worker-r1',
+    modelId: 'model-r1',
+    reasoningEffort: 'high',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[2]), {
+    type: 'child.open',
+    parentAppSessionId: 'r1',
+    childSessionId: 'validator-r1',
+    requestId: 'open-validator-r1',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[3]), {
+    type: 'child.loadHistory',
+    parentAppSessionId: 'r1',
+    childSessionId: 'validator-r1',
+    cursor: 'cursor-r1',
+    limit: 240,
+  });
+  assert.deepEqual(JSON.parse(socket.sent[4]), {
+    type: 'child.interrupt',
+    parentAppSessionId: 'r1',
+    childSessionId: 'worker-r1',
+  });
+  assert.deepEqual(JSON.parse(socket.sent[5]), {
+    type: 'session.interrupt',
+    appSessionId: 'r1',
+  });
+  const reanchoring = reanchorSessionsForWorktreeRemoval('/repo/.worktrees/feature', '/repo');
+  const reanchorCommand = JSON.parse(socket.sent[6] ?? '') as {
+    type: string;
+    requestId: string;
+    fromCwd: string;
+    toCwd: string;
+  };
+  assert.deepEqual(reanchorCommand, {
+    type: 'sessions.reanchorCwd',
+    requestId: reanchorCommand.requestId,
+    fromCwd: '/repo/.worktrees/feature',
+    toCwd: '/repo',
+  });
+  deliver({
+    type: 'sessions.cwdReanchored',
+    requestId: reanchorCommand.requestId,
+    ok: true,
+    count: 2,
+  });
+  assert.equal(await reanchoring, 2);
+  const session = {
+    appSessionId: 'r1',
+    providerSessionId: 'provider-r1',
+    provider: 'droid',
+    sessionPurpose: 'chat',
+    interactionMode: 'auto',
+    role: 'primary',
+    title: 'R1',
+    goal: 'hello',
+    cwd: '/repo',
+    autonomy: 'low',
+    phase: 'intake',
+    features: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    contextTokens: 0,
+    createdAt: 0,
+    updatedAt: 0,
+  } as const;
+
+  deliver({ type: 'session.created', clientRef: 'r1-create', session });
+  assert.deepEqual(baselineAdoptions, [['/repo', 'r1-create', 'r1']]);
+  assert.equal(seen.length, 2);
+  unsubscribe();
+  deliver({ type: 'session.updated', session });
+  assert.equal(seen.length, 2);
+  assert.equal(FakeWebSocket.instances.length, 1);
+});
+
+test('bridge publishes one server batch while preserving per-event subscribers', async () => {
+  const { bridge, socket, seenTypes } = await startBridge();
+  const batches: string[][] = [];
+  bridge.subscribeBatch((events) => batches.push(events.map((event) => event.type)));
+  socket.message(
+    batch('generation-1', 1, 2, [CONNECTED, { type: 'runtime.updated', status: RUNTIME }]),
+  );
+
+  assert.deepEqual(seenTypes(), ['connection', 'runtime.updated']);
+  assert.deepEqual(batches, [['connection', 'runtime.updated']]);
+});
+
+test('bridge accepts direct command errors but ignores unbatched events', async () => {
+  const { bridge, socket } = await startBridge();
+  const batches: string[][] = [];
+  bridge.subscribeBatch((events) => batches.push(events.map((event) => event.type)));
+  socket.message(CONNECTED);
+  socket.message({ type: 'error', message: 'Invalid JSON command' });
+  assert.deepEqual(batches, [['error']]);
+});
+
+test('reconnect carries the last fully applied generation and sequence', async () => {
+  const { socket: first, reconnect } = await startBridge();
+  first.message(batch('generation-1', 1, 1, [CONNECTED]));
+  first.close();
+
+  const second = await reconnect();
+  const url = new URL(second.url);
+  const pageId = new URL(first.url).searchParams.get('pageId');
+  assert.equal(url.searchParams.get('bridgeProtocol'), '8');
+  assert.ok(pageId);
+  assert.equal(url.searchParams.get('pageId'), pageId);
+  assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
+});
+
+test('coalesced sequence gaps inside one batch advance the resume cursor safely', async () => {
+  const { socket: first, seenTypes, reconnect } = await startBridge();
+  first.message({
+    type: 'events.batch',
+    generation: 'generation-1',
+    firstSeq: 1,
+    lastSeq: 3,
+    events: [{ seq: 3, event: CONNECTED }],
+  });
+
+  assert.deepEqual(seenTypes(), ['connection']);
+  assert.equal(first.closeArgs, null);
+  first.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-1', seq: '3' });
+});
+
+test('a generation-changed snapshot restores the cursor without a hard resync error', async () => {
+  const { socket: first, seenTypes, reconnect } = await startBridge();
+  first.message(snapshotMessage('generation-2', 42, 'generation_changed'));
+
+  assert.deepEqual(seenTypes(), ['connection', 'runtime.updated', 'sessions.processes']);
+  first.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-2', seq: '42' });
+});
+
+test('late messages from a replaced socket are ignored', async () => {
+  const { socket: first, seenTypes, reconnect } = await startBridge();
+  first.close();
+  const second = await reconnect();
+  second.open();
+
+  first.message(batch('generation-1', 1, 1, [CONNECTED]));
+  second.message(batch('generation-1', 1, 1, [CONNECTED]));
+  assert.deepEqual(seenTypes(), ['connection']);
 });
 
 test('recovery snapshots replace process lists, including sessions that disappeared', async () => {
-  const runtime = installFakeRuntime();
-  try {
-    const bridge = new Bridge(
-      async () => ({ port: 43130, token: 'snapshot-token' }),
-      () => undefined,
-    );
-    let state = initialState;
-    bridge.subscribe((event) => {
-      const action = adaptEvent(event);
-      if (action) state = reducer(state, action);
-    });
-    await bridge.start();
-    const socket = required(FakeWebSocket.instances.at(-1));
-    socket.open();
-    const process = {
-      pid: 123,
-      name: 'vite',
-      command: 'node vite.js',
-      originCommand: 'npm run dev',
-      ports: [5173],
-      startedAt: 1,
-    };
-    socket.message(
-      batch('generation-1', 1, 1, [
-        { type: 'session.processes', appSessionId: 'closed-session', processes: [process] },
-      ]),
-    );
-    assert.deepEqual(state.agentProcesses, { 'closed-session': [process] });
-    const snapshot = {
-      type: 'bridge.snapshot',
-      generation: 'generation-1',
-      lastSeq: 42,
-      reason: 'replay_unavailable',
-      snapshot: {
-        runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
-        sessions: [],
-        children: [],
-        processes: { 'live-session': [process] },
-        persistence: { durable: true, hadUnflushedWork: false },
-        interrupted: [],
-      },
-    };
-    socket.message(snapshot);
-    assert.deepEqual(state.agentProcesses, { 'live-session': [process] });
-    socket.message({
-      ...snapshot,
-      generation: 'generation-2',
-      reason: 'generation_changed',
-      snapshot: { ...snapshot.snapshot, processes: {} },
-    });
-    assert.deepEqual(state.agentProcesses, {});
-  } finally {
-    restoreFakeRuntime(runtime);
-  }
+  const { bridge, socket } = await startBridge();
+  let state = initialState;
+  bridge.subscribe((event) => {
+    const action = adaptEvent(event);
+    if (action) state = reducer(state, action);
+  });
+  const process = {
+    pid: 123,
+    name: 'vite',
+    command: 'node vite.js',
+    originCommand: 'npm run dev',
+    ports: [5173],
+    startedAt: 1,
+  };
+  socket.message(
+    batch('generation-1', 1, 1, [
+      { type: 'session.processes', appSessionId: 'closed-session', processes: [process] },
+    ]),
+  );
+  assert.deepEqual(state.agentProcesses, { 'closed-session': [process] });
+  socket.message(
+    snapshotMessage('generation-1', 42, 'replay_unavailable', {
+      processes: { 'live-session': [process] },
+    }),
+  );
+  assert.deepEqual(state.agentProcesses, { 'live-session': [process] });
+  socket.message(snapshotMessage('generation-2', 42, 'generation_changed'));
+  assert.deepEqual(state.agentProcesses, {});
 });
 
-test(
-  'duplicate replay batches are ignored and sequence gaps reconnect',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43124, token: 'sequence-token' }),
-        () => undefined,
-      );
-      const seen: string[] = [];
-      bridge.subscribe((event) => seen.push(event.type));
-      await bridge.start();
-      const socket = required(FakeWebSocket.instances.at(-1));
-      socket.open();
-      const first = batch('generation-1', 1, 1, [{ type: 'connection', status: 'connected' }]);
-      socket.message(first);
-      socket.message(first);
-      assert.deepEqual(seen, ['connection']);
+test('duplicate replay batches are ignored and sequence gaps reconnect', async () => {
+  const { socket, seenTypes } = await startBridge();
+  const first = batch('generation-1', 1, 1, [CONNECTED]);
+  socket.message(first);
+  socket.message(first);
+  assert.deepEqual(seenTypes(), ['connection']);
 
-      socket.message(batch('generation-1', 3, 3, [{ type: 'connection', status: 'connected' }]));
-      assert.deepEqual(socket.closeArgs, [4012, 'bridge event sequence gap']);
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
+  socket.message(batch('generation-1', 3, 3, [CONNECTED]));
+  assert.deepEqual(socket.closeArgs, [4012, 'bridge event sequence gap']);
+});
 
-test(
-  'malformed batches reset the cursor and reconnect without publishing payloads',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    const reconnects: Array<() => void> = [];
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43128, token: 'malformed-token' }),
-        (callback) => reconnects.push(callback),
-      );
-      const seen: ServerEvent[] = [];
-      bridge.subscribe((event) => seen.push(event));
-      await bridge.start();
-      const first = required(FakeWebSocket.instances.at(-1));
-      first.open();
-      first.message({
-        type: 'events.batch',
-        generation: 'generation-1',
-        firstSeq: 1,
-        lastSeq: 1,
-        events: null,
-      });
+test('malformed batches reset the cursor and reconnect without publishing payloads', async () => {
+  const { socket: first, seen, reconnect } = await startBridge();
+  first.message({
+    type: 'events.batch',
+    generation: 'generation-1',
+    firstSeq: 1,
+    lastSeq: 1,
+    events: null,
+  });
 
-      assert.deepEqual(first.closeArgs, [4002, 'malformed bridge message']);
-      assert.deepEqual(seen, [
-        {
-          type: 'error',
-          code: 'bridge.resync_required',
-          message:
-            'The agent runtime sent a malformed event batch. Reconnecting with a fresh cursor.',
-          recoverable: true,
-        },
-      ]);
+  assert.deepEqual(first.closeArgs, [4002, 'malformed bridge message']);
+  assert.deepEqual(seen, [
+    {
+      type: 'error',
+      code: 'bridge.resync_required',
+      message: 'The agent runtime sent a malformed event batch. Reconnecting with a fresh cursor.',
+      recoverable: true,
+    },
+  ]);
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: null, seq: null });
+});
 
-      reconnects.shift()?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      const second = required(FakeWebSocket.instances.at(-1));
-      const url = new URL(second.url);
-      assert.equal(url.searchParams.get('resumeGeneration'), null);
-      assert.equal(url.searchParams.get('resumeSeq'), null);
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
+test('known events with missing payloads are rejected as malformed batches', async () => {
+  const { socket, seen } = await startBridge();
+  socket.message({
+    type: 'events.batch',
+    generation: 'generation-1',
+    firstSeq: 1,
+    lastSeq: 1,
+    events: [{ seq: 1, event: { type: 'session.updated' } }],
+  });
 
-test(
-  'known events with missing payloads are rejected as malformed batches',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43130, token: 'event-validation-token' }),
-        () => undefined,
-      );
-      const seen: ServerEvent[] = [];
-      bridge.subscribe((event) => seen.push(event));
-      await bridge.start();
-      const socket = required(FakeWebSocket.instances.at(-1));
-      socket.open();
-      socket.message({
-        type: 'events.batch',
-        generation: 'generation-1',
-        firstSeq: 1,
-        lastSeq: 1,
-        events: [{ seq: 1, event: { type: 'session.updated' } }],
-      });
+  assert.deepEqual(socket.closeArgs, [4002, 'malformed bridge message']);
+  assert.deepEqual(
+    seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
+    ['bridge.resync_required'],
+  );
+});
 
-      assert.deepEqual(socket.closeArgs, [4002, 'malformed bridge message']);
-      assert.deepEqual(
-        seen
-          .filter(
-            (event): event is Extract<ServerEvent, { type: 'error' }> => event.type === 'error',
-          )
-          .map((event) => event.code),
-        ['bridge.resync_required'],
-      );
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
+test('empty reset generations cannot replace a valid resume cursor', async () => {
+  const { socket: first, seenTypes, reconnect } = await startBridge();
+  first.message(batch('generation-1', 1, 1, [CONNECTED]));
+  first.message({ type: 'bridge.reset', generation: '', lastSeq: 1, reason: 'invalid_resume' });
 
-test(
-  'empty reset generations cannot replace a valid resume cursor',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    const reconnects: Array<() => void> = [];
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43129, token: 'reset-token' }),
-        (callback) => reconnects.push(callback),
-      );
-      const seen: string[] = [];
-      bridge.subscribe((event) => seen.push(event.type));
-      await bridge.start();
-      const first = required(FakeWebSocket.instances.at(-1));
-      first.open();
-      first.message(batch('generation-1', 1, 1, [{ type: 'connection', status: 'connected' }]));
-      first.message({
-        type: 'bridge.reset',
-        generation: '',
-        lastSeq: 1,
-        reason: 'invalid_resume',
-      });
+  first.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-1', seq: '1' });
+  assert.deepEqual(seenTypes(), ['connection']);
+});
 
-      first.close();
-      reconnects.shift()?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      const second = required(FakeWebSocket.instances.at(-1));
-      const url = new URL(second.url);
-      assert.equal(url.searchParams.get('resumeGeneration'), 'generation-1');
-      assert.equal(url.searchParams.get('resumeSeq'), '1');
-      assert.deepEqual(seen, ['connection']);
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
+test('unflushed persistence in a snapshot is reported rather than treated as durable', async () => {
+  const { socket, seen, seenTypes } = await startBridge();
+  socket.message(
+    snapshotMessage('generation-9', 8, 'generation_changed', {
+      persistence: {
+        durable: false,
+        hadUnflushedWork: true,
+        message: 'Previous process had unflushed history.',
+      },
+    }),
+  );
+  socket.message(batch('generation-9', 8, 8, [CONNECTED]));
+  socket.message(batch('generation-9', 9, 9, [CONNECTED]));
 
-test(
-  'unflushed persistence in a snapshot is reported rather than treated as durable',
-  { concurrency: false },
-  async () => {
-    const runtime = installFakeRuntime();
-    try {
-      const bridge = new Bridge(
-        async () => ({ port: 43131, token: 'unflushed-token' }),
-        () => undefined,
-      );
-      const seen: ServerEvent[] = [];
-      bridge.subscribe((event) => seen.push(event));
-      await bridge.start();
-      const socket = required(FakeWebSocket.instances.at(-1));
-      socket.open();
-      socket.message({
-        type: 'bridge.snapshot',
-        generation: 'generation-9',
-        lastSeq: 8,
-        reason: 'generation_changed',
-        snapshot: {
-          runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
-          sessions: [],
-          children: [],
-          processes: {},
-          persistence: {
-            durable: false,
-            hadUnflushedWork: true,
-            message: 'Previous process had unflushed history.',
-          },
-          interrupted: [],
-        },
-      });
-      socket.message(batch('generation-9', 8, 8, [{ type: 'connection', status: 'connected' }]));
-      socket.message(batch('generation-9', 9, 9, [{ type: 'connection', status: 'connected' }]));
-
-      assert.deepEqual(
-        seen.map((event) => event.type),
-        ['connection', 'runtime.updated', 'sessions.processes', 'error', 'connection'],
-      );
-      const unflushed = seen.find(
-        (event): event is Extract<ServerEvent, { type: 'error' }> => event.type === 'error',
-      );
-      assert.equal(unflushed?.code, 'history.unflushed_work');
-    } finally {
-      restoreFakeRuntime(runtime);
-    }
-  },
-);
+  assert.deepEqual(seenTypes(), [
+    'connection',
+    'runtime.updated',
+    'sessions.processes',
+    'error',
+    'connection',
+  ]);
+  assert.deepEqual(
+    seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
+    ['history.unflushed_work'],
+  );
+});
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error('expected fake socket');

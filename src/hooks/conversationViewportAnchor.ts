@@ -47,7 +47,7 @@ export function scrollTopForPreservedAnchor(
   return Math.max(0, captured.scrollTop + nextRowOffsetTop - captured.rowOffsetTop);
 }
 
-export function updateViewportAnchorGeometry(
+function updateViewportAnchorGeometry(
   anchor: ViewportAnchor,
   rowOffsetTop: number,
   scrollTop: number,

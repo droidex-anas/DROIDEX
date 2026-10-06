@@ -122,7 +122,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
           It asks with the app's own cards, in the same place the composer
           would have shown them, rather than behind this surface. */}
       <div className="mx-auto max-h-[35vh] w-full max-w-[680px] shrink-0 overflow-y-auto px-6">
-        <InlineInteractions asks />
+        <InlineInteractions appSessionId={appSessionId} asks />
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-3 pb-6 pt-4">

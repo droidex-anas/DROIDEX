@@ -112,7 +112,7 @@ describe('statusColorOnLight', () => {
 });
 
 describe('custom theme list helpers', () => {
-  it('upsertCustomTheme appends or replaces by id without mutating the input', () => {
+  it('upsert appends or replaces by id without mutating the input; remove drops only that id', () => {
     const list = [EXAMPLE_CUSTOM];
     const appended = upsertCustomTheme(list, { ...EXAMPLE_CUSTOM, id: 'custom-two' });
     assert.deepEqual(
@@ -123,15 +123,12 @@ describe('custom theme list helpers', () => {
     assert.equal(replaced.length, 1);
     assert.equal(replaced[0].name, 'Renamed');
     assert.equal(list[0].name, 'Test Theme');
-  });
 
-  it('removeCustomTheme drops only the matching id', () => {
-    const list = [EXAMPLE_CUSTOM, { ...EXAMPLE_CUSTOM, id: 'custom-two' }];
     assert.deepEqual(
-      removeCustomTheme(list, 'custom-test').map((p) => p.id),
+      removeCustomTheme(appended, 'custom-test').map((p) => p.id),
       ['custom-two'],
     );
-    assert.equal(removeCustomTheme(list, 'nope').length, 2);
+    assert.equal(removeCustomTheme(appended, 'nope').length, 2);
   });
 });
 
@@ -143,17 +140,11 @@ describe('resolveVariant', () => {
 });
 
 describe('detectPresetId', () => {
-  it('matches built-in variants exactly', () => {
+  it('matches built-in and custom variants exactly, ignoring hex case, else reports custom', () => {
     assert.equal(detectPresetId({ ...DEFAULT_THEME.dark }), DEFAULT_THEME.id);
     assert.equal(detectPresetId({ ...BUILT_IN_THEMES[1].light }), BUILT_IN_THEMES[1].id);
-  });
-
-  it('matches case-insensitively', () => {
     const upper = { ...DEFAULT_THEME.dark, bg: DEFAULT_THEME.dark.bg.toUpperCase() };
     assert.equal(detectPresetId(upper), DEFAULT_THEME.id);
-  });
-
-  it('matches custom presets and reports unmatched colors as custom', () => {
     assert.equal(detectPresetId({ ...EXAMPLE_CUSTOM.dark }, [EXAMPLE_CUSTOM]), EXAMPLE_CUSTOM.id);
     assert.equal(
       detectPresetId({ ...DEFAULT_THEME.dark, accent: '#ee6018' }, [EXAMPLE_CUSTOM]),
@@ -219,7 +210,7 @@ describe('fixed label colors', () => {
 });
 
 describe('parseCustomThemes', () => {
-  it('drops malformed entries and non-array payloads', () => {
+  it('drops malformed entries, blank names, and non-array payloads, trimming names', () => {
     assert.deepEqual(parseCustomThemes(null), []);
     assert.deepEqual(parseCustomThemes('nope'), []);
     assert.deepEqual(
@@ -237,9 +228,6 @@ describe('parseCustomThemes', () => {
       ]),
       [EXAMPLE_CUSTOM],
     );
-  });
-
-  it('trims and rejects empty names', () => {
     const [parsed] = parseCustomThemes([{ ...EXAMPLE_CUSTOM, name: '  Padded  ' }]);
     assert.equal(parsed.name, 'Padded');
     assert.deepEqual(parseCustomThemes([{ ...EXAMPLE_CUSTOM, name: '   ' }]), []);
@@ -247,16 +235,13 @@ describe('parseCustomThemes', () => {
 });
 
 describe('parseThemePresetImport', () => {
-  it('accepts a valid export payload', () => {
+  it('accepts a valid export payload and rejects incomplete ones', () => {
     const payload = {
       name: EXAMPLE_CUSTOM.name,
       light: EXAMPLE_CUSTOM.light,
       dark: EXAMPLE_CUSTOM.dark,
     };
     assert.deepEqual(parseThemePresetImport(payload), payload);
-  });
-
-  it('rejects invalid payloads', () => {
     assert.equal(parseThemePresetImport(null), null);
     assert.equal(parseThemePresetImport({ name: 'x' }), null);
     assert.equal(

@@ -5,28 +5,15 @@ import {
   nativeBrowserRequestTargetsActiveSession,
   nativeBrowserRequestTargetsVisibleSurface,
 } from './browserSessionIdentity';
-import type { SessionSummary } from '../types/bridge';
+import { sessionSummary } from '../test/sessionSummary';
 
-const session = (appSessionId: string, providerSessionId?: string): SessionSummary => ({
-  appSessionId,
-  providerSessionId,
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
-  title: appSessionId,
-  goal: appSessionId,
-  cwd: '',
-  workspaceKind: 'none',
-  autonomy: 'low',
-  phase: 'running',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: 1,
-  updatedAt: 1,
-});
+const session = (appSessionId: string, providerSessionId?: string) =>
+  sessionSummary(appSessionId, {
+    providerSessionId,
+    goal: appSessionId,
+    workspaceKind: 'none',
+    phase: 'running',
+  });
 
 test('browserKeyForSession uses the stable app session id through compaction', () => {
   // The provider session id changes on compaction; the browser

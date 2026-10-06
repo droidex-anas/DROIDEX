@@ -6,107 +6,93 @@ import {
   selectionForPrWorkspace,
 } from './prWorkspaceCwd';
 
-test('prefers an explicit bind, then a folder session, then the newest workspace', () => {
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: '/bound',
-      activeCwd: '/session',
-      workspaceKind: 'folder',
-      workspaceCwds: ['/bound', '/older'],
-    }),
-    '/bound',
-  );
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: null,
-      activeCwd: '/session',
-      workspaceKind: 'folder',
-      workspaceCwds: ['/recent'],
-    }),
-    '/session',
-  );
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: null,
-      activeCwd: '/session',
-      workspaceKind: 'none',
-      workspaceCwds: ['/recent'],
-    }),
-    '/recent',
-  );
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: null,
-      activeCwd: null,
-      workspaceKind: undefined,
-      workspaceCwds: [],
-    }),
-    null,
-  );
-});
-
-test('keeps a bound cwd that is only the active session folder', () => {
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: '/session',
-      activeCwd: '/session',
-      workspaceKind: 'folder',
-      workspaceCwds: [],
-    }),
-    '/session',
-  );
-});
-
-test('drops a bound cwd that is no longer a known workspace', () => {
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: '/removed',
-      activeCwd: '/session',
-      workspaceKind: 'folder',
-      workspaceCwds: ['/recent'],
-    }),
-    '/session',
-  );
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: '/removed',
-      activeCwd: '/session',
-      workspaceKind: 'none',
-      workspaceCwds: ['/recent'],
-    }),
-    '/recent',
-  );
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: '/removed',
-      activeCwd: null,
-      workspaceKind: undefined,
-      workspaceCwds: [],
-    }),
-    null,
-  );
-});
-
-test('known folders compare with the app path equivalence rules', () => {
-  // Windows separators and drive casing name the same folder.
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: 'C:\\Work\\Repo',
-      activeCwd: null,
-      workspaceKind: 'folder',
-      workspaceCwds: ['c:/work/repo'],
-    }),
-    'C:\\Work\\Repo',
-  );
-  assert.equal(
-    resolvePrWorkspaceCwd({
-      boundCwd: 'c:/work/repo',
-      activeCwd: 'C:\\Work\\Repo',
-      workspaceKind: 'folder',
-      workspaceCwds: [],
-    }),
-    'c:/work/repo',
-  );
+test('the workspace is the known bind, then a folder session, then the newest workspace', () => {
+  const cases: [string, Parameters<typeof resolvePrWorkspaceCwd>[0], string | null][] = [
+    [
+      'an explicit bind',
+      {
+        boundCwd: '/bound',
+        activeCwd: '/session',
+        workspaceKind: 'folder',
+        workspaceCwds: ['/bound'],
+      },
+      '/bound',
+    ],
+    [
+      'a folder session',
+      {
+        boundCwd: null,
+        activeCwd: '/session',
+        workspaceKind: 'folder',
+        workspaceCwds: ['/recent'],
+      },
+      '/session',
+    ],
+    [
+      'the newest workspace',
+      { boundCwd: null, activeCwd: '/session', workspaceKind: 'none', workspaceCwds: ['/recent'] },
+      '/recent',
+    ],
+    [
+      'nothing known',
+      { boundCwd: null, activeCwd: null, workspaceKind: undefined, workspaceCwds: [] },
+      null,
+    ],
+    [
+      'a bind that is only the active session folder',
+      { boundCwd: '/session', activeCwd: '/session', workspaceKind: 'folder', workspaceCwds: [] },
+      '/session',
+    ],
+    [
+      'a removed bind in a folder session',
+      {
+        boundCwd: '/removed',
+        activeCwd: '/session',
+        workspaceKind: 'folder',
+        workspaceCwds: ['/recent'],
+      },
+      '/session',
+    ],
+    [
+      'a removed bind in a folder-less session',
+      {
+        boundCwd: '/removed',
+        activeCwd: '/session',
+        workspaceKind: 'none',
+        workspaceCwds: ['/recent'],
+      },
+      '/recent',
+    ],
+    [
+      'a removed bind with nothing else known',
+      { boundCwd: '/removed', activeCwd: null, workspaceKind: undefined, workspaceCwds: [] },
+      null,
+    ],
+    // Windows separators and drive casing name the same folder.
+    [
+      'a bind listed under another spelling',
+      {
+        boundCwd: 'C:\\Work\\Repo',
+        activeCwd: null,
+        workspaceKind: 'folder',
+        workspaceCwds: ['c:/work/repo'],
+      },
+      'C:\\Work\\Repo',
+    ],
+    [
+      'a bind that is the active folder under another spelling',
+      {
+        boundCwd: 'c:/work/repo',
+        activeCwd: 'C:\\Work\\Repo',
+        workspaceKind: 'folder',
+        workspaceCwds: [],
+      },
+      'c:/work/repo',
+    ],
+  ];
+  for (const [name, input, expected] of cases) {
+    assert.equal(resolvePrWorkspaceCwd(input), expected, name);
+  }
 });
 
 test('a selected PR is retained only for the effective bound repository', () => {

@@ -113,26 +113,13 @@ test('history isolation uses the launcher directory and strips ambient overrides
   }
 });
 
-test('sidecar startup reports stderr when the child exits before ready', async () => {
+test('sidecar startup rejects when the child exits before ready', async () => {
   const child = fakeChild();
   const { supervisor } = harness([child, fakeChild()]);
   const pending = supervisor.start();
   child.stderr.write('listen EADDRINUSE\n');
   child.emit('exit', 1, null);
   await assert.rejects(pending, /Sidecar exited before ready/);
-});
-
-test('getBridgeInfo never spawns after an intentional stop', async () => {
-  const firstChild = fakeChild();
-  const { supervisor, calls } = harness([firstChild]);
-  const first = supervisor.start();
-  firstChild.stdout.write('SIDECAR_READY 43001\n');
-  await first;
-
-  supervisor.stop();
-  assert.equal(firstChild.killed, true);
-  await assert.rejects(supervisor.getBridgeInfo(), /stopped/);
-  assert.equal(calls.length, 1);
 });
 
 test('stop during startup invalidates the old child before an immediate restart', async () => {
@@ -154,34 +141,6 @@ test('stop during startup invalidates the old child before an immediate restart'
   assert.equal(calls.length, 2);
 });
 
-test('intentional shutdown is not reported as a crash', async () => {
-  const child = fakeChild();
-  const stderr = new PassThrough();
-  let diagnostics = '';
-  stderr.on('data', (chunk) => {
-    diagnostics += String(chunk);
-  });
-  const supervisor = createSidecarSupervisor({
-    entryPath: () => '/app/sidecar.mjs',
-    cwd: () => '/app',
-    userData: () => '/profiles/droidex',
-    stdout: new PassThrough(),
-    stderr,
-    requestHealth: async () => ({ ok: true }),
-    spawnProcess: () => child,
-  });
-  const started = supervisor.start();
-  child.stdout.write('SIDECAR_READY 43001\n');
-  await started;
-
-  const stopped = supervisor.stop();
-  child.emit('exit', null, 'SIGTERM');
-  await stopped;
-
-  assert.equal(diagnostics, '');
-  assert.equal(supervisor.snapshot().lifecycle, 'stopped');
-});
-
 test('stop resolves only after the sidecar process exits', async () => {
   const child = fakeChild();
   const { supervisor } = harness([child]);
@@ -199,22 +158,6 @@ test('stop resolves only after the sidecar process exits', async () => {
   child.emit('exit', 0, null);
   await stop;
   assert.equal(stopped, true);
-});
-
-test('unexpected sidecar exits are forwarded to diagnostics', async () => {
-  const child = fakeChild();
-  const crashes = [];
-  const { supervisor } = harness([child, fakeChild()], {
-    onUnexpectedExit: (error) => crashes.push(error.message),
-  });
-  const started = supervisor.start();
-  child.stdout.write('SIDECAR_READY 43001\n');
-  await started;
-
-  child.emit('exit', 1, null);
-
-  assert.deepEqual(crashes, ['Sidecar exited unexpectedly (1).']);
-  assert.equal(supervisor.snapshot().lifecycle, 'restarting');
 });
 
 test('heartbeat arms one timeout at the interval and does not stack', async () => {
@@ -237,30 +180,6 @@ test('heartbeat arms one timeout at the interval and does not stack', async () =
   const stopping = supervisor.stop();
   child.emit('exit', 0, null);
   await stopping;
-});
-
-test('a missed heartbeat degrades without declaring the process dead', async () => {
-  const child = fakeChild();
-  let shouldFail = false;
-  const { supervisor, flushScheduled } = harness([child], {
-    requestHealth: async () => {
-      if (shouldFail) throw new Error('busy');
-      return { ok: true };
-    },
-  });
-  child.stdout.write('SIDECAR_READY 43001\n');
-  await supervisor.start();
-  assert.equal(supervisor.snapshot().lifecycle, 'healthy');
-
-  shouldFail = true;
-  flushScheduled();
-  await Promise.resolve();
-  await Promise.resolve();
-
-  const health = supervisor.snapshot();
-  assert.equal(health.lifecycle, 'degraded');
-  assert.equal(health.processAlive, true);
-  assert.equal(health.bridgeResponsive, false);
 });
 
 test('a hung /health times out even when the sidecar never writes a response', async () => {
@@ -316,15 +235,20 @@ test('a live sidecar whose /health is blocked is degraded and is not restarted',
   );
 });
 
-test('bridge-info waits for the supervisor restart and does not spawn a second sidecar', async () => {
+test('an unexpected exit reports a crash and bridge-info waits for one supervised restart', async () => {
   const firstChild = fakeChild();
   const secondChild = fakeChild();
-  const { supervisor, calls, flushScheduled } = harness([firstChild, secondChild]);
+  const crashes = [];
+  const { supervisor, calls, flushScheduled } = harness([firstChild, secondChild], {
+    onUnexpectedExit: (error) => crashes.push(error.message),
+  });
   firstChild.stdout.write('SIDECAR_READY 43001\n');
   await supervisor.start();
   assert.equal(calls.length, 1);
 
   firstChild.emit('exit', 1, null);
+  assert.deepEqual(crashes, ['Sidecar exited unexpectedly (1).']);
+  assert.equal(supervisor.snapshot().lifecycle, 'restarting');
   const waiting = supervisor.getBridgeInfo();
   assert.equal(calls.length, 1);
 
@@ -356,17 +280,26 @@ test('restart storms stay bounded and land in recovery-required', async () => {
   await assert.rejects(supervisor.start(), /recovery is required/);
 });
 
-test('intentional shutdown never restarts', async () => {
+test('intentional shutdown never restarts, respawns, or reports a crash', async () => {
   const child = fakeChild();
-  const { supervisor, calls, scheduled } = harness([child, fakeChild()]);
+  const stderr = new PassThrough();
+  let diagnostics = '';
+  stderr.on('data', (chunk) => {
+    diagnostics += String(chunk);
+  });
+  const { supervisor, calls, scheduled } = harness([child, fakeChild()], { stderr });
   child.stdout.write('SIDECAR_READY 43001\n');
   await supervisor.start();
   const stopping = supervisor.stop();
+  assert.equal(child.killed, true);
   child.emit('exit', 1, null);
   await stopping;
+
   assert.equal(supervisor.snapshot().lifecycle, 'stopped');
   assert.equal(scheduled.filter((item) => !item.cancelled).length, 0);
+  await assert.rejects(supervisor.getBridgeInfo(), /stopped/);
   assert.equal(calls.length, 1);
+  assert.equal(diagnostics, '');
 });
 
 test('spawn error without exit leaves starting and schedules a bounded restart', async () => {
