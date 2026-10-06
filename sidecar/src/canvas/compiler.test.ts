@@ -70,6 +70,18 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   assert.ok(design.html.includes('--ds-accent'), 'the kit tokens carry semantic names');
 });
 
+test('a design above the selection limit still compiles with an honest diagnostic', async () => {
+  const source = `export default function Dense(){ return <main>${'<i/>'.repeat(8193)}</main> }`;
+  const design = await compile({ 'main.tsx': source });
+  assert.match(design.html, /id="canvas-root"/);
+  assert.deepEqual(design.elements, []);
+  assert.deepEqual(
+    design.diagnostics.map((entry) => entry.code),
+    ['selection_unavailable'],
+  );
+  assert.match(design.diagnostics[0]?.message ?? '', /8,192/);
+});
+
 test('direct edits compile through the worker and its map points to canonical source', async () => {
   const cases: { source: string; change: ElementEdit['change']; rendered: string }[] = [
     { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
@@ -351,6 +363,8 @@ test('a reply the protocol does not define is not an answer', () => {
     requestId: 2,
     status: 'stopped',
   });
+  const edited = { requestId: 3, status: 'edited', files: { 'main.tsx': '<h1>Changed</h1>' } };
+  assert.deepEqual(compilerResponse(edited), edited);
 
   for (const malformed of [
     null,
@@ -365,6 +379,8 @@ test('a reply the protocol does not define is not an answer', () => {
     { requestId: 1, status: 'ready' },
     { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
     { requestId: 1, status: 'failed' },
+    { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
+    { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
   ]) {
     assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));
   }

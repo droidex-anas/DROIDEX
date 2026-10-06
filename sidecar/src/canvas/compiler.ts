@@ -12,8 +12,14 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
-import type { CanvasDiagnostic, DesignSystemRef, SourceElement } from './protocol.js';
-import { CANVAS_LIMITS, sourceElementSchema, type SourceFiles } from './schema.js';
+import { canvasError } from './canvasError.js';
+import type { CanvasDiagnostic, DesignSystemRef, ElementEdit, SourceElement } from './protocol.js';
+import {
+  CANVAS_LIMITS,
+  sourceElementSchema,
+  sourceFilesSchema,
+  type SourceFiles,
+} from './schema.js';
 
 export interface CompileInput {
   designId: string;
@@ -71,11 +77,23 @@ export class CompilerUnavailableError extends Error {
 
 export type CompilerRequest =
   | { type: 'compile'; requestId: number; input: CompileInput }
+  | {
+      type: 'edit';
+      requestId: number;
+      files: SourceFiles;
+      elements: SourceElement[];
+      edit: ElementEdit;
+      designSystem: DesignSystemRef;
+    }
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
+type EditFailureCode = 'stale_reference' | 'ambiguous_element' | 'invalid_source' | 'invalid_edit';
+
 export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
+  | { requestId: number; status: 'edited'; files: SourceFiles }
+  | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
   | {
@@ -88,6 +106,12 @@ export type CompilerResponse =
 
 interface PendingCompile {
   resolve(design: CompiledDesign): void;
+  reject(error: Error): void;
+  release(): void;
+}
+
+interface PendingEdit {
+  resolve(files: SourceFiles): void;
   reject(error: Error): void;
   release(): void;
 }
@@ -106,6 +130,7 @@ const SHUTDOWN_GRACE_MS = 2_000;
 export class CompilerWorker {
   private compiler: ChildProcess | null = null;
   private readonly pending = new Map<number, PendingCompile>();
+  private readonly pendingEdits = new Map<number, PendingEdit>();
   private shutdownAck: (() => void) | null = null;
   private nextRequestId = 1;
   private terminated = false;
@@ -140,6 +165,45 @@ export class CompilerWorker {
         },
       });
       compiler.send({ type: 'compile', requestId, input } satisfies CompilerRequest);
+    });
+  }
+
+  /** Applies one literal edit in the parser-owning process. */
+  edit(
+    files: SourceFiles,
+    elements: SourceElement[],
+    edit: ElementEdit,
+    designSystem: DesignSystemRef,
+    signal: AbortSignal,
+  ): Promise<SourceFiles> {
+    if (this.terminated)
+      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    if (signal.aborted) return Promise.reject(new CompileCancelledError());
+    const requestId = this.nextRequestId++;
+    const compiler = this.liveCompiler();
+    return new Promise<SourceFiles>((resolve, reject) => {
+      const onAbort = (): void => {
+        this.settleEdit(requestId, () => {
+          reject(new CompileCancelledError());
+        });
+        compiler.send({ type: 'cancel', requestId } satisfies CompilerRequest);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.pendingEdits.set(requestId, {
+        resolve,
+        reject,
+        release: () => {
+          signal.removeEventListener('abort', onAbort);
+        },
+      });
+      compiler.send({
+        type: 'edit',
+        requestId,
+        files,
+        elements,
+        edit,
+        designSystem,
+      } satisfies CompilerRequest);
     });
   }
 
@@ -217,6 +281,27 @@ export class CompilerWorker {
       this.shutdownAck?.();
       return;
     }
+    if (this.pendingEdits.has(response.requestId)) {
+      this.settleEdit(response.requestId, (call) => {
+        switch (response.status) {
+          case 'edited':
+            call.resolve(response.files);
+            return;
+          case 'edit_failed':
+            call.reject(canvasError(response.code, response.message));
+            return;
+          case 'cancelled':
+            call.reject(new CompileCancelledError());
+            return;
+          case 'unavailable':
+            call.reject(new CompilerUnavailableError(response.reason, response.message));
+            return;
+          default:
+            call.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+        }
+      });
+      return;
+    }
     this.settle(response.requestId, (call) => {
       switch (response.status) {
         case 'ready':
@@ -233,6 +318,8 @@ export class CompilerWorker {
           // boundary, which never carries a path (spec §8).
           call.reject(new CompilerUnavailableError(response.reason, response.message));
           return;
+        default:
+          call.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
       }
     });
   }
@@ -251,6 +338,10 @@ export class CompilerWorker {
         call.reject(error);
       });
     }
+    for (const requestId of [...this.pendingEdits.keys()])
+      this.settleEdit(requestId, (call) => {
+        call.reject(error);
+      });
   }
 
   /** Settles a request exactly once; a later answer for it is dropped. */
@@ -261,11 +352,25 @@ export class CompilerWorker {
     call.release();
     finish(call);
   }
+
+  private settleEdit(requestId: number, finish: (call: PendingEdit) => void): void {
+    const call = this.pendingEdits.get(requestId);
+    if (!call) return;
+    this.pendingEdits.delete(requestId);
+    call.release();
+    finish(call);
+  }
 }
 
 const UNAVAILABLE_REASONS: readonly CompilerUnavailableReason[] = [
   'damaged-runtime',
   'lost-compiler',
+];
+const EDIT_FAILURE_CODES: readonly EditFailureCode[] = [
+  'stale_reference',
+  'ambiguous_element',
+  'invalid_source',
+  'invalid_edit',
 ];
 
 /**
@@ -285,8 +390,12 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
     message: text,
     design,
     diagnostics,
+    files,
+    code,
   } = message as Record<string, unknown>;
   if (typeof requestId !== 'number') return null;
+  const edit = editResponse(requestId, status, files, code, text);
+  if (edit !== undefined) return edit;
   switch (status) {
     case 'cancelled':
     case 'stopped':
@@ -304,6 +413,24 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
     default:
       return null;
   }
+}
+
+function editResponse(
+  requestId: number,
+  status: unknown,
+  files: unknown,
+  code: unknown,
+  message: unknown,
+): Extract<CompilerResponse, { status: 'edited' | 'edit_failed' }> | null | undefined {
+  if (status === 'edited') {
+    const parsed = sourceFilesSchema.safeParse(files);
+    return parsed.success ? { requestId, status, files: parsed.data } : null;
+  }
+  if (status === 'edit_failed')
+    return typeof message === 'string' && EDIT_FAILURE_CODES.includes(code as EditFailureCode)
+      ? { requestId, status, code: code as EditFailureCode, message }
+      : null;
+  return undefined;
 }
 
 function isCompiledDesign(design: unknown): design is CompiledDesign {

@@ -18,6 +18,7 @@ import type {
   CreateFramesResult,
   DesignRef,
   DesignSystemRef,
+  EditElementInput,
   ElementRef,
   SourceElement,
   WriteFilesInput,
@@ -26,6 +27,7 @@ import type {
 import {
   arrangeFramesInputSchema,
   createFramesInputSchema,
+  editElementInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -49,6 +51,7 @@ type SidecarWire = {
   designRef: DesignRef;
   elementRef: ElementRef;
   element: SourceElement;
+  edit: EditElementInput;
   error: CanvasError;
   command: CanvasCommand;
   reply: CanvasReply;
@@ -68,6 +71,7 @@ type RendererWire = {
   designRef: Renderer.DesignRef;
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
+  edit: Renderer.EditElementInput;
   error: Renderer.CanvasError;
   command: Renderer.CanvasCommand;
   reply: Renderer.CanvasReply;
@@ -147,7 +151,14 @@ const wire: SidecarWire = {
         layoutVersion: 2,
         revisionId: 'rev_02',
         designSystem,
-        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02', generation: 1 },
+        build: {
+          status: 'ready',
+          revisionId: 'rev_02',
+          artifactId: 'art_02',
+          elements: [],
+          diagnostics: [],
+          generation: 1,
+        },
       },
       {
         designId: 'dsg_reserved',
@@ -214,6 +225,13 @@ const wire: SidecarWire = {
     tagName: 'h1',
     editability: 'literal',
   },
+  edit: {
+    mutationId: 'edit-hey',
+    edit: {
+      element: { designId: 'dsg_hey', revisionId: 'rev_02', elementId: 'el_17', instancePath: '0' },
+      change: { kind: 'text', value: 'Welcome' },
+    },
+  },
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
   command: {
     type: 'canvas.write',
@@ -251,6 +269,7 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     designRef: true,
     elementRef: true,
     element: true,
+    edit: true,
     error: true,
     command: true,
     reply: true,
@@ -316,6 +335,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       reply: { kind: 'artifact', artifact: null },
     },
     wire.event,
+    {
+      type: 'canvas.result',
+      requestId: 'req_02',
+      ok: false,
+      error: { code: 'stale_revision', message: 'Reselect the element.' },
+    },
     { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },
     { type: 'canvas.summaries', summaries },
     { type: 'canvas.change', change: wire.change },
@@ -332,13 +357,58 @@ test('every serialized event the sidecar emits passes the renderer validator', (
   assert.equal(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(129) }), false);
 });
 
-test('the create, write and arrange fixtures parse, and the parsed value fits the mirror', () => {
+test('the renderer accepts a ready element map and rejects incomplete or unbounded maps', () => {
+  const ready = {
+    status: 'ready',
+    revisionId: 'rev_02',
+    artifactId: 'art_02',
+    elements: [wire.element],
+    diagnostics: [{ code: 'selection_unavailable', message: 'Reselect after rebuilding.' }],
+    generation: 1,
+  };
+  const event = (build: unknown) => ({
+    type: 'canvas.snapshot',
+    requestId: 'req_01',
+    snapshot: {
+      ...wire.snapshot,
+      frames: [{ ...wire.snapshot.frames[0], build }],
+    },
+  });
+
+  assert.equal(isCanvasEvent(event(ready)), true);
+  assert.equal(
+    isCanvasEvent(
+      event({
+        status: 'ready',
+        revisionId: 'rev_02',
+        artifactId: 'art_02',
+        diagnostics: [],
+        generation: 1,
+      }),
+    ),
+    false,
+  );
+  assert.equal(isCanvasEvent(event({ ...ready, diagnostics: undefined })), false);
+  assert.equal(
+    isCanvasEvent(event({ ...ready, elements: new Array(8193).fill(wire.element) })),
+    false,
+  );
+  assert.equal(
+    isCanvasEvent(event({ ...ready, diagnostics: new Array(65).fill(ready.diagnostics[0]) })),
+    false,
+  );
+  assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
+});
+
+test('the create, write, edit and arrange fixtures parse and fit the mirror', () => {
   const create: Renderer.CreateFramesInput = createFramesInputSchema.parse(wire.create);
   const write: Renderer.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
   const arrange: Renderer.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
+  const edit: Renderer.EditElementInput = editElementInputSchema.parse(wire.edit);
   assert.deepEqual(create, wire.create);
   assert.deepEqual(write, wire.write);
   assert.deepEqual(arrange, wire.arrange);
+  assert.deepEqual(edit, wire.edit);
 });
 
 test('create rejects more than four frames and an out-of-range dimension', () => {

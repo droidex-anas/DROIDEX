@@ -1171,22 +1171,27 @@ Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache pa
 - Text editing supports a single JSX text node or string/no-substitution-template expression,
   plus empty paired tags. Token editing replaces an existing literal `var(--token)` in an
   allowlisted React style property; it does not rewrite utility classes or invent style objects.
-  Image editing replaces a literal `img src="canvas-asset:<assetId>"`; asset existence and offline
-  resolution belong to 07c, and kit token membership belongs to the inspector's pinned kit.
-- `CompiledDesign.elements` follows the accepted build into the required `elements` field on
-  the ready `BuildResult` in the derived cache. Older outcomes without that field are cache misses
-  and rebuild. No historical reader or migration was added. The renderer-facing ready-state
-  projection is unchanged: its mirror/validation/fixture updates require renderer-file ownership,
-  explicitly excluded from this subtask. That projection is pending the ownership decision requested
-  from the orchestrator. No preview selection events or inspector behavior are included.
+  Image editing replaces a literal `img src="canvas-asset:<assetId>"`; the bridge refuses image
+  edits until 07d's asset store can verify ownership. The edit boundary checks token membership
+  against the pinned kit's mode and CSS declarations before committing.
+- Ready build frames and restored snapshots carry the exact element map and up to 64 compiler
+  diagnostics. Older outcomes without these fields are cache misses and rebuild; cached ranges
+  must fit their canonical file. No historical reader or migration was added. `canvas.editElement`
+  resolves the current built map, rejects malformed/stale/computed references with curated codes,
+  applies the AST edit in the owned compiler worker, and commits changed source through the
+  workspace's normal scope and revision CAS. A direct edit forks a compiler worker for its request
+  so parsing cannot block the sidecar's main loop; the worker is ended after settlement.
+  The renderer protocol mirror and inbound validator share this contract; preview selection
+  events and inspector behavior remain in 08b.
 - Measurements on this arm64 checkout, Node 22: kit example (928 bytes, four sites) first
   instrumentation 8.65 ms, warm median 0.43 ms across 29 runs; 1 MiB of source across four
   maximum-sized files 33.91 ms. These exclude parser module loading and worker startup and
   vary with host load. Exact-column inline maps expand that 1 MiB input to 9,438,320 bytes
   inside the worker; esbuild composes them down to the output locations it emits. A deliberately
   dense 256 KiB file with 65,529 JSX sites took 2.02 seconds in the initial probe. Parsing now
-  runs in the deadline-owned compiler process, and `maxSourceElements: 8192` refuses excessive
-  native JSX site counts with a simplify/rebuild diagnostic before producing that expanded map.
+  runs in the deadline-owned compiler process. Above `maxSourceElements: 8192`, the worker
+  compiles canonical source, returns an empty map, and reports `selection_unavailable` rather
+  than publishing a partial map or failing the preview.
   This independent bound also applies at the worker reply and cache boundaries. These are
   probes, not timing assertions in unit tests.
 

@@ -9,7 +9,7 @@
 // its gate runs again after every await there, so nothing lands once a newer
 // attempt, a cancellation or shutdown has taken the frame.
 
-import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
+import { builtState, CanvasBuildCache, MAX_BUILD_DIAGNOSTICS } from './canvasBuildCache.js';
 import { buildFailure, unsavedBuild, type BuildOutcome } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { CanvasFiles } from './canvasFiles.js';
@@ -387,7 +387,12 @@ export class CanvasBuilds {
     try {
       await this.owner.cache.saveArtifact(job.canvasId, compiled.artifactId, compiled.html);
       return {
-        result: { status: 'ready', artifactId: compiled.artifactId, elements: compiled.elements },
+        result: {
+          status: 'ready',
+          artifactId: compiled.artifactId,
+          elements: compiled.elements,
+          diagnostics: compiled.diagnostics.slice(0, MAX_BUILD_DIAGNOSTICS),
+        },
         persists: true,
       };
     } catch (error) {

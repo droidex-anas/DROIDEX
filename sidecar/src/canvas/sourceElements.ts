@@ -6,7 +6,12 @@ import { CANVAS_LIMITS } from './schema.js';
 
 export class SourceElementError extends Error {
   constructor(
-    readonly code: 'stale_reference' | 'ambiguous_element' | 'invalid_source' | 'invalid_edit',
+    readonly code:
+      | 'stale_reference'
+      | 'ambiguous_element'
+      | 'invalid_source'
+      | 'invalid_edit'
+      | 'selection_limit',
     message: string,
     readonly file?: string,
     readonly line?: number,
@@ -217,8 +222,8 @@ function sourceSites(files: SourceFiles, revisionId: string): Site[] {
         );
       if (sites.length === CANVAS_LIMITS.maxSourceElements)
         throw new SourceElementError(
-          'invalid_source',
-          `A design can map at most ${String(CANVAS_LIMITS.maxSourceElements)} native JSX elements. Simplify the source and rebuild.`,
+          'selection_limit',
+          `This design has more than ${CANVAS_LIMITS.maxSourceElements.toLocaleString('en-US')} native JSX elements. Selection is unavailable for this revision. Simplify the source and rebuild to select elements.`,
           file,
         );
       const start = node.getStart(source);

@@ -261,14 +261,14 @@ test('instrumented lines and insertion edges map back to canonical source', () =
   assert.equal(textEntry.originalColumn, '  return <h1>'.length);
 });
 
-test('dense source fails with an actionable bound instead of producing an unbounded element map', () => {
+test('dense source reports a selection limit instead of producing a partial element map', () => {
   const source = `export default () => <>${'<i/>'.repeat(CANVAS_LIMITS.maxSourceElements + 1)}</>`;
   assert.throws(
     () => instrumentSource({ 'main.tsx': source }, 'r1'),
     (error: unknown) => {
       assert.ok(error instanceof SourceElementError);
-      assert.equal(error.code, 'invalid_source');
-      assert.match(error.message, /8192.*Simplify/);
+      assert.equal(error.code, 'selection_limit');
+      assert.match(error.message, /8,192.*Simplify/);
       return true;
     },
   );

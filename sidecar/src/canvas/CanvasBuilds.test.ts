@@ -19,6 +19,7 @@ import { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
+import { instrumentSource } from './sourceElements.js';
 
 /** A yield to the event loop, so a premature resolution becomes visible. */
 function drained(): Promise<void> {
@@ -76,6 +77,8 @@ test('an older build that finishes under a newer one publishes nothing', async (
     status: 'ready',
     revisionId: second.revisionId,
     artifactId: 'artifact-newer',
+    elements: [],
+    diagnostics: [],
     generation: 2,
   };
   assert.deepEqual(canvas.frame(designId).build, ready);
@@ -211,6 +214,8 @@ test('an overdue build takes down only its own slot', async (t) => {
     status: 'ready',
     revisionId: healthy.revisionId,
     artifactId: 'artifact-two',
+    elements: [],
+    diagnostics: [],
     generation: 1,
   });
   assert.equal(second.signal.aborted, false, 'the healthy build was never cancelled');
@@ -285,6 +290,8 @@ test('a lost artifact for the current revision is rebuilt, not just reported', a
     // same source. Either way the attempt is what moved, and that is what a
     // mounted preview reads.
     artifactId: 'artifact-two',
+    elements: [],
+    diagnostics: [],
     generation: 2,
   });
   // The document the frame now names is on disk, which is what the read that
@@ -358,19 +365,14 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
   const canvas = await board(t);
   const [designId] = await canvas.create('Hey');
   assert.ok(designId);
-  const receipt = await canvas.write(designId, null, 'v1');
-  const elements = [
-    {
-      elementId: 'element-one',
-      file: 'main.tsx',
-      start: 1,
-      end: 12,
-      tagName: 'h1',
-      editability: 'literal' as const,
-    },
-  ];
+  const source = 'export default function App(){ return <h1>v1</h1> }';
+  const receipt = await canvas.write(designId, null, source);
+  const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
   (await canvas.fleet.compile(1)).ready('artifact-one', elements);
   await canvas.reported(designId, 'ready');
+  const published = reportedStates(canvas, designId).find((state) => state.status === 'ready');
+  assert.ok(published?.status === 'ready');
+  assert.deepEqual(published.elements, elements);
 
   const cached = await new CanvasFiles(canvas.store.root).readBuildOutput(
     canvas.canvasId,
@@ -392,6 +394,8 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
     status: 'ready',
     revisionId: receipt.revisionId,
     artifactId: 'artifact-one',
+    elements,
+    diagnostics: [],
     // A restored outcome is attempt zero: nothing was built in this session.
     generation: 0,
   });
@@ -409,6 +413,47 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
   assert.equal(rebuild.input.revisionId, receipt.revisionId);
   rebuild.ready('artifact-again');
   await recovered.reported(designId, 'ready');
+});
+
+test('a cached selection range beyond its source forces a rebuild', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const source = 'export default function App(){ return <h1>v1</h1> }';
+  const receipt = await canvas.write(designId, null, source);
+  const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
+  (await canvas.fleet.compile(1)).ready('artifact-one', elements);
+  await canvas.reported(designId, 'ready');
+
+  const files = new CanvasFiles(canvas.store.root);
+  const name = `${receipt.revisionId}.json`;
+  const cached = await files.readBuildOutput(canvas.canvasId, name);
+  assert.ok(cached);
+  const damaged = JSON.parse(cached);
+  damaged.result.elements[0].end = source.length + 1;
+  await files.writeBuildOutput(canvas.canvasId, name, JSON.stringify(damaged));
+
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
+});
+
+test('ready frames keep a bounded compiler diagnostic list', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Dense');
+  assert.ok(designId);
+  await canvas.write(designId, null, 'dense');
+  const diagnostics = Array.from({ length: 70 }, (_, index) => ({
+    code: 'selection_unavailable',
+    message: `Selection limit ${index}`,
+  }));
+  (await canvas.fleet.compile(1)).ready('artifact-dense', [], diagnostics);
+  await canvas.reported(designId, 'ready');
+  const build = canvas.frame(designId).build;
+  assert.ok(build.status === 'ready');
+  assert.deepEqual(build.elements, []);
+  assert.deepEqual(build.diagnostics, diagnostics.slice(0, 64));
 });
 
 test('cancelling a canvas releases its slots and reports its frames', async (t) => {
@@ -746,6 +791,8 @@ test('a frame seeded from a saved revision is built like a write', async (t) => 
     status: 'ready',
     revisionId: copy.input.revisionId,
     artifactId: 'artifact-copy',
+    elements: [],
+    diagnostics: [],
     generation: 1,
   });
 });
@@ -777,6 +824,8 @@ test('a rebuild sweep from an old projection leaves the current state alone', as
     status: 'ready',
     revisionId: current.revisionId,
     artifactId: 'artifact-current',
+    elements: [],
+    diagnostics: [],
     generation: 2,
   });
   assert.equal(canvas.fleet.held.length, 4, 'nothing was rebuilt for a revision that is gone');
@@ -839,6 +888,8 @@ test('one design ID on two canvases keeps two build states', async (t) => {
     status: 'ready',
     revisionId: 'rev_01',
     artifactId: 'artifact-one',
+    elements: [],
+    diagnostics: [],
     generation: 1,
   });
   assert.equal(builds.stateOf('cv_02', 'dsg_hey').status, 'failed');

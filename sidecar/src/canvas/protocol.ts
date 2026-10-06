@@ -8,6 +8,7 @@ import type {
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
+  EditElementInput,
   FrameRect,
   WriteFilesInput,
 } from './schema.js';
@@ -17,6 +18,7 @@ export type {
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
+  EditElementInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -94,7 +96,13 @@ export interface SourceElement {
 export type CanvasBuildOutcome =
   | { status: 'pending' }
   | { status: 'building'; revisionId: string }
-  | { status: 'ready'; revisionId: string; artifactId: string }
+  | {
+      status: 'ready';
+      revisionId: string;
+      artifactId: string;
+      elements: SourceElement[];
+      diagnostics: CanvasDiagnostic[];
+    }
   | {
       status: 'failed';
       revisionId: string;
@@ -175,7 +183,13 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
-  | 'storage_failed';
+  | 'storage_failed'
+  | 'stale_revision'
+  | 'stale_reference'
+  | 'ambiguous_element'
+  | 'invalid_edit'
+  | 'invalid_source'
+  | 'unsupported_edit';
 
 export interface CanvasError {
   code: CanvasErrorCode;
@@ -218,6 +232,13 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: WriteFilesInput;
+    }
+  | {
+      type: 'canvas.editElement';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: EditElementInput;
     }
   | {
       type: 'canvas.arrange';

@@ -36,6 +36,7 @@ const buildResultSchema = z.discriminatedUnion('status', [
       status: z.literal('ready'),
       artifactId: canvasIdentifierSchema,
       elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
+      diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
     })
     .strict(),
   z
@@ -173,6 +174,22 @@ export class CanvasBuildCache {
     const parsed = buildOutcomeSchema.safeParse(value);
     if (!parsed.success) return null;
     const { designId, revisionId, result } = parsed.data;
+    if (result.status === 'ready' && result.elements.length > 0) {
+      const source = await this.files
+        .readRevision(canvasId, { designId, revisionId })
+        .catch(() => null);
+      if (!source) return null;
+      for (const element of result.elements) {
+        const file = source.get(element.file);
+        if (
+          !file ||
+          element.end > file.length ||
+          !file.startsWith(`<${element.tagName}`, element.start) ||
+          !/[\s/>]/.test(file[element.start + element.tagName.length + 1] ?? '')
+        )
+          return null;
+      }
+    }
     return { designId, revisionId, result };
   }
 }
@@ -211,6 +228,12 @@ export function builtState(
   lastWorkingRevisionId: string | null,
 ): CanvasBuildOutcome {
   if (result.status === 'ready')
-    return { status: 'ready', revisionId, artifactId: result.artifactId };
+    return {
+      status: 'ready',
+      revisionId,
+      artifactId: result.artifactId,
+      elements: result.elements,
+      diagnostics: result.diagnostics,
+    };
   return { status: 'failed', revisionId, diagnostics: result.diagnostics, lastWorkingRevisionId };
 }

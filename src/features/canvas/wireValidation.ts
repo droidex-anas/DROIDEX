@@ -13,6 +13,12 @@ const ERROR_CODES = new Set([
   'capture_unavailable',
   'scope_expired',
   'storage_failed',
+  'stale_revision',
+  'stale_reference',
+  'ambiguous_element',
+  'invalid_edit',
+  'invalid_source',
+  'unsupported_edit',
 ]);
 
 const REPLY_KINDS = new Set([
@@ -27,6 +33,9 @@ const REPLY_KINDS = new Set([
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
+const MAX_SOURCE_ELEMENTS = 8192;
+const MAX_BUILD_DIAGNOSTICS = 64;
+const MAX_SOURCE_FILE_BYTES = 256 * 1024;
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
   switch (value.type) {
@@ -142,11 +151,16 @@ function isBuild(value: unknown): boolean {
     case 'building':
       return id(value.revisionId);
     case 'ready':
-      return id(value.revisionId) && id(value.artifactId);
+      return (
+        id(value.revisionId) &&
+        id(value.artifactId) &&
+        boundedList(value.elements, MAX_SOURCE_ELEMENTS, isSourceElement) &&
+        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
+      );
     case 'failed':
       return (
         id(value.revisionId) &&
-        list(value.diagnostics, isDiagnostic) &&
+        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic) &&
         (value.lastWorkingRevisionId === null || id(value.lastWorkingRevisionId))
       );
     case 'cancelled':
@@ -156,14 +170,30 @@ function isBuild(value: unknown): boolean {
   }
 }
 
+function isSourceElement(value: unknown): boolean {
+  return (
+    record(value) &&
+    id(value.elementId) &&
+    boundedText(value.file, 256) &&
+    count(value.start) &&
+    count(value.end) &&
+    value.end > value.start &&
+    value.end <= MAX_SOURCE_FILE_BYTES &&
+    boundedText(value.tagName, MAX_SOURCE_FILE_BYTES) &&
+    (value.editability === 'literal' ||
+      value.editability === 'computed' ||
+      value.editability === 'shared')
+  );
+}
+
 function isDiagnostic(value: unknown): boolean {
   return (
     record(value) &&
-    text(value.code) &&
-    typeof value.message === 'string' &&
-    (value.file === undefined || typeof value.file === 'string') &&
-    (value.line === undefined || finite(value.line)) &&
-    (value.column === undefined || finite(value.column))
+    boundedText(value.code, 64) &&
+    boundedText(value.message, 2048) &&
+    (value.file === undefined || (typeof value.file === 'string' && value.file.length <= 320)) &&
+    (value.line === undefined || count(value.line)) &&
+    (value.column === undefined || count(value.column))
   );
 }
 
@@ -184,6 +214,10 @@ function list(value: unknown, entry: (item: unknown) => boolean): boolean {
   return Array.isArray(value) && value.every(entry);
 }
 
+function boundedList(value: unknown, max: number, entry: (item: unknown) => boolean): boolean {
+  return Array.isArray(value) && value.length <= max && value.every(entry);
+}
+
 /** An opaque Canvas identifier, bounded the way the sidecar schema bounds it. */
 function id(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 128;
@@ -193,7 +227,11 @@ function text(value: unknown): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 2_000;
 }
 
-function count(value: unknown): boolean {
+function boundedText(value: unknown, max: number): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+
+function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
