@@ -753,24 +753,24 @@ export class SessionLifecycle {
     }
     liveSession.interruptingToSend = true;
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
-    const interrupt = liveSession.session.interrupt();
-    const settled = new Promise<void>((resolve) => {
-      setTimeout(resolve, SEND_NOW_INTERRUPT_WAIT_MS).unref();
-      interrupt.then(resolve, resolve);
-    });
-    liveSession.sendNowInterrupt = settled;
-    try {
-      await interrupt;
-    } catch (error) {
+    // A refusal is reported first, so the turn settling after it sees it.
+    const interrupt = liveSession.session.interrupt().catch((error: unknown) => {
       liveSession.interruptingToSend = false;
       this.dependencies.emitError({
         code: 'session.send_now_failed',
         appSessionId,
         message: `Could not stop the turn to send now: ${errMsg(error)}`,
       });
-    } finally {
-      if (liveSession.sendNowInterrupt === settled) liveSession.sendNowInterrupt = undefined;
-    }
+    });
+    // Capped, like the settlement that waits on it, so a harness that never
+    // answers cannot hold the command either.
+    const settled = new Promise<void>((resolve) => {
+      setTimeout(resolve, SEND_NOW_INTERRUPT_WAIT_MS).unref();
+      void interrupt.then(resolve);
+    });
+    liveSession.sendNowInterrupt = settled;
+    await settled;
+    if (liveSession.sendNowInterrupt === settled) liveSession.sendNowInterrupt = undefined;
   }
 
   // Where a prompt the user sent goes: the live session to send it to, 'held'
