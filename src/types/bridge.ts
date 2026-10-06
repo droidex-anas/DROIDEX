@@ -150,7 +150,7 @@ export interface UsageLimit {
 }
 
 // One limit window of a harness account, as the harness reported it. `id` is
-// the harness's own name for the window, so an update that carries one window
+// the adapter's stable key for the window, so an update that carries one window
 // lands on the row a full read drew. `durationMs` is the window's length, and
 // `updatedAt` (epoch ms) when this window was last read or pushed.
 export interface UsageMeter {
@@ -170,8 +170,9 @@ export type UsageExtra =
   | { kind: 'extra_usage'; usedPercent?: number }
   | { kind: 'extra_balance'; cents: number };
 
-// A harness account's usage. `stale` marks meters kept after a later read
-// failed; `unavailable` says why an account has no meters at all.
+// A harness account's usage. `stale` marks a latest read that failed: meters,
+// if any, are the last good ones; `unavailable` says why an account has no
+// meters at all.
 export interface ProviderUsage {
   provider: ProviderKind;
   meters: UsageMeter[];

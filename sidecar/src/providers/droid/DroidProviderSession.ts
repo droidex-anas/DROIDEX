@@ -105,8 +105,9 @@ export class DroidProviderSession implements ProviderSession {
       }
     } catch (error) {
       const message = errMsg(error);
-      if (!droidErrorDetails(message).errorKind) throw error;
-      this.limitDetail = message;
+      // A limit notice already proved the refusal; a later error does not undo it.
+      if (!droidErrorDetails(message).errorKind && this.limitDetail === undefined) throw error;
+      this.limitDetail ??= message;
     }
     // A turn refused on the limit can still end in a successful result; only
     // the notice or the streamed error says it was refused.

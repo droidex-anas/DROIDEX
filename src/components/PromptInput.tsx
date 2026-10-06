@@ -2148,20 +2148,22 @@ export default function PromptInput({
 
         {/* The usage tabs share this slot with StartInBar, which only shows
             before a chat exists and steps aside while /usage is open. */}
-        <Suspense fallback={null}>
-          <UsageTabs
-            provider={composerProvider}
-            connected={runtimeReady}
-            panelOpen={usageOpen}
-            onClosePanel={() => {
-              setUsageOpen(false);
-            }}
-            chat={activeSession && visibleTarget.kind === 'primary' ? { usageLimit } : undefined}
-            onSwitchModel={() => {
-              setModelsOpen(true);
-            }}
-          />
-        </Suspense>
+        {(Boolean(activeSession) || usageOpen) && (
+          <Suspense fallback={null}>
+            <UsageTabs
+              provider={composerProvider}
+              connected={runtimeReady}
+              panelOpen={usageOpen}
+              onClosePanel={() => {
+                setUsageOpen(false);
+              }}
+              chat={activeSession && visibleTarget.kind === 'primary' ? { usageLimit } : undefined}
+              onSwitchModel={() => {
+                setModelsOpen(true);
+              }}
+            />
+          </Suspense>
+        )}
         {showStartIn && !usageOpen && (
           <div
             className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"

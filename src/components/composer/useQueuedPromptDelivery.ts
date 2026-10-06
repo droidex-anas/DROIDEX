@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
@@ -42,8 +42,12 @@ export function useQueuedPromptDelivery({
     limited: false,
   });
   const previousInstalling = useRef(appUpdateInstalling);
+  // Committed limit state only: a render React drops must not open or shut
+  // the gate a delivery in flight reads.
   const limited = useRef(usageLimited);
-  limited.current = usageLimited;
+  useLayoutEffect(() => {
+    limited.current = usageLimited;
+  }, [usageLimited]);
 
   useEffect(
     () => () => {

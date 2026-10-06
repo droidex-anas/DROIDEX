@@ -45,12 +45,17 @@ export async function readFactoryUsage(
 // other one still has room, which is when another model can run now.
 export function factoryRefusalLimit(meters: readonly ReportedMeter[], now: number): UsageLimit {
   const recoveries = new Map<string | undefined, ReportedMeter>();
+  // A pool with a spent window that names no reset is not known to recover.
+  const unknown = new Set<string | undefined>();
   for (const meter of meters) {
-    if (meter.usedPercent < 100 || (meter.resetsAt ?? 0) <= now) continue;
+    if (meter.usedPercent < 100) continue;
+    if (meter.resetsAt === undefined) unknown.add(meter.model);
+    if ((meter.resetsAt ?? 0) <= now) continue;
     const latest = recoveries.get(meter.model);
     if (!latest || (meter.resetsAt ?? 0) > (latest.resetsAt ?? 0))
       recoveries.set(meter.model, meter);
   }
+  for (const pool of unknown) recoveries.delete(pool);
   const first = [...recoveries.values()]
     .sort((left, right) => (left.resetsAt ?? 0) - (right.resetsAt ?? 0))
     .at(0);
