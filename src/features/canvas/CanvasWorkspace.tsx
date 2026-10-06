@@ -1,5 +1,5 @@
-// The Canvas tab of the utility pane. It reads which canvas this chat is
-// attached to, watches that canvas, and otherwise offers the empty state.
+// The Canvas tab of the utility pane. It shows a named canvas when Open supplies
+// one; otherwise it reads and watches the chat's attachment.
 // Opening it only ever reads: no canvas is minted and no build is started until
 // the user presses Create (spec §4, §6).
 //
@@ -25,6 +25,7 @@ const canvas = new CanvasClient(bridge);
 export function CanvasWorkspace({
   appSessionId,
   canvasId,
+  namedCanvasId,
   isExpanded,
   onToggleExpanded,
   onAttachmentChange,
@@ -32,11 +33,17 @@ export function CanvasWorkspace({
   appSessionId: string;
   /** The attachment the app already knows of, so a reopened pane does not blink. */
   canvasId: string | null;
+  /** An explicit Open target, viewed without moving the chat's attachment. */
+  namedCanvasId?: string;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onAttachmentChange: (appSessionId: string, canvasId: string | null) => void;
 }) {
-  const [state, dispatch] = useReducer(reduceCanvasPane, canvasId, initialCanvasPaneState);
+  const [state, dispatch] = useReducer(
+    reduceCanvasPane,
+    namedCanvasId ?? canvasId,
+    initialCanvasPaneState,
+  );
   const [reopenCount, setReopenCount] = useState(0);
   const createMutationId = useRef<string | null>(null);
   const createInFlight = useRef(false);
@@ -49,9 +56,12 @@ export function CanvasWorkspace({
     [appSessionId, onAttachmentChange],
   );
 
-  // The sidecar owns the attachment, so its answer outranks the cached id even
-  // when the pane is already showing a board for one.
+  // The sidecar owns the attachment; a named Open views its target directly.
   useEffect(() => {
+    if (namedCanvasId !== undefined) {
+      dispatch({ type: 'selected', canvasId: namedCanvasId });
+      return;
+    }
     let active = true;
     canvas
       .attachedCanvasId(appSessionId)
@@ -64,7 +74,7 @@ export function CanvasWorkspace({
     return () => {
       active = false;
     };
-  }, [appSessionId, attach, reopenCount]);
+  }, [appSessionId, attach, namedCanvasId, reopenCount]);
 
   const watched = watchedCanvasId(state);
   useEffect(() => {

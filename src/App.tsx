@@ -1030,6 +1030,7 @@ export default function App() {
                             <LazyCanvasWorkspace
                               appSessionId={activeSession.appSessionId}
                               canvasId={canvasAttachment}
+                              namedCanvasId={tab.canvasId ?? undefined}
                               isExpanded={paneExpanded}
                               onToggleExpanded={() => {
                                 setExpandedPaneAppSessionId(

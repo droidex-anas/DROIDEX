@@ -63,6 +63,16 @@ test('a cached attachment loads its canvas and the sidecar answer still decides'
   assert.deepEqual(moved, { status: 'loading', canvasId: 'canvas-2' });
 });
 
+test('selecting a named canvas replaces the displayed board without changing an attachment', () => {
+  const attached = apply(initialCanvasPaneState('canvas-B'), {
+    type: 'snapshot',
+    snapshot: snapshot(3, ['Attached'], 'canvas-B'),
+  });
+  const named = reduceCanvasPane(attached, { type: 'selected', canvasId: 'canvas-A' });
+  assert.deepEqual(named, { status: 'loading', canvasId: 'canvas-A' });
+  assert.equal(watchedCanvasId(named), 'canvas-A');
+});
+
 test('a confirming attachment answer keeps the snapshot the pane already loaded', () => {
   const ready = apply(initialCanvasPaneState('canvas-1'), {
     type: 'snapshot',

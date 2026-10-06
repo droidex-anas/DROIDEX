@@ -673,7 +673,8 @@ export type Action =
       filePath?: string;
       agentId?: string;
       threadId?: string;
-      frameId?: string;
+      canvasId?: string | null;
+      frameId?: string | null;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -2045,6 +2046,7 @@ export function reducer(state: AppState, action: Action): AppState {
           filePath: action.filePath,
           agentId: action.agentId,
           threadId: action.threadId,
+          canvasId: action.canvasId,
           frameId: action.frameId,
         },
       );

@@ -22,20 +22,11 @@ export function useOpenCanvasPane(): (target: CanvasPaneTarget) => void {
   return useCallback(
     ({ appSessionId, canvasId, frameId }: CanvasPaneTarget) => {
       dispatch({
-        type: 'BATCH',
-        actions: [
-          // A caller that names the canvas saves the pane a round trip; one that
-          // does not leaves the attachment unclaimed rather than asserting none.
-          ...(canvasId === null
-            ? []
-            : [{ type: 'SET_CANVAS_ATTACHMENT' as const, appSessionId, canvasId }]),
-          {
-            type: 'OPEN_UTILITY_TOOL' as const,
-            tool: 'canvas' as const,
-            appSessionId,
-            ...(frameId === undefined ? {} : { frameId }),
-          },
-        ],
+        type: 'OPEN_UTILITY_TOOL',
+        tool: 'canvas',
+        appSessionId,
+        canvasId,
+        frameId: frameId ?? null,
       });
     },
     [dispatch],

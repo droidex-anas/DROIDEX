@@ -19,13 +19,15 @@ export interface UtilityTab {
   agentId?: string;
   // The threads pane: the thread it is showing, absent while it shows the list.
   threadId?: string;
-  // The Canvas pane: the frame an Open asked it to focus, absent until one does.
-  frameId?: string;
+  // A named Canvas Open views this canvas without changing the chat attachment.
+  canvasId?: string | null;
+  // The frame an Open asked it to focus; null clears an earlier request.
+  frameId?: string | null;
 }
 
 // The ids that point a singleton pane at one thing. Opening the tool again with
 // a different one re-points the pane that is already open.
-const TARGET_KEYS = ['agentId', 'threadId', 'frameId'] as const;
+const TARGET_KEYS = ['agentId', 'threadId', 'canvasId', 'frameId'] as const;
 type TargetKey = (typeof TARGET_KEYS)[number];
 
 export interface UtilityPanelState {

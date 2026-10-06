@@ -24,6 +24,7 @@ export type CanvasPaneEvent =
   // The attachment as the sidecar reports it, which outranks any cached id.
   | { type: 'attached'; canvasId: string | null }
   | { type: 'created'; canvasId: string }
+  | { type: 'selected'; canvasId: string }
   | { type: 'creating' }
   | { type: 'create-failed'; message: string }
   | { type: 'snapshot'; snapshot: CanvasSnapshot }
@@ -48,6 +49,7 @@ export function watchedCanvasId(state: CanvasPaneState): string | null {
 export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent): CanvasPaneState {
   switch (event.type) {
     case 'created':
+    case 'selected':
     case 'attached': {
       if (
         event.type === 'attached' &&
