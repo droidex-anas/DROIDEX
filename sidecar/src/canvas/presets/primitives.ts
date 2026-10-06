@@ -143,27 +143,56 @@ export interface DialogProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  returnFocusId?: string;
 }
 
-export function Dialog({ open, onClose, title, children }: DialogProps) {
+const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable="true"]';
+
+function isVisible(element: HTMLElement) {
+  return element.isConnected && element.getClientRects().length > 0 &&
+    getComputedStyle(element).visibility !== 'hidden' && !element.closest('[inert]');
+}
+
+export function Dialog({ open, onClose, title, children, returnFocusId }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
     const dialog = ref.current;
     if (!open || !dialog) return;
     const previous = document.activeElement;
-    // Native modal behavior owns focus containment, inert background and Escape.
     dialog.showModal();
     return () => {
       dialog.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      if (previous instanceof HTMLElement && isVisible(previous)) previous.focus();
+      else if (returnFocusId) {
+        const destination = document.getElementById(returnFocusId);
+        if (destination && isVisible(destination)) destination.focus();
+      }
     };
-  }, [open]);
+  }, [open, returnFocusId]);
   return (
     <dialog
       ref={ref}
       aria-labelledby={titleId}
       className="ds-dialog"
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab') return;
+        // Native Tab can leave the preview iframe while its modal stays open.
+        const dialog = event.currentTarget;
+        const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+          (element) => isVisible(element) && element.tabIndex >= 0 && !element.matches(':disabled'),
+        );
+        const active = document.activeElement;
+        const position = focusable.findIndex((element) => element === active);
+        if (focusable.length === 0) {
+          event.preventDefault();
+          dialog.focus();
+          return;
+        }
+        if (position !== -1 && (event.shiftKey ? position !== 0 : position !== focusable.length - 1)) return;
+        event.preventDefault();
+        (event.shiftKey ? focusable.at(-1) : focusable[0])?.focus();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();

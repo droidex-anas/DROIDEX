@@ -1,4 +1,4 @@
-export const HEY_TSX = `import { useState } from 'react';
+export const HEY_TSX = `import { useId, useState } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
 import { Badge, Button, Card, Dialog, Input, Tabs } from '@droidex/design-system';
 
@@ -7,6 +7,7 @@ export default function Hey() {
   const [name, setName] = useState('');
   const [tab, setTab] = useState('start');
   const [open, setOpen] = useState(false);
+  const nameInputId = useId();
   return (
     <main className="flex min-h-screen items-center justify-center p-6 sm:p-10">
       <Card className="flex w-full max-w-lg flex-col gap-6">
@@ -26,6 +27,7 @@ export default function Hey() {
               content: (
                 <div className="space-y-4">
                   <Input
+                    id={nameInputId}
                     label="Your name"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
@@ -69,7 +71,7 @@ export default function Hey() {
             { value: 'later', label: 'Coming soon', disabled: true, content: null },
           ]}
         />
-        <Dialog open={open} onClose={() => setOpen(false)} title="Make yourself at home">
+        <Dialog open={open} onClose={() => setOpen(false)} title="Make yourself at home" returnFocusId={nameInputId}>
           <p>Try your name, switch tabs, and get started. You can start over at any time.</p>
           <Button
             className="mt-4"
@@ -94,8 +96,9 @@ required visible label and optional hint/error; it connects descriptions and err
 Tabs takes label, value, onValueChange and items: { value, label, content, disabled? }[].
 Use unique item values and keep value on an enabled item. Arrow keys, Home and End
 move and select; Tab enters the active panel. Dialog takes open, onClose, title and
-children; keep open in state, set false in onClose. Its native modal traps focus,
-Escape requests close, and closing restores focus. Use buttons, not clickable divs.
+children; keep open in state, set false in onClose. Tab stays inside, Escape
+requests close, and closing restores a visible opener. Set returnFocusId to a
+visible destination when closing hides the opener. Use buttons, not clickable divs.
 
 Give every control a real action, labels, and honest loading/empty/error states.
 Keep the focus, disabled and reduced-motion behavior. Use semantic --ds-* tokens;
