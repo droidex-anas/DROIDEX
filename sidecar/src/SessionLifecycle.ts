@@ -209,6 +209,7 @@ export interface SessionLifecycleDependencies {
   appendSteer: (appSessionId: string, text: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
+  settleStreaming: (appSessionId: string, sourceSessionId: string) => Promise<void>;
   // Releases the longest-idle runtime other than this one; true when one went.
   releaseRuntimeForCapacity: (excludedAppSessionId: string) => Promise<boolean>;
 }
@@ -1169,15 +1170,19 @@ export class SessionLifecycle {
         });
         return;
       }
-      // The chat stays busy until Send now's interrupt settles, so nothing new
-      // starts under it.
-      const interrupt = liveSession.sendNowInterrupt;
-      if (!interrupt) {
-        this.settleDelegatedTurn(liveSession, end);
-        return;
-      }
+      // The chat stays busy until the turn's last words are written, so what
+      // reads its reply as it settles (a project report) has them, and until
+      // Send now's interrupt settles, so nothing new starts under it.
       const turn = liveSession.delegatedTurns;
-      void interrupt.then(() => {
+      const written = this.dependencies
+        .settleStreaming(appSessionId, appSessionId)
+        .catch((error: unknown) => {
+          this.dependencies.emitError({
+            appSessionId,
+            message: `Could not settle the session transcript: ${errMsg(error)}`,
+          });
+        });
+      void Promise.all([written, liveSession.sendNowInterrupt]).then(() => {
         // The chat closed, or the provider started another turn, meanwhile.
         if (isCurrent() && liveSession.delegatedTurns === turn)
           this.settleDelegatedTurn(liveSession, end);
@@ -1395,6 +1400,10 @@ export class SessionLifecycle {
   ): Promise<void> {
     const d = this.dependencies;
     const stableAppSessionId = liveSession.summary.appSessionId;
+    // Counted before the turn: Claude Code can start one of its own while this
+    // turn's transcript is still being written.
+    const delegatedTurns = liveSession.delegatedTurns;
+    let turn: Promise<void> | undefined;
     try {
       liveSession.streaming = true;
       // Persist resumed activity immediately so the chat stays near the top
@@ -1405,7 +1414,7 @@ export class SessionLifecycle {
         streaming: true,
         ...queueSummary(liveSession),
       });
-      liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
+      turn = liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
         prompt: prompt.text,
         ...(prompt.mentions ? { mentions: prompt.mentions } : {}),
         ...(delivery ? { delivery } : {}),
@@ -1413,12 +1422,12 @@ export class SessionLifecycle {
         ...(prompt.steerId || prompt.announce ? { announce: true as const } : {}),
         ...(prompt.isCurrent ? { stillAllowed: prompt.isCurrent } : {}),
       });
-      await liveSession.turnPromise;
+      await turn;
     } finally {
-      liveSession.turnPromise = undefined;
-      const delegatedTurns = liveSession.delegatedTurns;
+      // A provider-started turn that ended meanwhile may have started the next one.
+      if (liveSession.turnPromise === turn) liveSession.turnPromise = undefined;
       if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
-      // A turn the provider started meanwhile owns the chat and its queue now.
+      // A turn the provider started since this one began owns the chat and its queue now.
       if (liveSession.delegatedTurns === delegatedTurns)
         await this.settleTypedTurn(liveSession, stableAppSessionId);
     }

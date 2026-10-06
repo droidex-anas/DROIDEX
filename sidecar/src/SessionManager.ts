@@ -705,6 +705,8 @@ export class SessionManager {
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
+      settleStreaming: (appSessionId, sourceSessionId) =>
+        this.timeline.settleStreaming(appSessionId, sourceSessionId),
       releaseRuntimeForCapacity: (excludedAppSessionId) =>
         this.runtimeRetirement.releaseOldestForCapacity(excludedAppSessionId),
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
