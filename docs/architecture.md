@@ -335,13 +335,33 @@ artifact and the instance identity, the other drains a bounded queue of
 cadence and revalidates the instance after every await, so a replaced preview
 can never be reached by the guest it replaced.
 
-Main owns termination. The renderer asks through a narrow
-`canvas-preview-terminate` IPC and main ends the guest through the
-`webContents` it attached, which also ends the generated frame's process;
-independently, main ends a guest on that guest's own `unresponsive` event. Both
-paths wait for no guest reply. The artifact itself travels over the ordinary
-bridge: `canvas.readArtifact` answers one revision's document, read from the
-derived build cache by `sidecar/src/canvas/canvasBuildCache.ts`.
+Guests live in their own in-memory session, not the app's. CSP cannot bound
+WebRTC — `connect-src` does not govern ICE and Chromium never shipped the
+`webrtc` directive — so that session is where the network is closed: every TCP
+connection resolves through a proxy at `127.0.0.1:1` with `<-loopback>` so
+loopback is not bypassed, non-proxied UDP is refused, and every permission is
+denied. The partition is forced at attachment rather than trusted from the
+element, and `will-attach-webview` refuses any guest while that session is still
+being configured, because an unconfigured session routes directly. Every path
+that can create the app window waits on the same setup, so no guest can exist
+before it.
+
+Main owns termination, through three paths that each wait for no guest reply:
+the renderer asks through a narrow `canvas-preview-terminate` IPC; main ends a
+guest on its own `unresponsive` event; and main probes the generated frame with
+a literal every two seconds, ending the guest when a probe misses a three-second
+deadline. That last one is the only thing that sees a design which stops running
+after it reported ready, since the intermediate stays responsive and the design
+is a process of its own. The renderer, for its part, settles its own lifecycle
+from the element's `render-process-gone`, `destroyed` and `crashed` events rather
+than waiting out a poll deadline.
+
+The artifact itself travels over the ordinary bridge: `canvas.readArtifact`
+answers one revision's document, read from the derived build cache by
+`sidecar/src/canvas/canvasBuildCache.ts`. Every build state carries the
+registry's per-design `generation`, so a board can tell a build that moved from a
+frame an arrange merely re-sent, and a rebuild of identical source — which is
+content-addressed to the same artifact ID — still reads as a new attempt.
 
 ### Electron main gauges
 

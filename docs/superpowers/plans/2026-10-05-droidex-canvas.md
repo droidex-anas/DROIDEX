@@ -629,10 +629,11 @@ Settled by 03c's second review cycle (Astra xhigh, adversarial, against `0790088
   listener lives. Chromium's P2P TCP sockets resolve through the proxy, so TURN-TCP goes nowhere.
   Measured: pre-fix `connections: 2`, post-fix `0`.
 - **Checked egress paths, all zero at a real listener:** ICE over UDP (STUN), ICE over TURN with
-  `?transport=tcp` at both of the reviewer's timings, a direct host candidate with no server,
-  WebTransport, `navigator.sendBeacon`, `<link rel=dns-prefetch|preconnect|prefetch>`, and
-  `<a ping>`. Each attempt reports itself through the production channel before anything is
-  measured, so a zero can never mean "never tried".
+  `?transport=tcp` at both of the reviewer's timings, WebTransport, `navigator.sendBeacon`,
+  `<link rel=dns-prefetch|preconnect|prefetch>`, and `<a ping>`. Each reports itself through the
+  production channel before anything is measured, and the one whose marker could precede its own
+  effect — the ping — is additionally checked by the fragment its click leaves on the frame; without
+  that the case passed with the click removed. See the third cycle for the host candidate.
 - **Clicking an `a[ping]` stops the generated document from running**, even with a fragment `href`,
   and afterwards `frames[0].url` is the intermediate's URL plus the fragment rather than
   `about:srcdoc`. A design that tries that path ends its own preview. It therefore gets its own
@@ -670,6 +671,45 @@ Settled by 03c's second review cycle (Astra xhigh, adversarial, against `0790088
   second read lands and the guest mounts. No DOM library and no production export were needed; the
   probe is inline in the spec, and esbuild is resolved from the sidecar's declared copy so the root's
   dependency list is unchanged.
+
+Settled by 03c's third review cycle (Astra xhigh, adversarial, against `0790088b`):
+
+- **`activate` could create a window before the preview session existed.** `app.on('activate')`
+  called `createMainWindow()` directly, so a guest could attach into a session that still routed
+  `DIRECT` — measured as one TURN-TCP connection and 56 bytes to loopback — and releasing setup then
+  made a second window. Two owners now: the security invariant is at the attach point, where
+  `will-attach-webview` refuses any guest for a session `canvasPreview.cjs` has not finished
+  configuring; and the ordering is one promise in main that every window-creation path
+  (`whenReady`, `activate`, the notification open) goes through, so an early click waits for setup
+  instead of racing it and `focusMainWindow` no longer creates anything. Readiness is keyed on the
+  session object in a `WeakSet`, not a module flag: that is what the configuring produced, and it
+  does not leak between tests.
+- **Arranging a loaded frame reset its preview.** The re-read was keyed on the build object's
+  identity, and an arrange re-sends every frame it touches with a fresh object and an unchanged
+  build, so a mounted preview was torn down and its state lost. Object identity is not a signal.
+  `generation` — the per-design attempt counter `canvasBuildStates.ts` already keeps monotonic — now
+  travels on **every** `CanvasBuildState`, projected by `stateOf`, through both `protocol.ts` mirrors
+  and the renderer validator, and `useArtifact` keys on `revisionId` + `generation` + `status` by
+  value. Shape: `CanvasBuildState = CanvasBuildOutcome & { generation: number }`, so the union says
+  what the build is doing and the intersection says which attempt it belongs to, in one place.
+- The three cases triangulate, and no single wrong answer passes all of them: keying on the object
+  fails `[C10]` (arrange re-reads), keying on nothing fails `[C9]` (a recovered artifact never
+  arrives), and keying on the artifact ID fails `[C9]` too because an identical rebuild is
+  content-addressed to the same ID.
+- **A restored outcome is attempt zero.** The derived cache does not record a generation, and nothing
+  has been built in the session that just opened, so `install` restores on 0 and the first rebuild of
+  that design takes 1 — which a mounted preview reads as the move it is. A design the registry has
+  never heard of is also `{ status: 'pending', generation: 0 }`.
+- **The host-candidate path is not covered, and is no longer claimed.** A hand-built remote passive
+  TCP candidate was tried; Chromium refused it (`addIceCandidate` threw) and the positive control
+  with the proxy removed produced zero connections, so the probe proved nothing and would have been
+  worse than its absence. It is dropped rather than kept as decoration. TURN over `?transport=tcp` at
+  both timings already covers dialling a remote TCP endpoint, which is the path that actually
+  escaped; a direct host candidate with a real remote peer remains unmeasured here.
+- **`[C8]` now checks the intermediate, not just the reader.** The renderer trims an over-long field,
+  so restoring the old character-based cut in the intermediate still passed: the case now drains the
+  raw `drain()` answer and asserts that snapshot is already within 512 bytes and identical to what
+  the reader produced, so the two sides cannot drift apart unnoticed.
 
 - Adding the repair took `CanvasBuilds.ts` to 514 lines. The two queueing paths were folded into one
   `queueFromHead` (the head rule had been written twice), and `canvasCompilerProcesses.ts` now owns
