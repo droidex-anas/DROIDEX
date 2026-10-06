@@ -19,6 +19,7 @@ import type {
   SessionInteractionMode,
 } from '../../protocol.js';
 import { errMsg } from '../../errors.js';
+import type { UsageLimitError } from '../usageLimit.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type {
@@ -103,7 +104,9 @@ export class ClaudeSession implements ProviderSession {
   private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
   // The running turn's own result has arrived; it may still wait for steers.
   private turnAnswered = false;
-  private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
+  private turnQueue?: MessageQueue<TurnItem>;
+  // The usage refusal the provider-started turn was given, read at its result.
+  private delegatedRefusal?: UsageLimitError;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private readonly delegatedListeners = new Set<
     (running: boolean, end?: DelegatedTurnEnd) => void
@@ -224,10 +227,10 @@ export class ClaudeSession implements ProviderSession {
     const turnId = randomUUID();
     this.activeTurnId = turnId;
     this.mapper.beginTurn(turnId);
-    const turnQueue = (this.turnQueue = new MessageQueue<{
-      message: SDKMessage;
-      events: NormalizedEvent[];
-    }>());
+    const turnQueue = (this.turnQueue = new MessageQueue<TurnItem>());
+    // Read with the messages, not off the mapper: the pump maps ahead of this
+    // loop, so the mapper may already hold the next turn's refusal.
+    let refusal: UsageLimitError | undefined;
     let reportedPlanningModel = false;
     let ended = false;
     // A result taken off the queue means the CLI has finished the turn, even if
@@ -257,6 +260,7 @@ export class ClaudeSession implements ProviderSession {
           return;
         }
         const { message, events } = next.value;
+        refusal ??= next.value.refusal;
         if (message.type === 'result') resultTaken = true;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
@@ -280,8 +284,9 @@ export class ClaudeSession implements ProviderSession {
         }
         // The turn's own result, then that of each steer run as a CLI turn after it.
         if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
-          const refusal = this.mapper.takeRefusal();
-          if (refusal) throw refusal;
+          const refused = refusal;
+          refusal = undefined;
+          if (refused) throw refused;
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
@@ -408,8 +413,9 @@ export class ClaudeSession implements ProviderSession {
     }
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message, this.fastMode);
+    const refusal = this.mapper.takeRefusal();
     if (this.delegatedTurnRunning) {
-      this.forwardDelegated(message, events);
+      this.forwardDelegated({ message, events, refusal });
       return;
     }
     if (this.discardUntilResult && message.type === 'result') this.discardUntilResult = false;
@@ -419,28 +425,31 @@ export class ClaudeSession implements ProviderSession {
         for (const listener of this.backgroundListeners) listener(event);
       } else turnEvents.push(event);
     }
-    this.turnQueue?.push({ message, events: turnEvents });
+    this.turnQueue?.push({ message, events: turnEvents, refusal });
   }
 
-  private continueAfterTurn(items: { message: SDKMessage; events: NormalizedEvent[] }[]): void {
-    for (const { message, events } of items) {
+  private continueAfterTurn(items: TurnItem[]): void {
+    for (const { message, events, refusal } of items) {
       if (!this.delegatedTurnRunning && startsDelegatedTurn(message)) {
         // Already mapped, spawns included: only the fork point is dropped.
         this.mapper.forgetForkPoint();
         this.setDelegatedTurn(true);
       }
       // Mapped while our turn was current, so they carry its fork point.
-      if (this.delegatedTurnRunning) this.forwardDelegated(message, events.map(withoutForkPoint));
+      if (this.delegatedTurnRunning)
+        this.forwardDelegated({ message, events: events.map(withoutForkPoint), refusal });
     }
   }
 
   // A turn Claude Code started itself reaches the chat as it happens.
-  private forwardDelegated(message: SDKMessage, events: NormalizedEvent[]): void {
+  private forwardDelegated({ message, events, refusal }: TurnItem): void {
     for (const event of events) for (const listener of this.backgroundListeners) listener(event);
+    this.delegatedRefusal ??= refusal;
     if (message.type !== 'result') return;
     // A usage refusal still ends the turn with a result, as a typed turn's does.
-    const refusal = this.mapper.takeRefusal();
-    if (refusal) this.endDelegatedTurn(refusal);
+    const refused = this.delegatedRefusal;
+    this.delegatedRefusal = undefined;
+    if (refused) this.endDelegatedTurn(refused);
     else if (message.subtype !== 'success')
       this.endDelegatedTurn(new Error(turnFailure(message.subtype, message.errors)), true);
     else if (message.is_error) this.endDelegatedTurn(new Error(message.result), true);
@@ -464,6 +473,7 @@ export class ClaudeSession implements ProviderSession {
   private setDelegatedTurn(running: boolean, end?: DelegatedTurnEnd): void {
     if (this.delegatedTurnRunning === running) return;
     this.delegatedTurnRunning = running;
+    if (running) this.delegatedRefusal = undefined;
     for (const listener of this.delegatedListeners) listener(running, end);
   }
 
@@ -622,6 +632,12 @@ function startsDelegatedTurn(message: SDKMessage): boolean {
     (message.type === 'assistant' || message.type === 'stream_event') &&
     message.parent_tool_use_id === null
   );
+}
+
+interface TurnItem {
+  message: SDKMessage;
+  events: NormalizedEvent[];
+  refusal?: UsageLimitError | undefined;
 }
 
 function withoutForkPoint(event: NormalizedEvent): NormalizedEvent {

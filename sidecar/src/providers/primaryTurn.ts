@@ -128,14 +128,17 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!isCurrent()) return;
+  // A turn the provider started itself after this one owns the outcome now:
+  // its failure or its limit is newer than anything this turn could report.
+  const superseded = liveSession.delegatedTurns !== delegatedTurns;
   if (turnError) {
-    // A turn the provider started itself after this one owns the outcome now.
-    if (liveSession.delegatedTurns === delegatedTurns)
+    if (!superseded)
       settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   }
   // An answered turn is the only evidence that a limit has lifted; a stopped
   // one proves nothing.
   else if (
+    !superseded &&
     liveSession.summary.usageLimit &&
     !liveSession.interrupting &&
     !liveSession.interruptingToSend

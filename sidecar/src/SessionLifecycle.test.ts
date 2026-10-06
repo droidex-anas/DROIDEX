@@ -146,6 +146,9 @@ function createHarness(
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
+    settleStreaming: async () => {
+      calls.push({ target: 'cleanup', method: 'timeline.settleStreaming', args: [] });
+    },
     releaseRuntimeForCapacity: async () => false,
     provider: () => provider,
     registry,
