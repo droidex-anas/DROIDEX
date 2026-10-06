@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react';
 import { LayoutTemplate, Spinner } from '@droidex/icons';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
+import { useStoreDispatch } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
 import { CanvasClient } from './client';
 import {
@@ -154,12 +155,7 @@ function CanvasBoardMount({ frameCount }: { frameCount: number }) {
   return (
     <div data-canvas-board className="min-h-0 flex-1">
       {frameCount === 0 ? (
-        <CanvasPlate title="Ask your agent to design something">
-          <CanvasNote>
-            Describe a screen, a component or a small app in the composer — “a settings page with a
-            theme toggle”, “a pricing card” — and it is designed on this canvas.
-          </CanvasNote>
-        </CanvasPlate>
+        <CanvasInvitation />
       ) : (
         <CanvasPlate title={`${designCountLabel(frameCount)} on this canvas`}>
           <CanvasNote>
@@ -168,6 +164,48 @@ function CanvasBoardMount({ frameCount }: { frameCount: number }) {
         </CanvasPlate>
       )}
     </div>
+  );
+}
+
+// Starting points for a canvas with nothing on it. Each one seeds the chat's
+// own composer; nothing is sent, so the user can keep typing or press Enter.
+const EXAMPLE_REQUESTS = [
+  'Design a settings page with a theme toggle',
+  'Design a pricing card with three tiers',
+  'Design a dashboard with a usage chart',
+];
+
+/**
+ * The empty state from spec §4: the agent does the designing, so the example
+ * requests lead and anything the user can do by hand follows them.
+ */
+function CanvasInvitation({ children }: { children?: ReactNode }) {
+  const dispatch = useStoreDispatch();
+  return (
+    <CanvasPlate title="Ask your agent to design something">
+      <CanvasNote>
+        Describe a screen, a component or a small app and it is designed on this canvas.
+      </CanvasNote>
+      <ul className="-mx-1.5 flex flex-col gap-0.5">
+        {EXAMPLE_REQUESTS.map((request) => (
+          <li key={request}>
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: 'SEED_COMPOSER', text: request });
+              }}
+              className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+            >
+              <span className="shrink-0 text-droid-accent opacity-0 transition-opacity group-hover:opacity-100">
+                &gt;
+              </span>
+              <span className="min-w-0 flex-1">{request}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {children}
+    </CanvasPlate>
   );
 }
 
@@ -198,10 +236,9 @@ function CanvasEmptyState({
   }
 
   return (
-    <CanvasPlate title="No canvas on this chat">
-      <CanvasNote>Create one to design here, or open a canvas you already have.</CanvasNote>
+    <CanvasInvitation>
       {error && <CanvasFailure>{error}</CanvasFailure>}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex gap-1.5">
         <CanvasAction label="Create canvas" onClick={onCreate} />
         <CanvasAction
           label="Open saved canvas"
@@ -218,7 +255,7 @@ function CanvasEmptyState({
           }}
         />
       </div>
-    </CanvasPlate>
+    </CanvasInvitation>
   );
 }
 
@@ -323,7 +360,7 @@ function CanvasAction({ label, onClick }: { label: string; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="rounded-xl bg-droid-accent/15 px-3 py-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+      className="flex-1 rounded-xl bg-droid-accent/10 px-3 py-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
     >
       {label}
     </button>
