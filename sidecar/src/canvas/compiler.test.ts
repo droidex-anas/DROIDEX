@@ -250,24 +250,84 @@ test('CSS cannot make the compiler load a module from disk', async (t) => {
 });
 
 test('CSS cannot reach outside the preview for a resource', async () => {
-  for (const value of [
-    'url(https://fonts.example.com/a.woff2)',
-    "url('//cdn.example.com/x.png')",
-  ]) {
-    const [diagnostic] = await diagnosticsFor({
-      ...STATEFUL_DESIGN,
-      'styles.css': `.a { background-image: ${value}; }\n`,
-    });
-    assert.equal(diagnostic?.code, 'css_error', value);
-    assert.equal(diagnostic?.file, 'styles.css');
+  const refused: [string, SourceFiles][] = [
+    [
+      'a plain remote url',
+      { 'styles.css': '.a { background-image: url(https://cdn.example.com/x.png); }\n' },
+    ],
+    [
+      'a protocol-relative url',
+      { 'styles.css': ".a { background-image: url('//cdn.example.com/x.png'); }\n" },
+    ],
+    [
+      'a remote font',
+      {
+        'styles.css':
+          "@font-face { font-family: X; src: url('https://cdn.example.com/x.woff2'); }\n",
+      },
+    ],
+    // The function name is escaped, which the CSS tokenizer splits in two.
+    [
+      'an escaped url function',
+      { 'styles.css': '.a { background: \\75 rl(https://cdn.example.com/x.png); }\n' },
+    ],
+    [
+      'an escaped image set',
+      { 'styles.css': '.a { background: image\\2d set("https://cdn.example.com/x.png" 1x); }\n' },
+    ],
+    [
+      'a remote image in a set',
+      { 'styles.css': '.a { background: image-set(url(https://cdn.example.com/x.png) 1x); }\n' },
+    ],
+    // Written in the TSX, so it only appears in Tailwind's generated CSS.
+    [
+      'a remote url in a utility',
+      {
+        'main.tsx':
+          'export default function Hey() {\n  return <p className="bg-[url(https://cdn.example.com/x.png)]">hey</p>;\n}\n',
+      },
+    ],
+  ];
+
+  for (const [reason, files] of refused) {
+    const [diagnostic] = await diagnosticsFor({ ...STATEFUL_DESIGN, ...files });
+    assert.equal(diagnostic?.code, 'css_error', reason);
+    assert.ok(diagnostic.message.includes('cdn.example.com'), `${reason} names what it refused`);
   }
 
-  // An inline value is the one a preview with no network can actually render.
-  const inline = await compile({
-    ...STATEFUL_DESIGN,
-    'styles.css': '.a { background-image: url(data:image/gif;base64,R0lGODlhAQABAAAAACw=); }\n',
-  });
-  assert.ok(inline.html.includes('data:image/gif'));
+  // Inline data is what a preview with no network can actually render, in any
+  // quoting and with any spacing, and Tailwind's own syntax is untouched.
+  const accepted: [string, SourceFiles][] = [
+    [
+      'a quoted data url',
+      {
+        'styles.css':
+          '.a { background-image: url( "data:image/gif;base64,R0lGODlhAQABAAAAACw=" ); }\n',
+      },
+    ],
+    [
+      'an unquoted data url',
+      {
+        'styles.css': '.a { background-image: url(data:image/gif;base64,R0lGODlhAQABAAAAACw=); }\n',
+      },
+    ],
+    [
+      'a data image set',
+      {
+        'styles.css':
+          '.a { background: image-set("data:image/gif;base64,R0lGODlhAQABAAAAACw=" 1x); }\n',
+      },
+    ],
+    [
+      'apply and theme',
+      { 'styles.css': '.a { @apply flex gap-3; color: theme(colors.red.500); }\n' },
+    ],
+  ];
+
+  for (const [reason, files] of accepted) {
+    const { html } = await compile({ ...STATEFUL_DESIGN, ...files });
+    assert.ok(html.includes('<style>'), reason);
+  }
 });
 
 test('no Tailwind or PostCSS configuration is read from disk or from the design', async () => {
