@@ -15,6 +15,7 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  PreviewArtifact,
   WriteFilesInput,
   WriteReceipt,
 } from './protocol';
@@ -171,6 +172,26 @@ export class CanvasClient {
       input,
     });
     return reply(event, 'arranged').change;
+  }
+
+  /**
+   * The document one built revision produced, or null once the derived cache has
+   * lost it. A `ready` frame asks for its own revision and a `failed` frame for
+   * its `lastWorkingRevisionId`; both are read the same way.
+   */
+  async readArtifact(
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+  ): Promise<PreviewArtifact | null> {
+    const event = await this.request({
+      type: 'canvas.readArtifact',
+      requestId: requestId(),
+      canvasId,
+      designId,
+      revisionId,
+    });
+    return reply(event, 'artifact').artifact;
   }
 
   /** This client's projection of a canvas, once its snapshot has landed. */

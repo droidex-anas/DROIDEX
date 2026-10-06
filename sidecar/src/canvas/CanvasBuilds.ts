@@ -26,6 +26,7 @@ import type {
   CanvasFrame,
   CanvasSnapshot,
   DesignSystemRef,
+  PreviewArtifact,
   RevisionRef,
   SourceFiles,
 } from './protocol.js';
@@ -233,9 +234,18 @@ export class CanvasBuilds {
     for (const started of this.pump()) this.announce(started);
   }
 
-  /** What Task 3c loads into a preview: one ready artifact's document. */
-  readArtifact(canvasId: string, artifactId: string): Promise<string | null> {
-    return this.owner.cache.readArtifact(canvasId, artifactId);
+  /**
+   * What a preview loads: the document one revision's build produced, or null
+   * once the derived cache has lost it. A `failed` frame asks for its
+   * `lastWorkingRevisionId` the same way, which is why this is keyed by revision
+   * rather than by artifact ID.
+   */
+  readArtifact(
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+  ): Promise<PreviewArtifact | null> {
+    return this.owner.cache.readRevisionArtifact(canvasId, designId, revisionId);
   }
 
   /** Releases every slot, settles every waiter and ends every process once. */

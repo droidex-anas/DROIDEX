@@ -299,6 +299,21 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       ok: true,
       reply: { kind: 'arranged', change: wire.change },
     },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: {
+        kind: 'artifact',
+        artifact: { artifactId: 'a'.repeat(64), html: '<!doctype html><body>Hey</body>' },
+      },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'artifact', artifact: null },
+    },
     wire.event,
     { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },
     { type: 'canvas.summaries', summaries },

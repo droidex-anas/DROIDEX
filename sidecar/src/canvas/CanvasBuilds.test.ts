@@ -375,7 +375,9 @@ test('a build whose commit fails leaves memory and disk agreeing', async (t) => 
   // its next snapshot. The artifact is cached too: it was written before the
   // commit that would have published the frame.
   assert.equal(canvas.frame(designId).build.status, 'ready');
-  assert.match((await canvas.builds.readArtifact(canvas.canvasId, 'artifact-one')) ?? '', /<html>/);
+  const cached = await canvas.builds.readArtifact(canvas.canvasId, designId, receipt.revisionId);
+  assert.equal(cached?.artifactId, 'artifact-one');
+  assert.match(cached?.html ?? '', /<html>/);
   // Closing waits for the refused commit to reconcile the head from disk.
   await canvas.workspace.close();
 
@@ -413,10 +415,14 @@ test('a failed revision keeps the last working artifact and its revision', async
   assert.deepEqual(canvas.frame(designId).build, failed);
   // The fallback the frame names is the one the manifest committed.
   assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, working.revisionId);
-  // The working artifact is still there to show beside the diagnostics.
-  assert.match(
-    (await canvas.builds.readArtifact(canvas.canvasId, 'artifact-working')) ?? '',
-    /<html>/,
+  // The working artifact is still there to show beside the diagnostics, and the
+  // revision that failed has none of its own to offer.
+  const fallback = await canvas.builds.readArtifact(canvas.canvasId, designId, working.revisionId);
+  assert.equal(fallback?.artifactId, 'artifact-working');
+  assert.match(fallback?.html ?? '', /<html>/);
+  assert.equal(
+    await canvas.builds.readArtifact(canvas.canvasId, designId, broken.revisionId),
+    null,
   );
 
   const reopened = await board(t, { store: canvas.store });

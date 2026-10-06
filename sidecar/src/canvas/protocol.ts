@@ -94,6 +94,15 @@ export type CanvasBuildState =
     }
   | { status: 'cancelled'; revisionId: string | null };
 
+/**
+ * One built revision's preview document and the ID of that document. A preview
+ * loads this in its guest; nothing else reads it.
+ */
+export interface PreviewArtifact {
+  artifactId: string;
+  html: string;
+}
+
 export interface CanvasFrame {
   designId: string;
   name: string;
@@ -167,6 +176,15 @@ export type CanvasCommand =
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
+  // A derived read, authorized like `canvas.subscribe` by the page asking: the
+  // artifact is a projection of a canvas any renderer page may watch.
+  | {
+      type: 'canvas.readArtifact';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    }
   | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
@@ -199,7 +217,8 @@ export type CanvasReply =
   | { kind: 'attachment'; canvasId: string | null }
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  | { kind: 'arranged'; change: CanvasChange };
+  | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'artifact'; artifact: PreviewArtifact | null };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

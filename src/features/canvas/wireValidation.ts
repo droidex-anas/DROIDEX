@@ -15,7 +15,18 @@ const ERROR_CODES = new Set([
   'storage_failed',
 ]);
 
-const REPLY_KINDS = new Set(['ok', 'summaries', 'attachment', 'created', 'written', 'arranged']);
+const REPLY_KINDS = new Set([
+  'ok',
+  'summaries',
+  'attachment',
+  'created',
+  'written',
+  'arranged',
+  'artifact',
+]);
+
+/** An artifact document, bounded well above a realistic design (spec §5). */
+const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
   switch (value.type) {
@@ -49,9 +60,21 @@ function isReply(value: unknown): boolean {
       return isReceipt(value.receipt);
     case 'arranged':
       return isChange(value.change);
+    case 'artifact':
+      return value.artifact === null || isArtifact(value.artifact);
     default:
       return true;
   }
+}
+
+function isArtifact(value: unknown): boolean {
+  return (
+    record(value) &&
+    id(value.artifactId) &&
+    typeof value.html === 'string' &&
+    value.html.length > 0 &&
+    value.html.length <= MAX_ARTIFACT_BYTES
+  );
 }
 
 function isSnapshot(value: unknown): boolean {
