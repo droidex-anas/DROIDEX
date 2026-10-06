@@ -127,10 +127,13 @@ test('a translated limit notice fails the turn with its detail and adds no row',
 
 async function createHarness() {
   let receive: (message: Record<string, unknown>) => void = () => undefined;
-  let acceptPrompt: () => void = () => undefined;
-  const promptAccepted = new Promise<void>((resolve) => {
-    acceptPrompt = resolve;
-  });
+  const userMessages: Array<(messageId: string | undefined) => void> = [];
+  // Resolves with the messageId of the n-th user message Droid receives.
+  const userMessage = (n: number) =>
+    new Promise<string | undefined>((resolve) => {
+      userMessages[n] = resolve;
+    });
+  const promptAccepted = userMessage(0);
   const init = InitializeSessionResultSchema.parse({
     sessionId: 'provider-session',
     session: {},
@@ -146,7 +149,8 @@ async function createHarness() {
         id: request.id,
         result: request.method === 'droid.initialize_session' ? init : {},
       });
-      if (request.method === 'droid.add_user_message') acceptPrompt();
+      if (request.method === 'droid.add_user_message')
+        userMessages.shift()?.((request.params as { messageId?: string }).messageId);
     },
     onMessage(callback) {
       receive = callback;
@@ -158,23 +162,35 @@ async function createHarness() {
   const client = new DroidClient({ transport });
   await client.initializeSession({ machineId: 'test', cwd: '/tmp' });
   const droid = new DroidSession(client, init.sessionId, init);
-  const session = new DroidProviderSession('app-session', droid, new DroidRuntime());
+  const runtime = new DroidRuntime();
+  // Steering needs the client the runtime would have started the session on.
+  Reflect.get(runtime, 'processes').set(droid, { pid: 1, transport, client });
+  const session = new DroidProviderSession('app-session', droid, runtime);
+  const notify = (notification: Record<string, unknown>) =>
+    receive({
+      jsonrpc: '2.0',
+      factoryApiVersion: '1.0.0',
+      type: 'notification',
+      method: 'droid.session_notification',
+      params: { notification },
+    });
   return {
     session,
     promptAccepted,
-    notify(notification: Record<string, unknown>) {
-      receive({
-        jsonrpc: '2.0',
-        factoryApiVersion: '1.0.0',
-        type: 'notification',
-        method: 'droid.session_notification',
-        params: { notification },
-      });
-    },
+    nextUserMessage: () => userMessage(0),
+    notify,
+    state: (newState: string) => notify({ type: 'droid_working_state_changed', newState }),
+    fail: () =>
+      notify({
+        type: 'error',
+        message: 'Model connection failed',
+        errorType: 'ConnectionError',
+        timestamp: '2026-10-02T00:00:00Z',
+      }),
   };
 }
 
-// The SDK does not know "thinking", so it yields no result for this turn.
+// The SDK does not know "thinking", so it never settles this loop itself.
 test('a turn that thinks, fails and goes idle ends, whichever of the error and the idle notice is seen first', async () => {
   for (const idleBeforeConsumption of [true, false]) {
     const h = await createHarness();
@@ -182,25 +198,61 @@ test('a turn that thinks, fails and goes idle ends, whichever of the error and t
       const stream = h.session.stream('hello');
       const first = stream.next();
       await h.promptAccepted;
-      h.notify({ type: 'droid_working_state_changed', newState: 'thinking' });
-      h.notify({
-        type: 'error',
-        message: 'Model connection failed',
-        errorType: 'ConnectionError',
-        timestamp: '2026-10-02T00:00:00Z',
-      });
-      if (idleBeforeConsumption)
-        h.notify({ type: 'droid_working_state_changed', newState: 'idle' });
+      h.state('thinking');
+      h.fail();
+      if (idleBeforeConsumption) h.state('idle');
       const event = await first;
       assert.equal(event.value?.transcript?.kind, 'error');
       assert.equal(event.value?.transcript?.text, 'Model connection failed');
-      const settlement = stream.next();
-      if (!idleBeforeConsumption)
-        h.notify({ type: 'droid_working_state_changed', newState: 'idle' });
-      assert.deepEqual((await settlement).value, { done: true });
-      assert.equal((await stream.next()).done, true);
+      const rest = turnEvents(stream);
+      if (!idleBeforeConsumption) h.state('idle');
+      assert.deepEqual(
+        (await rest).filter((next) => next.transcript),
+        [],
+      );
     } finally {
       await h.session.close();
     }
+  }
+});
+
+test('a steer accepted before a thinking turn fails still gets its reply', async () => {
+  const h = await createHarness();
+  try {
+    const stream = h.session.stream('hello');
+    const first = stream.next();
+    await h.promptAccepted;
+    h.state('thinking');
+    h.fail();
+    assert.equal((await first).value?.transcript?.kind, 'error');
+    const steerSent = h.nextUserMessage();
+    const steered = h.session.steer('try again');
+    const messageId = await steerSent;
+    const rest = turnEvents(stream);
+    h.state('idle');
+    h.notify({
+      type: 'create_message',
+      message: {
+        id: messageId,
+        role: 'user',
+        createdAt: 0,
+        updatedAt: 0,
+        content: [{ type: 'text', text: 'try again' }],
+      },
+    });
+    assert.equal(await steered, true);
+    h.state('streaming_assistant_message');
+    h.notify({
+      type: 'assistant_text_delta',
+      messageId: 'reply',
+      blockIndex: 0,
+      textDelta: 'Retried.',
+    });
+    h.state('idle');
+    const events = await rest;
+    assert.ok(events.some((event) => event.transcript?.text === 'Retried.'));
+    assert.deepEqual(events.at(-1), { done: true });
+  } finally {
+    await h.session.close();
   }
 });

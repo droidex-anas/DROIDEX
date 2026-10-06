@@ -1,4 +1,3 @@
-import { DroidWorkingState } from '@factory/droid-sdk';
 import {
   factoryReasoningEffort,
   mapAutonomy,
@@ -94,11 +93,6 @@ export class DroidProviderSession implements ProviderSession {
     // switch waits until Droid says the usage limit caused it, or a turn reaches
     // its result; one not yet reported when a turn fails goes with the next.
     this.limitDetail = undefined;
-    // The SDK ends a turn when the harness goes idle after working, but it
-    // does not know the "thinking" state: a turn that only thought and then
-    // failed never ends for it, and the chat would stay running for good.
-    let failed = false;
-    let endedOnIdle = false;
     try {
       for await (const event of this.runtime.streamTurn(this.droid, prompt, {
         includePartialMessages: true,
@@ -121,16 +115,6 @@ export class DroidProviderSession implements ProviderSession {
         );
         hotPathMetrics.recordNormalize(performance.now() - normalizeStartedAt);
         if (normalized) yield normalized;
-        if (event.type === 'error') failed = true;
-        // Idle after an error is the end of the turn; its error is already shown.
-        else if (
-          failed &&
-          event.type === 'working_state_changed' &&
-          event.state === DroidWorkingState.Idle
-        ) {
-          endedOnIdle = true;
-          break;
-        }
       }
     } catch (error) {
       const message = errMsg(error);
@@ -141,8 +125,6 @@ export class DroidProviderSession implements ProviderSession {
     // A turn refused on the limit can still end in a successful result; only
     // the notice or the streamed error says it was refused.
     if (this.limitDetail !== undefined) throw await this.usageLimitError(this.limitDetail);
-    // Marked done the way the SDK's result would have marked it.
-    if (endedOnIdle) yield { done: true };
   }
 
   // Droid's refusal names no reset. With a Factory key, one billing read says
