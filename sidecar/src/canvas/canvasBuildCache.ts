@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
-import type { CanvasBuildState, CanvasDiagnostic } from './protocol.js';
+import type { CanvasBuildState } from './protocol.js';
 import { CANVAS_LIMITS, canvasIdentifierSchema } from './schema.js';
 
 const BUILD_OUTCOME_VERSION = 1;
@@ -62,35 +62,35 @@ interface CachedOutcome {
 /** One design's build state as this cache can still prove it. */
 export interface RestoredBuild {
   canvasId: string;
+  designId: string;
   state: CanvasBuildState;
 }
 
 export class CanvasBuildCache {
   constructor(private readonly files: CanvasFiles) {}
 
-  /** The artifact document, then the outcome that names it. */
-  async saveReady(
-    canvasId: string,
-    designId: string,
-    revisionId: string,
-    artifactId: string,
-    html: string,
-  ): Promise<void> {
-    await this.files.writeBuildOutput(canvasId, artifactName(artifactId), html);
-    await this.save(canvasId, { designId, revisionId, result: { status: 'ready', artifactId } });
+  /**
+   * One artifact document, named by its own content. It is written before the
+   * commit that may publish it, so an attempt that loses its frame can leave an
+   * orphan here; nothing reads an artifact that no outcome names.
+   */
+  saveArtifact(canvasId: string, artifactId: string, html: string): Promise<void> {
+    return this.files.writeBuildOutput(canvasId, artifactName(artifactId), html);
   }
 
-  async saveFailed(
+  /** What one revision's build concluded, written by the commit that publishes it. */
+  saveOutcome(
     canvasId: string,
     designId: string,
     revisionId: string,
-    diagnostics: readonly CanvasDiagnostic[],
+    result: BuildResult,
   ): Promise<void> {
-    await this.save(canvasId, {
-      designId,
-      revisionId,
-      result: { status: 'failed', diagnostics: [...diagnostics] },
-    });
+    const document = { version: BUILD_OUTCOME_VERSION, designId, revisionId, result } as const;
+    return this.files.writeBuildOutput(
+      canvasId,
+      outcomeName(revisionId),
+      `${JSON.stringify(document)}\n`,
+    );
   }
 
   /** One ready artifact's document, or null once the cache has lost it. */
@@ -99,12 +99,12 @@ export class CanvasBuildCache {
   }
 
   /**
-   * The build state every design on these canvases can be served with, keyed by
-   * design. A design is absent when this cache cannot prove anything about its
-   * current revision, which leaves the frame `pending` and due a rebuild.
+   * The build state every design on these canvases can be served with. A design
+   * is absent when this cache cannot prove anything about its current revision,
+   * which leaves the frame `pending` and due a rebuild.
    */
-  async restoreStates(manifests: readonly CanvasManifest[]): Promise<Map<string, RestoredBuild>> {
-    const restored = new Map<string, RestoredBuild>();
+  async restoreStates(manifests: readonly CanvasManifest[]): Promise<RestoredBuild[]> {
+    const restored: RestoredBuild[] = [];
     for (const manifest of manifests) {
       const revisionIds = manifest.designs.flatMap((design) =>
         design.revisionId === null ? [] : [design.revisionId],
@@ -118,8 +118,9 @@ export class CanvasBuildCache {
       for (const design of manifest.designs) {
         const outcome = design.revisionId === null ? undefined : outcomes.get(design.revisionId);
         if (outcome?.designId !== design.designId) continue;
-        restored.set(design.designId, {
+        restored.push({
           canvasId: manifest.canvasId,
+          designId: design.designId,
           state: builtState(outcome.revisionId, outcome.result, design.lastWorkingRevisionId),
         });
       }
@@ -152,15 +153,6 @@ export class CanvasBuildCache {
       restored.set(revisionId, outcome);
     }
     return restored;
-  }
-
-  private async save(canvasId: string, outcome: CachedOutcome): Promise<void> {
-    const document = { version: BUILD_OUTCOME_VERSION, ...outcome } as const;
-    await this.files.writeBuildOutput(
-      canvasId,
-      outcomeName(outcome.revisionId),
-      `${JSON.stringify(document)}\n`,
-    );
   }
 
   /** A cache entry we cannot parse is one we cannot use; the frame rebuilds. */

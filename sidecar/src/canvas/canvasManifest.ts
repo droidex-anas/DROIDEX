@@ -145,10 +145,14 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
 
 /** Where a frame's build state comes from: `CanvasBuilds` is its one owner. */
 export interface BuildStates {
-  stateOf(designId: string): CanvasBuildState;
+  stateOf(canvasId: string, designId: string): CanvasBuildState;
 }
 
-export function toFrame(design: PersistedDesign, builds: BuildStates): CanvasFrame {
+export function toFrame(
+  canvasId: string,
+  design: PersistedDesign,
+  builds: BuildStates,
+): CanvasFrame {
   return {
     designId: design.designId,
     name: design.name,
@@ -156,7 +160,7 @@ export function toFrame(design: PersistedDesign, builds: BuildStates): CanvasFra
     layoutVersion: design.layoutVersion,
     revisionId: design.revisionId,
     designSystem: { ...design.designSystem },
-    build: builds.stateOf(design.designId),
+    build: builds.stateOf(canvasId, design.designId),
   };
 }
 
@@ -164,7 +168,7 @@ export function canvasSnapshot(manifest: CanvasManifest, builds: BuildStates): C
   return {
     canvasId: manifest.canvasId,
     sequence: manifest.sequence,
-    frames: manifest.designs.map((design) => toFrame(design, builds)),
+    frames: manifest.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
   };
 }
 
@@ -185,7 +189,7 @@ export function canvasChange(
   return {
     canvasId: manifest.canvasId,
     sequence: manifest.sequence,
-    frames: designs.map((design) => toFrame(design, builds)),
+    frames: designs.map((design) => toFrame(manifest.canvasId, design, builds)),
     removedDesignIds: [],
   };
 }
@@ -200,7 +204,7 @@ export function recordedCreate(
   if (record?.kind !== 'create') return null;
   return {
     canvasId: manifest.canvasId,
-    frames: record.designs.map((design) => toFrame(design, builds)),
+    frames: record.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
   };
 }
 
@@ -229,7 +233,7 @@ export function recordedArrange(
     // head, so a frame later commits removed is simply no longer in the answer.
     frames: record.placements.flatMap((placement) => {
       const design = manifest.designs.find((entry) => entry.designId === placement.designId);
-      return design ? [toFrame({ ...design, ...placement }, builds)] : [];
+      return design ? [toFrame(manifest.canvasId, { ...design, ...placement }, builds)] : [];
     }),
     removedDesignIds: [],
   };

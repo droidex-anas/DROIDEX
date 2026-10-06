@@ -7,6 +7,7 @@ import { deferred, observedFileSystem } from '../testing/canvasStorageSupport.js
 import {
   CanvasBuilds,
   type BuildDeadline,
+  type BuildTarget,
   type CanvasBuildHost,
   type DesignCompiler,
 } from './CanvasBuilds.js';
@@ -52,10 +53,30 @@ interface HeldCompile {
 class CompilerFleet {
   readonly clients: FakeCompiler[] = [];
   readonly held: HeldCompile[] = [];
+  /** What each termination recorded, in the order they finished. */
+  readonly ended: string[] = [];
   private readonly arrivals: Array<() => void> = [];
+  private holding: { promise: Promise<void>; resolve: () => void } | null = null;
+
+  /** Holds every later termination open until `releaseTerminations` runs. */
+  holdTerminations(): void {
+    this.holding = deferred();
+  }
+
+  releaseTerminations(): void {
+    this.holding?.resolve();
+  }
+
+  /** What a client's `terminate` waits for, and what it records when it ends. */
+  terminating(client: number): Promise<void> {
+    const held = this.holding?.promise ?? Promise.resolve();
+    return held.then(() => {
+      this.ended.push(`client-${String(client)}`);
+    });
+  }
 
   readonly client = (): DesignCompiler => {
-    const client = new FakeCompiler(this);
+    const client = new FakeCompiler(this, this.clients.length + 1);
     this.clients.push(client);
     return client;
   };
@@ -84,7 +105,10 @@ class CompilerFleet {
 class FakeCompiler implements DesignCompiler {
   terminated = false;
 
-  constructor(private readonly fleet: CompilerFleet) {}
+  constructor(
+    private readonly fleet: CompilerFleet,
+    private readonly index: number,
+  ) {}
 
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
     return new Promise<CompiledDesign>((resolve, reject) => {
@@ -121,7 +145,7 @@ class FakeCompiler implements DesignCompiler {
 
   terminate(): Promise<void> {
     this.terminated = true;
-    return Promise.resolve();
+    return this.fleet.terminating(this.index);
   }
 }
 
@@ -157,8 +181,10 @@ interface Board {
   changes: CanvasChange[];
   frame(designId: string): CanvasFrame;
   create(...names: string[]): Promise<string[]>;
+  /** A frame seeded from a saved revision, which arrives with source. */
+  createSeeded(name: string, designId: string, revisionId: string): Promise<string>;
   write(designId: string, expected: string | null, text: string): Promise<WriteReceipt>;
-  /** Resolves once a published change reports this frame in that state. */
+  /** Resolves once a change published from now on reports that state. */
   reported(designId: string, status: CanvasBuildState['status']): Promise<void>;
 }
 
@@ -268,10 +294,12 @@ async function board(t: TestContext, options: BoardOptions = {}): Promise<Board>
       scopes.revoke(scope.scopeId);
     }
   };
-  const seen = (designId: string, status: CanvasBuildState['status']): boolean =>
-    changes.some((change) =>
-      change.frames.some((frame) => frame.designId === designId && frame.build.status === status),
-    );
+  const seen = (designId: string, status: CanvasBuildState['status'], from: number): boolean =>
+    changes
+      .slice(from)
+      .some((change) =>
+        change.frames.some((frame) => frame.designId === designId && frame.build.status === status),
+      );
   return {
     store,
     canvasId,
@@ -296,6 +324,25 @@ async function board(t: TestContext, options: BoardOptions = {}): Promise<Board>
       );
       return created.frames.map((frame) => frame.designId);
     },
+    createSeeded: async (name, designId, revisionId) => {
+      const created = await under((scope) =>
+        workspace.create(scope, {
+          mutationId: `seed-${name}`,
+          frames: [
+            {
+              name,
+              width: 720,
+              height: 720,
+              designSystem,
+              seed: { kind: 'revision', canvasId, revision: { designId, revisionId } },
+            },
+          ],
+        }),
+      );
+      const seeded = created.frames[0]?.designId;
+      assert.ok(seeded, 'the seeded frame was created');
+      return seeded;
+    },
     write: (designId, expected, text) =>
       under((scope) =>
         workspace.write(scope, {
@@ -307,10 +354,12 @@ async function board(t: TestContext, options: BoardOptions = {}): Promise<Board>
         }),
       ),
     reported: (designId, status) => {
-      if (seen(designId, status)) return Promise.resolve();
+      // From here on: a design reaches the same state more than once.
+      const from = changes.length;
+      if (seen(designId, status, from)) return Promise.resolve();
       return new Promise<void>((resolve) => {
         const waiter = (): void => {
-          if (!seen(designId, status)) return;
+          if (!seen(designId, status, from)) return;
           waiters.delete(waiter);
           resolve();
         };
@@ -318,6 +367,13 @@ async function board(t: TestContext, options: BoardOptions = {}): Promise<Board>
       });
     },
   };
+}
+
+/** A yield to the event loop, so a premature resolution becomes visible. */
+function drained(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 /** The manifest as it is saved, which is what a restart would read. */
@@ -537,6 +593,8 @@ test('a failed revision keeps the last working artifact and its revision', async
     lastWorkingRevisionId: working.revisionId,
   };
   assert.deepEqual(canvas.frame(designId).build, failed);
+  // The fallback the frame names is the one the manifest committed.
+  assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, working.revisionId);
   // The working artifact is still there to show beside the diagnostics.
   assert.match(
     (await canvas.builds.readArtifact(canvas.canvasId, 'artifact-working')) ?? '',
@@ -647,47 +705,166 @@ test('closing releases every slot and settles every waiter once', async (t) => {
   await canvas.builds.close();
 });
 
+test('an artifact that lands after a newer attempt failed is not resurrected', async (t) => {
+  const storage = holdBuildOutput();
+  const canvas = await board(t, { fs: storage.fs });
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const receipt = await canvas.write(designId, null, 'v1');
+  const stale = await canvas.fleet.compile(1);
+
+  // The first attempt is saving its artifact when it loses the frame.
+  storage.arm();
+  stale.ready('artifact-stale');
+  await storage.reached;
+  canvas.builds.cancelCanvas(canvas.canvasId);
+  await canvas.reported(designId, 'cancelled');
+  canvas.builds.requestRebuilds(canvas.workspace.snapshot(canvas.canvasId));
+  const current = await canvas.fleet.compile(2);
+  assert.equal(current.input.revisionId, receipt.revisionId);
+  current.failed('syntax_error');
+  await canvas.reported(designId, 'failed');
+
+  assert.equal(canvas.frame(designId).build.status, 'failed');
+
+  // Only now does the first attempt finish writing, under the newer outcome.
+  // Closing drains it, which is what a restart would wait for too.
+  storage.release();
+  await canvas.builds.close();
+
+  const reopened = await board(t, { store: canvas.store });
+  assert.equal(reopened.frame(designId).build.status, 'failed', 'the cache kept the newer outcome');
+});
+
+test('the deadline is released the moment a compile settles', async (t) => {
+  const storage = holdBuildOutput();
+  const canvas = await board(t, { fs: storage.fs });
+  const [one, two, three] = await canvas.create('One', 'Two', 'Three');
+  assert.ok(one && two && three);
+  for (const designId of [one, two, three]) await canvas.write(designId, null, 'v1');
+  const first = await canvas.fleet.compile(1);
+  await canvas.fleet.compile(2);
+  assert.equal(canvas.deadlines.live(), 2, 'one deadline per compiling build');
+
+  storage.arm();
+  first.ready('artifact-one');
+  await storage.reached;
+  // Saving is bounded by storage, not by the build deadline, so nothing can
+  // declare this build overdue while it writes.
+  assert.equal(canvas.deadlines.live(), 1, 'the settled compile released its deadline');
+
+  storage.release();
+  await canvas.reported(one, 'ready');
+  // One settlement, and the slot it held went to the design that was waiting.
+  assert.deepEqual(
+    reportedStates(canvas, one).filter((build) => build.status === 'ready').length,
+    1,
+  );
+  assert.equal((await canvas.fleet.compile(3)).input.designId, three);
+  assert.equal(canvas.fleet.terminated, 0, 'no process was ended for a build that finished');
+});
+
+test('closing waits for a termination it has already started', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  await canvas.write(designId, null, 'v1');
+  await canvas.fleet.compile(1);
+
+  canvas.fleet.holdTerminations();
+  canvas.deadlines.expire();
+  const closing = canvas.builds.close().then(() => canvas.fleet.ended.push('closed'));
+  // A yield past every pending microtask: a close that did not wait for the
+  // termination it started would already have finished here.
+  await drained();
+  assert.deepEqual(canvas.fleet.ended, []);
+
+  canvas.fleet.releaseTerminations();
+  await closing;
+  assert.deepEqual(canvas.fleet.ended, ['client-1', 'closed']);
+});
+
+/**
+ * A stand-in for the canvas, for the cases a real workspace cannot reach: a
+ * design that leaves its frame mid-build, and one design ID on two canvases.
+ */
+function standIn(builds: CanvasBuilds) {
+  const revisions = new Map<string, string>();
+  /** One `<canvasId>/<designId>:<status>` per commit this canvas published. */
+  const committed: string[] = [];
+  const waiters = new Set<() => void>();
+  const buildTarget = (canvasId: string, designId: string): BuildTarget | null => {
+    const revisionId = revisions.get(`${canvasId}/${designId}`);
+    if (revisionId === undefined) return null;
+    return {
+      frame: {
+        designId,
+        name: designId,
+        rect: { x: 0, y: 0, width: 720, height: 720 },
+        layoutVersion: 0,
+        revisionId,
+        designSystem,
+        build: builds.stateOf(canvasId, designId),
+      },
+      lastWorkingRevisionId: null,
+    };
+  };
+  const host: CanvasBuildHost = {
+    buildTarget,
+    readFiles: () => Promise.resolve({ 'main.tsx': 'export default () => null' }),
+    commitBuild: async (canvasId, designId, publish) => {
+      // The workspace publishes nothing for a design its head has lost.
+      const target = buildTarget(canvasId, designId);
+      if (!target) return;
+      if (!(await publish(target))) return;
+      committed.push(`${canvasId}/${designId}:${builds.stateOf(canvasId, designId).status}`);
+      for (const waiter of [...waiters]) waiter();
+    },
+  };
+  /** Resolves once one commit has left that frame in that state. */
+  const settled = (entry: string): Promise<void> => {
+    if (committed.includes(entry)) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const waiter = (): void => {
+        if (!committed.includes(entry)) return;
+        waiters.delete(waiter);
+        resolve();
+      };
+      waiters.add(waiter);
+    });
+  };
+  return { host, revisions, committed, settled };
+}
+
 test('a design that leaves its canvas mid-build publishes nothing', async (t) => {
   const fleet = new CompilerFleet();
   const deadlines = fakeDeadlines();
   const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
+  t.after(() => builds.close());
   const files = new CanvasFiles((await storage(t)).root);
   await files.createRoot();
-  const published: string[] = [];
-  const revisions = new Map<string, string>([['dsg_hey', 'rev_1']]);
-  const host: CanvasBuildHost = {
-    buildTarget: (canvasId, designId) => {
-      const revisionId = revisions.get(designId);
-      if (revisionId === undefined) return null;
-      return {
-        frame: {
-          designId,
-          name: 'Hey',
-          rect: { x: 0, y: 0, width: 720, height: 720 },
-          layoutVersion: 0,
-          revisionId,
-          designSystem,
-          build: builds.stateOf(designId),
-        },
-        lastWorkingRevisionId: null,
-      };
-    },
-    readFiles: () => Promise.resolve({ 'main.tsx': 'export default () => null' }),
-    noteBuild: (canvasId, designId) => {
-      published.push(designId);
-    },
-  };
-  await builds.load(host, files, []);
+  const canvas = standIn(builds);
+  for (const designId of ['one', 'two', 'three'])
+    canvas.revisions.set(`cv_01/${designId}`, `rev_${designId}`);
+  await builds.load(canvas.host, files, []);
 
-  builds.enqueue('cv_01', { designId: 'dsg_hey', revisionId: 'rev_1', sequence: 1 });
+  for (const designId of ['one', 'two', 'three'])
+    builds.enqueue('cv_01', designId, `rev_${designId}`);
   const held = await fleet.compile(1);
   // Task 6's delete removes the frame while its build is still running.
-  revisions.delete('dsg_hey');
+  canvas.revisions.delete('cv_01/one');
   held.ready('artifact-orphan');
-  // `close` settles every build in flight, so nothing is still on its way.
-  await builds.close();
+  // The slot it held is the one the waiting design starts on, and the registry
+  // is still open: only deletion decided this build's outcome.
+  const next = await fleet.compile(3);
+  assert.equal(next.input.designId, 'three');
 
-  assert.deepEqual(published, []);
+  assert.equal(
+    canvas.committed.some((entry) => entry.startsWith('cv_01/one:')),
+    false,
+    'nothing was published for the design that left',
+  );
+  assert.deepEqual(builds.stateOf('cv_01', 'one'), { status: 'pending' });
   assert.deepEqual([...(await files.listBuildOutputs('cv_01'))], []);
-  assert.equal(deadlines.live(), 0, 'the orphaned build released its slot');
+  assert.equal(deadlines.live(), 2, 'the orphaned build released its slot and its deadline');
 });

@@ -5,7 +5,7 @@
 // nothing published. `canvasHeads.ts` owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
-import type { BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
+import type { BuildCommit, BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
@@ -220,7 +220,10 @@ export class CanvasWorkspace {
         }
         if (scope.canvasId === null) this.leases.claim(scope, canvasId);
         return {
-          value: { canvasId, frames: designs.map((design) => toFrame(design, this.builds)) },
+          value: {
+            canvasId,
+            frames: designs.map((design) => toFrame(canvasId, design, this.builds)),
+          },
           change: canvasChange(next, designs, this.builds),
         };
       });
@@ -271,7 +274,7 @@ export class CanvasWorkspace {
         // The revision is durable, so it can be built. Queuing it here is what
         // makes the change below report this revision's own build and never the
         // previous one's artifact (spec §4).
-        this.builds.enqueue(canvasId, receipt);
+        this.builds.enqueue(canvasId, receipt.designId, receipt.revisionId);
         return { value: receipt, change: canvasChange(next, [target], this.builds) };
       });
     });
@@ -345,30 +348,42 @@ export class CanvasWorkspace {
     const design = this.heads.find(canvasId)?.designs.find((entry) => entry.designId === designId);
     if (!design) return null;
     return {
-      frame: toFrame(design, this.builds),
+      frame: toFrame(canvasId, design, this.builds),
       lastWorkingRevisionId: design.lastWorkingRevisionId,
     };
   }
 
   /**
-   * Publishes one design's new build state, and persists the revision it falls
-   * back to when the build worked (spec §7). Build outputs are derived, but the
-   * change the pane projects is ordered like every other one, so this commits.
+   * Publishes one frame on this canvas's commit queue, the queue a write
+   * commits on, so a build's gate, its outcome file and its state all land in
+   * one serialized step against the head as this commit finds it. `publish`
+   * answers with the revision the design now falls back to (spec §7), or null
+   * to publish nothing at all.
    */
-  noteBuild(canvasId: string, designId: string, workingRevisionId: string | null): void {
-    void this.commits
+  commitBuild(
+    canvasId: string,
+    designId: string,
+    publish: (target: BuildTarget) => Promise<BuildCommit | null>,
+  ): Promise<void> {
+    return this.commits
       .admit(() =>
         this.commits.publish<undefined>(async () => {
           const live = this.heads.find(canvasId);
+          const design = live?.designs.find((entry) => entry.designId === designId);
           // A build that outlived its canvas has nothing left to report.
-          if (!live?.designs.some((entry) => entry.designId === designId))
-            return { value: undefined };
+          if (!live || !design) return { value: undefined };
+          const committed = await publish({
+            frame: toFrame(canvasId, design, this.builds),
+            lastWorkingRevisionId: design.lastWorkingRevisionId,
+          });
+          if (!committed) return { value: undefined };
           const next = structuredClone(live);
-          const design = this.design(next, designId);
-          if (workingRevisionId !== null) design.lastWorkingRevisionId = workingRevisionId;
+          const target = this.design(next, designId);
+          if (committed.workingRevisionId !== null)
+            target.lastWorkingRevisionId = committed.workingRevisionId;
           next.sequence += 1;
           await this.heads.install(next, this.openGate());
-          return { value: undefined, change: canvasChange(next, [design], this.builds) };
+          return { value: undefined, change: canvasChange(next, [target], this.builds) };
         }),
       )
       .catch((error: unknown) => {
