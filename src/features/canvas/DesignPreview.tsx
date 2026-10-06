@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { canvasPreviewUrl, terminateCanvasPreviewGuest } from '../../lib/desktop';
+import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame, PreviewArtifact } from './protocol';
 
@@ -32,84 +33,75 @@ const SHOWN_PREVIEW_DIAGNOSTICS = 8;
 
 export function DesignPreview({ canvasId, frame, readArtifact, onResize }: DesignPreviewProps) {
   const revisionId = previewRevisionId(frame.build);
-  const artifact = useArtifact(canvasId, frame.designId, revisionId, readArtifact);
+  const read = useArtifact(canvasId, frame.designId, revisionId, frame.build, readArtifact);
   const failures = frame.build.status === 'failed' ? frame.build.diagnostics : [];
 
   // A build that failed with nothing to fall back to still says why.
   if (revisionId === null)
     return <PreviewPlacard label={waitingLabel(frame.build)} diagnostics={failures} />;
-  if (artifact === 'loading') return <PreviewPlacard label="Loading this preview…" />;
-  // Reading a lost artifact for the revision a frame is showing is what asks the
-  // runtime to build it again, so there is nothing for a control here to do: the
-  // frame will arrive building and then ready with a document that exists.
-  if (artifact === null)
-    return <PreviewPlacard label="Building this preview again…" diagnostics={failures} />;
+  if (read.state !== 'found')
+    return <PreviewPlacard label={missingLabel(read.state, frame.build)} diagnostics={failures} />;
   return (
     <PreviewGuestFrame
-      key={`${frame.designId}:${artifact.artifactId}`}
+      key={`${frame.designId}:${read.artifact.artifactId}`}
       designId={frame.designId}
       revisionId={revisionId}
       // Spec §5: a failed revision labels the older working preview it is showing.
       showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
-      html={artifact.html}
+      html={read.artifact.html}
       diagnostics={failures}
       onResize={onResize}
     />
   );
 }
 
-/** The revision whose artifact this frame shows, if any is worth asking for. */
-function previewRevisionId(build: CanvasBuildState): string | null {
-  if (build.status === 'ready') return build.revisionId;
-  if (build.status === 'failed') return build.lastWorkingRevisionId;
-  return null;
-}
+/** What one read of a revision's artifact concluded. */
+type ArtifactRead =
+  | { state: 'loading' }
+  | { state: 'found'; artifact: PreviewArtifact }
+  /** The derived cache does not have it; whether that is being fixed is the
+   * frame's business, not this read's. */
+  | { state: 'missing' }
+  | { state: 'unreadable' };
 
-function waitingLabel(build: CanvasBuildState): string {
-  switch (build.status) {
-    case 'building':
-      return 'Building this design…';
-    case 'cancelled':
-      return 'This build was cancelled.';
-    case 'failed':
-      return 'This design has no working preview yet.';
-    default:
-      return 'Waiting to build…';
-  }
-}
+const LOADING: ArtifactRead = { state: 'loading' };
 
 /**
- * The artifact for one revision, reloaded whenever the frame points somewhere
- * else. `'loading'` is the state before the first answer; null means the derived
- * cache no longer has it and the design needs building again.
+ * The artifact for one revision, read again whenever the frame points somewhere
+ * else or its build moves at all. The build object is the signal rather than the
+ * artifact ID, because a rebuild of identical source is content-addressed to the
+ * same ID: that read has to happen because the document came back, not because
+ * its name changed. `applyCanvasChange` keeps an unchanged frame's identity, so
+ * this reads once per change to this design and not once per snapshot.
  */
 function useArtifact(
   canvasId: string,
   designId: string,
   revisionId: string | null,
+  build: CanvasBuildState,
   readArtifact: DesignPreviewProps['readArtifact'],
-): PreviewArtifact | null | 'loading' {
-  const [artifact, setArtifact] = useState<PreviewArtifact | null | 'loading'>('loading');
+): ArtifactRead {
+  const [read, setRead] = useState<ArtifactRead>(LOADING);
 
   useEffect(() => {
     if (revisionId === null) return;
     let wanted = true;
-    setArtifact('loading');
+    setRead(LOADING);
     readArtifact(canvasId, designId, revisionId).then(
-      (loaded) => {
-        if (wanted) setArtifact(loaded);
+      (artifact) => {
+        if (wanted) setRead(artifact ? { state: 'found', artifact } : { state: 'missing' });
       },
       (error: unknown) => {
         console.error('A Canvas preview artifact could not be read:', error);
-        if (wanted) setArtifact(null);
+        if (wanted) setRead({ state: 'unreadable' });
       },
     );
     return () => {
       wanted = false;
     };
-  }, [canvasId, designId, revisionId, readArtifact]);
+  }, [canvasId, designId, revisionId, build, readArtifact]);
 
-  return artifact;
+  return read;
 }
 
 /**

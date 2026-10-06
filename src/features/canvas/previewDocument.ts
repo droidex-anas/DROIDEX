@@ -122,11 +122,15 @@ function readEvent(value: unknown): PreviewEvent | null {
     case 'diagnostics':
       return readDiagnostics(value.diagnostics);
     case 'selection':
-      return text(value.elementId) && text(value.instancePath)
-        ? { event: 'selection', elementId: value.elementId, instancePath: value.instancePath }
+      return present(value.elementId) && present(value.instancePath)
+        ? {
+            event: 'selection',
+            elementId: clamp(value.elementId),
+            instancePath: clamp(value.instancePath),
+          }
         : null;
     case 'interaction':
-      return text(value.kind) ? { event: 'interaction', kind: value.kind } : null;
+      return present(value.kind) ? { event: 'interaction', kind: clamp(value.kind) } : null;
     default:
       return null;
   }
@@ -136,9 +140,8 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   if (!Array.isArray(value) || value.length > MAX_PREVIEW_DIAGNOSTICS) return null;
   const diagnostics: CanvasDiagnostic[] = [];
   for (const entry of value) {
-    if (!record(entry) || !text(entry.code) || typeof entry.message !== 'string') return null;
-    if (utf8Bytes(entry.message) > MAX_PREVIEW_TEXT) return null;
-    diagnostics.push({ code: entry.code, message: entry.message });
+    if (!record(entry) || !present(entry.code) || typeof entry.message !== 'string') return null;
+    diagnostics.push({ code: clamp(entry.code), message: clamp(entry.message) });
   }
   return { event: 'diagnostics', diagnostics };
 }
@@ -151,8 +154,25 @@ function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-function text(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && utf8Bytes(value) <= MAX_PREVIEW_TEXT;
+function present(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+/**
+ * A text field is display data. Past the structural bounds it carries no
+ * security consequence, so an over-long one is cut rather than used as a reason
+ * to refuse the snapshot: refusing one would end a guest over a diagnostic, and
+ * the intermediate already cuts to the same bound from the other side. The cut
+ * lands on a code point boundary, so a character is never split in half.
+ */
+function clamp(value: string): string {
+  if (utf8Bytes(value) <= MAX_PREVIEW_TEXT) return value;
+  let cut = '';
+  for (const character of value) {
+    if (utf8Bytes(cut + character) > MAX_PREVIEW_TEXT) break;
+    cut += character;
+  }
+  return cut;
 }
 
 const encoder = new TextEncoder();

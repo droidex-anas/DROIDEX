@@ -226,8 +226,9 @@ export class CanvasBuilds {
    *
    * A miss for the revision the frame holds as `ready` means a document the
    * manifest still vouches for is gone, and nothing else would ever ask for it
-   * again, so the read itself queues the design; the new build publishes a new
-   * `artifactId`, which is the change a mounted preview needs. A miss for a
+   * again, so the read itself queues the design. The rebuild is content-addressed
+   * from the same source, so it lands on the same `artifactId`: what tells a
+   * preview to read again is the build transition, not a new name. A miss for a
    * fallback the frame has moved past queues nothing (Task 5's follow-up).
    */
   async readArtifact(

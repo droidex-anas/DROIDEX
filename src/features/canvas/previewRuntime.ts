@@ -35,7 +35,22 @@ export const PREVIEW_READY_DEADLINE_MS = 10_000;
 export interface PreviewGuest {
   getWebContentsId(): number;
   executeJavaScript(code: string): Promise<unknown>;
+  addEventListener(type: PreviewGuestGoneEvent, listener: () => void): void;
+  removeEventListener(type: PreviewGuestGoneEvent, listener: () => void): void;
 }
+
+/**
+ * The webview element's own ways of saying its guest is gone. A poll in flight
+ * never answers after one of these, so waiting out the poll deadline would cost
+ * seconds of a frame showing a live preview that is not there.
+ */
+export type PreviewGuestGoneEvent = 'render-process-gone' | 'destroyed' | 'crashed';
+
+const GUEST_GONE_EVENTS: readonly PreviewGuestGoneEvent[] = [
+  'render-process-gone',
+  'destroyed',
+  'crashed',
+];
 
 /** Bounded timers, injected so no test waits on wall-clock time. */
 export interface PreviewClock {
@@ -102,6 +117,7 @@ class GuestRun implements PreviewRun {
   private releaseReadyDeadline: (() => void) | null = null;
   private releasePollDeadline: (() => void) | null = null;
   private releaseNextPoll: (() => void) | null = null;
+  private releaseGoneEvents: (() => void) | null = null;
 
   constructor(private readonly options: PreviewRunOptions) {
     this.instance = {
@@ -120,10 +136,28 @@ class GuestRun implements PreviewRun {
       this.options.observer.onLost('guest_gone');
       return;
     }
+    this.releaseGoneEvents = this.watchForGone();
     this.releaseReadyDeadline = this.clock.schedule(() => {
       this.lose('not_ready');
     }, PREVIEW_READY_DEADLINE_MS);
     void this.start();
+  }
+
+  /**
+   * The element says the guest is gone as soon as it happens, so this settles
+   * `onLost` immediately instead of leaving a poll to time out. `lose` is
+   * idempotent, so the deadline behind it costs nothing and still covers a guest
+   * that stops answering without dying.
+   */
+  private watchForGone(): () => void {
+    const gone = () => {
+      this.lose('guest_gone');
+    };
+    const guest = this.options.guest;
+    for (const event of GUEST_GONE_EVENTS) guest.addEventListener(event, gone);
+    return () => {
+      for (const event of GUEST_GONE_EVENTS) guest.removeEventListener(event, gone);
+    };
   }
 
   stop(): void {
@@ -132,6 +166,8 @@ class GuestRun implements PreviewRun {
   }
 
   private release(): void {
+    this.releaseGoneEvents?.();
+    this.releaseGoneEvents = null;
     this.releaseReadyDeadline?.();
     this.releasePollDeadline?.();
     this.releaseNextPoll?.();

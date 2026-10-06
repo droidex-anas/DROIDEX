@@ -38,14 +38,28 @@ function createClock() {
 /** A webview whose every call is a promise this test settles. */
 function createGuest(webContentsId = 42) {
   const calls: { code: string; settle: (value: unknown) => void; fail: () => void }[] = [];
+  const listeners = new Map<string, Set<() => void>>();
   return {
     calls,
+    listeners,
+    /** The element reporting that its guest died, as the webview tag does. */
+    emit(type: string) {
+      for (const listener of [...(listeners.get(type) ?? [])]) listener();
+    },
     guest: {
       getWebContentsId: () => webContentsId,
       executeJavaScript: (code: string) =>
         new Promise<unknown>((resolve, reject) => {
           calls.push({ code, settle: resolve, fail: () => reject(new Error('guest gone')) });
         }),
+      addEventListener(type: string, listener: () => void) {
+        const held = listeners.get(type) ?? new Set<() => void>();
+        listeners.set(type, held);
+        held.add(listener);
+      },
+      removeEventListener(type: string, listener: () => void) {
+        listeners.get(type)?.delete(listener);
+      },
     },
   };
 }
@@ -76,7 +90,8 @@ interface RunOptions {
 function run(options: RunOptions = {}) {
   const terminated: number[] = [];
   const clock = createClock();
-  const { guest, calls } = createGuest(options.webContentsId);
+  const element = createGuest(options.webContentsId);
+  const { guest, calls } = element;
   const { observer, seen } = createObserver();
   const preview = startPreview({
     guest,
@@ -93,7 +108,7 @@ function run(options: RunOptions = {}) {
         return Promise.resolve(true);
       }),
   });
-  return { preview, clock, calls, seen, terminated };
+  return { preview, clock, calls, seen, terminated, element };
 }
 
 /** The identity the guest echoes back, as `start` was given it. */
@@ -296,4 +311,38 @@ test('a guest that was never attached is lost before anything is run on it', () 
   assert.deepEqual(seen.lost, ['guest_gone']);
   assert.equal(asked, 0);
   assert.deepEqual(clock.pending(), []);
+});
+
+test('a guest the element reports gone is lost at once, not at the poll deadline', async () => {
+  const session = run({ webContentsId: 13 });
+  await started(session);
+  assert.deepEqual(session.clock.pending(), [PREVIEW_READY_DEADLINE_MS, PREVIEW_POLL_DEADLINE_MS]);
+
+  session.element.emit('render-process-gone');
+
+  // Settled from the event, with the poll still in flight: waiting out the
+  // deadline would leave a dead preview on screen for seconds.
+  assert.deepEqual(session.seen.lost, ['guest_gone']);
+  assert.deepEqual(session.clock.pending(), []);
+  assert.deepEqual(session.terminated, [13]);
+  // The wedged call eventually answers and reaches nothing.
+  session.calls[1].settle('{}');
+  await Promise.resolve();
+  assert.deepEqual(session.seen.lost, ['guest_gone']);
+});
+
+test('every termination event the element exposes is watched and released', () => {
+  for (const event of ['render-process-gone', 'destroyed', 'crashed']) {
+    const session = run();
+    assert.equal(session.element.listeners.get(event)?.size, 1, event);
+    session.element.emit(event);
+    assert.deepEqual(session.seen.lost, ['guest_gone'], event);
+    assert.equal(session.element.listeners.get(event)?.size, 0, event);
+  }
+
+  // Stopping a healthy run releases them too.
+  const stopped = run();
+  stopped.preview.stop();
+  for (const event of ['render-process-gone', 'destroyed', 'crashed'])
+    assert.equal(stopped.element.listeners.get(event)?.size, 0, event);
 });

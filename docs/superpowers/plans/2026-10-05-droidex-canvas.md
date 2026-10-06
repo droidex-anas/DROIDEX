@@ -571,11 +571,11 @@ Settled by 03c (landed in `electron/{canvasPreview.cjs,main.cjs,preload.cjs}` an
 Settled by 03c's first review cycle (Astra xhigh, adversarial, against `0b370915`):
 
 - **ICE is not a fetch, and `connect-src` never governed it.** The reviewer reached a loopback STUN
-  server from the production sandbox and received a datagram. Both layers now hold: the CSP carries
-  `webrtc 'block'` (CSP3, inherited by the srcdoc frame) and `attach` calls
-  `contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`, so the guest has no UDP path even
-  if the policy string is ever loosened. `[C6]` measures this on a real `udp4` socket beside the
-  stream listener, because a TCP-only listener cannot see ICE at all.
+  server from the production sandbox and received a datagram. `attach` calls
+  `contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`, which closed that datagram path.
+  `webrtc 'block'` was added to the CSP at the same time and **was never a second layer**: see the
+  second cycle below, where it was removed. `[C6]` measures on a real `udp4` socket beside the stream
+  listener, because a TCP-only listener cannot see ICE at all.
 - The other non-CSP egress paths were checked in the same probe and all reach nothing: `<a ping>`
   (`ping-to` is a fetch directive, and `default-src 'none'` covers it), `navigator.sendBeacon`
   (`connect-src`), and `<link rel=dns-prefetch|preconnect|prefetch>` (a prefetch is `default-src`,
@@ -611,6 +611,58 @@ Settled by 03c's first review cycle (Astra xhigh, adversarial, against `0b370915
   regression, and `PreviewGuestFrame` is tested directly for the fallback label.
 - Clicking an `a[ping]` at module scope ends the srcdoc document before the design mounts, so the
   probe does it from an effect instead; measured that way the ping reaches the listener zero times.
+Settled by 03c's second review cycle (Astra xhigh, adversarial, against `0790088b`):
+
+- **The CSP `webrtc` directive does not exist.** Chromium never shipped it and logs
+  `Unrecognized Content-Security-Policy directive 'webrtc'`, so the first cycle's "both layers" was
+  one layer and a comment. It is removed, and the CSP's own docblock now says plainly that it does
+  not bound WebRTC at all. Never claim a layer the engine does not implement.
+- **TURN over TCP is closed at the socket, in the guest's own session.** UDP was shut but TCP was
+  not: the reviewer opened two connections and sent Allocate requests, from an immediate negotiation
+  and from a peer created 500 ms before `setLocalDescription`. The guest now attaches into an owned
+  in-memory partition (`droidex-canvas-preview`, deliberately not `persist:`), forced from
+  `will-attach-webview` rather than trusted from the element, and that session is configured once at
+  startup: the owned scheme is served on it — required anyway, since a partitioned guest cannot see
+  the default session's handlers — every permission is refused, and `setProxy` points every TCP
+  connection at `http://127.0.0.1:1` with `proxyBypassRules: '<-loopback>'`. The bypass rule is the
+  whole point: Chromium bypasses a proxy for loopback by default, which is exactly where a probe's
+  listener lives. Chromium's P2P TCP sockets resolve through the proxy, so TURN-TCP goes nowhere.
+  Measured: pre-fix `connections: 2`, post-fix `0`.
+- **Checked egress paths, all zero at a real listener:** ICE over UDP (STUN), ICE over TURN with
+  `?transport=tcp` at both of the reviewer's timings, a direct host candidate with no server,
+  WebTransport, `navigator.sendBeacon`, `<link rel=dns-prefetch|preconnect|prefetch>`, and
+  `<a ping>`. Each attempt reports itself through the production channel before anything is
+  measured, so a zero can never mean "never tried".
+- **Clicking an `a[ping]` stops the generated document from running**, even with a fragment `href`,
+  and afterwards `frames[0].url` is the intermediate's URL plus the fragment rather than
+  `about:srcdoc`. A design that tries that path ends its own preview. It therefore gets its own
+  guest in `[C6]`, measured alone, because anything after it in the same document is measuring a
+  dead frame.
+- **Text fields are display data, so they are cut, not grounds for refusal.** `throw
+  Error('界'.repeat(200))` is 200 code units and 600 bytes: it passed a character cap in the
+  intermediate and then failed a byte cap in the reader, which refused the snapshot and ended the
+  guest over a diagnostic. Both sides now cut to 512 bytes on a code point boundary, so they agree by
+  construction and drift cannot terminate a guest. The structural bounds — event count, total
+  snapshot bytes, shape, identity — stay strict, because those are what a guest should be ended over.
+- **A guest the element reports gone is lost at once.** With a poll in flight, `render-process-gone`
+  used to be followed by 2.95 s of silence until the poll deadline. `previewRuntime` now listens for
+  `render-process-gone`, `destroyed` and `crashed` on the element and settles `onLost` from them;
+  `lose` is idempotent, so the deadline stays as the fallback for a guest that stops answering
+  without dying.
+- **A re-read is keyed on the build object, not the artifact ID.** The production compiler is
+  content-addressed, so a rebuild of identical source lands on the *same* `artifactId` — the first
+  cycle's comment claiming a new one was wrong and is corrected. `applyCanvasChange` keeps an
+  unchanged frame's identity, so depending the read on `frame.build` reads once per change to this
+  design and not once per snapshot, and a batched `building` → `ready` for the same revision is a new
+  build object and therefore a new read.
+- **A frame with no document says which of the three it is:** being rebuilt (a miss for the revision
+  the frame holds as `ready`, which is the read that queued the work), no longer available (a miss
+  for a `failed` frame's fallback, which queues nothing), or unreadable (the read threw). Promising a
+  rebuild in the second case was a lie.
+- Not covered, and not faked: proving the re-read behaviour in this repo needs a DOM renderer, and
+  neither jsdom nor `react-test-renderer` is a dependency here. The label rule is a pure exported
+  function with its own test; the dependency change itself is one line with its reason beside it.
+
 - Adding the repair took `CanvasBuilds.ts` to 514 lines. The two queueing paths were folded into one
   `queueFromHead` (the head rule had been written twice), and `canvasCompilerProcesses.ts` now owns
   the compiler child processes: a slot's process is forked on its first build, ended at most once,
