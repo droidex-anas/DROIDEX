@@ -42,7 +42,7 @@ export const REVISION_METADATA_VERSION = 1;
 
 // Every file in a revision is listed here, so a read never walks the directory
 // and never discovers a name the workspace did not write.
-export const revisionMetadataSchema = z
+const revisionMetadataSchema = z
   .object({
     version: z.literal(REVISION_METADATA_VERSION),
     designId: canvasIdentifierSchema,
@@ -54,7 +54,7 @@ export const revisionMetadataSchema = z
   })
   .strict();
 
-export type RevisionMetadata = z.infer<typeof revisionMetadataSchema>;
+type RevisionMetadata = z.infer<typeof revisionMetadataSchema>;
 
 /** A revision to publish: its file list is whatever tree is handed over with it. */
 export type NewRevision = Omit<RevisionMetadata, 'files'>;
@@ -64,7 +64,7 @@ export type ManifestLoad =
   | { state: 'damaged'; reason: string }
   | { state: 'loaded'; manifest: CanvasManifest };
 
-export interface CanvasFileHandle {
+interface CanvasFileHandle {
   readFile(encoding: 'utf8'): Promise<string>;
   writeFile(data: string, encoding: 'utf8'): Promise<void>;
   sync(): Promise<void>;

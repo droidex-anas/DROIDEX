@@ -14,11 +14,9 @@ import type {
 
 export type {
   ArrangeFramesInput,
-  CanvasSeed,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
-  FrameRect,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -84,7 +82,7 @@ export interface SourceElement {
   editability: 'literal' | 'computed' | 'shared';
 }
 
-export type CanvasBuildState =
+type CanvasBuildState =
   | { status: 'pending' }
   | { status: 'building'; revisionId: string; generation: number }
   | { status: 'ready'; revisionId: string; artifactId: string }

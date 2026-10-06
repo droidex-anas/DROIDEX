@@ -54,7 +54,7 @@ export function observedFileSystem(
 }
 
 /** The lease the filler receipts in `ledgerAtCapacity` belong to. */
-export const LEDGER_FILLER_SCOPE_ID = 'scope-filler';
+const LEDGER_FILLER_SCOPE_ID = 'scope-filler';
 
 /**
  * A canvas history holding as many unsettled receipts as the ledger allows:
