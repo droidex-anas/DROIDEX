@@ -1,9 +1,10 @@
-// The design compiler, in its own worker thread. It turns one revision's source
-// into a self-contained preview document and never executes that source:
-// esbuild bundles text and Tailwind scans text (spec §6).
+// The design compiler, in its own process. It turns one revision's source into a
+// self-contained preview document and never executes that source: esbuild
+// bundles text and Tailwind scans text (spec §6). A process rather than a
+// thread so that this loop owns and reaps esbuild's service child; see
+// compiler.ts.
 
 import { createHash } from 'node:crypto';
-import { parentPort } from 'node:worker_threads';
 import { CanvasCommandError } from './canvasError.js';
 import {
   CompileCancelledError,
@@ -87,15 +88,15 @@ function escapeClosingTag(content: string, tag: 'style' | 'script'): string {
   return content.replace(new RegExp(`</(${tag})`, 'gi'), '<\\/$1');
 }
 
-// ── Worker transport ─────────────────────────────────────────────────
+// ── Compiler transport ───────────────────────────────────────────────
 // One message per request, correlated by `requestId`. Requests run
 // independently; `CanvasBuilds` (Task 3b) decides how many are in flight.
 
-if (!parentPort) throw new Error('The design compiler must run as a worker thread.');
-const port = parentPort;
+if (!process.send) throw new Error('The design compiler must run as a forked process.');
+const send = process.send.bind(process);
 const running = new Map<number, AbortController>();
 
-port.on('message', (request: CompilerRequest) => {
+process.on('message', (request: CompilerRequest) => {
   if (request.type === 'cancel') {
     running.get(request.requestId)?.abort();
     return;
@@ -119,7 +120,7 @@ async function shutdown(requestId: number): Promise<void> {
   } catch (error) {
     console.error('Canvas compiler shutdown failed:', error);
   }
-  port.postMessage({ requestId, status: 'stopped' } satisfies CompilerResponse);
+  send({ requestId, status: 'stopped' } satisfies CompilerResponse);
 }
 
 async function runCompile(
@@ -129,9 +130,9 @@ async function runCompile(
 ): Promise<void> {
   try {
     const design = await compileDesign(input, signal);
-    port.postMessage({ requestId, status: 'ready', design } satisfies CompilerResponse);
+    send({ requestId, status: 'ready', design } satisfies CompilerResponse);
   } catch (error) {
-    port.postMessage({ requestId, ...outcomeOf(error) } satisfies CompilerResponse);
+    send({ requestId, ...outcomeOf(error) } satisfies CompilerResponse);
   }
 }
 

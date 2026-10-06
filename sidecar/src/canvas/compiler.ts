@@ -1,8 +1,16 @@
-// The sidecar's half of the design compiler: one worker thread, one request per
+// The sidecar's half of the design compiler: one child process, one request per
 // message, nothing else. Slots, per-design coalescing and build deadlines
 // belong to `CanvasBuilds` (Task 3b), which owns this client.
+//
+// The compiler runs as a forked process rather than a worker thread because it
+// starts esbuild's service process. libuv reaps a child only through the loop
+// that spawned it, and `esbuild.stop()` kills that child without exposing it,
+// so a terminated worker thread left the service `<defunct>` for the sidecar's
+// whole life. A forked compiler is owned by the sidecar's own loop, and the
+// service it leaves behind is reparented and reaped by init.
 
-import { Worker } from 'node:worker_threads';
+import { fork, type ChildProcess } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import type { CanvasDiagnostic, DesignSystemRef, SourceElement } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 
@@ -77,7 +85,7 @@ const UNAVAILABLE = 'The Canvas compiler is unavailable; restart DROIDEX.';
 const SHUTDOWN_GRACE_MS = 2_000;
 
 export class CompilerWorker {
-  private worker: Worker | null = null;
+  private compiler: ChildProcess | null = null;
   private readonly pending = new Map<number, PendingCompile>();
   private shutdownAck: (() => void) | null = null;
   private nextRequestId = 1;
@@ -93,15 +101,15 @@ export class CompilerWorker {
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
 
     const requestId = this.nextRequestId++;
-    const worker = this.liveWorker();
+    const compiler = this.liveCompiler();
     return new Promise<CompiledDesign>((resolve, reject) => {
       const onAbort = (): void => {
-        // The worker checks its own signal between stages, but the caller is
+        // The compiler checks its own signal between stages, but the caller is
         // answered now rather than waiting for a compile it no longer wants.
         this.settle(requestId, () => {
           reject(new CompileCancelledError());
         });
-        worker.postMessage({ type: 'cancel', requestId } satisfies CompilerRequest);
+        compiler.send({ type: 'cancel', requestId } satisfies CompilerRequest);
       };
       signal.addEventListener('abort', onAbort, { once: true });
       this.pending.set(requestId, {
@@ -111,7 +119,7 @@ export class CompilerWorker {
           signal.removeEventListener('abort', onAbort);
         },
       });
-      worker.postMessage({ type: 'compile', requestId, input } satisfies CompilerRequest);
+      compiler.send({ type: 'compile', requestId, input } satisfies CompilerRequest);
     });
   }
 
@@ -119,17 +127,17 @@ export class CompilerWorker {
   async terminate(): Promise<void> {
     if (this.terminated) return;
     this.terminated = true;
-    const worker = this.worker;
-    this.worker = null;
+    const compiler = this.compiler;
+    this.compiler = null;
     this.failAll(new CompilerUnavailableError(UNAVAILABLE));
-    if (!worker) return;
-    // The worker owns an esbuild service process, so it gets the turn it needs
-    // to stop that service before its thread is ended.
-    await this.awaitShutdown(worker);
-    await worker.terminate();
+    if (!compiler) return;
+    // The compiler owns esbuild's service process, so it gets the turn it needs
+    // to stop that service while it can still reap it.
+    await this.awaitShutdown(compiler);
+    compiler.kill();
   }
 
-  private awaitShutdown(worker: Worker): Promise<void> {
+  private awaitShutdown(compiler: ChildProcess): Promise<void> {
     return new Promise<void>((resolve) => {
       const finish = (): void => {
         clearTimeout(grace);
@@ -139,33 +147,38 @@ export class CompilerWorker {
       const grace = setTimeout(finish, SHUTDOWN_GRACE_MS);
       grace.unref();
       this.shutdownAck = finish;
-      // A worker that is already gone cannot answer, and neither can one whose
-      // thread dies while stopping.
-      worker.once('exit', finish);
-      worker.once('error', finish);
+      // A compiler that is already gone cannot answer, and neither can one that
+      // dies while stopping.
+      compiler.once('exit', finish);
+      compiler.once('error', finish);
       const requestId = this.nextRequestId++;
-      worker.postMessage({ type: 'shutdown', requestId } satisfies CompilerRequest);
+      compiler.send({ type: 'shutdown', requestId } satisfies CompilerRequest);
     });
   }
 
   /**
-   * The running worker, started on first use and replaced after a crash so one
-   * bad revision cannot disable the compiler for the session.
+   * The running compiler, started on first use and replaced after a crash so
+   * one bad revision cannot disable the compiler for the session.
    */
-  private liveWorker(): Worker {
-    if (this.worker) return this.worker;
-    const worker = new Worker(compilerWorkerUrl(), { execArgv: [] });
-    worker.on('message', (response: CompilerResponse) => {
+  private liveCompiler(): ChildProcess {
+    if (this.compiler) return this.compiler;
+    const compiler = fork(compilerEntryPath(), [], {
+      // The parent may run under a loader; the compiler picks its own below.
+      execArgv: [],
+      execPath: process.execPath,
+      serialization: 'advanced',
+    });
+    compiler.on('message', (response: CompilerResponse) => {
       this.receive(response);
     });
-    worker.on('error', (error: Error) => {
-      this.loseWorker(worker, error);
+    compiler.on('error', (error: Error) => {
+      this.loseCompiler(compiler, error);
     });
-    worker.on('exit', (code) => {
-      this.loseWorker(worker, new Error(`The compiler worker exited with code ${String(code)}.`));
+    compiler.on('exit', (code) => {
+      this.loseCompiler(compiler, new Error(`The compiler exited with code ${String(code)}.`));
     });
-    this.worker = worker;
-    return worker;
+    this.compiler = compiler;
+    return compiler;
   }
 
   private receive(response: CompilerResponse): void {
@@ -194,10 +207,10 @@ export class CompilerWorker {
   }
 
   /** The cause goes to the sidecar log; the caller learns only what to do. */
-  private loseWorker(worker: Worker, cause: Error): void {
-    if (this.worker !== worker) return;
-    this.worker = null;
-    console.error('Canvas compiler worker lost:', cause);
+  private loseCompiler(compiler: ChildProcess, cause: Error): void {
+    if (this.compiler !== compiler) return;
+    this.compiler = null;
+    console.error('Canvas compiler lost:', cause);
     this.failAll(new CompilerUnavailableError(UNAVAILABLE));
   }
 
@@ -219,11 +232,12 @@ export class CompilerWorker {
   }
 }
 
-// tsx loads the TypeScript entry in development; the built sidecar loads the
-// bundled worker beside it, as `HistoryWorkerClient` does.
-function compilerWorkerUrl(): URL {
+// The loader registers tsx and imports the TypeScript entry in development; the
+// built sidecar forks the bundled entry beside it, as `HistoryWorkerClient`
+// resolves its own worker.
+function compilerEntryPath(): string {
   const name = import.meta.url.endsWith('.ts')
     ? './compilerWorkerLoader.mjs'
     : './compilerWorker.mjs';
-  return new URL(name, import.meta.url);
+  return fileURLToPath(new URL(name, import.meta.url));
 }

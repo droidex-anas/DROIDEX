@@ -331,34 +331,53 @@ test('an adversarial closing tag never ends the inline style or script', async (
   }
 });
 
-test('terminating leaves no compiler service process behind', async (t) => {
+test('ending the compiler leaves no process of its own behind', async (t) => {
   if (process.platform === 'win32') return;
-  const before = compilerServiceIds();
-  const worker = new CompilerWorker();
-  t.after(() => worker.terminate());
-  await worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
-  const started = [...compilerServiceIds()].filter((pid) => !before.has(pid));
-  assert.ok(started.length > 0, 'the bundler runs a service process');
+  // esbuild's service is killed but never reaped by the loop that spawned it
+  // unless that loop is a process the sidecar owns, so both PIDs are captured
+  // while they are alive: a <defunct> process no longer matches by name.
+  for (const ending of ['terminate', 'crash'] as const) {
+    const others = compilerProcessIds();
+    const worker = new CompilerWorker();
+    t.after(() => worker.terminate());
+    await worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
 
-  await worker.terminate();
+    const compiler = [...compilerProcessIds()].find((pid) => !others.has(pid));
+    assert.ok(compiler, 'the compiler runs in a process of its own');
+    const service = childProcessIds(compiler)[0];
+    assert.ok(service, 'the bundler runs a service process');
 
-  const surviving = (): string[] => started.filter((pid) => compilerServiceIds().has(pid));
-  for (let turn = 0; turn < 200 && surviving().length > 0; turn += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
+    if (ending === 'terminate') await worker.terminate();
+    else process.kill(Number(compiler), 'SIGKILL');
+
+    for (let turn = 0; turn < 500; turn += 1) {
+      if (!processState(compiler) && !processState(service)) break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    // A reaped process has no state at all; a zombie still reports one.
+    assert.equal(processState(compiler), '', `compiler gone after ${ending}`);
+    assert.equal(processState(service), '', `service gone after ${ending}`);
   }
-  assert.deepEqual(surviving(), [], 'the service process is gone');
 });
 
-/**
- * The PIDs of the bundler's own esbuild service processes. Matched by the
- * sidecar's copy, because the test runner's loader owns one of its own.
- */
-function compilerServiceIds(): Set<string> {
-  const listed = execFileSync('/bin/sh', [
-    '-c',
-    `pgrep -P ${String(process.pid)} -f 'sidecar/node_modules/.*bin/esbuild' || true`,
-  ]);
-  return new Set(listed.toString().trim().split('\n').filter(Boolean));
+function compilerProcessIds(): Set<string> {
+  return new Set(listProcesses(`pgrep -P ${String(process.pid)} -f compilerWorker`));
+}
+
+function childProcessIds(parent: string): string[] {
+  return listProcesses(`pgrep -P ${parent}`);
+}
+
+function processState(pid: string): string {
+  return shell(`ps -o stat= -p ${pid} || true`);
+}
+
+function listProcesses(command: string): string[] {
+  return shell(`${command} || true`).split('\n').filter(Boolean);
+}
+
+function shell(command: string): string {
+  return execFileSync('/bin/sh', ['-c', command]).toString().trim();
 }
 
 function scratchDirectory(t: TestContext): string {
