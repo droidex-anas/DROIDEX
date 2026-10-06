@@ -129,6 +129,8 @@ export class ProjectService {
   // Counts each project's holds, so a message on its way when one lands stays
   // withdrawn after Resume.
   private readonly holds = new WeakMap<Project, number>();
+  // Messages to threads still on their way to a running turn, which a finish must wait for.
+  private readonly sending = new WeakMap<Project, number>();
   // Sessions last seen mid-turn, so a settle is told from any other update.
   private readonly streamingSessions = new Set<string>();
   private readonly membership = new Map<string, Project>();
@@ -455,7 +457,11 @@ export class ProjectService {
         (thread.ask !== undefined || this.sessions.awaitingApproval(thread.appSessionId)),
     );
     if (waiting) throw new Error(`${waiting.title} is still waiting on an answer or an approval.`);
-    if (project.delivery || project.pending.some((message) => message.to !== source))
+    if (
+      project.delivery ||
+      (this.sending.get(project) ?? 0) > 0 ||
+      project.pending.some((message) => message.to !== source)
+    )
       throw new Error('Messages to its threads are still on their way.');
     const working = project.threads.filter(
       (thread) =>
@@ -557,7 +563,14 @@ export class ProjectService {
         !project.paused &&
         this.holds.get(project) === holds &&
         this.membership.get(target) === project;
-      if (await this.sessions.steer(target, prompt, isCurrent, delivery === 'now')) {
+      this.sending.set(project, (this.sending.get(project) ?? 0) + 1);
+      let steered: boolean;
+      try {
+        steered = await this.sessions.steer(target, prompt, isCurrent, delivery === 'now');
+      } finally {
+        this.sending.set(project, (this.sending.get(project) ?? 1) - 1);
+      }
+      if (steered) {
         if (reopened) await this.save();
         return delivery === 'now' ? 'sent-now' : 'steered';
       }
