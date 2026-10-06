@@ -122,6 +122,61 @@ async function startBridge() {
   return { bridge, socket, seen, seenTypes, reconnect };
 }
 
+test('a full offline queue flushes whole and in order on the next socket', async () => {
+  // The sidecar admits strictly more frames than this (MAX_HELD_CLIENT_MESSAGES
+  // in sidecar/src/bridgeServer.ts), so a full flush is never a flood.
+  const QUEUE_CAP = 256;
+  const { bridge, socket: first, reconnect } = await startBridge();
+  first.close();
+  for (let index = 0; index < QUEUE_CAP; index += 1)
+    bridge.send({ type: 'session.interrupt', appSessionId: `app-${String(index)}` });
+
+  const second = await reconnect();
+  second.open();
+  assert.deepEqual(
+    second.sent.map(interruptedSession),
+    Array.from({ length: QUEUE_CAP }, (_, index) => `app-${String(index)}`),
+  );
+
+  // A queue already at the cap refuses what comes next rather than evicting
+  // what is already in it: a queued Stop outranks a newer status request.
+  second.close();
+  const warnings: string[] = [];
+  const previousWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    for (let index = 0; index < QUEUE_CAP; index += 1)
+      assert.equal(
+        bridge.send({ type: 'session.interrupt', appSessionId: `late-${String(index)}` }),
+        true,
+      );
+    // Refused, not thrown: a send from a render or an effect may not unmount the
+    // React root because the runtime happens to be down.
+    assert.equal(bridge.send({ type: 'runtime.status' }), false);
+    assert.equal(bridge.send({ type: 'env.detect' }), false);
+  } finally {
+    console.warn = previousWarn;
+  }
+  // Once per full queue, not once per refusal, and it names what it refused.
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? '', /holding 256 commands; refused runtime\.status/);
+
+  const third = await reconnect();
+  third.open();
+  const flushed = third.sent.map(interruptedSession);
+  assert.equal(flushed.length, QUEUE_CAP);
+  assert.equal(flushed.at(0), 'late-0');
+  assert.equal(flushed.at(-1), `late-${String(QUEUE_CAP - 1)}`);
+});
+
+function interruptedSession(sent: string): string {
+  return (JSON.parse(sent) as { appSessionId: string }).appSessionId;
+}
+
+function commandType(sent: string): string {
+  return (JSON.parse(sent) as { type: string }).type;
+}
+
 function resumeCursor(socket: FakeWebSocket) {
   const params = new URL(socket.url).searchParams;
   return { generation: params.get('resumeGeneration'), seq: params.get('resumeSeq') };
@@ -343,6 +398,43 @@ test('reconnect carries the last fully applied generation and sequence', async (
   assert.ok(pageId);
   assert.equal(url.searchParams.get('pageId'), pageId);
   assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
+});
+
+test('every readmitted socket reports a reconnection, and the first one does not', async () => {
+  const reconnected: number[] = [];
+  const { bridge, socket: first, seenTypes, reconnect } = await startBridge();
+  // Subscribed after the first socket opened, the way a lazily started feature
+  // subscribes: the count below is what a reconnect alone adds.
+  const stop = bridge.onReconnected(() => {
+    reconnected.push(reconnected.length + 1);
+    // A listener's command goes out on the socket that was just readmitted, not
+    // into the offline queue; the sidecar holds it until admission finishes.
+    assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
+  });
+  first.message(batch('generation-1', 1, 1, [CONNECTED]));
+  assert.deepEqual(reconnected, []);
+  first.close();
+
+  // An ordinary resume the sidecar answers by replaying: no snapshot, no reset,
+  // and no connection event of its own.
+  const second = await reconnect();
+  assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
+  second.open();
+  assert.deepEqual(reconnected, [1]);
+  assert.deepEqual(second.sent.map(commandType), ['runtime.status']);
+  second.message(batch('generation-1', 2, 2, [{ type: 'history.persistenceRecovered' }]));
+  assert.deepEqual(seenTypes(), ['connection', 'history.persistenceRecovered']);
+
+  second.close();
+  const third = await reconnect();
+  third.open();
+  assert.deepEqual(reconnected, [1, 2]);
+
+  stop();
+  third.close();
+  const fourth = await reconnect();
+  fourth.open();
+  assert.deepEqual(reconnected, [1, 2]);
 });
 
 test('coalesced sequence gaps inside one batch advance the resume cursor safely', async () => {

@@ -3,10 +3,14 @@ import test from 'node:test';
 import type { z } from 'zod';
 
 import type * as Renderer from '../../../src/features/canvas/protocol.js';
+import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,
+  CanvasCommand,
   CanvasError,
+  CanvasEvent,
+  CanvasReply,
   CanvasSnapshot,
   CanvasSummary,
   CanvasTurnContext,
@@ -25,6 +29,10 @@ import {
   writeFilesInputSchema,
 } from './schema.js';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 // Every DTO the renderer mirrors. Assignability is too weak to catch a mirror
 // that gained an optional field, so ExactMirror below compares each pair for
 // type identity instead.
@@ -42,6 +50,9 @@ type SidecarWire = {
   elementRef: ElementRef;
   element: SourceElement;
   error: CanvasError;
+  command: CanvasCommand;
+  reply: CanvasReply;
+  event: CanvasEvent;
 };
 
 type RendererWire = {
@@ -58,6 +69,9 @@ type RendererWire = {
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
   error: Renderer.CanvasError;
+  command: Renderer.CanvasCommand;
+  reply: Renderer.CanvasReply;
+  event: Renderer.CanvasEvent;
 };
 
 type Equals<A, B> =
@@ -200,6 +214,26 @@ const wire: SidecarWire = {
     editability: 'literal',
   },
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
+  command: {
+    type: 'canvas.write',
+    requestId: 'req_01',
+    appSessionId: 'app_01',
+    canvasId: 'cv_01',
+    input: {
+      mutationId: 'write-hey',
+      designId: 'dsg_hey',
+      expectedRevisionId: 'rev_02',
+      files: { 'main.tsx': 'export default function Hey() {\n  return <h1>Hey</h1>;\n}\n' },
+      deletedPaths: [],
+    },
+  },
+  reply: { kind: 'written', receipt: { designId: 'dsg_hey', revisionId: 'rev_03', sequence: 8 } },
+  event: {
+    type: 'canvas.result',
+    requestId: 'req_01',
+    ok: false,
+    error: { code: 'scope_expired', message: 'This chat is not attached to that canvas.' },
+  },
 };
 
 test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
@@ -217,9 +251,69 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     elementRef: true,
     element: true,
     error: true,
+    command: true,
+    reply: true,
+    event: true,
   };
   assert.ok(Object.values(exact).every((isExact) => isExact));
   assert.deepEqual(JSON.parse(JSON.stringify(wire)), wire);
+});
+
+test('every serialized event the sidecar emits passes the renderer validator', () => {
+  const summaries = [wire.summary];
+  const events: CanvasEvent[] = [
+    { type: 'canvas.result', requestId: 'req_01', ok: true, reply: { kind: 'ok' } },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'summaries', summaries },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'attachment', canvasId: 'cv_01' },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'attachment', canvasId: null },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'created', created: wire.createResult },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'written', receipt: wire.receipt },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'arranged', change: wire.change },
+    },
+    wire.event,
+    { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },
+    { type: 'canvas.summaries', summaries },
+    { type: 'canvas.change', change: wire.change },
+  ];
+  // Types agreeing is not enough: the two runtime bounds have to agree too, or
+  // a reply the sidecar accepts arrives as an event the renderer throws away.
+  for (const event of events) {
+    const serialized: unknown = JSON.parse(JSON.stringify(event));
+    assert.ok(isRecord(serialized) && isCanvasEvent(serialized), `rejected ${event.type}`);
+  }
+  // The renderer's half of the one correlation bound; canvasBridge.test.ts
+  // holds the sidecar to the same length through the dispatch boundary.
+  assert.ok(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(128) }));
+  assert.equal(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(129) }), false);
 });
 
 test('the create, write and arrange fixtures parse, and the parsed value fits the mirror', () => {

@@ -5,6 +5,7 @@
 // nothing published. `canvasHeads.ts` owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
+import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import {
   CanvasFiles,
@@ -52,9 +53,17 @@ export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 const CLOSING = 'The Canvas workspace is closing.';
 
+/** A commit's answer and the change it published, if it published one. */
+interface Committed<T> {
+  value: T;
+  change?: CanvasChange;
+}
+
 export class CanvasWorkspace {
   private commits: Promise<unknown> = Promise.resolve();
   private readonly running = new Set<Promise<void>>();
+  /** Every committed change, in sequence, for the pane to project. */
+  readonly changes = new CanvasChangeFeed();
   private closed = false;
 
   private constructor(
@@ -87,10 +96,17 @@ export class CanvasWorkspace {
     return this.heads.attachedCanvasId(appSessionId);
   }
 
-  createCanvas(): Promise<CanvasSnapshot> {
+  /**
+   * A new canvas, attached in the same commit so explicit Create leaves either
+   * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
+   * first: a crash between the two writes must leave it unattached, not twice.
+   */
+  createCanvas(appSessionId: string): Promise<CanvasSnapshot> {
     return this.admit(() =>
       this.commit(async () => {
+        await this.detachFrom(appSessionId, null);
         const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
+        manifest.attachedAppSessionIds.push(appSessionId);
         await this.heads.install(manifest, this.openGate());
         return canvasSnapshot(manifest);
       }),
@@ -139,7 +155,7 @@ export class CanvasWorkspace {
       }
       const staged = await stageFrames(this.files, canvasId, input);
 
-      return this.commit(async () => {
+      return this.commitChange(async () => {
         let next: CanvasManifest;
         let beforeRename: () => void;
         if (bootstrapping) {
@@ -148,7 +164,7 @@ export class CanvasWorkspace {
             const recorded = recordedCreate(this.canvas(attached), input.mutationId, fingerprint);
             if (recorded) {
               this.leases.claim(scope, attached);
-              return recorded;
+              return { value: recorded };
             }
             throw canvasError('scope_expired', ATTACHED_SINCE);
           }
@@ -167,7 +183,7 @@ export class CanvasWorkspace {
           this.leases.requireAttachment(scope, canvasId);
           const live = this.leases.requireCanvas(scope, canvasId);
           const recorded = recordedCreate(live, input.mutationId, fingerprint);
-          if (recorded) return recorded;
+          if (recorded) return { value: recorded };
           next = structuredClone(live);
           beforeRename = () => {
             this.requireOpen();
@@ -200,7 +216,10 @@ export class CanvasWorkspace {
           throw error;
         }
         if (scope.canvasId === null) this.leases.claim(scope, canvasId);
-        return { canvasId, frames: designs.map(toFrame) };
+        return {
+          value: { canvasId, frames: designs.map(toFrame) },
+          change: canvasChange(next, designs),
+        };
       });
     });
   }
@@ -229,10 +248,10 @@ export class CanvasWorkspace {
       };
       await this.files.publishRevision(canvasId, revision, merged);
 
-      return this.commit(async () => {
+      return this.commitChange(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);
         const again = recordedWrite(live, input.mutationId, fingerprint);
-        if (again) return again;
+        if (again) return { value: again };
         const next = structuredClone(live);
         const target = this.design(next, input.designId);
         requireExpectedRevision(target, input.expectedRevisionId);
@@ -257,7 +276,7 @@ export class CanvasWorkspace {
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, [input.designId]));
-        return receipt;
+        return { value: receipt, change: canvasChange(next, [target]) };
       });
     });
   }
@@ -271,10 +290,10 @@ export class CanvasWorkspace {
       const recorded = recordedArrange(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
 
-      return this.commit(async () => {
+      return this.commitChange(async () => {
         const live = this.leases.requireDesigns(scope, designIds);
         const again = recordedArrange(live, input.mutationId, fingerprint);
-        if (again) return again;
+        if (again) return { value: again };
         const next = structuredClone(live);
         const moved: PersistedDesign[] = [];
         for (const frame of input.frames) {
@@ -305,7 +324,8 @@ export class CanvasWorkspace {
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, designIds));
-        return canvasChange(next, moved);
+        const change = canvasChange(next, moved);
+        return { value: change, change };
       });
     });
   }
@@ -326,6 +346,7 @@ export class CanvasWorkspace {
     this.closed = true;
     while (this.running.size > 0) await Promise.all([...this.running]);
     this.leases.forget();
+    this.changes.clear();
   }
 
   /** Admits one mutation, so close() knows what it still has to wait for. */
@@ -345,6 +366,18 @@ export class CanvasWorkspace {
     });
     this.commits = next.catch(ignoreOutcome);
     return next;
+  }
+
+  /**
+   * A commit that may publish a change. Listeners run once the lock has moved
+   * on, so a subscriber cannot stall the next commit, and still in sequence,
+   * because the queue hands the lock on in an earlier microtask.
+   */
+  private commitChange<T>(work: () => Promise<Committed<T>>): Promise<T> {
+    return this.commit(work).then(({ value, change }) => {
+      if (change) this.changes.publish(change);
+      return value;
+    });
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */

@@ -1,4 +1,7 @@
 import { join } from 'node:path';
+import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { ProjectService } from './projects/ProjectService.js';
 import { ProjectStore } from './projects/store.js';
 import { ProjectSessions } from './projects/sessions.js';
@@ -10,7 +13,7 @@ import {
 } from './automations/AutomationManager.js';
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
-import { droidexUserDataDir } from './droidexPaths.js';
+import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
@@ -26,12 +29,13 @@ const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
-  onCommand: async (command) => {
+  onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
       void projects?.userStopped(command.appSessionId).catch(reportProjectError);
     }
     if (await handleProjectCommand(command)) return;
+    if (await handleCanvasCommand(command, pageId)) return;
     if (automationManager && (await automationManager.handleBridgeCommand(command))) return;
     await manager.handle(command);
   },
@@ -96,6 +100,29 @@ function reportProjectError(error: unknown): void {
     message: error instanceof Error ? error.message : String(error),
   });
 }
+
+// Canvas leases live beside the workspace that checks them: the pane registers
+// one per mutation request, and Task 4 registers each turn's lease here.
+const canvasScopes = new CanvasScopes();
+const canvasReady = CanvasWorkspace.open(canvasDir(), canvasScopes).then((workspace) => {
+  if (shuttingDown) void workspace.close();
+  return workspace;
+});
+void canvasReady.catch((error: unknown) => {
+  server.broadcast({
+    type: 'error',
+    code: 'canvas.storage_failed',
+    message: `Canvas storage did not open, so no board is available until DROIDEX restarts: ${error instanceof Error ? error.message : String(error)}`,
+  });
+});
+const handleCanvasCommand = createCanvasCommandHandler(
+  canvasReady,
+  canvasScopes,
+  (event) => {
+    server.broadcast(event);
+  },
+  (listener) => server.onPageGone(listener),
+);
 
 automationManager = configureAutomationManager({
   dataDir: droidexUserDataDir(),
@@ -168,6 +195,11 @@ async function shutdown(): Promise<void> {
           const service = await projectsReady.catch(() => undefined);
           await service?.flush();
         }
+      },
+      // After the sessions, because an agent's Canvas mutation runs under one.
+      shutdownCanvas: async () => {
+        const workspace = await canvasReady.catch(() => undefined);
+        await workspace?.close();
       },
       disableMetrics: () => {
         hotPathMetrics.disable();

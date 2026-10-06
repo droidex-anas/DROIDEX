@@ -1,3 +1,4 @@
+import { isCanvasEvent } from '../features/canvas/wireValidation';
 import { isProjectView, isProjectResult } from '../features/projects/validation';
 import type {
   BridgeResetMessage,
@@ -144,6 +145,11 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return Array.isArray(value.projects) && value.projects.every(isProjectView);
     case 'project.result':
       return isProjectResult(value);
+    case 'canvas.summaries':
+    case 'canvas.snapshot':
+    case 'canvas.change':
+    case 'canvas.result':
+      return isCanvasEvent(value);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
     case 'runtime.updated':
