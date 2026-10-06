@@ -180,6 +180,10 @@ export class DroidRuntime implements FactoryRuntime {
         turn.observeMainEvent(event);
         if (event.type === 'result') result = event;
         else yield event;
+        // Called once for every SDK event, in order, since it counts idles. At
+        // the idle of a loop the SDK would wait on for good, the tail takes over:
+        // it holds every notice after that idle and settles the turn.
+        if (turn.consumeIdleEndsOpenLoop(event)) break;
       }
       yield* turn.streamTail();
       // No steer may join after the settlement event becomes visible.
