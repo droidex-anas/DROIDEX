@@ -11,6 +11,7 @@
 //   node tools/stage-canvas-runtime.mjs arm64 x64
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
@@ -151,46 +152,76 @@ function copyPackage({ dir, name }, archDir) {
   }
 }
 
+/** The version, tarball and integrity the reviewed lockfile records. */
+function lockedPackage(name) {
+  const lock = JSON.parse(readFileSync(join(sidecarDir, 'package-lock.json'), 'utf8'));
+  const locked = lock.packages[`node_modules/${name}`];
+  if (!locked?.resolved || !locked.integrity)
+    fail(`${name} has no resolved tarball in sidecar/package-lock.json.`);
+  return locked;
+}
+
+/** Whether `path` is the exact bytes an `sha<n>-<base64>` integrity names. */
+function matchesIntegrity(path, integrity) {
+  if (!existsSync(path)) return false;
+  const separator = integrity.indexOf('-');
+  const algorithm = integrity.slice(0, separator);
+  const digest = integrity.slice(separator + 1);
+  return createHash(algorithm).update(readFileSync(path)).digest('base64') === digest;
+}
+
 /**
  * The other architecture's binary is not installed here: npm skips an optional
- * dependency whose cpu does not match and refuses an explicit install of one
- * without `--force`. Packaging may reach the registry; a design compile never
- * does.
+ * dependency whose cpu does not match. It comes from the tarball the reviewed
+ * lockfile pins, verified against that lockfile's integrity before anything is
+ * extracted, with no npm involved and so no lifecycle script and nothing
+ * written outside the staging directory. A verified tarball is kept, so a
+ * repeat build is offline; packaging needs the registry once per esbuild
+ * version, and a design compile never does.
  */
-function fetchPlatformPackage(name, version) {
-  const cache = join(stagingDir, '.npm');
+async function fetchPlatformPackage(name, version) {
+  const locked = lockedPackage(name);
+  if (locked.version !== version)
+    fail(`sidecar/package-lock.json pins ${name}@${locked.version}, not the installed ${version}.`);
+  const cache = join(stagingDir, '.tarballs');
   mkdirSync(cache, { recursive: true });
-  execFileSync(
-    'npm',
-    [
-      'install',
-      '--prefix',
-      cache,
-      '--no-save',
-      '--no-audit',
-      '--no-fund',
-      '--force',
-      `${name}@${version}`,
-    ],
-    { stdio: 'inherit' },
-  );
-  const fetched = join(cache, 'node_modules', name);
-  if (!existsSync(fetched)) fail(`${name}@${version} could not be staged from the registry.`);
-  return fetched;
+  const slug = `${name.replace('@', '').replace('/', '-')}-${locked.version}`;
+  const tarball = join(cache, `${slug}.tgz`);
+  if (!matchesIntegrity(tarball, locked.integrity)) {
+    const response = await fetch(locked.resolved);
+    if (!response.ok) fail(`${locked.resolved} answered ${String(response.status)}.`);
+    writeFileSync(tarball, Buffer.from(await response.arrayBuffer()));
+    if (!matchesIntegrity(tarball, locked.integrity))
+      fail(`${locked.resolved} does not match the integrity in sidecar/package-lock.json.`);
+  }
+  // Extracted into an empty directory of its own, and only the files found
+  // under it are copied, so an entry that tried to climb out lands nowhere the
+  // staging reads.
+  const unpacked = join(cache, slug);
+  rmSync(unpacked, { recursive: true, force: true });
+  mkdirSync(unpacked, { recursive: true });
+  execFileSync('/usr/bin/tar', ['-xzf', tarball, '-C', unpacked, '--strip-components=1']);
+  return unpacked;
 }
 
 /** Returns the staged binary's path, relative to the runtime directory. */
-function stagePlatformBinary(arch, version, archDir) {
+async function stagePlatformBinary(arch, version, archDir) {
   const name = `@esbuild/${PLATFORM}-${arch}`;
   const installed = join(sidecarDir, 'node_modules', name);
-  const source = existsSync(installed) ? installed : fetchPlatformPackage(name, version);
+  const source = existsSync(installed) ? installed : await fetchPlatformPackage(name, version);
   for (const file of packageFiles(source)) {
     if (isSkipped(relative(source, file))) continue;
     const destination = join(archDir, 'node_modules', name, relative(source, file));
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(file, destination);
   }
-  return `node_modules/${name}/bin/esbuild`;
+  const binaryPath = `node_modules/${name}/bin/esbuild`;
+  const binary = join(archDir, binaryPath);
+  if ((statSync(binary).mode & 0o111) === 0) fail(`${binaryPath} is not executable.`);
+  const described = execFileSync('/usr/bin/file', [binary], { encoding: 'utf8' });
+  const expected = arch === 'arm64' ? 'arm64' : 'x86_64';
+  if (!described.includes(expected)) fail(`${binaryPath} is not ${expected}.`);
+  return binaryPath;
 }
 
 /**
@@ -229,7 +260,7 @@ for (const arch of architectures) {
   const archDir = join(stagingDir, arch);
   rmSync(archDir, { recursive: true, force: true });
   for (const entry of closure) copyPackage(entry, archDir);
-  const binaryPath = stagePlatformBinary(arch, esbuildVersion, archDir);
+  const binaryPath = await stagePlatformBinary(arch, esbuildVersion, archDir);
   const { bytes, files } = writeManifest(archDir, binaryPath);
   process.stdout.write(
     `${archDir}: ${String(closure.length + 1)} packages, ${String(files)} files, ${String(bytes)} bytes (${(bytes / 1024 / 1024).toFixed(2)} MiB)\n`,
