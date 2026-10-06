@@ -1435,8 +1435,9 @@ export class SessionLifecycle {
       // A provider-started turn that ended meanwhile may have started the next one.
       if (liveSession.turnPromise === turn) liveSession.turnPromise = undefined;
       // This turn's rows are all in. One the provider started meanwhile, and
-      // still running, keeps the source open; one that ended left it to us.
-      if (!liveSession.delegatedTurnOpen)
+      // still running, keeps the source open; one that ended left it to us,
+      // unless the next typed turn it started already owns the source.
+      if (!liveSession.delegatedTurnOpen && !liveSession.turnPromise)
         d.eventFlow.apply(stableAppSessionId, stableAppSessionId, 'primary', { done: true });
       if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
       // A turn the provider started since this one began owns the chat and its queue now.
