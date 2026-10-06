@@ -110,7 +110,7 @@ sidebar tools never keep a copy of the sidebar: each call sends the window a
 `sidebar.request` and waits up
 to three seconds for its `sidebar.result`, which the app root answers from one
 read of the store, so it works with the sidebar collapsed. See
-[Session tools](session-tools.md) for the eleven tools, and
+[Session tools](session-tools.md) for the twelve tools, and
 [Projects](projects.md) for current capabilities and limitations.
 
 ### Child runtime residency

@@ -179,6 +179,7 @@ const DELIVERY_NOTES: Partial<Record<string, string>> = {
     'It runs next: DROIDEX asks the turn the thread is running to stop first. Its report wakes you.',
   queued:
     'It starts the thread now if it is idle, or waits for the turn it is running. Its report wakes you; end your turn.',
+  held: 'The project is held, so it waits until the user resumes the project.',
 };
 
 /**

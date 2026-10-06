@@ -657,6 +657,8 @@ export class SessionLifecycle {
     // A Stop or the caller's guard can change between admission and this line.
     if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) return false;
     if (now) {
+      // A runtime replaced during admission would carry the prompt off with it.
+      if (this.dependencies.registry.getLive(appSessionId) !== admitted.liveSession) return false;
       admitted.liveSession.pendingSends.push(prompt);
       this.updateQueuedSends(admitted.liveSession);
       // Not awaited: a turn that ended meanwhile runs this one at once, and the

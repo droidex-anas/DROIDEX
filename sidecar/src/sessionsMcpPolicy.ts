@@ -20,7 +20,8 @@ const TOOL_TITLES = new Map([
 
 // Reading and steering this chat's own threads only moves text between
 // conversations DROIDEX already owns, and none of it can put a thread past the
-// autonomy of the chat that started it. Reading the sidebar changes nothing.
+// autonomy of the chat that started it. Marking the project done changes only
+// what Projects shows, and new work reopens it. Reading the sidebar changes nothing.
 // Starting a chat spends real work under its own autonomy, and messaging,
 // stopping or moving a chat the user follows acts on their work, so those ask
 // unless this chat runs at High.

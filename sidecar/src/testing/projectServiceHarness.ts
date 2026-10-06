@@ -149,10 +149,12 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
       return { status: 'accepted', settled };
     },
     isAsking: (id, requestId) => asking.get(id) === requestId,
-    steer: (id, prompt, isCurrent, now) => {
-      if (!sessions.get(id)?.streaming || !isCurrent()) return Promise.resolve(false);
+    steer: async (id, prompt, isCurrent, now) => {
+      if (!sessions.get(id)?.streaming || !isCurrent()) return false;
       steered.push({ id, prompt, now });
-      return Promise.resolve(true);
+      // Send now stops the running turn, as the lifecycle's does.
+      if (now) await streaming(id, false);
+      return true;
     },
     rename: (id, title) => {
       const session = sessions.get(id);

@@ -290,10 +290,14 @@ export class ProjectService {
       if (!joined && requested.workspaceOf)
         throw new Error('This chat has started no threads to share a checkout with.');
       const project = joined ?? this.adoption(source, owner);
-      // New work means the goal is not met after all.
-      delete project.done;
       try {
-        return await this.startThread(project, spawn, owner, input, requested);
+        const started = await this.startThread(project, spawn, owner, input, requested);
+        // New work means the goal is not met after all; a refused spawn is no new work.
+        if (project.done) {
+          delete project.done;
+          await this.save();
+        }
+        return started;
       } finally {
         if (this.settleAdoption(project)) await this.save();
       }
@@ -416,10 +420,13 @@ export class ProjectService {
       project = this.adoption(source, owner);
       this.commitAdoption(source, project);
     }
+    // Renamed first, so a name the chat refuses leaves the plan as it was.
+    if (title) await this.rename(project, source, title);
     const members = new Set(project.threads.map((thread) => thread.appSessionId));
     project.plan = planFromSteps(steps, (id) => members.has(id));
-    if (project.plan.some((step) => step.state && step.state !== 'done')) delete project.done;
-    if (title) await this.rename(project, source, title);
+    // A step of the chat's own that is not done, stated or not, means work remains.
+    if (project.plan.some((step) => !step.threadAppSessionId && step.state !== 'done'))
+      delete project.done;
     this.settleAdoption(project);
     await this.save();
     return project.plan.length;
@@ -442,6 +449,12 @@ export class ProjectService {
     if (requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the chat that leads a project can mark it done.');
     if (project.launching > 0) throw new Error('A thread of this project is still starting.');
+    const waiting = project.threads.find(
+      (thread) =>
+        thread.appSessionId !== source &&
+        (thread.ask !== undefined || this.sessions.awaitingApproval(thread.appSessionId)),
+    );
+    if (waiting) throw new Error(`${waiting.title} is still waiting on an answer or an approval.`);
     const working = project.threads.filter(
       (thread) =>
         thread.appSessionId !== source && this.sessions.get(thread.appSessionId)?.streaming,
@@ -477,7 +490,7 @@ export class ProjectService {
     answers?: string[],
     questionId?: string,
     delivery: ThreadDelivery = 'steer',
-  ): Promise<'answered' | 'already-answered' | 'steered' | 'sent-now' | 'queued'> {
+  ): Promise<'answered' | 'already-answered' | 'steered' | 'sent-now' | 'queued' | 'held'> {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const ask = thread.ask;
@@ -543,7 +556,7 @@ export class ProjectService {
     this.enqueue(project, { from: source, to: target, kind: 'message', text });
     await this.save();
     this.wakes.kick(project);
-    return 'queued';
+    return project.paused ? 'held' : 'queued';
   }
 
   /**
