@@ -10,9 +10,12 @@ import type {
   PermissionOutcome,
   ServerEvent,
   SessionSummary,
+  TranscriptEvent,
 } from './protocol.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
-import type { Provider, ProviderResumeInput } from './providers/session.js';
+import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
+import { runPrimaryTurn } from './providers/primaryTurn.js';
+import { SessionEventFlow } from './SessionEventFlow.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
@@ -20,6 +23,7 @@ import {
   SessionLifecycle,
   type LiveSession,
   type SessionCreateCommand,
+  type SessionLifecycleDependencies,
 } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import {
@@ -83,6 +87,7 @@ class RejectingCloseSession extends FakeFactorySession {
 function createHarness(
   ordinarySummaries: SessionSummary[] = [],
   beforeFirstTurn?: (session: SessionSummary, clientRef: string) => Promise<void>,
+  overrides: Partial<SessionLifecycleDependencies> = {},
 ) {
   const calls: RecordedCall[] = [];
   const events: ServerEvent[] = [];
@@ -268,6 +273,7 @@ function createHarness(
     appendSteer: (appSessionId, text) => record('protocol', 'appendSteer', appSessionId, text),
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
+    ...overrides,
   });
 
   return {
@@ -393,6 +399,14 @@ function requireLive(harness: Harness, id: string): LiveSession {
 function interruptCount(harness: Harness): number {
   return harness.calls.filter((call) => call.target === 'provider' && call.method === 'interrupt')
     .length;
+}
+
+function turnGate() {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve: () => resolve() };
 }
 
 test('create and cold resume publish only after registration', async () => {
@@ -1496,8 +1510,11 @@ test('scheduled delivery resumes the exact historical provider and waits for a r
 });
 
 test('scheduled delivery waits outside pendingSends for turns, compaction, interactions and ready user sends', async () => {
-  const harness = createHarness([summary('scheduled-busy')]);
-  const provider = queueLoad(harness, 'scheduled-busy');
+  const harness = createHarness([
+    summary('scheduled-busy', 'scheduled-busy', { provider: 'claude' }),
+  ]);
+  const provider = new FakeFactorySession('scheduled-busy', {}, harness.calls);
+  harness.setProvider(claudeResumeProvider(harness, provider));
   await harness.lifecycle.resume('scheduled-busy');
   const live = requireLive(harness, 'scheduled-busy');
   const busy = async () => {
@@ -1525,7 +1542,171 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
     live.pendingSends.map((pending) => pending.text),
     ['user prompt'],
   );
+  live.pendingSends = [];
+  harness.setSettingsWait(() => {
+    live.streaming = true;
+    return Promise.resolve();
+  });
+  await busy();
+  assert.deepEqual(live.pendingSends, [], 'a settings race must not detach the delivery receipt');
+  live.streaming = false;
+  let current = true;
+  harness.setSettingsWait(() => {
+    current = false;
+    live.streaming = true;
+    return Promise.resolve();
+  });
+  assert.deepEqual(
+    await harness.lifecycle.deliverScheduled('scheduled-busy', 'withdrawn', () => current),
+    { status: 'cancelled' },
+  );
+  assert.deepEqual(live.pendingSends, []);
   await harness.lifecycle.closeAll();
+});
+
+test('an old typed turn cannot close the replacement runtime event source', async () => {
+  const rows: TranscriptEvent[] = [];
+  const flow = new SessionEventFlow({
+    appendTranscript: (event) => rows.push(event),
+    flushTranscript: () => undefined,
+    applySideEffects: () => undefined,
+    resolveChildScope: () => undefined,
+    recordUsage: () => undefined,
+  });
+  const oldTurn = turnGate();
+  const replacementTurn = turnGate();
+  let waiting = oldTurn.promise;
+  const h = createHarness([summary('replaced')], undefined, {
+    eventFlow: flow,
+    forgetEventFlow: (id) => flow.forgetSession(id),
+    runPrimaryTurn: (live) => {
+      flow.beginTurn(live.summary.appSessionId, live.summary.appSessionId);
+      return waiting;
+    },
+  });
+  queueLoad(h, 'replaced');
+  await h.lifecycle.resume('replaced');
+  const oldSend = h.lifecycle.send('replaced', 'old');
+  await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.close('replaced');
+  queueLoad(h, 'replaced');
+  await h.lifecycle.resume('replaced');
+  waiting = replacementTurn.promise;
+  const newSend = h.lifecycle.send('replaced', 'replacement');
+  await new Promise((resolve) => setImmediate(resolve));
+  oldTurn.resolve();
+  await oldSend;
+  flow.apply('replaced', 'replaced', 'primary', {
+    transcript: {
+      id: 'replacement-reply',
+      appSessionId: 'replaced',
+      sourceSessionId: 'replaced',
+      role: 'primary',
+      ts: 1,
+      kind: 'text',
+      text: 'replacement reply',
+    },
+  });
+  assert.deepEqual(
+    rows.map((row) => row.text),
+    ['replacement reply'],
+  );
+  assert.equal(requireLive(h, 'replaced').streaming, true);
+  replacementTurn.resolve();
+  await newSend;
+  await h.lifecycle.closeAll();
+});
+
+test('typed preparation waits for delegated flush without losing its prompt or draining concurrently', async () => {
+  const stored = turnGate();
+  const flushed = turnGate();
+  const rows: string[] = [];
+  let providerRunning = false;
+  let delegated: (running: boolean, end?: DelegatedTurnEnd) => void = () =>
+    assert.fail('no listener');
+  const h = createHarness([summary('overlap', 'overlap', { provider: 'claude' })], undefined, {
+    settleStreaming: () => flushed.promise,
+    runPrimaryTurn: (live, request) =>
+      runPrimaryTurn(
+        {
+          eventFlow: { beginTurn: () => undefined, apply: () => undefined },
+          context: {
+            beginTurn: () => undefined,
+            startPolling: () => undefined,
+            stopPolling: () => undefined,
+            refresh: () => Promise.resolve(),
+          },
+          timeline: {
+            recordPrompt: (_id, prompt) => {
+              rows.push(prompt);
+              return stored.promise;
+            },
+            announcePrompt: () => assert.fail('unexpected announcement'),
+            settleStreaming: () => Promise.resolve(),
+            appendStatus: () => undefined,
+            appendError: () => undefined,
+          },
+          contextTarget: () => undefined,
+          isCurrent: (current) => h.registry.getLive('overlap') === current && !current.closeMode,
+          applyDesignToolPolicy: () => Promise.resolve(true),
+          updateSummary: (id, patch) => {
+            h.registry.updateSummary(id, patch);
+          },
+          emitError: () => assert.fail('unexpected turn error'),
+        },
+        live,
+        request,
+      ),
+  });
+  const fake = new FakeFactorySession('overlap', {}, h.calls);
+  const typed = fake.deferNextStream();
+  const base = claudeResumeProvider(h, fake);
+  h.setProvider({
+    ...base,
+    resume: async (id, input) => {
+      const resumed = await base.resume(id, input);
+      return {
+        ...resumed,
+        onDelegatedTurn: (listener) => {
+          delegated = listener;
+          return () => undefined;
+        },
+        stream: async function* (prompt, mentions) {
+          if (providerRunning) throw new Error('provider turn still running');
+          yield* resumed.stream(prompt, mentions);
+        },
+      };
+    },
+  });
+  await h.lifecycle.resume('overlap');
+  const sending = h.lifecycle.send('overlap', 'typed');
+  await new Promise((resolve) => setImmediate(resolve));
+  providerRunning = true;
+  delegated(true);
+  await h.lifecycle.send('overlap', 'queued');
+  stored.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(fake.prompts, []);
+  providerRunning = false;
+  delegated(false, { status: 'completed' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requireLive(h, 'overlap').streaming, true);
+  assert.deepEqual(fake.prompts, []);
+  flushed.resolve();
+  await fake.waitForPrompts(1);
+  assert.deepEqual(fake.prompts, ['typed']);
+  assert.deepEqual(
+    requireLive(h, 'overlap').pendingSends.map((prompt) => prompt.text),
+    ['queued'],
+  );
+  typed.resolve();
+  await sending;
+  await fake.waitForPrompts(2);
+  await requireLive(h, 'overlap').turnPromise;
+  assert.deepEqual(fake.prompts, ['typed', 'queued']);
+  assert.deepEqual(rows, ['typed', 'queued']);
+  assert.equal(requireLive(h, 'overlap').streaming, false);
+  await h.lifecycle.closeAll();
 });
 
 test('scheduled delivery rejects unknown IDs and discards settings results after cancellation or provider replacement', async () => {

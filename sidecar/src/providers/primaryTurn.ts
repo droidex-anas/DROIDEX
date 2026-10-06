@@ -59,9 +59,7 @@ export async function runPrimaryTurn(
   // in the same window is left alone: its prompt is queued behind this one,
   // and the agent needs this one to make sense of it.
   const stoppedBeforeStart = () => liveSession.interrupting === true;
-  // Counts the turns the provider started itself, so this one's failure cannot
-  // be written over one that ran after it.
-  const delegatedTurns = liveSession.delegatedTurns;
+  let delegatedTurns = liveSession.delegatedTurns;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -99,6 +97,11 @@ export async function runPrimaryTurn(
   try {
     const configured =
       preflight ?? (await d.applyDesignToolPolicy(liveSession, isDesignPrompt(prompt)));
+    // Preparation can yield to a provider-started turn. Keep this prompt's row
+    // and queue reservation, but wait for that turn's final rows before sending.
+    while (isCurrent() && !stoppedBeforeStart() && liveSession.delegatedTurnSettled) {
+      await liveSession.delegatedTurnSettled;
+    }
     if (
       !isCurrent() ||
       stoppedBeforeStart() ||
@@ -108,6 +111,11 @@ export async function runPrimaryTurn(
       context.stopPolling();
       return;
     }
+    if (liveSession.delegatedTurns !== delegatedTurns)
+      d.updateSummary(appSessionId, {
+        phase: liveSession.summary.sessionPurpose === 'mission-control' ? 'planning' : 'running',
+      });
+    delegatedTurns = liveSession.delegatedTurns;
     for await (const normalized of providerSession.stream(prompt, mentions)) {
       // The runtime answered, so the prompt is accepted even if this turn stops
       // applying events; acknowledgement must never depend on the turn's outcome.
@@ -137,11 +145,11 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!isCurrent()) return;
-  // A turn the provider started itself after this one owns the outcome now:
-  // its failure or its limit is newer than anything this turn could report.
+  // A newer provider-started turn owns the outcome, but a refusal from either
+  // turn must hold the chat, even when their replies overlapped.
   const superseded = liveSession.delegatedTurns !== delegatedTurns;
   if (turnError) {
-    if (!superseded)
+    if (!superseded || turnError instanceof UsageLimitError)
       settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
   }
   // An answered turn is the only evidence that a limit has lifted; a stopped
