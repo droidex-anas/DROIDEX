@@ -404,7 +404,14 @@ export function CanvasBoard({
         ))}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-3">
+      <div
+        // The board's own controls are not background: a pan started here would
+        // capture the pointer and the button would never see its click.
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
+        className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-3"
+      >
         <span className="rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text-secondary">
           {Math.round(viewport.scale * 100)}%
         </span>

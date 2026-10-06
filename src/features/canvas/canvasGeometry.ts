@@ -35,7 +35,7 @@ const WHEEL_RATE_PX = 400;
 /** A trackpad pinch arrives as many small deltas, so it needs a finer rate. */
 const PINCH_RATE_PX = 120;
 
-export function clampScale(scale: number): number {
+function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
