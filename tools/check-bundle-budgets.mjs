@@ -125,13 +125,15 @@ import { join } from 'node:path';
 // Raised from 1_443_000 to 1_459_000 for the rewritten Browser on top of tabs
 // and tiles. The browser host mounts every chat's <webview> page from the app
 // frame, the composer carries design marks, and the transcript draws the
-// Browser card. Main at b1a4f45c measures 1_431_242, the rewrite alone 1_404_693 on
-// its older base, and the two together 1_449_988, leaving ~9KB of headroom.
+// Browser card. Main at 64949712 measures 1_435_466, the rewrite alone
+// 1_452_985 on main at b1a4f45c, and the two together 1_457_268, which leaves
+// ~1.7KB of headroom.
 //
 // initialCssBytes raised from 101_500 to 103_500 for the redesigned Browser
 // pane: its toolbar, omnibox, loading bar and shared compact composer add ~2.3KB
 // of utility classes to the app frame (100_269 before, 102_538 after), leaving
-// ~1KB of headroom as past CSS raises have.
+// ~1KB of headroom as past CSS raises have. On main at 64949712 (100_614) the
+// two together measure 102_602.
 const BUDGETS = {
   initialRendererJsBytes: 1_459_000,
   initialCssBytes: 103_500,
