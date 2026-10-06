@@ -14,6 +14,9 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
     text(value.id, 200) &&
     text(value.title, 120) &&
     (value.cwd === undefined || text(value.cwd, 4_096)) &&
+    (value.startedAt === undefined || count(value.startedAt)) &&
+    (value.done === undefined ||
+      (record(value.done) && count(value.done.at) && text(value.done.outcome, 600))) &&
     typeof value.paused === 'boolean' &&
     // A project starts as many threads as its work needs; only its queues are bounded.
     count(value.launching) &&

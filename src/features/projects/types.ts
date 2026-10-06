@@ -33,9 +33,18 @@ export interface ProjectThread {
   waiting: boolean;
 }
 
+/** The main chat's word that the project's goal is achieved, and what it achieved. */
+export interface ProjectDone {
+  at: number;
+  outcome: string;
+}
+
 export interface ProjectView {
   id: string;
   title: string;
+  /** When it began; the main chat's start for projects from before this was kept. */
+  startedAt?: number;
+  done?: ProjectDone;
   cwd?: string;
   paused: boolean;
   launching: number;

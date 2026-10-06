@@ -1,5 +1,6 @@
 import { Check } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { SidebarSectionHeading } from '../../components/SidebarSectionHeading';
 import type { SessionActivityStatus } from '../../lib/sidebarActivity';
 import type { ThreadRow } from './threadBoard';
 import type { ProjectStep } from './types';
@@ -13,43 +14,60 @@ import type { ProjectStep } from './types';
 export function ProjectPlan({
   plan,
   rows,
+  open,
+  onToggle,
   onOpenThread,
 }: {
   plan: readonly ProjectStep[];
   rows: readonly ThreadRow[];
+  open: boolean;
+  onToggle: () => void;
   onOpenThread: (appSessionId: string) => void;
 }) {
   if (plan.length === 0) return null;
   const byThread = new Map(rows.map((row) => [row.appSessionId, row]));
   const milestones = groupByMilestone(plan);
+  // Only what the chat marked done counts: a thread's idle says nothing of its step.
+  const finished = plan.filter(
+    (step) =>
+      step.state === 'done' && !(step.threadAppSessionId && byThread.has(step.threadAppSessionId)),
+  ).length;
   let number = 0;
 
   return (
     <section aria-label="Project plan" className="px-2 pb-1 pt-1">
-      {milestones.map(([milestone, steps]) => (
-        <div key={milestone} className="pb-1">
-          {milestone && (
-            <span className="block px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted/70">
-              {milestone}
-            </span>
-          )}
-          {steps.map((step) => {
-            number += 1;
-            const row = step.threadAppSessionId ? byThread.get(step.threadAppSessionId) : undefined;
-            const done = row ? false : step.state === 'done';
-            return (
-              <PlanRow
-                key={step.id}
-                index={number}
-                step={step}
-                row={row}
-                done={done}
-                onOpenThread={onOpenThread}
-              />
-            );
-          })}
-        </div>
-      ))}
+      <SidebarSectionHeading
+        label={`Plan · ${String(finished)} of ${String(plan.length)} done`}
+        open={open}
+        onToggle={onToggle}
+      />
+      {open &&
+        milestones.map(([milestone, steps]) => (
+          <div key={milestone} className="pb-1">
+            {milestone && (
+              <span className="block px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted/70">
+                {milestone}
+              </span>
+            )}
+            {steps.map((step) => {
+              number += 1;
+              const row = step.threadAppSessionId
+                ? byThread.get(step.threadAppSessionId)
+                : undefined;
+              const done = row ? false : step.state === 'done';
+              return (
+                <PlanRow
+                  key={step.id}
+                  index={number}
+                  step={step}
+                  row={row}
+                  done={done}
+                  onOpenThread={onOpenThread}
+                />
+              );
+            })}
+          </div>
+        ))}
     </section>
   );
 }

@@ -121,7 +121,7 @@ export interface Project {
 }
 
 /** The lead's word that the project's goal is achieved, and what it achieved. */
-export interface ProjectDone {
+interface ProjectDone {
   at: number;
   outcome: string;
 }
