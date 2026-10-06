@@ -377,10 +377,30 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   implements `CanvasBuildHost` (`buildTarget`, `readFiles`, `noteBuild`); nothing else reaches in.
 - `CANVAS_LIMITS` did not carry the build limits after 02a, so 03b added them where the other
   spec §5 contracts live: `buildSlots: 2` and `buildDeadlineMs: 15_000`. Nothing hard-codes either.
-- `write` enqueues inside the commit that makes the revision durable, right after `heads.install`.
-  That is what lets the change it publishes already say `pending` or `building` for the new
-  revision instead of the previous revision's `ready` artifact (spec §4), and it is why `enqueue`
-  publishes no change of its own. Every other transition publishes exactly one.
+- `write` enqueues inside the commit that makes the revision durable, right after `heads.install`,
+  and a `create` whose frame is seeded from a saved revision enqueues there too: both arrive with
+  source, so both are built the same way. That is what lets the change each publishes already say
+  `pending` or `building` for the new revision instead of the previous revision's `ready` artifact
+  (spec §4), and it is why neither publishes a second change of its own.
+- **One commit owns an outcome.** A build's result reaches the canvas through `commitBuild`, which
+  runs on the workspace's own commit queue beside `write` and `arrange`. Inside that one step, and
+  nowhere else: the `canPublish` and lifecycle gate against the head as the commit finds it, the
+  outcome file `builds/<revisionId>.json`, the recorded state, the `lastWorkingRevisionId` read
+  from that same head, and the published frame. An attempt that lost its frame while it was saving
+  therefore writes nothing at all, so no restart can resurrect it. Only the content-addressed
+  `builds/<artifactId>.html` is written beforehand; an orphan there is harmless and unreferenced.
+- **The deadline bounds compilation only.** It starts when the compile does and is released the
+  moment the compile settles, so saving and publishing — bounded by storage failure handling like
+  every other workspace write — can never be read as an overdue build, and no process is ever ended
+  for a build that had already finished.
+- Build state is keyed by canvas and design: two manifests may hold the same design ID, and sharing
+  one entry would have them share a generation counter and overwrite each other's outcomes.
+- `requestRebuilds` holds no sweep mark and may be called on every read. The head decides, never
+  the caller's projection: a frame whose revision has moved on since that snapshot is left alone,
+  so an old projection cannot erase a current `ready`. Coalescing makes the repeat cheap.
+- A `cancelled` frame is rebuilt by the next read of its canvas, the same as a `pending` one: both
+  mean nothing has been built for the current revision, and a detach that cancelled a board's
+  builds would otherwise leave its frames stuck until Task 5's Retry ships.
 - A build transition commits the manifest to take the next change sequence. The renderer drops a
   change whose sequence is at or below its projection (`client.ts`), so an in-memory sequence would
   make build changes invisible; the commit is also where `ready` persists the last-working pointer.
@@ -419,7 +439,8 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   for the work again. A superseded or cancelled compile never flashes `cancelled`: its rejection
   publishes nothing, because the state that replaced it is already the frame's.
 - `shutdownCanvas` closes builds before the workspace, so a settling build still reports through the
-  workspace and the workspace then waits for that commit. `close()` is idempotent.
+  workspace and the workspace then waits for that commit. `close()` is idempotent, and it waits for
+  the compiler terminations it has already started, including one an overdue build began.
 - What 3c and Task 5 consume: `CanvasBuilds.readArtifact(canvasId, artifactId)` returns one ready
   artifact's HTML document or null when the cache has lost it; `frame.build` carries the
   `artifactId` to ask for, the diagnostics to show, and the `lastWorkingRevisionId` whose artifact
@@ -810,6 +831,7 @@ Noted during execution; not in any task's scope. Each needs its own change and r
 - `sidecar/src/canvas/CanvasWorkspace.test.ts` sits at 798 effective lines against the 800 cap. The next behavior that needs a workspace-level test must first move an existing contract to its module's owner suite (`canvasHeads`, `canvasLeases`, `canvasFrames`, `canvasManifest`) rather than grow this one.
 - `Bridge.send` now returns `false` when the renderer's offline queue holds `MAX_QUEUED_COMMANDS`, and the sidecar holds up to `MAX_HELD_CLIENT_MESSAGES` frames while admitting a socket (02c). Nothing presents a refused command to the user yet, and the 64-frame headroom for live commands sent during admission is not enforced on callers (voice sends freely). Surface refusals in the UI and bound live admission traffic as one bridge-level change.
 - The Canvas renderer client logs a failed gap-recovery resync and retries on the next change; it has no error channel. Task 5 surfaces it in the pane.
+- A failed frame names the revision it falls back to, but the artifact document for that revision may be gone from the derived cache. The manifest pointer is the truth and survives; `CanvasBuilds.readArtifact` answers `null`, as its contract says, and the frame shows an honest placeholder beside its diagnostics. Rebuilding that revision on demand belongs with Task 5, where the Retry control lives and there is a user action to attach the work to (03b review cycle 1, accepted as a follow-up).
 
 ## Plan self-review and handoff checklist
 
