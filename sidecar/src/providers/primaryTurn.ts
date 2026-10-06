@@ -108,8 +108,12 @@ export async function runPrimaryTurn(
     // A delivery whose row is written counts as taken, so its project's claim
     // is released while it waits: that turn may need the project's answer.
     if (liveSession.delegatedTurnSettled) delivery?.accepted();
-    while (isCurrent() && !stoppedBeforeStart() && liveSession.delegatedTurnSettled) {
-      await liveSession.delegatedTurnSettled;
+    let reservation = liveSession.delegatedTurnSettled;
+    while (isCurrent() && !stoppedBeforeStart() && reservation) {
+      await reservation;
+      // A newer provider-started turn may have taken the chat meanwhile.
+      const next = liveSession.delegatedTurnSettled;
+      reservation = next === reservation ? undefined : next;
     }
     if (
       !isCurrent() ||

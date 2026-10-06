@@ -1219,6 +1219,7 @@ export class SessionLifecycle {
       // Send now's interrupt settles, so nothing new starts under it.
       const turn = liveSession.delegatedTurns;
       const resolve = resolveDelegatedTurn;
+      const reservation = liveSession.delegatedTurnSettled;
       const usageLimit = usageLimitAtStart;
       void this.dependencies
         .settleStreaming(appSessionId, appSessionId)
@@ -1241,7 +1242,12 @@ export class SessionLifecycle {
             );
           },
         )
-        .finally(resolve);
+        .finally(() => {
+          // Released however the settle ended, so a waiting typed turn never spins.
+          if (liveSession.delegatedTurnSettled === reservation)
+            liveSession.delegatedTurnSettled = undefined;
+          resolve?.();
+        });
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
