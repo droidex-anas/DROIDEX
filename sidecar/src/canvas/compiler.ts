@@ -241,11 +241,17 @@ export class CompilerWorker {
  */
 function compilerEnv(): NodeJS.ProcessEnv {
   const binary = ownedEsbuildBinary();
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
     ...(binary === null ? {} : { ESBUILD_BINARY_PATH: binary }),
   };
+  // Either would let a module or a loader from outside the owned runtime into
+  // the compiler, and nothing DROIDEX sets needs them: the compiler picks its
+  // own loader through `execArgv`.
+  delete env.NODE_PATH;
+  delete env.NODE_OPTIONS;
+  return env;
 }
 
 // The loader registers tsx and imports the TypeScript entry in development; the

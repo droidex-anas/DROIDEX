@@ -11,9 +11,19 @@
 //   node tools/stage-canvas-runtime.mjs arm64 x64
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import process from 'node:process';
+import { CANVAS_RUNTIME_MANIFEST } from './verifyCanvasRuntime.mjs';
 
 const sidecarDir = 'sidecar';
 const stagingDir = join(sidecarDir, 'canvas-runtime');
@@ -34,8 +44,15 @@ const RUNTIME_ROOTS = [
 
 // No runtime path reads these, and a packaged app may not carry source maps.
 // License and notice files keep their own names, so only documentation is
-// dropped by name.
-const SKIPPED_NAMES = new Set(['README.md', 'readme.md', 'CHANGELOG.md', '.DS_Store']);
+// dropped by name. `.gitkeep` is here because electron-builder drops it, and
+// the manifest has to describe exactly what the packaged app contains.
+const SKIPPED_NAMES = new Set([
+  'README.md',
+  'readme.md',
+  'CHANGELOG.md',
+  '.DS_Store',
+  '.gitkeep',
+]);
 const SKIPPED_SUFFIXES = ['.map', '.ts', '.flow'];
 
 /** The parts of a package a design compile can never reach. */
@@ -107,6 +124,17 @@ function packageFiles(dir) {
   return files;
 }
 
+/** Everything under a staged tree, nested dependencies included. */
+function stagedFiles(dir) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...stagedFiles(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
+
 function isSkipped(packagePath) {
   const name = packagePath.slice(packagePath.lastIndexOf('/') + 1);
   return SKIPPED_NAMES.has(name) || SKIPPED_SUFFIXES.some((suffix) => name.endsWith(suffix));
@@ -134,7 +162,16 @@ function fetchPlatformPackage(name, version) {
   mkdirSync(cache, { recursive: true });
   execFileSync(
     'npm',
-    ['install', '--prefix', cache, '--no-save', '--no-audit', '--no-fund', '--force', `${name}@${version}`],
+    [
+      'install',
+      '--prefix',
+      cache,
+      '--no-save',
+      '--no-audit',
+      '--no-fund',
+      '--force',
+      `${name}@${version}`,
+    ],
     { stdio: 'inherit' },
   );
   const fetched = join(cache, 'node_modules', name);
@@ -142,6 +179,7 @@ function fetchPlatformPackage(name, version) {
   return fetched;
 }
 
+/** Returns the staged binary's path, relative to the runtime directory. */
 function stagePlatformBinary(arch, version, archDir) {
   const name = `@esbuild/${PLATFORM}-${arch}`;
   const installed = join(sidecarDir, 'node_modules', name);
@@ -152,23 +190,28 @@ function stagePlatformBinary(arch, version, archDir) {
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(file, destination);
   }
+  return `node_modules/${name}/bin/esbuild`;
 }
 
-function treeSize(dir) {
+/**
+ * What the compiler checks before it accepts a request: every file the runtime
+ * must contain, with its size. The platform binary is named separately and
+ * carries no size, because code signing rewrites it while packaging.
+ */
+function writeManifest(archDir, binaryPath) {
+  const files = {};
   let bytes = 0;
-  let files = 0;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const nested = treeSize(path);
-      bytes += nested.bytes;
-      files += nested.files;
-    } else if (entry.isFile()) {
-      bytes += readFileSync(path).byteLength;
-      files += 1;
-    }
+  for (const file of stagedFiles(archDir)) {
+    const path = relative(archDir, file).split(sep).join('/');
+    const size = statSync(file).size;
+    bytes += size;
+    if (path !== binaryPath) files[path] = size;
   }
-  return { bytes, files };
+  writeFileSync(
+    join(archDir, CANVAS_RUNTIME_MANIFEST),
+    `${JSON.stringify({ version: 1, binary: binaryPath, files }, null, 2)}\n`,
+  );
+  return { bytes, files: Object.keys(files).length + 1 };
 }
 
 const requested = process.argv.slice(2);
@@ -186,8 +229,8 @@ for (const arch of architectures) {
   const archDir = join(stagingDir, arch);
   rmSync(archDir, { recursive: true, force: true });
   for (const entry of closure) copyPackage(entry, archDir);
-  stagePlatformBinary(arch, esbuildVersion, archDir);
-  const { bytes, files } = treeSize(archDir);
+  const binaryPath = stagePlatformBinary(arch, esbuildVersion, archDir);
+  const { bytes, files } = writeManifest(archDir, binaryPath);
   process.stdout.write(
     `${archDir}: ${String(closure.length + 1)} packages, ${String(files)} files, ${String(bytes)} bytes (${(bytes / 1024 / 1024).toFixed(2)} MiB)\n`,
   );

@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { CanvasCommandError } from './canvasError.js';
+import { ownedCanvasRuntimeDir, verifyCanvasRuntime } from './canvasRuntime.js';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -20,6 +21,7 @@ import { readDesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
+const RUNTIME_RECOVERY = 'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
 /**
  * Compiles one revision into a document the preview host can load in an
@@ -96,6 +98,13 @@ if (!process.send) throw new Error('The design compiler must run as a forked pro
 const send = process.send.bind(process);
 const running = new Map<number, AbortController>();
 
+// The runtime an app owns is checked once, before any request: node resolution
+// cannot be bounded per module, so an incomplete runtime must not compile at
+// all rather than silently borrow a module from somewhere else. The reason goes
+// to the sidecar log; a caller only ever learns the compiler is unavailable.
+const runtimeFault = verifyCanvasRuntime(ownedCanvasRuntimeDir);
+if (runtimeFault !== null) console.error('Canvas runtime is incomplete:', runtimeFault);
+
 process.on('message', (request: CompilerRequest) => {
   if (request.type === 'cancel') {
     running.get(request.requestId)?.abort();
@@ -103,6 +112,10 @@ process.on('message', (request: CompilerRequest) => {
   }
   if (request.type === 'shutdown') {
     void shutdown(request.requestId);
+    return;
+  }
+  if (runtimeFault !== null) {
+    send({ requestId: request.requestId, status: 'unavailable', message: RUNTIME_RECOVERY });
     return;
   }
   const controller = new AbortController();

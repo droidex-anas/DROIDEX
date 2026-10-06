@@ -3,12 +3,16 @@
 // owned `ESBUILD_BINARY_PATH`. Nothing here may reach the network, so the child
 // runs with every outbound call replaced by a throw.
 //
+// It then damages copies of that runtime one way at a time, with the checkout's
+// own node_modules above them, and requires each damaged copy to compile
+// nothing: node resolution would otherwise borrow the missing module from the
+// ancestor and answer with a normal-looking artifact.
+//
 //   npm run canvas:probe                     # the staged runtime, built dist
 //   npm run canvas:probe -- <path-to-.app>   # a packaged app's own resources
 
 import { fork } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
@@ -19,17 +23,15 @@ import type {
 } from '../sidecar/src/canvas/compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from '../sidecar/src/canvas/designSystems.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
+import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
-// Every specifier the compiler or a design may load. All of them have to come
-// from the runtime; one resolving elsewhere is the packaging bug this catches.
-const OWNED_SPECIFIERS = [
-  'esbuild',
-  'postcss',
-  'postcss-value-parser',
-  'tailwindcss',
-  'react',
-  'react/jsx-runtime',
-  'react-dom/client',
+const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
+
+/** Each way a shipped runtime can be short of what a compile needs. */
+const DAMAGE: [string, string][] = [
+  ['a transitive package', 'node_modules/picocolors'],
+  ['the esbuild binary', `node_modules/${PLATFORM_PACKAGE}/bin/esbuild`],
+  ["Tailwind's preflight", 'node_modules/tailwindcss/lib/css/preflight.css'],
 ];
 
 // Long enough that a cold compile on a loaded machine is never cut short, and
@@ -57,17 +59,19 @@ for (const [module, names] of [
 globalThis.fetch = refuse;
 `;
 
+interface ProbeTarget {
+  label: string;
+  runtimeDir: string;
+  compilerEntry: string;
+  execPath: string;
+}
+
 function fail(message: string): never {
   process.stderr.write(`Canvas compiler probe failed: ${message}\n`);
   process.exit(1);
 }
 
-function probeTarget(appPath: string | undefined): {
-  label: string;
-  runtimeDir: string;
-  compilerEntry: string;
-  execPath: string;
-} {
+function probeTarget(appPath: string | undefined): ProbeTarget {
   if (appPath === undefined) {
     return {
       label: `staged ${process.arch} runtime`,
@@ -76,29 +80,14 @@ function probeTarget(appPath: string | undefined): {
       execPath: process.execPath,
     };
   }
-  const resources = join(resolve(appPath), 'Contents', 'Resources');
+  const app = resolve(appPath);
+  const resources = join(app, 'Contents', 'Resources');
   return {
     label: `packaged ${process.arch} app`,
     runtimeDir: join(resources, 'sidecar', 'canvas-runtime'),
     compilerEntry: join(resources, 'sidecar', 'dist', 'compilerWorker.mjs'),
-    execPath: join(resolve(appPath), 'Contents', 'MacOS', 'DROIDEX'),
+    execPath: join(app, 'Contents', 'MacOS', 'DROIDEX'),
   };
-}
-
-/** Every owned specifier resolves inside the runtime, and none above it. */
-function assertOwnedResolution(runtimeDir: string): void {
-  const runtimeRequire = createRequire(join(runtimeDir, 'canvas-runtime.js'));
-  for (const specifier of OWNED_SPECIFIERS) {
-    let resolved;
-    try {
-      resolved = runtimeRequire.resolve(specifier);
-    } catch {
-      fail(`${specifier} does not resolve from ${runtimeDir}`);
-    }
-    if (!resolved.startsWith(`${runtimeDir}/`)) {
-      fail(`${specifier} resolved outside the runtime, to ${resolved}`);
-    }
-  }
 }
 
 function compileInput(): CompileInput {
@@ -113,58 +102,60 @@ function compileInput(): CompileInput {
   };
 }
 
-async function compileWithOwnedRuntime(target: ReturnType<typeof probeTarget>): Promise<string> {
-  const { runtimeDir, compilerEntry, execPath } = target;
-  for (const path of [runtimeDir, compilerEntry, execPath]) {
-    if (!existsSync(path)) fail(`${path} is missing`);
-  }
-  assertOwnedResolution(runtimeDir);
-
-  // A design compile reads nothing from the profile, so the probe gives the
-  // child an empty one rather than the machine's.
+/**
+ * One compile through the forked compiler. `runtimeDir` is what the Electron
+ * host would pass as DROIDEX_CANVAS_RUNTIME_DIR; omitting it is a host that
+ * lost the variable.
+ */
+async function compileWith(
+  target: ProbeTarget,
+  runtimeDir: string | null,
+): Promise<CompilerResponse> {
+  // A design compile reads nothing from the profile, so the child gets an empty
+  // one rather than the machine's.
   const home = mkdtempSync(join(tmpdir(), 'canvas-compiler-probe-'));
   const guard = `data:text/javascript,${encodeURIComponent(OFFLINE_GUARD)}`;
-  const compiler = fork(compilerEntry, [], {
+  const compiler = fork(target.compilerEntry, [], {
     execArgv: [],
-    execPath,
+    execPath: target.execPath,
     serialization: 'advanced',
     env: {
       PATH: '/usr/bin:/bin',
       HOME: home,
       ELECTRON_RUN_AS_NODE: '1',
       DROIDEX_USER_DATA_DIR: join(home, 'profile'),
-      DROIDEX_CANVAS_RUNTIME_DIR: runtimeDir,
-      ESBUILD_BINARY_PATH: join(
-        runtimeDir,
-        'node_modules',
-        `@esbuild/${process.platform}-${process.arch}`,
-        'bin',
-        'esbuild',
-      ),
       NODE_OPTIONS: `--import ${JSON.stringify(guard)}`,
+      ...(runtimeDir === null
+        ? {}
+        : {
+            DROIDEX_CANVAS_RUNTIME_DIR: runtimeDir,
+            ESBUILD_BINARY_PATH: join(runtimeDir, 'node_modules', PLATFORM_PACKAGE, 'bin', 'esbuild'),
+          }),
     },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
 
   try {
-    return await new Promise<string>((settle, reject) => {
+    return await new Promise<CompilerResponse>((settle, reject) => {
       const deadline = setTimeout(() => {
         reject(new Error(`no answer within ${String(DEADLINE_MS)}ms`));
       }, DEADLINE_MS);
       compiler.on('message', (response: CompilerResponse) => {
         clearTimeout(deadline);
-        if (response.status !== 'ready') {
-          reject(new Error(`the compiler answered ${JSON.stringify(response)}`));
-          return;
-        }
-        settle(assertUsableArtifact(response.design.artifactId, response.design.html));
+        settle(response);
       });
       compiler.on('error', reject);
       compiler.on('exit', (code, signal) => {
         clearTimeout(deadline);
-        reject(new Error(`the compiler exited (code=${String(code)}, signal=${String(signal)})`));
+        // A compiler that cannot even load its runtime dies instead of
+        // answering, which `CompilerWorker` reports the same way.
+        settle({ requestId: 1, status: 'unavailable', message: `exited ${String(code ?? signal)}` });
       });
-      compiler.send({ type: 'compile', requestId: 1, input: compileInput() } satisfies CompilerRequest);
+      compiler.send({
+        type: 'compile',
+        requestId: 1,
+        input: compileInput(),
+      } satisfies CompilerRequest);
     });
   } finally {
     compiler.kill();
@@ -172,8 +163,31 @@ async function compileWithOwnedRuntime(target: ReturnType<typeof probeTarget>): 
   }
 }
 
+/**
+ * A copy of the runtime with the checkout's own node_modules above it, so a
+ * missing module is reachable from an ancestor exactly as it would be on a
+ * user's machine.
+ */
+function borrowableCopy(
+  target: ProbeTarget,
+  removed: string | null,
+): { layout: string; target: ProbeTarget } {
+  const layout = mkdtempSync(join(tmpdir(), 'canvas-runtime-damaged-'));
+  symlinkSync(resolve('sidecar/node_modules'), join(layout, 'node_modules'));
+  const sidecar = join(layout, 'app', 'Contents', 'Resources', 'sidecar');
+  mkdirSync(join(sidecar, 'dist'), { recursive: true });
+  const compilerEntry = join(sidecar, 'dist', 'compilerWorker.mjs');
+  cpSync(target.compilerEntry, compilerEntry);
+  const runtimeDir = join(sidecar, 'canvas-runtime');
+  cpSync(target.runtimeDir, runtimeDir, { recursive: true });
+  if (removed !== null) rmSync(join(runtimeDir, removed), { recursive: true, force: true });
+  return { layout, target: { ...target, runtimeDir, compilerEntry } };
+}
+
 /** The artifact a preview host could load: self-contained, and the kit's own. */
-function assertUsableArtifact(artifactId: string, html: string): string {
+function artifactOf(response: CompilerResponse): string {
+  if (response.status !== 'ready') fail(`the compiler answered ${response.status}`);
+  const { artifactId, html } = response.design;
   const required: [string, boolean][] = [
     ['a sha256 artifact id', /^[0-9a-f]{64}$/.test(artifactId)],
     ['the preview root', html.includes('id="canvas-root"')],
@@ -189,9 +203,24 @@ function assertUsableArtifact(artifactId: string, html: string): string {
 }
 
 const target = probeTarget(process.argv[2]);
-const artifact = await compileWithOwnedRuntime(target).catch((error: unknown) => {
+for (const path of [target.runtimeDir, target.compilerEntry, target.execPath]) {
+  if (!existsSync(path)) fail(`${path} is missing`);
+}
+try {
+  verifyCanvasRuntime(target.runtimeDir, process.arch);
+} catch (error) {
   fail(error instanceof Error ? error.message : String(error));
-});
+}
+
+const artifact = artifactOf(await compileWith(target, target.runtimeDir));
 process.stdout.write(
   `Compiled the design kit's example offline from the ${target.label}: ${artifact}\n`,
 );
+
+for (const [what, path] of [...DAMAGE, ['nothing, but was never configured', null] as const]) {
+  const { layout, target: damaged } = borrowableCopy(target, path);
+  const response = await compileWith(damaged, path === null ? null : damaged.runtimeDir);
+  rmSync(layout, { recursive: true, force: true });
+  if (response.status !== 'unavailable') fail(`a runtime missing ${what} answered ${response.status}`);
+  process.stdout.write(`A runtime missing ${what} compiled nothing.\n`);
+}
