@@ -35,16 +35,6 @@ function mood(rows: readonly ThreadRow[], counts: ThreadCounts, done?: ProjectDo
   return rows.length > 0 ? 'settled' : 'empty';
 }
 
-/** What the threads are doing, in plain words: only what is actually there. */
-export function threadStatusLine(counts: ThreadCounts): string {
-  const parts: string[] = [];
-  if (counts.attention > 0)
-    parts.push(plural(counts.attention, 'thread needs you', 'threads need you'));
-  if (counts.working > 0) parts.push(plural(counts.working, 'thread working', 'threads working'));
-  if (counts.idle > 0) parts.push(plural(counts.idle, 'thread idle', 'threads idle'));
-  return parts.join(' · ');
-}
-
 /** How long the project has run, or took, and where it works. */
 export function projectTimeline(
   startedAt: number | undefined,

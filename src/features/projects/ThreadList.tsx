@@ -6,11 +6,11 @@ import { ProjectPlan } from './ProjectPlan';
 import { ThreadRow } from './ThreadRow';
 import { threadCounts, threadGroups, type ThreadRow as ThreadRowModel } from './threadBoard';
 import type { ProjectDone, ProjectStep } from './types';
-import { projectTimeline, threadGreeting, threadStatusLine } from './threadGreeting';
+import { projectTimeline, threadGreeting } from './threadGreeting';
 
 /* The Threads list: the panel's own line, the project it belongs to and how
    long it has run, then the plan and the threads grouped the way the inbox
-   groups chats, each section folding on its heading. Every row carries the
+   groups chats, each section folding on a heading that carries its count. Every row carries the
    thread's own last step, never a status the app cannot back up.
 
    Nothing here starts a thread. The chat that owns the project does that, with
@@ -55,8 +55,6 @@ export function ThreadList({
   };
   const groups = threadGroups(rows);
   const counts = threadCounts(rows);
-  // With no threads the greeting already says so; the line under it stays empty.
-  const status = held ? 'Coordination is held. Resume it in Projects.' : threadStatusLine(counts);
   const timeline = projectTimeline(startedAt, done, cwd, now);
 
   return (
@@ -71,11 +69,13 @@ export function ThreadList({
               {title}
             </p>
           )}
-          {status && (
-            <p className="mt-1 text-[13px] leading-5 text-droid-text-secondary">{status}</p>
-          )}
           {timeline && (
             <p className="mt-0.5 text-[12px] leading-5 text-droid-text-muted">{timeline}</p>
+          )}
+          {held && (
+            <p className="mt-1 text-[13px] leading-5 text-droid-text-secondary">
+              Coordination is held. Resume it in Projects.
+            </p>
           )}
           {done && (
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-droid-border px-3 py-2.5">

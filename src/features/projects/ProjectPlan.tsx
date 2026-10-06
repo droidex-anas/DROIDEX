@@ -1,4 +1,3 @@
-import { Check } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { SidebarSectionHeading } from '../../components/SidebarSectionHeading';
 import type { SessionActivityStatus } from '../../lib/sidebarActivity';
@@ -138,7 +137,6 @@ function StepMark({ row, state }: { row: ThreadRow | undefined; state?: ProjectS
     );
   }
   if (row) return <ActivityStatusGlyph status={row.status} />;
-  if (state === 'done') return <Check className="h-3 w-3 text-droid-text-muted/60" />;
   return <ActivityStatusGlyph status={PLANNED_STATUS[state ?? 'planned']} />;
 }
 
