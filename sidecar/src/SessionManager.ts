@@ -705,6 +705,10 @@ export class SessionManager {
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
+      settleStreaming: (appSessionId, sourceSessionId) =>
+        this.timeline.settleStreaming(appSessionId, sourceSessionId),
+      releaseRuntimeForCapacity: (excludedAppSessionId) =>
+        this.runtimeRetirement.releaseOldestForCapacity(excludedAppSessionId),
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
         this.modelSettings.hasActiveMutations(appSessionId),
@@ -747,8 +751,8 @@ export class SessionManager {
       appendProgress: (appSessionId, text) => {
         this.timeline.appendProgress(appSessionId, text);
       },
-      appendError: (appSessionId, message) => {
-        this.timeline.appendError(appSessionId, message);
+      appendError: (appSessionId, message, details) => {
+        this.timeline.appendError(appSessionId, message, details);
       },
       appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
       catalogUpdated: (liveSession, items) => {
@@ -1271,6 +1275,11 @@ export class SessionManager {
   /** Whether a question a conversation was asked is still waiting for an answer. */
   isQuestionPending(appSessionId: string, requestId: string): boolean {
     return this.interactions.isQuestionPending(appSessionId, requestId);
+  }
+
+  /** Whether this conversation is stopped on a permission request only the user can answer. */
+  isApprovalPending(appSessionId: string): boolean {
+    return this.interactions.hasPendingApproval(appSessionId);
   }
 
   /** Whether this conversation is open right now, rather than merely known. */

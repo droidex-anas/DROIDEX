@@ -19,9 +19,15 @@ import type {
   SessionInteractionMode,
 } from '../../protocol.js';
 import { errMsg } from '../../errors.js';
+import { UsageLimitError } from '../usageLimit.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
-import type { ProviderModelSettings, ProviderSession, UsageMetersListener } from '../session.js';
+import type {
+  DelegatedTurnEnd,
+  ProviderModelSettings,
+  ProviderSession,
+  UsageMetersListener,
+} from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
@@ -60,6 +66,9 @@ export interface ClaudeSessionInput {
   onUsage?: UsageMetersListener;
 }
 
+// Stands in for a turn id when Stop reaches a turn Claude Code started itself.
+const DELEGATED_TURN = 'delegated';
+
 export class ClaudeSession implements ProviderSession {
   readonly provider = 'claude' as const;
   readonly providerSessionId: string;
@@ -83,6 +92,10 @@ export class ClaudeSession implements ProviderSession {
   private fastMode: boolean;
   private readonly permissions: ClaudePermissionModes;
   private activeTurnId?: string;
+  private delegatedTurnRunning = false;
+  // Set when the chat stopped reading a turn the CLI is still running: what
+  // the CLI says until that turn's result is the turn's own, not a new turn.
+  private discardUntilResult = false;
   // The turn the user stopped, so only that turn's own error result is excused.
   private interruptedTurnId?: string;
   // The running turn takes steers: set once its prompt is pushed, never for a slash command.
@@ -91,8 +104,13 @@ export class ClaudeSession implements ProviderSession {
   private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
   // The running turn's own result has arrived; it may still wait for steers.
   private turnAnswered = false;
-  private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
+  private turnQueue?: MessageQueue<TurnItem>;
+  // The usage refusal the provider-started turn was given, read at its result.
+  private delegatedRefusal?: UsageLimitError;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
+  private readonly delegatedListeners = new Set<
+    (running: boolean, end?: DelegatedTurnEnd) => void
+  >();
 
   constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
@@ -178,6 +196,13 @@ export class ClaudeSession implements ProviderSession {
     };
   }
 
+  onDelegatedTurn(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void {
+    this.delegatedListeners.add(listener);
+    return () => {
+      this.delegatedListeners.delete(listener);
+    };
+  }
+
   get isClosed(): boolean {
     return this.abort.signal.aborted;
   }
@@ -198,15 +223,19 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
-    if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
+    this.requireTurnCanStart();
     const turnId = randomUUID();
     this.activeTurnId = turnId;
     this.mapper.beginTurn(turnId);
-    const turnQueue = (this.turnQueue = new MessageQueue<{
-      message: SDKMessage;
-      events: NormalizedEvent[];
-    }>());
+    const turnQueue = (this.turnQueue = new MessageQueue<TurnItem>());
+    // Read with the messages, not off the mapper: the pump maps ahead of this
+    // loop, so the mapper may already hold the next turn's refusal.
+    let refusal: UsageLimitError | undefined;
     let reportedPlanningModel = false;
+    let ended = false;
+    // A result taken off the queue means the CLI has finished the turn, even if
+    // the chat stops reading before the loop gets to end it.
+    let resultTaken = false;
     try {
       await this.waitUntilInitialized();
       const notice = this.permissions.takeNotice();
@@ -219,16 +248,20 @@ export class ClaudeSession implements ProviderSession {
         message: { role: 'user', content: prompt },
       });
       this.steerable = !isSlashCommand(prompt);
+      this.discardUntilResult = false;
       for (;;) {
         const next = await turnQueue.next();
         // An exhausted stream is a failure, unless Stop closed it on a turn
         // that already had its answer.
         if (next.done) {
           if (!this.turnAnswered) throw new Error('Claude Code exited before the turn finished.');
+          ended = true;
           yield { done: true };
           return;
         }
         const { message, events } = next.value;
+        refusal ??= next.value.refusal;
+        if (message.type === 'result') resultTaken = true;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
             ? planningModelNotice(message, this.mapper.modelId)
@@ -245,13 +278,15 @@ export class ClaudeSession implements ProviderSession {
         // A local slash command bypasses the model loop and publishes this one
         // terminal frame instead of a result for the ordinary turn path.
         if (message.type === 'system' && message.subtype === 'local_command_output') {
+          ended = true;
           yield { done: true };
           return;
         }
         // The turn's own result, then that of each steer run as a CLI turn after it.
         if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
-          const refusal = this.mapper.takeRefusal();
-          if (refusal) throw refusal;
+          const refused = refusal;
+          refusal = undefined;
+          if (refused) throw refused;
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
@@ -270,15 +305,35 @@ export class ClaudeSession implements ProviderSession {
             (message.type === 'result' && !message.user_message_uuids))
         ) {
           this.steerable = false;
+          ended = true;
           yield { done: true };
           return;
         }
       }
+    } catch (error) {
+      // A turn that fails has ended as surely as one that answered. Only a chat
+      // that stopped reading leaves the CLI still running it.
+      ended = true;
+      throw error;
     } finally {
       this.activeTurnId = undefined;
       this.steerable = false;
       this.turnAnswered = false;
       if (this.turnQueue === turnQueue) this.turnQueue = undefined;
+      const unread = turnQueue.drain();
+      // What the pump read after this turn ended, before the turn was handed
+      // over, is a turn Claude Code started itself. It goes on only now that the
+      // chat has closed this one, or closing this one would cut it off. A turn
+      // the chat stopped reading before its end is still the CLI's: the rest of
+      // it, up to its result, is dropped as it was.
+      if (ended || resultTaken) this.continueAfterTurn(unread);
+      else {
+        // The rest of the stopped turn ends at its result; what follows that
+        // is a turn Claude Code started itself.
+        const result = unread.findIndex(({ message }) => message.type === 'result');
+        this.discardUntilResult = result < 0;
+        if (result >= 0) this.continueAfterTurn(unread.slice(result + 1));
+      }
       await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
     }
   }
@@ -318,6 +373,12 @@ export class ClaudeSession implements ProviderSession {
     this.settleSteer(uuid, !cancelled);
   }
 
+  private requireTurnCanStart(): void {
+    if (this.activeTurnId) throw new Error('This Claude session is already running a turn.');
+    if (this.delegatedTurnRunning)
+      throw new Error('This Claude session is finishing a turn it started itself.');
+  }
+
   // Keep reading between turns so background children can settle immediately.
   private async pump(): Promise<void> {
     try {
@@ -346,15 +407,81 @@ export class ClaudeSession implements ProviderSession {
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
     this.usage.observe(message);
+    if (
+      !this.activeTurnId &&
+      !this.delegatedTurnRunning &&
+      !this.discardUntilResult &&
+      startsDelegatedTurn(message)
+    ) {
+      // No prompt of ours opened this turn, so its answer has no fork point.
+      this.mapper.beginTurn(undefined);
+      this.setDelegatedTurn(true);
+    }
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message, this.fastMode);
+    const refusal = this.mapper.takeRefusal();
+    if (this.delegatedTurnRunning) {
+      this.forwardDelegated({ message, events, refusal });
+      return;
+    }
+    if (this.discardUntilResult && message.type === 'result') this.discardUntilResult = false;
     const turnEvents: NormalizedEvent[] = [];
     for (const event of events) {
       if (event.childSession) {
         for (const listener of this.backgroundListeners) listener(event);
       } else turnEvents.push(event);
     }
-    this.turnQueue?.push({ message, events: turnEvents });
+    this.turnQueue?.push({ message, events: turnEvents, refusal });
+  }
+
+  private continueAfterTurn(items: TurnItem[]): void {
+    for (const { message, events, refusal } of items) {
+      if (!this.delegatedTurnRunning && startsDelegatedTurn(message)) {
+        // Already mapped, spawns included: only the fork point is dropped.
+        this.mapper.forgetForkPoint();
+        this.setDelegatedTurn(true);
+      }
+      // Mapped while our turn was current, so they carry its fork point.
+      if (this.delegatedTurnRunning)
+        this.forwardDelegated({ message, events: events.map(withoutForkPoint), refusal });
+    }
+  }
+
+  // A turn Claude Code started itself reaches the chat as it happens.
+  private forwardDelegated({ message, events, refusal }: TurnItem): void {
+    for (const event of events) for (const listener of this.backgroundListeners) listener(event);
+    this.delegatedRefusal ??= refusal;
+    if (message.type !== 'result') return;
+    // A usage refusal still ends the turn with a result, as a typed turn's does.
+    const refused = this.delegatedRefusal;
+    this.delegatedRefusal = undefined;
+    if (refused) this.endDelegatedTurn(refused);
+    else if (message.subtype !== 'success')
+      this.endDelegatedTurn(new Error(turnFailure(message.subtype, message.errors)), true);
+    else if (message.is_error) this.endDelegatedTurn(new Error(message.result), true);
+    else this.endDelegatedTurn();
+  }
+
+  // A stopped turn settles quietly, as a typed one does, however it ended.
+  private endDelegatedTurn(error?: Error, showError = false): void {
+    const stopped = this.interruptedTurnId === DELEGATED_TURN;
+    if (stopped) this.interruptedTurnId = undefined;
+    // A refusal holds the chat however the turn ended, as a typed turn's does.
+    if (stopped && !(error instanceof UsageLimitError)) {
+      this.setDelegatedTurn(false, { status: 'interrupted' });
+      return;
+    }
+    if (error && showError)
+      for (const listener of this.backgroundListeners)
+        listener(this.mapper.errorEvent(error.message));
+    this.setDelegatedTurn(false, error ? { status: 'failed', error } : { status: 'completed' });
+  }
+
+  private setDelegatedTurn(running: boolean, end?: DelegatedTurnEnd): void {
+    if (this.delegatedTurnRunning === running) return;
+    this.delegatedTurnRunning = running;
+    if (running) this.delegatedRefusal = undefined;
+    for (const listener of this.delegatedListeners) listener(running, end);
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -433,20 +560,25 @@ export class ClaudeSession implements ProviderSession {
 
   async interrupt(): Promise<void> {
     const turnId = this.activeTurnId;
-    if (!turnId) return;
+    if (!turnId && !this.delegatedTurnRunning) return;
+    const interruptedId = turnId ?? DELEGATED_TURN;
     // A second Stop during boot releases a CLI that never initializes.
-    if (this.initializing && this.interruptedTurnId === turnId) {
+    if (this.initializing && this.interruptedTurnId === interruptedId) {
       await this.close();
       return;
     }
-    this.interruptedTurnId = turnId;
+    this.interruptedTurnId = interruptedId;
     try {
       await this.initialized;
     } catch {
       // The turn or closure observer owns startup failure diagnostics.
       return;
     }
-    if (this.abort.signal.aborted || this.activeTurnId !== turnId) return;
+    if (
+      this.abort.signal.aborted ||
+      (turnId ? this.activeTurnId !== turnId : !this.delegatedTurnRunning)
+    )
+      return;
     // Aborts the in-flight turn on the live process; the turn then settles with
     // its own result, so the next prompt does not pay for a restart. Steers not
     // yet delivered are cancelled with it rather than left to run unobserved.
@@ -488,6 +620,7 @@ export class ClaudeSession implements ProviderSession {
     this.prompts.close();
     this.turnQueue?.close(error);
     this.backgroundListeners.clear();
+    this.delegatedListeners.clear();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
     try {
       this.query.close();
@@ -495,4 +628,27 @@ export class ClaudeSession implements ProviderSession {
       this.resolveClosed(error);
     }
   }
+}
+// Claude Code continues on its own when a background task it started finishes
+// after the turn ended: a task notification and a fresh init, then the model's
+// reply and a result, with no prompt of ours behind them (measured on the CLI).
+// The model's first output is where that turn starts for DROIDEX.
+// A usage refusal is such an assistant message too, so it opens the turn it ends.
+function startsDelegatedTurn(message: SDKMessage): boolean {
+  return (
+    (message.type === 'assistant' || message.type === 'stream_event') &&
+    message.parent_tool_use_id === null
+  );
+}
+
+interface TurnItem {
+  message: SDKMessage;
+  events: NormalizedEvent[];
+  refusal?: UsageLimitError | undefined;
+}
+
+function withoutForkPoint(event: NormalizedEvent): NormalizedEvent {
+  return event.transcript
+    ? { ...event, transcript: { ...event.transcript, forkPointId: undefined } }
+    : event;
 }
