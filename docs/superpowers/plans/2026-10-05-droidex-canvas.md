@@ -974,7 +974,7 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
+- [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
 - [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
