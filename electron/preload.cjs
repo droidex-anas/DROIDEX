@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld('droidControl', {
   saveImage: (dataUrl) => ipcRenderer.invoke('save-image', { dataUrl }),
   saveAttachment: (name, dataUrl) => ipcRenderer.invoke('save-attachment', { name, dataUrl }),
   discardImage: (path) => ipcRenderer.invoke('discard-image', { path }),
+  saveImageAs: (url, name) => ipcRenderer.invoke('save-image-as', { url, name }),
   // Absolute path behind a dropped/pasted File ('' for clipboard snapshots).
   // File.path was removed in Electron 32; webUtils is the supported seam.
   pathForFile: (file) => {

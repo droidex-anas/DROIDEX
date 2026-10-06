@@ -1,39 +1,81 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ImageOff, X } from 'lucide-react';
+import { Download, ImageOff, Minus, Plus } from 'lucide-react';
 import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { wrapTabFocus } from '../../lib/focusTrap';
+import { downloadImage } from './downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
+import { useZoomPan, ZOOM_STEP } from './useZoomPan';
+import {
+  ViewerCloseButton,
+  ViewerToolbar,
+  ViewerToolbarButton,
+  ViewerToolbarDivider,
+} from './viewerChrome';
 
 /**
  * Read-only full-view for a single image: click a transcript thumbnail to
- * inspect it, Escape or a backdrop click to leave. The composer's
- * ImageViewerModal stays separate because it owns cropping of a staged
- * attachment; this one only displays.
+ * inspect it, zoom and pan, download it, then Escape or a backdrop click to
+ * leave. The composer's ImageViewerModal stays separate because it owns
+ * cropping of a staged attachment; this one only displays.
  *
  * Portalled to the body like every other overlay in the app: the thumbnails
  * that open it live inside animated (transformed) transcript rows, and a
  * transformed ancestor becomes the containing block for `position: fixed`, so
  * rendering in place would pin the overlay inside a chat bubble.
  */
-export function ImageLightbox(props: { src: string; label: string; onClose: () => void }) {
+interface ImageLightboxProps {
+  src: string;
+  label: string;
+  // A diagram has no pixel size worth keeping, so it grows to fill the view on
+  // a canvas of its own instead of floating, transparent, over the backdrop.
+  vector?: boolean;
+  onClose: () => void;
+}
+
+// Zoom tops out at eight screen pixels per image pixel.
+const MAX_PIXEL_ZOOM = 8;
+
+export function ImageLightbox(props: ImageLightboxProps) {
   return createPortal(<ImageLightboxContent {...props} />, document.body);
 }
 
-function ImageLightboxContent({
-  src,
-  label,
-  onClose,
-}: {
-  src: string;
-  label: string;
-  onClose: () => void;
-}) {
+// The fitted image's drawn width over its pixel width, so the zoom readout says
+// 100% at actual size rather than at fit. Re-measured as the window resizes.
+function useFitRatio(imageRef: RefObject<HTMLImageElement | null>, enabled: boolean): number {
+  const [ratio, setRatio] = useState(1);
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!image || !enabled) return;
+    const observer = new ResizeObserver(() => {
+      if (image.naturalWidth > 0) setRatio(image.clientWidth / image.naturalWidth);
+    });
+    observer.observe(image);
+    return () => {
+      observer.disconnect();
+    };
+  }, [enabled, imageRef]);
+  return enabled ? ratio : 1;
+}
+
+function ImageLightboxContent({ src, label, vector = false, onClose }: ImageLightboxProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc === src;
   const reduceMotion = useReducedMotion();
+  // A diagram has no pixel size, so its readout stays relative to the fit.
+  const fitRatio = useFitRatio(imageRef, !vector && !failed);
+  const zoom = useZoomPan({
+    stageRef,
+    contentRef,
+    enabled: !failed,
+    maxScale: MAX_PIXEL_ZOOM / fitRatio,
+  });
+  const { zoomBy, reset } = zoom;
 
   // The browser pane's native view is painted above the DOM by the OS; hide it
   // while this covers the window, or it shows straight through the image.
@@ -55,13 +97,28 @@ function ImageLightboxContent({
         onClose();
         return;
       }
+      if (!failed && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        zoomBy(ZOOM_STEP);
+        return;
+      }
+      if (!failed && e.key === '-') {
+        e.preventDefault();
+        zoomBy(1 / ZOOM_STEP);
+        return;
+      }
+      if (!failed && e.key === '0') {
+        e.preventDefault();
+        reset();
+        return;
+      }
       wrapTabFocus(e, dialogRef.current);
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [onClose]);
+  }, [failed, onClose, reset, zoomBy]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -81,29 +138,16 @@ function ImageLightboxContent({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={IMAGE_VIEWER_TRANSITION}
-      className="fixed inset-0 z-[1200] flex flex-col bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[1200] bg-black/75 backdrop-blur-md focus:outline-none"
       onClick={onClose}
     >
-      {/* The bar is chrome, not backdrop: clicking the file name should not
-          dismiss the image the user is inspecting. */}
       <div
-        className="flex items-center gap-3 border-b border-droid-border/60 bg-droid-bg/80 px-5 py-3"
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
+        ref={stageRef}
+        className="absolute inset-0 flex items-center justify-center overflow-hidden px-8 pb-24 pt-16"
       >
-        <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text-muted">{label}</span>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text"
-        >
-          <X className="h-3.5 w-3.5" /> Close
-        </button>
-      </div>
-      <div className="flex flex-1 items-center justify-center overflow-hidden p-8">
         {failed ? (
           <div
-            className="flex max-w-[90vw] flex-col items-center gap-3 rounded-xl border border-droid-border bg-droid-bg/90 px-6 py-5 text-droid-text-muted"
+            className="flex max-w-[90vw] flex-col items-center gap-3 rounded-2xl bg-droid-raised px-6 py-5 text-droid-text-muted shadow-droid"
             onClick={(e) => {
               e.stopPropagation();
             }}
@@ -113,21 +157,73 @@ function ImageLightboxContent({
             <span className="text-[12px]">Image is no longer available</span>
           </div>
         ) : (
-          <motion.img
-            src={src}
-            alt={label}
-            draggable={false}
-            {...imageViewerContentMotion(reduceMotion)}
-            className="block max-h-[80vh] max-w-[90vw] select-none rounded-lg border border-droid-border object-contain"
+          <div
+            ref={contentRef}
+            {...zoom.contentHandlers}
+            className={`touch-none ${zoom.contentCursor}`}
+            style={zoom.contentStyle}
             onClick={(e) => {
               e.stopPropagation();
             }}
-            onError={() => {
-              setFailedSrc(src);
+            onDoubleClick={(e) => {
+              zoom.toggleAt(e.clientX, e.clientY);
             }}
-          />
+          >
+            <motion.img
+              ref={imageRef}
+              src={src}
+              alt={label}
+              draggable={false}
+              {...imageViewerContentMotion(reduceMotion)}
+              className={
+                vector
+                  ? 'block h-[calc(100vh-10rem)] w-[calc(100vw-4rem)] select-none rounded-2xl bg-droid-bg object-contain p-10 shadow-droid'
+                  : 'block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-lg object-contain shadow-droid'
+              }
+              onError={() => {
+                setFailedSrc(src);
+              }}
+            />
+          </div>
         )}
       </div>
+      <ViewerCloseButton onClose={onClose} />
+      {!failed && (
+        <ViewerToolbar label="Image controls">
+          <ViewerToolbarButton
+            label="Zoom out (−)"
+            disabled={!zoom.canZoomOut}
+            onClick={() => {
+              zoomBy(1 / ZOOM_STEP);
+            }}
+          >
+            <Minus className="h-4 w-4" />
+          </ViewerToolbarButton>
+          <ViewerToolbarButton label="Fit to window (0)" onClick={reset}>
+            <span className="min-w-[3rem] text-center tabular-nums">
+              {Math.round(zoom.scale * fitRatio * 100)}%
+            </span>
+          </ViewerToolbarButton>
+          <ViewerToolbarButton
+            label="Zoom in (+)"
+            disabled={!zoom.canZoomIn}
+            onClick={() => {
+              zoomBy(ZOOM_STEP);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+          </ViewerToolbarButton>
+          <ViewerToolbarDivider />
+          <ViewerToolbarButton
+            label="Download"
+            onClick={() => {
+              void downloadImage(src, label);
+            }}
+          >
+            <Download className="h-4 w-4" />
+          </ViewerToolbarButton>
+        </ViewerToolbar>
+      )}
     </motion.div>
   );
 }
