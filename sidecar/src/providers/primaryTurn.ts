@@ -113,9 +113,10 @@ export async function runPrimaryTurn(
       // applying events; acknowledgement must never depend on the turn's outcome.
       delivery?.accepted();
       if (!isCurrent()) break;
-      // Codex can end this turn and start one of its own in the same batch;
-      // this turn's end must not close the source while that turn runs on it.
-      if (normalized.done && liveSession.delegatedTurnOpen) continue;
+      // Codex can end this turn and start one of its own in the same batch.
+      // Once any turn has begun since this one, this turn's end is stale: the
+      // source is that turn's, and whoever finishes last closes it.
+      if (normalized.done && liveSession.delegatedTurns !== delegatedTurns) continue;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') {
         reportedError = true;
