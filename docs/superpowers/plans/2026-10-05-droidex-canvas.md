@@ -836,14 +836,13 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   lease records about its era — the field `CanvasScope` already carries, and what spec §6 says
   04b binds dispatch with — plus the guard that stops an in-flight steer from leasing after its
   era ended.
-- **A lease exists exactly when a prompt pinned something.** `CanvasTurnContext` requires a
-  design system, so there is nothing honest to mint from a prompt that pinned nothing: that
-  turn gets a handle and no lease, and a Canvas call in it is refused with `scope_expired`
-  (spec §6, "arriving when no turn is active"). Spec §6's unattached-chat rule is about the
-  *attachment*, not the context: a chat with the pane open and no canvas attached mints with
-  `canvasId: null`, and the workspace's first `canvas_create` fills the binding through the
-  existing `CanvasLeases.claim` → `CanvasScopes.bindScopeCanvas` path. Until Task 5 ships a
-  pane, no prompt carries a context, so no turn lease is minted in practice.
+- **Every turn mints a lease.** A prompt with no pinned context uses empty design and element
+  references and `DEFAULT_DESIGN_SYSTEM_REF` from the design-system owner, giving an ordinary
+  chat authority over its canvas without opening the pane. A delivered steer with no pinned
+  context gets the same default. For an unattached chat the lease starts with `canvasId: null`;
+  the workspace's first `canvas_create` fills the binding through the existing
+  `CanvasLeases.claim` → `CanvasScopes.bindScopeCanvas` path. A Canvas call outside an active
+  turn is still refused with `scope_expired` (spec §6).
 - **`allowedDesignIds`** is every design the chips named, whether as a frame or as an element
   inside one, and `'canvas'` only when the prompt pinned neither — which is what
   `CanvasLeases.requireDesigns` already expects (02b). Deriving it from `designs` alone, as the
@@ -853,9 +852,9 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
 
   | Seam | Mint | Revoke |
   | --- | --- | --- |
-  | `SessionLifecycle.runTurn`, at the streaming transition | the turn's lease, from `prompt.canvasContext` | — |
+  | `SessionLifecycle.runTurn`, at the streaming transition | the turn's lease, from `prompt.canvasContext` or the default context | — |
   | `SessionLifecycle.steer`, once `session.steer` resolved true | the steer's own lease, through the running turn's handle | — |
-  | `subscribeBackgroundEvents`, `onDelegatedTurn(true)`, only when no typed turn runs | handle only (a spoken turn pins nothing) | — |
+  | `subscribeBackgroundEvents`, `onDelegatedTurn(true)`, only when no typed turn runs | the turn's default lease | — |
   | `runTurn`'s `finally`, first statement | — | the turn and its steers, before anything awaits and before the queue advances |
   | `onDelegatedTurn(false)`, only when no typed turn runs | — | the same, for a turn the provider started |
   | `interrupt`, before `await session.interrupt()` | — | the running turn, before the external cleanup await |

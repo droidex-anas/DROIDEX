@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 
 import { canvasError, EXPIRED_TURN } from './canvasError.js';
 import type { CanvasScopes } from './canvasScopes.js';
+import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import type { CanvasScope, CanvasTurnContext } from './protocol.js';
 import { canvasTurnContextSchema } from './schema.js';
 
@@ -47,22 +48,21 @@ export class CanvasTurns {
 
   /**
    * Mints the lease a turn runs under, from the references its prompt pinned. A
-   * prompt that pinned none mints nothing and still gets the handle that owns
-   * the leases of the steers this turn takes in.
+   * prompt without chips uses the default kit and the whole canvas.
    */
   beginTurn(appSessionId: string, context: CanvasTurnContext | undefined): CanvasTurnLeases {
     const chat = this.chat(appSessionId);
     const era = chat.generation;
     const turn = Symbol('canvasTurn');
     let settled = false;
-    if (context) this.mint(appSessionId, chat, turn, context);
+    this.mint(appSessionId, chat, turn, context ?? emptyContext());
     return {
       addSteer: (steerContext) => {
         // A steer the harness delivered after this turn ended, or after the
         // provider that was running it was replaced, has no running turn to
         // authorize it, so it leases nothing.
-        if (settled || chat.generation !== era || !steerContext) return;
-        this.mint(appSessionId, chat, turn, steerContext);
+        if (settled || chat.generation !== era) return;
+        this.mint(appSessionId, chat, turn, steerContext ?? emptyContext());
       },
       revoke: () => {
         settled = true;
@@ -141,6 +141,10 @@ export class CanvasTurns {
     this.chats.set(appSessionId, chat);
     return chat;
   }
+}
+
+function emptyContext(): CanvasTurnContext {
+  return { designs: [], elements: [], designSystem: DEFAULT_DESIGN_SYSTEM_REF };
 }
 
 /**

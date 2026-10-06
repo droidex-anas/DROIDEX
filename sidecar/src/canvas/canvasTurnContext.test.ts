@@ -6,6 +6,7 @@ import { CanvasCommandError } from './canvasError.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { assertCanvasTurnContext, CanvasTurns } from './canvasTurnContext.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
+import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import type { CanvasTurnContext } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
@@ -61,10 +62,16 @@ test('a turn pins the references its prompt carried, and nothing it did not', ()
   turns.beginTurn('app-4', context());
   assert.equal(lease(turns, 'app-4').allowedDesignIds, 'canvas');
 
-  // A prompt that pinned nothing at all mints no lease, so a Canvas call in that
-  // turn has none to present.
+  // An ordinary chat can work on its attached canvas without opening the pane.
   turns.beginTurn('app-3', undefined);
-  assert.equal(turns.activeScope('app-3'), undefined);
+  const ordinary = lease(turns, 'app-3');
+  assert.deepEqual(ordinary.context, {
+    designs: [],
+    elements: [],
+    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+  });
+  assert.equal(ordinary.allowedDesignIds, 'canvas');
+  assert.equal(ordinary.canvasId, 'cv_01');
 });
 
 test('a steer leases its own references beside the running turn, never over them', () => {
@@ -139,18 +146,18 @@ test('a pane mutation’s scope is not a turn lease', () => {
   assert.throws(() => turns.requireScope('user:one'), { code: 'scope_expired' });
 });
 
-test('an unattached chat mints a null binding its first create fills', async (t: TestContext) => {
+test('an unattached ordinary chat mints a null binding its first create fills', async (t: TestContext) => {
   const { scopes, turns } = turnsFor(null);
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), scopes);
   t.after(() => workspace.close());
 
-  turns.beginTurn('app-1', context());
+  turns.beginTurn('app-1', undefined);
   const scope = lease(turns, 'app-1');
   assert.equal(scope.canvasId, null);
 
   const created = await workspace.create(scope, {
     mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF }],
   });
   // One commit made the canvas, the chat's attachment and the lease's binding.
   assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);

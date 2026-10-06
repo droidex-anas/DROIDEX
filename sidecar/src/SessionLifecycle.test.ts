@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import type { CanvasTurnContext } from './canvas/protocol.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { DEFAULT_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
+import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -148,7 +151,8 @@ function createHarness(
   };
   // The production lease owner, with no Canvas workspace open behind it, so
   // every chat reads as unattached.
-  const canvasTurns = new CanvasTurns(new CanvasScopes(), () => null);
+  const canvasScopes = new CanvasScopes();
+  const canvasTurns = new CanvasTurns(canvasScopes, () => null);
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
@@ -281,6 +285,7 @@ function createHarness(
     registry,
     lifecycle,
     canvasTurns,
+    canvasScopes,
     publicationRegistration,
     forgettingAfterUnregister,
     eventFlowForgettingAfterUnregister,
@@ -1935,6 +1940,32 @@ test('dependent ownership is committed before the first provider turn, and a fai
   );
 });
 
+test('an ordinary chat can create its first canvas during its initial turn', async (t) => {
+  const h = createHarness();
+  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), h.canvasScopes);
+  t.after(() => workspace.close());
+  const provider = queueCreate(h, 'ordinary');
+  const gate = provider.deferNextStream();
+
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  const scope = turnLease(h, 'ordinary');
+  assert.equal(scope.canvasId, null);
+  assert.deepEqual(scope.context.designSystem, DEFAULT_DESIGN_SYSTEM_REF);
+
+  const created = await workspace.create(scope, {
+    mutationId: 'ordinary-create',
+    frames: [
+      { name: 'Ordinary', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
+    ],
+  });
+  assert.equal(workspace.attachedCanvasId('ordinary'), created.canvasId);
+  assert.equal(h.canvasTurns.requireScope(scope.scopeId).canvasId, created.canvasId);
+  gate.resolve();
+  await requireLive(h, 'ordinary').turnPromise;
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+});
+
 test('a queued or reordered prompt runs under the references it was sent with', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'pinned');
@@ -1949,7 +1980,7 @@ test('a queued or reordered prompt runs under the references it was sent with', 
   await h.lifecycle.send('pinned', 'queued', undefined, undefined, pinned('dsg_queued'));
   await h.lifecycle.send('pinned', 'steered', undefined, 'steer-1', pinned('dsg_steered'));
   await h.lifecycle.sendNow('pinned', 'steer-1');
-  // The create's own turn pinned nothing, so it leases nothing.
+  // Send now stops the create's turn and revokes its lease.
   assert.equal(h.canvasTurns.activeScope('pinned'), undefined);
 
   gates[0].resolve();
