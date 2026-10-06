@@ -6,14 +6,21 @@
 // and enqueues a build once a revision is durable.
 //
 // An outcome reaches the canvas in one commit on the workspace's own queue, and
-// its gate runs again after every await there, so nothing about a build lands
-// once a newer attempt, a cancellation or shutdown has taken its frame.
+// its gate runs again after every await there, so nothing lands once a newer
+// attempt, a cancellation or shutdown has taken the frame.
 
-import { builtState, CanvasBuildCache, type BuildResult } from './canvasBuildCache.js';
-import { buildFailure, unsavedBuild } from './canvasBuildFailures.js';
+import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
+import {
+  buildFailure,
+  readyBuild,
+  unsavedBuild,
+  type BuildOutcome,
+} from './canvasBuildFailures.js';
+import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import { CompilerWorker, type CompiledDesign, type CompileInput } from './compiler.js';
+import type { BuildResult } from './canvasBuildCache.js';
 import type {
   CanvasBuildState,
   CanvasFrame,
@@ -109,14 +116,6 @@ interface BuildSlot {
   job: RunningBuild | null;
 }
 
-/** One design's build state, and the attempt number that only ever increases. */
-interface DesignBuild {
-  state: CanvasBuildState;
-  generation: number;
-}
-
-const PENDING: CanvasBuildState = { status: 'pending' };
-
 /** A publication with nothing new for the manifest to keep. */
 const announceFrame = (): Promise<BuildCommit> => Promise.resolve({ workingRevisionId: null });
 
@@ -134,8 +133,7 @@ export class CanvasBuilds {
   private readonly newCompiler: () => DesignCompiler;
   private readonly deadline: BuildDeadline;
   private installed: BuildOwner | null = null;
-  /** Every design this registry knows something about; the rest are pending. */
-  private readonly states = new Map<string, DesignBuild>();
+  private readonly states = new CanvasBuildStates();
   /** Waiting builds in arrival order, one per design. */
   private readonly queued = new Map<string, QueuedBuild>();
   private readonly slots: BuildSlot[] = Array.from({ length: CANVAS_LIMITS.buildSlots }, () => ({
@@ -165,17 +163,12 @@ export class CanvasBuilds {
   ): Promise<void> {
     const cache = new CanvasBuildCache(files);
     this.installed = { host, cache };
-    for (const restored of await cache.restoreStates(manifests)) {
-      this.states.set(key(restored.canvasId, restored.designId), {
-        state: restored.state,
-        generation: 0,
-      });
-    }
+    this.states.install(await cache.restoreStates(manifests));
   }
 
   /** The state every frame projection reads; an unknown design is pending. */
   stateOf(canvasId: string, designId: string): CanvasBuildState {
-    return this.states.get(key(canvasId, designId))?.state ?? PENDING;
+    return this.states.stateOf(canvasId, designId);
   }
 
   /**
@@ -200,7 +193,7 @@ export class CanvasBuilds {
     if (this.closed) return;
     for (const frame of snapshot.frames) {
       if (frame.revisionId === null) continue;
-      if (this.queued.has(key(snapshot.canvasId, frame.designId))) continue;
+      if (this.queued.has(designKey(snapshot.canvasId, frame.designId))) continue;
       if (this.slotOf(snapshot.canvasId, frame.designId)) continue;
       const current = this.owner.host.buildTarget(snapshot.canvasId, frame.designId)?.frame;
       if (current?.revisionId !== frame.revisionId) continue;
@@ -231,7 +224,10 @@ export class CanvasBuilds {
       stopped.push(job);
     }
     for (const job of stopped) {
-      this.record(canvasId, job.designId, { status: 'cancelled', revisionId: job.revisionId });
+      this.states.set(canvasId, job.designId, {
+        status: 'cancelled',
+        revisionId: job.revisionId,
+      });
       this.announce(job);
     }
     for (const started of this.pump()) this.announce(started);
@@ -265,8 +261,8 @@ export class CanvasBuilds {
     const running = this.slotOf(canvasId, designId);
     if (running) this.abandon(running);
     // A re-queued design keeps its place: the queue is FIFO across designs.
-    this.queued.set(key(canvasId, designId), { canvasId, designId, revisionId });
-    this.record(canvasId, designId, PENDING);
+    this.queued.set(designKey(canvasId, designId), { canvasId, designId, revisionId });
+    this.states.set(canvasId, designId, { status: 'pending' });
     return this.pump();
   }
 
@@ -278,7 +274,7 @@ export class CanvasBuilds {
       // The first free slot, so a second process exists only once two overlap.
       const slot = this.slots.find((candidate) => candidate.job === null);
       if (!slot) break;
-      this.queued.delete(key(job.canvasId, job.designId));
+      this.queued.delete(designKey(job.canvasId, job.designId));
       const running = this.start(slot, job);
       if (running) started.push(running);
     }
@@ -296,12 +292,12 @@ export class CanvasBuilds {
     const target = this.owner.host.buildTarget(job.canvasId, job.designId);
     if (!target) {
       // The frame left the canvas while this job waited; nothing projects it.
-      this.states.delete(key(job.canvasId, job.designId));
+      this.states.forget(job.canvasId, job.designId);
       return null;
     }
     // A revision this frame has moved past has nothing left to publish to.
     if (target.frame.revisionId !== job.revisionId) return null;
-    const generation = (this.states.get(key(job.canvasId, job.designId))?.generation ?? 0) + 1;
+    const generation = this.states.nextAttempt(job.canvasId, job.designId, job.revisionId);
     const running: RunningBuild = {
       canvasId: job.canvasId,
       designId: job.designId,
@@ -313,10 +309,6 @@ export class CanvasBuilds {
       overdue: false,
     };
     slot.job = running;
-    this.states.set(key(job.canvasId, job.designId), {
-      generation,
-      state: { status: 'building', revisionId: job.revisionId, generation },
-    });
     this.track(this.run(slot, running));
     return running;
   }
@@ -337,8 +329,8 @@ export class CanvasBuilds {
       if (!this.wanted(slot, job)) return;
       await this.publish(slot, job, await this.saveArtifact(job, compiled));
     } catch (error) {
-      const diagnostics = buildFailure(error, job.overdue);
-      if (diagnostics) await this.publish(slot, job, { status: 'failed', diagnostics });
+      const failure = buildFailure(error, job.overdue);
+      if (failure) await this.publish(slot, job, failure);
     } finally {
       this.release(slot, job);
     }
@@ -373,15 +365,15 @@ export class CanvasBuilds {
   }
 
   /** The artifact document, written before the commit that may publish it. */
-  private async saveArtifact(job: RunningBuild, compiled: CompiledDesign): Promise<BuildResult> {
+  private async saveArtifact(job: RunningBuild, compiled: CompiledDesign): Promise<BuildOutcome> {
     try {
       await this.owner.cache.saveArtifact(job.canvasId, compiled.artifactId, compiled.html);
-      return { status: 'ready', artifactId: compiled.artifactId };
+      return readyBuild(compiled.artifactId);
     } catch (error) {
       // Nothing can load an artifact that is not there, so the frame reports
       // the save rather than a working preview.
       console.error('A Canvas build artifact was not saved:', error);
-      return { status: 'failed', diagnostics: unsavedBuild() };
+      return unsavedBuild();
     }
   }
 
@@ -389,23 +381,19 @@ export class CanvasBuilds {
    * Publishes one outcome in one commit: file, state and frame all follow the
    * gate inside that step or not at all. The gate runs again after the write,
    * because cancellation, a rebuild and `close` happen outside this queue; a
-   * result that lost its frame there takes its file back and settles silently.
+   * result that lost its frame takes any file back and settles silently.
    */
-  private publish(slot: BuildSlot, job: RunningBuild, result: BuildResult): Promise<void> {
+  private publish(slot: BuildSlot, job: RunningBuild, outcome: BuildOutcome): Promise<void> {
+    const { result, persists } = outcome;
     return this.owner.host.commitBuild(job.canvasId, job.designId, async () => {
       if (!this.wanted(slot, job)) return null;
-      try {
-        await this.owner.cache.saveOutcome(job.canvasId, job.designId, job.revisionId, result);
-      } catch (error) {
-        // The frame still reports what the build did; a restart rebuilds it.
-        console.error('A Canvas build outcome was not saved:', error);
-      }
+      if (persists) await this.saveOutcome(job, result);
       const target = this.wanted(slot, job);
       if (!target) {
-        await this.owner.cache.discardOutcome(job.canvasId, job.revisionId);
+        if (persists) await this.owner.cache.discardOutcome(job.canvasId, job.revisionId);
         return null;
       }
-      this.record(
+      this.states.set(
         job.canvasId,
         job.designId,
         builtState(job.revisionId, result, target.lastWorkingRevisionId),
@@ -414,13 +402,22 @@ export class CanvasBuilds {
     });
   }
 
+  private async saveOutcome(job: RunningBuild, result: BuildResult): Promise<void> {
+    try {
+      await this.owner.cache.saveOutcome(job.canvasId, job.designId, job.revisionId, result);
+    } catch (error) {
+      // The frame still reports what the build did; a restart rebuilds it.
+      console.error('A Canvas build outcome was not saved:', error);
+    }
+  }
+
   /** The frame this build may still publish to, or null once it may not. */
   private wanted(slot: BuildSlot, job: RunningBuild): BuildTarget | null {
     if (this.closed || slot.job !== job) return null;
     const target = this.owner.host.buildTarget(job.canvasId, job.designId);
     if (!target) {
       // The frame is gone, so nothing projects its build state any more.
-      this.states.delete(key(job.canvasId, job.designId));
+      this.states.forget(job.canvasId, job.designId);
       return null;
     }
     return canPublish(target.frame, job) ? target : null;
@@ -440,12 +437,6 @@ export class CanvasBuilds {
     slot.job = null;
     job.cancelDeadline();
     for (const started of this.pump()) this.announce(started);
-  }
-
-  private record(canvasId: string, designId: string, state: CanvasBuildState): void {
-    const entry = key(canvasId, designId);
-    const generation = this.states.get(entry)?.generation ?? 0;
-    this.states.set(entry, { generation, state });
   }
 
   /**
@@ -492,8 +483,3 @@ const realDeadline: BuildDeadline = (onOverdue) => {
     clearTimeout(timer);
   };
 };
-
-/** Build state belongs to a design on a canvas: two canvases may share an ID. */
-function key(canvasId: string, designId: string): string {
-  return `${canvasId}/${designId}`;
-}
