@@ -1,14 +1,15 @@
 import type {
-  NativeBrowserAgentAction,
-  NativeBrowserAgentResult,
-  NativeBrowserBounds,
-  NativeBrowserBox,
-  NativeBrowserCaptureOptions,
-  NativeBrowserDesignPrompt,
+  NativeBrowserDesignEvent,
+  NativeBrowserDesignState,
+  NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
-  NativeBrowserSelection,
+  NativeBrowserAgentPoint,
+  NativeBrowserFrame,
+  NativeBrowserWorking,
 } from './nativeBrowser';
+import type { NativeBrowserChord } from './shortcuts';
+import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
 import type {
@@ -186,6 +187,8 @@ export type NotifyResult =
       message?: string;
     };
 
+type SaveImageResult = { saved: true; filePath: string } | { saved: false };
+
 interface DroidControlApi {
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
@@ -195,6 +198,7 @@ interface DroidControlApi {
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
   discardImage: (path: string) => Promise<void>;
+  saveImageAs: (url: string, name: string) => Promise<SaveImageResult>;
   pathForFile: (file: File) => string;
   notify: (title: string, body: string, options?: NotifyOptions) => Promise<NotifyResult>;
   onNotificationActivate: (handler: (payload: { appSessionId: string }) => void) => () => void;
@@ -297,39 +301,30 @@ interface DroidControlApi {
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
-  nativeBrowserOpen: (
+  nativeBrowserReserve: (
     browserSessionId: string,
-    url: string,
-    bounds?: NativeBrowserBounds,
-    viewport?: { width: number; height: number; deviceScaleFactor: number },
-  ) => Promise<void>;
-  nativeBrowserAttach: (
-    browserSessionId: string,
-    bounds: NativeBrowserBounds,
-    url?: string,
-  ) => Promise<void>;
-  nativeBrowserDetach: (browserSessionId?: string) => Promise<void>;
-  nativeBrowserSetBounds: (browserSessionId: string, bounds: NativeBrowserBounds) => Promise<void>;
-  nativeBrowserSetVisible: (browserSessionId: string, visible: boolean) => Promise<void>;
-  nativeBrowserClose: (browserSessionId: string) => Promise<void>;
-  nativeBrowserReload: (browserSessionId: string) => Promise<void>;
+    savedUrl?: string,
+    savedMode?: BrowserViewportMode,
+  ) => Promise<{ src: string; generation: number }>;
+  nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
+  nativeBrowserWorkingSessions: () => Promise<string[]>;
+  nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
+  nativeBrowserWatch: (browserSessionId: string, watching: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
-  nativeBrowserSetDesignMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserSetPencilMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserAgentAction: (
-    request: NativeBrowserAgentAction,
-  ) => Promise<NativeBrowserAgentResult | undefined>;
-  nativeBrowserCapture: (
+  nativeBrowserSetDesignState: (
     browserSessionId: string,
-    box?: NativeBrowserBox,
-    options?: NativeBrowserCaptureOptions,
-  ) => Promise<string | undefined>;
-  onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
-  onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;
+    state: NativeBrowserDesignState,
+  ) => Promise<void>;
+  nativeBrowserSetShortcuts: (chords: NativeBrowserChord[]) => Promise<void>;
+  onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
+  onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
-  onNativeBrowserAgentResult: (handler: (result: NativeBrowserAgentResult) => void) => () => void;
+  onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
+  onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
+  onNativeBrowserFrame: (handler: (event: NativeBrowserFrame) => void) => () => void;
+  onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
 
 declare global {
@@ -342,15 +337,7 @@ interface DesktopPerformanceMetrics {
   timestamp: number;
   webContentsTotal: number;
   ptys: number;
-  nativeBrowsers?: {
-    total: number;
-    live: number;
-    attached: number;
-    warm: number;
-    serialized: number;
-    maxLive: number;
-    idleMs: number;
-  };
+  nativeBrowsers?: { sessions: number; live: number };
   terminals?: { live: number; retained: number; total: number };
   powerTier?: 'interactive' | 'hidden' | 'low-power';
   memory: { rssBytes: number; heapUsedBytes: number; heapTotalBytes: number };
@@ -445,6 +432,12 @@ export async function pickFiles(): Promise<string[]> {
 // is what the prompt @-mentions. Only the desktop app can write to disk.
 export async function saveImage(dataUrl: string): Promise<string> {
   return requireDesktopApi('Image attachments need the desktop app.').saveImage(dataUrl);
+}
+
+// Asks where to save an image the viewer is showing and writes it there. The
+// main process fetches it, since droidex-img bytes are unreadable to the page.
+export async function saveImageAs(url: string, name: string): Promise<SaveImageResult> {
+  return requireDesktopApi('Saving images needs the desktop app.').saveImageAs(url, name);
 }
 
 // Same store for pasted non-image files; the original name is kept (sanitized)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -39,64 +39,44 @@ test('release removes a clean linked worktree', async () => {
   }
 });
 
-test('release preserves a main worktree with a separate Git directory', async () => {
+test('release preserves a main worktree, a submodule, and a linked worktree it did not lay out', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-workspace-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const release = (resolvedCwd: string) =>
+    releaseAutomationWorkspace({ resolvedCwd, executionMode: 'worktree' });
+
+  // A main worktree whose Git directory lives beside it.
   const repository = join(directory, 'repository');
   const gitDirectory = join(directory, 'repository.git');
+  await git(directory, ['init', `--separate-git-dir=${gitDirectory}`, repository]);
+  await release(repository);
+  assert.equal(existsSync(repository), true);
+  assert.equal(existsSync(gitDirectory), true);
 
-  try {
-    await mkdir(directory, { recursive: true });
-    await git(directory, ['init', `--separate-git-dir=${gitDirectory}`, repository]);
-    await releaseAutomationWorkspace({ resolvedCwd: repository, executionMode: 'worktree' });
-    assert.equal(existsSync(repository), true);
-    assert.equal(existsSync(gitDirectory), true);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('release preserves a submodule working tree', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-workspace-'));
+  // A submodule's working tree.
   const parent = join(directory, 'parent');
   const child = join(directory, 'child');
   const submodule = join(parent, 'modules', 'child');
+  await initializeRepository(parent);
+  await initializeRepository(child);
+  await git(parent, [
+    '-c',
+    'protocol.file.allow=always',
+    'submodule',
+    'add',
+    child,
+    'modules/child',
+  ]);
+  await release(submodule);
+  assert.equal(existsSync(submodule), true);
+  assert.equal(await git(submodule, ['rev-parse', '--show-toplevel']), await realpath(submodule));
 
-  try {
-    await initializeRepository(parent);
-    await initializeRepository(child);
-    await git(parent, [
-      '-c',
-      'protocol.file.allow=always',
-      'submodule',
-      'add',
-      child,
-      'modules/child',
-    ]);
-
-    await releaseAutomationWorkspace({ resolvedCwd: submodule, executionMode: 'worktree' });
-    assert.equal(existsSync(submodule), true);
-    assert.equal(await git(submodule, ['rev-parse', '--show-toplevel']), await realpath(submodule));
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('release preserves a clean linked worktree outside the automation layout', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'droidex-workspace-'));
-  const repository = join(directory, 'repository');
+  // A clean linked worktree outside the automation layout.
   const unrelated = join(directory, 'unrelated');
-
-  try {
-    await initializeRepository(repository);
-    await git(repository, ['worktree', 'add', '--detach', unrelated, 'HEAD']);
-
-    await releaseAutomationWorkspace({ resolvedCwd: unrelated, executionMode: 'worktree' });
-
-    assert.equal(existsSync(unrelated), true);
-    assert.match(await git(repository, ['worktree', 'list', '--porcelain']), /unrelated/);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  await git(parent, ['worktree', 'add', '--detach', unrelated, 'HEAD']);
+  await release(unrelated);
+  assert.equal(existsSync(unrelated), true);
+  assert.match(await git(parent, ['worktree', 'list', '--porcelain']), /unrelated/);
 });
 
 async function initializeRepository(repository: string): Promise<void> {

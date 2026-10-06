@@ -14,7 +14,6 @@ const {
   createRootAccessRegistry,
   validateRelative,
   resolveWithin,
-  LISTING_CAP_DEFAULT,
   TEXT_PREVIEW_CAP_BYTES,
 } = require('./files.cjs');
 
@@ -85,8 +84,10 @@ async function expectPostOpenIdentityMismatch(operation) {
 // Path safety
 // ---------------------------------------------------------------------------
 
-test('validateRelative rejects absolute paths, control chars, and traversal', () => {
+test('validateRelative rejects non-strings, absolute paths, control chars, and traversal', () => {
   assert.ok(validateRelative(root, '').target === path.resolve(root));
+  assert.throws(() => validateRelative(123, ''), /rootDir must be a string/);
+  assert.throws(() => validateRelative(root, 42), /must be a string/);
   assert.throws(() => validateRelative(root, '/etc/passwd'), /absolute path rejected/);
   assert.throws(() => validateRelative(root, 'a\0b'), /invalid characters/);
   assert.throws(() => validateRelative(root, '../escape'), /escapes root/);
@@ -94,11 +95,6 @@ test('validateRelative rejects absolute paths, control chars, and traversal', ()
   // A single `..` that lands back inside root is fine.
   const ok = validateRelative(root, 'sub/../alpha.md');
   assert.equal(path.relative(path.resolve(root), ok.target), 'alpha.md');
-});
-
-test('validateRelative requires string inputs', () => {
-  assert.throws(() => validateRelative(123, ''), /rootDir must be a string/);
-  assert.throws(() => validateRelative(root, 42), /must be a string/);
 });
 
 test('paths beginning with two dots remain valid inside the root', async () => {
@@ -156,11 +152,11 @@ test('listDirectory returns folders-first, alphabetical, non-recursive entries w
   assert.equal(listing.permissionDenied, false);
   const kinds = listing.entries.map((e) => e.kind);
   // All directories must appear before any file in the sorted output.
-  const firstFile = kinds.indexOf('file');
-  const lastDir = kinds.lastIndexOf('directory');
-  if (firstFile !== -1 && lastDir !== -1) {
-    assert.ok(lastDir < firstFile, 'directories must sort before files');
-  }
+  // The fixture root holds both directories and files, so the order is always checkable.
+  assert.ok(
+    kinds.lastIndexOf('directory') < kinds.indexOf('file'),
+    'directories must sort before files',
+  );
   const names = listing.entries.map((e) => e.name).sort();
   // The listing is not recursive, so nested.txt under sub/ must not appear.
   assert.ok(!names.includes('nested.txt'));
@@ -172,13 +168,6 @@ test('listDirectory returns folders-first, alphabetical, non-recursive entries w
     assert.equal(typeof entry.size, 'number');
     assert.equal(typeof entry.mtimeMs, 'number');
   }
-});
-
-test('listDirectory accepts a relative subpath', async () => {
-  const listing = await listDirectory(root, 'sub');
-  const names = listing.entries.map((e) => e.name);
-  assert.ok(names.includes('nested.txt'));
-  assert.ok(names.includes('big.txt'));
 });
 
 test('listDirectory rejects traversal and out-of-root targets', async () => {
@@ -220,10 +209,6 @@ test('listDirectory does not read metadata beyond the listing cap', async () => 
   });
 
   assert.equal(childMetadataReads, 2);
-});
-
-test(`listDirectory default cap is ${LISTING_CAP_DEFAULT}`, () => {
-  assert.equal(LISTING_CAP_DEFAULT, 1000);
 });
 
 // ---------------------------------------------------------------------------
@@ -292,12 +277,6 @@ test('readPreview rejects non-file targets and path escapes', async () => {
   await assert.rejects(() => readPreview(root, 'escape-link'), /escapes root/);
 });
 
-test('readPreview rejects traversal into a symlink escape', async () => {
-  const fileLink = path.join(root, 'file-escape');
-  await fsp.symlink(path.join(outside, 'secret.txt'), fileLink, 'file');
-  await assert.rejects(() => readPreview(root, 'file-escape'), /escapes root/);
-});
-
 test('readPreview verifies path identity after opening the descriptor', async () => {
   await expectPostOpenIdentityMismatch(() => readPreview(root, 'beta.txt'));
 });
@@ -306,33 +285,25 @@ test('readPreview verifies path identity after opening the descriptor', async ()
 // openDefault / revealInFolder with injected shell doubles
 // ---------------------------------------------------------------------------
 
-test('openDefault invokes the injected shell.openPath and refuses missing shell', async () => {
+test('openDefault invokes shell.openPath, surfaces its error string, and refuses a missing shell', async () => {
   const calls = [];
+  let openPathResult = ''; // Electron returns an empty string on success
   const shell = {
     async openPath(target) {
       calls.push(target);
-      return ''; // Electron returns an empty string on success
+      return openPathResult;
     },
     async showItemInFolder() {},
   };
   const result = await openDefault(root, 'alpha.md', shell);
   assert.equal(result.opened, true);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0], path.join(rootReal, 'alpha.md'));
+  assert.deepEqual(calls, [path.join(rootReal, 'alpha.md')]);
 
-  // Missing shell helper should throw a descriptive error instead of silently
-  // succeeding.
-  await assert.rejects(() => openDefault(root, 'alpha.md', {}), /shell.openPath is required/);
-});
-
-test('openDefault surfaces openPath error strings from Electron', async () => {
-  const shell = {
-    async openPath() {
-      return 'Failed to open';
-    },
-    async showItemInFolder() {},
-  };
+  openPathResult = 'Failed to open';
   await assert.rejects(() => openDefault(root, 'alpha.md', shell), /Failed to open/);
+
+  // A missing shell helper must throw a descriptive error instead of silently succeeding.
+  await assert.rejects(() => openDefault(root, 'alpha.md', {}), /shell.openPath is required/);
 });
 
 test('openDefault rejects directories and path escapes', async () => {

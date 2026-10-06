@@ -39,16 +39,19 @@ import {
 } from './sessionOpening.js';
 import type { ProviderInteractions } from './providers/interactions.js';
 import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
-import type { PrimaryTurnRequest } from './providers/primaryTurn.js';
+import { failedTurnSummary, type PrimaryTurnRequest } from './providers/primaryTurn.js';
 import {
   droidLaunchSettings,
   requireDroidReasoningSupported,
 } from './providers/droid/droidLaunch.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
-import type { Provider, ProviderSession } from './providers/session.js';
+import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+// How long a settled turn waits for Send now's interrupt. A harness that never
+// answers it must not leave the chat busy for good.
+const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
 
@@ -113,11 +116,13 @@ interface LiveTurnState {
   // Steers the harness holds for the running turn and has not delivered yet.
   steers: SessionPrompt[];
   interruptingToSend?: boolean;
+  // Send now's interrupt while it is in flight. A turn that ends on its own
+  // first waits for it, or it would stop the turn started after it.
+  sendNowInterrupt?: Promise<void>;
+  // Counts the turns the provider started by itself, so a settlement that
+  // waited knows whether another began meanwhile.
+  delegatedTurns?: number;
   interrupting?: boolean; // Marks user Stop so the resulting stream abort settles quietly.
-  /** A turn the provider started itself is running; it settles, and drains the queue, on its own. */
-  delegatedTurn?: boolean;
-  /** Counts provider-started turns, so a settle that awaited cannot reach a newer one. */
-  delegatedGeneration?: number;
 }
 type SessionCloseMode = 'discard-pending' | 'preserve-pending';
 export interface LiveSession extends LiveTurnState {
@@ -175,8 +180,6 @@ export interface SessionLifecycleDependencies {
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
-  settleStreaming: (appSessionId: string, sourceSessionId: string) => Promise<void>;
-  releaseRuntimeForCapacity: (excludedAppSessionId: string) => Promise<boolean>;
   context: Pick<
     SessionContext,
     'refresh' | 'stopPolling' | 'stopSession' | 'forgetSession' | 'preserveUsage'
@@ -206,6 +209,8 @@ export interface SessionLifecycleDependencies {
   appendSteer: (appSessionId: string, text: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
+  // Releases the longest-idle runtime other than this one; true when one went.
+  releaseRuntimeForCapacity: (excludedAppSessionId: string) => Promise<boolean>;
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
@@ -215,9 +220,13 @@ export class SessionLifecycle {
   // but has not started its turn compares the count it was accepted at, so a
   // Stop takes it back even while there is no runtime to interrupt.
   private readonly stops = new Map<string, number>();
-  // The prompts waiting for a chat that is relaunching on a new context window,
-  // in the order they were sent. The chat has no runtime to queue them on.
-  private readonly relaunches = new Map<string, SessionPrompt[]>();
+  // A chat relaunching on a new context window: the prompts waiting for it, in
+  // the order they were sent, since it has no runtime to queue them on, and the
+  // usage limit it is held on, which its reopened summary carries.
+  private readonly relaunches = new Map<
+    string,
+    { waiting: SessionPrompt[]; usageLimit: SessionSummary['usageLimit'] }
+  >();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
   // A branch is a session opened from another session's transcript: its goal
@@ -475,7 +484,12 @@ export class SessionLifecycle {
       // A closed settings write must settle before registration changes its target.
       await d.waitForSettingsMutations?.(appSessionId);
       requireCurrentResume();
-      const projectedSummary = d.applyPendingSettingsToSummary({ ...summary });
+      // A relaunching chat is still held on the limit its last turn was refused on.
+      const usageLimit = this.relaunches.get(appSessionId)?.usageLimit;
+      const projectedSummary = d.applyPendingSettingsToSummary({
+        ...summary,
+        ...(usageLimit ? { usageLimit } : {}),
+      });
       const liveSession = createLiveSession(projectedSummary, providerSession, session, mcp);
       if (projectedSummary.contextWindowTokens !== historical?.contextWindowTokens)
         liveSession.restartBeforeNextTurn = true;
@@ -585,7 +599,7 @@ export class SessionLifecycle {
     });
   }
 
-  async deliverScheduled(
+  deliverScheduled(
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
@@ -692,7 +706,6 @@ export class SessionLifecycle {
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const session = liveSession.session;
     if (
-      !session.steer ||
       !liveSession.streaming ||
       liveSession.compacting ||
       liveSession.autoCompacting ||
@@ -751,16 +764,24 @@ export class SessionLifecycle {
     }
     liveSession.interruptingToSend = true;
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
-    try {
-      await liveSession.session.interrupt();
-    } catch (error) {
+    // A refusal is reported first, so the turn settling after it sees it.
+    const interrupt = liveSession.session.interrupt().catch((error: unknown) => {
       liveSession.interruptingToSend = false;
       this.dependencies.emitError({
         code: 'session.send_now_failed',
         appSessionId,
         message: `Could not stop the turn to send now: ${errMsg(error)}`,
       });
-    }
+    });
+    // Capped, like the settlement that waits on it, so a harness that never
+    // answers cannot hold the command either.
+    const settled = new Promise<void>((resolve) => {
+      setTimeout(resolve, SEND_NOW_INTERRUPT_WAIT_MS).unref();
+      void interrupt.then(resolve);
+    });
+    liveSession.sendNowInterrupt = settled;
+    await settled;
+    if (liveSession.sendNowInterrupt === settled) liveSession.sendNowInterrupt = undefined;
   }
 
   // Where a prompt the user sent goes: the live session to send it to, 'held'
@@ -799,7 +820,7 @@ export class SessionLifecycle {
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
     this.noteStop(requestedAppSessionId);
-    this.relaunches.get(this.chatKey(requestedAppSessionId))?.splice(0);
+    this.relaunches.get(this.chatKey(requestedAppSessionId))?.waiting.splice(0);
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
@@ -1132,12 +1153,11 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running, failed) => {
+    const delegated = liveSession.session.onDelegatedTurn?.((running, end) => {
       if (!isCurrent()) return;
-      liveSession.delegatedTurn = running;
       if (running) {
-        liveSession.delegatedGeneration = (liveSession.delegatedGeneration ?? 0) + 1;
         liveSession.streaming = true;
+        liveSession.delegatedTurns = (liveSession.delegatedTurns ?? 0) + 1;
         // A settled turn leaves the chat's own source closed, and nothing else
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
@@ -1149,12 +1169,19 @@ export class SessionLifecycle {
         });
         return;
       }
-      // A Stop lands before the turn reports itself finished, so the flags it
-      // set are cleared here as they are for a typed turn.
-      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
-      liveSession.interrupting = false;
-      liveSession.interruptingToSend = false;
-      void this.settleDelegatedTurn(liveSession, failed === true, stopped);
+      // The chat stays busy until Send now's interrupt settles, so nothing new
+      // starts under it.
+      const interrupt = liveSession.sendNowInterrupt;
+      if (!interrupt) {
+        this.settleDelegatedTurn(liveSession, end);
+        return;
+      }
+      const turn = liveSession.delegatedTurns;
+      void interrupt.then(() => {
+        // The chat closed, or the provider started another turn, meanwhile.
+        if (isCurrent() && liveSession.delegatedTurns === turn)
+          this.settleDelegatedTurn(liveSession, end);
+      });
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
@@ -1163,36 +1190,20 @@ export class SessionLifecycle {
       };
   }
 
-  // The chat reads as streaming until its transcript's tail is flushed, so a
-  // prompt sent meanwhile queues instead of running beside the next queued one.
-  private async settleDelegatedTurn(
-    liveSession: LiveSession,
-    failed: boolean,
-    stopped: boolean,
-  ): Promise<void> {
-    const appSessionId = liveSession.summary.appSessionId;
-    const generation = liveSession.delegatedGeneration;
-    try {
-      await this.dependencies.settleStreaming(appSessionId, appSessionId);
-    } catch (error) {
-      this.dependencies.emitError({
-        appSessionId,
-        message: `Could not settle the session transcript: ${errMsg(error)}`,
-      });
-    }
-    if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return;
-    // Another provider-started turn began while this one flushed; it settles itself.
-    if (liveSession.delegatedGeneration !== generation) return;
-    // A typed turn still finishing, or one already started, settles the chat and
-    // takes the queue; so does another provider-started turn.
-    if (
-      liveSession.turnPromise !== undefined ||
-      liveSession.delegatedTurn ||
-      !liveSession.streaming
-    )
-      return;
-    if (failed) this.dependencies.registry.updateSummary(appSessionId, { phase: 'failed' });
+  private settleDelegatedTurn(liveSession: LiveSession, end: DelegatedTurnEnd | undefined): void {
     liveSession.streaming = false;
+    const appSessionId = liveSession.summary.appSessionId;
+    // A Stop lands before the turn reports itself finished, so the flags it
+    // set are cleared here as they are for a typed turn.
+    const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+    liveSession.interrupting = false;
+    liveSession.interruptingToSend = false;
+    // A spoken turn settles as a typed one does: a failure fails the chat,
+    // holding it on a refusal, and a finished turn is an answer that lifts a hold.
+    if (end?.status === 'failed')
+      this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
+    else if (end?.status === 'completed' && !stopped && liveSession.summary.usageLimit)
+      this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
     this.publishTurnSettled(liveSession);
     if (stopped) this.dependencies.childSessions.retryAgentWave(appSessionId);
     // A runtime that has gone takes the queue with it through the close
@@ -1405,35 +1416,44 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
-      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
-      liveSession.interruptingToSend = false;
-      liveSession.interrupting = false;
-      liveSession.streaming = liveSession.delegatedTurn === true;
-      // A wave held back while the Stop was outstanding is owed once it is over.
-      if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
-      // Let the closure observer claim cleanup before advancing the queue.
-      if (liveSession.session.isClosed) await liveSession.session.closed;
-      if (liveSession.providerClosePromise) {
-        if (d.registry.getLive(stableAppSessionId) === liveSession)
-          this.publishTurnSettled(liveSession);
-        // The closure observer reports cleanup failures; keep queued sends here
-        // until the runtime can actually be released.
-        await liveSession.providerClosePromise.catch(() => undefined);
-      }
-      if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
-        liveSession.pendingSends = [];
-      } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
-        const queued = liveSession.pendingSends.splice(0);
-        if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
-      } else if (liveSession.autoCompacting) {
-        const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
-        if (compactionTarget) d.compaction.afterTurn(compactionTarget);
+      const delegatedTurns = liveSession.delegatedTurns;
+      if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
+      // A turn the provider started meanwhile owns the chat and its queue now.
+      if (liveSession.delegatedTurns === delegatedTurns)
+        await this.settleTypedTurn(liveSession, stableAppSessionId);
+    }
+  }
+
+  private async settleTypedTurn(liveSession: LiveSession, stableAppSessionId: string) {
+    const d = this.dependencies;
+    const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+    liveSession.interruptingToSend = false;
+    liveSession.interrupting = false;
+    liveSession.streaming = false;
+    // A wave held back while the Stop was outstanding is owed once it is over.
+    if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
+    // Let the closure observer claim cleanup before advancing the queue.
+    if (liveSession.session.isClosed) await liveSession.session.closed;
+    if (liveSession.providerClosePromise) {
+      if (d.registry.getLive(stableAppSessionId) === liveSession)
         this.publishTurnSettled(liveSession);
-      } else {
-        const next = liveSession.delegatedTurn ? undefined : liveSession.pendingSends.shift();
-        this.publishTurnSettled(liveSession);
-        if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
-      }
+      // The closure observer reports cleanup failures; keep queued sends here
+      // until the runtime can actually be released.
+      await liveSession.providerClosePromise.catch(() => undefined);
+    }
+    if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
+      liveSession.pendingSends = [];
+    } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
+      const queued = liveSession.pendingSends.splice(0);
+      if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
+    } else if (liveSession.autoCompacting) {
+      const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
+      if (compactionTarget) d.compaction.afterTurn(compactionTarget);
+      this.publishTurnSettled(liveSession);
+    } else {
+      const next = liveSession.pendingSends.shift();
+      this.publishTurnSettled(liveSession);
+      if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
     }
   }
 
@@ -1483,9 +1503,10 @@ export class SessionLifecycle {
     const appSessionId = stale.summary.appSessionId;
     const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
     const waiting = [prompt, ...stale.pendingSends.splice(0)];
-    this.relaunches.set(appSessionId, waiting);
+    const relaunch = { waiting, usageLimit: stale.summary.usageLimit };
+    this.relaunches.set(appSessionId, relaunch);
     // A discarding close removes the queue; a Stop only empties it.
-    const abandoned = () => d.isShutdownStarted() || this.relaunches.get(appSessionId) !== waiting;
+    const abandoned = () => d.isShutdownStarted() || this.relaunches.get(appSessionId) !== relaunch;
     let liveSession: LiveSession | undefined;
     let reason = '';
     try {
@@ -1504,7 +1525,7 @@ export class SessionLifecycle {
       if (abandoned()) return;
       reason = ` (${errMsg(error)})`;
     } finally {
-      if (this.relaunches.get(appSessionId) === waiting) this.relaunches.delete(appSessionId);
+      if (this.relaunches.get(appSessionId) === relaunch) this.relaunches.delete(appSessionId);
     }
     // From here to the turn nothing yields: a send that arrives later finds a
     // chat that is streaming and queues behind it.
@@ -1530,9 +1551,9 @@ export class SessionLifecycle {
 
   // True when the chat is relaunching and the prompt now waits for it.
   private waitForRelaunch(id: string, prompt: SessionPrompt): boolean {
-    const waiting = this.relaunches.get(this.chatKey(id));
-    waiting?.push(prompt);
-    return waiting !== undefined;
+    const relaunch = this.relaunches.get(this.chatKey(id));
+    relaunch?.waiting.push(prompt);
+    return relaunch !== undefined;
   }
 
   private stopCount(id: string): number {

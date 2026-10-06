@@ -4,6 +4,9 @@ const PRIVACY_SECURITY_PANE = '/System/Library/PreferencePanes/Security.prefPane
 
 function createApplicationMenuTemplate(options) {
   const isMac = options.platform === 'darwin';
+  // Cmd/Ctrl+W closes the renderer's active tab, so the window takes the
+  // browser's close-window chord instead.
+  const closeWindowItem = { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' };
   const reloadItem = () => ({
     label: `Reload ${options.appName}`,
     accelerator: 'CmdOrCtrl+R',
@@ -54,7 +57,7 @@ function createApplicationMenuTemplate(options) {
       : []),
     {
       label: 'File',
-      submenu: [isMac ? { role: 'close' } : { role: 'quit' }],
+      submenu: [isMac ? closeWindowItem : { role: 'quit' }],
     },
     {
       label: 'Edit',
@@ -75,7 +78,7 @@ function createApplicationMenuTemplate(options) {
       label: 'Window',
       submenu: isMac
         ? [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }]
-        : [{ role: 'minimize' }, { role: 'close' }],
+        : [{ role: 'minimize' }, closeWindowItem],
     },
     {
       role: 'help',

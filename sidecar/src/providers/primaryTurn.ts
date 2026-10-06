@@ -7,7 +7,7 @@ import type { ProviderMention } from './catalog.js';
 import type { LiveSession } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
-import { usageLimitDetails } from './usageLimit.js';
+import { UsageLimitError, usageLimitDetails } from './usageLimit.js';
 
 export interface PrimaryTurnDependencies {
   eventFlow: Pick<SessionEventFlow, 'beginTurn' | 'apply'>;
@@ -61,7 +61,7 @@ export async function runPrimaryTurn(
   const stoppedBeforeStart = () => liveSession.interrupting === true;
   // Counts the turns the provider started itself, so this one's failure cannot
   // be written over one that ran after it.
-  const delegatedGeneration = liveSession.delegatedGeneration;
+  const delegatedTurns = liveSession.delegatedTurns;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -128,9 +128,22 @@ export async function runPrimaryTurn(
     context.stopPolling();
   }
   if (!isCurrent()) return;
-  // A turn the provider started itself after this one owns the outcome now.
-  if (turnError && liveSession.delegatedGeneration === delegatedGeneration)
-    settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
+  if (turnError) {
+    // A turn the provider started itself after this one owns the outcome now.
+    if (liveSession.delegatedTurns === delegatedTurns)
+      settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
+  }
+  // An answered turn is the only evidence that a limit has lifted; a stopped
+  // one proves nothing.
+  else if (
+    liveSession.summary.usageLimit &&
+    !liveSession.interrupting &&
+    !liveSession.interruptingToSend
+  )
+    d.updateSummary(appSessionId, { usageLimit: undefined });
+  // Not awaited: Droid can take long to answer, and the chat would read as
+  // busy meanwhile, holding back what is queued for it. A newer turn's
+  // refresh supersedes this one (SessionContext).
   void context.refresh();
 }
 
@@ -159,7 +172,16 @@ function settleTurnFailure(
     }
     d.emitError({ appSessionId, message });
   }
-  d.updateSummary(appSessionId, { phase: 'failed' });
+  d.updateSummary(appSessionId, failedTurnSummary(error));
+}
+
+// The limit is set only by a refusal. A failure of any other kind says nothing
+// about it, so a hold already set stays until a turn gets an answer.
+export function failedTurnSummary(error: unknown): Pick<SessionSummary, 'phase' | 'usageLimit'> {
+  return {
+    phase: 'failed',
+    ...(error instanceof UsageLimitError ? { usageLimit: error.limit } : {}),
+  };
 }
 
 interface TurnContext {

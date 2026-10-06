@@ -26,3 +26,9 @@ sidecar/node_modules
 
 # Claude Code session handoffs (local, per checkout)
 .remember/
+
+# Dated agent planning docs
+docs/superpowers/
+
+# Dated output of agent security scans (regenerated per scan)
+/security-findings.json

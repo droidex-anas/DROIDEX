@@ -4,6 +4,103 @@ import { shouldStopTurnStarting } from './PromptInput';
 import type { TranscriptEvent } from '../types/bridge';
 import { hasAppContextForTranscript } from '../lib/composePrompt';
 import { shouldResumeQueuedPromptAfterUpdate } from './composer/useQueuedPromptDelivery';
+import { initialState, reducer } from '../hooks/useStore';
+import { createComposerTranscriptSelector } from './composer/composerTranscript';
+import { withUpdatedTranscript } from '../lib/transcriptStoreMemory';
+
+function transcriptEvent(id: string, fields: Partial<TranscriptEvent> = {}): TranscriptEvent {
+  return {
+    id,
+    appSessionId: 'parent',
+    sourceSessionId: 'provider-parent',
+    role: 'primary',
+    kind: 'text',
+    text: id,
+    ts: 1,
+    ...fields,
+  };
+}
+
+test('composer recall keeps only primary prompts, collapses duplicates, and follows replaced history', () => {
+  const select = createComposerTranscriptSelector('parent', null);
+  let state = reducer(initialState, {
+    type: 'BATCH',
+    actions: [
+      transcriptEvent('first', { author: 'user', text: 'First prompt' }),
+      transcriptEvent('blank', { author: 'user', text: '  ' }),
+      transcriptEvent('brief', { author: 'user', role: 'worker', sourceSessionId: 'child' }),
+      transcriptEvent('answer'),
+      transcriptEvent('duplicate', { author: 'user', text: 'First prompt' }),
+      transcriptEvent('second', { author: 'user', text: 'Second prompt' }),
+      transcriptEvent('reply'),
+    ].map((event) => ({ type: 'SESSION_TRANSCRIPT', event })),
+  });
+  assert.deepEqual(select(state).promptHistory, ['First prompt', 'Second prompt']);
+
+  state = reducer(state, { type: 'SESSION_TRANSCRIPT', event: transcriptEvent('delta') });
+  assert.deepEqual(select(state).promptHistory, ['First prompt', 'Second prompt']);
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: transcriptEvent('third', { author: 'user', text: 'Third prompt' }),
+  });
+  assert.deepEqual(select(state).promptHistory, ['First prompt', 'Second prompt', 'Third prompt']);
+
+  state = reducer(state, {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'parent',
+    mode: 'prepend',
+    progress: [],
+    transcripts: [transcriptEvent('older', { author: 'user', text: 'Older prompt', ts: 0 })],
+  });
+  assert.deepEqual(select(state).promptHistory, [
+    'Older prompt',
+    'First prompt',
+    'Second prompt',
+    'Third prompt',
+  ]);
+  state = withUpdatedTranscript(
+    state,
+    'parent',
+    [transcriptEvent('replacement', { author: 'user', text: 'Replacement prompt' })],
+    0,
+  );
+  assert.deepEqual(select(state).promptHistory, ['Replacement prompt']);
+});
+
+test('composer App context follows streamed fences for the exact target and clears on replacement', () => {
+  const primary = createComposerTranscriptSelector('parent', null);
+  const child = createComposerTranscriptSelector('parent', 'child');
+  let state = reducer(initialState, {
+    type: 'SESSION_TRANSCRIPT',
+    event: transcriptEvent('primary-app', { text: '```app\n<main>Primary</main>\n' }),
+  });
+  assert.equal(primary(state).hasAppContext, false);
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: transcriptEvent('close-fence', { text: '```' }),
+  });
+  assert.equal(primary(state).hasAppContext, true);
+  assert.equal(child(state).hasAppContext, false);
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: transcriptEvent('child-app', {
+      role: 'worker',
+      sourceSessionId: 'child',
+      text: '```app\n<main>Child</main>\n```',
+    }),
+  });
+  assert.equal(child(state).hasAppContext, true);
+
+  state = withUpdatedTranscript(state, 'parent', [transcriptEvent('plain')], 0);
+  assert.equal(primary(state).hasAppContext, false);
+  assert.equal(child(state).hasAppContext, false);
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT',
+    event: transcriptEvent('user-app', { author: 'user', text: '```app\n<main>User</main>\n```' }),
+  });
+  assert.equal(primary(state).hasAppContext, false);
+  assert.equal(createComposerTranscriptSelector(null, null)(state).hasAppContext, false);
+});
 
 test('an idle queued prompt resumes only when an update window returns control', () => {
   assert.equal(shouldResumeQueuedPromptAfterUpdate(true, false, false, true, 'presented'), true);

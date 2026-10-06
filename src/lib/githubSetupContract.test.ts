@@ -1,40 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import * as github from './github.js';
+import {
+  authenticateGithubCli,
+  cancelGithubSetup,
+  getGithubAvailability,
+  installGithubCli,
+  isGithubAuthCodeCopied,
+  onGithubAuthCode,
+} from './github.js';
 import type { GithubAvailability, GithubSetupResult } from '../types/vcs.js';
 
-interface SetupExports {
-  getGithubAvailability?: () => Promise<GithubAvailability>;
-  installGithubCli?: () => Promise<GithubSetupResult>;
-  authenticateGithubCli?: () => Promise<GithubSetupResult>;
-  cancelGithubSetup?: () => Promise<void>;
-  onGithubAuthCode?: (handler: (code: string) => void) => () => void;
-  isGithubAuthCodeCopied?: (authCode: string | null, copiedCode: string | null) => boolean;
-}
-
 test('copy acknowledgement belongs only to the code that was copied', () => {
-  assert.equal(setup.isGithubAuthCodeCopied?.('ABCD-7HJK', 'ABCD-7HJK'), true);
-  assert.equal(setup.isGithubAuthCodeCopied?.('WXYZ-1234', 'ABCD-7HJK'), false);
-  assert.equal(setup.isGithubAuthCodeCopied?.(null, 'ABCD-7HJK'), false);
+  assert.equal(isGithubAuthCodeCopied('ABCD-7HJK', 'ABCD-7HJK'), true);
+  assert.equal(isGithubAuthCodeCopied('WXYZ-1234', 'ABCD-7HJK'), false);
+  assert.equal(isGithubAuthCodeCopied(null, 'ABCD-7HJK'), false);
 });
-
-const setup = github as SetupExports;
-
-function requireSetupFunctions() {
-  assert.equal(typeof setup.getGithubAvailability, 'function');
-  assert.equal(typeof setup.installGithubCli, 'function');
-  assert.equal(typeof setup.authenticateGithubCli, 'function');
-  assert.equal(typeof setup.cancelGithubSetup, 'function');
-  assert.equal(typeof setup.onGithubAuthCode, 'function');
-  return {
-    getAvailability: setup.getGithubAvailability,
-    install: setup.installGithubCli,
-    authenticate: setup.authenticateGithubCli,
-    cancel: setup.cancelGithubSetup,
-    onAuthCode: setup.onGithubAuthCode,
-  };
-}
 
 function setDesktopApi(api: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'window', {
@@ -61,12 +42,10 @@ test('GitHub setup wrappers preserve closed desktop results', async () => {
     githubCancelSetup: async () => ({ ok: true }),
     onGithubAuthCode: () => () => undefined,
   });
-  const functions = requireSetupFunctions();
-
-  assert.deepEqual(await functions.getAvailability!(), expectedAvailability);
-  assert.deepEqual(await functions.install!(), { ok: true });
-  assert.deepEqual(await functions.authenticate!(), { ok: true });
-  await functions.cancel!();
+  assert.deepEqual(await getGithubAvailability(), expectedAvailability);
+  assert.deepEqual(await installGithubCli(), { ok: true });
+  assert.deepEqual(await authenticateGithubCli(), { ok: true });
+  await cancelGithubSetup();
 });
 
 test('GitHub setup wrapper exposes only the validated device-code string', () => {
@@ -80,10 +59,9 @@ test('GitHub setup wrapper exposes only the validated device-code string', () =>
       };
     },
   });
-  const functions = requireSetupFunctions();
   const received: string[] = [];
 
-  const unsubscribe = functions.onAuthCode!((code) => received.push(code));
+  const unsubscribe = onGithubAuthCode((code) => received.push(code));
   desktopHandler?.(null);
   desktopHandler?.({});
   desktopHandler?.({ code: 42 });
@@ -107,19 +85,17 @@ test('GitHub setup wrappers return fixed transport failures', async () => {
       throw new Error('private auth details');
     },
   });
-  const functions = requireSetupFunctions();
-
-  assert.deepEqual(await functions.getAvailability!(), {
+  assert.deepEqual(await getGithubAvailability(), {
     installed: false,
     authenticated: false,
     installMethod: 'manual',
   });
-  assert.deepEqual(await functions.install!(), {
+  assert.deepEqual(await installGithubCli(), {
     ok: false,
     reason: 'install_failed',
     message: 'DROIDEX could not start GitHub CLI installation.',
   });
-  assert.deepEqual(await functions.authenticate!(), {
+  assert.deepEqual(await authenticateGithubCli(), {
     ok: false,
     reason: 'auth_failed',
     message: 'DROIDEX could not start GitHub sign-in.',
@@ -132,13 +108,12 @@ test('GitHub setup operations explain when desktop integration is unavailable', 
     configurable: true,
     writable: true,
   });
-  const functions = requireSetupFunctions();
   const expected: GithubSetupResult = {
     ok: false,
     reason: 'not_desktop',
     message: 'GitHub setup is available in the desktop app.',
   };
 
-  assert.deepEqual(await functions.install!(), expected);
-  assert.deepEqual(await functions.authenticate!(), expected);
+  assert.deepEqual(await installGithubCli(), expected);
+  assert.deepEqual(await authenticateGithubCli(), expected);
 });

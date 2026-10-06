@@ -8,7 +8,7 @@ import {
 } from './finishNotificationControls';
 import { SHORTCUT_DEFINITIONS } from './shortcuts';
 
-export interface SettingsSearchEntry {
+interface SettingsSearchEntry {
   /** Settings nav tab to open. */
   tab: string;
   /** Human label shown in search hits (usually the control name). */
@@ -27,7 +27,7 @@ function e(tab: string, label: string, keywords: string[] = []): SettingsSearchE
  */
 const SHORTCUT_KEYWORDS = ['hotkeys', 'keymap', 'bindings', 'shortcuts', 'cmd'];
 
-export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
+const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   // ── Notifications (shared control definitions) ───────────────────────────
   ...FINISH_NOTIFICATION_TOGGLES.map((row) => e('Notifications', row.label, [...row.keywords])),
   e('Notifications', FINISH_NOTIFICATION_TEST_ACTION.label, [

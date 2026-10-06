@@ -25,15 +25,11 @@ function fixture() {
     resolveShell: () => ({ file: '/bin/zsh', args: ['-l'] }),
     buildEnv: () => ({ TERM: 'xterm-256color' }),
     loadPty: () => ({
-      spawn(file, args, spawnOptions) {
+      spawn() {
         let dataHandler = () => {};
         let exitHandler = () => {};
         const instance = {
-          file,
-          args,
-          options: spawnOptions,
           writes: [],
-          resizes: [],
           killed: false,
           onData(handler) {
             dataHandler = handler;
@@ -44,9 +40,7 @@ function fixture() {
           write(data) {
             this.writes.push(data);
           },
-          resize(cols, rows) {
-            this.resizes.push([cols, rows]);
-          },
+          resize() {},
           kill() {
             this.killed = true;
           },
@@ -180,18 +174,6 @@ test('terminal subscription cycles retain one sender cleanup listener', async ()
 
   assert.equal(sender.listenerCount('destroyed'), 0);
   assert.equal(active.closed, true);
-});
-
-test('input is delivered without a Promise round trip', async () => {
-  const { manager, instances, registry } = createHarness();
-  const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
-  const sender = fakeSender();
-  const port = fakePort();
-  registry.subscribe(sender, terminal.id, port);
-
-  port.emitMessage({ type: 'input', data: 'echo hi\r' });
-
-  assert.deepEqual(instances[0].writes, ['echo hi\r']);
 });
 
 test('batched data stays ordered and preserves sequence and byteOffset', async () => {
@@ -350,7 +332,7 @@ test('double close after exit is idempotent', async () => {
   assert.equal(port.posted.filter((payload) => payload.kind === 'exit').length, 1);
 });
 
-test('malformed and unknown port messages are ignored without tearing down', async () => {
+test('valid input is written synchronously; malformed and unknown port messages are ignored', async () => {
   const { manager, instances, registry } = createHarness();
   const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
   const sender = fakeSender();

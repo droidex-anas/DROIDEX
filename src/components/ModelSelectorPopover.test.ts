@@ -34,6 +34,7 @@ function renderTarget(readiness: ExactChildSettingsTarget['readiness']): string 
       StaticStoreProvider,
       { state, dispatch: () => undefined },
       createElement(ModelSelectorPopover, {
+        appSessionId: null,
         childTarget: target,
         onClose: () => undefined,
       }),
@@ -60,7 +61,7 @@ test('exact child editor labels readiness and keeps per-row reasoning locked', (
   assert.match(unavailable, /aria-disabled="true"/);
 });
 
-test('a dangling active session id keeps using the visible global defaults', () => {
+test('a dangling session id keeps using the visible global defaults', () => {
   const model: ModelInfo = {
     id: 'global-model',
     displayName: 'Global Model',
@@ -70,7 +71,6 @@ test('a dangling active session id keeps using the visible global defaults', () 
   };
   const state: AppState = {
     ...initialState,
-    activeAppSessionId: 'missing-session',
     sessions: {},
     models: [model],
     draftProvider: 'droid',
@@ -84,6 +84,7 @@ test('a dangling active session id keeps using the visible global defaults', () 
       StaticStoreProvider,
       { state, dispatch: () => undefined },
       createElement(ModelSelectorPopover, {
+        appSessionId: 'missing-session',
         singleAgent: true,
         onClose: () => undefined,
       }),
@@ -92,7 +93,7 @@ test('a dangling active session id keeps using the visible global defaults', () 
 
   // The selected model names the popover; the search box stays a plain search box.
   assert.match(html, /placeholder="Search models"/);
-  assert.match(html, /text-droid-text truncate"[^>]*>Global Model</);
+  assert.match(html, />Global Model</);
   // The selected row shows the session's effort; the meter has one dot per supported effort.
   assert.match(html, /aria-selected="true"[\s\S]*?capitalize[^>]*>low<\/span>/);
   assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);

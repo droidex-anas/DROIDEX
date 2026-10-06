@@ -21,7 +21,7 @@ export function feedItemTailId(item: FeedItem): string {
     const tail = item.items.at(-1);
     return tail ? feedItemTailId(tail) : item.key;
   }
-  if (item.type === 'tools' || item.type === 'child_sessions') {
+  if (item.type === 'tools' || item.type === 'child_sessions' || item.type === 'browser') {
     return item.events.at(-1)?.id ?? item.key;
   }
   if (item.type === 'diffs') {
@@ -47,7 +47,7 @@ export function scrollTopForPreservedAnchor(
   return Math.max(0, captured.scrollTop + nextRowOffsetTop - captured.rowOffsetTop);
 }
 
-export function updateViewportAnchorGeometry(
+function updateViewportAnchorGeometry(
   anchor: ViewportAnchor,
   rowOffsetTop: number,
   scrollTop: number,

@@ -3,33 +3,23 @@ import assert from 'node:assert/strict';
 import type { SessionSummary } from '../types/bridge';
 import type { SidebarRequest } from '../types/sidebar';
 import { withLocalStorageMap } from '../test/localStorage';
+import { initialTabStrip } from '../features/tabs/tabStrip';
 import { DEFAULT_SIDEBAR_PREFERENCES } from './sidebarActivity';
 import { answerSidebarRequest } from './sidebarRequests';
 import { sidebarPreferences, updateSidebarPreferences } from './sidebarPreferences';
+import { sessionSummary } from '../test/sessionSummary';
 
 type SidebarState = Parameters<typeof answerSidebarRequest>[1];
 
-function chat(appSessionId: string, updatedAt = 100): SessionSummary {
-  return {
-    appSessionId,
+const chat = (appSessionId: string, updatedAt = 100) =>
+  sessionSummary(appSessionId, {
     title: `Chat ${appSessionId}`,
-    goal: '',
     cwd: '/workspace',
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
     autonomy: 'off',
     phase: 'completed',
     streaming: false,
-    createdAt: 1,
     updatedAt,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-  };
-}
+  });
 
 function sidebarState(sessions: SessionSummary[]): SidebarState {
   return {
@@ -39,8 +29,10 @@ function sidebarState(sessions: SessionSummary[]): SidebarState {
     projects: [],
     pendingPermissions: {},
     pendingQuestions: {},
+    mainView: 'session',
     activeAppSessionId: null,
     sessionLastSeen: {},
+    tabStrip: initialTabStrip(),
   };
 }
 

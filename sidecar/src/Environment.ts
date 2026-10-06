@@ -126,23 +126,6 @@ export function availableChannels(
   return channels;
 }
 
-// Returns negative when a < b, positive when a > b, 0 when equal. Tolerates
-// missing/partial versions and ignores any pre-release/build suffix.
-export function compareSemver(a: string | undefined, b: string | undefined): number {
-  const pa = parseSemver(a);
-  const pb = parseSemver(b);
-  for (let i = 0; i < 3; i++) {
-    if (pa[i] !== pb[i]) return pa[i] - pb[i];
-  }
-  return 0;
-}
-
-function parseSemver(value: string | undefined): [number, number, number] {
-  const match = /(\d+)\.(\d+)\.(\d+)/.exec(value ?? '');
-  if (!match) return [0, 0, 0];
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
 async function resolveCliPath(): Promise<string | undefined> {
   if (process.env.DROID_PATH && isExecutable(process.env.DROID_PATH)) return process.env.DROID_PATH;
   for (const candidate of CLI_CANDIDATES) {

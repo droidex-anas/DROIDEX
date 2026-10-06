@@ -49,7 +49,7 @@ function appendedEvent(ts: number): Extract<ServerEvent, { type: 'event.appended
   };
 }
 
-test('startup phases are recorded once in order for composer sessions', () => {
+test('startup phases are recorded once in order, with notApplicable for composer-less startup', () => {
   resetRendererPerfForTest();
   noteRendererHtmlLoaded();
   noteFirstMeaningfulShellPaint();
@@ -75,18 +75,15 @@ test('startup phases are recorded once in order for composer sessions', () => {
   assert.ok(phases.firstMeaningfulShellPaintMs! <= phases.composerInteractive.atMs);
   assert.ok(phases.composerInteractive.atMs <= phases.sidecarConnectedMs!);
   assert.ok(phases.sidecarConnectedMs! <= phases.sessionListReadyMs!);
-});
 
-test('composer-less startup records notApplicable instead of a fabricated mark', () => {
+  // Composer-less startup records notApplicable instead of a fabricated mark.
   resetRendererPerfForTest();
   noteRendererHtmlLoaded();
   noteFirstMeaningfulShellPaint();
   noteComposerNotApplicable();
   noteComposerInteractive();
-
-  const phases = getRendererPerfSnapshot().startupPhases;
-  assert.equal(phases.composerInteractive.status, 'notApplicable');
-  assert.equal(phases.composerInteractive.status === 'marked', false);
+  const composerless = getRendererPerfSnapshot().startupPhases;
+  assert.equal(composerless.composerInteractive.status, 'notApplicable');
 });
 
 test('receive → commit → paint legs are measured per batch', () => {
@@ -231,7 +228,7 @@ function withFakedPerfClock(offsetMs: number, fn: () => void): void {
   }
 }
 
-test('a stale awaiting-paint batch is dropped, not stamped late', () => {
+test('a stale awaiting-paint batch is dropped, not stamped by a late frame', () => {
   resetRendererPerfForTest();
   const frames = withFakeRaf(() => {
     noteBridgeEventReceived(appendedEvent(performance.timeOrigin + performance.now()));
@@ -251,25 +248,6 @@ test('a stale awaiting-paint batch is dropped, not stamped late', () => {
   const snapshot = getRendererPerfSnapshot();
   assert.equal(snapshot.receiveToCommitMs.count, 2);
   assert.equal(snapshot.receiveToPaintMs.count, 1, 'only the fresh entry records a paint sample');
-});
-
-test('a paint frame that runs late records nothing stale', () => {
-  resetRendererPerfForTest();
-  const frames = withFakeRaf(() => {
-    noteBridgeEventReceived(appendedEvent(performance.timeOrigin + performance.now()));
-    noteStoreCommitted();
-  });
-  withFakedPerfClock(60_000, () => {
-    frames[0]?.callback();
-  });
-
-  const snapshot = getRendererPerfSnapshot();
-  assert.equal(snapshot.receiveToCommitMs.count, 1);
-  assert.equal(
-    snapshot.receiveToPaintMs.count,
-    0,
-    'a frame firing past the threshold stamps nothing',
-  );
 });
 
 test('the pre-commit telemetry queue drops oldest samples once it hits capacity', () => {

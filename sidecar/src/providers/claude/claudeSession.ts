@@ -21,10 +21,15 @@ import type {
 import { errMsg } from '../../errors.js';
 import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
-import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import type {
+  DelegatedTurnEnd,
+  ProviderModelSettings,
+  ProviderSession,
+  UsageMetersListener,
+} from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
 import { claudeLaunchModel, planningModelNotice, type ClaudeDefaultModel } from './claudeModels.js';
-import { ClaudeEventMapper, rateLimitRefusal } from './claudeEvents.js';
+import { ClaudeEventMapper } from './claudeEvents.js';
 import {
   answersTurn,
   commandLifecycle,
@@ -35,6 +40,7 @@ import {
 } from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
+import { ClaudeUsage } from './claudeRateLimits.js';
 
 export interface ClaudeSessionInput {
   // Claude pins the session id it is given, so DROIDEX's own identity is also
@@ -56,6 +62,7 @@ export interface ClaudeSessionInput {
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
   resume?: boolean;
+  onUsage?: UsageMetersListener;
 }
 
 // Stands in for a turn id when Stop reaches a turn Claude Code started itself.
@@ -76,11 +83,11 @@ export class ClaudeSession implements ProviderSession {
   // Control requests may only start after the CLI answers initialize.
   private readonly initialized: Promise<void>;
   private readonly catalog: ClaudeCatalog;
+  readonly usage: ClaudeUsage;
   // Resolves once the CLI process exists, which is all an open has to wait for.
   private readonly spawned: Promise<void>;
   private initializing = true;
   private child?: ChildProcess;
-  private modelId: string | undefined;
   private fastMode: boolean;
   private readonly permissions: ClaudePermissionModes;
   private activeTurnId?: string;
@@ -98,11 +105,12 @@ export class ClaudeSession implements ProviderSession {
   private turnAnswered = false;
   private turnQueue?: MessageQueue<{ message: SDKMessage; events: NormalizedEvent[] }>;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
-  private readonly delegatedListeners = new Set<(running: boolean, failed?: boolean) => void>();
+  private readonly delegatedListeners = new Set<
+    (running: boolean, end?: DelegatedTurnEnd) => void
+  >();
 
   constructor(private readonly input: ClaudeSessionInput) {
     this.providerSessionId = input.appSessionId;
-    this.modelId = input.modelId;
     this.fastMode = input.fastMode ?? false;
     this.permissions = new ClaudePermissionModes(
       input.autonomy,
@@ -111,7 +119,7 @@ export class ClaudeSession implements ProviderSession {
         this.requireOpen();
       },
     );
-    this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId);
+    this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId, input.models);
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
     });
@@ -165,6 +173,7 @@ export class ClaudeSession implements ProviderSession {
     // closure observer reports the failure without an unhandled rejection.
     void this.initialized.catch(() => undefined);
     this.catalog = new ClaudeCatalog(this.query, this.initialized);
+    this.usage = new ClaudeUsage(this.query, () => this.waitUntilInitialized(), input.onUsage);
     // A CLI that fails before it reaches spawn still settles initialization,
     // which is what releases the open instead of leaving it hanging.
     this.spawned = Promise.race([spawned, this.initialized]);
@@ -184,7 +193,7 @@ export class ClaudeSession implements ProviderSession {
     };
   }
 
-  onDelegatedTurn(listener: (running: boolean, failed?: boolean) => void): () => void {
+  onDelegatedTurn(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void {
     this.delegatedListeners.add(listener);
     return () => {
       this.delegatedListeners.delete(listener);
@@ -251,7 +260,7 @@ export class ClaudeSession implements ProviderSession {
         if (message.type === 'result') resultTaken = true;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
-            ? planningModelNotice(message, this.modelId)
+            ? planningModelNotice(message, this.mapper.modelId)
             : undefined;
           if (notice) {
             reportedPlanningModel = true;
@@ -269,14 +278,10 @@ export class ClaudeSession implements ProviderSession {
           yield { done: true };
           return;
         }
-        // A refused usage window is answered with no result at all, so the turn
-        // has to end here instead of waiting for one that never comes.
-        if (message.type === 'rate_limit_event') {
-          const refusal = rateLimitRefusal(message.rate_limit_info);
-          if (refusal) throw refusal;
-        }
         // The turn's own result, then that of each steer run as a CLI turn after it.
         if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
+          const refusal = this.mapper.takeRefusal();
+          if (refusal) throw refusal;
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
           if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
@@ -390,6 +395,7 @@ export class ClaudeSession implements ProviderSession {
 
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
+    this.usage.observe(message);
     if (
       !this.activeTurnId &&
       !this.delegatedTurnRunning &&
@@ -431,32 +437,34 @@ export class ClaudeSession implements ProviderSession {
   // A turn Claude Code started itself reaches the chat as it happens.
   private forwardDelegated(message: SDKMessage, events: NormalizedEvent[]): void {
     for (const event of events) for (const listener of this.backgroundListeners) listener(event);
-    if (message.type === 'result') {
-      const failed = message.subtype !== 'success' || message.is_error;
-      const error =
-        message.subtype === 'success'
-          ? message.result
-          : turnFailure(message.subtype, message.errors);
-      this.endDelegatedTurn(failed, failed ? error : undefined);
-    }
-    // A refused usage window ends the turn with no result; its notice is in the events.
-    else if (message.type === 'rate_limit_event' && rateLimitRefusal(message.rate_limit_info))
-      this.endDelegatedTurn(true);
+    if (message.type !== 'result') return;
+    // A usage refusal still ends the turn with a result, as a typed turn's does.
+    const refusal = this.mapper.takeRefusal();
+    if (refusal) this.endDelegatedTurn(refusal);
+    else if (message.subtype !== 'success')
+      this.endDelegatedTurn(new Error(turnFailure(message.subtype, message.errors)), true);
+    else if (message.is_error) this.endDelegatedTurn(new Error(message.result), true);
+    else this.endDelegatedTurn();
   }
 
   // A stopped turn settles quietly, as a typed one does, however it ended.
-  private endDelegatedTurn(failed: boolean, error?: string): void {
+  private endDelegatedTurn(error?: Error, showError = false): void {
     const stopped = this.interruptedTurnId === DELEGATED_TURN;
     if (stopped) this.interruptedTurnId = undefined;
-    if (!stopped && error)
-      for (const listener of this.backgroundListeners) listener(this.mapper.errorEvent(error));
-    this.setDelegatedTurn(false, failed && !stopped);
+    if (stopped) {
+      this.setDelegatedTurn(false, { status: 'interrupted' });
+      return;
+    }
+    if (error && showError)
+      for (const listener of this.backgroundListeners)
+        listener(this.mapper.errorEvent(error.message));
+    this.setDelegatedTurn(false, error ? { status: 'failed', error } : { status: 'completed' });
   }
 
-  private setDelegatedTurn(running: boolean, failed = false): void {
+  private setDelegatedTurn(running: boolean, end?: DelegatedTurnEnd): void {
     if (this.delegatedTurnRunning === running) return;
     this.delegatedTurnRunning = running;
-    for (const listener of this.delegatedListeners) listener(running, failed);
+    for (const listener of this.delegatedListeners) listener(running, end);
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -493,16 +501,15 @@ export class ClaudeSession implements ProviderSession {
   }: ProviderModelSettings): Promise<void> {
     await this.waitUntilInitialized();
     const resolvedModel = claudeLaunchModel(
-      modelId === undefined ? this.modelId : (modelId ?? undefined),
+      modelId === undefined ? this.mapper.modelId : (modelId ?? undefined),
       contextWindowTokens ?? this.input.contextWindowTokens,
       this.input.models,
       this.input.defaultModel,
     );
-    if (modelId !== undefined && resolvedModel !== this.modelId) {
+    if (modelId !== undefined && resolvedModel !== this.mapper.modelId) {
       await this.query.setModel(resolvedModel);
       this.requireOpen();
-      this.modelId = resolvedModel;
-      this.mapper.setModel(this.modelId);
+      this.mapper.setModel(resolvedModel);
     }
     this.requireOpen();
     if (fastMode !== undefined) {
@@ -609,10 +616,8 @@ export class ClaudeSession implements ProviderSession {
 // after the turn ended: a task notification and a fresh init, then the model's
 // reply and a result, with no prompt of ours behind them (measured on the CLI).
 // The model's first output is where that turn starts for DROIDEX.
-// A refused usage window can end such a turn before the model says anything.
+// A usage refusal is such an assistant message too, so it opens the turn it ends.
 function startsDelegatedTurn(message: SDKMessage): boolean {
-  if (message.type === 'rate_limit_event')
-    return rateLimitRefusal(message.rate_limit_info) !== undefined;
   return (
     (message.type === 'assistant' || message.type === 'stream_event') &&
     message.parent_tool_use_id === null

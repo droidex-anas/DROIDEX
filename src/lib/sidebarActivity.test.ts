@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { SessionAttentionKind } from './sessionAttention';
-import type { SessionSummary } from '../types/bridge';
 import type { ChatMetadata } from './chatMetadata';
 import {
   canSettleSession,
@@ -15,26 +14,16 @@ import {
   matchesActivityFilter,
   compareSidebarSessions,
 } from './sidebarActivity';
+import { sessionSummary } from '../test/sessionSummary';
 
-const session: SessionSummary = {
-  appSessionId: 'older-chat',
+const session = sessionSummary('older-chat', {
   title: 'Review sidebar',
-  goal: '',
   cwd: '/workspace',
-  provider: 'droid',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
   autonomy: 'off',
   phase: 'running',
   streaming: false,
-  createdAt: 1,
   updatedAt: 100,
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-};
+});
 
 test('settling survives reload, while new activity and requests return the task to attention', () => {
   const stored = new Map<string, string>();

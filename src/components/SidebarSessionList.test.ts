@@ -87,21 +87,18 @@ function flatten(node: ReactNode): string {
 
 const eight = Array.from({ length: 8 }, (_, index) => session(`s-${String(index)}`, index));
 
-test('the list pages to the visible count and offers to show more', () => {
+test('the list pages to the visible count, offers more, and collapses again', () => {
   const html = render({ sessions: eight });
 
   assert.ok(html.includes('s-4'));
   assert.ok(!html.includes('s-5'));
   assert.ok(html.includes('Show more'));
   assert.ok(!html.includes('Show less'));
-});
 
-test('an expanded list can be collapsed again', () => {
-  const html = render({ sessions: eight, visibleCount: 10 });
-
-  assert.ok(html.includes('s-7'));
-  assert.ok(!html.includes('Show more'));
-  assert.ok(html.includes('Show less'));
+  const expanded = render({ sessions: eight, visibleCount: 10 });
+  assert.ok(expanded.includes('s-7'));
+  assert.ok(!expanded.includes('Show more'));
+  assert.ok(expanded.includes('Show less'));
 });
 
 test('the active session stays visible below the paged window', () => {
@@ -111,25 +108,22 @@ test('the active session stays visible below the paged window', () => {
   assert.ok(!html.includes('s-6'));
 });
 
-test('earlier pre-existing sessions are offered once everything loaded is shown', () => {
-  const html = render({
+test('earlier sessions are offered only once the loaded list is paged through and some exist', () => {
+  const withEarlier = { earlierSessionCount: 943, onShowEarlier: () => undefined };
+  assert.ok(render({ sessions: eight.slice(0, 3), ...withEarlier }).includes('Show 943 earlier'));
+
+  // Earlier sessions wait until the loaded list has been paged through.
+  const unpaged = render({ sessions: eight, ...withEarlier });
+  assert.ok(unpaged.includes('Show more'));
+  assert.ok(!unpaged.includes('Show 943 earlier'));
+
+  // A folder with nothing withheld shows no reveal control.
+  const nothingWithheld = render({
     sessions: eight.slice(0, 3),
-    earlierSessionCount: 943,
+    earlierSessionCount: 0,
     onShowEarlier: () => undefined,
   });
-
-  assert.ok(html.includes('Show 943 earlier'));
-});
-
-test('earlier sessions wait until the loaded list has been paged through', () => {
-  const html = render({
-    sessions: eight,
-    earlierSessionCount: 943,
-    onShowEarlier: () => undefined,
-  });
-
-  assert.ok(html.includes('Show more'));
-  assert.ok(!html.includes('Show 943 earlier'));
+  assert.ok(!nothingWithheld.includes('earlier'));
 });
 
 test('revealing earlier sessions also pages them into view', () => {
@@ -152,16 +146,6 @@ test('revealing earlier sessions also pages them into view', () => {
 
   assert.equal(revealed, 1);
   assert.equal(paged, 1);
-});
-
-test('a folder with nothing withheld shows no reveal control', () => {
-  const html = render({
-    sessions: eight.slice(0, 3),
-    earlierSessionCount: 0,
-    onShowEarlier: () => undefined,
-  });
-
-  assert.ok(!html.includes('earlier'));
 });
 
 test('loading earlier history keeps All tasks unlimited', () => {

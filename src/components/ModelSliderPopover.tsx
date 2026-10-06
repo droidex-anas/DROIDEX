@@ -63,7 +63,13 @@ const SLIDER_STYLE = {
  * into a spring effort slider for the selected one. Scoped to a single chat;
  * Mission Control and exact-child pickers keep the classic popover.
  */
-export default function ModelSliderPopover({ onClose }: { onClose: () => void }) {
+export default function ModelSliderPopover({
+  appSessionId,
+  onClose,
+}: {
+  appSessionId: string | null;
+  onClose: () => void;
+}) {
   const {
     query,
     setQuery,
@@ -90,7 +96,7 @@ export default function ModelSliderPopover({ onClose }: { onClose: () => void })
     scopedAppSessionId,
     updateModel,
     updateReasoning,
-  } = useModelPicker({ singleAgent: true });
+  } = useModelPicker({ appSessionId, singleAgent: true });
   const { contextWindowTokens, providerWindow, setContextWindow } =
     useContextWindow(scopedAppSessionId);
   const efforts = effortsFor(activeModel, effReasoning);

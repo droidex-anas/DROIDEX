@@ -199,30 +199,6 @@ export function loadMissionControlSessions(
     .sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
-export function loadHistoricalSessions(options: HistoricalSummaryFilter = {}): HistoricalSession[] {
-  const rows: HistoricalSession[] = [];
-  const cached = readStoredSummaryPatches();
-  const workspaceCwds = options.workspaceCwds
-    ? new Set(options.workspaceCwds.filter(Boolean))
-    : null;
-  if (workspaceCwds?.size === 0 && !options.includePlainChats) return [];
-  for (const [providerSessionId, file] of scanSessionFiles()) {
-    const { summary } = summarizeSessionFile(providerSessionId, file);
-    if (!summary) continue;
-    const patched = applyCachedSummary(summary, cached);
-    if (
-      (workspaceCwds || options.includePlainChats) &&
-      !shouldIncludeCwd(patched.cwd ?? '', workspaceCwds, options.includePlainChats)
-    )
-      continue;
-    rows.push({
-      summary: patched,
-      progress: [],
-    });
-  }
-  return rows.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
-}
-
 export function loadSessionHistory(): SessionHistoryEntry[] {
   const rows: SessionHistoryEntry[] = [];
   for (const [providerSessionId, path] of buildSessionIndex()) {
@@ -1470,10 +1446,6 @@ function scanSessionFileTree(): SessionFileScan {
   return { files, isComplete };
 }
 
-function scanSessionFiles(): Map<string, SessionFileStat> {
-  return scanSessionFileTree().files;
-}
-
 // Stats one session file and its settings sidecar, or returns null when the
 // file is gone (deleted between a watcher event and the reconcile).
 function statSessionFile(path: string): SessionFileStat | null {
@@ -1656,9 +1628,9 @@ function readSessionModelSettings(
         stringValue(raw.modelId) ||
         stringValue(raw.model),
     reasoningEffort: reasoningValue(
-      stringValue(sidecarSettings.reasoningEffort) ||
-        stringValue(settings.reasoningEffort) ||
-        stringValue(raw.reasoningEffort),
+      Object.hasOwn(sidecarSettings, 'reasoningEffort')
+        ? stringValue(sidecarSettings.reasoningEffort)
+        : stringValue(settings.reasoningEffort) || stringValue(raw.reasoningEffort),
     ),
     contextWindowTokens: contextWindowTokensValue(
       sidecarSettings.contextWindowTokens !== undefined

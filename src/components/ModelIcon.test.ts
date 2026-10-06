@@ -36,9 +36,23 @@ test('model identity decides before the generic provider field', () => {
   );
 });
 
-test('an unrecognized custom model never borrows the OpenAI mark', () => {
+test('without a recognizable identity, built-ins use their provider and custom models no mark', () => {
   assert.equal(providerOf(custom('custom:acme:command-r', 'Command R')), 'default');
   assert.equal(providerOf(custom('custom:acme:phi-4', 'Phi 4', 'anthropic')), 'default');
+  assert.equal(
+    providerOf({ id: 'gpt-4o', displayName: 'GPT 4o', provider: 'openai', isCustom: false }),
+    'openai',
+  );
+  assert.equal(
+    providerOf({
+      id: 'claude-opus-4-8',
+      displayName: 'Opus',
+      provider: 'anthropic',
+      isCustom: false,
+    }),
+    'anthropic',
+  );
+  assert.equal(providerOf(undefined, undefined), 'default');
 });
 
 test('makers win over subscription wrappers, with word-boundary tokens', () => {
@@ -54,23 +68,6 @@ test('makers win over subscription wrappers, with word-boundary tokens', () => {
   // path prefix is not Copilot.
   assert.equal(providerOf(custom('custom:acme:amused-1', 'Amused 1')), 'default');
   assert.equal(providerOf(custom('github/gpt-4o', 'github/gpt-4o')), 'openai');
-});
-
-test('built-in models still resolve from the provider field', () => {
-  assert.equal(
-    providerOf({ id: 'gpt-4o', displayName: 'GPT 4o', provider: 'openai', isCustom: false }),
-    'openai',
-  );
-  assert.equal(
-    providerOf({
-      id: 'claude-opus-4-8',
-      displayName: 'Opus',
-      provider: 'anthropic',
-      isCustom: false,
-    }),
-    'anthropic',
-  );
-  assert.equal(providerOf(undefined, undefined), 'default');
 });
 
 test('droidproxy models are detected by id and shown without the text prefix', () => {

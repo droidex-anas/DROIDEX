@@ -1,60 +1,81 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useDocumentVisible } from './useDocumentVisible';
 import { useStoreDispatch, useStoreSelector } from './useStore';
+import { chatsOnScreen, sameEntries } from '../features/tabs/tabStrip';
 import { setBackgroundWork } from '../lib/commands';
 import { resolveBackgroundWorkTier, type BackgroundWorkTier } from '../lib/backgroundWork';
-import { desktopPowerTier, onDesktopMemoryPressure, onDesktopPowerTier } from '../lib/desktop';
+import {
+  desktopPowerTier,
+  onDesktopMemoryPressure,
+  onDesktopPowerTier,
+  type DesktopPowerTierSnapshot,
+} from '../lib/desktop';
+
+interface SentBackgroundWork {
+  tier: BackgroundWorkTier;
+  focused: string | null;
+  visible: string[];
+}
+
+type PowerState = Pick<DesktopPowerTierSnapshot, 'windowVisible' | 'onBattery'>;
+
+const VISIBLE_ON_MAINS: PowerState = { windowVisible: true, onBattery: false };
 
 export function useBackgroundWorkTier(): void {
   const documentVisible = useDocumentVisible();
-  const focusedAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
+  const activeAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
+  // Sorted so that rearranging tiles is not a change in what is on screen.
+  const visibleAppSessionIds = useStoreSelector(
+    (state) => chatsOnScreen(state).sort(),
+    sameEntries,
+  );
+  const focusedAppSessionId =
+    activeAppSessionId && visibleAppSessionIds.includes(activeAppSessionId)
+      ? activeAppSessionId
+      : null;
   const connected = useStoreSelector((state) => state.connection === 'connected');
   const dispatch = useStoreDispatch();
-  const lastSent = useRef<{ tier: BackgroundWorkTier; focused: string | null } | null>(null);
+  const [power, setPower] = useState<PowerState>(VISIBLE_ON_MAINS);
+  const lastSent = useRef<SentBackgroundWork | null>(null);
+
+  // Power and memory pressure come from the desktop host, not the sidecar, so
+  // they stay current across reconnects and apart from every tile gesture.
+  useEffect(() => {
+    let disposed = false;
+    void desktopPowerTier().then((snapshot) => {
+      if (!disposed && snapshot) setPower(snapshot);
+    });
+    const stopPower = onDesktopPowerTier(setPower);
+    const stopPressure = onDesktopMemoryPressure(() => {
+      dispatch({ type: 'MEMORY_PRESSURE' });
+    });
+    return () => {
+      disposed = true;
+      stopPower();
+      stopPressure();
+    };
+  }, [dispatch]);
 
   useEffect(() => {
     if (!connected) {
       lastSent.current = null;
       return;
     }
-    let disposed = false;
-    let windowVisible = true;
-    let onBattery = false;
-
-    const publish = (tier: BackgroundWorkTier) => {
-      const focused = focusedAppSessionId;
-      if (lastSent.current?.tier === tier && lastSent.current.focused === focused) return;
-      lastSent.current = { tier, focused };
-      setBackgroundWork(tier, focused);
-    };
-
-    const sync = () => {
-      if (disposed) return;
-      publish(resolveBackgroundWorkTier({ windowVisible, documentVisible, onBattery }));
-    };
-
-    void desktopPowerTier().then((snapshot) => {
-      if (disposed || !snapshot) return;
-      windowVisible = snapshot.windowVisible;
-      onBattery = snapshot.onBattery;
-      sync();
+    const tier = resolveBackgroundWorkTier({
+      windowVisible: power.windowVisible,
+      documentVisible,
+      onBattery: power.onBattery,
     });
-
-    const stopPower = onDesktopPowerTier((snapshot) => {
-      windowVisible = snapshot.windowVisible;
-      onBattery = snapshot.onBattery;
-      sync();
-    });
-    const stopPressure = onDesktopMemoryPressure(() => {
-      dispatch({ type: 'MEMORY_PRESSURE' });
-    });
-    sync();
-
-    return () => {
-      disposed = true;
-      stopPower();
-      stopPressure();
-    };
-  }, [connected, dispatch, documentVisible, focusedAppSessionId]);
+    const sent = lastSent.current;
+    if (
+      sent?.tier === tier &&
+      sent.focused === focusedAppSessionId &&
+      sameEntries(sent.visible, visibleAppSessionIds)
+    ) {
+      return;
+    }
+    lastSent.current = { tier, focused: focusedAppSessionId, visible: visibleAppSessionIds };
+    setBackgroundWork(tier, focusedAppSessionId, visibleAppSessionIds);
+  }, [connected, documentVisible, focusedAppSessionId, power, visibleAppSessionIds]);
 }

@@ -1,5 +1,5 @@
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { shallowEqual, useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { respondPermission } from '../lib/commands';
 import type { PermissionKind, PermissionOutcome } from '../types/bridge';
 import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
@@ -63,18 +63,16 @@ function Subject({ kind, detail }: { kind: PermissionKind; detail: string }) {
   );
 }
 
-export default function PermissionInline({ appSessionId }: { appSessionId?: string }) {
+export default function PermissionInline({ appSessionId }: { appSessionId: string }) {
   const dispatch = useStoreDispatch();
   const reduceMotion = useReducedMotion();
   // Permission requests are session-scoped, and a session can be waiting on
-  // more than one: the oldest is the one the user is asked about, for the chat
-  // the user is looking at or the side chat given.
+  // more than one: the oldest is the one the user is asked about.
   const state = useStoreSelector((current) => {
-    const id = appSessionId ?? current.activeAppSessionId;
-    const session = id ? current.sessions[id] : undefined;
+    const sessions: Partial<AppState['sessions']> = current.sessions;
     return {
-      request: id ? current.pendingPermissions[id]?.[0] : undefined,
-      provider: session?.provider,
+      request: current.pendingPermissions[appSessionId]?.[0],
+      provider: sessions[appSessionId]?.provider,
     };
   }, shallowEqual);
   const req = state.request;

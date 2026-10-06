@@ -56,23 +56,18 @@ test('only the named session tools on the sessions server are ever approved', ()
   }
 });
 
-test('one Always allow for thread_spawn covers only the kind of chat it was given for', () => {
-  const scope = (input: Record<string, unknown>) =>
-    sessionsGrantScope(SESSIONS_MCP_SERVER_NAME, 'thread_spawn', input);
-  assert.equal(scope({ reportBack: true }), 'thread');
-  assert.equal(scope({ reportBack: false }), 'chat');
+test('one Always allow covers only the spawn kind, the one chat, or the exact mark it was given for', () => {
+  const scope = (tool: string, input: Record<string, unknown>) =>
+    sessionsGrantScope(SESSIONS_MCP_SERVER_NAME, tool, input);
+  assert.equal(scope('thread_spawn', { reportBack: true }), 'thread');
+  assert.equal(scope('thread_spawn', { reportBack: false }), 'chat');
   // Without a kind there is nothing a grant could be scoped to.
-  assert.equal(scope({}), '');
-  assert.equal(sessionsGrantScope(SESSIONS_MCP_SERVER_NAME, 'thread_read', {}), undefined);
+  assert.equal(scope('thread_spawn', {}), '');
+  assert.equal(scope('thread_read', {}), undefined);
   assert.equal(
     sessionsGrantScope('droidex-automations', 'thread_spawn', { reportBack: true }),
     undefined,
   );
-});
-
-test('one Always allow for a message or a stop covers one chat, and for a mark the exact call', () => {
-  const scope = (tool: string, input: Record<string, unknown>) =>
-    sessionsGrantScope(SESSIONS_MCP_SERVER_NAME, tool, input);
   assert.equal(scope('session_send', { sessionId: 'chat-a', text: 'hi' }), 'chat-a');
   assert.equal(scope('session_send', { sessionId: 'chat-b', text: 'hi' }), 'chat-b');
   assert.equal(scope('session_stop', { sessionId: 'chat-a' }), 'chat-a');

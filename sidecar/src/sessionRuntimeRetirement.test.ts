@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { LiveSession } from './SessionLifecycle.js';
-import type { SessionSummary } from './protocol.js';
 import {
   nextSessionRetirementAt,
   retirableSessions,
@@ -11,6 +10,7 @@ import {
   type SessionRuntimeRetirementDependencies,
 } from './sessionRuntimeRetirement.js';
 import { fakeProviderSession, FakeFactorySession } from './testing/fakeFactoryRuntime.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const IDLE_MS = 1_800_000;
 
@@ -28,7 +28,8 @@ function facts(
     queuedSends: 0,
     interrupting: false,
     closing: false,
-    focused: false,
+    coolingDown: false,
+    onScreen: false,
     hasUnsettledChildren: false,
     hasOpenBrowser: false,
     hasPendingSettings: false,
@@ -38,22 +39,32 @@ function facts(
   };
 }
 
-test('a settled background session is retirable only once it passes the idle budget', () => {
+test('a settled background session is retirable once it passes the idle budget, oldest deadline first', () => {
   const idle = [facts('a', 1_000)];
 
   assert.deepEqual(retirableSessions(idle, 1_000 + IDLE_MS - 1, IDLE_MS), []);
   assert.deepEqual(retirableSessions(idle, 1_000 + IDLE_MS, IDLE_MS), ['a']);
+
+  // A monotonic timestamp ahead of the clock counts as zero elapsed idle time.
+  const ahead = [facts('a', 101)];
+  assert.deepEqual(retirableSessions(ahead, 100, 0), ['a']);
+  assert.deepEqual(retirableSessions(ahead, 100, 1), []);
+  assert.deepEqual(retirableSessions(ahead, 102, 1), ['a']);
+
+  // The next deadline follows the session that went idle first.
+  const two = [facts('older', 1_000), facts('newer', 4_000)];
+  assert.equal(nextSessionRetirementAt(two, 10_000, IDLE_MS), 1_000 + IDLE_MS);
+  assert.equal(
+    nextSessionRetirementAt([facts('busy', 1_000, { streaming: true })], 10_000, IDLE_MS),
+    undefined,
+  );
+  assert.equal(nextSessionRetirementAt([], 10_000, IDLE_MS), undefined);
 });
 
-test('a session the user is looking at is never retirable, however long it sits', () => {
-  const forever = 1_000 + IDLE_MS * 100;
-
-  assert.deepEqual(retirableSessions([facts('a', 1_000, { focused: true })], forever, IDLE_MS), []);
-});
-
-test('a session with work, unsaved intent, or a resource in use is never retirable', () => {
+test('a session on screen, with work, unsaved intent, or a resource in use is never retirable', () => {
   const forever = 1_000 + IDLE_MS * 100;
   const blocked: [string, Partial<SessionRetirementFacts>][] = [
+    ['on-screen', { onScreen: true }],
     ['mid-turn', { streaming: true }],
     ['mid-mission-turn', { phase: 'orchestrator_turn', streaming: true }],
     ['still-initializing', { phase: 'initializing' }],
@@ -78,49 +89,19 @@ test('a session with work, unsaved intent, or a resource in use is never retirab
   }
 });
 
-test('the next deadline follows the session that went idle first', () => {
-  const idle = [facts('older', 1_000), facts('newer', 4_000)];
-
-  assert.equal(nextSessionRetirementAt(idle, IDLE_MS), 1_000 + IDLE_MS);
-  assert.equal(
-    nextSessionRetirementAt([facts('busy', 1_000, { streaming: true })], IDLE_MS),
-    undefined,
-  );
-  assert.equal(nextSessionRetirementAt([], IDLE_MS), undefined);
-});
-
 interface OwnerHarness {
   owner: SessionRuntimeRetirement;
   retired: string[];
-  statuses: { appSessionId: string; text: string }[];
   errors: { appSessionId: string; message: string }[];
   live: Map<string, LiveSession>;
-  focus: { current: string | null };
   clock: { now: number };
+  // Reports these chats as the ones on screen, replacing the previous report.
+  show(...appSessionIds: string[]): void;
   add(appSessionId: string, updatedAt: number, patch?: Partial<LiveSession>): LiveSession;
 }
 
 function liveSession(appSessionId: string, updatedAt: number): LiveSession {
-  const summary = {
-    appSessionId,
-    providerSessionId: appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
-    goal: '',
-    cwd: '',
-    autonomy: 'off',
-    phase: 'paused',
-    streaming: false,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 0,
-    updatedAt,
-  } satisfies SessionSummary;
+  const summary = sessionSummary({ appSessionId, autonomy: 'off', streaming: false, updatedAt });
   const droid = new FakeFactorySession(appSessionId, {}, []);
   return {
     summary,
@@ -137,14 +118,13 @@ function liveSession(appSessionId: string, updatedAt: number): LiveSession {
 
 function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> = {}): OwnerHarness {
   const retired: string[] = [];
-  const statuses: { appSessionId: string; text: string }[] = [];
   const errors: { appSessionId: string; message: string }[] = [];
   const live = new Map<string, LiveSession>();
-  const focus = { current: null as string | null };
+  let onScreen: ReadonlySet<string> | null = null;
   const clock = { now: 10_000 };
   const owner = new SessionRuntimeRetirement({
     liveSessions: () => [...live.values()],
-    focusedAppSessionId: () => focus.current,
+    onScreenAppSessionIds: () => onScreen,
     hasUnsettledChildren: () => false,
     hasOpenBrowser: () => false,
     hasPendingSettings: () => false,
@@ -155,7 +135,6 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
       live.delete(appSessionId);
       return Promise.resolve();
     },
-    appendProgress: (appSessionId, text) => statuses.push({ appSessionId, text }),
     emitError: (appSessionId, message) => errors.push({ appSessionId, message }),
     idleMs: IDLE_MS,
     now: () => clock.now,
@@ -164,11 +143,14 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
   return {
     owner,
     retired,
-    statuses,
     errors,
     live,
-    focus,
     clock,
+    show(...appSessionIds) {
+      const previous = onScreen;
+      onScreen = new Set(appSessionIds);
+      owner.noteOnScreen(previous);
+    },
     add(appSessionId, updatedAt, patch = {}) {
       const session = Object.assign(liveSession(appSessionId, updatedAt), patch);
       live.set(appSessionId, session);
@@ -176,6 +158,120 @@ function ownerHarness(overrides: Partial<SessionRuntimeRetirementDependencies> =
     },
   };
 }
+
+test('only three settled off-screen runtimes stay warm, longest idle released first', async () => {
+  const h = ownerHarness();
+  try {
+    h.add('newest', 4_000);
+    h.add('oldest', 1_000);
+    h.add('second', 2_000);
+    h.add('third', 3_000);
+    h.add('visible', 0);
+    h.add('working', 0, { streaming: true });
+    h.show('visible');
+
+    assert.equal(h.owner.armedFor(), h.clock.now, 'exceeding the cap arms an immediate sweep');
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest']);
+
+    h.clock.now = 2_000 + IDLE_MS - 1;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest'], 'the remaining three keep their idle budget');
+
+    h.clock.now = 4_000 + IDLE_MS;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest', 'second', 'third', 'newest']);
+    assert.deepEqual([...h.live.keys()], ['visible', 'working']);
+  } finally {
+    h.owner.stop();
+  }
+});
+
+test('a failed release counts toward the cap while waiting five minutes to retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let failRelease = true;
+  const h = ownerHarness({
+    retire: (appSessionId) => {
+      if (appSessionId === 'oldest' && failRelease)
+        return Promise.reject(new Error('flush failed'));
+      h.retired.push(appSessionId);
+      h.live.delete(appSessionId);
+      return Promise.resolve();
+    },
+  });
+  try {
+    h.add('oldest', 1_000);
+    h.add('second', 2_000);
+    h.add('third', 3_000);
+    h.add('newest', 4_000);
+    h.show();
+    const retryAt = h.clock.now + 5 * 60_000;
+
+    await h.owner.sweep();
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['second']);
+    assert.deepEqual([...h.live.keys()], ['oldest', 'third', 'newest']);
+    assert.equal(h.errors.length, 1);
+    assert.equal(h.owner.armedFor(), retryAt);
+
+    h.clock.now = retryAt - 1;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['second']);
+    assert.equal(h.errors.length, 1, 'a sweep during cooldown must not retry the release');
+
+    failRelease = false;
+    h.clock.now = retryAt;
+    h.add('resumed', retryAt);
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['second', 'oldest']);
+    assert.deepEqual([...h.live.keys()], ['third', 'newest', 'resumed']);
+    assert.equal(h.owner.armedFor(), 3_000 + IDLE_MS);
+  } finally {
+    h.owner.stop();
+  }
+});
+
+test('an over-cap set of cooling-down runtimes waits for retry even past the idle budget', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let failRelease = true;
+  const h = ownerHarness({
+    retire: (appSessionId) => {
+      if (failRelease) return Promise.reject(new Error('flush failed'));
+      h.retired.push(appSessionId);
+      h.live.delete(appSessionId);
+      return Promise.resolve();
+    },
+  });
+  try {
+    h.add('oldest', 1_000);
+    h.add('second', 2_000);
+    h.add('third', 3_000);
+    h.add('newest', 4_000);
+    h.clock.now = IDLE_MS;
+    h.show();
+    const retryAt = h.clock.now + 5 * 60_000;
+
+    for (let attempt = 0; attempt < 4; attempt++) await h.owner.sweep();
+    assert.equal(h.errors.length, 4);
+    assert.equal(h.live.size, 4);
+    assert.equal(h.owner.armedFor(), retryAt, 'cooldowns must not arm an immediate sweep');
+
+    h.clock.now = retryAt - 1;
+    await h.owner.sweep();
+    assert.equal(h.errors.length, 4, 'passing the idle budget must not bypass cooldown');
+    assert.deepEqual(h.retired, []);
+    assert.equal(h.owner.armedFor(), retryAt);
+
+    failRelease = false;
+    h.clock.now = retryAt;
+    await h.owner.sweep();
+    assert.deepEqual(h.retired, ['oldest', 'second', 'third', 'newest']);
+    assert.equal(h.live.size, 0);
+    assert.equal(h.owner.armedFor(), undefined);
+  } finally {
+    h.owner.stop();
+  }
+});
 
 test('nothing is retirable until the renderer has reported what is on screen', async () => {
   const h = ownerHarness();
@@ -185,33 +281,55 @@ test('nothing is retirable until the renderer has reported what is on screen', a
   await h.owner.sweep();
   assert.deepEqual(h.retired, []);
 
-  h.focus.current = 'other';
-  h.owner.noteFocus(null);
+  h.show('other');
   await h.owner.sweep();
   assert.deepEqual(h.retired, ['background']);
-  assert.deepEqual(
-    h.statuses.map(({ appSessionId }) => appSessionId),
-    ['background'],
-  );
 });
 
-test('a session stays warm for a full budget after the user switches away from it', async () => {
+test('a session stays warm for a full budget after the user switches away, until it closes', async () => {
   const h = ownerHarness();
   h.add('read-for-a-while', 0);
-  h.focus.current = 'read-for-a-while';
-  h.owner.noteFocus(null);
+  h.show('read-for-a-while');
   h.clock.now = IDLE_MS * 10;
 
   // Switching away starts the clock: an old updatedAt must not make a session
   // the user just left immediately retirable.
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus('read-for-a-while');
+  h.show('elsewhere');
   await h.owner.sweep();
   assert.deepEqual(h.retired, []);
 
   h.clock.now += IDLE_MS;
   await h.owner.sweep();
   assert.deepEqual(h.retired, ['read-for-a-while']);
+
+  // A closed session forgets when the user last looked at it, so one resumed
+  // with nothing newer than its last turn is not kept warm by that moment.
+  h.add('reopened', 0);
+  h.show('reopened');
+  h.show('elsewhere');
+  h.live.delete('reopened');
+  h.owner.arm();
+  h.add('reopened', 0);
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, ['read-for-a-while', 'reopened']);
+});
+
+test('every chat on screen stays warm, and each starts its clock as it leaves', async () => {
+  const h = ownerHarness();
+  h.add('left', 0);
+  h.add('right', 0);
+  h.clock.now = IDLE_MS * 10;
+  h.show('left', 'right');
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, []);
+
+  h.show('left');
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, [], 'leaving the screen starts the clock, it does not expire it');
+
+  h.clock.now += IDLE_MS;
+  await h.owner.sweep();
+  assert.deepEqual(h.retired, ['right']);
 });
 
 test('capacity release chooses the oldest safe runtime and excludes the delivery target', async () => {
@@ -220,8 +338,7 @@ test('capacity release chooses the oldest safe runtime and excludes the delivery
   h.add('newer', 3_000);
   h.add('oldest', 1_000);
   h.add('focused', 500);
-  h.focus.current = 'focused';
-  h.owner.noteFocus(null);
+  h.show('focused');
 
   assert.equal(await h.owner.releaseOldestForCapacity('delivery-target'), true);
   assert.deepEqual(h.retired, ['oldest']);
@@ -244,8 +361,7 @@ test('a prompt that arrives during an earlier release saves the session behind i
   });
   h.add('first', 0);
   const second = h.add('second', 0);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus(null);
+  h.show('elsewhere');
   h.clock.now = IDLE_MS * 10;
 
   const sweeping = h.owner.sweep();
@@ -253,37 +369,14 @@ test('a prompt that arrives during an earlier release saves the session behind i
   releaseSecond();
   await sweeping;
 
-  assert.deepEqual(retired, ['first']);
-  assert.deepEqual(
-    h.statuses.map(({ appSessionId }) => appSessionId),
-    ['first'],
-    'a session that started a turn must not be told its runtime went away',
-  );
-});
-
-test('a closed session stops carrying the moment the user last looked at it', async () => {
-  const h = ownerHarness();
-  h.add('reopened', 0);
-  h.focus.current = 'reopened';
-  h.owner.noteFocus(null);
-  h.clock.now = IDLE_MS * 10;
-
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus('reopened');
-  h.live.delete('reopened');
-  h.owner.arm();
-
-  // Resumed with nothing newer than its last turn: the pre-close switch-away
-  // must not be what keeps it warm.
-  h.add('reopened', 0);
-  await h.owner.sweep();
-  assert.deepEqual(h.retired, ['reopened']);
+  assert.deepEqual(retired, ['first'], 'a session that started a turn keeps its runtime');
 });
 
 test('overlapping retirement sweeps wait for the same pending close', async () => {
   let finishClose = (): void => undefined;
   const h = ownerHarness({
     retire: (id) => {
+      h.retired.push(id);
       h.live.delete(id);
       return new Promise<void>((resolve) => {
         finishClose = resolve;
@@ -291,8 +384,7 @@ test('overlapping retirement sweeps wait for the same pending close', async () =
     },
   });
   h.add('pending-close', 0);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus(null);
+  h.show('elsewhere');
   h.clock.now = IDLE_MS * 10;
   try {
     const first = h.owner.sweep();
@@ -305,7 +397,7 @@ test('overlapping retirement sweeps wait for the same pending close', async () =
     finishClose();
     await Promise.all([first, second]);
     assert.equal(finished, true);
-    assert.equal(h.statuses.length, 1);
+    assert.deepEqual(h.retired, ['pending-close']);
   } finally {
     finishClose();
     h.owner.stop();
@@ -316,13 +408,13 @@ test('a failed release is reported and does not stop the rest of the sweep', asy
   const h = ownerHarness({
     retire: (appSessionId) => {
       if (appSessionId === 'broken') return Promise.reject(new Error('flush failed'));
+      h.retired.push(appSessionId);
       return Promise.resolve();
     },
   });
   h.add('broken', 0);
   h.add('fine', 0);
-  h.focus.current = 'elsewhere';
-  h.owner.noteFocus(null);
+  h.show('elsewhere');
   h.clock.now = IDLE_MS * 10;
 
   await h.owner.sweep();
@@ -332,10 +424,7 @@ test('a failed release is reported and does not stop the rest of the sweep', asy
       message: "Could not release this session's idle runtime: flush failed",
     },
   ]);
-  assert.equal(
-    h.statuses.some(({ appSessionId }) => appSessionId === 'fine'),
-    true,
-  );
+  assert.deepEqual(h.retired, ['fine']);
 });
 
 test('the timer is armed only while a session is actually retirable', () => {
@@ -350,8 +439,7 @@ test('the timer is armed only while a session is actually retirable', () => {
   try {
     const h = ownerHarness();
     const streaming = h.add('streaming', 0, { streaming: true });
-    h.focus.current = null;
-    h.owner.noteFocus(null);
+    h.show();
 
     h.owner.arm();
     assert.equal(h.owner.armedFor(), undefined, 'a streaming session must not arm a wakeup');
@@ -378,11 +466,4 @@ test('the timer is armed only while a session is actually retirable', () => {
     Reflect.set(globalThis, 'setTimeout', realSetTimeout);
     Reflect.set(globalThis, 'clearTimeout', realClearTimeout);
   }
-});
-
-test('a monotonic timestamp ahead of the clock counts as zero elapsed idle time', () => {
-  const idle = [facts('a', 101)];
-  assert.deepEqual(retirableSessions(idle, 100, 0), ['a']);
-  assert.deepEqual(retirableSessions(idle, 100, 1), []);
-  assert.deepEqual(retirableSessions(idle, 102, 1), ['a']);
 });

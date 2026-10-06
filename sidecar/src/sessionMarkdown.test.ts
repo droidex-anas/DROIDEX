@@ -21,17 +21,21 @@ const META = {
   exportedAt: new Date('2026-08-09T12:00:00.000Z'),
 };
 
-test('header carries the title, resume hint, directory, and export date', () => {
+test('header carries the title, resume hint, directory, and export date, and nothing else when empty', () => {
   const md = transcriptToMarkdown([], META);
   assert.match(md, /^# Fix the sidebar/);
   assert.match(md, /`droid-abc` — resume with `droid -r droid-abc`/);
   assert.match(md, /- \*\*Directory:\*\* `\/repo`/);
   assert.match(md, /- \*\*Exported:\*\* 2026-08-09T12:00:00\.000Z/);
-});
-
-test('header omits the directory line when the session has no cwd', () => {
-  const md = transcriptToMarkdown([], { ...META, cwd: undefined });
-  assert.doesNotMatch(md, /Directory/);
+  assert.equal(
+    md
+      .trim()
+      .split('\n')
+      .filter((l) => l.startsWith('##')).length,
+    0,
+  );
+  // A session without a cwd has no directory line.
+  assert.doesNotMatch(transcriptToMarkdown([], { ...META, cwd: undefined }), /Directory/);
 });
 
 test('a meta note renders as a caveat right under the header', () => {
@@ -47,47 +51,39 @@ test('a meta note renders as a caveat right under the header', () => {
   assert.ok(headerEnd > -1 && note > headerEnd && turn > note);
 });
 
-test('user and assistant text become labeled sections in order', () => {
+test('a transcript renders in order: labeled turns, folded thinking, fenced tools, quoted errors, dividers', () => {
   const md = transcriptToMarkdown(
-    [ev({ kind: 'text', author: 'user', text: 'hello there' }), ev({ kind: 'text', text: 'hi!' })],
+    [
+      ev({ kind: 'text', author: 'user', text: 'hello there' }),
+      ev({ kind: 'thinking', text: 'hmm' }),
+      ev({ kind: 'status', text: 'Working…' }),
+      ev({ kind: 'text', text: 'hi!' }),
+      ev({ kind: 'tool_call', toolName: 'Execute', toolArgs: { command: 'ls' } }),
+      ev({ kind: 'tool_result', toolName: 'Execute', text: 'file.ts' }),
+      ev({ kind: 'tool_result', text: 'boom', isError: true }),
+      ev({ kind: 'error', text: 'bad thing' }),
+      ev({ kind: 'compaction', removedCount: 42 }),
+    ],
     META,
   );
   const user = md.indexOf('## User\n\nhello there');
   const droid = md.indexOf('## Droid\n\nhi!');
   assert.ok(user > -1 && droid > user);
-});
-
-test('thinking folds into a details block; status chrome is dropped', () => {
-  const md = transcriptToMarkdown(
-    [ev({ kind: 'thinking', text: 'hmm' }), ev({ kind: 'status', text: 'Working…' })],
-    META,
-  );
   assert.match(md, /<details>\n<summary>Thinking<\/summary>\n\nhmm\n\n<\/details>/);
+  // Status chrome is dropped.
   assert.doesNotMatch(md, /Working…/);
-});
-
-test('tool calls and results are fenced; errors are quoted', () => {
-  const md = transcriptToMarkdown(
-    [
-      ev({ kind: 'tool_call', toolName: 'Execute', toolArgs: { command: 'ls' } }),
-      ev({ kind: 'tool_result', toolName: 'Execute', text: 'file.ts' }),
-      ev({ kind: 'tool_result', text: 'boom', isError: true }),
-      ev({ kind: 'error', text: 'bad thing' }),
-    ],
-    META,
-  );
   assert.match(md, /\*\*Tool: Execute\*\*\n\n```\n\{\n {2}"command": "ls"\n\}\n```/);
   assert.match(md, /\*\*Tool result: Execute\*\*\n\n```\nfile\.ts\n```/);
   assert.match(md, /\*\*Tool error\*\*\n\n```\nboom\n```/);
   assert.match(md, /> \*\*Error:\*\* bad thing/);
-});
+  assert.match(md, /---\n\n\*42 earlier messages were summarized by compaction\.\*/);
 
-test('a payload containing code fences gets a longer outer fence', () => {
-  const md = transcriptToMarkdown(
+  // A payload containing code fences gets a longer outer fence.
+  const fenced = transcriptToMarkdown(
     [ev({ kind: 'tool_result', text: 'before\n```ts\ncode\n```\nafter' })],
     META,
   );
-  assert.match(md, /````\nbefore\n```ts\ncode\n```\nafter\n````/);
+  assert.match(fenced, /````\nbefore\n```ts\ncode\n```\nafter\n````/);
 });
 
 test('oversized tool output and thinking are truncated with a marker', () => {
@@ -101,20 +97,4 @@ test('oversized tool output and thinking are truncated with a marker', () => {
   assert.match(md, /\[truncated 1000 chars\]/);
   assert.ok(!md.includes('x'.repeat(2_500)));
   assert.ok(!md.includes('y'.repeat(4_500)));
-});
-
-test('compaction becomes a divider with the summarized count', () => {
-  const md = transcriptToMarkdown([ev({ kind: 'compaction', removedCount: 42 })], META);
-  assert.match(md, /---\n\n\*42 earlier messages were summarized by compaction\.\*/);
-});
-
-test('empty transcript exports just the header', () => {
-  const md = transcriptToMarkdown([], META);
-  assert.equal(
-    md
-      .trim()
-      .split('\n')
-      .filter((l) => l.startsWith('##')).length,
-    0,
-  );
 });

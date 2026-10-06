@@ -352,30 +352,36 @@ function CsvPreview({
           performance).
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-[11px]">
-          <tbody>
-            {rows.map((row, rIdx) => (
-              <tr key={rIdx} className={rIdx === 0 ? 'bg-droid-elevated/40 font-medium' : ''}>
-                {row.map((cell, cIdx) => (
-                  <td
-                    key={cIdx}
-                    className="border-t border-droid-border px-2 py-1 text-droid-text-secondary [overflow-wrap:anywhere]"
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PreviewTable rows={rows} />
       {(rows.length >= TABLE_ROW_LIMIT ||
         (rows[rows.length - 1]?.length ?? 0) >= TABLE_COL_LIMIT) && (
         <div className="shrink-0 border-t border-droid-border bg-droid-surface/60 px-3 py-1 text-[11px] text-droid-text-muted">
           Limited to {TABLE_ROW_LIMIT} rows × {TABLE_COL_LIMIT} columns.
         </div>
       )}
+    </div>
+  );
+}
+
+function PreviewTable({ rows }: { rows: string[][] }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <table className="w-full border-collapse text-[11px]">
+        <tbody>
+          {rows.map((row, rIdx) => (
+            <tr key={rIdx} className={rIdx === 0 ? 'bg-droid-elevated/40 font-medium' : ''}>
+              {row.map((cell, cIdx) => (
+                <td
+                  key={cIdx}
+                  className="border-t border-droid-border px-2 py-1 text-droid-text-secondary [overflow-wrap:anywhere]"
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -773,24 +779,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
           ))}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-[11px]">
-          <tbody>
-            {sheet.data.map((row, rIdx) => (
-              <tr key={rIdx} className={rIdx === 0 ? 'bg-droid-elevated/40 font-medium' : ''}>
-                {row.map((cell, cIdx) => (
-                  <td
-                    key={cIdx}
-                    className="border-t border-droid-border px-2 py-1 text-droid-text-secondary [overflow-wrap:anywhere]"
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PreviewTable rows={sheet.data} />
       <div className="shrink-0 border-t border-droid-border bg-droid-surface/60 px-3 py-1 text-[11px] text-droid-text-muted">
         Limited to {TABLE_ROW_LIMIT} rows × {TABLE_COL_LIMIT} columns per sheet.
       </div>

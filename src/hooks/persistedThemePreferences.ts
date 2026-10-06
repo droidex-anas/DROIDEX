@@ -54,11 +54,8 @@ function getLocalStorage(): Storage | undefined {
   return descriptor && 'value' in descriptor ? (descriptor.value as Storage) : undefined;
 }
 
-// 'symbol' is the focused style's earlier name. Loading never rewrites the
-// saved theme, so a theme saved before the rename still carries it.
 export function normalizeDiffStyle(value: unknown): DiffStyle {
-  if (value === 'focused' || value === 'symbol') return 'focused';
-  return 'soft';
+  return value === 'focused' ? 'focused' : 'soft';
 }
 
 export function loadCustomThemes(): ThemePreset[] {

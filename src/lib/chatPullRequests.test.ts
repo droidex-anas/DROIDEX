@@ -33,6 +33,18 @@ const pr: PullRequest = {
   reviews: [],
 };
 
+const available = async () => ({
+  installed: true,
+  authenticated: true,
+  installMethod: 'manual' as const,
+});
+const environment = async () => ({
+  isRepo: true,
+  isGitHub: true,
+  branch: 'sidebar',
+  worktreePath: '/worktree',
+});
+
 test('automatic discovery deduplicates worktrees and ignores moved chats and cancelled results', async () => {
   let targets: ChatPrTarget[] = [
     { appSessionId: 'one', cwd: '/worktree' },
@@ -43,17 +55,8 @@ test('automatic discovery deduplicates worktrees and ignores moved chats and can
   let calls = 0;
   const linked: string[][] = [];
   const api = {
-    getGithubAvailability: async () => ({
-      installed: true,
-      authenticated: true,
-      installMethod: 'manual' as const,
-    }),
-    getGitEnvironment: async () => ({
-      isRepo: true,
-      isGitHub: true,
-      branch: 'sidebar',
-      worktreePath: '/worktree',
-    }),
+    getGithubAvailability: available,
+    getGitEnvironment: environment,
     detectPullRequest: async (cwd: string, branch?: string) => {
       calls++;
       assert.equal(cwd, '/worktree');
@@ -88,18 +91,6 @@ test('automatic discovery deduplicates worktrees and ignores moved chats and can
       },
     },
   );
-});
-
-const available = async () => ({
-  installed: true,
-  authenticated: true,
-  installMethod: 'manual' as const,
-});
-const environment = async () => ({
-  isRepo: true,
-  isGitHub: true,
-  branch: 'sidebar',
-  worktreePath: '/worktree',
 });
 
 test('subdirectories share one canonical worktree lookup and retain original cwd targeting', async () => {

@@ -1,11 +1,21 @@
 {
   "electron/nativeBrowserPreload.cjs": {
     "no-undef": {
-      "count": 98
+      "count": 42
     }
   },
-  "sidecar/src/browser/BrowserSessionManager.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
+  "sidecar/src/ChildSessions.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "sidecar/src/SessionLifecycle.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "sidecar/src/SessionTimeline.test.ts": {
+    "max-lines": {
       "count": 1
     }
   },
@@ -15,12 +25,6 @@
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 4
     }
   },
   "sidecar/src/browser/NativeBrowserRuntime.ts": {
@@ -65,7 +69,7 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
@@ -74,7 +78,7 @@
       "count": 1
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 29
+      "count": 28
     }
   },
   "sidecar/src/skillSignals.ts": {
@@ -153,9 +157,6 @@
     }
   },
   "src/components/SpecRenderer.tsx": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 3
     }
@@ -165,38 +166,8 @@
       "count": 2
     }
   },
-  "src/components/browser/BrowserCanvas.tsx": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/components/browser/DesignModeComposer.tsx": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 4
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 1
-    }
-  },
   "src/components/browser/NativeBrowserSurface.tsx": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 4
-    },
     "@typescript-eslint/no-empty-function": {
-      "count": 9
-    }
-  },
-  "src/components/browser/browserComposerPosition.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     }
   },
@@ -210,22 +181,9 @@
       "count": 1
     }
   },
-  "src/components/browser/designModeTargeting.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 6
-    }
-  },
   "src/components/browser/useElementSize.ts": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1
-    }
-  },
-  "src/components/canvas/SmoothCanvas.tsx": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 1
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 3
     }
   },
   "src/components/environment/usePopover.ts": {
@@ -280,13 +238,10 @@
   },
   "src/hooks/useStore.tsx": {
     "@typescript-eslint/no-dynamic-delete": {
-      "count": 7
+      "count": 6
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 23
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
@@ -308,83 +263,9 @@
       "count": 2
     }
   },
-  "src/lib/iframeDesignMode.ts": {
-    "@typescript-eslint/consistent-type-definitions": {
-      "count": 1
-    },
-    "@typescript-eslint/no-deprecated": {
-      "count": 1
-    },
-    "@typescript-eslint/no-empty-function": {
-      "count": 2
-    },
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 7
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 12
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 2
-    },
-    "@typescript-eslint/require-await": {
-      "count": 6
-    },
-    "@typescript-eslint/restrict-plus-operands": {
-      "count": 1
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 19
-    }
-  },
   "src/lib/nativeBrowser.ts": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 8
-    },
-    "@typescript-eslint/no-empty-function": {
-      "count": 4
-    },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 18
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 2
-    },
-    "@typescript-eslint/require-await": {
-      "count": 4
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 1
+      "count": 11
     }
   },
   "src/lib/repoEnvironment.ts": {

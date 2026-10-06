@@ -2,9 +2,10 @@ import { bridge } from './bridge';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
-  BrowserNativeResult,
+  BrowserState,
   BrowserViewport,
   BrowserViewportMode,
+  ClientCommand,
   ConfigurableSessionRole,
   ContextWindowTokens,
   DesignReference,
@@ -422,9 +423,15 @@ export const setHistoryIndexingIdle = (isIdle: boolean) => {
 
 export const setBackgroundWork = (
   tier: 'interactive' | 'hidden' | 'low-power',
-  focusedAppSessionId?: string | null,
+  focusedAppSessionId: string | null,
+  visibleAppSessionIds: string[],
 ) => {
-  return bridge.sendIfConnected({ type: 'app.backgroundWork', tier, focusedAppSessionId });
+  return bridge.sendIfConnected({
+    type: 'app.backgroundWork',
+    tier,
+    focusedAppSessionId,
+    visibleAppSessionIds,
+  });
 };
 
 export const updateAgentSettings = (input: {
@@ -461,6 +468,20 @@ export const openBrowser = (input: {
   bridge.send({ type: 'browser.open', ...input });
 };
 
+/** The browsers the app kept, keyed by chat, for the sidecar to take up so their panes keep working. */
+export const restoreBrowsersCommand = (
+  browsers: Record<string, BrowserState>,
+): ClientCommand | null => {
+  const kept = Object.entries(browsers).map(([appSessionId, browser]) => ({
+    appSessionId,
+    browserSessionId: browser.browserSessionId,
+    url: browser.url,
+    viewport: browser.viewport,
+    viewportMode: browser.viewportMode,
+  }));
+  return kept.length > 0 ? { type: 'browser.restore', browsers: kept } : null;
+};
+
 export const reloadBrowser = (appSessionId: string) => {
   bridge.send({ type: 'browser.reload', appSessionId });
 };
@@ -469,6 +490,8 @@ export const resizeBrowserViewport = (input: {
   appSessionId: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
+  /** The pane's size for Fit, taken only while the page is on Fit. */
+  follow?: boolean;
 }) => {
   bridge.send({ type: 'browser.resizeViewport', ...input });
 };
@@ -477,21 +500,27 @@ export const addDesignReference = (appSessionId: string, reference: DesignRefere
   bridge.send({ type: 'browser.design.addReference', appSessionId, reference });
 };
 
+export const removeDesignReferences = (appSessionId: string, ids: string[]) => {
+  bridge.send({ type: 'browser.design.removeReferences', appSessionId, ids });
+};
+
+/** Sends a prompt with its marks, as sendToSession sends any other. */
 export const sendDesignPrompt = (
   appSessionId: string,
   instruction: string,
-  referenceIds: string[],
+  references: DesignReference[],
+  responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
+  requireAgentWorkAvailable();
   bridge.send({
     type: 'browser.design.sendPrompt',
     appSessionId,
     instruction,
-    referenceIds,
+    references,
+    ...(mentions?.length ? { mentions } : {}),
+    ...(responseFormat ? { responseFormat } : {}),
   });
-};
-
-export const sendNativeBrowserResult = (result: BrowserNativeResult) => {
-  bridge.send({ type: 'browser.native.result', result });
 };
 
 export const sendSidebarResult = (result: SidebarResult) => {

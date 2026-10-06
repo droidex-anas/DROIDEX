@@ -224,6 +224,7 @@ function appendSearchRecords(
       candidate.providerSessionId,
       'primary',
       JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
+      { textOnly: true },
     );
   } catch {
     return false;

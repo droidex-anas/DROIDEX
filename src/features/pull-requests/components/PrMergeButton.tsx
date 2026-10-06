@@ -18,17 +18,13 @@ function mergeLabel(merging: boolean, merged: boolean): string {
   return merging ? 'Merging…' : 'Merge';
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
-export function mergeButtonTitle(
-  blocked: string | null,
-  merging: boolean,
-  merged: boolean,
-): string {
+function mergeButtonTitle(blocked: string | null, merging: boolean, merged: boolean): string {
   if (merged) return 'Pull request merged';
   if (merging) return 'Merging pull request';
   return blocked ?? 'Merge this pull request';
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function mergePullRequestKey(pr: PullRequest, repositoryKey: string): string {
   return pr.url || `${repositoryKey}#${String(pr.number)}`;
 }

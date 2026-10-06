@@ -16,6 +16,7 @@ export function TranscriptReachHost({
   onLoadOlder,
   onScrollToRow,
   enabled,
+  takesShortcuts,
   children,
 }: {
   items: readonly FeedItem[];
@@ -27,6 +28,7 @@ export function TranscriptReachHost({
   onLoadOlder: () => void;
   onScrollToRow: (rowId: string) => void;
   enabled: boolean;
+  takesShortcuts: boolean;
   children: ReactNode;
 }) {
   const { state, dispatch, activeRowId, matchRowIds, countLabel, scopeNotice, copyRange } =
@@ -40,6 +42,7 @@ export function TranscriptReachHost({
       onLoadOlder,
       onScrollToRow,
       enabled,
+      takesShortcuts,
     });
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -5,7 +5,7 @@ import { AutomationScheduler } from './automationScheduler.js';
 import { nextAutomationRun } from './schedule.js';
 import type { AutomationStore } from './types.js';
 
-test('daily schedules use their selected timezone across a daylight saving change', () => {
+test('next runs follow the selected timezone across daylight saving, and a date that never occurs has none', () => {
   const from = Date.UTC(2026, 7, 20, 2, 0, 0);
   assert.equal(
     nextAutomationRun({ kind: 'daily', time: '09:00' }, 'Asia/Kolkata', from),
@@ -20,15 +20,14 @@ test('daily schedules use their selected timezone across a daylight saving chang
     ),
     Date.UTC(2026, 2, 9, 6, 30, 0),
   );
-});
-
-test('cron returns null for a calendar date that never occurs', () => {
-  const next = nextAutomationRun(
-    { kind: 'cron', expression: '0 0 30 2 *' },
-    'Asia/Kolkata',
-    Date.UTC(2024, 2, 1, 12, 0, 0),
+  assert.equal(
+    nextAutomationRun(
+      { kind: 'cron', expression: '0 0 30 2 *' },
+      'Asia/Kolkata',
+      Date.UTC(2024, 2, 1, 12, 0, 0),
+    ),
+    null,
   );
-  assert.equal(next, null);
 });
 
 test('scheduler backs off after a due-store write fails', async (context) => {

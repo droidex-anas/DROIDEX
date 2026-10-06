@@ -27,6 +27,7 @@ const PREFERENCE_FILENAME = 'usage-analytics-preferences.json';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const INVALID_PREFERENCE_MESSAGE =
   'Usage analytics preference is invalid. Toggle it again in Settings.';
+const OPTED_OUT_MESSAGE = 'Usage analytics was turned off during this launch.';
 
 // Files an earlier run leaves in userData. Seeing one means an existing user
 // updated into an instrumented build rather than a new installation. This build
@@ -45,6 +46,21 @@ function createUsageAnalytics(options) {
   const exists = options.exists || existsSync;
   let installationPromise = null;
   let priorInstall = null;
+  // Set the moment the user opts out, so work already under way stops instead
+  // of writing the identifier back after the file has been deleted.
+  let optedOut = false;
+  let fileWork = Promise.resolve();
+
+  /**
+   * Runs everything that touches the installation file one after another. Opting
+   * out deletes that file, and without this a write still in flight could land
+   * after the delete and leave the identifier on disk.
+   */
+  function queueFileWork(work) {
+    const done = fileWork.then(work, work);
+    fileWork = done.then(ignore, ignore);
+    return done;
+  }
 
   /** Snapshot whether an earlier run left files behind. Call before anything this run writes to userData. */
   function notePriorInstall() {
@@ -73,26 +89,33 @@ function createUsageAnalytics(options) {
   async function setEnabled(enabled) {
     if (typeof enabled !== 'boolean')
       throw new Error('Usage analytics preference must be boolean.');
+    optedOut = !enabled;
     await saveBooleanPreference({ filePath: preferenceFilePath(), enabled, fs: fileSystem });
+    installationPromise = null;
     if (!enabled) {
-      installationPromise = null;
-      try {
-        await fileSystem.unlink(installationFilePath());
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-      }
+      await queueFileWork(async () => {
+        try {
+          await fileSystem.unlink(installationFilePath());
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error;
+        }
+      });
     }
     return { enabled };
   }
 
   function installation() {
+    if (optedOut) return Promise.reject(new Error(OPTED_OUT_MESSAGE));
     notePriorInstall();
-    installationPromise ??= loadOrCreateInstallation({
-      filePath: installationFilePath(),
-      priorInstall,
-      randomUUID,
-      fs: fileSystem,
-      now: options.now,
+    installationPromise ??= queueFileWork(() => {
+      if (optedOut) throw new Error(OPTED_OUT_MESSAGE);
+      return loadOrCreateInstallation({
+        filePath: installationFilePath(),
+        priorInstall,
+        randomUUID,
+        fs: fileSystem,
+        now: options.now,
+      });
     });
     return installationPromise;
   }
@@ -109,6 +132,8 @@ function createUsageAnalytics(options) {
       if (!config.applicationId || !config.clientToken || !config.site) return DISABLED;
       if (!(await preference()).enabled) return DISABLED;
       const record = await installation();
+      // The user can have opted out while the identifier was being read.
+      if (optedOut) return DISABLED;
       return {
         enabled: true,
         applicationId: config.applicationId,
@@ -139,8 +164,11 @@ function createUsageAnalytics(options) {
       if (record.firstLaunchReportedAt) return { recorded: true };
       const reportedAt = (options.now?.() ?? new Date()).toISOString();
       const reported = { ...record, firstLaunchReportedAt: reportedAt };
-      await writeInstallation(fileSystem, installationFilePath(), reported);
-      installationPromise = Promise.resolve(reported);
+      await queueFileWork(async () => {
+        if (optedOut) throw new Error(OPTED_OUT_MESSAGE);
+        await writeInstallation(fileSystem, installationFilePath(), reported);
+        installationPromise = Promise.resolve(reported);
+      });
       return { recorded: true };
     } catch (error) {
       options.logError?.('Usage analytics first-launch marker skipped', error);
@@ -169,6 +197,8 @@ function buildContext(app, config, options) {
 function normalizeChannel(value) {
   return value === 'release' ? 'release' : 'local';
 }
+
+function ignore() {}
 
 function isOptedOutByEnvironment(env) {
   const value = env.DROIDEX_DISABLE_USAGE_ANALYTICS;

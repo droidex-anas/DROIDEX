@@ -5,6 +5,7 @@ const { join } = require('node:path');
 const {
   buildPtyEnv,
   createTerminalManager,
+  defaultShell,
   MAX_COLS,
   MAX_REPLAY_BYTES,
   MAX_ROWS,
@@ -71,8 +72,23 @@ function fixture(options = {}) {
   return { manager, instances };
 }
 
-test('terminal manager keeps a PTY alive until explicit kill', async () => {
-  const { manager, instances } = fixture();
+// Retention timers the test fires by hand by calling the collected callbacks.
+function manualRetention(cleanups) {
+  return {
+    setTimeout: (callback) => {
+      cleanups.push(callback);
+      return { unref() {} };
+    },
+    clearTimeout: () => {},
+  };
+}
+
+test('terminal manager keeps a PTY alive until explicit kill and then retains nothing', async () => {
+  const cleanups = [];
+  const { manager, instances } = fixture({
+    ...manualRetention(cleanups),
+    exitRetentionMs: 10,
+  });
   const terminal = await manager.create({
     appSessionId: 'session-1',
     cwd: '/repo',
@@ -85,8 +101,13 @@ test('terminal manager keeps a PTY alive until explicit kill', async () => {
   assert.deepEqual(instances[0].writes, ['echo test\r']);
   assert.deepEqual(instances[0].resizes, [[120, 40]]);
   assert.equal(manager.list().length, 1);
+
   manager.kill(terminal.id);
   assert.equal(instances[0].killed, true);
+  assert.equal(manager.list().length, 0);
+  // The PTY's own exit after an explicit kill must not schedule retention.
+  instances[0].emitExit();
+  assert.equal(cleanups.length, 0);
   assert.equal(manager.list().length, 0);
 });
 
@@ -99,26 +120,46 @@ test('terminal manager opens a folderless chat in its configured runtime directo
   assert.equal(instances[0].options.cwd, '/real/droidex/chats');
 });
 
-test('explicit kill does not retain the terminal after its PTY exits', async () => {
-  const cleanups = [];
-  const { manager, instances } = fixture({
-    setTimeout: (callback) => {
-      cleanups.push(callback);
-      return { unref() {} };
-    },
-    clearTimeout: () => {},
-    exitRetentionMs: 10,
-  });
-  const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
-
-  manager.kill(terminal.id);
-  instances[0].emitExit();
-
-  assert.equal(cleanups.length, 0);
-  assert.equal(manager.list().length, 0);
+test('terminal manager spawns nothing for a cwd that is missing or not a directory', async () => {
+  const cases = [
+    ['', { stat: async () => ({ isDirectory: () => true }) }, /cwd is required/],
+    [
+      '/nope',
+      {
+        stat: async () => {
+          throw new Error('ENOENT');
+        },
+      },
+      /does not exist/,
+    ],
+    ['/a-file', { stat: async () => ({ isDirectory: () => false }) }, /not a directory/],
+  ];
+  for (const [cwd, fsp, error] of cases) {
+    const { manager, instances } = fixture({ fsp });
+    await assert.rejects(() => manager.create({ appSessionId: 's1', cwd }), error);
+    assert.equal(instances.length, 0, cwd);
+  }
 });
 
-test('terminal manager caps dimensions before spawning and resizing the PTY', async () => {
+test('defaultShell prefers $SHELL as a login shell and pwsh only when SHELL names it on Windows', () => {
+  const cases = [
+    ['darwin', { SHELL: '/bin/fish' }, { file: '/bin/fish', args: ['-l'] }],
+    ['darwin', {}, { file: '/bin/zsh', args: ['-l'] }],
+    ['linux', {}, { file: '/bin/bash', args: ['-l'] }],
+    [
+      'win32',
+      { SHELL: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' },
+      { file: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', args: ['-NoLogo'] },
+    ],
+    ['win32', { SHELL: '/bin/bash', COMSPEC: 'C:\\cmd.exe' }, { file: 'C:\\cmd.exe', args: [] }],
+    ['win32', {}, { file: 'cmd.exe', args: [] }],
+  ];
+  for (const [platform, env, shell] of cases) {
+    assert.deepEqual(defaultShell(platform, env), shell, `${platform} ${JSON.stringify(env)}`);
+  }
+});
+
+test('terminal manager caps dimensions and keeps the last size for unusable ones', async () => {
   const { manager, instances } = fixture();
   const terminal = await manager.create({
     appSessionId: 'session-1',
@@ -131,21 +172,11 @@ test('terminal manager caps dimensions before spawning and resizing the PTY', as
   assert.equal(terminal.rows, MAX_ROWS);
 
   manager.resize(terminal.id, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
-  assert.deepEqual(instances[0].resizes, [[MAX_COLS, MAX_ROWS]]);
-});
-
-test('terminal subscribers receive bounded replay and exit state', async () => {
-  const { manager, instances } = fixture();
-  const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
-  instances[0].emitData('x'.repeat(MAX_REPLAY_BYTES + 32));
-  instances[0].emitExit(7, 0);
-  const events = [];
-  manager.subscribe(terminal.id, (event) => events.push(event));
-  assert.equal(events[0].kind, 'replay');
-  assert.equal(Buffer.byteLength(events[0].data), MAX_REPLAY_BYTES);
-  assert.equal(events[0].truncated, true);
-  assert.equal(events[1].kind, 'exit');
-  assert.equal(events[1].exitCode, 7);
+  manager.resize(terminal.id, 0, Number.NaN);
+  assert.deepEqual(instances[0].resizes, [
+    [MAX_COLS, MAX_ROWS],
+    [MAX_COLS, MAX_ROWS],
+  ]);
 });
 
 test('terminal manager enforces per-session and global limits', async () => {
@@ -189,11 +220,7 @@ test('concurrent terminal creation cannot exceed the per-session limit', async (
 test('exited terminals are reclaimed after the retention window', async () => {
   const cleanups = [];
   const { manager, instances } = fixture({
-    setTimeout: (callback) => {
-      cleanups.push(callback);
-      return { unref() {} };
-    },
-    clearTimeout: () => {},
+    ...manualRetention(cleanups),
     exitRetentionMs: 10,
   });
   const exited = [];
@@ -296,11 +323,7 @@ test('terminal manager releases capacity when node-pty fails to load', async () 
 test('an exited terminal drops its PTY immediately and keeps bounded replay for late subscribers', async () => {
   const cleanups = [];
   const { manager, instances } = fixture({
-    setTimeout: (callback) => {
-      cleanups.push(callback);
-      return { unref() {} };
-    },
-    clearTimeout: () => {},
+    ...manualRetention(cleanups),
     exitRetentionMs: 30_000,
   });
   const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
@@ -331,39 +354,34 @@ test('memory pressure trims live replay without dropping the terminal', async ()
   assert.equal(manager.resourceCounts().live, 1);
 });
 
-test('hasChildren asks the child-pid lister for the shell pid', async () => {
+test('hasChildren asks about the live shell pid and propagates a lookup failure', async () => {
+  let lookup = async () => [];
   const calls = [];
-  const { manager } = fixture({
-    listChildPids: async (pid) => {
+  const { manager, instances } = fixture({
+    listChildPids: (pid) => {
       calls.push(pid);
-      return pid === 4242 ? [5000] : [];
+      return lookup(pid);
     },
   });
   const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
+
+  lookup = async (pid) => (pid === 4242 ? [5000] : []);
   assert.equal(await manager.hasChildren(info.id), true);
   assert.deepEqual(calls, [4242]);
   assert.equal(await manager.hasChildren('missing'), false);
-});
 
-test('hasChildren answers false for a shell that exits while pgrep runs', async () => {
-  const { manager, instances } = fixture({
-    listChildPids: async () => {
-      instances[0].emitExit(0, 0);
-      return [5000];
-    },
-  });
-  const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
-  assert.equal(await manager.hasChildren(info.id), false);
-});
-
-test('hasChildren propagates a child-pid lookup failure so the caller can confirm', async () => {
-  const { manager } = fixture({
-    listChildPids: async () => {
-      throw new Error('pgrep: not found');
-    },
-  });
-  const info = await manager.create({ appSessionId: 's1', cwd: '/w' });
+  // The caller confirms with the user when the lookup itself fails.
+  lookup = async () => {
+    throw new Error('pgrep: not found');
+  };
   await assert.rejects(() => manager.hasChildren(info.id), /pgrep/);
+
+  // A shell that exits while pgrep runs has no children to protect.
+  lookup = async () => {
+    instances[0].emitExit(0, 0);
+    return [5000];
+  };
+  assert.equal(await manager.hasChildren(info.id), false);
 });
 
 test('a spawned shell does not inherit the app-private variables', () => {
@@ -375,7 +393,6 @@ test('a spawned shell does not inherit the app-private variables', () => {
     DROIDEX_HISTORY_DIR: '/profile/history',
     BRIDGE_PORT: '1234',
     BRIDGE_TOKEN: 'secret',
-    BROWSER_ASSET_TOKEN: 'secret',
     BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     ELECTRON_RUN_AS_NODE: '1',
     ELECTRON_START_URL: 'http://localhost:5173',

@@ -36,6 +36,7 @@ import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
 import { ChildSessionLine } from './transcript/ChildSessionLine';
 import { AgentWaveCard } from './agents/AgentWaveCard';
+import { BrowserCard } from './browser/BrowserCard';
 import { GeneratedImageCard } from './media/GeneratedImageCard';
 
 // Row chrome and renderers live in the transcript modules; re-export the ones
@@ -495,6 +496,14 @@ export const FeedItemView = memo(function FeedItemView({
           event={item.event}
           output={item.result?.text}
           running={live && !item.result}
+        />
+      );
+    case 'browser':
+      return (
+        <BrowserCard
+          cardKey={item.key}
+          events={item.events}
+          working={!item.ended && (sessionLive ?? live)}
         />
       );
     case 'tools':

@@ -23,18 +23,29 @@ test('the menu lists every level with its consequence description', () => {
   }
   // Exactly the current level is checked.
   assert.equal((html.match(/aria-checked="true"/g) ?? []).length, 1);
-  assert.ok(html.includes('aria-checked="true"'));
 });
 
-test('the pill shows the confirmed level and its meaning on hover', () => {
-  const html = renderToStaticMarkup(
-    createElement(AutonomySelector, { scope: 'session', value: 'low', onSelect: () => undefined }),
-  );
+test('the pill shows the confirmed level and its meaning, and a pending change blocks it', () => {
+  const pill = (pending: boolean) =>
+    renderToStaticMarkup(
+      createElement(AutonomySelector, {
+        scope: 'session',
+        value: 'low',
+        pending,
+        onSelect: () => undefined,
+      }),
+    );
 
-  assert.ok(html.includes(AUTONOMY_LABELS.low));
-  assert.ok(html.includes(`title="${AUTONOMY_LABELS.low} — ${AUTONOMY_DESCRIPTIONS.low}"`));
-  assert.ok(html.includes('aria-haspopup="menu"'));
-  assert.ok(!html.includes('disabled'));
+  const idle = pill(false);
+  assert.ok(idle.includes(`title="${AUTONOMY_LABELS.low} — ${AUTONOMY_DESCRIPTIONS.low}"`));
+  assert.ok(idle.includes('aria-haspopup="menu"'));
+  assert.ok(!idle.includes('disabled'));
+
+  const pending = pill(true);
+  assert.ok(pending.includes(AUTONOMY_LABELS.low));
+  assert.ok(pending.includes('disabled=""'));
+  assert.ok(pending.includes('aria-busy="true"'));
+  assert.ok(pending.includes('Updating autonomy…'));
 });
 
 test('the chosen mode carries its harness consequence, and only that mode', () => {
@@ -60,20 +71,4 @@ test('the chosen mode carries its harness consequence, and only that mode', () =
     }),
   );
   assert.ok(!claude.includes('classifier'));
-});
-
-test('a pending change keeps the confirmed level and blocks interaction', () => {
-  const html = renderToStaticMarkup(
-    createElement(AutonomySelector, {
-      scope: 'session',
-      value: 'medium',
-      pending: true,
-      onSelect: () => undefined,
-    }),
-  );
-
-  assert.ok(html.includes(AUTONOMY_LABELS.medium));
-  assert.ok(html.includes('disabled=""'));
-  assert.ok(html.includes('aria-busy="true"'));
-  assert.ok(html.includes('Updating autonomy…'));
 });

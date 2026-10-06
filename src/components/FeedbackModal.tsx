@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { wrapTabFocus } from '../lib/focusTrap';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
@@ -12,12 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { Copy } from '@droidex/icons';
-import { useObscuresNativeSurfaces } from '../hooks/useObscuresNativeSurfaces';
 import type { FeedbackAttachments, FeedbackCategory, FeedbackReportRequest } from '../lib/desktop';
 import { submitFeedbackReport } from '../lib/feedbackReport';
-
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const CATEGORIES: {
   value: FeedbackCategory;
@@ -54,10 +51,6 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
   const copyButtonRef = useRef<HTMLButtonElement>(null);
   const submittingRef = useRef(false);
 
-  // The browser pane's native view is painted above the DOM by the OS; hide it
-  // while this covers the window, or it shows straight through the dialog.
-  useObscuresNativeSurfaces();
-
   useEffect(() => {
     const opener = document.activeElement;
     descriptionRef.current?.focus();
@@ -91,24 +84,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
   }, [onClose, submitting]);
 
   const trapTab = (event: ReactKeyboardEvent) => {
-    if (event.key !== 'Tab') return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      (active === last || active === dialog || !dialog.contains(active))
-    ) {
-      event.preventDefault();
-      first.focus();
-    }
+    wrapTabFocus(event, dialogRef.current);
   };
 
   const submit = async () => {

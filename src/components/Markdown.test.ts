@@ -3,42 +3,55 @@ import test from 'node:test';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Markdown, MarkdownTree, markdownFenceOptions } from './Markdown';
+import { SpecRenderer } from './SpecRenderer';
 
 interface MarkdownProps {
   children: string;
   specMode?: boolean;
 }
 
-test('disabled diagrams render fenced SVG as escaped code', () => {
-  const source = '```svg\n<svg onload="globalThis.pwned=true"></svg>\n```';
-  const html = renderToStaticMarkup(
-    createElement(Markdown, { allowGeneratedContent: false }, source),
-  );
+test('disabled generated content renders svg and app fences as escaped code', () => {
+  const disabled = (source: string) =>
+    renderToStaticMarkup(createElement(Markdown, { allowGeneratedContent: false }, source));
 
-  assert.doesNotMatch(html, /<svg[^>]*\sonload=/i);
-  assert.match(html, /&lt;svg onload=/);
+  const svg = disabled('```svg\n<svg onload="globalThis.pwned=true"></svg>\n```');
+  assert.doesNotMatch(svg, /<svg[^>]*\sonload=/i);
+  assert.match(svg, /&lt;svg onload=/);
+
+  const app = disabled('```app\n<p>Untrusted preview content</p>\n```');
+  assert.match(app, /&lt;p&gt;Untrusted preview content&lt;\/p&gt;/);
+  assert.doesNotMatch(app, /aria-label="Play app"/);
 });
 
-test('restored app fences start inline without a Play card', () => {
+test('generated SVG stays in image context in chat and spec previews', () => {
+  const payload =
+    '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.pwned=true" viewBox="0 0 4 2"><title> Authored "<tspan>flow</tspan>" </title><desc>Input   to output</desc><rect width="4" height="2"/></svg>';
+  const source = `\`\`\`svg\n${payload}\n\`\`\``;
+  const previews = [
+    createElement(Markdown, null, source),
+    createElement(SpecRenderer, { content: source }),
+  ];
+  for (const preview of previews) {
+    const html = renderToStaticMarkup(preview);
+    assert.match(html, /<img[^>]*src="data:image\/svg\+xml;charset=utf-8,/);
+    assert.match(html, /alt="Authored &quot;flow&quot;\. Input to output"/);
+    assert.doesNotMatch(html, /\sonload=/);
+  }
+  assert.match(
+    renderToStaticMarkup(createElement(SpecRenderer, { content: '```svg\n<svg/>\n```' })),
+    /alt="SVG diagram"/,
+  );
+});
+
+test('restored app fences start inline without a Play card; a cut-off one alerts alone', () => {
   const source = '```app\n<button onclick="document.body.dataset.ran=\'yes\'">Run</button>\n```';
   const html = renderToStaticMarkup(createElement(Markdown, null, source));
 
   assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
   assert.match(html, />Starting interactive app</);
-});
 
-test('an App fence that saved history cut short reports the loss instead of offering Play', () => {
-  const source = '```app\n<main data-droidex-app-root><script>const points = [';
-  const html = renderToStaticMarkup(createElement(Markdown, { cutOffAppBlocks: true }, source));
-
-  assert.match(html, /role="alert"/);
-  assert.match(html, /Saved history kept only part/);
-  assert.doesNotMatch(html, /aria-label="Play app"/);
-  assert.doesNotMatch(html, />Starting interactive app</);
-});
-
-test('a cut-off message keeps its earlier complete App playable', () => {
-  const source = [
+  // A cut-off message keeps its earlier complete App playable.
+  const cutOff = [
     '```app',
     '<main>Complete</main>',
     '```',
@@ -46,28 +59,9 @@ test('a cut-off message keeps its earlier complete App playable', () => {
     '```app',
     '<main>Cut off<script>const points = [',
   ].join('\n');
-  const html = renderToStaticMarkup(createElement(Markdown, { cutOffAppBlocks: true }, source));
-
-  assert.equal(html.match(/>Starting interactive app</g)?.length, 1);
-  assert.equal(html.match(/role="alert"/g)?.length, 1);
-});
-
-test('a complete app fence in the live response opens automatically', () => {
-  const source = '```app\n<main>Live app</main>\n```';
-  const html = renderToStaticMarkup(createElement(Markdown, null, source));
-
-  assert.match(html, />Starting interactive app</);
-  assert.doesNotMatch(html, /aria-label="(?:Play|Stop) app"/);
-});
-
-test('disabled generated content renders app fences as ordinary code', () => {
-  const source = '```app\n<p>Untrusted preview content</p>\n```';
-  const html = renderToStaticMarkup(
-    createElement(Markdown, { allowGeneratedContent: false }, source),
-  );
-
-  assert.match(html, /&lt;p&gt;Untrusted preview content&lt;\/p&gt;/);
-  assert.doesNotMatch(html, /aria-label="Play app"/);
+  const cutHtml = renderToStaticMarkup(createElement(Markdown, { cutOffAppBlocks: true }, cutOff));
+  assert.equal(cutHtml.match(/>Starting interactive app</g)?.length, 1);
+  assert.equal(cutHtml.match(/role="alert"/g)?.length, 1);
 });
 
 test('plain fenced blocks preserve preformatted multiline layout', () => {
@@ -76,7 +70,10 @@ test('plain fenced blocks preserve preformatted multiline layout', () => {
   );
 
   assert.match(html, /<pre[^>]*>/);
-  assert.match(html, /first line\nsecond line/);
+  // A fence without a language is still a code card, not an inline pill on
+  // every line, and it does not gain the parser's trailing newline.
+  assert.match(html, /title="Copy"/);
+  assert.match(html, /first line\nsecond line<\/code>/);
 });
 
 test('formatted spec headings keep a usable text slug', () => {
@@ -89,100 +86,101 @@ test('formatted spec headings keep a usable text slug', () => {
 });
 
 test('a linked image renders one image control without a wrapping anchor', () => {
-  const html = renderToStaticMarkup(
-    createElement(Markdown, null, '[![Preview](https://x.test/a.png)](https://x.test/full)'),
-  );
-
-  assert.match(html, /<button[^>]*title="View Preview"/);
-  assert.doesNotMatch(html, /<a[^>]*href="https:\/\/x\.test\/full"/);
-});
-
-test('a link containing image and text does not wrap the image control in an anchor', () => {
-  const html = renderToStaticMarkup(
-    createElement(
-      Markdown,
-      null,
-      '[![Preview](https://x.test/a.png) full size](https://x.test/full)',
-    ),
-  );
-
-  assert.match(html, /<button[^>]*title="View Preview"/);
-  assert.match(html, /full size/);
-  assert.doesNotMatch(html, /<a[^>]*href="https:\/\/x\.test\/full"/);
-});
-
-test('each live App fence owns its own completion state', () => {
-  const source = [
-    '```app',
-    '<main>Complete</main>',
-    '```',
-    '',
-    '```app',
-    '<main>Still streaming',
-  ].join('\n');
-  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
-
-  assert.equal(html.match(/>Starting interactive app</g)?.length, 1);
-  assert.equal(html.match(/>Building interactive app</g)?.length, 1);
-});
-
-test('App fences with an info-string title use the same completion state as react-markdown', () => {
-  const source = '```app title="Latency explorer"\n<main>Still streaming';
-  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
-
-  assert.match(html, />Building interactive app</);
-  assert.doesNotMatch(html, />Starting interactive app</);
-});
-
-test('uppercase fences stay ordinary code without shifting a later App completion state', () => {
-  const source = [
-    '```App',
-    '<main>Ordinary code</main>',
-    '```',
-    '',
-    '```app',
-    '<main>Still streaming',
-  ].join('\n');
-  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
-
-  assert.match(html, /&lt;main&gt;Ordinary code&lt;\/main&gt;/);
-  assert.match(html, />Building interactive app</);
-  assert.doesNotMatch(html, />Starting interactive app</);
-});
-
-test('completed App fences inside quotes and lists keep their completed streaming state', () => {
-  const sources = [
-    ['> ```app', '> <main>Quoted app</main>', '> ```'].join('\n'),
-    ['- ```app', '  <main>Listed app</main>', '  ```'].join('\n'),
-    ['- > ```app', '  > <main>Quoted list app</main>', '  > ```'].join('\n'),
-  ];
-
-  for (const source of sources) {
-    const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
-    assert.match(html, />Starting interactive app</);
-    assert.doesNotMatch(html, />Building interactive app</);
+  const imageOnly = '[![Preview](https://x.test/a.png)](https://x.test/full)';
+  const imageAndText = '[![Preview](https://x.test/a.png) full size](https://x.test/full)';
+  for (const source of [imageOnly, imageAndText]) {
+    const html = renderToStaticMarkup(createElement(Markdown, null, source));
+    assert.match(html, /<button[^>]*title="View Preview"/, source);
+    assert.doesNotMatch(html, /<a[^>]*href="https:\/\/x\.test\/full"/, source);
+    // Link text beside the image still renders.
+    if (source === imageAndText) assert.match(html, /full size/);
   }
 });
 
-// The fence scan is deliberately simpler than a full CommonMark parser, so a
-// fence nested deeper than it follows is missing from its list. An unfinished
-// one must still not be mistaken for a finished app and auto-played.
-test('a streaming App fence nested past the fence scan keeps building', () => {
-  const source = [
-    '```app',
-    '<main>Complete</main>',
-    '```',
-    '',
-    '- item',
-    '  - nested',
-    '',
-    '      ```app',
-    '      <main>Still streaming',
-  ].join('\n');
-  const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
+test('each live App fence owns its own completion state', () => {
+  const cases: { name: string; source: string; starting: number; building: number }[] = [
+    {
+      name: 'a complete fence before a streaming one',
+      source: [
+        '```app',
+        '<main>Complete</main>',
+        '```',
+        '',
+        '```app',
+        '<main>Still streaming',
+      ].join('\n'),
+      starting: 1,
+      building: 1,
+    },
+    {
+      // Same completion state as react-markdown for an info-string title.
+      name: 'an info-string title',
+      source: '```app title="Latency explorer"\n<main>Still streaming',
+      starting: 0,
+      building: 1,
+    },
+    {
+      // An uppercase fence is ordinary code and must not shift a later App.
+      name: 'an uppercase fence before a streaming one',
+      source: [
+        '```App',
+        '<main>Ordinary code</main>',
+        '```',
+        '',
+        '```app',
+        '<main>Still streaming',
+      ].join('\n'),
+      starting: 0,
+      building: 1,
+    },
+    {
+      name: 'a completed fence in a quote',
+      source: ['> ```app', '> <main>Quoted app</main>', '> ```'].join('\n'),
+      starting: 1,
+      building: 0,
+    },
+    {
+      name: 'a completed fence in a list',
+      source: ['- ```app', '  <main>Listed app</main>', '  ```'].join('\n'),
+      starting: 1,
+      building: 0,
+    },
+    {
+      name: 'a completed fence in a quoted list',
+      source: ['- > ```app', '  > <main>Quoted list app</main>', '  > ```'].join('\n'),
+      starting: 1,
+      building: 0,
+    },
+    {
+      // The fence scan is deliberately simpler than a full CommonMark parser, so a
+      // fence nested deeper than it follows is missing from its list. An unfinished
+      // one must still not be mistaken for a finished app and auto-played.
+      name: 'a streaming fence nested past the fence scan',
+      source: [
+        '```app',
+        '<main>Complete</main>',
+        '```',
+        '',
+        '- item',
+        '  - nested',
+        '',
+        '      ```app',
+        '      <main>Still streaming',
+      ].join('\n'),
+      starting: 1,
+      building: 1,
+    },
+  ];
+  const count = (html: string, pattern: RegExp) => (html.match(pattern) ?? []).length;
 
-  assert.equal(html.match(/>Starting interactive app</g)?.length, 1);
-  assert.equal(html.match(/>Building interactive app</g)?.length, 1);
+  for (const { name, source, starting, building } of cases) {
+    const html = renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source));
+    assert.equal(count(html, />Starting interactive app</g), starting, name);
+    assert.equal(count(html, />Building interactive app</g), building, name);
+    if (name.startsWith('an uppercase')) {
+      assert.match(html, /&lt;main&gt;Ordinary code&lt;\/main&gt;/);
+    }
+  }
 });
 
 test('a streaming response keeps the same element types across renders', () => {

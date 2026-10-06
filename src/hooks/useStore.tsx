@@ -15,6 +15,31 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  activeDraftTileId,
+  composeOrigin,
+  draftTileIds,
+  enteredPlaceNavigation,
+  placeCreatedChat,
+  showChat,
+  showNewChat,
+  showView,
+  withComposeTileClosed,
+  type ComposeOrigin,
+} from '../features/tabs/tabNavigation';
+import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
+import {
+  chatsBesideFocus,
+  isChatInView,
+  isMission,
+  livePage,
+  reduceTabStrip,
+  withoutChats,
+  withoutOtherTabsShowing,
+  type TabAction,
+  type TabStrip,
+} from '../features/tabs/tabStrip';
+import { focusedTile } from '../features/tabs/tileGrid';
+import {
   reduceVoice,
   withoutVoiceSession,
   type VoiceAction,
@@ -74,6 +99,7 @@ import type {
   ProviderKind,
   ProviderMention,
   ProviderStatus,
+  ProviderUsage,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
@@ -82,6 +108,7 @@ import type {
   DesignReference,
   VoiceNarration,
 } from '../types/bridge';
+import { PROVIDER_KINDS } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
@@ -126,7 +153,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { createSnapshotScheduler, loadSessionSnapshot } from '../lib/sessionSnapshot';
-import { createComposerSeed } from '../lib/composerReset';
+import { createComposerSeed, type ComposerSeed } from '../lib/composerReset';
 import { toast } from '../lib/toast';
 import { type DiffScope } from '../types/vcs';
 import {
@@ -199,7 +226,6 @@ export type { ImagePasteQuality } from '../lib/images';
 interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
-  referenceIds: string[];
 }
 
 export interface QueuedPrompt {
@@ -328,6 +354,9 @@ export interface AppState {
   modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
+  // Header tabs. The active tab's page, or its focused tile, is the live one
+  // above (mainView, activeAppSessionId, draftChat); see features/tabs/tabStrip.
+  tabStrip: TabStrip;
   automationEditorRequest: AutomationEditorRequest | null;
   prWorkspaceCwd: string | null;
   prWorkspaceNumber: number | null;
@@ -368,14 +397,15 @@ export interface AppState {
   pendingAutonomy: Record<string, Autonomy>;
   // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
-  // One-shot text seeded into the composer (welcome-screen suggestion cards,
-  // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
-  composerSeed: { text: string; id: number; replace: boolean } | null;
+  // One-shot text seeded into a composer (welcome-screen suggestion cards,
+  // saved-note clicks, the browser's prompt box), in arrival order. Each seed
+  // belongs to one chat, or one new-chat draft, and waits until its composer
+  // takes it.
+  composerSeeds: ComposerSeed[];
   workspaceCwds: string[];
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
   // resumes where it left off after an app restart, unless it was fully closed.
-  browserOpenKeys: Record<string, boolean>;
   browsers: Record<string, BrowserState>;
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
@@ -399,6 +429,8 @@ export interface AppState {
   // pick is sticky: it survives session switches and restarts.
   providerStatuses: ProviderStatus[];
   draftProvider: ProviderKind;
+  // Each harness account's usage, as the sidecar last reported it.
+  usage: Partial<Record<ProviderKind, ProviderUsage>>;
 
   // Global compaction model applied to every session. 'current-model' = use
   // each session's active model; otherwise a specific model id.
@@ -430,7 +462,17 @@ export interface AppState {
   skillsProviderSessionId?: string | null;
 
   // Attachments for the first message of a not-yet-created session, keyed by clientRef.
-  pendingCompose: Partial<Record<string, { text: string; skills: string[]; files: string[] }>>;
+  // `origin` is the place the compose was sent from; its chat opens there. It
+  // is null once that tile has closed.
+  pendingCompose: Partial<
+    Record<
+      string,
+      { text: string; skills: string[]; files: string[]; origin: ComposeOrigin | null }
+    >
+  >;
+  // Where each send was made from while it prepares, before it has a pending
+  // compose, keyed by hold id. Null once that tile has closed.
+  heldComposeOrigins: Partial<Record<string, ComposeOrigin | null>>;
   // Bounded settlement identity for the latest successful foreground create.
   // PromptInput uses it to distinguish that activation from a failure followed
   // by the user selecting an unrelated existing session.
@@ -477,7 +519,13 @@ export type Action =
       text: string;
       skills: string[];
       files: string[];
+      // The hold whose place the compose takes, read here rather than by the
+      // caller so a tile closed in the meantime is already forgotten.
+      originHoldId: string | null;
     }
+  // A send holds the place it was made from until its pending compose takes it.
+  | { type: 'HOLD_COMPOSE_ORIGIN'; holdId: string }
+  | { type: 'RELEASE_COMPOSE_ORIGIN'; holdId: string }
   | { type: 'SESSION_UPDATED'; session: SessionSummary }
   | { type: 'SESSION_CLOSED'; appSessionId: string }
   | { type: 'SESSION_PROCESSES'; appSessionId: string; processes: AgentProcess[] }
@@ -662,6 +710,10 @@ export type Action =
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
+  | TabAction
+  // A chat dropped on a tile's center shows in that tile; a null tile is the
+  // whole page of a tab that is not split.
+  | { type: 'DROP_CHAT'; tileId: string | null; appSessionId: string }
   | VoiceAction
   | {
       type: 'START_CHAT';
@@ -670,8 +722,15 @@ export type Action =
       branch?: string;
       project?: true;
     }
-  | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
-  | { type: 'CLEAR_COMPOSER_SEED' }
+  | {
+      type: 'SEED_COMPOSER';
+      text: string;
+      replace?: boolean;
+      appSessionId?: string;
+      send?: boolean;
+      focus?: boolean;
+    }
+  | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
   | { type: 'SESSION_NOTE_MARK_USED'; appSessionId: string; noteId: string }
   | { type: 'SESSION_NOTE_REMOVE'; appSessionId: string; noteId: string }
@@ -689,7 +748,7 @@ export type Action =
       canGoBack?: boolean;
       canGoForward?: boolean;
     }
-  | { type: 'BROWSER_CLOSED'; appSessionId: string }
+  | { type: 'BROWSER_CLOSED'; appSessionId: string; keepPane?: boolean }
   | { type: 'BROWSER_ERROR'; appSessionId?: string; message: string }
   | { type: 'TOGGLE_DESIGN_MODE'; appSessionId: string }
   | { type: 'SET_DESIGN_MODE'; appSessionId: string; open: boolean }
@@ -702,6 +761,8 @@ export type Action =
   // Models / per-agent config
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
   | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
+  | { type: 'USAGE_UPDATED'; usage: ProviderUsage }
+  | { type: 'BRIDGE_SNAPSHOT' }
   | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
@@ -733,7 +794,13 @@ export type Action =
       requestId: string;
       settings: PendingModelSettings;
     }
-  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string };
+  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
+  // The sidecar was replaced: nothing it was working on will be answered.
+  | {
+      type: 'MODEL_UPDATES_UNANSWERED';
+      liveAppSessionIds: ReadonlySet<string>;
+      resentRequestIds: ReadonlySet<string>;
+    };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -741,6 +808,9 @@ const initialCustomThemes = loadCustomThemes();
 
 const persistedUiState = loadPersistedUiState();
 const sessionSnapshot = loadSessionSnapshot();
+const restoredTabStrip = loadTabStrip();
+const restoresNewChat =
+  (persistedUiState.mainView ?? 'session') === 'session' && !persistedUiState.activeAppSessionId;
 
 export interface AutomationEditorRequest {
   automationId: string;
@@ -801,6 +871,7 @@ export const initialState: AppState = {
   utilityPanels: persistedUiState.utilityPanels ?? {},
   sidebarCollapsed: persistedUiState.sidebarCollapsed ?? false,
   mainView: persistedUiState.mainView ?? 'session',
+  tabStrip: restoredTabStrip,
   automationEditorRequest: null,
   prWorkspaceCwd: persistedUiState.prWorkspaceCwd ?? null,
   prWorkspaceNumber: persistedUiState.prWorkspaceNumber ?? null,
@@ -811,7 +882,7 @@ export const initialState: AppState = {
   theme: loadTheme(initialCustomThemes),
   customThemes: initialCustomThemes,
   missionControlMode: persistedUiState.missionControlMode ?? false,
-  draftChat: null,
+  draftChat: restoresNewChat ? activeTabDraft(restoredTabStrip) : null,
   defaultAutonomy: loadDefaultPermissionMode(),
   toolActivity: loadToolActivity(),
   draftAutonomy: null,
@@ -819,9 +890,8 @@ export const initialState: AppState = {
   draftContextWindowTokens: null,
   pendingAutonomy: {},
   pendingModelUpdates: {},
-  composerSeed: null,
+  composerSeeds: [],
   workspaceCwds: loadWorkspaceCwds(),
-  browserOpenKeys: persistedUiState.browserOpenKeys ?? {},
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
   browserGlobalError: undefined,
@@ -832,6 +902,7 @@ export const initialState: AppState = {
   models: [],
   providerStatuses: [],
   draftProvider: loadDraftProvider(),
+  usage: {},
   compactionModel: loadCompactionModel(),
   compactionTokenLimit: loadCompactionTokenLimit(),
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
@@ -854,6 +925,7 @@ export const initialState: AppState = {
   harnessModels: loadHarnessModels(),
   agentConfig: loadAgentConfig(),
   pendingCompose: {},
+  heldComposeOrigins: {},
   lastCreatedSessionRequest: null,
   pendingForks: {},
   sideChats: {},
@@ -870,27 +942,6 @@ function activeBrowserKey(state: AppState): string | undefined {
   // (`appSessionId`), matching the backend; the provider session is swapped by
   // compaction and would desync the open state from the backend's updates.
   return state.sessions[state.activeAppSessionId]?.appSessionId ?? state.activeAppSessionId;
-}
-
-// Record an explicit open (true) or hidden (false) decision for a browser key.
-// Storing `false` (rather than deleting) lets data syncs distinguish a pane the
-// user deliberately hid from one that was never opened.
-function withBrowserOpenKey(
-  keys: Record<string, boolean>,
-  key: string,
-  open: boolean,
-): Record<string, boolean> {
-  if (keys[key] === open) return keys;
-  return { ...keys, [key]: open };
-}
-
-// Forget a browser key entirely (full reset, e.g. session closed). A later
-// update then treats the session as never-opened.
-function clearBrowserOpenKey(keys: Record<string, boolean>, key: string): Record<string, boolean> {
-  if (!(key in keys)) return keys;
-  const next = { ...keys };
-  delete next[key];
-  return next;
 }
 
 function closeActiveUtilityPanel(state: AppState): AppState {
@@ -960,7 +1011,65 @@ function withoutKey<T>(
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
 }
 
+// The action that closes the live chat's place, when that is `appSessionId`.
+function closeLiveChat(state: AppState, appSessionId: string): TabAction | null {
+  const live = livePage(state);
+  if (live.kind === 'chat' && live.appSessionId === appSessionId) {
+    return { type: 'CLOSE_TAB', tabId: state.tabStrip.activeTabId };
+  }
+  if (live.kind !== 'tiles') return null;
+  const tile = focusedTile(live.grid);
+  const shown = tile.page.kind === 'chat' && tile.page.appSessionId === appSessionId;
+  return shown ? { type: 'CLOSE_TILE', tileId: tile.id } : null;
+}
+
+// The tiles beside the focused one are on screen too, so showing them reads them.
+function withTilesSeen(state: AppState, seenAt: number): AppState {
+  const seen = chatsBesideFocus(state.tabStrip).filter(
+    (appSessionId) =>
+      Object.hasOwn(state.sessions, appSessionId) && state.sessionLastSeen[appSessionId] !== seenAt,
+  );
+  if (seen.length === 0) return state;
+  const sessionLastSeen = { ...state.sessionLastSeen };
+  for (const appSessionId of seen) sessionLastSeen[appSessionId] = seenAt;
+  return { ...state, sessionLastSeen };
+}
+
+// An archived or deleted chat leaves every tab, and cannot be reopened. The
+// tab or tile showing it closes, as a browser tab does when its page goes away.
+function withoutChatTabs(state: AppState, appSessionId: string): AppState {
+  const close = closeLiveChat(state, appSessionId);
+  const closed = close ? reducer(state, close) : state;
+  const tabStrip = withoutChats(closed.tabStrip, (id) => id === appSessionId);
+  return tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
+}
+
 export function reducer(state: AppState, action: Action): AppState {
+  return withoutLeftDrafts(reduceAction(state, action));
+}
+
+// A draft's seeds and its sent compose wait in its tile. Once the tile closes or
+// shows something else, that draft is gone: its seeds are dropped and its
+// compose forgets the tile, so neither reaches a later draft there.
+function withoutLeftDrafts(state: AppState): AppState {
+  const waiting = [
+    ...state.composerSeeds.map((seed) => seed.draftTileId),
+    ...Object.values(state.pendingCompose).map((compose) => compose?.origin?.tileId),
+    ...Object.values(state.heldComposeOrigins).map((origin) => origin?.tileId),
+  ];
+  if (!waiting.some(Boolean)) return state;
+  const drafts = draftTileIds(state);
+  const left = new Set(waiting.filter((tileId) => tileId && !drafts.includes(tileId)));
+  if (left.size === 0) return state;
+  let next: AppState = {
+    ...state,
+    composerSeeds: state.composerSeeds.filter((seed) => !left.has(seed.draftTileId)),
+  };
+  for (const tileId of left) if (tileId) next = { ...next, ...withComposeTileClosed(next, tileId) };
+  return next;
+}
+
+function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
@@ -996,8 +1105,15 @@ export function reducer(state: AppState, action: Action): AppState {
       // `session.created` is also emitted when an existing session resumes.
       // Only a create matching this renderer's pending compose may take focus;
       // background resumes must never replace the chat the user selected. A
-      // side chat opens beside its source, never in its place.
-      const shouldActivate = pending !== undefined && action.session.lineage?.kind !== 'side';
+      // side chat opens beside its source, never in its place. A create sent
+      // from a tab or tile the user has since left opens there instead.
+      const ownsCreate = pending !== undefined && action.session.lineage?.kind !== 'side';
+      const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
+      const placed = ownsCreate
+        ? placeCreatedChat({ ...state, sessions }, pending.origin, action.session.appSessionId)
+        : null;
+      const shouldActivate = placed?.focus === true;
+      const tabStrip = placed?.tabStrip ?? state.tabStrip;
       const targetIsActive = state.activeAppSessionId === action.session.appSessionId;
       const childReset =
         shouldActivate || targetIsActive ? invalidateSelectedChildOpening(state) : state;
@@ -1031,14 +1147,21 @@ export function reducer(state: AppState, action: Action): AppState {
       }
 
       const pendingCompose = withoutKey(state.pendingCompose, action.clientRef);
+      // Seeds that arrived for the draft while it was sent go to the chat it became.
+      const draftTileId = ownsCreate ? pending.origin?.tileId : undefined;
+      const composerSeeds = draftTileId
+        ? state.composerSeeds.map((pendingSeed) =>
+            pendingSeed.draftTileId === draftTileId
+              ? { ...pendingSeed, appSessionId: action.session.appSessionId, draftTileId: null }
+              : pendingSeed,
+          )
+        : state.composerSeeds;
 
       const next: AppState = {
         ...childReset,
-        sessions: {
-          ...state.sessions,
-          [action.session.appSessionId]: action.session,
-        },
+        sessions,
         sessionOrder: order,
+        tabStrip,
         activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
         draftChat: shouldActivate ? null : state.draftChat,
         draftAutonomy: shouldActivate ? null : state.draftAutonomy,
@@ -1058,6 +1181,7 @@ export function reducer(state: AppState, action: Action): AppState {
         childAccess,
         childRuntime,
         pendingCompose,
+        composerSeeds,
         pendingForks: withoutKey(state.pendingForks, action.clientRef),
         sideChats:
           state.pendingForks[action.clientRef]?.kind === 'side'
@@ -1232,8 +1356,29 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         pendingCompose: {
           ...state.pendingCompose,
-          [action.clientRef]: { text: action.text, skills: action.skills, files: action.files },
+          [action.clientRef]: {
+            text: action.text,
+            skills: action.skills,
+            files: action.files,
+            origin:
+              action.originHoldId === null
+                ? null
+                : (state.heldComposeOrigins[action.originHoldId] ?? null),
+          },
         },
+      };
+    case 'HOLD_COMPOSE_ORIGIN':
+      return {
+        ...state,
+        heldComposeOrigins: {
+          ...state.heldComposeOrigins,
+          [action.holdId]: composeOrigin(state.tabStrip),
+        },
+      };
+    case 'RELEASE_COMPOSE_ORIGIN':
+      return {
+        ...state,
+        heldComposeOrigins: withoutKey(state.heldComposeOrigins, action.holdId),
       };
 
     case 'SESSION_UPDATED': {
@@ -1281,18 +1426,27 @@ export function reducer(state: AppState, action: Action): AppState {
             Object.entries(state.pendingAutonomy).filter(([id]) => id !== m.appSessionId),
           )
         : state.pendingAutonomy;
+      const inView = isChatInView(state, m.appSessionId);
+      // The active chat is never unread; a tile beside it is read as it changes.
+      const seenInTile =
+        inView &&
+        m.appSessionId !== state.activeAppSessionId &&
+        m.updatedAt > (state.sessionLastSeen[m.appSessionId] ?? 0);
       const next = {
         ...state,
         sessions: { ...state.sessions, [m.appSessionId]: m },
         contextStats,
         pendingAutonomy,
+        sessionLastSeen: seenInTile
+          ? { ...state.sessionLastSeen, [m.appSessionId]: m.updatedAt }
+          : state.sessionLastSeen,
       };
       if (
         !previous ||
         !sessionIsLive(previous) ||
         sessionIsLive(m) ||
         m.updatedAt <= previous.updatedAt ||
-        state.activeAppSessionId === m.appSessionId ||
+        inView ||
         state.transcriptViewportPinned[m.appSessionId] === false
       )
         return next;
@@ -1386,8 +1540,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'ARCHIVE_CHAT': {
       const chatMetadata = archiveChat(state.chatMetadata, action.appSessionId, Date.now());
       const utilityPanels = removeSessionPanel(state.utilityPanels, action.appSessionId);
-      if (!chatMetadata && utilityPanels === state.utilityPanels) return state;
-      return { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels };
+      const archived =
+        chatMetadata || utilityPanels !== state.utilityPanels
+          ? { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels }
+          : state;
+      return withoutChatTabs(archived, action.appSessionId);
     }
 
     case 'RESTORE_CHAT': {
@@ -1400,8 +1557,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // chats and their PTYs remain live; only explicit deletion/archival cleans up panels.
       const chatMetadata = deleteChat(state.chatMetadata, action.appSessionId, Date.now());
       const utilityPanels = removeSessionPanel(state.utilityPanels, action.appSessionId);
-      if (!chatMetadata && utilityPanels === state.utilityPanels) return state;
-      return { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels };
+      const deleted =
+        chatMetadata || utilityPanels !== state.utilityPanels
+          ? { ...state, chatMetadata: chatMetadata ?? state.chatMetadata, utilityPanels }
+          : state;
+      return withoutChatTabs(deleted, action.appSessionId);
     }
 
     case 'SESSION_FEATURES': {
@@ -1515,7 +1675,7 @@ export function reducer(state: AppState, action: Action): AppState {
 
     /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
     case 'TRANSCRIPT_RELEASE_VIEWPORT': {
-      if (state.activeAppSessionId !== action.appSessionId) return state;
+      if (!isChatInView(state, action.appSessionId)) return state;
       if (state.transcriptViewportPinned[action.appSessionId] === false) return state;
       const session = state.sessions[action.appSessionId];
       if (!session || sessionIsLive(session)) return state;
@@ -1671,10 +1831,11 @@ export function reducer(state: AppState, action: Action): AppState {
       // longer reports (deleted outside the app, or pruned from a hydrated
       // snapshot). Rows added locally this run are not confirmed yet and
       // survive.
-      const confirmed = state.listConfirmedSessionIds;
+      const confirmed = new Set(state.listConfirmedSessionIds);
+      const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
       const map: Record<string, SessionSummary> = {};
       for (const [id, summary] of Object.entries(state.sessions)) {
-        if (confirmed?.includes(id) && !incoming.has(id)) continue;
+        if (isConfirmedGone(id)) continue;
         map[id] = summary;
       }
       for (const m of action.sessions) {
@@ -1712,16 +1873,14 @@ export function reducer(state: AppState, action: Action): AppState {
       // localStorage does not accumulate orphans. Metadata for rows added
       // locally this run (not yet list-confirmed) survives.
       let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(
-        (id) => confirmed?.includes(id) && !incoming.has(id),
-      );
+      const orphaned = Object.keys(chatMetadata).filter(isConfirmedGone);
       if (orphaned.length > 0) {
         const drop = new Set(orphaned);
         chatMetadata = Object.fromEntries(
           Object.entries(chatMetadata).filter(([id]) => !drop.has(id)),
         );
       }
-      return {
+      const listed: AppState = {
         ...retainedState,
         sessions: map,
         sessionOrder: order,
@@ -1730,7 +1889,17 @@ export function reducer(state: AppState, action: Action): AppState {
         listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
         earlierSessionsByCwd: action.earlierSessionsByCwd,
         activeAppSessionId,
+        // The list covers every folder in the sidebar, so a restored tab whose
+        // chat neither it nor the snapshot knows has nothing to show.
+        tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
       };
+      // A focused tile whose chat is gone closes like any other, so the tile
+      // beside it comes forward instead of a second new chat.
+      const goneTile =
+        state.activeAppSessionId !== null && activeAppSessionId === null
+          ? closeLiveChat(state, state.activeAppSessionId)
+          : null;
+      return goneTile?.type === 'CLOSE_TILE' ? reducer(listed, goneTile) : listed;
     }
 
     case 'SESSION_HISTORY_LOADING_OLDER':
@@ -1807,6 +1976,7 @@ export function reducer(state: AppState, action: Action): AppState {
         sessionLastSeen[state.activeAppSessionId] = now;
       }
       if (action.id) sessionLastSeen[action.id] = now;
+      const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state);
       let next = invalidateSelectedChildOpening(releaseInactiveSelectedChild(state));
       const outgoingAppSessionId = state.activeAppSessionId;
       const outgoingSession = outgoingAppSessionId
@@ -1814,10 +1984,14 @@ export function reducer(state: AppState, action: Action): AppState {
         : undefined;
       if (
         outgoingAppSessionId &&
-        outgoingAppSessionId !== action.id &&
         outgoingSession &&
         !sessionIsLive(outgoingSession) &&
-        state.transcriptViewportPinned[outgoingAppSessionId] !== false
+        state.transcriptViewportPinned[outgoingAppSessionId] !== false &&
+        // A chat left for another tile stays on screen.
+        !isChatInView(
+          { mainView: 'session', activeAppSessionId: action.id, tabStrip },
+          outgoingAppSessionId,
+        )
       ) {
         next = releaseSessionTranscriptWindow(
           next,
@@ -1825,22 +1999,27 @@ export function reducer(state: AppState, action: Action): AppState {
           INACTIVE_TRANSCRIPT_POLICY,
         );
       }
-      return {
-        ...next,
-        activeAppSessionId: action.id,
-        sessionLastSeen,
-        draftChat: null,
-        draftAutonomy: null,
-        draftFastMode: false,
-        draftContextWindowTokens: null,
-        selectedChild: null,
-        // A pending review-focus request belongs to the session that issued
-        // it; never let it fire in another session's panel after a switch.
-        reviewFocusPath: action.id === state.activeAppSessionId ? state.reviewFocusPath : null,
-        reviewFocusChange: action.id === state.activeAppSessionId ? state.reviewFocusChange : null,
-        mainView: 'session',
-        automationEditorRequest: null,
-      };
+      return withTilesSeen(
+        {
+          ...next,
+          activeAppSessionId: action.id,
+          sessionLastSeen,
+          draftChat: null,
+          draftAutonomy: null,
+          draftFastMode: false,
+          draftContextWindowTokens: null,
+          selectedChild: null,
+          // A pending review-focus request belongs to the session that issued
+          // it; never let it fire in another session's panel after a switch.
+          reviewFocusPath: action.id === state.activeAppSessionId ? state.reviewFocusPath : null,
+          reviewFocusChange:
+            action.id === state.activeAppSessionId ? state.reviewFocusChange : null,
+          mainView: 'session',
+          automationEditorRequest: null,
+          tabStrip,
+        },
+        now,
+      );
     }
 
     case 'MARK_ALL_SESSIONS_READ': {
@@ -1886,10 +2065,6 @@ export function reducer(state: AppState, action: Action): AppState {
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
         reviewOpenAppSessionId:
           action.tool === 'review' ? appSessionId : state.reviewOpenAppSessionId,
-        browserOpenKeys:
-          action.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, true)
-            : state.browserOpenKeys,
       };
     }
 
@@ -1909,10 +2084,6 @@ export function reducer(state: AppState, action: Action): AppState {
             : state.reviewOpenAppSessionId,
         reviewFocusPath: closing?.tool === 'review' ? null : state.reviewFocusPath,
         reviewFocusChange: closing?.tool === 'review' ? null : state.reviewFocusChange,
-        browserOpenKeys:
-          closing?.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, false)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2097,6 +2268,11 @@ export function reducer(state: AppState, action: Action): AppState {
       return reduceVoice(state, action);
 
     case 'OPEN_PULL_REQUESTS':
+      return {
+        ...reducePrInbox(state, action),
+        automationEditorRequest: null,
+        tabStrip: showView(state, { kind: 'pull-requests' }),
+      };
     case 'CLOSE_PULL_REQUESTS':
     case 'MOVE_PR_TO_BACKLOG':
     case 'RESTORE_PR_FROM_BACKLOG': {
@@ -2112,6 +2288,7 @@ export function reducer(state: AppState, action: Action): AppState {
         mainView: 'projects',
         automationEditorRequest: null,
         rightPanelOpen: false,
+        tabStrip: showView(state, { kind: 'projects' }),
       };
     case 'CLOSE_PROJECTS':
       return state.mainView === 'projects' ? { ...state, mainView: 'session' } : state;
@@ -2123,7 +2300,46 @@ export function reducer(state: AppState, action: Action): AppState {
           ? createAutomationEditorRequest(action.automationId)
           : null,
         rightPanelOpen: false,
+        tabStrip: showView(state, { kind: 'automations' }),
       };
+
+    case 'OPEN_TAB':
+    case 'OPEN_NEW_CHAT_TAB':
+    case 'ACTIVATE_TAB':
+    case 'CLOSE_TAB':
+    case 'REOPEN_CLOSED_TAB':
+    case 'REORDER_TABS':
+    case 'SPLIT_TILE':
+    case 'MOVE_TILE':
+    case 'FOCUS_TILE':
+    case 'CLOSE_TILE':
+    case 'RESIZE_TILE_COLUMNS':
+    case 'RESIZE_TILE_ROWS': {
+      const tabStrip = reduceTabStrip(state, action);
+      if (tabStrip === state.tabStrip) return state;
+      // The navigation brings the live page to the place the new strip
+      // focuses. It runs against the new strip so it sees which chats stay on
+      // screen; the strip it computes for itself is replaced.
+      const navigation = enteredPlaceNavigation(state, tabStrip);
+      const composes =
+        action.type === 'CLOSE_TILE' ? withComposeTileClosed(state, action.tileId) : null;
+      const entered: AppState = { ...state, ...composes, tabStrip };
+      const navigated = navigation ? reducer(entered, navigation) : entered;
+      return withTilesSeen({ ...navigated, tabStrip }, Date.now());
+    }
+
+    // The chat leaves any other tab first, so showing it lands here instead
+    // of switching to that tab. A mission keeps a tab of its own.
+    case 'DROP_CHAT': {
+      const tabStrip = isMission(state, action.appSessionId)
+        ? state.tabStrip
+        : withoutOtherTabsShowing(state.tabStrip, action.appSessionId);
+      const moved: AppState = { ...state, tabStrip };
+      const target = action.tileId
+        ? reducer(moved, { type: 'FOCUS_TILE', tileId: action.tileId })
+        : moved;
+      return reducer(target, { type: 'SET_ACTIVE_SESSION', id: action.appSessionId });
+    }
 
     case 'CLOSE_AUTOMATIONS':
       return state.mainView !== 'automations' && !state.automationEditorRequest
@@ -2163,15 +2379,36 @@ export function reducer(state: AppState, action: Action): AppState {
         sessionLastSeen,
         mainView: 'session',
         automationEditorRequest: null,
+        tabStrip: showNewChat(state),
       };
     }
 
-    case 'SEED_COMPOSER':
-      return { ...state, composerSeed: createComposerSeed(action.text, action.replace) };
-    // The composer consumes the seed once; it must not linger, or remounting
+    // A seed belongs to its chat from the moment it arrives: the one named, or
+    // else the chat focused now, or else the draft in the focused tab.
+    case 'SEED_COMPOSER': {
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
+      const draftTileId = appSessionId ? null : activeDraftTileId(state);
+      if (!appSessionId && !draftTileId) return state;
+      const seed = createComposerSeed(action.text, action.replace, {
+        appSessionId,
+        draftTileId,
+        send: action.send,
+        focus: action.focus,
+      });
+      return { ...state, composerSeeds: [...state.composerSeeds, seed] };
+    }
+    // The composer consumes each seed once; it must not linger, or remounting
     // the composer (e.g. toggling Mission Control) would re-apply stale text.
-    case 'CLEAR_COMPOSER_SEED':
-      return { ...state, composerSeed: null };
+    case 'CONSUME_COMPOSER_SEED': {
+      const seed = state.composerSeeds.find((pending) => pending.id === action.id);
+      if (!seed) return state;
+      const next = { ...state, composerSeeds: state.composerSeeds.filter((s) => s !== seed) };
+      // A prompt sent with a chat's marks goes out as it is consumed, to that
+      // chat and never to a child open in it, which would get it without them.
+      return seed.send && state.selectedChild?.parentAppSessionId === seed.appSessionId
+        ? reduceSelectChild(next, { selection: null })
+        : next;
+    }
 
     case 'SESSION_NOTE_ADD': {
       const sessionNotes = addSessionNote(state.sessionNotes, action.appSessionId, action.text);
@@ -2225,7 +2462,6 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(current, 'browser', () => `browser:${key}`)
             : setUtilityPanelOpen(current, false),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, opening),
       };
     }
 
@@ -2241,36 +2477,19 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(state.utilityPanels[key], 'browser', () => `browser:${key}`)
             : removeUtilityTool(state.utilityPanels[key], 'browser'),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, action.open),
       };
     }
 
     case 'BROWSER_UPDATED': {
       if (!action.browser.appSessionId) return state;
       const appSessionId = action.browser.appSessionId;
-      // Surface a freshly opened browser, but never re-open a pane the user hid.
-      // Missing keys differ from explicitly hidden panes.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-      const hidden = state.browserOpenKeys[appSessionId] === false;
+      // Only records the page: agent work never opens or switches the pane.
       return {
         ...state,
         browsers: { ...state.browsers, [appSessionId]: action.browser },
         browserErrors: Object.fromEntries(
           Object.entries(state.browserErrors).filter(([id]) => id !== appSessionId),
         ),
-        browserOpenKeys: hidden
-          ? state.browserOpenKeys
-          : withBrowserOpenKey(state.browserOpenKeys, appSessionId, true),
-        utilityPanels: hidden
-          ? state.utilityPanels
-          : {
-              ...state.utilityPanels,
-              [appSessionId]: openUtilityTool(
-                state.utilityPanels[appSessionId],
-                'browser',
-                () => `browser:${appSessionId}`,
-              ),
-            },
       };
     }
 
@@ -2295,7 +2514,8 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'BROWSER_CLOSED':
       // Full close: drop the session's browser, design mode, and open flag so a
-      // later reopen starts fresh (and it is excluded from persistence).
+      // later reopen starts fresh (and it is excluded from persistence). A
+      // browser closed with its chat's runtime leaves the pane open.
       return {
         ...state,
         browsers: Object.fromEntries(
@@ -2305,14 +2525,15 @@ export function reducer(state: AppState, action: Action): AppState {
           Object.entries(state.browserErrors).filter(([id]) => id !== action.appSessionId),
         ),
         designModes: clearDesignMode(state.designModes, action.appSessionId),
-        browserOpenKeys: clearBrowserOpenKey(state.browserOpenKeys, action.appSessionId),
-        utilityPanels: {
-          ...state.utilityPanels,
-          [action.appSessionId]: removeUtilityTool(
-            state.utilityPanels[action.appSessionId],
-            'browser',
-          ),
-        },
+        utilityPanels: action.keepPane
+          ? state.utilityPanels
+          : {
+              ...state.utilityPanels,
+              [action.appSessionId]: removeUtilityTool(
+                state.utilityPanels[action.appSessionId],
+                'browser',
+              ),
+            },
       };
 
     case 'BROWSER_ERROR':
@@ -2320,13 +2541,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         browserErrors: { ...state.browserErrors, [action.appSessionId]: action.message },
-        // Respect an explicit hide; otherwise surface the errored browser.
-        browserOpenKeys:
-          // Missing keys differ from explicitly hidden panes.
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-          state.browserOpenKeys[action.appSessionId] === false
-            ? state.browserOpenKeys
-            : withBrowserOpenKey(state.browserOpenKeys, action.appSessionId, true),
       };
 
     case 'TOGGLE_DESIGN_MODE':
@@ -2371,6 +2585,20 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_DRAFT_PROVIDER':
       return { ...state, draftProvider: action.provider };
+
+    case 'USAGE_UPDATED':
+      return { ...state, usage: { ...state.usage, [action.usage.provider]: action.usage } };
+
+    // A fresh stream may come from a new sidecar, maybe on another account:
+    // the usage the last one read is unconfirmed until this one answers.
+    case 'BRIDGE_SNAPSHOT': {
+      const usage: AppState['usage'] = {};
+      for (const provider of PROVIDER_KINDS) {
+        const known = state.usage[provider];
+        if (known) usage[provider] = { ...known, stale: true };
+      }
+      return { ...state, usage };
+    }
 
     case 'SKILLS_LIST':
       return {
@@ -2524,6 +2752,21 @@ export function reducer(state: AppState, action: Action): AppState {
           },
         },
       };
+
+    case 'MODEL_UPDATES_UNANSWERED': {
+      // Only a live chat's change the old sidecar took is lost: the snapshot
+      // carries that chat's confirmed settings, which then show. A closed chat
+      // gets no summary here, and a request resent on reconnect is answered by
+      // the new sidecar.
+      const kept = Object.entries(state.pendingModelUpdates).filter(
+        ([appSessionId, pending]) =>
+          !action.liveAppSessionIds.has(appSessionId) ||
+          (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
+      );
+      return kept.length === Object.keys(state.pendingModelUpdates).length
+        ? state
+        : { ...state, pendingModelUpdates: Object.fromEntries(kept) };
+    }
 
     case 'MODEL_UPDATE_SETTLED': {
       if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
@@ -2735,12 +2978,14 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return null;
     case 'provider.status':
       return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
+    case 'usage.updated':
+      return { type: 'USAGE_UPDATED', usage: ev.usage };
     case 'settings.defaults':
       return { type: 'FACTORY_DEFAULTS', defaults: ev.defaults };
     case 'browser.updated':
       return { type: 'BROWSER_UPDATED', browser: ev.state };
     case 'browser.closed':
-      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
+      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId, keepPane: ev.keepPane };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     case 'voice.answer':
@@ -2881,8 +3126,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       delayMs: 16,
     });
     bridgeActionBatcherRef.current = batcher;
-    const unsub = bridge.subscribeBatch((events) => {
-      const actions: Action[] = [];
+    const unsub = bridge.subscribeBatch((events, fromSnapshot) => {
+      const actions: Action[] = fromSnapshot ? [{ type: 'BRIDGE_SNAPSHOT' }] : [];
       for (const ev of events) {
         // Verbose per-event logging runs on every streaming token and eagerly
         // deep-clones + redacts the whole event, so keep it to dev builds only;
@@ -2902,8 +3147,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       batcher.pushBridgeBatch(actions);
     });
+    // Queued ahead of the snapshot's own events, through the same batcher.
+    const unsubReplaced = bridge.subscribeRuntimeReplaced((liveAppSessionIds, resentRequestIds) => {
+      batcher.pushBridgeBatch([
+        { type: 'MODEL_UPDATES_UNANSWERED', liveAppSessionIds, resentRequestIds },
+      ]);
+    });
     return () => {
       unsub();
+      unsubReplaced();
       // StrictMode remounts this effect in dev; deliver anything in flight so
       // no event is lost across the resubscribe.
       batcher.dispose();

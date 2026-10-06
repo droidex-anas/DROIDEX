@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  clampCompactionTokenLimit,
   compactionTokenLimitForModel,
   compactionTriggerCeiling,
   daemonCompactionSettings,
@@ -37,13 +36,10 @@ test('compaction limits prefer per-model settings and preserve Factory fallbacks
   );
 });
 
-test('compaction thresholds leave model-window headroom and retain daemon defaults', () => {
+test('compaction thresholds leave model-window headroom, retain daemon defaults, and stay armed when cleared', () => {
   assert.equal(compactionTriggerCeiling(100_000), 80_000);
   assert.equal(compactionTriggerCeiling(undefined), undefined);
   assert.equal(compactionTriggerCeiling(1), 1);
-  assert.equal(clampCompactionTokenLimit(200_000, 100_000), 80_000);
-  assert.equal(clampCompactionTokenLimit(80_000, 200_000), 80_000);
-  assert.equal(clampCompactionTokenLimit(200_000), 200_000);
   assert.equal(daemonDefaultCompactionTokenLimit(), 250_000);
   assert.equal(daemonDefaultCompactionTokenLimit(1_000_000), 250_000);
   assert.equal(daemonDefaultCompactionTokenLimit(180_000), 180_000);
@@ -55,6 +51,19 @@ test('compaction thresholds leave model-window headroom and retain daemon defaul
     }),
     80_000,
   );
+  // Cleared UI limits still arm daemon auto-compaction.
+  assert.equal(
+    effectiveCompactionTriggerLimit({
+      modelId: 'model-a',
+      ui: { compactionTokenLimit: null, compactionTokenLimitPerModel: {} },
+    }),
+    250_000,
+  );
+  assert.deepEqual(daemonCompactionSettings(120_000), {
+    compactionThresholdCheckEnabled: true,
+    compactionTokenLimit: 120_000,
+  });
+  assert.deepEqual(daemonCompactionSettings(undefined), { compactionThresholdCheckEnabled: true });
 });
 
 test('resume limits prefer exposed session settings before current defaults', () => {
@@ -138,21 +147,4 @@ test('the UI snapshot outranks exposed and CLI compaction limits', () => {
     ),
     175_000,
   );
-});
-
-test('cleared UI limits still arm daemon auto-compaction', () => {
-  assert.equal(
-    effectiveCompactionTriggerLimit({
-      modelId: 'model-a',
-      ui: { compactionTokenLimit: null, compactionTokenLimitPerModel: {} },
-    }),
-    250_000,
-  );
-  assert.deepEqual(daemonCompactionSettings(120_000), {
-    compactionThresholdCheckEnabled: true,
-    compactionTokenLimit: 120_000,
-  });
-  assert.deepEqual(daemonCompactionSettings(undefined), {
-    compactionThresholdCheckEnabled: true,
-  });
 });

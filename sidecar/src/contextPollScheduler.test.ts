@@ -9,73 +9,34 @@ import {
   contextPollIntervalMs,
 } from './contextPollScheduler.js';
 
-test('visible focused primary keeps the current cadence', () => {
-  assert.equal(
-    contextPollIntervalMs({
-      tier: 'interactive',
-      isChild: false,
-      focusedAppSessionId: 'app-1',
-      appSessionId: 'app-1',
-    }),
-    CONTEXT_POLL_ACTIVE_MS,
-  );
-});
-
-test('active background children poll slower than the focused primary', () => {
-  assert.equal(
-    contextPollIntervalMs({
-      tier: 'interactive',
-      isChild: true,
-      focusedAppSessionId: 'app-1',
-      appSessionId: 'app-1',
-    }),
-    CONTEXT_POLL_BACKGROUND_MS,
-  );
-});
-
-test('unfocused primary sessions poll much slower', () => {
-  assert.equal(
-    contextPollIntervalMs({
-      tier: 'interactive',
-      isChild: false,
-      focusedAppSessionId: 'app-1',
-      appSessionId: 'app-2',
-    }),
-    CONTEXT_POLL_INACTIVE_MS,
-  );
-});
-
-test('children of an unfocused session use the inactive cadence', () => {
-  assert.equal(
-    contextPollIntervalMs({
-      tier: 'interactive',
-      isChild: true,
-      focusedAppSessionId: 'app-1',
-      appSessionId: 'app-2',
-    }),
-    CONTEXT_POLL_INACTIVE_MS,
-  );
-});
-
-test('hidden and low-power tiers pause informational polling', () => {
-  assert.equal(
-    contextPollIntervalMs({
-      tier: 'hidden',
-      isChild: false,
-      focusedAppSessionId: 'app-1',
-      appSessionId: 'app-1',
-    }),
-    0,
-  );
-  assert.equal(
-    contextPollIntervalMs({
-      tier: 'low-power',
-      isChild: true,
-      focusedAppSessionId: 'app-1',
-      appSessionId: 'app-1',
-    }),
-    0,
-  );
+test('cadence follows whether the chat is on screen and its role, and hidden or low-power tiers pause polling', () => {
+  const cases: [string, Parameters<typeof contextPollIntervalMs>[0], number][] = [
+    [
+      'on-screen primary',
+      { tier: 'interactive', isChild: false, isOnScreen: true },
+      CONTEXT_POLL_ACTIVE_MS,
+    ],
+    [
+      'child of an on-screen chat',
+      { tier: 'interactive', isChild: true, isOnScreen: true },
+      CONTEXT_POLL_BACKGROUND_MS,
+    ],
+    [
+      'off-screen primary',
+      { tier: 'interactive', isChild: false, isOnScreen: false },
+      CONTEXT_POLL_INACTIVE_MS,
+    ],
+    [
+      'child of an off-screen chat',
+      { tier: 'interactive', isChild: true, isOnScreen: false },
+      CONTEXT_POLL_INACTIVE_MS,
+    ],
+    ['hidden', { tier: 'hidden', isChild: false, isOnScreen: true }, 0],
+    ['low-power', { tier: 'low-power', isChild: true, isOnScreen: true }, 0],
+  ];
+  for (const [label, input, expected] of cases) {
+    assert.equal(contextPollIntervalMs(input), expected, label);
+  }
 });
 
 test('poll host pauses timers when cadence drops to zero and resumes with an immediate poll', () => {

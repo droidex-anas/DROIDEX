@@ -61,7 +61,7 @@ test('search unavailability is sticky until a successful search reply', () => {
   assert.deepEqual(getHistoryHealth(), { persistence: 'ok', search: 'ok' });
 });
 
-test('history status errors are identified without treating other errors as status', () => {
+test('only history status errors are status, and their copy never fabricates progress', () => {
   assert.equal(
     isHistoryStatusError({
       type: 'error',
@@ -86,9 +86,7 @@ test('history status errors are identified without treating other errors as stat
     }),
     false,
   );
-});
 
-test('history status copy never fabricates progress', () => {
   for (const message of [
     HISTORY_PERSISTENCE_DEGRADED_MESSAGE,
     HISTORY_SEARCH_UNAVAILABLE_MESSAGE,

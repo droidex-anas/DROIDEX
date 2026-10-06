@@ -1,50 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ChildSessionSummary, SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import { initialState, reducer, type AppState } from './useStore';
+import { sessionSummary } from '../test/sessionSummary';
+import { childSummary } from '../test/childSummary';
 
-function session(
-  appSessionId: string,
-  streaming: boolean,
-  updatedAt = streaming ? 1 : 2,
-): SessionSummary {
-  return {
-    appSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: appSessionId,
+const session = (appSessionId: string, streaming: boolean, updatedAt = streaming ? 1 : 2) =>
+  sessionSummary(appSessionId, {
     goal: '',
     cwd: '/tmp',
     autonomy: 'off',
     phase: streaming ? 'running' : 'completed',
     streaming,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
     updatedAt,
-  };
-}
+  });
 
-function childSession(
+const childSession = (
   parentAppSessionId: string,
   childSessionId: string,
   status: ChildSessionSummary['status'],
-): ChildSessionSummary {
-  return {
-    parentAppSessionId,
-    childSessionId,
-    role: 'worker',
-    status,
-    modelId: 'model',
-    transcriptAvailable: true,
-    streamFidelity: 'state',
-  };
-}
+) => childSummary(parentAppSessionId, childSessionId, { status, modelId: 'model' });
 
 function events(
   appSessionId: string,

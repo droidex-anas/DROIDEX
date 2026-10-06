@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import type { PrComment, PullRequest } from '../../../types/vcs';
 import {
-  CUBIC_REVIEW_MENTION,
   droidReviewSeed,
   hasCubicActivity,
   isCubicAuthor,
@@ -51,10 +50,6 @@ test('the cubic memory is keyed by repository, not by checkout', () => {
   assert.equal(repoKeyFromPrUrl('https://github.com/droidex-anas/droid-maxxing'), null);
   assert.equal(repoKeyFromPrUrl(null), null);
   assert.equal(repoKeyFromPrUrl(undefined), null);
-});
-
-test('the cubic trigger is the mention GitHub understands', () => {
-  assert.equal(CUBIC_REVIEW_MENTION, '@cubic-dev-ai review this PR');
 });
 
 test('an unknown repository is invited to Cubic and can still review locally', () => {
