@@ -23,12 +23,11 @@ export const VIEWPORT_LABELS: Record<BrowserViewportMode, string> = {
   mobile: 'Phone',
 };
 
-export function viewportFromFrame(size: Size, edgeToEdge = false): BrowserViewport {
+export function viewportFromFrame(size: Size): BrowserViewport {
   if (size.width <= 1 || size.height <= 1) return FIT_FALLBACK_VIEWPORT;
-  const inset = edgeToEdge ? 0 : 36;
   return {
-    width: pixels(size.width - inset),
-    height: pixels(size.height - inset),
+    width: pixels(size.width),
+    height: pixels(size.height),
     deviceScaleFactor: 2,
   };
 }
@@ -43,27 +42,22 @@ export function viewportForMode(
 const PAGE_PADDING = 18;
 
 /**
- * Where the page sits in the pane. Fit fills it (edge to edge when
- * expanded); a standard size keeps its own CSS size, scaled down to fit and
+ * Where the page sits in the pane. Fit fills it edge to edge; a standard size keeps its own CSS size, scaled down to fit and
  * centred, so the page lays out exactly as the agent sees it.
  */
 export function pageLayout(
   frame: Size,
   viewport: BrowserViewport,
   mode: BrowserViewportMode,
-  expanded = false,
 ): Size & { left: number; top: number; scale?: number } {
-  if (expanded && mode === 'fit') {
+  if (mode === 'fit') {
     return { width: pixels(frame.width), height: pixels(frame.height), left: 0, top: 0 };
   }
   const availableWidth = Math.max(1, frame.width - PAGE_PADDING * 2);
   const availableHeight = Math.max(1, frame.height - PAGE_PADDING * 2);
-  const scale =
-    mode === 'fit'
-      ? undefined
-      : Math.min(1, availableWidth / viewport.width, availableHeight / viewport.height);
-  const width = scale === undefined ? availableWidth : viewport.width * scale;
-  const height = scale === undefined ? availableHeight : viewport.height * scale;
+  const scale = Math.min(1, availableWidth / viewport.width, availableHeight / viewport.height);
+  const width = viewport.width * scale;
+  const height = viewport.height * scale;
   return {
     width: Math.round(width),
     height: Math.round(height),

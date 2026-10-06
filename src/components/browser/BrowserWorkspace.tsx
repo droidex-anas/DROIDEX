@@ -85,7 +85,7 @@ export default function BrowserWorkspace({
   const frameSize = useElementSize(frameRef);
   const roomSize = useElementSize(roomRef);
   const frameReady = frameSize.width > 8 && frameSize.height > 8;
-  const fitViewport = useMemo(() => viewportFromFrame(frameSize, expanded), [expanded, frameSize]);
+  const fitViewport = useMemo(() => viewportFromFrame(frameSize), [frameSize]);
   const initialUrl = safeBrowserUrl(browser?.url, appOrigin);
   const [urlInput, setUrlInput] = useState(browserAddressValue(initialUrl));
   const [activeUrl, setActiveUrl] = useState(initialUrl);
@@ -545,7 +545,7 @@ export default function BrowserWorkspace({
         )}
         <DesignQuickPrompt
           quick={quickPrompt}
-          page={pageLayout(pageFrame, shownViewport, viewportMode, expanded)}
+          page={pageLayout(pageFrame, shownViewport, viewportMode)}
           // In full screen the composer floats over the page's foot.
           floor={expanded ? roomSize.height : frameSize.height}
         />
