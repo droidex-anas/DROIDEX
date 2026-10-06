@@ -74,6 +74,8 @@ let hasStarted = false;
 // this for the rest of the launch; the next launch never starts a client.
 let client: RumApi | null = null;
 let reportingAllowed = true;
+// Read through a call: an opt-out can land while startup awaits.
+const optedOut = () => !reportingAllowed;
 
 export async function startUsageAnalytics(
   deps: UsageAnalyticsDeps = {},
@@ -85,12 +87,14 @@ export async function startUsageAnalytics(
     );
     if (!bootstrap) return 'disabled';
     hasStarted = true;
+    // An opt-out during the bootstrap round trip skips the SDK download too.
+    if (optedOut()) return 'disabled';
 
     const rum = await (deps.loadRum ?? loadRum)();
     // Opting out while the SDK was still loading has to stop the launch here.
     // Starting a view emits a view event, and Datadog does not let beforeSend
     // discard those, so the only way not to send one is never to start it.
-    if (!reportingAllowed) return 'disabled';
+    if (optedOut()) return 'disabled';
     client = rum;
     rum.init(buildRumConfig(bootstrap));
     rum.setUser({ id: bootstrap.installationId });

@@ -237,13 +237,14 @@ If a deployment causes user impact:
 
 DROIDEX counts installations through Datadog RUM. The goal is a defensible
 answer to "how many installations run this?". Nothing here observes features,
-funnels, or content: no screen, click, command, setting, harness, prompt, or
-session is recorded. Only two events exist, and both are emitted by
-`src/lib/usageAnalytics.ts`:
+funnels, or content: no feature screen, click, command, setting, harness,
+prompt, or DROID session content is recorded. What is sent is one generic `app`
+view with the RUM session metadata Datadog keeps for it, and two events, both
+emitted by `src/lib/usageAnalytics.ts`:
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `app_opened` | Every launch of a packaged, configured build whose user has not opted out | `app_version`, `platform`, `architecture`, `distribution_channel` |
+| `app_opened` | Every launch of a packaged, configured build whose user has not opted out, and where `DROIDEX_DISABLE_USAGE_ANALYTICS` is not `1` or `true` | `app_version`, `platform`, `architecture`, `distribution_channel` |
 | `install_first_launch` | Once per installation ID, under the same conditions | the same four, plus `install_origin` |
 
 ### The installation identifier
