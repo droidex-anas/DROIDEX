@@ -92,7 +92,7 @@ export async function runPrimaryTurn(
     if (writing) await writing;
   }
   if (!isCurrent() || stoppedBeforeStart()) {
-    delivery?.declined('stale');
+    settleWrittenDelivery(delivery, stoppedBeforeStart());
     return;
   }
   d.context.beginTurn(appSessionId);
@@ -120,7 +120,7 @@ export async function runPrimaryTurn(
       stoppedBeforeStart() ||
       (delivery && (!configured || !delivery.isCurrent()))
     ) {
-      delivery?.declined('stale');
+      settleWrittenDelivery(delivery, stoppedBeforeStart());
       context.stopPolling();
       return;
     }
@@ -178,6 +178,14 @@ export async function runPrimaryTurn(
   // busy meanwhile, holding back what is queued for it. A newer turn's
   // refresh supersedes this one (SessionContext).
   void context.refresh();
+}
+
+/* A delivery whose prompt row is already written cannot be sent again without
+   writing it twice. A Stop drops it, as Stop drops the rest of the chat's
+   queue; anything else hands it back to be sent to the chat as it is now. */
+function settleWrittenDelivery(delivery: ScheduledTurnDelivery | undefined, stopped: boolean) {
+  if (stopped) delivery?.accepted();
+  else delivery?.declined('stale');
 }
 
 function settleTurnFailure(

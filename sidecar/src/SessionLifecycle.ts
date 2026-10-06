@@ -1242,6 +1242,9 @@ export class SessionLifecycle {
             );
           },
         )
+        .catch((error: unknown) => {
+          this.dependencies.emitError({ appSessionId, message: errMsg(error) });
+        })
         .finally(() => {
           // Released however the settle ended, so a waiting typed turn never spins.
           if (liveSession.delegatedTurnSettled === reservation)
@@ -1281,7 +1284,12 @@ export class SessionLifecycle {
     const appSessionId = liveSession.summary.appSessionId;
     this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(refusal));
     // A refusal leaves no row of its own; the typed path writes this notice too.
-    this.dependencies.appendError(appSessionId, refusal.message, usageLimitDetails(refusal));
+    // A notice that cannot be written must not leave the turn unsettled.
+    try {
+      this.dependencies.appendError(appSessionId, refusal.message, usageLimitDetails(refusal));
+    } catch (error) {
+      this.dependencies.emitError({ appSessionId, message: errMsg(error) });
+    }
   }
 
   private settleDelegatedTurn(
