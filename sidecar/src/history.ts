@@ -1628,9 +1628,9 @@ function readSessionModelSettings(
         stringValue(raw.modelId) ||
         stringValue(raw.model),
     reasoningEffort: reasoningValue(
-      stringValue(sidecarSettings.reasoningEffort) ||
-        stringValue(settings.reasoningEffort) ||
-        stringValue(raw.reasoningEffort),
+      Object.hasOwn(sidecarSettings, 'reasoningEffort')
+        ? stringValue(sidecarSettings.reasoningEffort)
+        : stringValue(settings.reasoningEffort) || stringValue(raw.reasoningEffort),
     ),
     contextWindowTokens: contextWindowTokensValue(
       sidecarSettings.contextWindowTokens !== undefined

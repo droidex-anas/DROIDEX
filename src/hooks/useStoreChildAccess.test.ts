@@ -203,7 +203,7 @@ test('disconnect clears child selection, access, and runtime watermarks', () => 
   assert.deepEqual(state.contextStats.child, {});
 });
 
-test('switching parents, starting a draft, or creating a parent invalidates an opening child', () => {
+test('switching parents or starting a draft invalidates an opening child', () => {
   const navigations: Array<[string, (state: AppState) => AppState]> = [
     [
       'activate another parent',
@@ -218,26 +218,39 @@ test('switching parents, starting a draft, or creating a parent invalidates an o
       (state) =>
         reducer(state, { type: 'START_CHAT', cwd: '/workspace', executionMode: 'worktree' }),
     ],
-    [
-      'create a parent',
-      (state) =>
-        reducer(
-          reducer(state, {
-            type: 'SET_PENDING_COMPOSE',
-            clientRef: 'new-parent',
-            text: 'start parent',
-            skills: [],
-            files: [],
-          }),
-          { type: 'SESSION_CREATED', clientRef: 'new-parent', session: session('parent-b') },
-        ),
-    ],
   ];
   for (const [label, navigate] of navigations) {
     const state = navigate(select(initialState, 'parent-a', 'child-a', 'request-a'));
     assert.equal(state.selectedChild, null, label);
     assert.deepEqual(accessOf(state), CLOSED, label);
   }
+});
+
+test('a new parent created after the user opened a child leaves that child open', () => {
+  // Sent from the new chat, which the user then left for a parent's child.
+  const sent = reducer(initialState, { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'hold-1' });
+  let state = select(sent, 'parent-a', 'child-a', 'request-a');
+  const opening = accessOf(state);
+  state = reducer(state, {
+    type: 'SET_PENDING_COMPOSE',
+    clientRef: 'new-parent',
+    text: 'start parent',
+    skills: [],
+    files: [],
+    originHoldId: 'hold-1',
+  });
+  state = reducer(state, {
+    type: 'SESSION_CREATED',
+    clientRef: 'new-parent',
+    session: session('parent-b'),
+  });
+
+  assert.equal(state.activeAppSessionId, 'parent-a');
+  assert.deepEqual(state.selectedChild, {
+    parentAppSessionId: 'parent-a',
+    childSessionId: 'child-a',
+  });
+  assert.deepEqual(accessOf(state), opening);
 });
 
 test('resuming a background parent does not steal the selected session', () => {

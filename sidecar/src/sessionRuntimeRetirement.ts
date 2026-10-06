@@ -1,24 +1,15 @@
-// A top-level session's provider runtime is an OS process, and an idle one is
-// not cheap: measured on this machine by PID, a Claude Code CLI holds 291 to
-// 295 MiB, a `codex app-server` thread about 241 MiB, and a Droid runtime about
-// 367 MiB across 17 threads. Nothing releases one during an app run: the
-// renderer never sends session.close, so eight open workspaces hold eight of
-// them until quit. These rules release the ones the user has demonstrably
-// walked away from. The transcript is served from history either way.
+// Provider runtimes cost hundreds of MiB each; keep at most three settled
+// off-screen runtimes live, releasing the longest idle first. History survives.
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionPhase } from './protocol.js';
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 
-// Six times the child budget, because of where the cost lands rather than how
-// large it is: a child pays behind its own loading state, while a session used
-// to pay after the user had typed a prompt and pressed enter. Selecting the
-// chat now starts its runtime first (sessionRuntimeWarmUp), so that reload runs
-// while the user types instead of after: measured on this machine, a Claude
-// Code session answers again 2.0 to 2.1 s after the resume call, and a Codex
-// process opens a thread in about 0.2 s. Thirty minutes stands; the memory
-// figures above argue about how many runtimes may sit idle, not about how long
-// one the user has walked away from should wait.
+// The three most recently idle runtimes retain the 30-minute budget; selecting
+// a released chat warms its runtime while the user types (sessionRuntimeWarmUp).
 export const SESSION_RUNTIME_IDLE_RETIREMENT_MS = 30 * 60_000;
+const SESSION_RUNTIME_IDLE_LIMIT = 3;
+// A failed close must not retry and emit diagnostics every turn of the event loop.
+const SESSION_RUNTIME_RELEASE_RETRY_MS = 5 * 60_000;
 
 // `streaming` is the authority on whether a turn is in flight: nothing moves a
 // settled session out of 'running' or 'planning'. These phases mean the session
@@ -39,7 +30,8 @@ export interface SessionRetirementFacts {
   queuedSends: number;
   interrupting: boolean;
   closing: boolean;
-  focused: boolean;
+  coolingDown: boolean;
+  onScreen: boolean;
   hasUnsettledChildren: boolean;
   hasOpenBrowser: boolean;
   hasPendingSettings: boolean;
@@ -53,7 +45,7 @@ export interface SessionRetirementFacts {
 // embedded browser with it.
 function isRetirableSession(facts: SessionRetirementFacts): boolean {
   return (
-    !facts.focused &&
+    !facts.onScreen &&
     !UNANSWERED_PHASES.has(facts.phase) &&
     !facts.streaming &&
     !facts.compacting &&
@@ -72,11 +64,7 @@ function isRetirableSession(facts: SessionRetirementFacts): boolean {
   );
 }
 
-export function isDueForRetirement(
-  facts: SessionRetirementFacts,
-  now: number,
-  idleMs: number,
-): boolean {
+function isDueForRetirement(facts: SessionRetirementFacts, now: number, idleMs: number): boolean {
   // Monotonic activity timestamps can lead the wall clock by a tick.
   return isRetirableSession(facts) && Math.max(0, now - facts.idleSince) >= idleMs;
 }
@@ -105,7 +93,8 @@ export function adoptedSessionFacts(identity: {
     queuedSends: 0,
     interrupting: false,
     closing: false,
-    focused: false,
+    coolingDown: false,
+    onScreen: false,
     hasOpenBrowser: false,
     hasPendingSettings: false,
     // A restart took every process the previous run had spawned with it.
@@ -119,29 +108,41 @@ export function retirableSessions(
   now: number,
   idleMs: number,
 ): string[] {
-  const due: string[] = [];
+  const eligible: SessionRetirementFacts[] = [];
   for (const session of facts) {
-    if (isDueForRetirement(session, now, idleMs)) due.push(session.appSessionId);
+    if (isRetirableSession(session)) eligible.push(session);
   }
-  return due;
+  eligible.sort((a, b) => a.idleSince - b.idleSince);
+  const excess = eligible.length - SESSION_RUNTIME_IDLE_LIMIT;
+  // A failed release leaves a live runtime; release the next-oldest instead.
+  return eligible
+    .filter((session) => !session.coolingDown)
+    .filter((session, index) => index < excess || isDueForRetirement(session, now, idleMs))
+    .map((session) => session.appSessionId);
 }
 
 export function nextSessionRetirementAt(
   facts: Iterable<SessionRetirementFacts>,
+  now: number,
   idleMs: number,
 ): number | undefined {
   let earliest: number | undefined;
+  let count = 0;
   for (const session of facts) {
     if (!isRetirableSession(session)) continue;
+    count++;
+    if (session.coolingDown) continue;
     const dueAt = session.idleSince + idleMs;
     if (earliest === undefined || dueAt < earliest) earliest = dueAt;
   }
+  if (count > SESSION_RUNTIME_IDLE_LIMIT && earliest !== undefined) return now;
   return earliest;
 }
 
 export interface SessionRuntimeRetirementDependencies {
   liveSessions: () => readonly LiveSession[];
-  focusedAppSessionId: () => string | null;
+  // Null until the renderer first reports what is on screen.
+  onScreenAppSessionIds: () => ReadonlySet<string> | null;
   hasUnsettledChildren: (appSessionId: string) => boolean;
   hasOpenBrowser: (appSessionId: string) => boolean;
   hasPendingSettings: (appSessionId: string) => boolean;
@@ -157,24 +158,24 @@ export class SessionRuntimeRetirement {
   private readonly timer = new RuntimeRetirementTimer(() => {
     void this.sweep();
   });
-  // When each session stopped being the one the user was looking at. A session
-  // read for twenty minutes without a reply must not count as idle for those
-  // twenty minutes.
-  private readonly unfocusedAt = new Map<string, number>();
-  private focusReported = false;
+  // When each session left the screen. A session read for twenty minutes
+  // without a reply must not count as idle for those twenty minutes.
+  private readonly leftScreenAt = new Map<string, number>();
+  private readonly releaseRetryAt = new Map<string, number>();
   private stopped = false;
   private sweeping: Promise<void> | null = null;
 
   constructor(private readonly dependencies: SessionRuntimeRetirementDependencies) {}
 
-  // `previouslyFocused` is the focus this owner is replacing; the dependency
-  // already reports the new one.
-  noteFocus(previouslyFocused: string | null): void {
-    this.focusReported = true;
-    const focused = this.dependencies.focusedAppSessionId();
-    if (previouslyFocused !== null && previouslyFocused !== focused)
-      this.unfocusedAt.set(previouslyFocused, this.dependencies.now());
-    if (focused !== null) this.unfocusedAt.delete(focused);
+  // `previouslyOnScreen` is the report this owner is replacing; the dependency
+  // already returns the new one.
+  noteOnScreen(previouslyOnScreen: ReadonlySet<string> | null): void {
+    const onScreen = this.dependencies.onScreenAppSessionIds() ?? new Set<string>();
+    const now = this.dependencies.now();
+    for (const appSessionId of previouslyOnScreen ?? []) {
+      if (!onScreen.has(appSessionId)) this.leftScreenAt.set(appSessionId, now);
+    }
+    for (const appSessionId of onScreen) this.leftScreenAt.delete(appSessionId);
     this.arm();
   }
 
@@ -183,26 +184,28 @@ export class SessionRuntimeRetirement {
       this.timer.cancel();
       return;
     }
-    this.timer.armFor(
-      nextSessionRetirementAt(this.facts(), this.dependencies.idleMs),
-      this.dependencies.now(),
-    );
+    const now = this.dependencies.now();
+    let dueAt = nextSessionRetirementAt(this.facts(now), now, this.dependencies.idleMs);
+    for (const retryAt of this.releaseRetryAt.values()) {
+      if (retryAt > now && (dueAt === undefined || retryAt < dueAt)) dueAt = retryAt;
+    }
+    this.timer.armFor(dueAt, now);
   }
 
   stop(): void {
     this.stopped = true;
     this.timer.cancel();
-    this.unfocusedAt.clear();
+    this.leftScreenAt.clear();
+    this.releaseRetryAt.clear();
   }
 
   armedFor(): number | undefined {
     return this.timer.armedFor();
   }
 
-  // Release the provider process behind every session settled and untouched
-  // past the idle budget. The transcript, history, and sidebar entry survive,
-  // and the release writes nothing to the chat: selecting it warms the runtime
-  // again before a send.
+  // Release settled off-screen runtimes over the cap or past the idle budget.
+  // The transcript, history, and sidebar entry survive, and the release writes
+  // nothing to the chat: selecting it warms the runtime again before a send.
   sweep(): Promise<void> {
     if (this.sweeping) return this.sweeping;
     this.sweeping = this.sweepOnce().finally(() => {
@@ -213,55 +216,57 @@ export class SessionRuntimeRetirement {
 
   private async sweepOnce(): Promise<void> {
     const d = this.dependencies;
-    for (const appSessionId of retirableSessions(this.facts(), d.now(), d.idleMs)) {
+    const startedAt = d.now();
+    for (const appSessionId of retirableSessions(this.facts(startedAt), startedAt, d.idleMs)) {
       if (this.stopped) break;
       // Each release awaits, and a prompt can reach a session still waiting in
       // this queue during that window, so the decision is taken again here.
-      const current = this.factsFor(appSessionId);
-      if (!current || !isDueForRetirement(current, d.now(), d.idleMs)) continue;
+      const now = d.now();
+      if (!retirableSessions(this.facts(now), now, d.idleMs).includes(appSessionId)) continue;
       try {
         await d.retire(appSessionId);
       } catch (error) {
+        this.releaseRetryAt.set(appSessionId, d.now() + SESSION_RUNTIME_RELEASE_RETRY_MS);
         d.emitError(
           appSessionId,
           `Could not release this session's idle runtime: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    // The sweep supersedes wakeups armed while a release was pending.
+    this.timer.cancel();
     this.arm();
   }
 
   // Nothing is retirable until the renderer has told us what the user is
   // looking at: without that signal we cannot tell a background session from
   // the one on screen.
-  private facts(): SessionRetirementFacts[] {
+  private facts(now: number): SessionRetirementFacts[] {
     const live = this.dependencies.liveSessions();
     this.forgetClosedSessions(live);
-    if (!this.focusReported) return [];
-    return live.map((session) => this.describe(session));
+    const onScreen = this.dependencies.onScreenAppSessionIds();
+    if (!onScreen) return [];
+    return live.map((session) => this.describe(session, onScreen, now));
   }
 
-  private factsFor(appSessionId: string): SessionRetirementFacts | undefined {
-    if (!this.focusReported) return undefined;
-    const live = this.dependencies
-      .liveSessions()
-      .find((session) => session.summary.appSessionId === appSessionId);
-    return live ? this.describe(live) : undefined;
-  }
-
-  private describe(live: LiveSession): SessionRetirementFacts {
+  private describe(
+    live: LiveSession,
+    onScreen: ReadonlySet<string>,
+    now: number,
+  ): SessionRetirementFacts {
     const d = this.dependencies;
     const appSessionId = live.summary.appSessionId;
     return {
       appSessionId,
-      idleSince: Math.max(live.summary.updatedAt, this.unfocusedAt.get(appSessionId) ?? 0),
+      idleSince: Math.max(live.summary.updatedAt, this.leftScreenAt.get(appSessionId) ?? 0),
       phase: live.summary.phase,
       streaming: live.streaming || live.summary.streaming === true,
       compacting: live.compacting === true || live.autoCompacting,
       queuedSends: live.pendingSends.length,
       interrupting: live.interrupting === true || live.interruptingToSend === true,
       closing: live.closeMode !== undefined,
-      focused: appSessionId === d.focusedAppSessionId(),
+      coolingDown: (this.releaseRetryAt.get(appSessionId) ?? 0) > now,
+      onScreen: onScreen.has(appSessionId),
       hasUnsettledChildren: d.hasUnsettledChildren(appSessionId),
       hasOpenBrowser: d.hasOpenBrowser(appSessionId),
       hasPendingSettings: d.hasPendingSettings(appSessionId),
@@ -271,10 +276,12 @@ export class SessionRuntimeRetirement {
   }
 
   private forgetClosedSessions(live: readonly LiveSession[]): void {
-    if (this.unfocusedAt.size === 0) return;
+    if (this.leftScreenAt.size === 0 && this.releaseRetryAt.size === 0) return;
     const open = new Set(live.map((session) => session.summary.appSessionId));
-    for (const appSessionId of this.unfocusedAt.keys()) {
-      if (!open.has(appSessionId)) this.unfocusedAt.delete(appSessionId);
+    for (const timestamps of [this.leftScreenAt, this.releaseRetryAt]) {
+      for (const appSessionId of timestamps.keys()) {
+        if (!open.has(appSessionId)) timestamps.delete(appSessionId);
+      }
     }
   }
 }

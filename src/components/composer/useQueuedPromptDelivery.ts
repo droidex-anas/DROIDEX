@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useStoreApi, useStoreDispatch } from '../../hooks/useStore';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
 import {
@@ -8,6 +8,7 @@ import {
   responseFormatForPrompt,
 } from '../../lib/composePrompt';
 import { markGitTurnStart } from '../../lib/git';
+import { sessionIsLive } from '../../lib/sessions';
 import { promptWithSideChatReplies } from '../../lib/sideChats';
 import {
   createLocalDesignTranscriptEvent,
@@ -19,12 +20,15 @@ export function useQueuedPromptDelivery({
   appSessionId,
   cwd,
   isLive,
+  usageLimited,
   appUpdateInstalling,
   appUpdateInstallResult,
 }: {
   appSessionId: string | null;
   cwd: string | null;
   isLive: boolean;
+  // The chat is held on a usage limit: its queue waits until the limit lifts.
+  usageLimited: boolean;
   appUpdateInstalling: boolean;
   appUpdateInstallResult: 'downloaded' | 'presented' | null;
 }): void {
@@ -32,13 +36,18 @@ export function useQueuedPromptDelivery({
   const dispatch = useStoreDispatch();
   const guard = useMemo(createPromptQueueDeliveryGuard, []);
   const generation = useRef(0);
-  const previous = useRef<{ appSessionId: string | null; live: boolean }>({
+  const previous = useRef<{ appSessionId: string | null; live: boolean; limited: boolean }>({
     appSessionId: null,
     live: false,
+    limited: false,
   });
   const previousInstalling = useRef(appUpdateInstalling);
-  const live = useRef(isLive);
-  live.current = isLive;
+  // Committed limit state only: a render React drops must not open or shut
+  // the gate a delivery in flight reads.
+  const limited = useRef(usageLimited);
+  useLayoutEffect(() => {
+    limited.current = usageLimited;
+  }, [usageLimited]);
 
   useEffect(
     () => () => {
@@ -49,20 +58,27 @@ export function useQueuedPromptDelivery({
 
   const deliverPrompt = useCallback(async () => {
     if (!appSessionId || isAppUpdateInstalling()) return;
+    // A chat that is gone from the store has nothing left to deliver to.
+    const isSessionIdle = () => {
+      const sessions: Partial<AppState['sessions']> = store.getState().sessions;
+      const session = sessions[appSessionId];
+      return session !== undefined && !sessionIsLive(session);
+    };
     if (!(store.getState().promptQueue[appSessionId] ?? []).length) return;
-    if (live.current) return;
+    if (!isSessionIdle() || limited.current) return;
     const capturedGeneration = generation.current;
     try {
       await guard.run(async () => {
         if (cwd) await markGitTurnStart(cwd, appSessionId);
         // The guard serialises queued deliveries, not interactive sends: the
         // user can start a turn while the git baseline is captured, and this
-        // prompt must wait for that turn instead of joining it.
+        // prompt must wait for that turn instead of joining it. The generation
+        // moves when this composer leaves the session.
         if (
           isAppUpdateInstalling() ||
-          live.current ||
-          generation.current !== capturedGeneration ||
-          store.getState().activeAppSessionId !== appSessionId
+          !isSessionIdle() ||
+          limited.current ||
+          generation.current !== capturedGeneration
         )
           return;
         // Edits and reorders may land during baseline capture. Only the current
@@ -123,15 +139,18 @@ export function useQueuedPromptDelivery({
 
   useEffect(() => {
     const was = previous.current;
-    // Either this session just settled, or the user came back to one that
-    // settled while they were away; both leave its queue to drain here.
-    const settled = was.live && !isLive && was.appSessionId === appSessionId;
-    const returned = was.appSessionId !== appSessionId && !isLive;
-    previous.current = { appSessionId, live: isLive };
-    if (!settled && !returned) return;
+    // This session just settled, the user came back to one that settled while
+    // they were away, or the limit an idle one was held on lifted; each leaves
+    // its queue to drain here.
+    const sameSession = was.appSessionId === appSessionId;
+    const settled = was.live && !isLive && sameSession;
+    const returned = !sameSession && !isLive;
+    const lifted = was.limited && !usageLimited && !isLive && sameSession;
+    previous.current = { appSessionId, live: isLive, limited: usageLimited };
+    if (!settled && !returned && !lifted) return;
     if (appSessionId && (store.getState().promptQueue[appSessionId] ?? []).length)
       void deliverPrompt();
-  }, [appSessionId, deliverPrompt, isLive, store]);
+  }, [appSessionId, deliverPrompt, isLive, store, usageLimited]);
 
   useEffect(() => {
     const hasQueued = Boolean(

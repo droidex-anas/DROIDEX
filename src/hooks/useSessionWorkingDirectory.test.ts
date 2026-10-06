@@ -6,6 +6,9 @@ import {
 } from './useSessionWorkingDirectory';
 import type { GitWorktree } from '../types/vcs';
 import type { TranscriptEvent } from '../types/bridge';
+import { initialState, reducer } from './useStore';
+import { withUpdatedTranscript } from '../lib/transcriptStoreMemory';
+import { textEvent } from '../test/textEvent';
 
 const worktree = (path: string): GitWorktree => ({
   path,
@@ -52,7 +55,7 @@ test('working-directory transcript selection ignores streamed text-only updates'
     toolName: 'Create',
   };
   const selectTranscript = createWorkingDirectoryTranscriptSelector('s1');
-  const initial = selectTranscript({ transcripts: { s1: [toolEvent] } });
+  const initial = selectTranscript({ transcripts: { s1: [toolEvent] }, transcriptMutations: {} });
   const afterText = selectTranscript({
     transcripts: {
       s1: [
@@ -68,8 +71,72 @@ test('working-directory transcript selection ignores streamed text-only updates'
         },
       ],
     },
+    transcriptMutations: {
+      s1: {
+        kind: 'append',
+        previousLength: 1,
+        firstChangedIndex: 1,
+        baseRevision: 0,
+        revision: 1,
+      },
+    },
   });
 
   assert.equal(afterText, initial);
   assert.deepEqual(afterText, [toolEvent]);
+});
+
+test('working-directory evidence follows tool corrections, prepends and resets for each source', () => {
+  for (const sourceSessionId of [undefined, 'child']) {
+    const tool = textEvent('tool', {
+      appSessionId: 's1',
+      sourceSessionId: sourceSessionId ?? 's1',
+      role: sourceSessionId ? 'worker' : 'primary',
+      kind: 'tool_call',
+      toolName: 'Create',
+      toolUseId: 'create-1',
+      toolArgs: { cwd: '/repo' },
+    });
+    const select = createWorkingDirectoryTranscriptSelector('s1', sourceSessionId);
+    let state = reducer(initialState, { type: 'SESSION_TRANSCRIPT', event: tool });
+    const initial = select(state);
+    state = reducer(state, {
+      type: 'SESSION_TRANSCRIPT',
+      event: textEvent('text', { appSessionId: 's1' }),
+    });
+    assert.equal(select(state), initial);
+    state = reducer(state, {
+      type: 'SESSION_TRANSCRIPT',
+      event: textEvent('other', { appSessionId: 's2' }),
+    });
+    assert.equal(select(state), initial);
+
+    state = reducer(state, {
+      type: 'SESSION_TRANSCRIPT',
+      event: { ...tool, id: 'correction', toolArgs: { cwd: '/worktree' } },
+    });
+    const corrected = select(state);
+    assert.deepEqual(
+      corrected.map((event) => event.toolArgs),
+      [{ cwd: '/worktree' }],
+    );
+    const older = { ...tool, id: 'older', toolUseId: 'older', toolArgs: { cwd: '/older' } };
+    const previous = state.transcripts.s1;
+    state = withUpdatedTranscript(state, 's1', [older, ...previous], 0, {
+      mutation: {
+        kind: 'prepend',
+        previousLength: previous.length,
+        firstChangedIndex: 0,
+        insertedCount: 1,
+      },
+    });
+    assert.deepEqual(
+      select(state).map((event) => event.toolArgs),
+      [{ cwd: '/older' }, { cwd: '/worktree' }],
+    );
+    state = withUpdatedTranscript(state, 's1', [tool], 0);
+    assert.deepEqual(select(state), [tool]);
+    state = withUpdatedTranscript(state, 's1', [], 0);
+    assert.deepEqual(select(state), []);
+  }
 });

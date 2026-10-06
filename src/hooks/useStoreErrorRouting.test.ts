@@ -84,12 +84,14 @@ test('a primary error fails only the primary session', () => {
 });
 
 test('a create failure clears only its matching pending first message', () => {
-  const withFirst = reducer(initialState, {
+  const held = reducer(initialState, { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'hold-1' });
+  const withFirst = reducer(held, {
     type: 'SET_PENDING_COMPOSE',
     clientRef: 'client-1',
     text: 'first',
     skills: [],
     files: [],
+    originHoldId: 'hold-1',
   });
   const withBoth = reducer(withFirst, {
     type: 'SET_PENDING_COMPOSE',
@@ -97,6 +99,7 @@ test('a create failure clears only its matching pending first message', () => {
     text: 'second',
     skills: [],
     files: [],
+    originHoldId: 'hold-1',
   });
   const failure = {
     type: 'error' as const,

@@ -47,6 +47,7 @@ export function parseStoredNotice(
   const modelSwitch = objectValue(line.modelSwitch);
   const from = stringValue(modelSwitch?.from);
   const to = stringValue(modelSwitch?.to);
+  const cause = modelSwitch?.cause;
   const resetsAt = numberValue(line.resetsAt);
   return {
     id,
@@ -57,7 +58,15 @@ export function parseStoredNotice(
     kind: line.type,
     text,
     ...(line.type === 'error' ? { isError: true } : {}),
-    ...(line.type === 'status' && from && to ? { modelSwitch: { from, to } } : {}),
+    ...(line.type === 'status' && from && to
+      ? {
+          modelSwitch: {
+            from,
+            to,
+            ...(cause === 'harness' || cause === 'usage_limit' ? { cause } : {}),
+          },
+        }
+      : {}),
     ...(line.type === 'error' && line.errorKind === 'usage_limit'
       ? { errorKind: 'usage_limit', ...(resetsAt !== undefined ? { resetsAt } : {}) }
       : {}),

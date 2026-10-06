@@ -422,9 +422,15 @@ export const setHistoryIndexingIdle = (isIdle: boolean) => {
 
 export const setBackgroundWork = (
   tier: 'interactive' | 'hidden' | 'low-power',
-  focusedAppSessionId?: string | null,
+  focusedAppSessionId: string | null,
+  visibleAppSessionIds: string[],
 ) => {
-  return bridge.sendIfConnected({ type: 'app.backgroundWork', tier, focusedAppSessionId });
+  return bridge.sendIfConnected({
+    type: 'app.backgroundWork',
+    tier,
+    focusedAppSessionId,
+    visibleAppSessionIds,
+  });
 };
 
 export const updateAgentSettings = (input: {

@@ -4,6 +4,7 @@ import {
   query,
   type ModelInfo as ClaudeModelInfo,
   type McpServerConfig as SdkMcpServerConfig,
+  type Query,
   type SDKUserMessage,
   type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -25,6 +26,8 @@ import type {
   ProviderModelSettings,
   ProviderResumeInput,
   ProviderSession,
+  UsageMetersListener,
+  UsageReading,
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
@@ -36,9 +39,11 @@ import {
   claudeModelRows,
   type ClaudeDefaultModel,
 } from './claudeModels.js';
+import { readClaudeUsage } from './claudeRateLimits.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
+const PROBE_CANCELLED = 'Claude Code was not checked.';
 const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
 
 export class ClaudeProvider implements Provider {
@@ -47,6 +52,8 @@ export class ClaudeProvider implements Provider {
   // The model a chat that pins none runs on: the row published for it and the
   // CLI's own name for it, suffix included.
   private defaultModel?: ClaudeDefaultModel;
+
+  constructor(private readonly onUsage?: UsageMetersListener) {}
 
   validateModelSettings(settings: ProviderModelSettings): void {
     claudeLaunchModel(
@@ -138,7 +145,7 @@ export class ClaudeProvider implements Provider {
   }
 
   private async open(
-    input: Omit<ClaudeSessionInput, 'executable' | 'models'>,
+    input: Omit<ClaudeSessionInput, 'executable' | 'models' | 'onUsage'>,
   ): Promise<ProviderSession> {
     const modelId = claudeLaunchModel(
       input.modelId,
@@ -152,6 +159,7 @@ export class ClaudeProvider implements Provider {
       models: this.models,
       ...(this.defaultModel ? { defaultModel: this.defaultModel } : {}),
       executable: this.requireExecutable(),
+      ...(this.onUsage ? { onUsage: this.onUsage } : {}),
     });
     try {
       await session.start();
@@ -169,6 +177,10 @@ export class ClaudeProvider implements Provider {
     const executable = resolveClaudePath();
     if (!executable)
       return { provider: 'claude', readiness: 'missing', message: INSTALL_HINT, models: [] };
+    // A refresh cancelled while this provider loaded must not start the CLI:
+    // the abort it would have listened for has already fired.
+    if (signal.aborted)
+      return { provider: 'claude', readiness: 'error', message: PROBE_CANCELLED, models: [] };
 
     const abort = new AbortController();
     const timer = setTimeout(() => {
@@ -177,21 +189,7 @@ export class ClaudeProvider implements Provider {
     signal.addEventListener('abort', () => {
       abort.abort();
     });
-    const probe = query({
-      prompt: idlePrompt(abort.signal),
-      options: {
-        abortController: abort,
-        cwd: tmpdir(),
-        pathToClaudeCodeExecutable: executable,
-        persistSession: false,
-        env: claudeContextEnv(childEnv(), 1000000),
-        allowedTools: [],
-        mcpServers: {},
-        strictMcpConfig: true,
-        settingSources: ['user'],
-        settings: { disableAllHooks: true },
-      },
-    });
+    const probe = idleQuery(executable, abort, claudeContextEnv(childEnv(), 1000000));
     try {
       const init = await probe.initializationResult();
       const account = accountLabel(init.account);
@@ -225,6 +223,33 @@ export class ClaudeProvider implements Provider {
       return claudeProbeFailure(error);
     } finally {
       clearTimeout(timer);
+      abort.abort();
+    }
+  }
+
+  // The probe's idle CLI, with the claude.ai connectors and IDE discovery off
+  // too, since it only has to answer the usage call.
+  async readUsage(signal: AbortSignal): Promise<UsageReading> {
+    const executable = this.requireExecutable();
+    signal.throwIfAborted();
+    const abort = new AbortController();
+    const stop = () => {
+      abort.abort();
+    };
+    signal.addEventListener('abort', stop);
+    const probe = idleQuery(executable, abort, {
+      ...childEnv(),
+      ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
+      CLAUDE_CODE_AUTO_CONNECT_IDE: '0',
+      CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: '1',
+    });
+    try {
+      await probe.initializationResult();
+      // The usage call takes no signal, so it must not start once cancelled.
+      signal.throwIfAborted();
+      return await readClaudeUsage(probe);
+    } finally {
+      signal.removeEventListener('abort', stop);
       abort.abort();
     }
   }
@@ -339,6 +364,26 @@ function claudeProbeFailure(error: unknown): ProviderStatus {
     ? 'unauthenticated'
     : 'error';
   return { provider: 'claude', readiness, message, models: [] };
+}
+
+// A CLI that starts, answers control requests and is torn down without a turn
+// ever reaching the API: no hooks, no MCP servers, no tools, no session file.
+function idleQuery(executable: string, abort: AbortController, env: NodeJS.ProcessEnv): Query {
+  return query({
+    prompt: idlePrompt(abort.signal),
+    options: {
+      abortController: abort,
+      cwd: tmpdir(),
+      pathToClaudeCodeExecutable: executable,
+      persistSession: false,
+      env,
+      allowedTools: [],
+      mcpServers: {},
+      strictMcpConfig: true,
+      settingSources: ['user'],
+      settings: { disableAllHooks: true },
+    },
+  });
 }
 
 // A prompt that never yields: the CLI initializes and then waits, so the probe

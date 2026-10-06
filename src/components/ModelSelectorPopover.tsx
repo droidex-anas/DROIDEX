@@ -29,15 +29,17 @@ const AGENTS: { kind: AgentKind; label: string; hint: string }[] = [
 ];
 
 export default function ModelSelectorPopover({
+  appSessionId,
   onClose,
   singleAgent = false,
   childTarget,
 }: {
+  appSessionId: string | null;
   onClose: () => void;
   singleAgent?: boolean;
   childTarget?: ExactChildSettingsTarget;
 }) {
-  const picker = useModelPicker({ singleAgent, childTarget });
+  const picker = useModelPicker({ appSessionId, singleAgent, childTarget });
   const {
     agent,
     setAgent,

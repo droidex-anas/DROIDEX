@@ -139,6 +139,56 @@ export interface SessionLineage {
   forkedAt: number;
 }
 
+export type UsageWindow = 'five_hour' | 'daily' | 'weekly' | 'monthly';
+
+// A usage limit as the harness reported it. `model` names the one model family
+// the limit covers ('Opus'); `resetsAt` is epoch ms, set only while still ahead.
+export interface UsageLimit {
+  window?: UsageWindow;
+  model?: string;
+  resetsAt?: number;
+}
+
+// One limit window of a harness account, as the harness reported it. `id` is
+// the adapter's stable key for the window, so an update that carries one window
+// lands on the row a full read drew. `durationMs` is the window's length, and
+// `updatedAt` (epoch ms) when this window was last read or pushed.
+export interface UsageMeter {
+  id: string;
+  window?: UsageWindow;
+  model?: string;
+  usedPercent: number;
+  resetsAt?: number;
+  durationMs?: number;
+  updatedAt: number;
+}
+
+// What an account holds beside its windows, shown and never spent: Codex limit
+// resets, Claude extra usage, a Factory extra-usage balance.
+export type UsageExtra =
+  | { kind: 'limit_resets'; available: number }
+  | { kind: 'extra_usage'; usedPercent?: number }
+  | { kind: 'extra_balance'; cents: number };
+
+// A harness account's usage. `stale` marks a latest read that failed: meters,
+// if any, are the last good ones; `unavailable` says why an account has no
+// meters at all.
+export interface ProviderUsage {
+  provider: ProviderKind;
+  meters: UsageMeter[];
+  extra?: UsageExtra;
+  unavailable?: 'no_api_key' | 'no_plan_limits';
+  stale?: boolean;
+}
+
+// A model change the transcript records. `cause` is set when the harness made
+// the change by itself: 'usage_limit' when it said the limit was why.
+export interface ModelSwitch {
+  from: string;
+  to: string;
+  cause?: 'harness' | 'usage_limit';
+}
+
 export interface SessionSummary {
   appSessionId: string;
   providerSessionId?: string;
@@ -188,6 +238,9 @@ export interface SessionSummary {
   contextAccuracy?: 'exact' | 'estimated';
   contextUpdatedAt?: string;
   maxContextTokens?: number;
+  // Live-only: the limit this chat's last turn was refused on. The turn runner
+  // is its only writer; the next turn that ends without an error clears it.
+  usageLimit?: UsageLimit;
   // The auto-compaction trigger the sidecar last armed on the daemon for this
   // session (already clamped below the model window), cleared when arming
   // failed. Recorded as diagnostic/persisted truth; compaction itself is
@@ -251,7 +304,7 @@ export interface TranscriptEvent {
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';
-  modelSwitch?: { from: string; to: string };
+  modelSwitch?: ModelSwitch;
   errorKind?: 'usage_limit';
   resetsAt?: number;
   // A 'status' row that only says what the app is doing right now (booting a
@@ -781,6 +834,11 @@ export type ClientCommand =
   | { type: 'droidproxy.factoryModels.apply' }
   | { type: 'catalog.models' }
   | { type: 'provider.refresh' }
+  // Asks for a harness's account usage, answered by `usage.updated`. With
+  // `panelOpen`, /usage shows it: the read may start a short-lived harness
+  // process when no session of the harness is live. `immediate` skips the
+  // pause kept between automatic reads.
+  | { type: 'usage.refresh'; provider: ProviderKind; panelOpen: boolean; immediate: boolean }
   | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
@@ -902,7 +960,9 @@ export type ClientCommand =
   | {
       type: 'app.backgroundWork';
       tier: 'interactive' | 'hidden' | 'low-power';
-      focusedAppSessionId?: string | null;
+      // The chat the user is working in, and every chat on screen including it.
+      focusedAppSessionId: string | null;
+      visibleAppSessionIds: string[];
     }
   | {
       type: 'child.open';
@@ -1180,6 +1240,7 @@ export type ServerEvent =
       providerSessionId?: string | null;
     }
   | { type: 'provider.status'; statuses: ProviderStatus[] }
+  | { type: 'usage.updated'; usage: ProviderUsage }
   | { type: 'settings.defaults'; defaults: FactoryDefaultSettings }
   | {
       type: 'error';
@@ -1244,7 +1305,7 @@ export type ServerEvent =
   | { type: 'browser.closed'; appSessionId: string }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 8 as const;
+export const BRIDGE_PROTOCOL_VERSION = 9 as const;
 
 interface SequencedServerEvent {
   seq: number;

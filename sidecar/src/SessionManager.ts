@@ -13,6 +13,7 @@ import type {
   ProviderStatus,
   SessionSummary,
   ModelInfo,
+  ModelSwitch,
   ReasoningEffort,
   ResponseFormat,
   ServerEvent,
@@ -108,6 +109,7 @@ import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } from './appPrompt.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
+import { AccountUsage } from './providers/accountUsage.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
@@ -323,11 +325,31 @@ export class SessionManager {
   // Loaded with their first probe or session, after the sidecar is ready.
   private readonly claudeProvider = new LazyProvider('claude', async () => {
     const { ClaudeProvider } = await import('./providers/claude/ClaudeProvider.js');
-    return new ClaudeProvider();
+    return new ClaudeProvider((meters) => {
+      this.accountUsage.pushed('claude', meters);
+    });
   });
   private readonly codexProvider = new LazyProvider('codex', async () => {
     const { CodexProvider } = await import('./providers/codex/CodexProvider.js');
-    return new CodexProvider();
+    return new CodexProvider((meters) => {
+      this.accountUsage.pushed('codex', meters);
+    });
+  });
+  private readonly accountUsage = new AccountUsage({
+    // A chat that has begun closing still holds a connection, but not for long.
+    liveSession: (provider) =>
+      this.registry
+        .liveSessionsSnapshot()
+        .find(
+          (live) =>
+            live.summary.provider === provider &&
+            !hasSessionCloseStarted(live) &&
+            !live.session.isClosed,
+        )?.session,
+    readWithoutSession: (provider, signal) => this.providerFor(provider).readUsage(signal),
+    emit: (event) => {
+      this.emit(event);
+    },
   });
   private readonly providerProbes: ProviderProbes;
   private readonly harnessClis = new HarnessCliUpdater(
@@ -614,6 +636,11 @@ export class SessionManager {
       runtime: this.runtime,
       getFactoryDefaults: () => this.getFactoryDefaults(),
       providerDefaultModelId: (provider) => this.providerProbes.status(provider)?.defaultModelId,
+      knownModel: (provider, modelId) =>
+        (provider === DEFAULT_PROVIDER
+          ? this.droidModels.known()
+          : (this.providerProbes.status(provider)?.models ?? [])
+        ).find((model) => model.id === modelId),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       refreshPrimary: async (live, modelChanged) => {
@@ -626,9 +653,7 @@ export class SessionManager {
         const target = this.primaryContextTarget(live);
         if (target) await this.context.refresh(target);
       },
-      onPrimaryModelChanged: (summary, from, to) => {
-        return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
-      },
+      onPrimaryModelChanged: (summary, modelSwitch) => this.appendModelSwitch(summary, modelSwitch),
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
         // A settled write is one of the states that made this session refuse a
@@ -733,7 +758,7 @@ export class SessionManager {
     });
     this.runtimeRetirement = new SessionRuntimeRetirement({
       liveSessions: () => this.registry.liveSessionsSnapshot(),
-      focusedAppSessionId: () => this.context.focusedSession(),
+      onScreenAppSessionIds: () => this.context.onScreenSessions(),
       hasUnsettledChildren: (id) => this.childSessions.hasUnsettledChildren(id),
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
       hasPendingSettings: (id) => this.modelSettings.hasPending(id),
@@ -820,7 +845,9 @@ export class SessionManager {
   }
 
   connect(apiKey?: string): void {
+    const factoryApiKey = this.runtime.factoryApiKey();
     this.runtime.connect(apiKey);
+    if (this.runtime.factoryApiKey() !== factoryApiKey) this.accountUsage.factoryKeyChanged();
     this.ready = true;
     void this.adoption.adopt().catch((error: unknown) => {
       this.emit({
@@ -955,6 +982,9 @@ export class SessionManager {
       case 'provider.refresh':
         await this.emitProviderStatus();
         await this.providerProbes.refresh();
+        return;
+      case 'usage.refresh':
+        await this.accountUsage.refresh(cmd.provider, cmd);
         return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
@@ -1121,12 +1151,14 @@ export class SessionManager {
         return;
       case 'app.backgroundWork': {
         const previouslyFocused = this.context.focusedSession();
-        this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId);
-        this.runtimeRetirement.noteFocus(previouslyFocused);
+        const previouslyOnScreen = this.context.onScreenSessions();
+        this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId, cmd.visibleAppSessionIds);
+        this.runtimeRetirement.noteOnScreen(previouslyOnScreen);
         // Only a change of chat is a new selection; the tier moves on its own
         // whenever the window is hidden or the machine goes on battery.
-        const focused = this.context.focusedSession();
-        if (focused !== previouslyFocused) this.runtimeWarmUp.selected(focused);
+        if (cmd.focusedAppSessionId !== previouslyFocused) {
+          this.runtimeWarmUp.selected(cmd.focusedAppSessionId);
+        }
         return;
       }
       case 'settings.agent.update':
@@ -1513,10 +1545,9 @@ export class SessionManager {
     return targets;
   }
 
-  private async appendSettingsStatus(
+  private async appendModelSwitch(
     summary: SessionSummary,
-    text: string,
-    modelSwitch?: TranscriptEvent['modelSwitch'],
+    modelSwitch: ModelSwitch,
   ): Promise<void> {
     const id = summary.appSessionId;
     const closed = !this.registry.getLive(id);
@@ -1529,8 +1560,8 @@ export class SessionManager {
         role: 'primary',
         ts: Date.now(),
         kind: 'status',
-        text,
-        ...(modelSwitch ? { modelSwitch } : {}),
+        text: `Model switched: ${modelSwitch.from} → ${modelSwitch.to}`,
+        modelSwitch,
       });
     } finally {
       if (closed) await this.timeline.releaseTranscript(id);
@@ -1574,6 +1605,7 @@ export class SessionManager {
       liveSession,
       request,
     );
+    this.accountUsage.afterTurn(liveSession.summary.provider);
   }
 
   private isCurrentPrimarySession(liveSession: LiveSession): boolean {
@@ -1691,6 +1723,8 @@ export class SessionManager {
 
   private applyEventSideEffects(appSessionId: string, n: NormalizedSideEffects): void {
     this.missionControlPolicy.apply(appSessionId, n);
+    if (n.harnessModelSwitch)
+      this.modelSettings.adoptHarnessModel(appSessionId, n.harnessModelSwitch);
     if (n.childSession) {
       const { toolUseId, ...childSession } = n.childSession;
       this.childSessions.admitChildObservation({
@@ -2108,6 +2142,7 @@ export class SessionManager {
     this.runtimeRetirement.stop();
     this.runtimeWarmUp.stop();
     this.providerProbes.cancel();
+    this.accountUsage.close();
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {
       try {

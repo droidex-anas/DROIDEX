@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { composeOrigin } from '../features/tabs/tabNavigation';
 import { initialState, reducer, type AppState } from './useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import { sessionSummary } from '../test/sessionSummary';
@@ -178,7 +179,12 @@ test('session creation records the exact request-to-session settlement', () => {
   const state: AppState = {
     ...initialState,
     pendingCompose: {
-      'client-1': { text: 'hello', skills: [], files: [] },
+      'client-1': {
+        text: 'hello',
+        skills: [],
+        files: [],
+        origin: composeOrigin(initialState.tabStrip),
+      },
     },
   };
 
@@ -208,7 +214,12 @@ test('session seeds preserve live file provenance without claiming background co
     {
       ...initialState,
       pendingCompose: {
-        'client-1': { text: 'typed prompt', skills: [], files: [] },
+        'client-1': {
+          text: 'typed prompt',
+          skills: [],
+          files: [],
+          origin: composeOrigin(initialState.tabStrip),
+        },
       },
     },
     {
@@ -259,4 +270,35 @@ test('a lost bridge drops model changes it can no longer settle', () => {
   });
   state = reducer(state, { type: 'SET_CONNECTION', status: 'error', message: 'Bridge closed' });
   assert.deepEqual(state.pendingModelUpdates, {});
+
+  // A replaced sidecar reconnects through a snapshot rather than a disconnect:
+  // only the pending changes go, the chat the user is looking at stays.
+  state = reducer(
+    { ...initialState, selectedChild: { parentAppSessionId: 'sess-a', childSessionId: 'c1' } },
+    {
+      type: 'MODEL_UPDATE_REQUESTED',
+      appSessionId: 'sess-a',
+      requestId: 'r2',
+      settings: { fastMode: true },
+    },
+  );
+  for (const [appSessionId, requestId] of [
+    ['sess-b', 'r3'],
+    ['sess-c', 'r4'],
+  ] as const)
+    state = reducer(state, {
+      type: 'MODEL_UPDATE_REQUESTED',
+      appSessionId,
+      requestId,
+      settings: { fastMode: true },
+    });
+  // sess-c's request went to the new sidecar on reconnect; sess-b is closed and
+  // gets no summary from the snapshot, so both keep their pending change.
+  state = reducer(state, {
+    type: 'MODEL_UPDATES_UNANSWERED',
+    liveAppSessionIds: new Set(['sess-a', 'sess-c']),
+    resentRequestIds: new Set(['r4']),
+  });
+  assert.deepEqual(Object.keys(state.pendingModelUpdates).sort(), ['sess-b', 'sess-c']);
+  assert.equal(state.selectedChild?.childSessionId, 'c1');
 });

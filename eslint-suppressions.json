@@ -84,7 +84,7 @@
       "count": 1
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 29
+      "count": 28
     }
   },
   "sidecar/src/skillSignals.ts": {
@@ -345,17 +345,11 @@
     }
   },
   "src/lib/nativeBrowser.ts": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 8
-    },
     "@typescript-eslint/no-empty-function": {
       "count": 4
     },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 18
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 1
     },
     "@typescript-eslint/prefer-promise-reject-errors": {
       "count": 2

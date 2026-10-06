@@ -1145,7 +1145,7 @@ export default function MissionControl() {
               childSessionActivity={onOrchestrator ? childSessionActivity : undefined}
             />
           )}
-          <PromptInput />
+          <PromptInput appSessionId={mission.appSessionId} />
         </section>
 
         {/* ─── Context panel (collapsible via the top-bar context button) ─── */}

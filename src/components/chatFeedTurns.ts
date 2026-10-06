@@ -14,11 +14,17 @@ import {
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
+// A switch the harness made by itself can land mid-reply, so only the user's
+// own switch opens a turn.
 function isTurnBoundary(item: FeedItem): boolean {
   return (
     (item.type === 'message' && item.event.author === 'user') ||
-    (item.type === 'status' && isSettingsStatus(item.event))
+    (item.type === 'status' && isSettingsStatus(item.event) && !isHarnessModelSwitch(item))
   );
+}
+
+function isHarnessModelSwitch(item: FeedItem): boolean {
+  return item.type === 'status' && item.event.modelSwitch?.cause !== undefined;
 }
 
 // Short preview of a message for the conversation timeline tooltip: whitespace
@@ -225,8 +231,8 @@ function isCompactionMarker(it: FeedItem): boolean {
 // response and expanding the fold replays the whole turn (compaction divider
 // included) at the configured density. Keep top-level: the turn's final answer
 // (its last assistant message, plus earlier fragments split off only by
-// todo/plan reconciliation (#19) or by an invisible harness nudge) and errors,
-// so failures remain visible.
+// todo/plan reconciliation (#19) or by an invisible harness nudge), errors, so
+// failures remain visible, and any model switch the harness made.
 // Invariant (#18): the final answer itself is never nested inside a Worked
 // group, no matter what trailing work or status follows it.
 function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
@@ -322,6 +328,10 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
     } else if (it.type === 'generated_image') {
       // The image is what the turn produced, not a step along the way: folding
       // it would hide the thing that was asked for.
+      survivors.push(it);
+    } else if (isHarnessModelSwitch(it)) {
+      // The harness changed the model under the turn, often on a usage limit;
+      // the answer after it ran on the new one.
       survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.

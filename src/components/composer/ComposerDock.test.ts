@@ -50,18 +50,23 @@ test('the docked agent line reads no transcript, so a streamed token cannot re-r
   };
   const base: AppState = {
     ...initialState,
-    activeAppSessionId: 'session-a',
     sessions: { 'session-a': session },
     childSessions: { 'session-a': { 'child-a': child } },
     transcripts: { 'session-a': [event('a')] },
   };
   const streamed: AppState = { ...base, transcripts: { 'session-a': [event('a'), event('b')] } };
-  assert.equal(shallowEqual(selectDockedAgents(base), selectDockedAgents(streamed)), true);
+  assert.equal(
+    shallowEqual(selectDockedAgents(base, 'session-a'), selectDockedAgents(streamed, 'session-a')),
+    true,
+  );
 
   // A child that actually changed does reach it.
   const settled: AppState = {
     ...base,
     childSessions: { 'session-a': { 'child-a': { ...child, status: 'completed' } } },
   };
-  assert.equal(shallowEqual(selectDockedAgents(base), selectDockedAgents(settled)), false);
+  assert.equal(
+    shallowEqual(selectDockedAgents(base, 'session-a'), selectDockedAgents(settled, 'session-a')),
+    false,
+  );
 });

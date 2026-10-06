@@ -1,11 +1,38 @@
+import { activeGrid, activeTab } from '../features/tabs/tabStrip';
+import { gridTiles } from '../features/tabs/tileGrid';
 import type { AppState } from '../hooks/useStore';
 
 const EMPTY_TRANSCRIPT: never[] = [];
 
-export function selectChatViewState(current: AppState) {
-  const activeSession = current.activeAppSessionId
-    ? current.sessions[current.activeAppSessionId]
-    : null;
+// The latest compose sent from this new chat that is still waiting for its
+// session; `tileId` is null in a tab that is not split, which is its own tile.
+function startingCompose(current: AppState, tileId: string | null) {
+  const tab = activeTab(current.tabStrip);
+  if (!tab) return undefined;
+  const shownTileId = tileId ?? tab.tileId;
+  return Object.values(current.pendingCompose)
+    .filter((compose) => {
+      const origin = compose?.origin;
+      return origin?.tabId === tab.id && origin.tileId === shownTileId;
+    })
+    .at(-1);
+}
+
+// The live draft belongs to the focused tile; any other new-chat tile keeps
+// its own in the tab's grid.
+function shownDraft(current: AppState, tileId: string | null): AppState['draftChat'] {
+  const grid = activeGrid(current.tabStrip);
+  if (!tileId || !grid || grid.focusedTileId === tileId) return current.draftChat;
+  const page = gridTiles(grid).find((tile) => tile.id === tileId)?.page;
+  return page?.kind === 'new-chat' ? page.draft : null;
+}
+
+export function selectChatViewState(
+  current: AppState,
+  appSessionId: string | null,
+  tileId: string | null,
+) {
+  const activeSession = appSessionId ? (current.sessions[appSessionId] ?? null) : null;
   return {
     activeSession,
     allTranscript: activeSession
@@ -18,11 +45,11 @@ export function selectChatViewState(current: AppState) {
     childAccess: current.childAccess,
     childHistory: current.childHistory,
     childSessions: current.childSessions,
-    draftChat: current.draftChat,
+    draftChat: shownDraft(current, tileId),
     historyCursor: current.historyCursor,
     historyLoadingOlder: current.historyLoadingOlder,
     models: current.models,
-    pendingCompose: current.pendingCompose,
+    startingCompose: activeSession ? undefined : startingCompose(current, tileId),
     selectedChild: current.selectedChild,
     sessionRestore: current.sessionRestore,
     sessionSpecs: current.sessionSpecs,
@@ -59,10 +86,6 @@ function equalChildSelection(
   );
 }
 
-function latestPendingCompose(state: ChatViewState) {
-  return Object.values(state.pendingCompose).at(-1);
-}
-
 export function equalVisibleChatState(previous: ChatViewState, next: ChatViewState): boolean {
   if (!equalActiveChatSession(previous.activeSession, next.activeSession)) return false;
   if (!Object.is(previous.allTranscript, next.allTranscript)) return false;
@@ -74,7 +97,7 @@ export function equalVisibleChatState(previous: ChatViewState, next: ChatViewSta
 
   const appSessionId = next.activeSession?.appSessionId;
   if (!appSessionId) {
-    return Object.is(latestPendingCompose(previous), latestPendingCompose(next));
+    return Object.is(previous.startingCompose, next.startingCompose);
   }
   if (
     !Object.is(previous.chatMetadata[appSessionId], next.chatMetadata[appSessionId]) ||

@@ -104,8 +104,25 @@ import { join } from 'node:path';
 // Main's lines hold when Projects lands on top of session forks, side chats
 // and the lazily loaded app frame: together the entry measures 1_391_821 and
 // the CSS 101_012.
+//
+// Raised from 1_407_000 to 1_434_000 for header tabs and tiled chats. Both are
+// the app frame: the tab strip paints at first frame, every chat renders
+// through the tile grid, and a split tab restored at launch paints its tiles
+// at once. Against main at 134581b4 (1_389_170), the tabs measure 1_406_277
+// and the tiles 1_424_871; most of the tiles' ~18.6KB is the grid model, its
+// stored-state validation and the store wiring. The split-only pieces (divider,
+// tile chrome, drop zones) are ~3.9KB, too little to be worth a skeleton in the
+// tile the user just split. The headroom is again ~9KB; the CSS of 100_623
+// stays under its line.
+//
+// Raised from 1_434_000 to 1_443_000 for usage limits. Against main at
+// b1a4f45c (1_431_240) the entry measures 1_434_484 with the usage slot (/usage,
+// the limit tab, the pace warning: ~6.6KB) already loaded lazily. The ~3.2KB
+// left must paint with the chat: the limit a chat is held on gates its queue,
+// the model-switch divider renders in the transcript, and the composer shows
+// the effort a fallback model actually runs. The headroom is again ~8.5KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_407_000,
+  initialRendererJsBytes: 1_443_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
