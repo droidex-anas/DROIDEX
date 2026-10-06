@@ -63,6 +63,11 @@ export const ThreadReportNotice = lazy(async () => {
   return { default: module.ThreadReportNotice };
 });
 
+const ThreadsWaiting = lazy(async () => {
+  const module = await import('../features/projects/ThreadsWaiting');
+  return { default: module.ThreadsWaiting };
+});
+
 const ThreadBriefNotice = lazy(async () => {
   const module = await import('../features/projects/ThreadNoticeCards');
   return { default: module.ThreadBriefNotice };
@@ -189,6 +194,8 @@ export interface FeedItemViewProps {
   liveTiming?: boolean;
   specContent?: string;
   isFinalResponse?: boolean;
+  // The chat's last row while it is idle: its reply says when it waits on threads.
+  waitingOnThreads?: boolean;
   // Set only on a settled final response an idle chat can fork from; the
   // latest response carries no point because it forks the whole chat.
   onFork?: (forkPointId?: string) => void;
@@ -245,6 +252,7 @@ const AssistantMessage = memo(function AssistantMessage({
   cacheId,
   specContent,
   spoken,
+  waitingOnThreads,
 }: {
   text: string;
   ts: number;
@@ -260,6 +268,8 @@ const AssistantMessage = memo(function AssistantMessage({
   specContent?: string;
   /** The reply was said out loud in a voice conversation. */
   spoken?: boolean;
+  /** The chat's latest settled reply: it says when the chat waits on its threads. */
+  waitingOnThreads?: boolean;
 }) {
   const appOwnsLiveStatus = live && hasAppBlock(text);
   // A live echo of the pinned spec shows no caret of its own: the feed's
@@ -291,7 +301,13 @@ const AssistantMessage = memo(function AssistantMessage({
               }
             : {})}
           {...(forking !== undefined ? { forking } : {})}
-        />
+        >
+          {waitingOnThreads ? (
+            <Suspense fallback={null}>
+              <ThreadsWaiting appSessionId={streamId} />
+            </Suspense>
+          ) : null}
+        </ResponseActions>
       ) : null}
     </div>
   );
@@ -343,6 +359,7 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
     prev.specContent === next.specContent &&
     prev.cwd === next.cwd &&
     prev.isFinalResponse === next.isFinalResponse &&
+    prev.waitingOnThreads === next.waitingOnThreads &&
     prev.onFork === next.onFork &&
     prev.forkPointId === next.forkPointId &&
     prev.forking === next.forking &&
@@ -371,6 +388,7 @@ export const FeedItemView = memo(function FeedItemView({
   liveTiming,
   specContent,
   isFinalResponse,
+  waitingOnThreads,
   onFork,
   forkPointId,
   forking,
@@ -410,6 +428,7 @@ export const FeedItemView = memo(function FeedItemView({
           streamId={item.event.appSessionId}
           live={live}
           isFinalResponse={isFinalResponse}
+          waitingOnThreads={waitingOnThreads}
           {...(onFork !== undefined ? { onFork } : {})}
           {...(forkPointId !== undefined ? { forkPointId } : {})}
           {...(forking !== undefined ? { forking } : {})}

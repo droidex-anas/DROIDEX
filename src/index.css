@@ -279,6 +279,11 @@
     animation: shimmer 1.8s linear infinite;
   }
 
+  /* A wait that may last hours: the sweep is calm, like a background task's. */
+  .shimmer-slow {
+    animation-duration: 3.6s;
+  }
+
   /* Keep infinite status indicators compositor-only. */
   @keyframes caret-blink {
     0%,

@@ -50,10 +50,7 @@ export function projectTimeline(
   const parts: string[] = [];
   if (done && startedAt) parts.push(`Done in ${elapsed(done.at - startedAt)}`);
   else if (done) parts.push('Done');
-  else if (startedAt) {
-    const age = now - startedAt;
-    parts.push(age < MINUTE ? 'Started just now' : `Started ${formatDuration(age)} ago`);
-  }
+  else if (startedAt) parts.push(`Running for ${elapsed(now - startedAt)}`);
   if (cwd) parts.push(workspaceName(cwd));
   return parts.join(' · ');
 }

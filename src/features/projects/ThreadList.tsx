@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Check } from '@droidex/icons';
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { SidebarSectionHeading } from '../../components/SidebarSectionHeading';
 import { ProjectPlan } from './ProjectPlan';
 import { ThreadRow } from './ThreadRow';
@@ -65,7 +65,7 @@ export function ThreadList({
             {threadGreeting(rows, counts, now, done)}
           </h2>
           {title && (
-            <p className="mt-2 truncate text-[14px] font-medium leading-5 text-droid-text">
+            <p className="mt-2.5 truncate text-[15px] font-semibold leading-5 tracking-tight text-droid-text">
               {title}
             </p>
           )}
@@ -79,7 +79,9 @@ export function ThreadList({
           )}
           {done && (
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-droid-border px-3 py-2.5">
-              <Check className="mt-1 h-3 w-3 shrink-0 text-droid-text-muted" />
+              <span className="mt-1 shrink-0">
+                <ActivityStatusGlyph status="settled" />
+              </span>
               <p className="min-w-0 text-[12px] leading-5 text-droid-text-secondary">
                 {done.outcome}
               </p>
