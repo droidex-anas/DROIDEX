@@ -172,7 +172,7 @@ async function writeVersion(path: string, content: string): Promise<void> {
   const temporary = join(directory, `.${randomUUID()}.tmp`);
   try {
     await refuseLinkedPath(path);
-    const created = await mkdir(directory, { recursive: true });
+    await mkdir(directory, { recursive: true });
     const file = await open(temporary, CREATE_FLAGS, 0o600);
     try {
       await file.writeFile(content, 'utf8');
@@ -182,8 +182,7 @@ async function writeVersion(path: string, content: string): Promise<void> {
     }
     await link(temporary, path);
     await unlink(temporary);
-    await flushNewDirectories(created, directory);
-    await syncDirectory(directory);
+    await flushAncestors(directory);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
     if (isExisting(error)) throw canvasError('invalid_input', IMMUTABLE_MESSAGE);
@@ -192,19 +191,24 @@ async function writeVersion(path: string, content: string): Promise<void> {
 }
 
 /**
- * Flushes every directory this save created, and the parent that now holds the
- * outermost new entry, so a crash cannot leave a kit in a directory the
- * filesystem never recorded. `mkdir` reports the first path it created.
+ * Flushes every directory entry this version rests on, whichever writer created
+ * them. Flushing only what this save created would let one writer acknowledge a
+ * version inside a directory another writer has not flushed yet, and a crash
+ * would lose it. A flush of an already durable directory costs almost nothing,
+ * so each save pays for its whole chain and its acknowledgement stands alone.
  */
-async function flushNewDirectories(created: string | undefined, leaf: string): Promise<void> {
-  if (created === undefined) return;
-  await syncDirectory(dirname(created));
-  let current = created;
-  for (const segment of relative(created, leaf).split(sep)) {
-    await syncDirectory(current);
+async function flushAncestors(leaf: string): Promise<void> {
+  const root = canvasDir();
+  // The storage root's own entry belongs to the user's profile, which may
+  // legitimately be a link; everything below it is Canvas's own.
+  const chain = [dirname(root), root];
+  let current = root;
+  for (const segment of relative(root, leaf).split(sep)) {
     if (segment === '') break;
     current = join(current, segment);
+    chain.push(current);
   }
+  for (const path of chain) await syncDirectory(path);
 }
 
 async function syncDirectory(path: string): Promise<void> {
