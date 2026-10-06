@@ -197,7 +197,7 @@ function QuickPromptBox({
   floor: number;
 }) {
   const still = useReducedMotion();
-  const boxRef = useRef<HTMLFormElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const height = useElementSize(boxRef).height;
   const { close } = quick;
@@ -250,7 +250,7 @@ function QuickPromptBox({
   );
 
   return (
-    <motion.form
+    <motion.div
       ref={boxRef}
       initial={{ opacity: 0, y: still ? 0 : 6 }}
       animate={{ opacity: 1, y: 0 }}
@@ -259,10 +259,6 @@ function QuickPromptBox({
       className="absolute z-20"
       style={{ left, top, width, visibility: shown ? 'visible' : 'hidden' }}
       inert={!shown}
-      onSubmit={(event) => {
-        event.preventDefault();
-        quick.send();
-      }}
     >
       <CompactComposer
         textareaRef={inputRef}
@@ -278,6 +274,6 @@ function QuickPromptBox({
         // Over the page it floats, so it takes a rim and a deeper shadow.
         className="border border-droid-border shadow-droid"
       />
-    </motion.form>
+    </motion.div>
   );
 }

@@ -179,7 +179,7 @@ function AddressBar({
   onOpen: () => void;
 }) {
   const link = useMemo(() => describeLink(pageUrl), [pageUrl]);
-  const secure = link !== null && pageUrl.startsWith('https:');
+  const secure = link !== null && /^https:/i.test(pageUrl);
   // Typed text that will run a search shows the search icon, not the page's.
   const searching =
     value !== browserAddressValue(pageUrl) && normalizeUrl(value).startsWith(SEARCH_URL);
@@ -196,7 +196,7 @@ function AddressBar({
     >
       {searching ? (
         <Search className="h-4 w-4 shrink-0 text-droid-text-muted" />
-      ) : secure ? (
+      ) : link ? (
         <LinkBadge key={link.host} link={link} className="h-4 w-4 shrink-0" />
       ) : (
         <Globe className="h-4 w-4 shrink-0 text-droid-text-muted" />
