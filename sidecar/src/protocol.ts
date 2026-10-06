@@ -1,3 +1,4 @@
+import type { CanvasCommand, CanvasEvent } from './canvas/protocol.js';
 import type { ProjectCommand, ProjectEvent } from './projects/types.js';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
@@ -751,6 +752,7 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | CanvasCommand
   | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
@@ -1052,6 +1054,7 @@ interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
+  | CanvasEvent
   | ProjectEvent
   | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }

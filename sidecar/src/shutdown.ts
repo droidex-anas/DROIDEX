@@ -1,6 +1,7 @@
 export interface SidecarShutdownStages {
   shutdownSessions: () => Promise<void>;
   shutdownAutomations: () => Promise<void>;
+  shutdownCanvas: () => Promise<void>;
   disableMetrics: () => void;
   closeBridge: () => Promise<void>;
 }
@@ -18,6 +19,7 @@ export async function shutdownSidecar(stages: SidecarShutdownStages): Promise<vo
 
   await attempt(stages.shutdownSessions);
   await attempt(stages.shutdownAutomations);
+  await attempt(stages.shutdownCanvas);
   await attempt(stages.disableMetrics);
   await attempt(stages.closeBridge);
 
