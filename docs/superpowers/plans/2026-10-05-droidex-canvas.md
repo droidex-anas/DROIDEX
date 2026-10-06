@@ -339,7 +339,7 @@ assert.equal((await workspace.readFiles(canvasId, first))['main.tsx'], input.fil
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/03a-compiler-worker`: Implement `compiler.ts`, `compilerWorker.ts`, initial `designSystems.ts` and `presets/droidex.ts`, with virtual resolution and an import allowlist.
+- [x] `canvas/03a-compiler-worker`: Implement `compiler.ts`, `compilerWorker.ts`, initial `designSystems.ts` and `presets/droidex.ts`, with virtual resolution and an import allowlist.
   Done: Fixtures compile working stateful React and reject bad source, unsupported imports and path escapes.
 - [ ] `canvas/03b-build-queue`: Implement `CanvasBuilds.ts` with two slots, coalescing, a 15 s deadline, `canPublish`, last-working artifacts and persisted outcomes.
   Done: Controlled-promise tests reject stale publication and release every slot and waiter once.
