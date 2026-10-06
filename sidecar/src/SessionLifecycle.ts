@@ -49,6 +49,9 @@ import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+// How long a settled turn waits for Send now's interrupt. A harness that never
+// answers it must not leave the chat busy for good.
+const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;
 
@@ -751,7 +754,10 @@ export class SessionLifecycle {
     liveSession.interruptingToSend = true;
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
     const interrupt = liveSession.session.interrupt();
-    const settled = interrupt.catch(() => undefined);
+    const settled = new Promise<void>((resolve) => {
+      setTimeout(resolve, SEND_NOW_INTERRUPT_WAIT_MS).unref();
+      interrupt.then(resolve, resolve);
+    });
     liveSession.sendNowInterrupt = settled;
     try {
       await interrupt;
@@ -1393,36 +1399,44 @@ export class SessionLifecycle {
       await liveSession.turnPromise;
     } finally {
       liveSession.turnPromise = undefined;
+      const delegatedTurns = liveSession.delegatedTurns;
       if (liveSession.sendNowInterrupt) await liveSession.sendNowInterrupt;
-      const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
-      liveSession.interruptingToSend = false;
-      liveSession.interrupting = false;
-      liveSession.streaming = false;
-      // A wave held back while the Stop was outstanding is owed once it is over.
-      if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
-      // Let the closure observer claim cleanup before advancing the queue.
-      if (liveSession.session.isClosed) await liveSession.session.closed;
-      if (liveSession.providerClosePromise) {
-        if (d.registry.getLive(stableAppSessionId) === liveSession)
-          this.publishTurnSettled(liveSession);
-        // The closure observer reports cleanup failures; keep queued sends here
-        // until the runtime can actually be released.
-        await liveSession.providerClosePromise.catch(() => undefined);
-      }
-      if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
-        liveSession.pendingSends = [];
-      } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
-        const queued = liveSession.pendingSends.splice(0);
-        if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
-      } else if (liveSession.autoCompacting) {
-        const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
-        if (compactionTarget) d.compaction.afterTurn(compactionTarget);
+      // A turn the provider started meanwhile owns the chat and its queue now.
+      if (liveSession.delegatedTurns === delegatedTurns)
+        await this.settleTypedTurn(liveSession, stableAppSessionId);
+    }
+  }
+
+  private async settleTypedTurn(liveSession: LiveSession, stableAppSessionId: string) {
+    const d = this.dependencies;
+    const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
+    liveSession.interruptingToSend = false;
+    liveSession.interrupting = false;
+    liveSession.streaming = false;
+    // A wave held back while the Stop was outstanding is owed once it is over.
+    if (stopped) d.childSessions.retryAgentWave(stableAppSessionId);
+    // Let the closure observer claim cleanup before advancing the queue.
+    if (liveSession.session.isClosed) await liveSession.session.closed;
+    if (liveSession.providerClosePromise) {
+      if (d.registry.getLive(stableAppSessionId) === liveSession)
         this.publishTurnSettled(liveSession);
-      } else {
-        const next = liveSession.pendingSends.shift();
-        this.publishTurnSettled(liveSession);
-        if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
-      }
+      // The closure observer reports cleanup failures; keep queued sends here
+      // until the runtime can actually be released.
+      await liveSession.providerClosePromise.catch(() => undefined);
+    }
+    if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
+      liveSession.pendingSends = [];
+    } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
+      const queued = liveSession.pendingSends.splice(0);
+      if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
+    } else if (liveSession.autoCompacting) {
+      const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
+      if (compactionTarget) d.compaction.afterTurn(compactionTarget);
+      this.publishTurnSettled(liveSession);
+    } else {
+      const next = liveSession.pendingSends.shift();
+      this.publishTurnSettled(liveSession);
+      if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
     }
   }
 
