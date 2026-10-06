@@ -8,5 +8,13 @@
     "regression/**/*.test.ts"
   ],
   "project": ["src/**/*.ts", "regression/**/*.ts"],
-  "ignoreBinaries": ["open"]
+  "ignoreBinaries": ["open"],
+  "ignoreDependencies": [
+    "esbuild",
+    "postcss",
+    "postcss-value-parser",
+    "react",
+    "react-dom",
+    "tailwindcss"
+  ]
 }

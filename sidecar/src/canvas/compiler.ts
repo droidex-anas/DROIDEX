@@ -11,6 +11,7 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ownedEsbuildBinary } from './canvasRuntime.js';
 import type { CanvasDiagnostic, DesignSystemRef, SourceElement } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 
@@ -167,6 +168,7 @@ export class CompilerWorker {
       execArgv: [],
       execPath: process.execPath,
       serialization: 'advanced',
+      env: compilerEnv(),
     });
     compiler.on('message', (response: CompilerResponse) => {
       this.receive(response);
@@ -230,6 +232,20 @@ export class CompilerWorker {
     call.release();
     finish(call);
   }
+}
+
+/**
+ * `process.execPath` is Electron's own binary in a packaged app, so the
+ * compiler is told to run as Node rather than as a second Electron. A packaged
+ * app also owns its esbuild binary; a checkout lets esbuild find its own.
+ */
+function compilerEnv(): NodeJS.ProcessEnv {
+  const binary = ownedEsbuildBinary();
+  return {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    ...(binary === null ? {} : { ESBUILD_BINARY_PATH: binary }),
+  };
 }
 
 // The loader registers tsx and imports the TypeScript entry in development; the

@@ -10,14 +10,25 @@
 // are off so no file location can be adopted, and the Tailwind configuration is
 // passed inline so nothing is ever looked up from disk (spec §6).
 
-import postcss, { type Declaration, type Root } from 'postcss';
-import valueParser from 'postcss-value-parser';
-import tailwindcss from 'tailwindcss';
+import type * as postcssModule from 'postcss';
+import type { Declaration, Root } from 'postcss';
+import type * as valueParserModule from 'postcss-value-parser';
+import type * as tailwindModule from 'tailwindcss';
 import type { Config } from 'tailwindcss';
+import { canvasRuntimeRequire } from './canvasRuntime.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 import { KIT_SPECIFIER } from './designBundle.js';
+
+// Tailwind and PostCSS come from the Canvas runtime rather than from an import,
+// so a packaged compile loads them from the directory the app owns; see
+// canvasRuntime.ts.
+const postcss = canvasRuntimeRequire('postcss') as typeof postcssModule.default;
+const valueParser = canvasRuntimeRequire(
+  'postcss-value-parser',
+) as typeof valueParserModule.default;
+const tailwindcss = canvasRuntimeRequire('tailwindcss') as typeof tailwindModule.default;
 
 export type DesignStylesheetResult =
   | { ok: true; css: string }

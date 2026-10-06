@@ -147,6 +147,12 @@ function createSidecarSupervisor(options) {
     const historyDir = options.historyDir?.();
     if (historyDir) env.DROIDEX_HISTORY_DIR = historyDir;
     else delete env.DROIDEX_HISTORY_DIR;
+    // The design compiler resolves esbuild, Tailwind, PostCSS and React from
+    // the runtime a packaged app owns. An unpackaged run has none, and an
+    // ambient value must not point a checkout at someone else's tree.
+    const canvasRuntimeDir = options.canvasRuntimeDir?.();
+    if (canvasRuntimeDir) env.DROIDEX_CANVAS_RUNTIME_DIR = canvasRuntimeDir;
+    else delete env.DROIDEX_CANVAS_RUNTIME_DIR;
     const nextChild = spawnProcess(process.execPath, [options.entryPath()], {
       cwd: options.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
