@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ServerEvent } from '../protocol.js';
+import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
@@ -135,6 +136,7 @@ class CanvasDispatch {
   constructor(
     ready: Promise<CanvasWorkspace>,
     private readonly scopes: CanvasScopes,
+    private readonly builds: CanvasBuilds,
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
@@ -196,6 +198,9 @@ class CanvasDispatch {
     }
     const page = this.watches.live(pageId);
     const workspace = await this.workspace;
+    // Opening a canvas is when its derived build cache is recovered, so the
+    // projection below already reports the frames that are building again.
+    this.builds.requestRebuilds(workspace.snapshot(command.canvasId));
     // The snapshot and the watch are one step: a client that holds a projection
     // is exactly the client that needs the changes extending it.
     const snapshot = workspace.snapshot(command.canvasId);
@@ -275,11 +280,12 @@ const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
 export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
+  builds: CanvasBuilds,
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
 ): (command: unknown, pageId: string | null) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  const dispatch = new CanvasDispatch(ready, scopes, emit, onPageGone);
+  const dispatch = new CanvasDispatch(ready, scopes, builds, emit, onPageGone);
 
   return async (value, pageId) => {
     if (!isCanvasRequest(value)) return false;

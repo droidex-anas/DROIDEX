@@ -12,6 +12,10 @@ export const CANVAS_LIMITS = {
   maxIdentifierLength: 128,
   maxFrameNameLength: 120,
   maxSourcePathLength: 256,
+  /** Spec §5: two compiler jobs run at once, across every open canvas. */
+  buildSlots: 2,
+  /** Spec §5: one build gets this long before its worker is ended. */
+  buildDeadlineMs: 15_000,
 } as const;
 
 // Rejections reach the model and the user, so each message states the limit it

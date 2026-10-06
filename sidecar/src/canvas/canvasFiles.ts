@@ -16,6 +16,7 @@ import { canvasIdentifierSchema, designSystemRefSchema, sourcePathSchema } from 
 
 const MANIFEST_FILE = 'manifest.json';
 const REVISIONS_DIRECTORY = 'revisions';
+const BUILDS_DIRECTORY = 'builds';
 const SOURCE_DIRECTORY = 'files';
 const METADATA_FILE = 'revision.json';
 const STAGING_PREFIX = '.staging-';
@@ -26,6 +27,7 @@ const WRITE_RECOVERY = 'Canvas could not be saved. The last saved board is uncha
 const SOURCE_RECOVERY =
   'Canvas source could not be saved. Retry the change; your source is unchanged.';
 const REVISION_RECOVERY = 'The saved source for that revision could not be read.';
+const BUILD_RECOVERY = 'The build could not be saved. Free some disk space and try again.';
 const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
 
 // The storage root and its parent belong to the user's profile, which may
@@ -243,6 +245,52 @@ export class CanvasFiles {
   }
 
   /**
+   * Replaces one derived build output in one rename. Build outputs are
+   * rebuildable caches (spec §7), so a reader treats a missing name as a miss,
+   * but a writer still flushes: a half-written artifact would be served.
+   */
+  async writeBuildOutput(canvasId: string, name: string, content: string): Promise<void> {
+    const canvas = this.canvasPath(canvasId);
+    const builds = join(canvas, BUILDS_DIRECTORY);
+    const target = join(builds, buildOutputSegment(name));
+    const temporary = `${target}.${randomUUID()}${TEMPORARY_SUFFIX}`;
+    try {
+      const createdCanvas = await this.makeDirectory(canvas);
+      const createdBuilds = await this.makeDirectory(builds);
+      await this.writeFlushed(temporary, content);
+      await this.fs.rename(temporary, target);
+      await this.syncDirectory(builds);
+      if (createdBuilds) await this.syncDirectory(canvas);
+      if (createdCanvas) await this.syncDirectory(this.root, PROFILE_OWNED);
+    } catch (error) {
+      await this.discard(temporary);
+      throw storageFailure(BUILD_RECOVERY, error);
+    }
+  }
+
+  /** The derived outputs this canvas holds. A cache that is not there is empty. */
+  async listBuildOutputs(canvasId: string): Promise<Set<string>> {
+    const builds = join(this.canvasPath(canvasId), BUILDS_DIRECTORY);
+    try {
+      await this.refuseLinkedPath(builds, new Set());
+      return new Set(await this.readdirIfPresent(builds));
+    } catch (error) {
+      throw storageFailure(READ_RECOVERY, error);
+    }
+  }
+
+  /** One derived output, or null once the cache no longer holds it. */
+  async readBuildOutput(canvasId: string, name: string): Promise<string | null> {
+    const target = join(this.canvasPath(canvasId), BUILDS_DIRECTORY, buildOutputSegment(name));
+    try {
+      return await this.readText(target);
+    } catch (error) {
+      if (isMissingPath(error)) return null;
+      throw storageFailure(READ_RECOVERY, error);
+    }
+  }
+
+  /**
    * A revision that is not there is an unusable reference; one whose metadata
    * is there but whose files are not is damaged storage. The caller decides
    * which of the two its own context makes it.
@@ -284,6 +332,7 @@ export class CanvasFiles {
   async removeTemporaries(canvasId: string): Promise<void> {
     const canvas = this.canvasPath(canvasId);
     const revisions = join(canvas, REVISIONS_DIRECTORY);
+    const builds = join(canvas, BUILDS_DIRECTORY);
     const checked = new Set<string>();
     try {
       await this.refuseLinkedPath(canvas, checked);
@@ -293,6 +342,10 @@ export class CanvasFiles {
       await this.refuseLinkedPath(revisions, checked);
       for (const name of await this.readdirIfPresent(revisions)) {
         if (name.startsWith(STAGING_PREFIX)) await this.discard(join(revisions, name));
+      }
+      await this.refuseLinkedPath(builds, checked);
+      for (const name of await this.readdirIfPresent(builds)) {
+        if (name.endsWith(TEMPORARY_SUFFIX)) await this.discard(join(builds, name));
       }
     } catch (error) {
       throw storageFailure(READ_RECOVERY, error);
@@ -402,6 +455,13 @@ function identifierSegment(id: string): string {
   const parsed = canvasIdentifierSchema.safeParse(id);
   if (!parsed.success) throw canvasError('invalid_input', 'That Canvas identifier is not usable.');
   return parsed.data;
+}
+
+/** A build output's own name: one validated identifier and one known suffix. */
+function buildOutputSegment(name: string): string {
+  if (!/^[A-Za-z0-9_-]{1,128}\.(?:html|json)$/.test(name))
+    throw canvasError('invalid_input', 'That build output name is not usable.');
+  return name;
 }
 
 function sourceSegments(path: string): string[] {

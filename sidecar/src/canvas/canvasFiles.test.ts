@@ -22,6 +22,7 @@ function manifest(canvasId = 'cv_01'): CanvasManifest {
     rect: { x: 0, y: 0, width: 720, height: 720 },
     layoutVersion: 0,
     revisionId: null,
+    lastWorkingRevisionId: null,
     designSystem,
   });
   return value;

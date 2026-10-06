@@ -82,7 +82,7 @@ export interface SourceElement {
   editability: 'literal' | 'computed' | 'shared';
 }
 
-type CanvasBuildState =
+export type CanvasBuildState =
   | { status: 'pending' }
   | { status: 'building'; revisionId: string; generation: number }
   | { status: 'ready'; revisionId: string; artifactId: string }

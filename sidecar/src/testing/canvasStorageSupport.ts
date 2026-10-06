@@ -6,7 +6,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
+import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
+import { CompileCancelledError } from '../canvas/compiler.js';
 import {
   canvasManifestSchema,
   CANVAS_MUTATION_RETENTION,
@@ -21,6 +23,30 @@ export async function canvasRoot(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-canvas-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return join(directory, 'canvases');
+}
+
+/**
+ * A build registry for the suites that are about storage rather than previews.
+ * Its compiler answers every build with a cancellation, which publishes no
+ * build change, so those suites still see exactly the changes they commit.
+ */
+export function quietBuilds(): CanvasBuilds {
+  return new CanvasBuilds({
+    compiler: () => ({
+      compile: () => Promise.reject(new CompileCancelledError()),
+      terminate: () => Promise.resolve(),
+    }),
+    deadline: () => () => undefined,
+  });
+}
+
+/** A promise a test resolves itself, to hold or release an awaited call. */
+export function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
 }
 
 export type CanvasFileSystemOperation = keyof CanvasFileSystem;

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
-import { canvasRoot, observedFileSystem } from '../testing/canvasStorageSupport.js';
+import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
+import type { CanvasBuilds } from './CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
@@ -17,6 +18,7 @@ interface Harness {
   root: string;
   workspace: CanvasWorkspace;
   scopes: CanvasScopes;
+  builds: CanvasBuilds;
   events: ServerEvent[];
   handle: (command: unknown, pageId?: string | null) => Promise<boolean>;
   /** Reports a renderer page's socket closing, the way the bridge server does. */
@@ -30,7 +32,8 @@ async function harness(
   const directory = options.root ?? (await canvasRoot(t));
   const scopes = new CanvasScopes();
   const events: ServerEvent[] = [];
-  const workspace = await CanvasWorkspace.open(directory, {
+  const builds = quietBuilds();
+  const workspace = await CanvasWorkspace.open(directory, builds, {
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: (scopeId, canvasId) => {
       scopes.bindScopeCanvas(scopeId, canvasId);
@@ -42,6 +45,7 @@ async function harness(
   const handle = createCanvasCommandHandler(
     Promise.resolve(workspace),
     scopes,
+    builds,
     (event) => {
       events.push(event);
     },
@@ -54,6 +58,7 @@ async function harness(
     root: directory,
     workspace,
     scopes,
+    builds,
     events,
     handle: (command, pageId = PAGE) => handle(command, pageId),
     pageGone: (pageId) => {
@@ -456,6 +461,7 @@ test('a workspace that failed to open answers every command the same way', async
   const handle = createCanvasCommandHandler(
     Promise.reject(new Error('canvases directory is read-only')),
     new CanvasScopes(),
+    quietBuilds(),
     (event) => {
       events.push(event);
     },
@@ -529,6 +535,7 @@ test('a page that goes away while the workspace opens installs no watch', async 
   const handle = createCanvasCommandHandler(
     opening.promise.then(() => canvas.workspace),
     canvas.scopes,
+    canvas.builds,
     (event) => {
       events.push(event);
     },

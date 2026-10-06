@@ -86,6 +86,7 @@ export function placeFrames(
       rect: { x, y, width: frame.width, height: frame.height },
       layoutVersion: 0,
       revisionId,
+      lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
     });
     x += frame.width + FRAME_GAP_PX;

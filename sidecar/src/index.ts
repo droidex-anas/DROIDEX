@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { CanvasBuilds } from './canvas/CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
@@ -104,10 +105,15 @@ function reportProjectError(error: unknown): void {
 // Canvas leases live beside the workspace that checks them: the pane registers
 // one per mutation request, and Task 4 registers each turn's lease here.
 const canvasScopes = new CanvasScopes();
-const canvasReady = CanvasWorkspace.open(canvasDir(), canvasScopes).then((workspace) => {
-  if (shuttingDown) void workspace.close();
-  return workspace;
-});
+// Builds are projected into every frame the workspace hands out, so the
+// registry exists before the workspace that reads it.
+const canvasBuilds = new CanvasBuilds();
+const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, canvasScopes).then(
+  (workspace) => {
+    if (shuttingDown) void workspace.close();
+    return workspace;
+  },
+);
 void canvasReady.catch((error: unknown) => {
   server.broadcast({
     type: 'error',
@@ -118,6 +124,7 @@ void canvasReady.catch((error: unknown) => {
 const handleCanvasCommand = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
+  canvasBuilds,
   (event) => {
     server.broadcast(event);
   },
@@ -198,6 +205,9 @@ async function shutdown(): Promise<void> {
       },
       // After the sessions, because an agent's Canvas mutation runs under one.
       shutdownCanvas: async () => {
+        // Builds first: a settling build still reports its outcome through the
+        // workspace, which then waits for that commit before it closes.
+        await canvasBuilds.close();
         const workspace = await canvasReady.catch(() => undefined);
         await workspace?.close();
       },

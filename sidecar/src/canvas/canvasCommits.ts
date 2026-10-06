@@ -7,7 +7,8 @@ import type { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { canvasError } from './canvasError.js';
 import type { CanvasChange } from './protocol.js';
 
-const CLOSING = 'The Canvas workspace is closing.';
+/** What a mutation admitted before the workspace closed is refused with. */
+export const CLOSING = 'The Canvas workspace is closing.';
 
 /** A commit's answer and the change it published, if it published one. */
 export interface Committed<T> {
