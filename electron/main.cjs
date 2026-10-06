@@ -653,6 +653,29 @@ function registerIpc() {
     assertMainRenderer(event);
     return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
   });
+  ipcMain.handle('canvas-export-source', async (event, { canvasId, ref }) => {
+    assertMainRenderer(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Export Canvas source',
+      buttonLabel: 'Export here',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const { port } = await sidecarSupervisor.getBridgeInfo();
+    const response = await fetch(`http://127.0.0.1:${String(port)}/canvas/source-export`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-canvas-export-token': sidecarSupervisor.canvasExportToken(),
+      },
+      body: JSON.stringify({ canvasId, ref, destinationDirectory: result.filePaths[0] }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (response.status === 404) throw new Error('Canvas export service changed. Try again.');
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.message || 'Canvas source could not be exported.');
+    return answer;
+  });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);
     return powerTier.snapshot();

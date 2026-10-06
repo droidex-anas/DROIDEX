@@ -1223,6 +1223,13 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
   Done: Repeated close is harmless and reused provider handles reject old writes/events; committed source survives failures.
 
+Settled by 10a (`thread/canvas-10a-source-export`):
+
+- Source export reads the immutable revision and its pinned kit version from Canvas storage. It writes the source unchanged under `src/`, all kit files under `design-system/`, the selected mode values under `canvas-export/`, referenced owned images under `assets/`, and embedded kit fonts under `fonts/`. Guidance, conversation records and build artifacts are excluded.
+- Electron main alone chooses the destination through `showOpenDialog` and calls the sidecar's validated HTTP route with a separate per-sidecar secret. The renderer receives only the result; that secret is stripped from agent and terminal child environments. The ordinary Canvas WebSocket has no export command.
+- The export includes a local build/preview script, a README and exact installed dependency versions resolved from the owned Canvas runtime. `lucide-react` uses the exact version in the root lockfile until Task 7 stages it in the Canvas runtime. Existing files or linked paths in the destination are refused before any write; exclusive opens also prevent overwrites if the directory changes during export.
+- The current integration branch has no Canvas board controls yet. Task 5's board context action must call `exportCanvasSource` from `src/lib/desktop.ts` for its selected revision when that branch lands. The 10a test builds and serves the Hey starter from a temporary directory with local installed packages; it does not exercise a browser render or a packaged runtime.
+
 **Files:** Create `sidecar/src/canvas/{canvasExport.ts,canvasExport.test.ts}`. Extend the existing Electron file-save/capture bridge at its actual owner and Canvas context actions; inspect `electron/main.cjs` and `electron/preload.cjs` before placing code. Extend runtime smoke and workspace/build teardown tests.
 
 **Interfaces:** `exportCanvasSource(canvasId: string, ref: RevisionRef, destinationDirectory: string): Promise<{ filesWritten: number }>` writes only to an explicit user-chosen directory. `captureCanvasImage(canvasId: string, ref: RevisionRef, signal: AbortSignal): Promise<{ mediaType: 'image/png'; bytes: Uint8Array }>` captures the exact rendered revision with a six-second deadline. Both require the authorized host boundary; generated code cannot choose paths or invoke export.
