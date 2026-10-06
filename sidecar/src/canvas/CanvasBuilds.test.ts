@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import {
   board,
   COMPILE_FAILED,
@@ -16,7 +16,7 @@ import {
   type Board,
 } from '../testing/canvasBuildSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
-import { CanvasFiles } from './canvasFiles.js';
+import { CanvasFiles, REVISION_METADATA_VERSION } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
 import { instrumentSource } from './sourceElements.js';
@@ -50,6 +50,18 @@ function reportedStates(canvas: Board, designId: string): CanvasBuildState[] {
   return canvas.changes.flatMap((change) =>
     change.frames.filter((frame) => frame.designId === designId).map((frame) => frame.build),
   );
+}
+
+async function readyElementMap(t: TestContext) {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  const source = 'export default function App(){ return <h1>v1</h1> }';
+  const receipt = await canvas.write(designId, null, source);
+  const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
+  (await canvas.fleet.compile(1)).ready('artifact-one', elements);
+  await canvas.reported(designId, 'ready');
+  return { canvas, designId, source, receipt, elements };
 }
 
 test('an older build that finishes under a newer one publishes nothing', async (t) => {
@@ -416,14 +428,7 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
 });
 
 test('a cached selection range beyond its source forces a rebuild', async (t) => {
-  const canvas = await board(t);
-  const [designId] = await canvas.create('Hey');
-  assert.ok(designId);
-  const source = 'export default function App(){ return <h1>v1</h1> }';
-  const receipt = await canvas.write(designId, null, source);
-  const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
-  (await canvas.fleet.compile(1)).ready('artifact-one', elements);
-  await canvas.reported(designId, 'ready');
+  const { canvas, designId, source, receipt } = await readyElementMap(t);
 
   const files = new CanvasFiles(canvas.store.root);
   const name = `${receipt.revisionId}.json`;
@@ -432,6 +437,47 @@ test('a cached selection range beyond its source forces a rebuild', async (t) =>
   const damaged = JSON.parse(cached);
   damaged.result.elements[0].end = source.length + 1;
   await files.writeBuildOutput(canvas.canvasId, name, JSON.stringify(damaged));
+
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
+});
+
+test('an in-bounds cached selection range mismatch forces a rebuild', async (t) => {
+  const { canvas, designId, source, receipt } = await readyElementMap(t);
+
+  const files = new CanvasFiles(canvas.store.root);
+  const name = `${receipt.revisionId}.json`;
+  const cached = await files.readBuildOutput(canvas.canvasId, name);
+  assert.ok(cached);
+  const damaged = JSON.parse(cached);
+  damaged.result.elements[0].end -= 1;
+  assert.ok(damaged.result.elements[0].end <= source.length);
+  await files.writeBuildOutput(canvas.canvasId, name, JSON.stringify(damaged));
+
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, receipt.revisionId);
+});
+
+test('a shortened saved source at the end of a cached range forces a rebuild', async (t) => {
+  const { canvas, designId, source, receipt, elements } = await readyElementMap(t);
+  const element = elements[0];
+  assert.ok(element);
+
+  const sourcePath = join(
+    canvas.store.root,
+    canvas.canvasId,
+    'revisions',
+    receipt.revisionId,
+    'files',
+    'main.tsx',
+  );
+  const shortened = source.slice(0, element.end - 1) + source.slice(element.end);
+  assert.ok(element.end <= shortened.length);
+  await writeFile(sourcePath, shortened);
 
   const reopened = await board(t, { store: canvas.store });
   assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
@@ -871,6 +917,23 @@ test('one design ID on two canvases keeps two build states', async (t) => {
   t.after(() => builds.close());
   const files = new CanvasFiles((await storage(t)).root);
   await files.createRoot();
+  for (const [canvasId, revisionId] of [
+    ['cv_01', 'rev_01'],
+    ['cv_02', 'rev_02'],
+  ]) {
+    await files.publishRevision(
+      canvasId,
+      {
+        version: REVISION_METADATA_VERSION,
+        designId: 'dsg_hey',
+        revisionId,
+        parentRevisionId: null,
+        designSystem: { id: 'droidex', version: 1, mode: 'light' },
+        createdAt: 1_767_225_600_000,
+      },
+      new Map([['main.tsx', 'export default () => null']]),
+    );
+  }
   const canvas = standIn(builds);
   canvas.revisions.set('cv_01/dsg_hey', 'rev_01');
   canvas.revisions.set('cv_02/dsg_hey', 'rev_02');

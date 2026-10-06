@@ -5,13 +5,14 @@
 // a cache miss and never an error. It is also untrusted on the way back in, so
 // every entry is revalidated against the current schema.
 
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
-import type { CanvasBuildOutcome, PreviewArtifact } from './protocol.js';
+import type { CanvasBuildOutcome, PreviewArtifact, SourceElement } from './protocol.js';
 import { CANVAS_LIMITS, canvasIdentifierSchema, sourceElementSchema } from './schema.js';
 
-const BUILD_OUTCOME_VERSION = 1;
+const BUILD_OUTCOME_VERSION = 2;
 
 /** How many diagnostics one failed build keeps. The rest add no new advice. */
 export const MAX_BUILD_DIAGNOSTICS = 64;
@@ -30,34 +31,36 @@ const diagnosticSchema = z
   })
   .strict();
 
-const buildResultSchema = z.discriminatedUnion('status', [
-  z
-    .object({
-      status: z.literal('ready'),
-      artifactId: canvasIdentifierSchema,
-      elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
-      diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
-    })
-    .strict(),
-  z
-    .object({
-      status: z.literal('failed'),
-      diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
-    })
-    .strict(),
-]);
+const readyResultSchema = z
+  .object({
+    status: z.literal('ready'),
+    artifactId: canvasIdentifierSchema,
+    elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
+    diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
+  })
+  .strict();
+
+const failedResultSchema = z
+  .object({
+    status: z.literal('failed'),
+    diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
+  })
+  .strict();
 
 const buildOutcomeSchema = z
   .object({
     version: z.literal(BUILD_OUTCOME_VERSION),
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
-    result: buildResultSchema,
+    result: z.discriminatedUnion('status', [
+      readyResultSchema.extend({ sourceMapDigest: z.string().regex(/^[0-9a-f]{64}$/) }),
+      failedResultSchema,
+    ]),
   })
   .strict();
 
 /** What one revision's build concluded, as the cache records it. */
-export type BuildResult = z.infer<typeof buildResultSchema>;
+export type BuildResult = z.infer<typeof readyResultSchema> | z.infer<typeof failedResultSchema>;
 
 /** The revision a cached outcome belongs to, and what that outcome was. */
 interface CachedOutcome {
@@ -90,14 +93,24 @@ export class CanvasBuildCache {
   }
 
   /** What one revision's build concluded, written by the commit that publishes it. */
-  saveOutcome(
+  async saveOutcome(
     canvasId: string,
     designId: string,
     revisionId: string,
     result: BuildResult,
   ): Promise<void> {
-    const document = { version: BUILD_OUTCOME_VERSION, designId, revisionId, result } as const;
-    return this.files.writeBuildOutput(
+    const stored =
+      result.status === 'ready'
+        ? {
+            ...result,
+            sourceMapDigest: sourceMapDigest(
+              await this.files.readRevision(canvasId, { designId, revisionId }),
+              result.elements,
+            ),
+          }
+        : result;
+    const document = { version: BUILD_OUTCOME_VERSION, designId, revisionId, result: stored };
+    await this.files.writeBuildOutput(
       canvasId,
       outcomeName(revisionId),
       `${JSON.stringify(document)}\n`,
@@ -174,11 +187,12 @@ export class CanvasBuildCache {
     const parsed = buildOutcomeSchema.safeParse(value);
     if (!parsed.success) return null;
     const { designId, revisionId, result } = parsed.data;
-    if (result.status === 'ready' && result.elements.length > 0) {
+    if (result.status === 'ready') {
       const source = await this.files
         .readRevision(canvasId, { designId, revisionId })
         .catch(() => null);
       if (!source) return null;
+      if (sourceMapDigest(source, result.elements) !== result.sourceMapDigest) return null;
       for (const element of result.elements) {
         const file = source.get(element.file);
         if (
@@ -192,6 +206,27 @@ export class CanvasBuildCache {
     }
     return { designId, revisionId, result };
   }
+}
+
+function sourceMapDigest(
+  files: ReadonlyMap<string, string>,
+  elements: readonly SourceElement[],
+): string {
+  const sources = [...files].sort(([left], [right]) => {
+    if (left === right) return 0;
+    return left < right ? -1 : 1;
+  });
+  const sites = elements.map(({ elementId, file, start, end, tagName, editability }) => [
+    elementId,
+    file,
+    start,
+    end,
+    tagName,
+    editability,
+  ]);
+  return createHash('sha256')
+    .update(JSON.stringify([sources, sites]))
+    .digest('hex');
 }
 
 function artifactName(artifactId: string): string {
