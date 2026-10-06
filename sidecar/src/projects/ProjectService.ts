@@ -126,6 +126,9 @@ export interface ThreadReadout {
 
 export class ProjectService {
   private readonly projects = new Map<string, Project>();
+  // Counts each project's holds, so a message on its way when one lands stays
+  // withdrawn after Resume.
+  private readonly holds = new WeakMap<Project, number>();
   // Sessions last seen mid-turn, so a settle is told from any other update.
   private readonly streamingSessions = new Set<string>();
   private readonly membership = new Map<string, Project>();
@@ -535,11 +538,10 @@ export class ProjectService {
     // place of the rest of that turn. A thread with no turn running gets it as
     // its next turn, which the wake queue starts.
     requireMessageText(text);
-    // Work sent to a thread means the goal is open again.
-    if (project.done) {
-      delete project.done;
-      await this.save();
-    }
+    // Work sent to a thread means the goal is open again; cleared before any
+    // wait, so a project_done racing this send sees the work.
+    const reopened = project.done !== undefined;
+    delete project.done;
     // A held project holds its main chat's messages too: they queue for Resume.
     if (delivery !== 'queue' && !project.paused && this.sessions.get(target)?.streaming) {
       const message = {
@@ -552,10 +554,16 @@ export class ProjectService {
       const prompt = wakePrompt(project, target, [message]);
       // Only this thread leaving the project withdraws it. A Stop on the
       // thread drops it with the rest of that chat's queue, as it would the user's.
+      const holds = this.holds.get(project);
       const isCurrent = () =>
-        !this.closed && !project.paused && this.membership.get(target) === project;
-      if (await this.sessions.steer(target, prompt, isCurrent, delivery === 'now'))
+        !this.closed &&
+        !project.paused &&
+        this.holds.get(project) === holds &&
+        this.membership.get(target) === project;
+      if (await this.sessions.steer(target, prompt, isCurrent, delivery === 'now')) {
+        if (reopened) await this.save();
         return delivery === 'now' ? 'sent-now' : 'steered';
+      }
       // Its turn ended, or was stopped, while this was on its way. Starting a
       // new turn could undo a Stop, so the lead decides.
       throw new Error(
@@ -676,6 +684,7 @@ export class ProjectService {
       delete project.delivery;
     }
     this.wakes.invalidate(project);
+    if (paused) this.noteHold(project);
     project.paused = paused;
     delete project.leadStopped;
     delete project.leadFailed;
@@ -702,6 +711,7 @@ export class ProjectService {
       if (!project.paused) project.leadStopped = true;
       delete project.leadFailed;
       this.wakes.invalidate(project);
+      this.noteHold(project);
       project.paused = true;
       await this.save();
       return;
@@ -1004,8 +1014,13 @@ export class ProjectService {
     if (this.closed) throw new Error('Projects are shutting down.');
   }
 
+  private noteHold(project: Project): void {
+    this.holds.set(project, (this.holds.get(project) ?? 0) + 1);
+  }
+
   private fail(project: Project, error: unknown): void {
     this.wakes.invalidate(project);
+    this.noteHold(project);
     project.paused = true;
     delete project.leadStopped;
     delete project.leadFailed;
