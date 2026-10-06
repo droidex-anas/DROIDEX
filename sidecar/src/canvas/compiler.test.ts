@@ -10,6 +10,7 @@ import {
   CompilerUnavailableError,
   CompilerWorker,
   RUNTIME_UNAVAILABLE,
+  compilerResponse,
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
@@ -266,6 +267,42 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
       CompilerUnavailableError,
       `${reason}, after terminating`,
     );
+  }
+});
+
+test('a reply the protocol does not define is not an answer', () => {
+  // What the forked compiler sends is the one thing here this module does not
+  // write, and an unknown reason would otherwise reach the renderer as advice
+  // to restart. A reply that fails this is handled as a crash: `liveCompiler`
+  // loses and ends the process, so every pending compile fails and the next
+  // build forks a replacement, the path 'a compiler process that dies' covers.
+  const unavailable = {
+    requestId: 1,
+    status: 'unavailable',
+    reason: 'damaged-runtime',
+    message: RUNTIME_UNAVAILABLE,
+  };
+  assert.deepEqual(compilerResponse(unavailable), unavailable);
+  assert.deepEqual(compilerResponse({ requestId: 2, status: 'stopped' }), {
+    requestId: 2,
+    status: 'stopped',
+  });
+
+  for (const malformed of [
+    null,
+    'stopped',
+    { status: 'stopped' },
+    { requestId: '1', status: 'stopped' },
+    { requestId: 1, status: 'invented' },
+    { ...unavailable, reason: 'invented' },
+    { ...unavailable, reason: undefined },
+    { ...unavailable, reason: { damaged: true } },
+    { ...unavailable, message: 12 },
+    { requestId: 1, status: 'ready' },
+    { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
+    { requestId: 1, status: 'failed' },
+  ]) {
+    assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));
   }
 });
 

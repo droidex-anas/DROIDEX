@@ -189,7 +189,17 @@ export class CompilerWorker {
       serialization: 'advanced',
       env: compilerEnv(),
     });
-    compiler.on('message', (response: CompilerResponse) => {
+    compiler.on('message', (message: unknown) => {
+      const response = compilerResponse(message);
+      // A forked process is a boundary. A reply that is not one of its own
+      // answers is the compiler failing, not a result to pass on, so it is
+      // treated exactly like a crash: this job and every other in flight fail,
+      // the process is ended, and the next build forks a replacement.
+      if (response === null) {
+        this.loseCompiler(compiler, new Error('The compiler sent a reply it does not define.'));
+        compiler.kill();
+        return;
+      }
       this.receive(response);
     });
     compiler.on('error', (error: Error) => {
@@ -251,6 +261,60 @@ export class CompilerWorker {
     call.release();
     finish(call);
   }
+}
+
+const UNAVAILABLE_REASONS: readonly CompilerUnavailableReason[] = [
+  'damaged-runtime',
+  'lost-compiler',
+];
+
+/**
+ * The child's answer, or null when what arrived is not one: the compiler is a
+ * forked process, and what it sends is the one thing in this module that is not
+ * this module's own. Only the shape the protocol defines is read. An answer for
+ * a request nobody is waiting for is not malformed — a cancelled compile is
+ * answered after its caller has already been told, and `settle` drops it — so
+ * `requestId` is checked for its type and nothing more.
+ */
+export function compilerResponse(message: unknown): CompilerResponse | null {
+  if (typeof message !== 'object' || message === null) return null;
+  const {
+    requestId,
+    status,
+    reason,
+    message: text,
+    design,
+    diagnostics,
+  } = message as Record<string, unknown>;
+  if (typeof requestId !== 'number') return null;
+  switch (status) {
+    case 'cancelled':
+    case 'stopped':
+      return { requestId, status };
+    case 'ready':
+      return isCompiledDesign(design) ? { requestId, status, design } : null;
+    case 'failed':
+      return Array.isArray(diagnostics)
+        ? { requestId, status, diagnostics: diagnostics as CanvasDiagnostic[] }
+        : null;
+    case 'unavailable':
+      if (typeof text !== 'string') return null;
+      if (!UNAVAILABLE_REASONS.includes(reason as CompilerUnavailableReason)) return null;
+      return { requestId, status, reason: reason as CompilerUnavailableReason, message: text };
+    default:
+      return null;
+  }
+}
+
+function isCompiledDesign(design: unknown): design is CompiledDesign {
+  if (typeof design !== 'object' || design === null) return false;
+  const { artifactId, html, diagnostics, elements } = design as Record<string, unknown>;
+  return (
+    typeof artifactId === 'string' &&
+    typeof html === 'string' &&
+    Array.isArray(diagnostics) &&
+    Array.isArray(elements)
+  );
 }
 
 /**
