@@ -158,6 +158,30 @@ export class ReplayFactoryRuntime implements FactoryRuntime {
     return { mode: 'cli_auth', droidPath: '/replay/droid', apiKeyConfigured: false };
   }
 
+  steer(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
+  streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined> {
+    return session.stream(prompt, options);
+  }
+
+  observeNotification(): void {
+    // Scripted streams have no raw notification tail.
+  }
+
+  stopTurn(): void {
+    // Scripted iterators settle through their session interrupt/close.
+  }
+
+  interruptTurn(session: FactorySession): Promise<void> {
+    return session.interrupt();
+  }
+
   factoryApiKey(): undefined {
     return undefined;
   }

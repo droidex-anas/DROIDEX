@@ -41,6 +41,15 @@ function droidOn(modelId: string) {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
     factoryApiKey: () => undefined,
+    steer: () => Promise.resolve(false),
+    streamTurn: (
+      session: FactorySession,
+      prompt: string,
+      options: { includePartialMessages: true },
+    ) => session.stream(prompt, options),
+    observeNotification: () => undefined,
+    interruptTurn: (session: FactorySession) => session.interrupt(),
+    stopTurn: () => undefined,
   };
   return { cli, session: new DroidProviderSession('app-1', droid, runtime) };
 }

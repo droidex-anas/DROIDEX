@@ -19,7 +19,17 @@ import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
 
-type DroidProcessRuntime = Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive' | 'factoryApiKey'>;
+type DroidProcessRuntime = Pick<
+  FactoryRuntime,
+  | 'processIdOf'
+  | 'isProcessAlive'
+  | 'factoryApiKey'
+  | 'steer'
+  | 'streamTurn'
+  | 'observeNotification'
+  | 'interruptTurn'
+  | 'stopTurn'
+>;
 
 // The turn settles only once the billing read behind its refusal has answered.
 const REFUSAL_READ_TIMEOUT_MS = 10_000;
@@ -48,6 +58,7 @@ export class DroidProviderSession implements ProviderSession {
     // Listened to for the session's life: a switch Droid reports between turns
     // is still the model the next turn runs on.
     this.stopListening = droid.onNotification((note) => {
+      this.runtime.observeNotification(droid, note);
       const notice = droidSessionNotice(extractNotification(note));
       switch (notice?.kind) {
         case 'model': {
@@ -83,7 +94,9 @@ export class DroidProviderSession implements ProviderSession {
     // its result; one not yet reported when a turn fails goes with the next.
     this.limitDetail = undefined;
     try {
-      for await (const event of this.droid.stream(prompt, { includePartialMessages: true })) {
+      for await (const event of this.runtime.streamTurn(this.droid, prompt, {
+        includePartialMessages: true,
+      })) {
         const pending = this.pendingSwitch;
         if (pending && (pending.cause === 'usage_limit' || event.type === 'result')) {
           yield { harnessModelSwitch: pending };
@@ -198,11 +211,16 @@ export class DroidProviderSession implements ProviderSession {
     await this.droid.updateSettings({ interactionMode: mapInteractionMode(mode) });
   }
 
-  async interrupt(): Promise<void> {
-    await this.droid.interrupt();
+  interrupt(): Promise<void> {
+    return this.runtime.interruptTurn(this.droid);
+  }
+
+  steer(text: string): Promise<boolean> {
+    return this.runtime.steer(this.droid, text);
   }
 
   async close(): Promise<void> {
+    this.runtime.stopTurn(this.droid);
     this.stopListening();
     await this.droid.close();
   }
