@@ -304,7 +304,12 @@ async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promis
       compiler.on('exit', (code, signal) => {
         clearTimeout(deadline);
         answered = false;
-        settle({ requestId, status: 'unavailable', message: `exited ${String(code ?? signal)}` });
+        settle({
+          requestId,
+          status: 'unavailable',
+          reason: 'lost-compiler',
+          message: `exited ${String(code ?? signal)}`,
+        });
       });
       compiler.on('error', reject);
       compiler.send(request);
