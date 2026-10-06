@@ -15,9 +15,10 @@ import {
   type CompiledDesign,
 } from './compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { CHART_DESIGN } from './fixtures/chart.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 
@@ -129,6 +130,14 @@ test('a named Lucide import adds only the used icon code', async () => {
   );
 });
 
+test('an allowed chart import compiles into a self-contained document', async () => {
+  const design = await compile(CHART_DESIGN);
+
+  assert.deepEqual(design.diagnostics, []);
+  assert.match(design.html, /Weekly visits/);
+  assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
+});
+
 test('identical input names one artifact and a change names another', async () => {
   const first = await compile(STATEFUL_DESIGN);
   const again = await compile(STATEFUL_DESIGN);
@@ -170,7 +179,13 @@ export default function Hey() {
   assert.equal(diagnostic?.code, 'unsupported_import');
   assert.equal(diagnostic?.file, 'main.tsx');
   assert.equal(diagnostic?.line, 1);
-  for (const supported of ['react', 'react-dom/client', '@droidex/design-system']) {
+  for (const supported of [
+    'react',
+    'react-dom/client',
+    'lucide-react',
+    'recharts',
+    '@droidex/design-system',
+  ]) {
     assert.ok(diagnostic?.message.includes(supported), `names ${supported}`);
   }
 });
@@ -183,6 +198,7 @@ test('an import that leaves the design is refused', async () => {
     ['node:fs', 'unsupported_import'],
     ['fs', 'unsupported_import'],
     ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
+    ['recharts/es6/index.js', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
 
@@ -272,7 +288,7 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     mkdirSync(runtime);
     writeFileSync(
       join(runtime, 'manifest.json'),
-      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files })}\n`,
+      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files, notices: [] })}\n`,
     );
 
     const worker = new CompilerWorker();

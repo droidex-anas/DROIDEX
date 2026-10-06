@@ -1,5 +1,6 @@
 import { bridge } from './bridge';
 import { isAppUpdateInstalling } from './appUpdate';
+import type { CanvasTurnContext } from '../features/canvas/protocol';
 import type {
   Autonomy,
   BrowserNativeResult,
@@ -177,14 +178,20 @@ export const listFactoryDefaults = () => {
 };
 
 // A steer id hands the prompt to the running turn; without one, a send while
-// the turn runs waits for it to end.
+// the turn runs waits for it to end. `canvasContext` is what the Canvas pane had
+// selected as this prompt was composed: it travels beside the text, and the turn
+// that runs the prompt pins its lease to it.
 export const sendToSession = (
   appSessionId: string,
   text: string,
-  responseFormat?: ResponseFormat,
-  mentions?: ProviderMention[],
-  steerId?: string,
+  options: {
+    responseFormat?: ResponseFormat;
+    mentions?: ProviderMention[];
+    steerId?: string;
+    canvasContext?: CanvasTurnContext;
+  } = {},
 ) => {
+  const { responseFormat, mentions, steerId, canvasContext } = options;
   requireAgentWorkAvailable();
   bridge.send({
     type: 'session.send',
@@ -193,6 +200,7 @@ export const sendToSession = (
     ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
     ...(steerId ? { steerId } : {}),
+    ...(canvasContext ? { canvasContext } : {}),
   });
 };
 

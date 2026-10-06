@@ -28,6 +28,7 @@ const SUPPORTED_IMPORTS: readonly string[] = [
   'react/jsx-runtime',
   'react-dom/client',
   'lucide-react',
+  'recharts',
   KIT_SPECIFIER,
 ];
 
@@ -60,11 +61,28 @@ const DESIGN_SPECIFIER = 'canvas:design';
  */
 const VIRTUAL_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), '.canvas-virtual-tree');
 
-const BOOT_SOURCE = `import { createRoot } from 'react-dom/client';
+const BOOT_SOURCE = `import { useLayoutEffect } from 'react';
+import { createRoot } from 'react-dom/client';
 import Design from '${DESIGN_SPECIFIER}';
 
+const renderState = (state, message) => {
+  globalThis.__droidexCanvasRenderState = { state, message };
+  dispatchEvent(new Event('droidex-canvas-render-state'));
+};
+
+function MountedDesign() {
+  useLayoutEffect(() => renderState('committed'), []);
+  return <Design />;
+}
+
 const root = document.getElementById('${ROOT_ELEMENT_ID}');
-if (root) createRoot(root).render(<Design />);
+if (root) createRoot(root, {
+  onUncaughtError(error) {
+    let message = 'The preview stopped with an error.';
+    try { message = error instanceof Error ? error.message : String(error); } catch {}
+    renderState('failed', message);
+  },
+}).render(<MountedDesign />);
 `;
 
 const SUPPORTED_LIST = SUPPORTED_IMPORTS.join(', ');
@@ -181,6 +199,9 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
             return refuse('missing_module', `No file in this design matches "${args.path}".`);
           return { path: resolved.path, namespace: args.namespace };
         }
+        // Node's package entry is CommonJS. Its ESM entry lets esbuild omit
+        // chart exports the design never uses.
+        if (args.path === 'recharts') return { path: runtimePath('recharts/es6/index.js') };
         if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
         return refuse(
           'unsupported_import',

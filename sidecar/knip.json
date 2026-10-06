@@ -16,6 +16,8 @@
     "postcss-value-parser",
     "react",
     "react-dom",
+    "react-is",
+    "recharts",
     "tailwindcss"
   ]
 }
