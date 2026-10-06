@@ -307,6 +307,50 @@ test('a module cannot be loaded past the allowlist at runtime', async () => {
   assert.equal(stylesheet?.code, 'css_error');
 });
 
+test('a glob import cannot reach the real filesystem', async () => {
+  // esbuild turns a template literal with a static relative prefix into a glob
+  // and expands it underneath the plugins, by listing the importer's resolve
+  // directory. Only a directory that does not exist keeps that off the
+  // sidecar's own tree; a file resolved from outside the design is reported as
+  // compile_failed, which is what must never appear here.
+  for (const extension of ['tsx', 'css', 'ts']) {
+    const diagnostics = await diagnosticsFor({
+      'main.tsx': [
+        'import(`./${globalThis.location.hash}.' + extension + '`);',
+        'export default function Hey() {',
+        '  return <p>hey</p>;',
+        '}',
+        '',
+      ].join('\n'),
+    });
+
+    assert.deepEqual(
+      diagnostics.map((diagnostic) => diagnostic.code),
+      ['unsupported_import'],
+      `one refusal for .${extension}, and nothing resolved outside the design`,
+    );
+    assert.equal(diagnostics[0]?.file, 'main.tsx');
+  }
+});
+
+test('the supported packages resolve without node resolution from a design', async () => {
+  const design = await compile({
+    'main.tsx': `import { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Button } from '@droidex/design-system';
+
+export default function Hey() {
+  const [count, setCount] = useState(0);
+  void createRoot;
+  return <Button onClick={() => setCount(count + 1)}>{count}</Button>;
+}
+`,
+  });
+
+  assert.deepEqual(design.diagnostics, []);
+  assert.ok(design.html.includes('useState'), 'React is bundled from its real package');
+});
+
 test('an adversarial closing tag never ends the inline style or script', async () => {
   // PostCSS escapes "<" as \3c and esbuild escapes "</script" in a string, so
   // this holds the document's own invariant rather than either tool's habit.

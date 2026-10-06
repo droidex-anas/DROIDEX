@@ -3,7 +3,8 @@
 // here executes generated source (spec §6). Only the four supported packages
 // resolve, and only from the runtime directory this module ships in.
 
-import { dirname } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import { KIT_ENTRY } from './designSystems.js';
@@ -43,16 +44,24 @@ const KIT_NAMESPACE = 'canvas-kit';
 const BOOT_NAMESPACE = 'canvas-boot';
 const VIRTUAL_NAMESPACES = new Set([DESIGN_NAMESPACE, KIT_NAMESPACE, BOOT_NAMESPACE]);
 
-// `build.resolve` re-enters this plugin, so a delegated lookup is marked and
-// falls through to ordinary node resolution on the second pass.
-const DELEGATED = 'canvas-runtime-import';
-
 const DESIGN_SPECIFIER = 'canvas:design';
 
-// react and react-dom resolve from the directory this module ships in, which is
-// `sidecar/src/canvas` in development and `sidecar/dist` once built. Task 3d
-// points it at the packaged Canvas runtime instead of a checkout's node_modules.
-const runtimeDirectory = dirname(fileURLToPath(import.meta.url));
+// react and react-dom are resolved from the directory this module ships in,
+// which is `sidecar/src/canvas` in development and `sidecar/dist` once built.
+// Task 3d points it at the packaged Canvas runtime instead of a checkout's
+// node_modules.
+const runtimeRequire = createRequire(import.meta.url);
+
+/**
+ * The directory every virtual file claims to live in. It is never created.
+ *
+ * esbuild expands a template-literal dynamic import with a static relative
+ * prefix by listing the importer's resolve directory, and that expansion runs
+ * underneath plugins. A virtual file that claimed a real directory therefore
+ * let a design list and read the sidecar's own tree, so the whole virtual
+ * project sits somewhere that does not exist and a glob finds nothing.
+ */
+const VIRTUAL_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), '.canvas-virtual-tree');
 
 const BOOT_SOURCE = `import { createRoot } from 'react-dom/client';
 import Design from '${DESIGN_SPECIFIER}';
@@ -68,6 +77,12 @@ const LOADER_MESSAGE =
 
 // esbuild's own ids for the two constructs it cannot resolve at build time.
 const LOADER_MESSAGE_IDS = new Set(['unsupported-dynamic-import', 'unsupported-require-call']);
+
+// A template-literal dynamic import with a static prefix is turned into a glob
+// by esbuild itself, underneath plugins, and reported as an unresolved import
+// of a pattern. A design can never write that specifier, so the pattern names
+// the construct exactly. It carries no message id of its own.
+const EXPANDED_GLOB_IMPORT = /^Could not resolve (?:import|require)\(".*\*.*"\)$/;
 const BUNDLE_RECOVERY = 'The design could not be compiled. Check main.tsx and retry.';
 const MISSING_ENTRY_MESSAGE = `A design needs ${DESIGN_ENTRY}, which default-exports its component.`;
 
@@ -145,16 +160,12 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
   return {
     name: 'canvas-virtual-tree',
     setup(build) {
-      build.onResolve({ filter: /.*/ }, async (args) => {
-        if (args.pluginData === DELEGATED) return undefined;
+      build.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === 'entry-point') return { path: 'boot', namespace: BOOT_NAMESPACE };
         // Imports inside the resolved runtime packages are theirs to make.
         if (!VIRTUAL_NAMESPACES.has(args.namespace)) return undefined;
-        if (args.namespace === BOOT_NAMESPACE) {
-          if (args.path === DESIGN_SPECIFIER)
-            return { path: DESIGN_ENTRY, namespace: DESIGN_NAMESPACE };
-          return await delegate(build, args.path);
-        }
+        if (args.namespace === BOOT_NAMESPACE && args.path === DESIGN_SPECIFIER)
+          return { path: DESIGN_ENTRY, namespace: DESIGN_NAMESPACE };
         if (args.path === KIT_SPECIFIER) return { path: KIT_ENTRY, namespace: KIT_NAMESPACE };
         if (args.path.startsWith('./') || args.path.startsWith('../')) {
           const resolved = resolveRelative(treeFor(args.namespace), args.importer, args.path);
@@ -163,7 +174,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
             return refuse('missing_module', `No file in this design matches "${args.path}".`);
           return { path: resolved.path, namespace: args.namespace };
         }
-        if (SUPPORTED_IMPORTS.includes(args.path)) return await delegate(build, args.path);
+        if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
         return refuse(
           'unsupported_import',
           `"${args.path}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design.`,
@@ -173,6 +184,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
       build.onLoad({ filter: /.*/, namespace: BOOT_NAMESPACE }, () => ({
         contents: BOOT_SOURCE,
         loader: 'tsx',
+        resolveDir: VIRTUAL_DIRECTORY,
       }));
       for (const namespace of [DESIGN_NAMESPACE, KIT_NAMESPACE]) {
         build.onLoad({ filter: /.*/, namespace }, (args) => loadVirtual(treeFor(namespace), args));
@@ -181,15 +193,14 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
   };
 }
 
-async function delegate(
-  build: esbuild.PluginBuild,
-  path: string,
-): Promise<esbuild.OnResolveResult> {
-  return await build.resolve(path, {
-    resolveDir: runtimeDirectory,
-    kind: 'import-statement',
-    pluginData: DELEGATED,
-  });
+/**
+ * The absolute file one supported package resolves to. Resolving here rather
+ * than letting esbuild resolve from the importer keeps node resolution away
+ * from a virtual file entirely; past this point esbuild is reading a real
+ * package from a real directory, which is its own business.
+ */
+function runtimePath(specifier: string): string {
+  return runtimeRequire.resolve(specifier);
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {
@@ -200,8 +211,9 @@ function refuse(code: string, message: string): esbuild.OnResolveResult {
 // collected by `designStylesheet.ts` and emitted once for the whole document,
 // so importing one contributes nothing to the script.
 function loadVirtual(tree: SourceFiles, args: esbuild.OnLoadArgs): esbuild.OnLoadResult {
-  if (args.path.endsWith('.css')) return { contents: '', loader: 'js' };
-  return { contents: tree[args.path], loader: 'tsx' };
+  if (args.path.endsWith('.css'))
+    return { contents: '', loader: 'js', resolveDir: VIRTUAL_DIRECTORY };
+  return { contents: tree[args.path], loader: 'tsx', resolveDir: VIRTUAL_DIRECTORY };
 }
 
 type RelativeResolution =
@@ -244,7 +256,7 @@ function diagnosticFrom(message: esbuild.Message, severity: 'error' | 'warning')
   const code = pluginCode(message);
   const location = designLocation(message.location);
   if (code !== null) return { code, message: message.text, ...location };
-  if (LOADER_MESSAGE_IDS.has(message.id))
+  if (LOADER_MESSAGE_IDS.has(message.id) || EXPANDED_GLOB_IMPORT.test(message.text))
     return { code: 'unsupported_import', message: LOADER_MESSAGE, ...location };
   // The bootstrap is ours, so the only failure it can report is the contract it
   // depends on: `main.tsx` has to default-export a component.
