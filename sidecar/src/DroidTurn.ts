@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
   convertNotificationToStreamMessage,
-  DroidWorkingState,
   StreamStateTracker,
   type DroidClient,
   type DroidStreamEvent,
@@ -16,7 +15,6 @@ export class DroidTurn {
   private wake: (() => void) | undefined;
   private mainEnded = false;
   private busy = false;
-  private sdkSawWork = false;
   // A delivered steer whose reply loop has not yet run to idle. Droid can show
   // the message while still idle, a moment before that loop starts.
   private loopOwed = false;
@@ -106,16 +104,6 @@ export class DroidTurn {
       toolName: event.toolUse.name,
       toolInput: event.toolUse.input,
     });
-  }
-
-  // The SDK settles the main loop on an idle that follows a state it knows. It
-  // drops "thinking", so a loop that only thought and then failed goes idle
-  // unsettled and the SDK would wait for good. Droid's own states say the loop
-  // is over; the tail completes the turn from there.
-  sdkLeftMainLoopOpen(event: DroidStreamEvent): boolean {
-    if (event.type !== 'working_state_changed') return false;
-    if (event.state !== DroidWorkingState.Idle) this.sdkSawWork = true;
-    return event.state === DroidWorkingState.Idle && !this.sdkSawWork && this.mainEnded;
   }
 
   async *streamTail(): AsyncGenerator<DroidStreamEvent, void, undefined> {

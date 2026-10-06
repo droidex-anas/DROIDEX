@@ -180,7 +180,6 @@ export class DroidRuntime implements FactoryRuntime {
         turn.observeMainEvent(event);
         if (event.type === 'result') result = event;
         else yield event;
-        if (turn.sdkLeftMainLoopOpen(event)) break;
       }
       yield* turn.streamTail();
       // No steer may join after the settlement event becomes visible.
