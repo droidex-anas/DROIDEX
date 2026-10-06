@@ -245,6 +245,40 @@ test('the production preview host renders a compiled chart offline', async () =>
   });
 });
 
+test('a chart that throws during render reports a preview error without becoming ready', async () => {
+  const design = await compileDesign({
+    'main.tsx': `import { Bar, BarChart } from 'recharts';
+
+export default function BrokenChart() {
+  return <BarChart width={480} height={260} data={[{ visits: 12 }]}>
+    <Bar dataKey="visits" isAnimationActive={false}
+      shape={() => { throw new Error('Chart shape failed'); }} />
+  </BarChart>;
+}
+`,
+  });
+  await withCanvasHost(async (_app, page) => {
+    await mountPreviewGuest(page);
+    const instance = newInstance('broken-chart');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    const seen: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          for (const event of (await drainGuest(page, instance)).events) {
+            seen.push(event.event);
+            if (event.event === 'diagnostics')
+              for (const diagnostic of event.diagnostics) seen.push(diagnostic.message);
+          }
+          return seen.some((entry) => entry.includes('Chart shape failed'));
+        },
+        { timeout: 10_000, intervals: [100] },
+      )
+      .toBe(true);
+    assert.equal(seen.includes('ready'), false, 'a failed first render cannot become ready');
+  });
+});
+
 test('[C5] main ends a guest the board asks about, and refuses one it never attached', async () => {
   // A design that keeps running, so the only thing that ends this guest is the
   // board's own request: main's probe of a live design never fires its deadline.
