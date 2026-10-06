@@ -888,12 +888,18 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   retargeted. Steer delivery captures its original turn handle before awaiting the harness and
   checks the provider and handle again afterward; a result delivered after that turn or provider
   ended cannot lease the next turn, including after compaction keeps the same `LiveSession`.
-- **The queued representations that carry a context** are `SessionPrompt`, which is the one
-  shape behind `pendingSends`, `steers`, send-now reordering, `relaunch`'s waiting list,
-  post-compaction `settleAfterCompaction` and `redeliverQueuedSends`. The context rides on the
-  prompt object, so reordering and redelivery move prompts without touching their references,
-  and `sessionPrompt()` omits the field entirely when there is none — a queued prompt either
-  has a context or has none.
+- **The sidecar queue carries the received context.** `SessionPrompt` is the one shape behind
+  `pendingSends`, `steers`, send-now reordering, `relaunch`'s waiting list, post-compaction
+  `settleAfterCompaction` and `redeliverQueuedSends`. Reordering and redelivery move that prompt
+  without changing its references. `sessionPrompt()` omits the field when none arrived.
+- **Renderer handoff to Tasks 5/7b.** `QueuedPrompt` in `src/hooks/useStore.tsx` and its
+  delivery/edit/reorder paths do not yet carry `canvasContext`, and the first-turn
+  `session.create` goal has no context field. Snapshot the selected design and element chips
+  and the current design-system version when composing each request; carry that value through
+  queue, edit, reorder, steer, send-now and first-turn create. The disconnected bridge currently
+  retains a command object by reference, so capture an immutable value before enqueueing it.
+  Add a queue → selection change → delivery regression at the renderer owner. This is renderer
+  transport work; 04a preserves references only after the request reaches the sidecar.
 - **The boundary.** `session.send` gained `canvasContext?: CanvasTurnContext`; `bridgeServer`
   checks it with `assertCanvasTurnContext` beside its existing `assertValid*` checks, and a
   `CanvasCommandError` now travels as `canvas.<code>` so a refusal keeps its stable code.
