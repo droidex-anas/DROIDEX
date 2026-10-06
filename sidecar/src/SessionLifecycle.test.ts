@@ -413,7 +413,8 @@ test('create and cold resume publish only after registration', async () => {
     resumeTrace.filter((method) =>
       ['loadSession', 'autoCompaction.arm', 'onNotification', 'syncSummaries'].includes(method),
     ),
-    ['loadSession', 'autoCompaction.arm', 'onNotification', 'syncSummaries'],
+    // The Droid session's own listener, then the compaction subscription.
+    ['loadSession', 'onNotification', 'autoCompaction.arm', 'onNotification', 'syncSummaries'],
   );
   assert.deepEqual(
     resumed.events.slice(-2).map((event) => event.type),
@@ -603,6 +604,8 @@ test('post-registration failures retain cleanup ownership through a process outa
     [
       ['unsubscribe', 'failed-create-publication'],
       ['mcp.close', 'mcp-1'],
+      // The Droid session's own listener goes as the session closes.
+      ['unsubscribe', 'failed-create-publication'],
       ['session.close', 'failed-create-publication'],
     ],
   );
@@ -629,6 +632,7 @@ test('post-registration failures retain cleanup ownership through a process outa
     [
       ['unsubscribe', 'failed-resume-publication-provider'],
       ['mcp.close', 'mcp-1'],
+      ['unsubscribe', 'failed-resume-publication-provider'],
       ['session.close', 'failed-resume-publication-provider'],
     ],
   );
@@ -1137,6 +1141,7 @@ test('close follows ownership order and closeAll closes its initial snapshot', a
     'compaction.forgetSession:owner',
     'unsubscribe:owner',
     'mcp.close:mcp-1',
+    'unsubscribe:owner',
     'session.close:owner',
     'browser.close:owner',
     'runtimeCaches.clear:owner',
@@ -1734,6 +1739,7 @@ function claudeResumeProvider(
     kind: 'claude',
     create: () => Promise.reject(new Error('unexpected create')),
     fork: () => Promise.reject(new Error('unexpected fork')),
+    readUsage: () => Promise.reject(new Error('unexpected usage read')),
     resume: async (id, input) => {
       await beforeResume(id, input);
       return {
@@ -1781,13 +1787,14 @@ test('a context switch waits for the turn and resumes the same chat before queue
     runtime: h.runtime,
     getFactoryDefaults: async () => ({}),
     providerDefaultModelId: () => 'model-default',
+    knownModel: () => undefined,
     validateModelSettings: async (_summary, selection) => {
       if (selection.modelId === 'unavailable') throw new Error('1M context unavailable');
     },
     maxContextTokensForModel: () => undefined,
     isShutdownStarted: () => false,
     refreshPrimary: async () => undefined,
-    onPrimaryModelChanged: () => undefined,
+    onPrimaryModelChanged: () => Promise.resolve(),
     onSettled: () => {
       stored.splice(0, stored.length, { ...live.summary });
     },

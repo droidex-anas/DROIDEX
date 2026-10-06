@@ -7,7 +7,7 @@ import type { LiveSession } from '../SessionLifecycle.js';
 export function createCompactionTestLiveSession(
   appSessionId: string,
   session: FactorySession,
-  runtime: Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive'>,
+  runtime: Pick<FactoryRuntime, 'processIdOf' | 'isProcessAlive' | 'factoryApiKey'>,
 ): LiveSession {
   return {
     summary: {

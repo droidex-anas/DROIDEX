@@ -12,9 +12,12 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  UsageMetersListener,
+  UsageReading,
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { CodexRateLimits } from './codexRateLimits.js';
 import { resolveCodexPath } from './codexExecutable.js';
 import { listModels } from './codexModels.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
@@ -57,6 +60,8 @@ async function initialize(client: AppServerClient): Promise<InitializeResponse> 
 
 export class CodexProvider implements Provider {
   readonly kind = 'codex' as const;
+
+  constructor(private readonly onUsage?: UsageMetersListener) {}
 
   create({
     interactions,
@@ -193,8 +198,26 @@ export class CodexProvider implements Provider {
     return status;
   }
 
+  async readUsage(signal: AbortSignal): Promise<UsageReading> {
+    const executable = resolveCodexPath();
+    if (!executable) throw new Error(INSTALL_HINT);
+    signal.throwIfAborted();
+    const client = new AppServerClient(executable, tmpdir());
+    const stop = () => {
+      void client.close();
+    };
+    signal.addEventListener('abort', stop);
+    try {
+      await initialize(client);
+      return await new CodexRateLimits(client).read();
+    } finally {
+      signal.removeEventListener('abort', stop);
+      await client.close();
+    }
+  }
+
   private async openSession(
-    input: Omit<CodexSessionInput, 'client'>,
+    input: Omit<CodexSessionInput, 'client' | 'onUsage'>,
     resumeId?: string,
   ): Promise<ProviderSession> {
     const executable = resolveCodexPath();
@@ -202,7 +225,11 @@ export class CodexProvider implements Provider {
     const client = new AppServerClient(executable, input.cwd);
     // The session registers its handlers in its constructor, so the handshake
     // that makes Codex start sending can only follow it.
-    const session = new CodexSession({ ...input, client });
+    const session = new CodexSession({
+      ...input,
+      client,
+      ...(this.onUsage ? { onUsage: this.onUsage } : {}),
+    });
     try {
       await initialize(client);
       if (!input.model.modelId) {

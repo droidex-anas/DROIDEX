@@ -7,30 +7,17 @@
 // re-emitting a snapshot would double every sentence in the chat. The snapshot
 // backfills one case only: a message that streamed nothing at all (an aborted
 // or synthetic frame), which is visible nowhere else.
-import type { SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
+import type { ModelInfo, SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
-import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import { claudeCatalogModelId } from './claudeModels.js';
+import { usageRefusal } from './claudeRateLimits.js';
+import type { UsageLimitError } from '../usageLimit.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
-
-export function rateLimitRefusal(info: SDKRateLimitInfo): UsageLimitError | undefined {
-  if (
-    info.status !== 'rejected' ||
-    info.overageStatus === 'allowed' ||
-    info.overageStatus === 'allowed_warning'
-  )
-    return undefined;
-  const resetsAt = resetAtMillis(info.resetsAt);
-  const resumesAt = resetsAt === undefined ? '' : new Date(resetsAt).toLocaleTimeString();
-  const message = resumesAt
-    ? `Claude usage limit reached. It resets at ${resumesAt}.`
-    : 'Claude usage limit reached.';
-  return new UsageLimitError(message, resetsAt);
-}
 
 interface ToolBlock {
   id: string;
@@ -64,14 +51,23 @@ export class ClaudeEventMapper {
   private reportedFastModeUnavailable = false;
   // The uuid of the prompt that opened the turn: where a fork of it cuts.
   private turnId?: string;
+  private lastRateLimit?: SDKRateLimitInfo;
+  private refusal?: UsageLimitError;
 
   constructor(
     private readonly appSessionId: string,
-    private modelId?: string,
+    private launchModelId?: string,
+    private readonly models: ModelInfo[] = [],
   ) {}
 
+  // The model the CLI runs: the one it launched on or was set to, or the one
+  // Claude Code moved the session to by itself.
+  get modelId(): string | undefined {
+    return this.launchModelId;
+  }
+
   setModel(modelId: string | undefined): void {
-    this.modelId = modelId;
+    this.launchModelId = modelId;
     this.observedModelId = undefined;
   }
 
@@ -79,7 +75,16 @@ export class ClaudeEventMapper {
   // background task identity the session may still be tracking across turns.
   beginTurn(turnId: string): void {
     this.turnId = turnId;
+    this.refusal = undefined;
     this.subagents.beginTurn();
+  }
+
+  // The usage limit the turn's request was refused on. The CLI still ends that
+  // turn with a result, which is where the session fails it.
+  takeRefusal(): UsageLimitError | undefined {
+    const refusal = this.refusal;
+    this.refusal = undefined;
+    return refusal;
   }
 
   map(message: SDKMessage, fastMode = false): NormalizedEvent[] {
@@ -93,7 +98,8 @@ export class ClaudeEventMapper {
       case 'result':
         return [...this.fastModeNotice(message, fastMode), ...this.result(message)];
       case 'rate_limit_event':
-        return this.rateLimit(message.rate_limit_info);
+        this.lastRateLimit = message.rate_limit_info;
+        return [];
       case 'system':
         return this.system(message);
       // Hook/plugin notices and the other auxiliary frames carry nothing the
@@ -120,6 +126,13 @@ export class ClaudeEventMapper {
     // A local slash command answers through this frame instead of the model loop.
     if (message.subtype === 'local_command_output')
       return message.content ? [{ transcript: this.answerText(message.content, null) }] : [];
+    const fallback = consentFallback(message);
+    if (fallback) {
+      const to = claudeCatalogModelId(fallback.to, this.models);
+      this.setModel(to);
+      const from = claudeCatalogModelId(fallback.from, this.models);
+      return [{ harnessModelSwitch: { from, to, cause: 'usage_limit' } }];
+    }
     return this.subagents.map(message, this.modelId ?? this.observedModelId);
   }
 
@@ -222,7 +235,8 @@ export class ClaudeEventMapper {
           );
         continue;
       }
-      if (streamed) continue;
+      // A failed request's text explains the failure, so it is the error row's.
+      if (streamed || message.error) continue;
       const owner = this.childOwner(message.parent_tool_use_id);
       if (block.type === 'text' && block.text)
         events.push({
@@ -235,15 +249,32 @@ export class ClaudeEventMapper {
           transcript: this.transcript('thinking', { text: block.thinking }),
         });
     }
-    if (message.error)
-      events.push({
-        transcript: this.transcript('error', {
-          text: message.error,
-          isError: true,
-          ...(message.error === 'rate_limit' ? { errorKind: 'usage_limit' } : {}),
-        }),
-      });
+    if (message.error) events.push(...this.failedRequest(message, streamed));
     return events;
+  }
+
+  // The CLI answers a failed request with a message of its own. A usage
+  // refusal on the main thread fails the turn instead of adding a row; any
+  // other failure is one error row, in the conversation it happened in.
+  private failedRequest(
+    message: Extract<SDKMessage, { type: 'assistant' }>,
+    streamed: boolean,
+  ): NormalizedEvent[] {
+    const error = message.error ?? 'unknown';
+    const text = (streamed ? '' : messageText(message.message.content)) || error;
+    const mainThread = !message.parent_tool_use_id;
+    const refusal =
+      mainThread && error === 'rate_limit' ? usageRefusal(text, this.lastRateLimit) : undefined;
+    if (refusal) {
+      this.refusal = refusal;
+      return [];
+    }
+    return [
+      {
+        ...this.childOwner(message.parent_tool_use_id),
+        transcript: this.transcript('error', { text, isError: true }),
+      },
+    ];
   }
 
   private toolResults(message: Extract<SDKMessage, { type: 'user' }>): NormalizedEvent[] {
@@ -331,20 +362,6 @@ export class ClaudeEventMapper {
     return { transcript: this.transcript('status', { text }) };
   }
 
-  private rateLimit(info: SDKRateLimitInfo): NormalizedEvent[] {
-    const refusal = rateLimitRefusal(info);
-    if (!refusal) return [];
-    return [
-      {
-        transcript: this.transcript('error', {
-          text: refusal.message,
-          isError: true,
-          ...usageLimitDetails(refusal),
-        }),
-      },
-    ];
-  }
-
   private toolCall(
     id: string,
     name: string,
@@ -419,6 +436,24 @@ export class ClaudeEventMapper {
       ...extra,
     };
   }
+}
+
+// Claude Code moves a chat off a model the account needs usage credits for,
+// for the rest of the session. The SDK does not type this frame.
+function consentFallback(
+  message: Record<string, unknown>,
+): { from: string; to: string } | undefined {
+  if (message.subtype !== 'model_consent_fallback') return undefined;
+  const { original_model: from, fallback_model: to } = message;
+  return typeof from === 'string' && typeof to === 'string' && from && to
+    ? { from, to }
+    : undefined;
+}
+
+function messageText(
+  content: Extract<SDKMessage, { type: 'assistant' }>['message']['content'],
+): string {
+  return content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n');
 }
 
 // What the CLI puts in a tool result when the user stops the turn before the

@@ -316,7 +316,7 @@ async function smokePackagedRuntime(architecture) {
         const port = output.match(/(?:^|\n)SIDECAR_READY (\d+)(?:\n|$)/)?.[1];
         if (bridge || !port) return;
         bridge = new globalThis.WebSocket(
-          `ws://127.0.0.1:${port}/?token=${bridgeToken}&bridgeProtocol=8`,
+          `ws://127.0.0.1:${port}/?token=${bridgeToken}&bridgeProtocol=9`,
         );
         bridge.addEventListener('open', () => {
           bridge.send(JSON.stringify({ type: 'sessions.list' }));

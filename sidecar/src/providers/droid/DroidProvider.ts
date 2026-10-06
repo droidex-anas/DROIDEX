@@ -12,8 +12,10 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  UsageReading,
 } from '../session.js';
 import { droidInteractionHandlers } from './droidInteractions.js';
+import { readFactoryUsage } from './factoryUsage.js';
 import { DroidProviderSession, droidSessionOf } from './DroidProviderSession.js';
 
 export class DroidProvider implements Provider {
@@ -107,6 +109,11 @@ export class DroidProvider implements Provider {
     // resume would then show instead of the copy's own.
     if (!point.rewindTo) await this.rename(copiedId, cwd, title);
     return { providerSessionId: copiedId };
+  }
+
+  // An HTTP read, never a session: the account's limits live only on Factory.
+  readUsage(signal: AbortSignal): Promise<UsageReading> {
+    return readFactoryUsage(this.runtime.factoryApiKey(), signal);
   }
 
   private async copyLoaded(

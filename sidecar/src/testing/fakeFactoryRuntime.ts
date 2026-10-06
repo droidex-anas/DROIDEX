@@ -435,6 +435,11 @@ export class FakeFactoryRuntime implements FactoryRuntime {
     return { mode: 'cli_auth', droidPath: '/test/droid', apiKeyConfigured: this.apiKey.length > 0 };
   }
 
+  // Never the test key: a Droid turn would otherwise read usage from Factory.
+  factoryApiKey(): undefined {
+    return undefined;
+  }
+
   readContextBreakdown(session: FactorySession): Promise<unknown> {
     const error = this.contextBreakdownErrors.get(session.sessionId);
     if (error) return Promise.reject(error);
@@ -585,5 +590,6 @@ export function fakeProviderSession(
   return new DroidProviderSession(appSessionId, session, {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
+    factoryApiKey: () => undefined,
   });
 }
