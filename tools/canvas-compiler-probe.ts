@@ -23,9 +23,11 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   renameSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
@@ -57,6 +59,23 @@ const DAMAGE: [string, (runtime: string) => void][] = [
   [
     'a file it only links to',
     (runtime) => linkOutside(runtime, 'node_modules/picocolors/picocolors.js'),
+  ],
+  [
+    // The tree agrees with its manifest, so only resolving the specifiers sees it.
+    'a package a compile resolves, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, 'node_modules/react/jsx-runtime.js');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files['node_modules/react/jsx-runtime.js'];
+      });
+    },
+  ],
+  [
+    'a staged size for one of its files',
+    (runtime) =>
+      rewriteManifest(runtime, (manifest) => {
+        manifest.files['node_modules/react/index.js'] = null;
+      }),
   ],
   [
     // No listed file changes, so only comparing the tree to the manifest sees it.
@@ -305,6 +324,18 @@ function copiedLayout(target: ProbeTarget, damage: ((runtime: string) => void) |
 
 function drop(runtime: string, relative: string): void {
   rmSync(join(runtime, relative), { recursive: true, force: true });
+}
+
+interface StagedManifest {
+  binary: string;
+  files: Record<string, number | null>;
+}
+
+function rewriteManifest(runtime: string, change: (manifest: StagedManifest) => void): void {
+  const path = join(runtime, 'manifest.json');
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as StagedManifest;
+  change(manifest);
+  writeFileSync(path, `${JSON.stringify(manifest)}\n`);
 }
 
 /** Moves one entry out of the runtime and links to it from where it was. */

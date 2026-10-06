@@ -12,7 +12,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { join, sep } from 'node:path';
 import process from 'node:process';
 
 /** Also read by sidecar/src/canvas/canvasRuntime.ts, which owns its contract. */
@@ -20,6 +21,20 @@ export const CANVAS_RUNTIME_MANIFEST = 'manifest.json';
 
 const EXECUTABLE_ARCH = { arm64: 'arm64', x64: 'x86_64' };
 const LICENSED = ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'scheduler'];
+
+// RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
+// tree can agree with its own manifest and still be short of a package a
+// compile resolves, so the gate resolves them too.
+const ANCHOR_FILE = 'canvas-runtime.js';
+const RUNTIME_SPECIFIERS = [
+  'esbuild',
+  'postcss',
+  'postcss-value-parser',
+  'tailwindcss',
+  'react',
+  'react/jsx-runtime',
+  'react-dom/client',
+];
 
 /**
  * Throws on the first thing wrong with the runtime at `runtimePath`, which must
@@ -32,11 +47,17 @@ export function verifyCanvasRuntime(runtimePath, arch) {
   const root = realpathSync(runtimePath);
   const manifest = JSON.parse(readFileSync(join(root, CANVAS_RUNTIME_MANIFEST), 'utf8'));
 
+  // Only these two are exempt from a staged size: the first describes the rest,
+  // and code signing rewrites the second while packaging. A `null` anywhere in
+  // `files` is a damaged manifest, not a third exemption.
   const sizes = new Map([
     [CANVAS_RUNTIME_MANIFEST, null],
     [manifest.binary, null],
-    ...Object.entries(manifest.files),
   ]);
+  for (const [path, bytes] of Object.entries(manifest.files)) {
+    if (typeof bytes !== 'number') fail(`${path} has no staged size`);
+    sizes.set(path, bytes);
+  }
   const directories = new Set();
   for (const path of sizes.keys())
     for (let cut = path.indexOf('/'); cut !== -1; cut = path.indexOf('/', cut + 1))
@@ -62,6 +83,18 @@ export function verifyCanvasRuntime(runtimePath, arch) {
   const foreign = arch === 'arm64' ? 'x64' : 'arm64';
   if (existsSync(join(modulesPath, '@esbuild', `darwin-${foreign}`)))
     fail(`the ${foreign} esbuild binary ships alongside the ${arch} one`);
+
+  const runtimeRequire = createRequire(join(root, ANCHOR_FILE));
+  for (const specifier of RUNTIME_SPECIFIERS) {
+    let resolved;
+    try {
+      resolved = runtimeRequire.resolve(specifier);
+    } catch {
+      fail(`${specifier} does not resolve`);
+    }
+    if (!resolved.startsWith(`${modulesPath}${sep}`))
+      fail(`${specifier} resolves outside the runtime`);
+  }
 }
 
 function walk(root, within, sizes, directories, found) {
