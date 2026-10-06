@@ -105,6 +105,15 @@ module.exports = {
     // The Electron host spawns the sidecar as resources/sidecar/dist/sidecar.mjs
     // (see sidecarEntry in electron/main.cjs). The bundle is self-contained.
     { from: 'sidecar/dist', to: 'sidecar/dist', filter: ['**/*'] },
+    // The Canvas compiler's own esbuild, Tailwind, PostCSS and React, staged
+    // per architecture by tools/stage-canvas-runtime.mjs. The host passes this
+    // directory to the sidecar as DROIDEX_CANVAS_RUNTIME_DIR, so a packaged
+    // design compile never resolves outside it and never downloads anything.
+    {
+      from: 'sidecar/canvas-runtime/${arch}',
+      to: 'sidecar/canvas-runtime',
+      filter: ['**/*'],
+    },
   ],
   npmRebuild: true,
   mac: {

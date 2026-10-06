@@ -1,0 +1,194 @@
+// Stages the Canvas compiler runtime that electron-builder ships as
+// resources/sidecar/canvas-runtime (spec §6): esbuild's Node API with the
+// selected architecture's native binary, Tailwind's PostCSS plugin, PostCSS and
+// React, each with its own license file. The packages are copied as they are
+// installed, so Tailwind's preflight loader still finds its CSS beside itself
+// and node resolution inside the runtime works unchanged.
+//
+// One complete tree per architecture, because DROIDEX_CANVAS_RUNTIME_DIR names
+// a single directory a packaged compile may resolve from.
+//
+//   node tools/stage-canvas-runtime.mjs arm64 x64
+
+import { execFileSync } from 'node:child_process';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
+import process from 'node:process';
+
+const sidecarDir = 'sidecar';
+const stagingDir = join(sidecarDir, 'canvas-runtime');
+// DROIDEX packages macOS only, so the architecture is the whole variable part
+// of esbuild's platform package name.
+const PLATFORM = 'darwin';
+const ARCHITECTURES = ['arm64', 'x64'];
+
+/** What a design compile loads; everything else arrives as their dependency. */
+const RUNTIME_ROOTS = [
+  'esbuild',
+  'tailwindcss',
+  'postcss',
+  'postcss-value-parser',
+  'react',
+  'react-dom',
+];
+
+// No runtime path reads these, and a packaged app may not carry source maps.
+// License and notice files keep their own names, so only documentation is
+// dropped by name.
+const SKIPPED_NAMES = new Set(['README.md', 'readme.md', 'CHANGELOG.md', '.DS_Store']);
+const SKIPPED_SUFFIXES = ['.map', '.ts', '.flow'];
+
+/** The parts of a package a design compile can never reach. */
+const PRUNED = {
+  // The Node API only. The native binary belongs to the architecture package,
+  // and `install.js` exists to download one.
+  esbuild: (path) => !['package.json', 'lib/main.js', 'LICENSE.md'].includes(path),
+  // Tailwind's PostCSS plugin, not its CLI: `peers` is the CLI's prebundled
+  // dependency bundle and `src` is the ESM mirror of `lib`.
+  tailwindcss: (path) =>
+    ['peers/', 'src/', 'scripts/', 'types/', 'lib/cli/'].some((prefix) =>
+      path.startsWith(prefix),
+    ) || path === 'lib/cli.js',
+  // A design imports `react-dom/client`. A preview has no server renderer and
+  // no profiling build; the development builds stay so that both branches of
+  // React's NODE_ENV switch still resolve.
+  'react-dom': (path) => /server|static|profiling|test-utils/.test(path),
+  react: (path) => /react-server|profiling/.test(path),
+  scheduler: (path) => /native|unstable_mock|unstable_post_task/.test(path),
+};
+
+function fail(message) {
+  process.stderr.write(`Canvas runtime staging failed: ${message}\n`);
+  process.exit(1);
+}
+
+/**
+ * Where node would resolve `name` from `fromDir`: the directory's own
+ * node_modules first, then each ancestor's, which is what keeps a nested
+ * duplicate at the path its dependent reads it from.
+ */
+function packageDirectory(fromDir, name) {
+  for (let dir = fromDir; ; dir = dirname(dir)) {
+    if (!dir.endsWith(`${sep}node_modules`) && dir !== 'node_modules') {
+      const candidate = join(dir, 'node_modules', name);
+      if (existsSync(join(candidate, 'package.json'))) return candidate;
+    }
+    if (dir === sidecarDir) return null;
+  }
+}
+
+/** Every installed package the runtime roots reach through `dependencies`. */
+function runtimeClosure() {
+  const packages = new Map();
+  const queue = RUNTIME_ROOTS.map((name) => ({ name, from: sidecarDir }));
+  while (queue.length > 0) {
+    const { name, from } = queue.shift();
+    const dir = packageDirectory(from, name);
+    if (!dir) fail(`${name} is not installed. Run npm ci --prefix sidecar.`);
+    if (packages.has(dir)) continue;
+    packages.set(dir, name);
+    const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    // Optional dependencies are the platform binaries and fsevents, neither of
+    // which a compile loads; the architecture package is staged on its own.
+    for (const dependency of Object.keys(manifest.dependencies ?? {}))
+      queue.push({ name: dependency, from: dir });
+  }
+  return [...packages].map(([dir, name]) => ({ dir, name }));
+}
+
+/** A package's own files, excluding the dependencies nested inside it. */
+function packageFiles(dir) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules') files.push(...packageFiles(join(dir, entry.name)));
+    } else if (entry.isFile()) files.push(join(dir, entry.name));
+  }
+  return files;
+}
+
+function isSkipped(packagePath) {
+  const name = packagePath.slice(packagePath.lastIndexOf('/') + 1);
+  return SKIPPED_NAMES.has(name) || SKIPPED_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+function copyPackage({ dir, name }, archDir) {
+  const prune = PRUNED[name];
+  for (const file of packageFiles(dir)) {
+    const packagePath = relative(dir, file).split(sep).join('/');
+    if (isSkipped(packagePath) || prune?.(packagePath)) continue;
+    const destination = join(archDir, relative(sidecarDir, dir), packagePath);
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(file, destination);
+  }
+}
+
+/**
+ * The other architecture's binary is not installed here: npm skips an optional
+ * dependency whose cpu does not match and refuses an explicit install of one
+ * without `--force`. Packaging may reach the registry; a design compile never
+ * does.
+ */
+function fetchPlatformPackage(name, version) {
+  const cache = join(stagingDir, '.npm');
+  mkdirSync(cache, { recursive: true });
+  execFileSync(
+    'npm',
+    ['install', '--prefix', cache, '--no-save', '--no-audit', '--no-fund', '--force', `${name}@${version}`],
+    { stdio: 'inherit' },
+  );
+  const fetched = join(cache, 'node_modules', name);
+  if (!existsSync(fetched)) fail(`${name}@${version} could not be staged from the registry.`);
+  return fetched;
+}
+
+function stagePlatformBinary(arch, version, archDir) {
+  const name = `@esbuild/${PLATFORM}-${arch}`;
+  const installed = join(sidecarDir, 'node_modules', name);
+  const source = existsSync(installed) ? installed : fetchPlatformPackage(name, version);
+  for (const file of packageFiles(source)) {
+    if (isSkipped(relative(source, file))) continue;
+    const destination = join(archDir, 'node_modules', name, relative(source, file));
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(file, destination);
+  }
+}
+
+function treeSize(dir) {
+  let bytes = 0;
+  let files = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = treeSize(path);
+      bytes += nested.bytes;
+      files += nested.files;
+    } else if (entry.isFile()) {
+      bytes += readFileSync(path).byteLength;
+      files += 1;
+    }
+  }
+  return { bytes, files };
+}
+
+const requested = process.argv.slice(2);
+const architectures = requested.length > 0 ? requested : [process.arch];
+for (const arch of architectures) {
+  if (!ARCHITECTURES.includes(arch)) fail(`${arch} is not a packaged architecture.`);
+}
+
+const closure = runtimeClosure();
+const esbuildVersion = JSON.parse(
+  readFileSync(join(sidecarDir, 'node_modules', 'esbuild', 'package.json'), 'utf8'),
+).version;
+
+for (const arch of architectures) {
+  const archDir = join(stagingDir, arch);
+  rmSync(archDir, { recursive: true, force: true });
+  for (const entry of closure) copyPackage(entry, archDir);
+  stagePlatformBinary(arch, esbuildVersion, archDir);
+  const { bytes, files } = treeSize(archDir);
+  process.stdout.write(
+    `${archDir}: ${String(closure.length + 1)} packages, ${String(files)} files, ${String(bytes)} bytes (${(bytes / 1024 / 1024).toFixed(2)} MiB)\n`,
+  );
+}
