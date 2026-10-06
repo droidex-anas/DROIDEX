@@ -194,6 +194,7 @@ async function fetchPlatformPackage(name, version) {
     if (!matchesIntegrity(tarball, locked.integrity))
       fail(`${locked.resolved} does not match the integrity in sidecar/package-lock.json.`);
   }
+  refuseUnexpectedMembers(tarball);
   // Extracted into an empty directory of its own, and only the files found
   // under it are copied, so an entry that tried to climb out lands nowhere the
   // staging reads.
@@ -202,6 +203,22 @@ async function fetchPlatformPackage(name, version) {
   mkdirSync(unpacked, { recursive: true });
   execFileSync('/usr/bin/tar', ['-xzf', tarball, '-C', unpacked, '--strip-components=1']);
   return unpacked;
+}
+
+/**
+ * Every member of an npm tarball lives under `package/`. The shape is checked
+ * before anything is extracted, because `--strip-components` normalises an
+ * absolute member rather than refusing it and takes whatever root it is given,
+ * so a differently shaped archive would place files inside the staged package.
+ */
+function refuseUnexpectedMembers(tarball) {
+  const members = execFileSync('/usr/bin/tar', ['-tzf', tarball], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean);
+  for (const member of members) {
+    if (!member.startsWith('package/') || member.split('/').includes('..'))
+      fail(`${tarball} carries ${member}, which is not inside its package directory.`);
+  }
 }
 
 /** Returns the staged binary's path, relative to the runtime directory. */
