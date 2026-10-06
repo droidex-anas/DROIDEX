@@ -1122,6 +1122,41 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+
+Settled by 07a (`canvas/07a-design-kits`):
+
+- The three built-in version-1 kits are `droidex`, `openai-inspired` and
+  `claude-inspired`. The latter two are locally authored interpretations, not official
+  presets. Each owns complete matching light/dark token maps, including typography,
+  spacing, radius, shadow and motion. App chrome is unchanged.
+- `readDesignSystem` returns a detached snapshot of the exact pinned version. Built-ins
+  are validated and snapshotted on load; user saves retain the existing atomic immutable
+  version contract. Schema validation also refuses unmatched mode token names.
+- Shared source primitives are copied into each executable kit: native-prop Button
+  (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
+  Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
+  Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
+  `title`, `children`) using native modal focus containment, Escape and focus restoration.
+  Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
+  Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
+- Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
+  for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
+  SIL OFL files both in the repository and the kit's virtual source files. Provenance is
+  in `presets/fonts/README.md`; other scripts use the local font stack.
+- `lucide-react` is pinned to 0.460.0, the app's existing version, staged with its ISC
+  licence, and verified by the owned-runtime gate. The flat import allowlist names only
+  `lucide-react`; its internal pinned ESM entry is resolved through the same owned anchor
+  so unused icons are removed. Public deep imports remain refused. No chart entry is
+  changed. `designStylesheet.ts` already scans the complete snapshot with Tailwind 3 and
+  needed no replacement path or dynamic-class guessing.
+- Compiler coverage exercises all six kit/mode starters and bounds a single named icon's
+  incremental output to 10 KiB. Contrast coverage checks the actual primitive foreground,
+  muted, primary, primary-hover, badge and error pairs against AA 4.5:1. The staged offline
+  probe compiles all six starters, including named icons and embedded fonts, then retains
+  its damaged-runtime and resolver-isolation checks. Electron interaction checks cover
+  state, disabled controls, tabs, dialog focus cycling, Escape, restoration and font load.
+
+
 ## Task 8: Element selection, direct edits and source/history UI
 
 **Subtasks (one branch and PR each, merged in order):**

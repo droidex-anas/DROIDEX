@@ -15,6 +15,8 @@ import {
   type CompiledDesign,
 } from './compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -89,13 +91,42 @@ test('Tailwind emits exactly the utilities the source spells out', async () => {
   assert.equal(/\.grid \{/.test(html), false, 'an unused utility is not emitted');
 });
 
-test("the kit's own example compiles", async () => {
-  const example = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
-  assert.ok(example, 'the kit ships a starter example');
-  const design = await compile({ 'main.tsx': example });
+test('every kit starter compiles in both pinned modes with offline fonts', async () => {
+  for (const kit of [
+    DROIDEX_DESIGN_SYSTEM,
+    OPENAI_INSPIRED_DESIGN_SYSTEM,
+    CLAUDE_INSPIRED_DESIGN_SYSTEM,
+  ]) {
+    const example = kit.examples['Hey.tsx'];
+    assert.ok(example);
+    for (const mode of ['light', 'dark'] as const) {
+      const input = {
+        ...compileInput({ 'main.tsx': example }),
+        designSystem: { id: kit.id, version: kit.version, mode },
+      };
+      const design = await shared.compile(input, new AbortController().signal);
+      assert.deepEqual(design.diagnostics, []);
+      assert.ok(design.html.includes("You're all set"));
+      assert.ok(design.html.includes('data-mode="' + mode + '"'));
+      assert.match(design.html, /data:font\/woff2;base64,/);
+      assert.doesNotMatch(design.html, /url\(\s*['"]?https?:/);
+    }
+  }
+});
 
-  assert.deepEqual(design.diagnostics, []);
-  assert.ok(design.html.includes("You're all set"), 'the example renders its own states');
+test('a named Lucide import adds only the used icon code', async () => {
+  const base = await compile({
+    'main.tsx': 'export default function Hey() { return <p>Hey</p>; }',
+  });
+  const icon = await compile({
+    'main.tsx':
+      "import { Activity } from 'lucide-react'; export default function Hey() { return <Activity aria-label='Activity' />; }",
+  });
+  const addedBytes = Buffer.byteLength(icon.html) - Buffer.byteLength(base.html);
+  assert.ok(
+    addedBytes > 0 && addedBytes < 10_000,
+    'one icon adds under 10 KiB, not the full catalog: ' + addedBytes,
+  );
 });
 
 test('identical input names one artifact and a change names another', async () => {
@@ -151,6 +182,7 @@ test('an import that leaves the design is refused', async () => {
     ['https://cdn.example.com/widget.js', 'unsupported_import'],
     ['node:fs', 'unsupported_import'],
     ['fs', 'unsupported_import'],
+    ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
 

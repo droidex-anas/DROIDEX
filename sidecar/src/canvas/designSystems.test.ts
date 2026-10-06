@@ -11,16 +11,69 @@ import {
   saveDesignSystem,
   type DesignSystem,
 } from './designSystems.js';
+import { CANVAS_LIMITS } from './schema.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 
-test('the built-in kit reads back exactly as it ships', async () => {
-  const system = await readDesignSystem({ id: 'droidex', version: 1, mode: 'light' });
+const KITS = [DROIDEX_DESIGN_SYSTEM, OPENAI_INSPIRED_DESIGN_SYSTEM, CLAUDE_INSPIRED_DESIGN_SYSTEM];
 
-  assert.deepEqual(system, DROIDEX_DESIGN_SYSTEM);
-  assert.ok(system.files['index.tsx'], 'the kit exports its primitives from index.tsx');
-  assert.ok(system.examples['Hey.tsx'], 'the kit ships a starter example');
-  assert.ok(system.modes.light['--ds-accent'] && system.modes.dark['--ds-accent']);
+test('built-in versions are exact snapshots that callers cannot mutate', async () => {
+  for (const kit of KITS) {
+    const ref = { id: kit.id, version: kit.version, mode: 'light' as const };
+    const system = await readDesignSystem(ref);
+    assert.deepEqual(system, kit);
+    system.modes.light['--ds-accent'] = '#000000';
+    system.files['index.tsx'] = '';
+    system.examples['Hey.tsx'] = '';
+    system.name = 'Changed';
+    assert.deepEqual(await readDesignSystem(ref), kit);
+    await assert.rejects(saveDesignSystem({ ...kit, version: 2 }), CanvasCommandError);
+    // The same validation used for custom versions applies to complete kit files.
+    await saveDesignSystem({ ...kit, id: 'validated-' + kit.id });
+  }
 });
+
+test('kit text meets AA contrast on every surface the primitives use', () => {
+  for (const kit of KITS) {
+    for (const [mode, tokens] of Object.entries(kit.modes)) {
+      const pairs = [
+        ...['canvas', 'surface', 'raised', 'elevated', 'active', 'accent-soft'].map((bg) => [
+          'fg',
+          bg,
+        ]),
+        ...['canvas', 'surface', 'raised', 'elevated', 'active'].map((bg) => ['fg-muted', bg]),
+        ['accent-fg', 'accent'],
+        ['accent-fg', 'accent-strong'],
+        ['danger', 'raised'],
+      ];
+      for (const [fg, bg] of pairs) {
+        const foreground = tokens['--ds-' + fg];
+        const background = tokens['--ds-' + bg];
+        assert.ok(foreground && background, kit.id + ' has ' + fg + '/' + bg);
+        const ratio = contrast(foreground, background);
+        assert.ok(
+          ratio >= 4.5,
+          kit.id + '/' + mode + ' ' + fg + '/' + bg + ': ' + ratio.toFixed(2),
+        );
+      }
+    }
+  }
+});
+
+function contrast(foreground: string, background: string): number {
+  function luminance(hex: string): number {
+    assert.match(hex, /^#[0-9a-f]{6}$/i);
+    const [r, g, b] = [1, 3, 5].map((start) => {
+      const channel = parseInt(hex.slice(start, start + 2), 16) / 255;
+      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  const a = luminance(foreground),
+    b = luminance(background);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
 
 test('a version that was never written is not available', async () => {
   await assert.rejects(readDesignSystem({ id: 'droidex', version: 2, mode: 'light' }), (error) => {
@@ -80,6 +133,17 @@ test('oversized guidance is refused', async () => {
 
 test('an unusable kit is refused before anything is written', async () => {
   const refusals: [string, DesignSystem][] = [
+    [
+      'a missing dark counterpart',
+      {
+        ...userKit('unpaired-kit'),
+        modes: { light: { '--ds-canvas': '#ffffff' }, dark: {} },
+      },
+    ],
+    [
+      'an oversized kit file',
+      withFiles('large-kit', { 'index.tsx': 'x'.repeat(CANVAS_LIMITS.maxFileBytes + 1) }),
+    ],
     ['an escaping path', withFiles('escape-kit', { '../outside.tsx': 'export const a = 1;\n' })],
     ['a missing entry', withFiles('entryless-kit', { 'button.tsx': 'export const a = 1;\n' })],
     [

@@ -44,7 +44,7 @@ const FINDER_METADATA = '.DS_Store';
 
 /**
  * Every specifier a compile resolves: the three packages the compiler itself
- * calls into, the value parser Tailwind shares with it, and the three a design
+ * calls into, the value parser Tailwind shares with it, and those a design
  * may import. `designBundle.ts` owns the design-facing allowlist, which also
  * carries the virtual design-system specifier and so cannot be this list.
  */
@@ -56,6 +56,8 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react',
+  'lucide-react/dist/esm/lucide-react.js',
 ];
 
 /** The packages the compiler calls into, and the resolver a design gets. */

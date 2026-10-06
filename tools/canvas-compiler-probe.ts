@@ -38,7 +38,8 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from '../sidecar/src/canvas/designSystems.js';
+import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
+import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
@@ -249,7 +250,11 @@ function compileInput(): CompileInput {
  * `runtimeDir` is what the Electron host would pass as
  * DROIDEX_CANVAS_RUNTIME_DIR; omitting it is a host that lost the variable.
  */
-async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promise<WorkerRun> {
+async function runWorker(
+  target: ProbeTarget,
+  runtimeDir: string | null,
+  input = compileInput(),
+): Promise<WorkerRun> {
   // A design compile reads nothing from the profile, so the child gets an empty
   // one rather than the machine's.
   const home = mkdtempSync(join(tmpdir(), 'canvas-compiler-probe-'));
@@ -318,7 +323,7 @@ async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promis
   }
 
   try {
-    const compiled = await answer(1, { type: 'compile', requestId: 1, input: compileInput() });
+    const compiled = await answer(1, { type: 'compile', requestId: 1, input });
     const stopped = await answer(2, { type: 'shutdown', requestId: 2 });
     return {
       compiled,
@@ -390,6 +395,8 @@ function artifactOf(response: CompilerResponse): string {
     ['a sha256 artifact id', /^[0-9a-f]{64}$/.test(artifactId)],
     ['the preview root', html.includes('id="canvas-root"')],
     ['the example content', html.includes("You're all set")],
+    ['the bundled named Lucide icon', html.includes('"ArrowRight"')],
+    ['the offline font', html.includes('data:font/woff2;base64,')],
     ['the kit tokens', html.includes('--ds-accent')],
     ['Tailwind preflight', html.includes('box-sizing: border-box')],
     ['the bundled React', html.includes('useState')],
@@ -436,11 +443,20 @@ try {
   fail(error instanceof Error ? error.message : String(error));
 }
 
-const shipped = await runWorker(target, target.runtimeDir);
-assertClean(shipped, target.label);
-process.stdout.write(
-  `Compiled the design kit's example offline from the ${target.label}: ${artifactOf(shipped.compiled)}\n`,
-);
+for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
+  for (const mode of ['light', 'dark'] as const) {
+    const ref: DesignSystemRef = { id, version: 1, mode };
+    const kit = await readDesignSystem(ref);
+    const example = kit.examples['Hey.tsx'];
+    if (example === undefined) fail(`${id} ships no starter example`);
+    const input = { ...compileInput(), files: { 'main.tsx': example }, designSystem: ref };
+    const shipped = await runWorker(target, target.runtimeDir, input);
+    assertClean(shipped, target.label);
+    process.stdout.write(
+      `Compiled ${id}/${mode} offline from ${target.label}: ${artifactOf(shipped.compiled)}\n`,
+    );
+  }
+}
 
 const copied = copiedLayout(target, null);
 const intact = await runWorker(copied.target, copied.target.runtimeDir);

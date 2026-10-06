@@ -1,6 +1,6 @@
 // Bundles one design's virtual source tree into a single browser script. The
 // tree is text and stays text: esbuild parses and concatenates it, so nothing
-// here executes generated source (spec §6). Only the four supported packages
+// here executes generated source (spec §6). Only the supported packages
 // resolve, and esbuild itself comes from the Canvas runtime rather than from an
 // import, so the bundled worker takes it from the directory a packaged app owns
 // (see canvasRuntime.ts).
@@ -22,11 +22,12 @@ export const KIT_SPECIFIER = '@droidex/design-system';
 /** The element `main.tsx`'s default export is mounted into. */
 export const ROOT_ELEMENT_ID = 'canvas-root';
 
-// Task 6 adds recharts and Task 7 adds lucide-react; nothing else resolves.
+// Only explicitly supported packages resolve.
 const SUPPORTED_IMPORTS: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react',
   KIT_SPECIFIER,
 ];
 
@@ -206,7 +207,11 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
  * package from a real directory, which is its own business.
  */
 function runtimePath(specifier: string): string {
-  return canvasRuntime().resolve(specifier);
+  // Node's resolver selects Lucide's CommonJS barrel, which retains every icon.
+  // Its pinned ESM entry lets esbuild remove all unused icons.
+  return canvasRuntime().resolve(
+    specifier === 'lucide-react' ? 'lucide-react/dist/esm/lucide-react.js' : specifier,
+  );
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {

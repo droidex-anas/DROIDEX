@@ -26,11 +26,19 @@ import process from 'node:process';
 export const CANVAS_RUNTIME_MANIFEST = 'manifest.json';
 
 const EXECUTABLE_ARCH = { arm64: 'arm64', x64: 'x86_64' };
-const LICENSED = ['esbuild', 'tailwindcss', 'postcss', 'react', 'react-dom', 'scheduler'];
+const LICENSED = [
+  'esbuild',
+  'tailwindcss',
+  'postcss',
+  'react',
+  'react-dom',
+  'scheduler',
+  'lucide-react',
+];
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
-// needs, so the gate resolves all seven and loads the three the compiler calls
+// needs, so the gate resolves all declared and loads the three the compiler calls
 // into: resolving a package says nothing about whether its own dependencies are
 // there. `postcss-value-parser` arrives through Tailwind, and the React a design
 // imports is read as files by esbuild rather than required.
@@ -53,6 +61,8 @@ const RUNTIME_SPECIFIERS = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react',
+  'lucide-react/dist/esm/lucide-react.js',
 ];
 
 /**

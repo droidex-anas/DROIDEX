@@ -41,6 +41,7 @@ const RUNTIME_ROOTS = [
   'postcss-value-parser',
   'react',
   'react-dom',
+  'lucide-react',
 ];
 
 // No runtime path reads these, and a packaged app may not carry source maps.
@@ -72,6 +73,7 @@ const PRUNED = {
   // React's NODE_ENV switch still resolve.
   'react-dom': (path) => /server|static|profiling|test-utils/.test(path),
   react: (path) => /react-server|profiling/.test(path),
+  'lucide-react': (path) => path.startsWith('dist/umd/') || path.startsWith('dynamicIconImports'),
   scheduler: (path) => /native|unstable_mock|unstable_post_task/.test(path),
 };
 
