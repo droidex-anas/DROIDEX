@@ -1287,17 +1287,22 @@ export class SessionLifecycle {
     // set are cleared here as they are for a typed turn.
     const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
     // A finished reply can lift an existing hold, but never a refusal that
-    // arrived while it ran, including from an overlapping typed turn.
-    if (end?.status === 'failed') {
-      if (end.error instanceof UsageLimitError) this.holdOnRefusal(liveSession, end.error);
-      else this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
-    } else if (
-      end?.status === 'completed' &&
-      !stopped &&
-      liveSession.summary.usageLimit === usageLimitAtStart &&
-      liveSession.summary.usageLimit
-    )
-      this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
+    // arrived while it ran, including from an overlapping typed turn. Writing
+    // the outcome can fail; the chat still settles below.
+    try {
+      if (end?.status === 'failed') {
+        if (end.error instanceof UsageLimitError) this.holdOnRefusal(liveSession, end.error);
+        else this.dependencies.registry.updateSummary(appSessionId, failedTurnSummary(end.error));
+      } else if (
+        end?.status === 'completed' &&
+        !stopped &&
+        liveSession.summary.usageLimit === usageLimitAtStart &&
+        liveSession.summary.usageLimit
+      )
+        this.dependencies.registry.updateSummary(appSessionId, { usageLimit: undefined });
+    } catch (error) {
+      this.dependencies.emitError({ appSessionId, message: errMsg(error) });
+    }
     // A typed turn still preparing or draining keeps the queue reserved.
     if (liveSession.turnPromise) return;
     liveSession.streaming = false;
