@@ -341,7 +341,9 @@ and warned, not failed, on shared runners. Bundle bytes stay gated by
 
 ## Build path
 
-`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus `sidecar/dist/historyPersistenceWorker.mjs`; Electron uses the former unless `SIDECAR_ENTRY` is set and packages both from `sidecar/dist`.
+`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus the `historyPersistenceWorker.mjs` and `compilerWorker.mjs` entries beside it; Electron uses the first unless `SIDECAR_ENTRY` is set and packages all three from `sidecar/dist`.
+
+Packaging adds one more resource beside that bundle. The design compiler loads esbuild, Tailwind, PostCSS and the React a design imports at run time, and a packaged app may not resolve them from a checkout or download them, so `npm run canvas:runtime` stages one complete runtime per architecture under `sidecar/canvas-runtime/<arch>` and `extraResources` copies the matching one to `resources/sidecar/canvas-runtime`. `electron/main.cjs` derives that directory from its own resources and hands it to the sidecar as `DROIDEX_CANVAS_RUNTIME_DIR`; `sidecar/src/canvas/canvasRuntime.ts` is the only reader, anchoring the compiler's `require` there and naming the owned `ESBUILD_BINARY_PATH` the forked compiler receives. Without that variable — any checkout, packaged or not — the compiler resolves from `sidecar/node_modules` exactly as it does in development. `npm run canvas:probe` compiles the design kit's own example through that contract with the network refused, and `npm run release:verify:mac` asserts the architecture's tree, its executable binary and the absence of the other architecture's.
 
 ## Update path
 

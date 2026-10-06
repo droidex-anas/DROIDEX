@@ -479,6 +479,72 @@ Settled by 03b (landed in `sidecar/src/canvas/{CanvasBuilds.ts,canvasBuildCache.
   rejected: its members are all thin accessors over a two-element array, and splitting it from the
   state registry would give one invariant two owners with a callback seam between them.
 
+Settled by 03d (landed in `sidecar/src/canvas/canvasRuntime.ts`, `tools/stage-canvas-runtime.mjs`,
+`tools/canvas-compiler-probe.ts`, `electron-builder.config.cjs`, `electron/{main.cjs,sidecar.cjs}`):
+
+- **One owner for "where is the Canvas runtime": the Electron host, through one variable.**
+  `electron/main.cjs` derives `resources/sidecar/canvas-runtime` from `process.resourcesPath` when
+  `app.isPackaged`, and `electron/sidecar.cjs` passes it as `DROIDEX_CANVAS_RUNTIME_DIR` (deleting
+  any ambient value otherwise, like `DROIDEX_HISTORY_DIR`). `canvasRuntime.ts` is the only reader:
+  it anchors the compiler's `require` at that directory or, unset, at its own
+  (`sidecar/src/canvas` under tsx, `sidecar/dist` built), and derives
+  `ESBUILD_BINARY_PATH` as `<dir>/node_modules/@esbuild/<platform>-<arch>/bin/esbuild`. The fork in
+  `compiler.ts` states `ELECTRON_RUN_AS_NODE=1` and that binary. The variable is app-private, so
+  both `childEnv` lists strip it from agent children. There is no third case and no fallback: a
+  packaged runtime that cannot be loaded fails as `compiler_unavailable`.
+- The worker loads `esbuild`, `tailwindcss`, `postcss` and `postcss-value-parser` through that one
+  anchor instead of importing them, so `build:compiler-worker` needs no `--external` flags at all
+  and the bundled entry resolves no bare specifier beside `sidecar/dist`. 03a's note that only
+  `react`/`react-dom` move is therefore superseded: a bundled ESM external would have resolved from
+  `resources/sidecar/node_modules`, which does not exist.
+- **As-is copy, pruned of what a compile cannot reach.** `npm run canvas:runtime` stages one
+  complete tree per architecture at `sidecar/canvas-runtime/<arch>/node_modules`, closing over
+  `dependencies` only and keeping nested duplicates where their dependent reads them, so Tailwind's
+  `__dirname` preflight loader and node resolution both work untouched. Dropping esbuild's own
+  binary copy, Tailwind's CLI and prebundled `peers`, Tailwind's `src` ESM mirror, and React's
+  server/profiling builds takes the staged tree from **36.75 MiB (1,443 files)** to **16.09 MiB
+  (903 files)** arm64. A dedicated bundle was not built: §6's bundled estimate for arm64 was
+  12,339,334 bytes (11.77 MiB), so the as-is copy costs 4,497,134 bytes more and keeps Tailwind's
+  preflight loader and node resolution working as installed.
+- **Measured packaged resources.** arm64 `resources/sidecar/canvas-runtime`: 902 files,
+  16,836,468 bytes (16.06 MiB), with `@esbuild/darwin-arm64/bin/esbuild` at 9,712,896 bytes, mode
+  755, Mach-O arm64 (electron-builder re-signs it, so it is 37,346 bytes smaller than the 9,750,242
+  npm ships). x64: 902 files, 17,656,684 bytes (16.84 MiB), binary 10,533,120 bytes, mode 755,
+  Mach-O x86_64. Each app carries only its own architecture's binary; the only staged file
+  electron-builder drops is `resolve`'s `.gitkeep` test fixture.
+- **electron-builder drops a copied directory's own top-level `node_modules`** (`createFilter` in
+  `app-builder-lib/out/util/filter.js`), which silently produced an app with no Canvas runtime at
+  all. The file set therefore names `sidecar/canvas-runtime/${arch}/node_modules` as its source.
+  `${arch}` is expanded in a file set's `from` and `to`, so one entry covers both architectures.
+- npm skips an optional dependency whose cpu does not match and refuses an explicit install of one
+  without `--force`, so the other architecture's esbuild binary is fetched into
+  `sidecar/canvas-runtime/.npm` while packaging, pinned to the installed esbuild version. Packaging
+  may reach the registry; a design compile may not, and does not.
+- **Offline packaged probe, run from inside the produced app.** `npm run canvas:probe --
+  release/mac-arm64/DROIDEX.app` forked
+  `Contents/Resources/sidecar/dist/compilerWorker.mjs` with `Contents/MacOS/DROIDEX` as `execPath`,
+  `ELECTRON_RUN_AS_NODE=1`, the owned runtime and binary, `PATH=/usr/bin:/bin`, an empty `HOME`, and
+  `net.connect`/`dns.lookup`/`http(s).request`/`fetch` replaced by throws in the child. It compiled
+  the kit's own `Hey.tsx` to artifact
+  `64dd3d94797e60278aa967ed683c5f26beac49a31477d1323f6427f3b8b2bd7b` (209,916 bytes) — byte for byte
+  the artifact the checkout produces. The probe also asserts every owned specifier resolves inside
+  the runtime, so a missing package fails instead of silently falling back.
+- **x64 was verified by inspection only, never executed**, on this arm64 machine: the x64 `--dir`
+  pack's resource tree, binary architecture, mode and the absence of the arm64 binary were checked
+  on disk. `release:verify:mac` makes the same assertions for both architectures and runs the probe
+  only for the architecture it is on.
+- **Dependency review: 4 prod findings to 12** (`npm --prefix sidecar audit --omit=dev`): before, 3
+  moderate + 1 critical, all through `@anthropic-ai/claude-agent-sdk` (`fast-uri`, `hono`,
+  `ip-address`, `proxy-addr`). After, +5 high and +2 moderate: `braces` (and `chokidar`,
+  `micromatch`, `fast-glob`, `tailwindcss` depending on it) and `postcss-selector-parser` (with
+  `postcss-nested`), plus `esbuild <= 0.24.2`. **No non-breaking upgrade removes any of them.**
+  3.4.19 is the last Tailwind 3.4; every published `braces` is in range; the
+  `postcss-selector-parser` fix is 7.1.6 and Tailwind 3 pins `^6.0.11`; the esbuild fix is 0.25+.
+  The esbuild advisory is its development server, which Canvas never starts — it calls `build()`
+  with `write: false`. Tailwind 4 is out of scope by instruction. **No Sonatype verdict is
+  claimed**: the `sonatype-guide` MCP server refused the configured token (HTTP 401,
+  `invalid_token`).
+
 
 
 - [ ] Add compile fixtures for working React state, CSS, relative modules, bad TSX, unsupported import and attempts to read outside the virtual tree. Reject undeclared packages, URL imports, Node builtins and filesystem escapes in the resolver. Never invoke generated source in the sidecar process.
