@@ -1344,6 +1344,71 @@ Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache pa
   This independent bound also applies at the worker reply and cache boundaries. These are
   probes, not timing assertions in unit tests.
 
+Settled by 08c (`src/features/canvas/{canvasSourceState.ts,CanvasSourcePanel.tsx,CanvasSourceEditor.tsx,CanvasSourceSlot.tsx}`
+and `canvas.readSource`):
+
+- The drawer is not CodeMirror. The repository ships `@codemirror/{state,view,commands,language,lang-markdown}`
+  for the composer, but no JavaScript, TypeScript, JSX or CSS grammar, and this plan asks for
+  explicit justification before a new grammar dependency. A CodeMirror core editor would
+  therefore show a design's `.tsx` and `.css` with no colour at all. The app's code colour is
+  `prism-react-renderer`, which already highlights TSX, CSS and JSON in the files pane, so the
+  editor is a transparent textarea laid over that highlight: the caret, selection, native undo
+  and platform keyboard behaviour come free, Cmd/Ctrl+S saves, Tab indents, and the colour is the
+  one shared theme. The Prism theme moved from `FilePreviewPane.tsx` to `src/lib/codeTheme.ts` so
+  the two surfaces cannot drift. Lines never wrap: that is what keeps the gutter, the highlight
+  and the caret on the same line as a build's diagnostics, and the textarea's own scrolling is
+  translated into the single shared scroller so the two layers cannot slide apart. The editor is
+  one 190-line file behind a lazy boundary with a six-prop contract, so swapping in CodeMirror
+  plus a grammar later is a contained change.
+- `canvasSourceState.ts` is a pure reducer and the drawer's only state. Buffers are keyed by frame
+  and then by path, so leaving a frame and coming back cannot lose an edit; only closing the
+  drawer discards them, and that asks first. A buffer holds the draft, the revision the edit began
+  from and the file as it read at that revision. `pendingWrite` is the single place a Save is
+  assembled: one write, one `expectedRevisionId`, every dirty path, and null while a conflict is
+  open or while a save is in flight.
+- A revision that lands while a buffer is dirty never replaces it. If the revision left that file
+  alone, only the buffer's base moves, because a Save naming the revision the text was typed on
+  would be refused for a change somewhere else in the tree. If the revision changed the file, the
+  buffer becomes a conflict carrying that revision's text (or null when it deleted the file) and
+  the drawer shows "Updated by agent" with Keep mine and Take theirs. Both texts are held — theirs
+  in `files`, the user's in the buffer — until the user picks. Keep mine rebases onto the
+  superseding revision so the next Save is accepted instead of rejected again; the agent's text
+  stays in its own revision either way. Text typed while a save is in flight stays dirty on top of
+  the revision that save produced.
+- Diagnostics are placed from the real build result, not re-derived. `buildDiagnostics` returns
+  nothing for a build that has not produced any yet, so a `building` frame never shows the last
+  failure as current. `placeIssues` pins a diagnostic to a file and a 1-based line only when the
+  file is one the frame actually lists: esbuild reports the pinned kit as `@droidex/design-system/...`
+  and a failure inside a generated module with no file at all, and both are listed without a place
+  rather than landing on the wrong line. `column` is esbuild's 0-based UTF-8 byte offset, so it is
+  shown in no caret and used for no mapping.
+- `canvas.readSource` is the drawer's read: the renderer had no way to read a revision's files, and
+  `CanvasWorkspace.readFiles` already existed for the agent. It is a derived read authorized like
+  `canvas.subscribe` by the page asking, bounded by `canvasIdentifierSchema` on all three
+  identifiers, it leaves the design's head alone, and `canvasFiles.readRevision` already refuses a
+  revision belonging to another design. The renderer's inbound validator bounds the reply at the
+  sidecar's own 64 files and 256-character paths.
+- `openSourcePanel(designId)` in `canvasState.ts` is the event 5d's toolbar dispatches. The drawer
+  follows its frame across every board change and closes only once that frame leaves the board, so
+  a rebuild or an arrange cannot strand it on a design that is gone. `CanvasSourceSlot` owns the
+  lazy boundary and the two bridge calls, which keeps `CanvasWorkspace.tsx` at 488 lines.
+- 08c merged `thread/canvas-05a-canvas-pane` because 08a's base has no Canvas pane: nothing could
+  import the drawer, so it could be neither seen in the running app nor measured in the bundle.
+  Until the board mounts in 5b, 05a's placeholder plate offers Source per frame; 5c and 5d replace
+  that placeholder wholesale.
+- Measured: entry 1,433,651 bytes against the 1,434,000 line, largest lazy chunk 691,095, and the
+  drawer's own chunks 10,671 (panel) and 2,822 (editor), both lazy. Prism lands in one shared
+  chunk, so the duplicate-dependency scan stays clean. CSS is 102,189, which needed
+  `initialCssBytes` raised from 101,500 to 103,200: the Canvas pane alone measures 100,978 — 522
+  under the old line before the drawer existed — and the drawer's chrome is ~1,350. Trimming its
+  one-off utilities to the shared scale recovered 42 bytes, so the raise is the honest accounting,
+  and `tools/check-bundle-budgets.mjs` carries it. `reduceCanvasPane` goes from a complexity
+  warning of 18 to 22 for the two drawer events, and `isReply` from 17 to 18 for the `source`
+  reply; both were already over the advisory line and neither is an error.
+- Deferred to 08d and later: revision comparison and the side-by-side diff a conflict could offer
+  (the drawer states both sides and keeps them, but does not draw a diff yet), creating, deleting
+  or renaming files from the drawer, and a read-only view of an older revision. Nothing autosaves.
+
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.
 - [ ] Add a focused round-trip regression whose meaningful contract is source preservation:
