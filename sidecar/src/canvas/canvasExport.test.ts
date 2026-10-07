@@ -91,6 +91,7 @@ test('exports the exact revision, referenced image, pinned kit, and private-free
     `assets/${assetId}`,
     'build.mjs',
     'canvas-export/modes.json',
+    'canvas-export/tailwind-config.json',
     ...Object.keys(system.files).map((path) => `design-system/${path}`),
     `fonts/${fontId}.woff2`,
     'package.json',
@@ -186,7 +187,7 @@ test('the exported Hey starter builds and serves outside the checkout without a 
   await mkdir(join(root, 'canvases', canvasId, 'assets'), { recursive: true });
   await writeFile(join(root, 'canvases', canvasId, 'assets', assetId), image);
   const source = `import { Card } from '@droidex/design-system';
-export default function Hey() { return <Card><img src="canvas-asset:${assetId}" alt="Hey" /></Card>; }`;
+export default function Hey() { return <Card className="dark:bg-black"><img src="canvas-asset:${assetId}" alt="Hey" /></Card>; }`;
   await saveRevision(root, { 'main.tsx': source }, defaultKit);
   await exportCanvasSource(canvasId, ref, destination);
   const sidecarModules = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules');
@@ -219,5 +220,7 @@ export default function Hey() { return <Card><img src="canvas-asset:${assetId}" 
   assert.match(script, /Hey/);
   assert.equal(asset.headers.get('content-type'), 'image/png');
   assert.deepEqual(Buffer.from(await asset.arrayBuffer()), image);
-  assert.match(await readFile(join(destination, 'dist/style.css'), 'utf8'), /--ds-accent/);
+  const stylesheet = await readFile(join(destination, 'dist/style.css'), 'utf8');
+  assert.match(stylesheet, /--ds-accent/);
+  assert.ok(stylesheet.includes(String.raw`.dark\:bg-black:where([data-mode='dark']`));
 });

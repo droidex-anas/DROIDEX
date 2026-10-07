@@ -221,15 +221,18 @@ function modeTokens(system: DesignSystem): string {
     .join('\n');
 }
 
+export const CANVAS_TAILWIND_OPTIONS = {
+  darkMode: ['selector', "[data-mode='dark']"],
+  theme: {},
+  plugins: [],
+} satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
+
 function tailwindConfig(files: SourceFiles, system: DesignSystem): Config {
   return {
     // Every design and kit file is scanned, so a class only appears when some
     // source literally spells it out; no partial class names are guessed.
     content: [...rawSources(system.files), ...rawSources(files)],
-    // The kit's dark values live under the same attribute the document carries.
-    darkMode: ['selector', "[data-mode='dark']"],
-    theme: {},
-    plugins: [],
+    ...CANVAS_TAILWIND_OPTIONS,
   };
 }
 

@@ -11,6 +11,7 @@ import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
 import { readDesignSystem } from './designSystems.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
+import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
@@ -55,6 +56,10 @@ export async function exportCanvasSource(
   files.push({
     path: 'canvas-export/modes.json',
     content: `${JSON.stringify({ selected: saved.designSystem.mode, modes: kit.modes }, null, 2)}\n`,
+  });
+  files.push({
+    path: 'canvas-export/tailwind-config.json',
+    content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
   });
 
   const assetIds = new Set<string>();
@@ -309,6 +314,7 @@ async function filesIn(directory) {
 const source = await filesIn('src');
 const kit = await filesIn('design-system');
 const modes = JSON.parse(await readFile('canvas-export/modes.json', 'utf8'));
+const tailwindOptions = JSON.parse(await readFile('canvas-export/tailwind-config.json', 'utf8'));
 const tokens = ['light', 'dark'].map((mode) => {
   const selector = mode === modes.selected ? ':root' : '[data-mode="' + mode + '"]';
   return selector + '{' + Object.entries(modes.modes[mode]).map(([key, value]) => key + ':' + value + ';').join('') + '}';
@@ -318,7 +324,7 @@ let css = '@tailwind base;\\n@tailwind components;\\n' + tokens + '\\n';
 for (const path of cssFiles) css += await readFile(path, 'utf8') + '\\n';
 css += '@tailwind utilities;\\n';
 const content = await Promise.all([...source, ...kit].filter((path) => /\\.[jt]sx?$/.test(path)).map((path) => readFile(path, 'utf8')));
-const stylesheet = await postcss([tailwindcss({ content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
+const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
 await mkdir('dist', { recursive: true });
 const assetUrl = (text) => text.replace(/canvas-asset:([0-9a-f]{64})\\b/g, '/assets/$1');
 await writeFile('dist/style.css', assetUrl(stylesheet.css));
