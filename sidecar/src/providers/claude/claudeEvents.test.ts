@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { TranscriptEvent } from '../../protocol.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
+import { SessionEventFlow } from '../../SessionEventFlow.js';
+import { SessionTimeline } from '../../SessionTimeline.js';
+import { ProviderTranscriptFile } from '../ProviderTranscriptFile.js';
+import { parseFullSessionTranscript } from '../../sessionTranscript.js';
+import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 
 // The cross-provider contract: a Claude turn has to reach the transcript in the
 // same shapes Droid writes, and the SDK repeats every block as a snapshot, so
@@ -92,6 +100,141 @@ test('a message that streamed nothing is reported from its snapshot', () => {
       ['error', 'rate_limit', 'usage_limit'],
     ],
   );
+});
+
+test('a Canvas assistant error body is a correlated tool result, not assistant prose', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-canvas-error-'));
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = directory;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const canary = 'CANVAS_INTERNAL_GUIDANCE_7E4B';
+  const summary = sessionSummary({ appSessionId: 'app-1', provider: 'claude' });
+  const file = new ProviderTranscriptFile(summary.appSessionId, () => summary);
+  const recorded: TranscriptEvent[] = [];
+  const emitted: TranscriptEvent[] = [];
+  const timeline = new SessionTimeline({
+    registry: { resolveSummary: () => summary, getLive: () => true },
+    history: {
+      recordEvent: (event) => {
+        recorded.push(event);
+      },
+    },
+    getChildSessions: () => [],
+    emit: (event) => {
+      if (event.type === 'event.appended') emitted.push(event.event);
+    },
+    emitError: (error) => {
+      throw new Error(error.message);
+    },
+    streamingCoalesceMs: 1000,
+  });
+  timeline.useTranscript(summary.appSessionId, file);
+  const flow = new SessionEventFlow({
+    appendTranscript: (event) => timeline.appendStreaming(event),
+    flushTranscript: (app, source) => timeline.flushStreamingFor(app, source),
+    applySideEffects: () => undefined,
+    resolveChildScope: () => ({ childSessionId: 'child-1', role: 'worker' }),
+    recordUsage: () => undefined,
+  });
+  await timeline.announcePrompt('app-1', `Please show ${canary}`);
+  const mapper = new ClaudeEventMapper('app-1');
+  for (const text of ['Ordinary ', 'reply.']) {
+    for (const event of mapper.map(
+      streamEvent({
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text },
+      }),
+    ))
+      flow.apply('app-1', 'app-1', 'primary', event);
+  }
+  assert.equal(recorded.length, 0, 'the real timeline coalescer buffers assistant deltas');
+  const events = mapper.map(
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'spawn-1',
+      error: 'unknown',
+      message: {
+        content: [
+          { type: 'text', text: 'Tool failed: CANVAS_INTERNAL_GUIDANCE_7E4B' },
+          {
+            type: 'tool_use',
+            id: 'canvas-error',
+            name: 'mcp__droidex-canvas__canvas_write',
+            input: { designId: 'design-1' },
+          },
+        ],
+      },
+    }),
+  );
+  for (const event of events) flow.apply('app-1', 'app-1', 'primary', event);
+  const streamedCall = {
+    type: 'tool_use',
+    id: 'canvas-streamed-error',
+    name: 'mcp__droidex-canvas__canvas_write',
+    input: { designId: 'design-2' },
+  };
+  for (const entry of [
+    streamEvent({ type: 'content_block_start', index: 0, content_block: streamedCall }, 'spawn-1'),
+    streamEvent(
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '{"designId":"design-2"}' },
+      },
+      'spawn-1',
+    ),
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'spawn-1',
+      error: 'unknown',
+      message: { content: [streamedCall, { type: 'text', text: `Tool failed: ${canary}` }] },
+    }),
+    streamEvent({ type: 'content_block_stop', index: 0 }, 'spawn-1'),
+  ]) {
+    for (const event of mapper.map(entry)) flow.apply('app-1', 'app-1', 'primary', event);
+  }
+  await timeline.settleStreaming('app-1', 'app-1');
+  const childPath = join(directory, 'provider-sessions', 'child-1.jsonl');
+  const replay = parseFullSessionTranscript('app-1', 'child-1', childPath, 'worker');
+  for (const rows of [recorded, emitted.filter((row) => row.author !== 'user'), replay]) {
+    assert.ok(!JSON.stringify(rows).includes(canary));
+    const result = rows.find((row) => row.kind === 'tool_result');
+    assert.equal(result?.canvasActivity?.state, 'failed');
+    assert.deepEqual(result?.canvasActivity?.designIds, ['design-1']);
+    assert.equal(result?.sourceSessionId, 'child-1');
+    assert.deepEqual(
+      rows.filter((row) => row.kind === 'tool_result').map((row) => row.canvasActivity?.state),
+      ['failed', 'failed'],
+    );
+    assert.equal(rows.filter((row) => row.kind === 'tool_call').length, 2);
+    const streamedResult = rows.find(
+      (row) => row.toolUseId === streamedCall.id && row.kind === 'tool_result',
+    );
+    assert.deepEqual(streamedResult?.canvasActivity?.designIds, ['design-2']);
+    assert.equal(streamedResult?.sourceSessionId, 'child-1');
+  }
+  assert.ok(!readFileSync(childPath, 'utf8').includes(canary));
+  assert.equal(recorded.find((row) => row.kind === 'text')?.text, 'Ordinary reply.');
+  assert.equal(emitted.find((row) => row.author === 'user')?.text, `Please show ${canary}`);
+  assert.equal((await file.read()).split(canary).length - 1, 1);
+  assert.deepEqual(
+    events.map(({ transcript, childOwner }) => [
+      transcript?.kind,
+      transcript?.toolUseId,
+      childOwner?.id,
+    ]),
+    [
+      ['tool_call', 'canvas-error', 'spawn-1'],
+      ['tool_result', 'canvas-error', 'spawn-1'],
+    ],
+  );
+  assert.equal(events[1].transcript?.isError, true);
+  assert.equal(events[1].transcript?.text, 'Tool failed: CANVAS_INTERNAL_GUIDANCE_7E4B');
 });
 
 test('a tool call carries its streamed input and pairs with its result by id', () => {

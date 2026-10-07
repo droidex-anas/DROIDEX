@@ -59,6 +59,7 @@ flowchart LR
 - Approval and question requests carry stable `requestId`s. The renderer keeps each session's pending requests in arrival order and settles only the matching id; consumers display the first pending request. Questions retain headers, option descriptions, and multiple selections as `{ selected: string[], custom?: string }` answers. Claude serializes selections into its question-text keyed answer map; Codex keeps arrays; Droid receives its scalar answer at its adapter boundary.
 - Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal.
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
+- Canvas tool calls are identified by their reserved MCP server, tool name, and tool-use ID. `SessionEventFlow` projects their arguments and results to `CanvasActivity` before recording or emitting them. App-owned provider files store the projected rows and the live call's occurrence ID, preserving saved frame names and revisions across reload. Droid's native file stays provider-owned, with safe occurrence-specific correlations stored beside the app profile. Backward and oversized eager replay resolve each result against its preceding call, including calls outside the page or byte window, without sharing mutable projection state across pages.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
@@ -348,6 +349,25 @@ capacity. Only a PID-less failed spawn may settle on close. Shutdown revokes
 turn and watch authority and closes workspace publication synchronously before
 awaiting process and storage cleanup. Already-renamed durable mutations finish
 successfully; build publication checks the captured job at the final manifest rename.
+
+### Canvas agent tools
+
+Each chat gets one local `droidex-canvas` MCP server with six tools: read, create,
+write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
+`canvas_read` returns that chat's newest live lease. Every mutation requires its
+explicit `scopeId`; retries keep the original scope and cannot borrow a later
+turn's authority. Named leases expire when their turn or provider ends.
+`canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
+`CanvasWorkspace` owns board
+mutations, including retry receipts and attachment bootstrap; the design-system
+store owns immutable kit versions. Droid and Claude use
+the per-chat loopback endpoint; Codex declares the same tools through dynamic
+tools on thread start. Claude's session-local `PreToolUse` hook pins both
+`canvas_read` and `canvas_inspect` tool-use IDs to their original leases. Child
+runtimes do not inherit the parent's Canvas endpoint without an assigned child
+scope. Agent inspection currently
+returns build diagnostics; screenshot and element capture report
+`capture_unavailable` until a scoped capture API exists.
 
 ### Canvas live previews
 

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import fs, { mkdir, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { canvasDir } from '../droidexPaths.js';
+import { deferred } from '../testing/canvasStorageSupport.js';
 import { CanvasCommandError } from './canvasError.js';
 import {
   DESIGN_SYSTEM_LIMITS,
@@ -152,6 +155,106 @@ test('a published version never changes', async () => {
   );
 });
 
+test('a saved version answers a lost-response retry only for the original mutation and content', async () => {
+  const kit = userKit('retry-kit');
+  const mutationId = 'save-retry-kit';
+  const first = await saveDesignSystem(kit, { mutationId });
+
+  assert.deepEqual(await saveDesignSystem(kit, { mutationId }), first);
+  await assert.rejects(saveDesignSystem({ ...kit, name: 'Different' }, { mutationId }), {
+    code: 'invalid_input',
+  });
+  await assert.rejects(saveDesignSystem(kit, { mutationId: 'other-save' }), {
+    code: 'invalid_input',
+  });
+  assert.deepEqual(await readDesignSystem(first), kit);
+});
+
+test(
+  'a save retry refuses a failed directory sync and flushes the whole chain after recovery',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const kit = userKit('failed-sync-kit');
+    const mutationId = 'save-failed-sync-kit';
+    const root = canvasDir();
+    const directory = join(root, 'design-systems', kit.id);
+    const directories = [dirname(root), root, join(root, 'design-systems'), directory];
+    const syncs: string[] = [];
+    let failing = true;
+    t.mock.method(console, 'error', () => undefined);
+    observeDirectorySync(t, (path) => {
+      syncs.push(path);
+      if (path === directory && failing)
+        throw Object.assign(new Error('Injected directory sync failure'), { code: 'EIO' });
+    });
+
+    await assert.rejects(saveDesignSystem(kit, { mutationId }), { code: 'storage_failed' });
+    assert.deepEqual(await readDesignSystem({ id: kit.id, version: 1, mode: 'light' }), kit);
+    syncs.length = 0;
+    await assert.rejects(saveDesignSystem(kit, { mutationId }), { code: 'storage_failed' });
+    assert.deepEqual(syncs, directories);
+
+    failing = false;
+    syncs.length = 0;
+    const receipt = await saveDesignSystem(kit, { mutationId });
+    assert.deepEqual(receipt, { id: kit.id, version: 1, mode: 'light' });
+    assert.deepEqual(syncs, directories);
+    assert.deepEqual(await readDesignSystem(receipt), kit);
+    assert.deepEqual(await readdir(directory), ['1.json']);
+  },
+);
+
+test(
+  'an overlapping save retry waits for directory durability and returns the same single version',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const kit = userKit('pending-sync-kit');
+    const mutationId = 'save-pending-sync-kit';
+    const directory = join(canvasDir(), 'design-systems', kit.id);
+    const firstSync = deferred();
+    const retrySync = deferred();
+    const release = deferred();
+    let syncCount = 0;
+    let receiptCount = 0;
+    observeDirectorySync(t, async (path) => {
+      if (path !== directory) return;
+      syncCount += 1;
+      if (syncCount === 1) firstSync.resolve();
+      else retrySync.resolve();
+      await release.promise;
+    });
+    const first = saveDesignSystem(kit, { mutationId }).then((receipt) => {
+      receiptCount += 1;
+      return receipt;
+    });
+    await firstSync.promise;
+    const retry = saveDesignSystem(kit, { mutationId }).then((receipt) => {
+      receiptCount += 1;
+      return receipt;
+    });
+
+    try {
+      assert.equal(
+        await Promise.race([
+          retrySync.promise.then(() => 'flushing'),
+          retry.then(() => 'acknowledged'),
+        ]),
+        'flushing',
+        'a readable version is not yet a durable receipt',
+      );
+      assert.equal(receiptCount, 0);
+      release.resolve();
+      const receipt = { id: kit.id, version: 1, mode: 'light' } as const;
+      assert.deepEqual(await Promise.all([first, retry]), [receipt, receipt]);
+      assert.deepEqual(await readDesignSystem(receipt), kit);
+      assert.deepEqual(await readdir(directory), ['1.json']);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([first, retry]);
+    }
+  },
+);
+
 test('a built-in id cannot be shadowed by a user kit', async () => {
   await assert.rejects(saveDesignSystem(userKit('droidex')), CanvasCommandError);
 });
@@ -268,6 +371,30 @@ async function scratchDirectory(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-canvas-kit-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return directory;
+}
+
+function observeDirectorySync(
+  t: TestContext,
+  observe: (path: string) => void | Promise<void>,
+): void {
+  const open = fs.open;
+  const mockedOpen = t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+    const file = await open(...args);
+    const [path, flags] = args;
+    if (typeof path === 'string' && flags === constants.O_RDONLY) {
+      const sync = file.sync.bind(file);
+      t.mock.method(file, 'sync', async () => {
+        await observe(path);
+        await sync();
+      });
+    }
+    return file;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mockedOpen.mock.restore();
+    syncBuiltinESMExports();
+  });
 }
 
 function userKit(id: string): DesignSystem {
