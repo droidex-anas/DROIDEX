@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
+  openSourceFrame,
+  openSourcePanel,
   reduceCanvasPane,
   watchedCanvasId,
   type CanvasPaneState,
@@ -98,6 +100,7 @@ test('snapshots move the projection forward only', () => {
     status: 'ready',
     canvasId: 'canvas-1',
     snapshot: snapshot(4, ['Pricing']),
+    sourceDesignId: null,
   });
 
   // A resync answers with a snapshot taken before the changes already applied.
@@ -163,4 +166,33 @@ test('a failed read offers a retry that starts the pane over', () => {
     message: 'The runtime did not answer that Canvas request.',
   });
   assert.deepEqual(reduceCanvasPane(failed, { type: 'reopened' }), { status: 'opening' });
+});
+
+test('the source drawer follows its frame and closes when the frame is gone', () => {
+  const ready = apply(initialCanvasPaneState('canvas-1'), {
+    type: 'snapshot',
+    snapshot: snapshot(4, ['Pricing', 'Hey']),
+  });
+  assert.equal(openSourceFrame(ready), null);
+
+  const open = reduceCanvasPane(ready, openSourcePanel('design-1'));
+  assert.equal(openSourceFrame(open)?.name, 'Hey');
+
+  // A change on the board leaves the drawer on its own frame.
+  const moved = reduceCanvasPane(open, {
+    type: 'snapshot',
+    snapshot: snapshot(5, ['Pricing', 'Hi']),
+  });
+  assert.equal(openSourceFrame(moved)?.name, 'Hi');
+
+  // The frame leaving the board closes the drawer rather than showing nothing.
+  const removed = reduceCanvasPane(moved, { type: 'snapshot', snapshot: snapshot(6, ['Pricing']) });
+  assert.equal(openSourceFrame(removed), null);
+
+  assert.equal(openSourceFrame(reduceCanvasPane(open, { type: 'close-source' })), null);
+  // A pane with no board has no drawer to open.
+  assert.equal(
+    reduceCanvasPane({ status: 'opening' }, openSourcePanel('design-1')).status,
+    'opening',
+  );
 });
