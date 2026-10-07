@@ -22,6 +22,7 @@ import {
   drained,
   readyElementMap,
   readyState,
+  recoverArtifact,
   reportedStates,
   savedManifest,
 } from '../testing/canvasBuildFixtures.js';
@@ -199,7 +200,7 @@ test('a build whose commit fails leaves memory and disk agreeing', async (t) => 
   // its next snapshot. The artifact is cached too: it was written before the
   // commit that would have published the frame.
   assert.equal(canvas.frame(designId).build.status, 'ready');
-  const cached = await canvas.builds.readArtifact(canvas.canvasId, designId, receipt.revisionId);
+  const cached = await recoverArtifact(canvas, designId, receipt.revisionId);
   assert.equal(cached?.artifactId, 'artifact-one');
   assert.match(cached?.html ?? '', /<html>/);
   // Closing waits for the refused commit to reconcile the head from disk.
@@ -228,7 +229,7 @@ test('a lost artifact for the current revision is rebuilt, not just reported', a
   // else would ask for this design again: the sweep only takes `pending` and
   // `cancelled` frames, and this frame is `ready`.
   await rm(join(canvas.store.root, canvas.canvasId, 'builds', 'artifact-one.html'));
-  assert.equal(await canvas.builds.readArtifact(canvas.canvasId, designId, head.revisionId), null);
+  assert.equal(await recoverArtifact(canvas, designId, head.revisionId), null);
 
   // Queued by the read itself, so the frame is already building for the same
   // revision under a later generation.
@@ -242,7 +243,7 @@ test('a lost artifact for the current revision is rebuilt, not just reported', a
   assert.deepEqual(canvas.frame(designId).build, readyState(head.revisionId, 'artifact-two', 2));
   // The document the frame now names is on disk, which is what the read that
   // queued this rebuild could not find.
-  const rebuilt = await canvas.builds.readArtifact(canvas.canvasId, designId, head.revisionId);
+  const rebuilt = await recoverArtifact(canvas, designId, head.revisionId);
   assert.equal(rebuilt?.artifactId, 'artifact-two');
 });
 
@@ -258,10 +259,7 @@ test('a lost fallback revision is a placeholder, never a rebuild', async (t) => 
   // The frame has moved past this revision, so asking for its lost artifact
   // queues nothing: rebuilding a revision that is not the head is Task 5's.
   await rm(join(canvas.store.root, canvas.canvasId, 'builds', 'artifact-working.html'));
-  assert.equal(
-    await canvas.builds.readArtifact(canvas.canvasId, designId, working.revisionId),
-    null,
-  );
+  assert.equal(await recoverArtifact(canvas, designId, working.revisionId), null);
 
   assert.deepEqual(canvas.frame(designId).build, failed);
   assert.equal(canvas.fleet.held.length, 2, 'no third compile was queued');
@@ -288,13 +286,10 @@ test('a failed revision keeps the last working artifact and its revision', async
   assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, working.revisionId);
   // The working artifact is still there to show beside the diagnostics, and the
   // revision that failed has none of its own to offer.
-  const fallback = await canvas.builds.readArtifact(canvas.canvasId, designId, working.revisionId);
+  const fallback = await recoverArtifact(canvas, designId, working.revisionId);
   assert.equal(fallback?.artifactId, 'artifact-working');
   assert.match(fallback?.html ?? '', /<html>/);
-  assert.equal(
-    await canvas.builds.readArtifact(canvas.canvasId, designId, broken.revisionId),
-    null,
-  );
+  assert.equal(await recoverArtifact(canvas, designId, broken.revisionId), null);
 
   const reopened = await board(t, { store: canvas.store });
   // The same outcome, restored on attempt zero: this session has built nothing.

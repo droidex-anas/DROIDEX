@@ -379,6 +379,8 @@ export async function buildHost(
 /** A real workspace over scratch storage, with the compiler under test control. */
 export async function board(t: TestContext, options: BoardOptions = {}): Promise<Board> {
   const store = options.store ?? (await storage(t));
+  // Reusing storage models a restart, not a second concurrent writer.
+  for (const close of store.closing.splice(0)) await close();
   const root = store.root;
   const fleet = new CompilerFleet();
   const deadlines = fakeDeadlines();

@@ -312,6 +312,34 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas storage and bridge
+
+`CanvasWorkspace` owns the durable manifests, source revisions, attachments and
+serialized commits. Opening canonicalizes the physical Canvas root and claims
+its SQLite writer lease before loading heads or sweeping temporaries. Linked
+roots therefore share one writer, even across separate profiles. A live owner
+refuses a second open with `storage_failed`; an atomic lease transaction
+reclaims only an owner whose process is known to have exited. Malformed leases
+or uncertain process liveness are refused rather than guessed. Close rejects
+queued commits and new mutations immediately, independently of active I/O.
+It still waits for admitted staging and active durable writes before releasing
+the lease; a failed open releases it too.
+
+The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
+remove watches synchronously. Removing the last pane watching a canvas cancels
+its queued and running builds through `cancelCanvas` only when `CanvasScopes`
+holds no active turn lease for that canvas. Accepted builds remain wanted while
+an agent turn owns the canvas, even with its pane closed. Cancellation leaves
+another watched canvas and another pane on the same canvas alone.
+A subscribe captures its own subscription identity before awaiting storage.
+Unsubscribe, page loss or a replacement subscription invalidates that identity,
+so a late answer cannot reinstall a watch or schedule rebuilds for a closed pane.
+Artifact reads capture the current subscribers and turn leases before awaiting
+storage. A cache miss admits a rebuild only if a captured subscription or a
+captured turn lease covering the design is still current after the read.
+Replacement panes and turns cannot revive an abandoned read. Reads without a
+live owner can still serve cached artifacts but admit no recovery work.
+
 ### Canvas live previews
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it

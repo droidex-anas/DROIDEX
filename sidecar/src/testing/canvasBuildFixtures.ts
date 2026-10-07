@@ -65,3 +65,8 @@ export function readyState(
 ): CanvasBuildState {
   return { status: 'ready', revisionId, artifactId, elements: [], diagnostics: [], generation };
 }
+
+/** The fixture owns recovery of its accepted revision independently of renderer watches. */
+export function recoverArtifact(canvas: Board, designId: string, revisionId: string) {
+  return canvas.builds.readArtifact(canvas.canvasId, designId, revisionId, () => true);
+}

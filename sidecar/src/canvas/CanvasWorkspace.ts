@@ -1,8 +1,6 @@
-// The durable owner of every canvas: frames, layout, immutable source
-// revisions, attachments and mutation retries (spec §7). Commits run one at a
-// time, each one writes and flushes its revision tree before it replaces a
-// manifest, and the lease is checked once more with the replacement ready and
-// nothing published. `canvasHeads.ts` owns which manifest is current.
+// The durable owner of Canvas frames, immutable source, attachments and retries.
+// Revision staging precedes serialized manifest publication; its final gate
+// checks lease and job identity. CanvasHeads owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
 import type { CanvasBuilds } from './CanvasBuilds.js';
@@ -15,6 +13,7 @@ import { CanvasFrameEdits } from './CanvasFrameEdits.js';
 import { placeFrames, requireSeedFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
   canvasChange,
   canvasSnapshot,
@@ -60,24 +59,29 @@ export class CanvasWorkspace {
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
+    private readonly writerLease: CanvasWriterLease,
   ) {
     this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
   }
 
-  /**
-   * Opens the storage root and hands the build registry the canvases it serves,
-   * so every frame projected from here reports a real build state.
-   */
+  /** Claims the physical storage root before loading heads or cleaning staging. */
   static async open(
     directory: string,
     builds: CanvasBuilds,
     deps: CanvasWorkspaceDeps,
   ): Promise<CanvasWorkspace> {
-    const files = new CanvasFiles(directory, deps.fs);
-    const heads = await CanvasHeads.load(files);
-    const workspace = new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads), builds);
-    await builds.load(workspace, files, heads.all());
-    return workspace;
+    const writerLease = await CanvasWriterLease.acquire(directory);
+    try {
+      const files = new CanvasFiles(writerLease.directory, deps.fs);
+      const heads = await CanvasHeads.load(files);
+      const leases = new CanvasLeases(deps, heads);
+      const workspace = new CanvasWorkspace(files, heads, leases, builds, writerLease);
+      await builds.load(workspace, files, heads.all());
+      return workspace;
+    } catch (error) {
+      writerLease.release();
+      throw error;
+    }
   }
 
   snapshot(canvasId: string): CanvasSnapshot {
@@ -406,6 +410,7 @@ export class CanvasWorkspace {
     await this.commits.drain();
     this.leases.forget();
     this.changes.clear();
+    this.writerLease.release();
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */
