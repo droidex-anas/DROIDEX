@@ -7,10 +7,8 @@ export function BrowserReferenceChip({ reference }: { reference: BrowserTranscri
   const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
   const [open, setOpen] = useState(false);
   const [failedThumbnailSrc, setFailedThumbnailSrc] = useState<string | null>(null);
-  const title = reference.selector
-    ? `${reference.selector}\n${reference.url ?? ''}`
-    : (reference.url ?? `Design reference: ${reference.label}`);
   const label = `@${reference.label}`;
+  const title = [reference.label, reference.selector, reference.url].filter(Boolean).join('\n');
 
   if (reference.imageDataUrl) {
     const thumbnailFailed = failedThumbnailSrc === reference.imageDataUrl;
