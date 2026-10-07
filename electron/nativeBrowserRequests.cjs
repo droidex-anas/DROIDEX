@@ -245,6 +245,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   async function performAction(request) {
     assertAccess(request);
     const outcome = await manager.runAgentAction(agentAction(request));
+    assertAccess(request);
     return result(request, outcome.ok, {
       snapshot: outcome.snapshot,
       inspection: outcome.inspection,
@@ -267,8 +268,11 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
         action: 'snapshot',
         // New console errors count from when the request came.
         receivedAt: request.receivedAt,
+        startBy: request.startBy,
+        runEnded: request.runEnded,
       })
       .catch(() => undefined);
+    assertAccess(request);
     return outcome?.ok && outcome.snapshot
       ? { snapshot: outcome.snapshot, text: outcome.text }
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };

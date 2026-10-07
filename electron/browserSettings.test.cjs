@@ -4,8 +4,9 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { createBrowserSettingsController } = require('./browserSettings.cjs');
+const { createBrowserPromptController } = require('./browserPrompt.cjs');
 
-async function fixture(t) {
+async function fixture(t, overrides = {}) {
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'droidex-browser-settings-'));
   t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
   const prompts = [];
@@ -17,6 +18,7 @@ async function fixture(t) {
       prompts.push(prompt);
       return { response: responses.shift() ?? prompt.cancelId };
     },
+    ...overrides,
   };
   const controller = createBrowserSettingsController(options);
   await controller.initialize();
@@ -39,7 +41,7 @@ test('browser policies default safely and persist across restarts', async (t) =>
   assert.equal(restarted.snapshot().showAgentCursor, false);
   assert.throws(() => restarted.assertAgentAccess(), /Agent browser access is off/);
   const saved = JSON.parse(await fs.readFile(controller.settingsPath, 'utf8'));
-  assert.equal(saved.version, 4);
+  assert.equal(saved.version, 5);
   assert.equal(saved.agentAccessEnabled, false);
   assert.equal((await fs.stat(controller.settingsPath)).mode & 0o777, 0o600);
 });
@@ -128,4 +130,70 @@ test('a failed settings write leaves the active policy intact and later writes c
   t.mock.restoreAll();
   await controller.update({ agentAccessEnabled: false });
   assert.throws(() => controller.assertAgentAccess(), /Agent browser access is off/);
+});
+
+test('renderer teardown cancels active and queued settings changes without native prompts or writes', async (t) => {
+  const shown = Promise.withResolvers();
+  let nativePrompts = 0;
+  const prompts = createBrowserPromptController({
+    isAvailable: () => true,
+    send: shown.resolve,
+    showNative: async () => {
+      nativePrompts++;
+      return { response: 0 };
+    },
+  });
+  t.after(() => prompts.cancelAll());
+  prompts.setRendererReady(true);
+  const { controller } = await fixture(t, { showPrompt: prompts.request });
+  await controller.update({ showAgentCursor: true });
+  const saved = await fs.readFile(controller.settingsPath, 'utf8');
+  const updates = [
+    controller.update({ diagnosticsEnabled: true }),
+    controller.update({ navigationApproval: 'never_ask' }),
+    controller.update({ showAgentCursor: false }),
+  ];
+  const cancelled = updates.map((update) => assert.rejects(update, /renderer closed/));
+  await shown.promise;
+  controller.cancelPendingUpdates();
+  prompts.setRendererReady(false);
+  await Promise.all(cancelled);
+
+  assert.equal(nativePrompts, 0);
+  assert.equal(controller.snapshot().diagnosticsEnabled, false);
+  assert.equal(controller.snapshot().showAgentCursor, true);
+  assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), saved);
+  await controller.update({ showAgentCursor: false });
+  assert.equal(controller.snapshot().showAgentCursor, false);
+});
+
+test('protection confirmation names every reduced setting and its previous and requested values', async (t) => {
+  const { controller, prompts } = await fixture(t);
+  await controller.update({
+    agentAccessEnabled: false,
+    loginFillApproval: 'never',
+    navigationApproval: 'always_ask',
+  });
+  const before = controller.snapshot();
+  assert.deepEqual(
+    await controller.update({
+      agentAccessEnabled: true,
+      diagnosticsEnabled: true,
+      navigationApproval: 'never_ask',
+      loginFillApproval: 'always_ask',
+      sitePermissionMode: 'ask',
+      askDownloadLocation: false,
+      showAgentCursor: false,
+    }),
+    before,
+  );
+  assert.deepEqual(prompts[0].detail.split('\n\n')[0].split('\n'), [
+    'Agent browser access: Off → On',
+    'Agent browser diagnostics: Off → On',
+    'Website opening approval: Always ask → Full site access',
+    'Agent login fill: Never use → Always ask',
+    'Camera and microphone: Block → Ask me',
+    'Ask where to save downloads: On → Off',
+  ]);
+  assert.equal(prompts.length, 1);
 });

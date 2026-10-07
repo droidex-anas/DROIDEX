@@ -275,6 +275,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  browserSettings.cancelPendingUpdates();
   browserPrompts.setRendererReady(false);
   sidecarSupervisor.stop();
   githubVcs.cancelSetup();
@@ -360,6 +361,7 @@ function createMainWindow() {
   });
 
   mainWindow.on('closed', () => {
+    browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(false);
     rendererOomRecovery.cancel();
     githubVcs.cancelSetup();
@@ -965,6 +967,7 @@ function registerIpc() {
   });
   ipcMain.handle('browser-permission-prompt-ready', (event, ready) => {
     assertMainRenderer(event);
+    if (ready === false) browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(ready);
   });
   ipcMain.handle('browser-permission-prompt-resolve', (event, { requestId, response }) => {
@@ -1148,6 +1151,7 @@ function installMainRendererLifecycle(contents) {
   let cleanedForNavigation = false;
 
   const cleanupForRendererReplacement = () => {
+    browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(false);
     if (!hasLoadedMainFrame || cleanedForNavigation) return;
     cleanedForNavigation = true;

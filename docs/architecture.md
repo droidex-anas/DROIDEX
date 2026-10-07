@@ -40,16 +40,19 @@ Browser policy lives in the versioned `browser-settings.json` in the Electron
 profile directory (`electron/browserSettingsSchema.cjs`, `electron/browserSettings.cjs`).
 Unknown fields, malformed values and unsupported versions stop startup with a
 recovery message; no prior schema is migrated or silently reset. Writes are
-serialized and atomic. A change that reduces protection requires main-owned
-confirmation against the policy it replaces. `browserSettingsGet` and
+serialized and atomic; renderer teardown cancels that renderer's pending updates.
+A change that reduces protection requires main-owned confirmation naming each
+reduced setting and its old and new values. `browserSettingsGet` and
 `browserSettingsUpdate` expose a secret-free snapshot through the desktop preload
 API; their contracts live in `src/lib/browserSettings.ts`.
 
 `electron/browserPrompt.cjs` owns browser approvals: one active prompt, at most 32
 waiting, a 120-second deadline from enqueue, and credentials ahead of queued
 permissions. Timeout, cancellation, renderer replacement and shutdown choose the
-declared cancel action. The prompt UI must subscribe to both prompt events before
-calling `browserPermissionPromptReady(true)`, then call it with `false` on unmount.
+declared cancel action with `cancelled: true`; only explicit user decisions are
+remembered for developer-tools access. The prompt UI must subscribe to both prompt
+events before calling `browserPermissionPromptReady(true)`, then call it with
+`false` on unmount.
 Only the trusted main renderer can register or answer the active prompt. Until the
 prompt UI ships in the next agent-controls stack PR, an unregistered UI uses the
 existing native dialogs with the same buttons and defaults. Remove that temporary
@@ -58,8 +61,9 @@ routes saved-login and developer-tools questions through the queue; it adds no
 visible settings or prompt components.
 
 Agent access is enforced at the private browser request boundary, including work
-waiting for its turn. Closing remains allowed for cleanup. Trusted renderer
-navigation and resizing are marked as user requests by `SessionBrowser`; async
+waiting for its turn or guest restoration, and before returning page content.
+Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
+marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
 saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
 are retained for subsequent runtime ports; this foundation enforces only the agent

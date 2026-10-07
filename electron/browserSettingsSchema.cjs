@@ -1,8 +1,7 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const SETTINGS_VERSION = 4;
-const COOKIE_IMPORT_METHODS = new Set(['file', 'profile']);
+const SETTINGS_VERSION = 5;
 const NAVIGATION_APPROVALS = new Set(['follow_autonomy', 'always_ask', 'new_sites', 'never_ask']);
 const LOGIN_FILL_APPROVALS = new Set(['always_ask', 'never']);
 const SITE_PERMISSION_MODES = new Set(['block', 'ask']);
@@ -20,7 +19,6 @@ function createDefaultBrowserSettings(downloadDirectory) {
     downloadDirectory,
     approvedAgentOrigins: [],
     sitePermissions: [],
-    lastCookieImport: null,
   };
 }
 
@@ -60,86 +58,7 @@ function validateSettings(value, defaults) {
     downloadDirectory: validateAbsoluteDirectory(value.downloadDirectory),
     approvedAgentOrigins: validateOriginList(value.approvedAgentOrigins),
     sitePermissions: validateSitePermissions(value.sitePermissions),
-    lastCookieImport: validateCookieImportReceipt(value.lastCookieImport),
   };
-}
-
-function validateCookieImportReceipt(value) {
-  if (value === null) return null;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Invalid browser settings: cookie import receipt must be an object or null.');
-  }
-  const allowed = [
-    'importedAt',
-    'source',
-    'importMethod',
-    'profileLabel',
-    'importedCount',
-    'replacementCount',
-    'skippedCount',
-    'failedCount',
-    'domainCount',
-  ];
-  if (Object.keys(value).some((key) => !allowed.includes(key))) {
-    throw new Error('Invalid browser settings: cookie import receipt contains an unknown field.');
-  }
-  if (typeof value.importedAt !== 'string' || value.importedAt.length > 32) {
-    throw new Error('Invalid browser settings: cookie import timestamp is invalid.');
-  }
-  const importedAt = new Date(value.importedAt);
-  if (!Number.isFinite(importedAt.valueOf()) || importedAt.toISOString() !== value.importedAt) {
-    throw new Error('Invalid browser settings: cookie import timestamp is invalid.');
-  }
-  if (value.source !== 'chrome') {
-    throw new Error('Invalid browser settings: cookie import source is invalid.');
-  }
-  if (!COOKIE_IMPORT_METHODS.has(value.importMethod)) {
-    throw new Error('Invalid browser settings: cookie import method is invalid.');
-  }
-  if (
-    typeof value.profileLabel !== 'string' ||
-    !value.profileLabel.trim() ||
-    value.profileLabel.length > 80 ||
-    // eslint-disable-next-line no-control-regex -- Persisted profile labels must reject control bytes.
-    /[\u0000-\u001f\u007f]/.test(value.profileLabel)
-  ) {
-    throw new Error('Invalid browser settings: cookie import profile label is invalid.');
-  }
-  const importedCount = validateCookieImportCount(value.importedCount, 'imported');
-  const replacementCount =
-    value.replacementCount === null
-      ? null
-      : validateCookieImportCount(value.replacementCount, 'replacement');
-  const skippedCount = validateCookieImportCount(value.skippedCount, 'skipped');
-  const failedCount = validateCookieImportCount(value.failedCount, 'failed');
-  const domainCount = validateCookieImportCount(value.domainCount, 'domain');
-  if (importedCount + failedCount + skippedCount > 5_000) {
-    throw new Error('Invalid browser settings: cookie import total count is invalid.');
-  }
-  if (replacementCount !== null && replacementCount > importedCount) {
-    throw new Error('Invalid browser settings: cookie import replacement count is invalid.');
-  }
-  if (domainCount > importedCount) {
-    throw new Error('Invalid browser settings: cookie import domain count is invalid.');
-  }
-  return {
-    importedAt: value.importedAt,
-    source: 'chrome',
-    importMethod: value.importMethod,
-    profileLabel: value.profileLabel,
-    importedCount,
-    replacementCount,
-    skippedCount,
-    failedCount,
-    domainCount,
-  };
-}
-
-function validateCookieImportCount(value, label) {
-  if (!Number.isInteger(value) || value < 0 || value > 5_000) {
-    throw new Error(`Invalid browser settings: cookie import ${label} count is invalid.`);
-  }
-  return value;
 }
 
 function validateSettingsPatch(patch, complete = false) {
@@ -258,7 +177,7 @@ function validateHomePage(value) {
   return url.href;
 }
 
-function weakensBrowserProtection(current, patch) {
+function browserProtectionReductions(current, patch) {
   const navigationApprovalWeakens =
     patch.navigationApproval !== undefined &&
     AUTONOMY_LEVELS.some(
@@ -266,21 +185,42 @@ function weakensBrowserProtection(current, patch) {
         NAVIGATION_STRENGTH[effectiveNavigationApproval(patch.navigationApproval, autonomy)] <
         NAVIGATION_STRENGTH[effectiveNavigationApproval(current.navigationApproval, autonomy)],
     );
-  return (
-    (patch.agentAccessEnabled === true && !current.agentAccessEnabled) ||
-    (patch.diagnosticsEnabled === true && !current.diagnosticsEnabled) ||
-    navigationApprovalWeakens ||
-    (patch.loginFillApproval === 'always_ask' && current.loginFillApproval === 'never') ||
-    (patch.sitePermissionMode === 'ask' && current.sitePermissionMode === 'block') ||
-    (patch.askDownloadLocation === false && current.askDownloadLocation)
-  );
+  const reductions = [];
+  if (patch.agentAccessEnabled === true && !current.agentAccessEnabled)
+    reductions.push('Agent browser access: Off → On');
+  if (patch.diagnosticsEnabled === true && !current.diagnosticsEnabled)
+    reductions.push('Agent browser diagnostics: Off → On');
+  if (navigationApprovalWeakens) {
+    const labels = {
+      follow_autonomy: 'Follow autonomy',
+      always_ask: 'Always ask',
+      new_sites: 'Ask for new sites',
+      never_ask: 'Full site access',
+    };
+    reductions.push(
+      `Website opening approval: ${labels[current.navigationApproval]} → ${labels[patch.navigationApproval]}`,
+    );
+  }
+  if (patch.loginFillApproval === 'always_ask' && current.loginFillApproval === 'never')
+    reductions.push('Agent login fill: Never use → Always ask');
+  if (patch.sitePermissionMode === 'ask' && current.sitePermissionMode === 'block')
+    reductions.push('Camera and microphone: Block → Ask me');
+  if (patch.askDownloadLocation === false && current.askDownloadLocation)
+    reductions.push('Ask where to save downloads: On → Off');
+  return reductions;
 }
 
-async function writeSettings(filePath, value) {
+async function writeSettings(filePath, value, signal) {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
-  await fsp.writeFile(temporaryPath, JSON.stringify(value, null, 2), { mode: 0o600 });
-  await fsp.rename(temporaryPath, filePath);
+  try {
+    signal.throwIfAborted();
+    await fsp.writeFile(temporaryPath, JSON.stringify(value, null, 2), { mode: 0o600, signal });
+    signal.throwIfAborted();
+    await fsp.rename(temporaryPath, filePath);
+  } finally {
+    await fsp.rm(temporaryPath, { force: true });
+  }
 }
 
 function validateAbsoluteDirectory(value) {
@@ -295,6 +235,6 @@ module.exports = {
   readSettings,
   validateSettings,
   validateSettingsPatch,
-  weakensBrowserProtection,
+  browserProtectionReductions,
   writeSettings,
 };

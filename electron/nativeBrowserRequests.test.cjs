@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
+const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 
 function fixture() {
   const actions = [];
@@ -84,5 +85,37 @@ test('disabling agent access stops input already waiting on a page to paint', as
   assert.equal(reply.ok, false);
   assert.match(reply.error, /Agent browser access is off/);
   assert.deepEqual(actions, []);
+  assert.deepEqual(requests.workingSessions(), []);
+});
+
+test('disabling agent access during guest restoration prevents reading the restored page', async () => {
+  const { manager, requests, send, disable } = fixture();
+  const restoring = Promise.withResolvers();
+  const started = Promise.withResolvers();
+  let reads = 0;
+  const page = createNativeBrowserPage({
+    appName: 'DROIDEX',
+    restoreForAction: () => {
+      started.resolve();
+      return restoring.promise;
+    },
+    liveContents: () => ({}),
+    credentials: {},
+    runWithWebContentsDebugger: async () => {
+      reads++;
+      throw new Error('The revoked request reached the page.');
+    },
+  });
+  manager.runAgentAction = page.runAgentAction;
+  const reading = send('readPage');
+  await started.promise;
+  disable();
+  restoring.resolve({});
+
+  const reply = await reading;
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /Agent browser access is off/);
+  assert.equal(reply.text, undefined);
+  assert.equal(reads, 0);
   assert.deepEqual(requests.workingSessions(), []);
 });

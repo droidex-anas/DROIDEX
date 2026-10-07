@@ -51,15 +51,14 @@ function createBrowserDevTools({ appName, showPrompt, isHostAppUrl, runWithWebCo
     return origin;
   }
 
-  // Asked once per origin and run of the app; a second caller waits on the
-  // same question.
+  // Remember explicit decisions until quit; concurrent callers share the question.
   function allowed(origin) {
     if (!answers.has(origin)) answers.set(origin, ask(origin));
     return answers.get(origin);
   }
 
   async function ask(origin) {
-    const { response } = await showPrompt({
+    const { response, cancelled } = await showPrompt({
       kind: 'permission',
       buttons: ['Allow until I quit', "Don't allow"],
       defaultId: 1,
@@ -68,7 +67,9 @@ function createBrowserDevTools({ appName, showPrompt, isHostAppUrl, runWithWebCo
       message: `Let agents run JavaScript on ${origin}?`,
       detail: `A script can read and change anything this site's pages can, including what ${appName} otherwise keeps from agents, such as passwords in fields. It applies to this site only, until you quit ${appName}.`,
     });
-    return response === 0;
+    if (cancelled) answers.delete(origin);
+    else answers.set(origin, response === 0);
+    return !cancelled && response === 0;
   }
 
   return { evaluate };

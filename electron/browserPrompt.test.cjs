@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
+const { createBrowserDevTools } = require('./browserDevTools.cjs');
 
 function createFixture(overrides = {}) {
   const sent = [];
@@ -57,13 +58,13 @@ test('timeout and cancelAll settle with the declared cancel action', async () =>
   const { controller, timers } = createFixture();
   const timed = controller.request(prompt);
   timers[0].callback();
-  assert.deepEqual(await timed, { response: 2 });
+  assert.deepEqual(await timed, { response: 2, cancelled: true });
 
   const active = controller.request(prompt);
   const queued = controller.request(prompt);
   controller.cancelAll();
-  assert.deepEqual(await active, { response: 2 });
-  assert.deepEqual(await queued, { response: 2 });
+  assert.deepEqual(await active, { response: 2, cancelled: true });
+  assert.deepEqual(await queued, { response: 2, cancelled: true });
 });
 
 test('invalid prompts and response indexes fail closed', async () => {
@@ -72,7 +73,7 @@ test('invalid prompts and response indexes fail closed', async () => {
   const result = controller.request(prompt);
   assert.equal(controller.resolve('prompt-1', 9), false);
   controller.cancelAll();
-  assert.deepEqual(await result, { response: 2 });
+  assert.deepEqual(await result, { response: 2, cancelled: true });
 });
 
 test('aborting one permission prompt closes only that prompt and advances the queue', async () => {
@@ -83,7 +84,7 @@ test('aborting one permission prompt closes only that prompt and advances the qu
 
   abort.abort();
 
-  assert.deepEqual(await first, { response: 2 });
+  assert.deepEqual(await first, { response: 2, cancelled: true });
   assert.deepEqual(dismissed, ['prompt-1']);
   assert.equal(sent[1].requestId, 'prompt-2');
   assert.equal(controller.resolve('prompt-2', 0), true);
@@ -103,7 +104,7 @@ test('a renderer dismissal failure still settles the prompt and advances the que
   const second = controller.request(prompt);
 
   assert.doesNotThrow(() => abort.abort());
-  assert.deepEqual(await first, { response: 2 });
+  assert.deepEqual(await first, { response: 2, cancelled: true });
   assert.equal(sent[1].requestId, 'prompt-2');
   assert.equal(controller.resolve('prompt-2', 0), true);
   assert.deepEqual(await second, { response: 0 });
@@ -123,12 +124,12 @@ test('queued prompts expire from enqueue time without ever being displayed', asy
 
   nowMs = 1_051;
   timers[1].callback();
-  assert.deepEqual(await queued, { response: 2 });
+  assert.deepEqual(await queued, { response: 2, cancelled: true });
   assert.deepEqual(dismissed, []);
   assert.equal(sent.length, 1);
 
   assert.equal(controller.resolve('prompt-1', 0), false);
-  assert.deepEqual(await active, { response: 2 });
+  assert.deepEqual(await active, { response: 2, cancelled: true });
   assert.equal(sent.length, 1);
 });
 
@@ -139,14 +140,14 @@ test('the bounded prompt queue cancels overflow immediately', async () => {
   const queuedTwo = controller.request(prompt);
   const overflow = controller.request(prompt);
 
-  assert.deepEqual(await overflow, { response: 2 });
+  assert.deepEqual(await overflow, { response: 2, cancelled: true });
   assert.equal(sent.length, 1);
   assert.equal(timers.length, 3);
 
   controller.cancelAll();
-  assert.deepEqual(await active, { response: 2 });
-  assert.deepEqual(await queuedOne, { response: 2 });
-  assert.deepEqual(await queuedTwo, { response: 2 });
+  assert.deepEqual(await active, { response: 2, cancelled: true });
+  assert.deepEqual(await queuedOne, { response: 2, cancelled: true });
+  assert.deepEqual(await queuedTwo, { response: 2, cancelled: true });
 });
 
 test('credential prompts move ahead of queued permissions without preempting the active prompt', async () => {
@@ -173,8 +174,8 @@ test('prompts fail closed while the renderer is unavailable', async () => {
   const first = controller.request(prompt);
   const second = controller.request(prompt);
 
-  assert.deepEqual(await first, { response: 2 });
-  assert.deepEqual(await second, { response: 2 });
+  assert.deepEqual(await first, { response: 2, cancelled: true });
+  assert.deepEqual(await second, { response: 2, cancelled: true });
   assert.equal(sent.length, 0);
 });
 
@@ -211,7 +212,7 @@ test('timeout aborts the native dialog and a late native answer cannot settle it
   const first = controller.request(prompt);
   const second = controller.request(prompt);
   timers[0].callback();
-  assert.deepEqual(await first, { response: 2 });
+  assert.deepEqual(await first, { response: 2, cancelled: true });
   assert.equal(dialogs[0].signal.aborted, true);
   dialogs[0].resolve({ response: 0 });
   dialogs[1].resolve({ response: 1 });
@@ -230,10 +231,41 @@ test('unregistering the renderer cancels pending approvals and uses native promp
   const active = controller.request(prompt);
   const queued = controller.request(prompt);
   controller.setRendererReady(false);
-  assert.deepEqual(await active, { response: 2 });
-  assert.deepEqual(await queued, { response: 2 });
+  assert.deepEqual(await active, { response: 2, cancelled: true });
+  assert.deepEqual(await queued, { response: 2, cancelled: true });
   assert.equal(controller.resolve('prompt-1', 0), false);
   assert.deepEqual(dismissed, ['prompt-1']);
   assert.deepEqual(await controller.request(prompt), { response: 0 });
   assert.equal(native.length, 1);
+});
+
+test('developer tools retry automatic cancellations and remember an explicit user denial', async () => {
+  let available = false;
+  const { controller, sent, timers } = createFixture({ isAvailable: () => available });
+  const tools = createBrowserDevTools({
+    appName: 'DROIDEX',
+    showPrompt: controller.request,
+    isHostAppUrl: () => false,
+    runWithWebContentsDebugger: () => assert.fail('A denied script must not run.'),
+  });
+  const evaluate = () => tools.evaluate({ getURL: () => 'https://example.test/' }, '1', () => {});
+  await assert.rejects(evaluate(), /not allowed developer tools/);
+  available = true;
+  const timed = assert.rejects(evaluate(), /not allowed developer tools/);
+  assert.equal(sent.length, 1);
+  timers.at(-1).callback();
+  await timed;
+
+  const tornDown = assert.rejects(evaluate(), /not allowed developer tools/);
+  assert.equal(sent.length, 2);
+  controller.setRendererReady(false);
+  await tornDown;
+  controller.setRendererReady(true);
+
+  const denied = assert.rejects(evaluate(), /not allowed developer tools/);
+  assert.equal(sent.length, 3);
+  assert.equal(controller.resolve(sent.at(-1).requestId, 1), true);
+  await denied;
+  await assert.rejects(evaluate(), /not allowed developer tools/);
+  assert.equal(sent.length, 3);
 });

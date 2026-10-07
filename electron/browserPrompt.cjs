@@ -13,10 +13,11 @@ function createBrowserPromptController(options) {
 
   function request(input, requestOptions = {}) {
     const prompt = validatePrompt(input);
-    if (requestOptions.signal?.aborted) return Promise.resolve({ response: prompt.cancelId });
+    if (requestOptions.signal?.aborted)
+      return Promise.resolve({ response: prompt.cancelId, cancelled: true });
     expireQueuedPrompts();
     if (active && queue.length >= maxQueuedPrompts) {
-      return Promise.resolve({ response: prompt.cancelId });
+      return Promise.resolve({ response: prompt.cancelId, cancelled: true });
     }
     return new Promise((resolve) => {
       const pending = {
@@ -56,16 +57,14 @@ function createBrowserPromptController(options) {
           // Stack PR 1 has no prompt UI. Remove this native presentation once it ships.
           Promise.resolve(options.showNative(pending.prompt, pending.dialogAbort.signal)).then(
             ({ response }) => {
-              const answer = validResponse(pending.prompt, response)
-                ? response
-                : pending.prompt.cancelId;
-              settle(requestId, answer);
+              if (validResponse(pending.prompt, response)) settle(requestId, response);
+              else settle(requestId, pending.prompt.cancelId, true);
             },
-            () => settle(requestId, pending.prompt.cancelId),
+            () => settle(requestId, pending.prompt.cancelId, true),
           );
         }
       } catch {
-        settle(requestId, pending.prompt.cancelId);
+        settle(requestId, pending.prompt.cancelId, true);
       }
       return;
     }
@@ -97,12 +96,15 @@ function createBrowserPromptController(options) {
   function settle(requestId, response, dismiss = false) {
     if (!active || active.requestId !== requestId) return;
     const pending = active;
-    if (now() >= pending.expiresAt) response = pending.prompt.cancelId;
+    if (now() >= pending.expiresAt) {
+      response = pending.prompt.cancelId;
+      dismiss = true;
+    }
     active = null;
     (options.clearTimeout || clearTimeout)(pending.timeout);
     removeAbortListener(pending);
     if (dismiss) dismissPending(pending);
-    pending.resolve({ response });
+    pending.resolve(dismiss ? { response, cancelled: true } : { response });
     showNext();
   }
 
@@ -143,7 +145,7 @@ function createBrowserPromptController(options) {
   function settleQueued(pending) {
     (options.clearTimeout || clearTimeout)(pending.timeout);
     removeAbortListener(pending);
-    pending.resolve({ response: pending.prompt.cancelId });
+    pending.resolve({ response: pending.prompt.cancelId, cancelled: true });
   }
 
   function cancelAll() {
@@ -153,7 +155,7 @@ function createBrowserPromptController(options) {
       (options.clearTimeout || clearTimeout)(pending.timeout);
       removeAbortListener(pending);
       dismissPending(pending);
-      pending.resolve({ response: pending.prompt.cancelId });
+      pending.resolve({ response: pending.prompt.cancelId, cancelled: true });
     }
     while (queue.length > 0) {
       const pending = queue.shift();

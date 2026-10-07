@@ -8,18 +8,6 @@ interface BrowserSitePermissionRule {
   microphone: 'allow' | 'ask' | 'deny';
 }
 
-interface BrowserCookieImportReceipt {
-  importedAt: string;
-  source: 'chrome';
-  importMethod: 'file' | 'profile';
-  profileLabel: string;
-  importedCount: number;
-  replacementCount: number | null;
-  skippedCount: number;
-  failedCount: number;
-  domainCount: number;
-}
-
 export interface BrowserSettingsSnapshot {
   agentAccessEnabled: boolean;
   navigationApproval: BrowserNavigationApproval;
@@ -32,7 +20,6 @@ export interface BrowserSettingsSnapshot {
   downloadDirectoryLabel: string;
   approvedAgentOrigins: string[];
   sitePermissionRules: BrowserSitePermissionRule[];
-  lastCookieImport: BrowserCookieImportReceipt | null;
 }
 
 export type BrowserSettingsPatch = Partial<
