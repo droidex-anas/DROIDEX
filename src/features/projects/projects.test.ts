@@ -14,9 +14,17 @@ const project: ProjectView = {
   paused: false,
   launching: 0,
   plan: [{ id: '1', title: 'Port the client', threadAppSessionId: 'worker' }],
+  todos: [],
+  runtimeLoad: { live: 0, limit: 12 },
   threads: [
-    { appSessionId: 'main', title: 'Main', waiting: false },
-    { appSessionId: 'worker', ownerAppSessionId: 'main', title: 'Worker', waiting: false },
+    { appSessionId: 'main', title: 'Main', waiting: false, state: 'idle' },
+    {
+      appSessionId: 'worker',
+      ownerAppSessionId: 'main',
+      title: 'Worker',
+      waiting: false,
+      state: 'idle',
+    },
   ],
   queued: 0,
   uncertain: 0,
@@ -57,6 +65,29 @@ test('validated project graphs and explicitly acknowledged results cross the bri
   assert.equal(wire({ type: 'project.result', requestId: 'request', ok: false }), null);
 });
 
+test('queued threads, wait reasons, load and due to-dos cross the bridge together', () => {
+  const snapshot = structuredClone(project);
+  snapshot.threads[1].state = 'queued';
+  snapshot.threads[1].waitReason = 'queued to start · 3rd';
+  snapshot.runtimeLoad = { live: 14, limit: 12 };
+  snapshot.todos = [{ id: 'todo', text: 'Review', after: 'worker', dueAt: 123, due: true }];
+  assert.ok(wire({ type: 'projects.snapshot', projects: [snapshot] }));
+  assert.equal(
+    wire({
+      type: 'projects.snapshot',
+      projects: [{ ...snapshot, todos: [{ id: 'todo', text: 'x'.repeat(401) }] }],
+    }),
+    null,
+  );
+  assert.equal(
+    wire({
+      type: 'projects.snapshot',
+      projects: [{ ...snapshot, runtimeLoad: { live: -1, limit: 12 } }],
+    }),
+    null,
+  );
+});
+
 test('malformed graphs and bad counts are rejected', () => {
   assert.equal(
     wire({ type: 'projects.snapshot', projects: [{ ...project, threads: [{}] }] }),
@@ -77,6 +108,7 @@ test('a snapshot crosses the bridge whatever number of projects and threads it h
       ownerAppSessionId: 'main',
       title: `Thread ${String(index)}`,
       waiting: false,
+      state: 'idle',
     });
   const projects = Array.from({ length: 50 }, (_, index) => ({ ...busy, id: String(index) }));
   assert.ok(wire({ type: 'projects.snapshot', projects }));

@@ -21,6 +21,7 @@ type Host = Pick<
   | 'providerCatalog'
   | 'answerQuestion'
   | 'steerRunningTurn'
+  | 'resourceCounts'
 >;
 
 /** Correlates session creation and commits membership before the first provider turn. */
@@ -31,6 +32,11 @@ export class ProjectSessions implements ProjectPort {
 
   get(appSessionId: string): SessionSummary | undefined {
     return this.host.sessionSummary(appSessionId);
+  }
+
+  // W2 port stub; replace with W1's shared runtime budget when integrating W1.
+  runtimeLoad() {
+    return { live: this.host.resourceCounts().livePrimarySessions, limit: 12 };
   }
 
   catalog(): Promise<ProviderStatus[]> {

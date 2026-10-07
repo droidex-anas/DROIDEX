@@ -1,5 +1,26 @@
 import type { Autonomy, ContextWindowTokens, ReasoningEffort } from '../protocol.js';
 import type { ProviderKind } from '../providers/providerKind.js';
+import type { ThreadState } from './projectTurns.js';
+
+export interface RuntimeLoad {
+  live: number;
+  limit: number;
+}
+
+export type ThreadWait =
+  | { kind: 'slot'; position: number }
+  | { kind: 'turn' }
+  | { kind: 'start'; position: number };
+
+export interface ProjectTodo {
+  id: string;
+  text: string;
+  after?: string;
+  dueAt?: number;
+  due?: true;
+  /** A report or reminder already carries this follow-up. */
+  notified?: true;
+}
 
 export interface ThreadInput {
   title: string;
@@ -114,6 +135,7 @@ export interface Project {
   done?: ProjectDone;
   launching: number;
   plan: ProjectStep[];
+  todos: ProjectTodo[];
   threads: ProjectThread[];
   pending: ThreadMessage[];
   delivery?: { state: 'sending' | 'uncertain'; messages: ThreadMessage[] };
@@ -136,7 +158,12 @@ export interface ProjectView {
   paused: boolean;
   launching: number;
   plan: ProjectStep[];
-  threads: Pick<ProjectThread, 'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId'>[];
+  todos: Omit<ProjectTodo, 'notified'>[];
+  runtimeLoad: RuntimeLoad;
+  threads: (Pick<ProjectThread, 'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId'> & {
+    state: ThreadState;
+    waitReason?: string;
+  })[];
   queued: number;
   uncertain: number;
   error?: string;

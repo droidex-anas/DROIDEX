@@ -20,6 +20,7 @@ function project(): Project {
     paused: false,
     launching: 0,
     plan: [],
+    todos: [],
     threads: [{ appSessionId: 'main', title: 'Main', reply: '', waiting: false }],
     pending: [],
   };
@@ -155,4 +156,23 @@ test('corrupt ledgers, unknown owners, duplicates, cycles and foreign targets ar
     threadInputSchema.safeParse({ ...input, ownerAppSessionId: 'spoofed' }).success,
     false,
   );
+});
+
+test('to-dos restore their triggers, and older or stale ledgers still load', async (t) => {
+  const path = await ledgerPath(t);
+  const saved = project();
+  saved.todos = [
+    { id: 'todo', text: 'Review', after: 'main', dueAt: 123, due: true, notified: true },
+  ];
+  const store = new ProjectStore(path);
+  await store.save([saved]);
+  assert.deepEqual((await store.load())[0]?.todos, saved.todos);
+  const { todos: _todos, ...older } = saved;
+  await writeFile(path, JSON.stringify([older]));
+  assert.deepEqual((await store.load())[0]?.todos, []);
+  await writeFile(
+    path,
+    JSON.stringify([{ ...saved, todos: [{ id: 'todo', text: 'Review', after: 'gone' }] }]),
+  );
+  assert.deepEqual((await store.load())[0]?.todos, [{ id: 'todo', text: 'Review' }]);
 });

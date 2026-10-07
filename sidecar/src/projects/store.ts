@@ -17,6 +17,8 @@ export const LEDGER_LIMITS = {
   stepTitle: 200,
   stepMilestone: 80,
   stepNote: 400,
+  todos: 40,
+  todoText: 400,
   /** What a finished project achieved, in the lead's words. */
   outcome: 600,
   /** A message, a thread's final reply, and each earlier reply kept. */
@@ -118,6 +120,22 @@ const project = z
       )
       .max(LEDGER_LIMITS.planSteps)
       .optional(),
+    todos: z
+      .array(
+        z
+          .object({
+            id,
+            text: z.string().trim().min(1).max(LEDGER_LIMITS.todoText),
+            after: id.optional(),
+            dueAt: z.number().int().min(0).max(8_640_000_000_000_000).optional(),
+            due: z.literal(true).optional(),
+            notified: z.literal(true).optional(),
+          })
+          .strict(),
+      )
+      .max(LEDGER_LIMITS.todos)
+      // Ledgers written before to-dos existed have none.
+      .default([]),
     threads: z.array(
       z
         .object({
@@ -260,6 +278,11 @@ function validateLedger(projects: Project[]): void {
     }
     validateOwnership(item);
     validateInbox(item);
+    // A to-do is the lead's note, never worth refusing the whole ledger over:
+    // one naming a thread that has since left the project loses only that link.
+    for (const todo of item.todos)
+      if (todo.after && !item.threads.some((thread) => thread.appSessionId === todo.after))
+        delete todo.after;
   }
 }
 

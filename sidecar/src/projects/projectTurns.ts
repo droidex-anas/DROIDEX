@@ -2,9 +2,9 @@ import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
 import { LEDGER_LIMITS } from './store.js';
-import type { Project, ProjectThread, ThreadMessage } from './types.js';
+import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
 
-export type ThreadState = 'working' | 'waiting' | 'stopped' | 'failed' | 'idle';
+export type ThreadState = 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
 
 /* A project runs as many threads as its work needs, so the ledger cannot keep
    every thread's history. The settled threads whose conversations moved most
@@ -214,6 +214,61 @@ export function requireThread(project: Project, appSessionId: string): ProjectTh
   return thread;
 }
 
+export function scopedThreads(project: Project, source: string): ProjectThread[] {
+  const caller = requireThread(project, source);
+  return project.threads.filter(
+    (thread) =>
+      thread.appSessionId !== source &&
+      (!caller.ownerAppSessionId || thread.ownerAppSessionId === source),
+  );
+}
+
+export function resolveThreadId(project: Project, source: string, id: string): string {
+  // An exact identity takes precedence over prefix matching.
+  if (project.threads.some((thread) => thread.appSessionId === id)) return id;
+  if (id.length < 8)
+    throw new Error('Use a full thread id or a unique prefix of at least 8 characters.');
+  const matches = scopedThreads(project, source).filter((thread) =>
+    thread.appSessionId.startsWith(id),
+  );
+  if (matches.length === 1) return matches[0].appSessionId;
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous thread prefix "${id}": ${matches.map((thread) => `${thread.title} (${thread.appSessionId})`).join(', ')}. Use a longer prefix or the full id.`,
+    );
+  throw new Error('Thread is outside this project or your ownership scope.');
+}
+
+export function threadWaitReason(
+  state: ThreadState,
+  wait: ThreadWait | undefined,
+  load: RuntimeLoad,
+  paused: boolean,
+  queued: number,
+): string | undefined {
+  if (paused) return 'project held · waits for the user to resume it';
+  if (wait?.kind === 'slot')
+    return `waiting for a free slot · ${ordinal(wait.position)} in line (${String(load.live)} running, limit ${String(load.limit)})`;
+  if (wait?.kind === 'start') return `queued to start · ${ordinal(wait.position)}`;
+  if (wait?.kind === 'turn') return 'message waits for its turn to end';
+  if (queued)
+    return state === 'working'
+      ? 'message waits for its turn to end'
+      : 'message queued for delivery';
+  if (state === 'waiting') return 'waiting for an answer';
+  if (state === 'stopped') return 'stopped · thread_send continues it';
+  if (state === 'failed') return 'last turn failed';
+  if (state === 'idle') return 'no turn running';
+  return undefined;
+}
+
+function ordinal(position: number): string {
+  const lastTwo = position % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) return `${String(position)}th`;
+  const suffix = ['th', 'st', 'nd', 'rd'][position % 10] ?? 'th';
+  return `${String(position)}${suffix}`;
+}
+
 /**
  * Leaves a thread with no question outstanding, and takes the wake that carried
  * it off the queue: an owner woken to answer a question its thread no longer
@@ -235,7 +290,9 @@ export function clearAsk(project: Project, thread: ProjectThread): boolean {
 export function threadState(
   thread: ProjectThread,
   session: SessionSummary | undefined,
+  wait?: ThreadWait,
 ): ThreadState {
+  if (wait?.kind === 'start') return 'queued';
   if (thread.ask) return 'waiting';
   if (session?.streaming) return 'working';
   if (session?.phase === 'failed') return 'failed';

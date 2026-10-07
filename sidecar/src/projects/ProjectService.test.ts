@@ -221,10 +221,11 @@ test('stopping a thread while its own spawn cuts a checkout cancels that spawn',
   // The user stops the thread once its spawn is past its settings and choosing a checkout.
   const get = h.port.get;
   h.port.get = (id) => {
+    const intercepted = h.port.get;
+    h.port.get = get;
     if (id === thread.appSessionId && h.projects.list()[0]?.launching) {
-      h.port.get = get;
       void h.projects.userStopped(thread.appSessionId);
-    }
+    } else h.port.get = intercepted;
     return get(id);
   };
   await assert.rejects(

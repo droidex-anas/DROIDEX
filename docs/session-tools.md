@@ -2,7 +2,7 @@
 
 An ordinary chat on Droid, Claude Code or Codex is given DROIDEX's in-app
 session tools, whether or not it belongs to a project. On Droid and Claude Code,
-`droidex-sessions` carries all twelve tools on one listener per session. Codex
+`droidex-sessions` carries all fifteen tools on one listener per session. Codex
 receives the same tools as deferred dynamic tools in the `droidex_sessions`
 namespace, with no local MCP listener. Unattended automation runs, missions and
 design sessions never get it, since none of them may call its tools, and nothing
@@ -12,7 +12,10 @@ in it runs until a tool is called.
 | --- | --- | --- | --- |
 | `thread_spawn` | Starts a chat that carries one task; `reportBack` is required | asks | one kind: threads or chats |
 | `thread_send` | Sends one of this chat's threads a message, or `answers` to the question `questionId` names; `delivery` picks steer (the default), now or queue | runs | never asks |
-| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings, how many messages it has not been seen to take, and whether a runtime is open for it | runs | never asks |
+| `thread_list` | Lists all controlled threads, their ids, owners, states, wait reasons, reply previews and queued messages, runtime load and the lead’s open to-dos; observes even when full, stopped or held | runs | never asks |
+| `todo_add` | Keeps a durable lead follow-up; `after` marks it due with a thread report, `inMinutes` schedules a wake (1–1440); at most 40 open, text 1–400; busy/full/held delivery follows reports | runs | never asks |
+| `todo_done` | Removes an open lead follow-up and its queued reminder, even when full, stopped or held | runs | never asks |
+| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings, how many messages it has not been seen to take, whether a runtime is open, its wait reason and runtime load; never starts it | runs | never asks |
 | `thread_configure` | Changes a thread's model, reasoning effort or autonomy | runs | never asks |
 | `thread_stop` | Ends a thread's turn and drops its queued messages | runs | never asks |
 | `plan_set` | Writes the plan the chat shows in Projects; `title` names the project and the chat | runs | never asks |
@@ -35,7 +38,17 @@ whole tool.
 With `reportBack: true`, `thread_spawn` starts a thread of the calling chat, in
 its project or a new one, down to three levels below the main chat, as
 [Projects](projects.md) describes. The other thread tools reach only that
-project, and a thread reaches only the threads it started.
+project, and a thread reaches only the threads it started. Thread-id arguments
+accept a full id or a unique prefix of at least eight characters in that scope.
+Ambiguous prefixes list matching titles and full ids. A full runtime pool queues
+project work; the tool returns its position instead of promising an immediate
+start. Continue a stopped, idle or queued thread with `thread_send`.
+
+Only the lead owns project to-dos. They persist in the project ledger; scheduled
+ones rearm after restart, and every project wake ends with the open list, due
+ones first. A due reminder waits in a full inbox or held project rather than
+being lost. Use `thread_list` after compaction or restart and to-dos for
+follow-ups instead of polling `thread_read`.
 
 With `reportBack: false` it starts an ordinary sidebar chat that belongs to no
 project, reports nowhere and wakes nobody; the thread tools refuse it, and the

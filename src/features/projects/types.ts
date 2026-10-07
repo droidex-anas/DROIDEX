@@ -31,6 +31,16 @@ export interface ProjectThread {
   ownerAppSessionId?: string;
   title: string;
   waiting: boolean;
+  state: 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
+  waitReason?: string;
+}
+
+export interface ProjectTodo {
+  id: string;
+  text: string;
+  after?: string;
+  dueAt?: number;
+  due?: true;
 }
 
 /** The main chat's word that the project's goal is achieved, and what it achieved. */
@@ -49,6 +59,8 @@ export interface ProjectView {
   paused: boolean;
   launching: number;
   plan: ProjectStep[];
+  todos: ProjectTodo[];
+  runtimeLoad: { live: number; limit: number };
   threads: ProjectThread[];
   queued: number;
   uncertain: number;

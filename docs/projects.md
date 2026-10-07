@@ -16,9 +16,10 @@ it is one of the sidebar's announcements (`src/lib/sidebarCards.ts`, id
 
 A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
 Droid and Claude Code receive the `droidex-sessions` MCP server; Codex receives
-the same tools as deferred dynamic tools in `droidex_sessions`. Seven run a
-project: `thread_spawn`, `thread_send`, `thread_read`, `thread_configure`,
-`thread_stop`, `plan_set` and `project_done`.
+the same tools as deferred dynamic tools in `droidex_sessions`. Ten run a
+project: `thread_spawn`, `thread_send`, `thread_list`, `thread_read`,
+`thread_configure`, `thread_stop`, `plan_set`, `project_done`, `todo_add` and
+`todo_done`.
 The other five are the [session tools](session-tools.md) for the chats in the
 user's sidebar. A Codex chat started before these tools were added resumes
 without them because Codex cannot add dynamic tools to an existing thread;
@@ -105,11 +106,53 @@ harness takes the message at its next step inside the running turn, with its
 own steer on Droid, Claude Code and Codex alike, or right after that turn when
 it cannot take it sooner. `delivery: 'now'` is Send now: DROIDEX
 stops the running turn and the message runs next. `delivery: 'queue'` waits for
-the turn to end. A thread with no turn running starts on the message either
-way, through the project's queue. When a working thread's turn ends or is
+the turn to end. A stopped or idle thread queues the message through the
+project's queue and waits for a runtime slot when capacity is full. When a
+working thread's turn ends or is
 stopped while the message is on its way, the send is refused rather than
 starting a new turn a Stop meant to end, and the chat reads the thread and
-sends again. The tool says whether the message was steered, sent now or queued.
+sends again. The tool says whether the message was steered, sent now or queued,
+with its queue position and wait reason when queued. A queued result means it has not
+started yet. Continue a stopped or queued thread with `thread_send` instead of
+spawning another. A spawn still creates a thread when its title matches a
+stopped, idle or queued one, but names that existing thread and suggests
+continuing it; title matching ignores case and a trailing number or `(retry)`.
+
+## Recovering the project and keeping follow-ups
+
+After compaction or a restart, `thread_list` returns every thread the caller can
+control in one call: full id, title, owner id, state, wait reason, the first 160
+characters of its latest reply and its queued message count. It also returns
+runtime load (`live` and `limit`) and the lead's open to-dos. A main chat reaches
+all other threads in its project; a thread lists only its direct children.
+`thread_read` returns the same wait reason and runtime load with the full reply
+readout. Both tools only observe: they never start or resume a runtime, even
+when capacity is full, a thread is stopped or the project is held.
+
+Every thread-id argument accepts the full id or a unique prefix of at least
+eight characters within that scope, including `workspaceOf`, plan links and
+`todo_add.after`. An ambiguous prefix fails with the matching titles and full
+ids. Runtime calls and returned ids use the canonical `appSessionId`.
+
+The lead records follow-ups with `todo_add({ text, after?, inMinutes? })`, then
+removes a handled follow-up with `todo_done({ id })`. A project holds at most 40
+open to-dos; text is 1–400 characters. `after` marks it due when that thread
+reports. `inMinutes` is an integer from 1 to 1440 and persists an absolute due
+time, so DROIDEX rearms the reminder after a restart once session history is
+ready. If both triggers are present, the first one makes it due. With neither,
+it stays in the open list until handled.
+
+Every wake ends with the open to-dos, due ones first and marked `[DUE]`. A timed
+reminder uses the same delivery path as a report: a busy lead receives it when
+that path can deliver, a held project waits for Resume, and a full inbox retains
+the due reminder until room opens. Each reminder queues once; it remains due
+until `todo_done` removes it. Removing a to-do also drops its pending reminder;
+a reminder already handed over may still arrive. Use these follow-ups instead
+of polling `thread_read` in a loop. Reports may arrive during the lead's turn.
+
+The project snapshot exposes open to-dos, runtime load, thread state (including
+`queued`) and wait reasons for the Threads panel. Rendering these new fields is
+a separate UI change.
 
 ## The plan
 
@@ -194,9 +237,9 @@ pulling one costs a whole extra turn. The **New project** brief also says that a
 thread which reports nothing twice is not working, and to stop it and tell the
 user rather than nudge it again.
 
-A chat receives an ordinary new turn when it becomes available; no model polls
-or stays running to wait for another model. Permission requests always need the
-user, never approval by another agent. A question can be answered by another
+Reports use the project delivery path and may reach a lead mid-turn. No model
+polls or stays running to wait for another model. Permission requests always
+need the user, never approval by another agent. A question can be answered by another
 chat: a thread's by the chat that started it, and any sidebar chat's by a chat
 that sends it answers with `session_send`.
 
@@ -286,11 +329,15 @@ Stop to hold.
 
 Malformed or incompatible ledgers fail visibly and are left untouched. There is
 no migration from the earlier prototypes, so back up an old `projects.json`
-before opening it with this version.
+before opening it with this version. Every project now requires a `todos` array,
+even when empty. To recover a ledger missing only that field, stop DROIDEX, back
+up the file, explicitly add `todos: []` to each project and restart. Leave all
+other fields and session identities intact.
 
 ## Ownership in code
 
-`ProjectService` owns the project graph: membership, plans, holds and the thread
+`ProjectService` owns the project graph: membership, plans, durable to-dos, their
+next-due timer, holds and the thread
 tools that act on them. `ProjectTurns` reads each settled turn of a project
 conversation, routes a thread's question to the chat that started it and writes
 the bounded report. `ProjectActivity` keeps a bounded final reply and the last

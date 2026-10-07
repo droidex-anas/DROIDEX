@@ -3,9 +3,14 @@ import { z } from 'zod';
 import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import { requireProjectService } from './service.js';
+import type { ThreadReadout } from './ProjectService.js';
 import { LEDGER_LIMITS } from './store.js';
 
-const threadId = z.string().min(1).max(200).describe('Id from thread_spawn.');
+const threadId = z
+  .string()
+  .min(1)
+  .max(200)
+  .describe('Full thread id or unique prefix of at least 8 characters in your scope.');
 
 const spawnInput = z.object({
   title: z
@@ -40,10 +45,7 @@ const spawnInput = z.object({
     .describe(
       "worktree: its own checkout on a new branch. inherit: this chat's folder. Omitted: a thread gets its own worktree when another thread is working in the folder; a chat shares the folder.",
     ),
-  workspaceOf: z
-    .string()
-    .min(1)
-    .max(200)
+  workspaceOf: threadId
     .optional()
     .describe(
       'Threads only. Id of a settled thread of this chat whose checkout it joins, to review that work.',
@@ -90,7 +92,7 @@ const sendInput = z.object({
     .enum(['steer', 'now', 'queue'])
     .optional()
     .describe(
-      "steer (default): into its running turn at the harness's next step, as the user's Steer does. now: stop its running turn and run this instead, for work that must not continue. queue: after its current turn. A thread with no turn running starts on it at once either way.",
+      "steer (default): into its running turn at the harness's next step, as the user's Steer does. now: stop its running turn and run this instead, for work that must not continue. queue: after its current turn. A stopped or idle thread queues it for a runtime slot; a held project keeps it until Resume.",
     ),
 });
 
@@ -132,10 +134,7 @@ const planInput = z.object({
           .enum(['planned', 'doing', 'done', 'blocked'])
           .optional()
           .describe("Only for a step no thread carries; a linked thread's state wins."),
-        threadId: z
-          .string()
-          .min(1)
-          .max(200)
+        threadId: threadId
           .optional()
           .describe('Id of a thread of this chat that carries the step.'),
         note: z
@@ -171,15 +170,24 @@ const configureInput = z.object({
 
 const stopInput = z.object({ threadId });
 
-// What happened to a message, so the lead never takes a queued one for a delivered one.
+const todoInput = z.object({
+  text: z.string().trim().min(1).max(LEDGER_LIMITS.todoText),
+  after: threadId.optional().describe('Mark due when this thread reports.'),
+  inMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(1440)
+    .optional()
+    .describe('Wake the lead after this many minutes, including across restarts.'),
+});
+
 const DELIVERY_NOTES: Partial<Record<string, string>> = {
-  steered:
-    'The thread takes it at its next step in the turn it is running, or right after that turn when the harness cannot take it sooner. Its report still wakes you.',
-  'sent-now':
-    'It runs next: DROIDEX asks the turn the thread is running to stop first. Its report wakes you.',
+  steered: 'Handed to its running turn; an unread steer may wait until that turn ends.',
+  'sent-now': 'Asked its current turn to stop; this message runs next.',
   queued:
-    'It starts the thread now if it is idle, or waits for the turn it is running. Its report wakes you; end your turn.',
-  held: 'The project is held, so it waits until the user resumes the project.',
+    'Queued for delivery, not started yet. It waits for its turn or a free runtime slot; do not respawn it.',
+  held: 'The project is held. It waits for the user to resume the project.',
 };
 
 /**
@@ -191,15 +199,36 @@ const DELIVERY_NOTES: Partial<Record<string, string>> = {
 export function threadTools(appSessionId: () => string) {
   return [
     tool(
+      'thread_list',
+      'List every thread you can control, with full ids, owners, states, wait reasons, reply previews, queued messages, runtime load and your open to-dos. Observational even when full, stopped or held. Use after compaction or restart; do not poll.',
+      {},
+      safeTool(async () => {
+        const projects = await requireProjectService();
+        return jsonResult({ ok: true, ...projects.listThreads(appSessionId()) });
+      }),
+    ),
+    tool(
+      'todo_add',
+      'Keep a durable lead follow-up (text 1..400, at most 40 open). after marks it due with that thread report; inMinutes (1..1440) wakes you when due. A full inbox retains it; a busy lead gets the same delivery as reports; a stopped or held project waits for Resume. Refuses when 40 are open.',
+      todoInput.shape,
+      safeTool(async (input: z.infer<typeof todoInput>) => {
+        const projects = await requireProjectService();
+        return jsonResult({ ok: true, ...(await projects.addTodo(appSessionId(), input)) });
+      }),
+    ),
+    tool(
+      'todo_done',
+      'Remove one open lead to-do by its id, including its queued reminder. Works when full, stopped or held; a reminder already handed over may still arrive.',
+      { id: z.string().min(1).max(200) },
+      safeTool(async ({ id }: { id: string }) => {
+        const projects = await requireProjectService();
+        await projects.doneTodo(appSessionId(), id);
+        return jsonResult({ ok: true, id });
+      }),
+    ),
+    tool(
       'thread_spawn',
-      [
-        'Start a new DROIDEX chat that carries one decided task alongside this one.',
-        'It cannot see this conversation, so the prompt must hold the whole task: the context, the files or areas involved, and what done looks like.',
-        'With reportBack true it is a thread of this chat, listed under it in Projects: its replies and questions arrive here as new turns, so end your turn after spawning, and steer it with the thread_ tools.',
-        "With reportBack false it is an ordinary chat in the user's sidebar that never reports here; follow it with session_read.",
-        "It inherits this chat's folder, harness, model, reasoning and autonomy unless you name others.",
-        'Investigate open questions here and spawn only decided work.',
-      ].join(' '),
+      'Start one decided task in a separate DROIDEX chat; its prompt must include the full task and context. reportBack true reports here; false makes a sidebar chat followed with session_read. Inherits your settings unless specified. Full capacity queues a thread with its position; a held project refuses. Use thread_send to continue a stopped, idle or queued thread. A matching title adds a reuse hint but still spawns.',
       spawnInput.shape,
       safeTool(async ({ reportBack, ...input }: z.infer<typeof spawnInput>) => {
         const projects = await requireProjectService();
@@ -221,23 +250,32 @@ export function threadTools(appSessionId: () => string) {
           reportBack: true,
           threadId: started.appSessionId,
           title: started.title,
-          state: 'working',
+          state: started.state,
+          delivery: started.delivery,
+          ...(started.position ? { position: started.position } : {}),
+          ...(started.waitReason ? { waitReason: started.waitReason } : {}),
+          ...(started.reuseNote ? { reuseNote: started.reuseNote } : {}),
           ...(started.cwd ? { cwd: started.cwd } : {}),
           ...(started.branch ? { branch: started.branch } : {}),
           ...(started.step ? { step: started.step } : {}),
-          note: 'Its replies and questions arrive here as new turns; end your turn instead of waiting.',
+          note:
+            started.delivery === 'queued'
+              ? 'Queued to start; do not respawn it. Its reports arrive here when it runs.'
+              : 'Started. Its reports arrive here, possibly mid-turn; end your turn when there is no other work.',
         });
       }),
     ),
     tool(
       'thread_send',
-      "Send one of this chat's threads new instructions or a correction. A working thread takes it inside its running turn unless you pass delivery. When it is waiting on a question it asked, pass answers, one per question in order, with its questionId; they reach it at once. Forward the user's own words when relaying theirs.",
+      'Send instructions to a thread you control. steer reaches its running turn; now stops that turn first; queue waits for it to end. Stopped or idle threads queue for a slot when capacity is full; held projects wait for Resume. A waiting question needs answers in order and its questionId. A full inbox refuses the message.',
       sendInput.shape,
       safeTool(async (input: z.infer<typeof sendInput>) => {
         const projects = await requireProjectService();
+        const caller = appSessionId();
+        const id = projects.resolveThreadId(caller, input.threadId);
         const delivery = await projects.send(
-          appSessionId(),
-          input.threadId,
+          caller,
+          id,
           input.text,
           input.answers,
           input.questionId,
@@ -245,20 +283,18 @@ export function threadTools(appSessionId: () => string) {
         );
         return jsonResult({
           ok: true,
-          threadId: input.threadId,
+          threadId: id,
           delivery,
+          ...(delivery === 'queued' || delivery === 'held'
+            ? deliveryStatus(projects.read(caller, id))
+            : {}),
           ...(DELIVERY_NOTES[delivery] ? { note: DELIVERY_NOTES[delivery] } : {}),
         });
       }),
     ),
     tool(
       'plan_set',
-      [
-        "Write the plan this chat shows the user in Projects: the steps it means to take, in order, each concrete enough that its finish is recognisable, in the user's words.",
-        'Each call replaces the whole plan, so send every step still intended.',
-        "Link a step to the thread carrying it with threadId, or name the step in thread_spawn, and Projects shows that thread's real state.",
-        'The first plan makes a chat that is not a project yet into one.',
-      ].join(' '),
+      'Replace the whole project plan (at most 60 steps); title names the project and lead chat. Link a step with threadId or spawn with step. The first plan creates a project. A full inbox or stopped/held project does not block plan updates; more than 60 steps is refused.',
       planInput.shape,
       safeTool(async (input: z.infer<typeof planInput>) => {
         const projects = await requireProjectService();
@@ -275,10 +311,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'project_done',
-      [
-        "Mark this project done once the user's goal is achieved and no thread is still working.",
-        'Projects shows the outcome and how long the project took. Spawning a thread, or a plan with open steps, reopens it.',
-      ].join(' '),
+      'Mark the project done with its outcome. Refuses while threads are working, starting, waiting on decisions or have undelivered messages. Works when stopped/held if no work remains; a full inbox of messages to threads blocks completion. New work reopens it.',
       doneInput.shape,
       safeTool(async (input: z.infer<typeof doneInput>) => {
         const projects = await requireProjectService();
@@ -288,12 +321,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_read',
-      [
-        `Read one of this chat's threads: its latest final replies (the last ${String(LEDGER_LIMITS.text)} characters of each; an old thread may keep only its final one), the question it is waiting on, and its settings.`,
-        'A report is an excerpt, so read the rest here before acting on it or telling the user.',
-        'A working thread has nothing new yet; DROIDEX wakes you when it settles, so do not poll.',
-        'queued counts the messages it has not been seen to take yet, yours waiting or handed over and any steer it has not read, so do not send them again. live is false when no runtime is open for it, because DROIDEX released it while idle or is reopening it; a message opens one.',
-      ].join(' '),
+      'Read a controlled thread without starting or resuming it: final replies, questions, settings, state, wait reason, runtime load and queued message count. Read even when full, stopped or held. A message may wait for a slot or its turn to end; do not resend it or poll this tool in a loop.',
       readInput.shape,
       safeTool(async (input: z.infer<typeof readInput>) => {
         const projects = await requireProjectService();
@@ -305,7 +333,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_configure',
-      "Change a thread's model, reasoning effort or autonomy when the work changes shape, instead of stopping it and starting another. Its history stays. Autonomy applies at once; a new model or effort applies once the thread's current turn ends.",
+      "Retune a controlled thread; its history stays. Autonomy applies now within its owner's limit; model and effort apply after its running turn. A full inbox or stopped/held project does not block settings changes or start work.",
       configureInput.shape,
       safeTool(async ({ threadId, ...settings }: z.infer<typeof configureInput>) => {
         const projects = await requireProjectService();
@@ -317,13 +345,24 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_stop',
-      "Stop one of this chat's threads: end its current turn and drop its queued messages. Its conversation stays open.",
+      'Stop a controlled thread and drop its queued messages, even when full or held. An already stopped thread stays stopped; thread_send continues its conversation.',
       stopInput.shape,
       safeTool(async (input: z.infer<typeof stopInput>) => {
         const projects = await requireProjectService();
-        await projects.stop(appSessionId(), input.threadId);
-        return jsonResult({ ok: true, threadId: input.threadId, state: 'stopped' });
+        const caller = appSessionId();
+        const id = projects.resolveThreadId(caller, input.threadId);
+        await projects.stop(caller, id);
+        return jsonResult({ ok: true, threadId: id, state: 'stopped' });
       }),
     ),
   ];
+}
+
+function deliveryStatus(read: ThreadReadout) {
+  return {
+    state: read.state,
+    ...(read.position ? { position: read.position } : {}),
+    ...(read.waitReason ? { waitReason: read.waitReason } : {}),
+    runtimeLoad: read.runtimeLoad,
+  };
 }

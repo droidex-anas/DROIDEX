@@ -3,10 +3,30 @@ import type { ProjectStep, ProjectThread, ProjectView } from './types';
 export function isProjectView(value: unknown): value is ProjectView {
   if (!record(value) || !isProjectMetadata(value) || !isThreadList(value.threads)) return false;
   if (!isPlan(value.plan)) return false;
+  if (!Array.isArray(value.todos) || value.todos.length > 40 || !value.todos.every(isTodo))
+    return false;
+  if (
+    !record(value.runtimeLoad) ||
+    !count(value.runtimeLoad.live) ||
+    !count(value.runtimeLoad.limit) ||
+    value.runtimeLoad.limit === 0
+  )
+    return false;
   const owners = new Map(
     value.threads.map((thread) => [thread.appSessionId, thread.ownerAppSessionId]),
   );
   return owners.size === value.threads.length && validOwnership(owners);
+}
+
+function isTodo(value: unknown): boolean {
+  return (
+    record(value) &&
+    text(value.id, 200) &&
+    text(value.text, 400) &&
+    (value.after === undefined || text(value.after, 200)) &&
+    (value.dueAt === undefined || count(value.dueAt)) &&
+    (value.due === undefined || value.due === true)
+  );
 }
 
 function isProjectMetadata(value: Record<string, unknown>): boolean {
@@ -53,6 +73,9 @@ function isThreadList(value: unknown): value is ProjectThread[] {
         text(thread.appSessionId, 200) &&
         text(thread.title, 120) &&
         typeof thread.waiting === 'boolean' &&
+        typeof thread.state === 'string' &&
+        ['working', 'queued', 'waiting', 'stopped', 'failed', 'idle'].includes(thread.state) &&
+        (thread.waitReason === undefined || text(thread.waitReason, 400)) &&
         (thread.ownerAppSessionId === undefined || text(thread.ownerAppSessionId, 200)),
     )
   );

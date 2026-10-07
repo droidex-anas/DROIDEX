@@ -10,6 +10,9 @@ const LEVELS = ['off', 'low', 'medium', 'high'] as const;
 const FREE = [
   'thread_send',
   'thread_read',
+  'thread_list',
+  'todo_add',
+  'todo_done',
   'thread_configure',
   'thread_stop',
   'plan_set',

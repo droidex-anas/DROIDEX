@@ -4,7 +4,10 @@ import {
   clearAsk,
   ProjectTurns,
   requireThread,
+  resolveThreadId,
+  scopedThreads,
   threadState,
+  threadWaitReason,
   type ThreadState,
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
@@ -29,16 +32,20 @@ import type {
   Project,
   ProjectStep,
   ProjectThread,
+  ProjectTodo,
   ProjectView,
   ThreadDelivery,
   ThreadInput,
   ThreadMessage,
   ThreadSettings,
   ThreadSpawnInput,
+  RuntimeLoad,
+  ThreadWait,
 } from './types.js';
 
 export interface ProjectPort {
   get(appSessionId: string): SessionSummary | undefined;
+  runtimeLoad(): RuntimeLoad;
   /** What each provider can run right now, so a spawn cannot name a model that is not there. */
   catalog(): Promise<ProviderStatus[]>;
   create(
@@ -97,6 +104,11 @@ interface StartedThread {
   cwd?: string;
   branch?: string;
   step?: string;
+  state: ThreadState;
+  delivery: 'started' | 'queued';
+  position?: number;
+  waitReason?: string;
+  reuseNote?: string;
 }
 
 /** What a chat reads back about a thread it owns. */
@@ -104,6 +116,10 @@ export interface ThreadReadout {
   threadId: string;
   title: string;
   state: ThreadState;
+  waitReason?: string;
+  runtimeLoad: RuntimeLoad;
+  wait?: ThreadWait;
+  position?: number;
   /** The replies asked for, oldest first; the latest one alone by default. */
   replies: string[];
   /** Older replies DROIDEX still holds, for an owner that wants more context. */
@@ -147,6 +163,8 @@ export class ProjectService {
   private readonly wakes: ProjectWakeQueue;
   private readonly turns: ProjectTurns;
   private readonly chats: SpawnedChats;
+  private todoTimer?: NodeJS.Timeout;
+  private historyLoaded = false;
   private closed = false;
 
   private constructor(
@@ -238,12 +256,19 @@ export class ProjectService {
         ...(milestone ? { milestone } : {}),
         ...(note ? { note } : {}),
       })),
-      threads: project.threads.map((thread) => ({
-        appSessionId: thread.appSessionId,
-        title: thread.title || 'Untitled thread',
-        waiting: thread.waiting,
-        ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
-      })),
+      todos: this.openTodos(project),
+      runtimeLoad: this.sessions.runtimeLoad(),
+      threads: project.threads.map((thread) => {
+        const status = this.threadStatus(project, thread);
+        return {
+          appSessionId: thread.appSessionId,
+          title: thread.title || 'Untitled thread',
+          waiting: thread.waiting,
+          state: status.state,
+          ...(status.waitReason ? { waitReason: status.waitReason } : {}),
+          ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
+        };
+      }),
       queued: project.pending.length,
       uncertain: project.delivery?.state === 'uncertain' ? project.delivery.messages.length : 0,
       ...(project.error ? { error: project.error } : {}),
@@ -349,6 +374,11 @@ export class ProjectService {
     // with nothing to say it was ours: a bad step name or a held project would
     // each strand one.
     this.checkAdmission(project);
+    if (requested.workspaceOf)
+      requested = {
+        ...requested,
+        workspaceOf: this.resolveThreadId(spawn.source, requested.workspaceOf),
+      };
     const named = requested.step ? findPlanStep(project.plan, requested.step) : undefined;
     // The thread counts as starting while its checkout is cut, and the count is
     // handed to the launch without a gap.
@@ -391,9 +421,27 @@ export class ProjectService {
       delete step.state;
       await this.save();
     }
+    const status = this.threadStatus(project, requireThread(project, appSessionId));
+    const reuse = scopedThreads(project, spawn.source).find((thread) => {
+      if (
+        thread.appSessionId === appSessionId ||
+        taskTitle(thread.title) !== taskTitle(input.title)
+      )
+        return false;
+      const state = this.threadStatus(project, thread).state;
+      return state === 'stopped' || state === 'idle' || state === 'queued';
+    });
+    const reuseNote = reuse
+      ? `${reuse.title} (${reuse.appSessionId}) is ${this.threadStatus(project, reuse).state}; thread_send continues it instead of spawning another.`
+      : undefined;
     return {
       appSessionId,
       title,
+      state: status.state,
+      delivery: status.state === 'queued' ? 'queued' : 'started',
+      ...(status.wait?.kind === 'start' ? { position: status.wait.position } : {}),
+      ...(status.waitReason ? { waitReason: status.waitReason } : {}),
+      ...(reuseNote ? { reuseNote } : {}),
       ...(workspace ? { cwd: workspace.cwd } : {}),
       ...(workspace && !('joined' in workspace) ? { branch: workspace.branch } : {}),
       ...(step ? { step: step.title } : {}),
@@ -440,8 +488,14 @@ export class ProjectService {
       project.title = name;
       requireThread(project, source).title = name;
     }
+    const resolved = steps.map((step) => ({
+      ...step,
+      ...(step.threadAppSessionId
+        ? { threadAppSessionId: this.resolveThreadId(source, step.threadAppSessionId) }
+        : {}),
+    }));
     const members = new Set(project.threads.map((thread) => thread.appSessionId));
-    project.plan = planFromSteps(steps, (id) => members.has(id));
+    project.plan = planFromSteps(resolved, (id) => members.has(id));
     // A step of the chat's own that is not done, stated or not, means work remains.
     if (project.plan.some((step) => !step.threadAppSessionId && step.state !== 'done'))
       delete project.done;
@@ -505,6 +559,7 @@ export class ProjectService {
     questionId?: string,
     delivery: ThreadDelivery = 'steer',
   ): Promise<'answered' | 'already-answered' | 'steered' | 'sent-now' | 'queued' | 'held'> {
+    target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const ask = thread.ask;
@@ -599,6 +654,7 @@ export class ProjectService {
    * for how far back it wants to read: one answer by default, never the lot.
    */
   read(source: string, target: string, replies = 1): ThreadReadout {
+    target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const session = this.sessions.get(target);
@@ -607,13 +663,11 @@ export class ProjectService {
     return {
       threadId: target,
       title: thread.title,
-      state: threadState(thread, session),
+      ...this.threadStatus(project, thread),
+      runtimeLoad: this.sessions.runtimeLoad(),
       replies: kept.slice(-wanted),
       moreReplies: Math.max(kept.length - wanted, 0),
-      queued:
-        [...project.pending, ...(project.delivery?.messages ?? [])].filter(
-          (message) => message.to === target,
-        ).length + (session?.pendingSteers?.length ?? 0),
+      queued: this.queuedMessages(project, target),
       ...(session ? { live: this.sessions.isLive(target) } : {}),
       ...(thread.repliesShed
         ? {
@@ -633,6 +687,183 @@ export class ProjectService {
     };
   }
 
+  listThreads(source: string) {
+    this.requireOpen();
+    const project = this.requireProjectFor(source);
+    const caller = requireThread(project, source);
+    return {
+      threads: scopedThreads(project, source).map((thread) => {
+        const status = this.threadStatus(project, thread);
+        return {
+          threadId: thread.appSessionId,
+          title: thread.title,
+          ownerId: thread.ownerAppSessionId,
+          state: status.state,
+          ...(status.waitReason ? { waitReason: status.waitReason } : {}),
+          lastReply: thread.reply.slice(0, 160),
+          queued: this.queuedMessages(project, thread.appSessionId),
+        };
+      }),
+      runtimeLoad: this.sessions.runtimeLoad(),
+      todos: caller.ownerAppSessionId ? [] : this.openTodos(project),
+    };
+  }
+
+  resolveThreadId(source: string, target: string): string {
+    this.requireOpen();
+    const project = this.requireProjectFor(source);
+    const id = resolveThreadId(project, source, target);
+    this.controlledProject(source, id);
+    return id;
+  }
+
+  async addTodo(
+    source: string,
+    input: { text: string; after?: string; inMinutes?: number },
+  ): Promise<Omit<ProjectTodo, 'notified'>> {
+    const project = this.requireLeadProject(source);
+    const text = input.text.trim();
+    if (!text || text.length > LEDGER_LIMITS.todoText)
+      throw new Error(`To-dos must contain 1 to ${String(LEDGER_LIMITS.todoText)} characters.`);
+    if (
+      input.inMinutes !== undefined &&
+      (!Number.isInteger(input.inMinutes) || input.inMinutes < 1 || input.inMinutes > 1440)
+    )
+      throw new Error('inMinutes must be a whole number from 1 to 1440.');
+    if (project.todos.length >= LEDGER_LIMITS.todos)
+      throw new Error(
+        `This project already has ${String(LEDGER_LIMITS.todos)} open to-dos. Use todo_done before adding another.`,
+      );
+    const after = input.after ? this.resolveThreadId(source, input.after) : undefined;
+    const todo: ProjectTodo = {
+      id: randomUUID(),
+      text,
+      ...(after ? { after } : {}),
+      ...(input.inMinutes !== undefined ? { dueAt: Date.now() + input.inMinutes * 60_000 } : {}),
+    };
+    if (after && this.hasUndeliveredReport(project, after)) todo.due = true;
+    project.todos.push(todo);
+    delete project.done;
+    await this.save();
+    if (todo.due) this.wakes.kick(project);
+    const result = { ...todo };
+    delete result.notified;
+    return result;
+  }
+
+  async doneTodo(source: string, id: string): Promise<void> {
+    const project = this.requireLeadProject(source);
+    if (!project.todos.some((todo) => todo.id === id))
+      throw new Error('No open to-do has that id in this project.');
+    project.todos = project.todos.filter((todo) => todo.id !== id);
+    project.pending = project.pending.filter((message) => message.id !== id);
+    await this.save();
+  }
+
+  private requireLeadProject(source: string): Project {
+    this.requireOpen();
+    const project = this.requireProjectFor(source);
+    if (requireThread(project, source).ownerAppSessionId)
+      throw new Error('Only the chat that leads a project keeps its to-dos.');
+    return project;
+  }
+
+  private hasUndeliveredReport(project: Project, target: string): boolean {
+    if (requireThread(project, target).owedReport) return true;
+    return [...project.pending, ...(project.delivery?.messages ?? [])].some(
+      (message) => message.kind === 'result' && message.from === target,
+    );
+  }
+
+  private openTodos(project: Project): Omit<ProjectTodo, 'notified'>[] {
+    return project.todos
+      .map((todo) => ({
+        id: todo.id,
+        text: todo.text,
+        ...(todo.after ? { after: todo.after } : {}),
+        ...(todo.dueAt !== undefined ? { dueAt: todo.dueAt } : {}),
+        ...(todo.due ? { due: true as const } : {}),
+      }))
+      .sort((a, b) => Number(Boolean(b.due)) - Number(Boolean(a.due)));
+  }
+
+  private queuedMessages(project: Project, target: string): number {
+    return (
+      [...project.pending, ...(project.delivery?.messages ?? [])].filter(
+        (message) => message.to === target,
+      ).length + (this.sessions.get(target)?.pendingSteers?.length ?? 0)
+    );
+  }
+
+  private threadStatus(project: Project, thread: ProjectThread) {
+    const wait = this.wakes.waitReason(thread.appSessionId);
+    const approval = this.sessions.awaitingApproval(thread.appSessionId);
+    const state = approval
+      ? 'waiting'
+      : threadState(thread, this.sessions.get(thread.appSessionId), wait);
+    const reason =
+      approval && !project.paused && !wait
+        ? 'waiting for user approval'
+        : threadWaitReason(
+            state,
+            wait,
+            this.sessions.runtimeLoad(),
+            project.paused,
+            this.queuedMessages(project, thread.appSessionId),
+          );
+    const targets = [...new Set(project.pending.map((message) => message.to))];
+    const position =
+      wait && wait.kind !== 'turn' ? wait.position : targets.indexOf(thread.appSessionId) + 1;
+    return {
+      state,
+      ...(wait ? { wait } : {}),
+      ...(reason ? { waitReason: reason } : {}),
+      ...(position > 0 ? { position } : {}),
+    };
+  }
+
+  private armTodoTimer(): void {
+    if (this.todoTimer) clearTimeout(this.todoTimer);
+    this.todoTimer = undefined;
+    if (this.closed || !this.historyLoaded) return;
+    let nextDueAt = Infinity;
+    for (const project of this.projects.values())
+      for (const todo of project.todos)
+        if (!todo.due && todo.dueAt !== undefined) nextDueAt = Math.min(nextDueAt, todo.dueAt);
+    if (nextDueAt === Infinity) return;
+    this.todoTimer = setTimeout(
+      () => {
+        this.todoTimer = undefined;
+        void this.wakeDueTodos().catch((error: unknown) => {
+          console.error('Could not persist project follow-ups:', error);
+        });
+      },
+      Math.min(2_147_483_647, Math.max(0, nextDueAt - Date.now())),
+    );
+    this.todoTimer.unref();
+  }
+
+  private async wakeDueTodos(): Promise<void> {
+    if (this.closed) return;
+    const dueProjects: Project[] = [];
+    const now = Date.now();
+    for (const project of this.projects.values()) {
+      let changed = false;
+      for (const todo of project.todos) {
+        if (todo.due || todo.dueAt === undefined || todo.dueAt > now) continue;
+        todo.due = true;
+        changed = true;
+      }
+      if (changed) {
+        this.refill(project);
+        dueProjects.push(project);
+      }
+    }
+    await this.save();
+    for (const project of dueProjects)
+      if (this.projects.get(project.id) === project) this.wakes.kick(project);
+  }
+
   /**
    * Retunes a thread within the limits of the chat that started it, and reads
    * back what took. Autonomy applies before this returns. A new model or effort
@@ -644,6 +875,7 @@ export class ProjectService {
     target: string,
     settings: ThreadSettings,
   ): Promise<ThreadReadout & { pending?: string }> {
+    target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     const caller = this.requireSession(source);
     const session = this.requireSession(target);
@@ -682,6 +914,7 @@ export class ProjectService {
   }
 
   async stop(source: string, target: string): Promise<void> {
+    target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     this.wakes.invalidate(project);
     await this.sessions.interrupt(target);
@@ -788,7 +1021,9 @@ export class ProjectService {
 
   /** Session history knows every thread now, so what a restart left queued can go out. */
   historyReady(): void {
+    this.historyLoaded = true;
     this.wakes.start(this.projects.values());
+    this.armTodoTimer();
   }
 
   sessionAvailable(appSessionId: string): void {
@@ -802,6 +1037,8 @@ export class ProjectService {
 
   close(): void {
     this.closed = true;
+    if (this.todoTimer) clearTimeout(this.todoTimer);
+    this.todoTimer = undefined;
     this.wakes.close();
     this.turns.clear();
   }
@@ -940,6 +1177,12 @@ export class ProjectService {
     const owner = thread.ownerAppSessionId;
     if (!owner) return;
     requireMessageText(text);
+    for (const todo of project.todos) {
+      if (todo.after !== thread.appSessionId || todo.due) continue;
+      todo.due = true;
+      // A direct report already wakes the lead with this follow-up attached.
+      if (!requireThread(project, owner).ownerAppSessionId) todo.notified = true;
+    }
     if (inboxFull(project)) {
       thread.owedReport = text;
       return;
@@ -954,6 +1197,20 @@ export class ProjectService {
       if (inboxFull(project)) return;
       const text = thread.owedReport;
       if (text) this.report(project, thread, text);
+    }
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (!lead) return;
+    for (const todo of project.todos) {
+      if (inboxFull(project)) return;
+      if (!todo.due || todo.notified) continue;
+      project.pending.push({
+        id: todo.id,
+        from: lead.appSessionId,
+        to: lead.appSessionId,
+        kind: 'message',
+        text: `Follow-up due (to-do ${todo.id}): ${todo.text}`,
+      });
+      todo.notified = true;
     }
   }
 
@@ -975,6 +1232,7 @@ export class ProjectService {
       paused: false,
       launching: 0,
       plan: [],
+      todos: [],
       threads: [],
       pending: [],
     };
@@ -1013,7 +1271,12 @@ export class ProjectService {
     if (!lead || project.launching > 0 || this.adopting.get(lead.appSessionId) !== project)
       return false;
     this.adopting.delete(lead.appSessionId);
-    if (project.threads.length > 1 || project.plan.length || !this.projects.has(project.id))
+    if (
+      project.threads.length > 1 ||
+      project.plan.length ||
+      project.todos.length ||
+      !this.projects.has(project.id)
+    )
       return false;
     this.projects.delete(project.id);
     this.membership.delete(lead.appSessionId);
@@ -1082,6 +1345,7 @@ export class ProjectService {
       for (const project of this.projects.values()) this.fail(project, error);
       throw error;
     }
+    this.armTodoTimer();
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 }
@@ -1094,4 +1358,11 @@ function inboxFull(project: Project): boolean {
 function requireMessageText(text: string): void {
   if (!text.trim() || text.length > LEDGER_LIMITS.text)
     throw new Error(`Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`);
+}
+
+function taskTitle(title: string): string {
+  return title
+    .replace(/(?:\s+\d+|\s*\(retry\))$/i, '')
+    .trim()
+    .toLowerCase();
 }
