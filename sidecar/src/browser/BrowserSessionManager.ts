@@ -42,8 +42,8 @@ export interface BrowserSessionManagerOptions {
 }
 
 export interface BrowserRuntime {
-  open(url: string): Promise<BrowserActionResult>;
-  reload(): Promise<BrowserActionResult>;
+  open(url: string, source?: 'user' | 'agent'): Promise<BrowserActionResult>;
+  reload(source?: 'user' | 'agent'): Promise<BrowserActionResult>;
   goBack(): Promise<BrowserActionResult>;
   goForward(): Promise<BrowserActionResult>;
   setViewport(viewport: BrowserViewport, mode: BrowserViewportMode): Promise<void>;
@@ -129,6 +129,7 @@ export class BrowserSessionManager {
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
   async open(input: {
+    source?: 'user' | 'agent';
     appSessionId: string;
     url: string;
     viewport?: BrowserViewport;
@@ -150,12 +151,12 @@ export class BrowserSessionManager {
       viewportMode: input.viewportMode ?? session.state.viewportMode,
     };
     this.emitUpdated(session.state);
-    return this.applied(session, await session.runtime.open(url));
+    return this.applied(session, await session.runtime.open(url, input.source ?? 'agent'));
   }
 
-  async reload(appSessionId: string): Promise<BrowserOutcome> {
+  async reload(appSessionId: string, source: 'user' | 'agent' = 'agent'): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    return this.applied(session, await session.runtime.reload());
+    return this.applied(session, await session.runtime.reload(source));
   }
 
   async goBack(appSessionId: string): Promise<BrowserOutcome> {

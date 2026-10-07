@@ -204,21 +204,30 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url, stillWanted);
+      await manager.open(
+        browserSessionId,
+        url,
+        stillWanted,
+        request.source === 'user' ? 'user' : 'agent',
+      );
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
-      await manager.reload(browserSessionId, stillWanted);
+      await manager.reload(
+        browserSessionId,
+        stillWanted,
+        request.source === 'user' ? 'user' : 'agent',
+      );
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
-          ? await manager.goBack(browserSessionId, stillWanted)
-          : await manager.goForward(browserSessionId, stillWanted);
+          ? await manager.goBack(browserSessionId, stillWanted, 'agent')
+          : await manager.goForward(browserSessionId, stillWanted, 'agent');
       const url = moved ? (await loaded)?.url : undefined;
       return result(request, true, await snapshotAfter(request, url));
     }

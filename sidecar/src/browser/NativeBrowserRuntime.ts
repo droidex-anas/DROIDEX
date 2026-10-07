@@ -31,12 +31,12 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     this.viewport = options.viewport;
   }
 
-  async open(url: string): Promise<BrowserActionResult> {
-    return this.resultFrom(await this.send({ action: 'open', url }), url);
+  async open(url: string, source: 'user' | 'agent' = 'agent'): Promise<BrowserActionResult> {
+    return this.resultFrom(await this.send({ action: 'open', url, source }), url);
   }
 
-  async reload(): Promise<BrowserActionResult> {
-    return this.act({ action: 'reload' });
+  async reload(source: 'user' | 'agent' = 'agent'): Promise<BrowserActionResult> {
+    return this.act({ action: 'reload', source });
   }
 
   async goBack(): Promise<BrowserActionResult> {

@@ -11,6 +11,7 @@ import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { getBrowserHistory } from '../../lib/browserHistory';
 import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
 import type { BrowserViewportMode } from '../../types/bridge';
 import {
@@ -292,6 +293,13 @@ export default function BrowserWorkspace({
     setUrlInput(browserAddressValue(url));
     setActiveUrl(url);
     if (browserKey) {
+      if (isDesktop()) {
+        void getBrowserHistory()
+          .recordTyped(url)
+          .catch((error: unknown) => {
+            console.error('Could not record the browser address in history:', error);
+          });
+      }
       openBrowser({
         appSessionId: browserKey,
         url,

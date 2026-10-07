@@ -223,6 +223,13 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
+  browserHistory: {
+    suggest: (input, limit) => ipcRenderer.invoke('browser-history-suggest', { input, limit }),
+    recordTyped: (url) => ipcRenderer.invoke('browser-history-record-typed', { url }),
+    remove: (url) => ipcRenderer.invoke('browser-history-remove', { url }),
+    clear: () => ipcRenderer.invoke('browser-history-clear'),
+  },
+
   nativeBrowserReserve: (browserSessionId, savedUrl, savedMode) =>
     ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl, savedMode }),
   nativeBrowserRelease: (browserSessionId) =>

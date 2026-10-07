@@ -27,6 +27,7 @@ function createBrowser() {
   };
   const manager = createNativeBrowserManager({
     app: {},
+    history: { recordVisit: async () => {}, updateTitle: async () => {} },
     appName: 'DROIDEX',
     session,
     dialog: {},

@@ -82,6 +82,22 @@ function createNativeBrowserPage({
     if (!contents) throw new Error(`${appName} browser is not open.`);
     // Waking the page can outlast the caller; then nothing more is done.
     if (Date.now() >= request.startBy) throw new Error('The browser page did not finish in time.');
+    const historyInput = entry.historyInput;
+    const sendsInput = ['click', 'fill', 'type', 'press', 'evaluate', 'fillCredentials'].includes(
+      request.action,
+    );
+    if (sendsInput) {
+      historyInput.source = 'agent';
+      historyInput.agentActions += 1;
+    }
+    try {
+      return await performAgentAction(request, entry, contents);
+    } finally {
+      if (sendsInput) historyInput.agentActions -= 1;
+    }
+  }
+
+  async function performAgentAction(request, entry, contents) {
     if (request.action === 'find') {
       const found = await reading.find(contents, entry, request.query);
       return { requestId: request.requestId, ok: true, ...found };

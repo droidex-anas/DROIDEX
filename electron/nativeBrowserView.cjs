@@ -17,6 +17,7 @@ function createNativeBrowserViewFactory({
   onCrashed,
   onInput,
   listEntries,
+  history,
 }) {
   let browserSessionConfigured = false;
   const requestStarts = new Map(); // webRequest id -> when its headers went out
@@ -84,6 +85,7 @@ function createNativeBrowserViewFactory({
       // Documents the page has loaded, so a design crop is never taken of a
       // later one, a reload of the same URL included.
       documents: 0,
+      historyInput: { source: 'user', agentActions: 0 },
       loadingUrl: null,
       loadingPromise: null,
       networkEvents: [],
@@ -96,6 +98,11 @@ function createNativeBrowserViewFactory({
     configureSession();
     entry.contents = contents;
     entry.crashed = false;
+    // Input attribution belongs to the guest, including operations still finishing on an old one.
+    const historyInput = { source: entry.historyInput.source, agentActions: 0 };
+    entry.historyInput = historyInput;
+    let visitedUrl = null;
+    let navigationSource = historyInput.source;
     const current = () => entry.contents === contents && !contents.isDestroyed();
     contents.setWindowOpenHandler(({ url: nextUrl }) => {
       if (current()) void loadUrl(entry, nextUrl);
@@ -103,8 +110,31 @@ function createNativeBrowserViewFactory({
     });
     // Only the page the browser shows forwards app shortcuts, not one let go.
     contents.on('before-input-event', (event, input) => {
-      if (current()) onInput(event, input);
+      if (!current()) return;
+      if (historyInput.agentActions === 0 && input.type === 'keyDown') historyInput.source = 'user';
+      onInput(event, input);
     });
+    contents.on('before-mouse-event', (_event, input) => {
+      if (current() && historyInput.agentActions === 0 && input.type === 'mouseDown')
+        historyInput.source = 'user';
+    });
+    contents.on('did-start-navigation', (details) => {
+      if (!current() || !details.isMainFrame) return;
+      navigationSource = historyInput.source;
+      if (!details.isSameDocument) visitedUrl = null;
+    });
+    const saveHistory = (operation) => {
+      void operation.catch(() =>
+        console.error(
+          'Could not save browser history. Check browser-history.json in the app profile and directory permissions.',
+        ),
+      );
+    };
+    const updateTitle = (title) => {
+      if (current() && visitedUrl === contents.getURL())
+        saveHistory(history.updateTitle(visitedUrl, title));
+    };
+    contents.on('page-title-updated', (_event, title) => updateTitle(title));
     contents.on('console-message', (details) => {
       // Electron's own notices about the guest are not the page's.
       if (!current() || String(details.sourceId ?? '').startsWith('node:electron/')) return;
@@ -125,18 +155,25 @@ function createNativeBrowserViewFactory({
       entry.failedRestoreUrl = null;
       entry.targetUrl = requestedUrl;
     });
-    contents.on('did-navigate', (_event, loadedUrl) => {
+    contents.on('did-navigate', (_event, loadedUrl, httpResponseCode) => {
       if (current()) entry.documents += 1;
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;
       if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
       // Nor is it part of the browser's history: it goes once a page follows it.
-      const history = contents.navigationHistory;
-      if (history.getActiveIndex() === 1 && history.getEntryAtIndex(0)?.url === 'about:blank')
-        history.removeEntryAtIndex(0);
+      const navigationHistory = contents.navigationHistory;
+      if (
+        navigationHistory.getActiveIndex() === 1 &&
+        navigationHistory.getEntryAtIndex(0)?.url === 'about:blank'
+      )
+        navigationHistory.removeEntryAtIndex(0);
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);
+      if (httpResponseCode < 400) {
+        visitedUrl = loadedUrl;
+        saveHistory(history.recordVisit(loadedUrl, navigationSource));
+      }
     });
     contents.on('did-finish-load', () => {
       if (!current()) return;
@@ -146,6 +183,7 @@ function createNativeBrowserViewFactory({
           emitLoaded(entry, entry.targetUrl);
         return;
       }
+      updateTitle(contents.getTitle());
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
       void autofill(contents);
     });
@@ -166,6 +204,11 @@ function createNativeBrowserViewFactory({
     // A frame's hash change or pushState is not the page moving.
     contents.on('did-navigate-in-page', (_event, nextUrl, isMainFrame) => {
       if (!current() || !isMainFrame) return;
+      if (visitedUrl !== null) {
+        visitedUrl = nextUrl;
+        saveHistory(history.recordVisit(nextUrl, navigationSource));
+        updateTitle(contents.getTitle());
+      }
       entry.targetUrl = nextUrl;
       emitLoaded(entry, nextUrl);
       if (entry.state.designMode && entry.shown) applyDesignState(entry);

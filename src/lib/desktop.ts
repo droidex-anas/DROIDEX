@@ -8,6 +8,7 @@ import type {
   NativeBrowserFrame,
   NativeBrowserWorking,
 } from './nativeBrowser';
+import type { BrowserHistoryApi } from './browserHistory';
 import type { NativeBrowserChord } from './shortcuts';
 import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
@@ -301,6 +302,7 @@ interface DroidControlApi {
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
+  browserHistory: BrowserHistoryApi;
   nativeBrowserReserve: (
     browserSessionId: string,
     savedUrl?: string,

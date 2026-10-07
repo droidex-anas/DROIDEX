@@ -28,6 +28,7 @@ const { createTerminalManager } = require('./terminal.cjs');
 const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createBrowserHistory } = require('./browserHistory.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
@@ -131,7 +132,9 @@ let appIconMode = 'system';
 let pendingNotificationOpen = null;
 const PENDING_NOTIFICATION_OPEN_MS = 30_000;
 const nativeBrowserShortcuts = createNativeBrowserShortcuts({ getMainWindow: () => mainWindow });
+const browserHistory = createBrowserHistory({ userData: () => app.getPath('userData') });
 const nativeBrowserManager = createNativeBrowserManager({
+  history: browserHistory,
   app,
   appName: APP_NAME,
   session,
@@ -252,6 +255,16 @@ app.on('before-quit', () => {
   terminalManager.closeAll();
   terminalSubscriptions.clear();
   filesRootAccess.clear();
+});
+
+let historyFlushedForQuit = false;
+app.on('will-quit', (event) => {
+  if (historyFlushedForQuit) return;
+  event.preventDefault();
+  void browserHistory.flush().finally(() => {
+    historyFlushedForQuit = true;
+    app.quit();
+  });
 });
 
 app.on('activate', () => {
@@ -922,6 +935,23 @@ function registerIpc() {
   ipcMain.handle('files-reveal', (event, { accessToken, relative }) => {
     assertMainRenderer(event);
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
+  });
+
+  ipcMain.handle('browser-history-suggest', (event, { input, limit }) => {
+    assertMainRenderer(event);
+    return browserHistory.suggest(input, limit);
+  });
+  ipcMain.handle('browser-history-record-typed', (event, { url }) => {
+    assertMainRenderer(event);
+    return browserHistory.recordTyped(url);
+  });
+  ipcMain.handle('browser-history-remove', (event, { url }) => {
+    assertMainRenderer(event);
+    return browserHistory.remove(url);
+  });
+  ipcMain.handle('browser-history-clear', (event) => {
+    assertMainRenderer(event);
+    return browserHistory.clear();
   });
 
   ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl, savedMode }) => {

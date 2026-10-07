@@ -63,6 +63,7 @@ export class SessionBrowser {
     await this.handleBrowser(cmd.appSessionId, () =>
       this.d.browsers.open({
         ...cmd,
+        source: 'user',
         appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
       }),
     );
@@ -88,7 +89,7 @@ export class SessionBrowser {
 
   async reload(cmd: Extract<ClientCommand, { type: 'browser.reload' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId)),
+      this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId), 'user'),
     );
   }
 
