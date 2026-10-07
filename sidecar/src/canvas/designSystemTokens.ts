@@ -17,6 +17,7 @@ export interface SourceTokens {
 
 /** Only global declarations with an explicit mode (or an explicit shared value) become kit tokens. */
 export function sourceTokens(files: SourceFiles): SourceTokens {
+  const sharedTokens: Record<string, string> = {};
   const result: SourceTokens = {
     modes: { light: {}, dark: {} },
     references: [],
@@ -86,9 +87,15 @@ export function sourceTokens(files: SourceFiles): SourceTokens {
         });
         return;
       }
+      const value = declaration.value.replace(
+        /^#([\da-f]{3,4})$/i,
+        (_match, hex: string) =>
+          '#' + hex.replace(/[\da-f]/gi, (digit) => digit.repeat(2)).toLowerCase(),
+      );
       for (const mode of modes) {
-        const existing = result.modes[mode][declaration.prop];
-        if (Object.hasOwn(result.modes[mode], declaration.prop) && existing !== declaration.value) {
+        const tokens = mode === 'shared' ? sharedTokens : result.modes[mode];
+        const existing = tokens[declaration.prop];
+        if (Object.hasOwn(tokens, declaration.prop) && existing !== value) {
           result.diagnostics.push({
             code: 'ambiguous_token',
             message: `${declaration.prop} has competing ${mode} values. Choose one explicitly before extraction.`,
@@ -96,21 +103,22 @@ export function sourceTokens(files: SourceFiles): SourceTokens {
             line: declaration.source?.start?.line,
           });
         }
-        result.modes[mode][declaration.prop] = declaration.value;
+        tokens[declaration.prop] = value;
       }
     });
   }
+  for (const mode of ['light', 'dark'] as const)
+    result.modes[mode] = { ...sharedTokens, ...result.modes[mode] };
   return result;
 }
 
-function declarationModes(declaration: Declaration): ('light' | 'dark')[] {
+function declarationModes(declaration: Declaration): ('shared' | 'light' | 'dark')[] {
   const rule = declaration.parent;
   if (rule?.type !== 'rule' || rule.parent?.type !== 'root') return [];
-  const modes = new Set<'light' | 'dark'>();
+  const modes = new Set<'shared' | 'light' | 'dark'>();
   for (const selector of rule.selector.split(',').map((part) => part.trim())) {
     if (selector === ':root' || selector === 'html') {
-      modes.add('light');
-      modes.add('dark');
+      modes.add('shared');
       continue;
     }
     const match = /^(?::root|html)?\[data-mode\s*=\s*['"]?(light|dark)['"]?\]$/.exec(selector);

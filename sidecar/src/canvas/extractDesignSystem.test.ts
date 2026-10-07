@@ -118,6 +118,18 @@ test('a wrapper around an imported kit primitive is reported instead of copying 
   assert.deepEqual(result.system.modes, DROIDEX_DESIGN_SYSTEM.modes);
 });
 
+test('extraction maps shared root defaults and an explicit dark override without ambiguity', () => {
+  const rules = [':root { --ds-accent: #fff; }', ':root[data-mode="dark"] { --ds-accent: #000; }'];
+  for (const css of [rules.join('\n'), [...rules].reverse().join('\n')]) {
+    const result = extractDesignSystem({ 'tokens.css': css }, input);
+    assert.equal(result.status, 'extracted');
+    if (result.status !== 'extracted') return;
+    assert.equal(result.system.modes.light['--ds-accent'], '#ffffff');
+    assert.equal(result.system.modes.dark['--ds-accent'], '#000000');
+    assert.ok(!result.diagnostics.some((entry) => entry.code === 'ambiguous_token'));
+  }
+});
+
 test('extraction refuses missing mode counterparts and ambiguous values rather than guessing', () => {
   for (const css of [
     '[data-mode="light"] { --ds-accent: #123456; }',
