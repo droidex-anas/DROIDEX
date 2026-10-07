@@ -440,7 +440,7 @@ test('cancelling a canvas releases its slots and reports its frames', async (t) 
   );
 });
 
-test('an abandoned compile cannot wedge or share its child with replacement work', async (t) => {
+test('abandoned compilers retain both slots until exit without receiving replacement work', async (t) => {
   const children = mockCompilerProcesses(t);
   const builds = new CanvasBuilds({
     compiler: () => new CompilerWorker(),
@@ -450,12 +450,15 @@ test('an abandoned compile cannot wedge or share its child with replacement work
   await files.createRoot();
   const canvas = standIn(builds);
   canvas.revisions.set('cv_01/dsg_hey', 'rev_01');
+  canvas.revisions.set('cv_01/dsg_two', 'rev_02');
   await builds.load(canvas.host, files, []);
   try {
     builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
+    builds.enqueue('cv_01', 'dsg_two', 'rev_02');
     await drained();
     const abandoned = children[0];
-    assert.ok(abandoned);
+    const other = children[1];
+    assert.ok(abandoned && other);
     builds.cancelCanvas('cv_01');
     await drained();
     assert.deepEqual(
@@ -465,21 +468,38 @@ test('an abandoned compile cannot wedge or share its child with replacement work
     );
 
     builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
+    builds.enqueue('cv_01', 'dsg_two', 'rev_02');
     await drained();
-    const replacement = children[1];
-    assert.ok(replacement, 'the freed slot forks a different compiler');
+    assert.equal(children.length, 2, 'abandoned children still consume both compiler slots');
+    assert.equal(builds.stateOf('cv_01', 'dsg_hey').status, 'pending');
+    assert.equal(builds.stateOf('cv_01', 'dsg_two').status, 'pending');
+    t.mock.timers.tick(2_000);
+    await drained();
+    assert.deepEqual(abandoned.signals, ['SIGKILL']);
+    assert.deepEqual(other.signals, ['SIGKILL']);
+    assert.equal(children.length, 2, 'SIGKILL delivery does not release physical capacity');
+    abandoned.exit();
+    await drained();
+    const replacement = children[2];
+    assert.ok(replacement, 'a reaped slot forks a different compiler');
+    assert.equal(children.length, 3, 'one exit admits exactly one replacement');
+    assert.deepEqual(
+      replacement.requests.map((request) => request.type),
+      ['compile'],
+    );
     assert.deepEqual(
       abandoned.requests.map((request) => request.type),
       ['compile', 'cancel', 'shutdown'],
     );
     assert.deepEqual(
-      replacement.requests.map((request) => request.type),
-      ['compile'],
+      other.requests.map((request) => request.type),
+      ['compile', 'cancel', 'shutdown'],
     );
-    t.mock.timers.tick(2_000);
+    assert.deepEqual(replacement.signals, [], 'abandoned work cannot end its replacement');
+    other.exit();
     await drained();
-    assert.equal(abandoned.signals.length, 1, 'a child ignoring cancellation is terminated');
-    assert.deepEqual(replacement.signals, [], 'the abandoned work cannot end its replacement');
+    assert.equal(children.length, 4, 'the second exit admits the remaining replacement');
+    assert.equal(children.filter((child) => child.exitCode === null).length, 2);
   } finally {
     const closing = builds.close();
     await drained();

@@ -145,7 +145,9 @@ export class CanvasBuilds {
   private closed = false;
 
   constructor(deps: CanvasBuildsDeps = {}) {
-    this.processes = new CompilerProcesses(deps.compiler);
+    this.processes = new CompilerProcesses(deps.compiler, () => {
+      for (const started of this.pump()) this.announce(started);
+    });
     this.deadline = deps.deadline ?? realDeadline;
   }
 
@@ -295,7 +297,9 @@ export class CanvasBuilds {
     for (const job of [...this.queued.values()]) {
       if (this.closed) break;
       // The first free slot, so a second process exists only once two overlap.
-      const slot = this.slots.find((candidate) => candidate.job === null);
+      const slot = this.slots.find(
+        (candidate) => candidate.job === null && !this.processes.isEnding(candidate),
+      );
       if (!slot) break;
       this.queued.delete(designKey(job.canvasId, job.designId));
       const running = this.start(slot, job);
