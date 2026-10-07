@@ -320,8 +320,10 @@ its SQLite writer lease before loading heads or sweeping temporaries. Linked
 roots therefore share one writer, even across separate profiles. A live owner
 refuses a second open with `storage_failed`; an atomic lease transaction
 reclaims only an owner whose process is known to have exited. Malformed leases
-or uncertain process liveness are refused rather than guessed. Close waits for
-admitted storage work before releasing the lease; a failed open releases it too.
+or uncertain process liveness are refused rather than guessed. Close rejects
+queued commits and new mutations immediately, independently of active I/O.
+It still waits for admitted staging and active durable writes before releasing
+the lease; a failed open releases it too.
 
 The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
 remove watches synchronously. Removing the last pane watching a canvas cancels

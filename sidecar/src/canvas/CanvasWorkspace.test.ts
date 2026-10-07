@@ -506,37 +506,6 @@ test('a revision seed copies the source it names, once per mutation', async (t) 
   assert.equal(workspace.snapshot(canvasId).frames.length, 2);
 });
 
-test('a canvas whose head cannot be reread is held damaged until reopen', async (t) => {
-  t.mock.method(console, 'error', () => undefined);
-  let unreadable = false;
-  const { root, deps, workspace, scope, canvasId, designId } = await withFrame(t, {
-    fs: observedFileSystem((operation, path) => {
-      if (!unreadable || !path.endsWith('manifest.json')) return;
-      if (operation === 'rename' || operation === 'open') throw new Error('the volume went away');
-    }),
-  });
-  unreadable = true;
-  await assert.rejects(
-    workspace.write(scope, writeInput('write-hey', designId, null, { 'main.tsx': HEY })),
-    { code: 'storage_failed' },
-  );
-  // Neither head is served, because choosing one of them would be a guess.
-  assert.deepEqual(workspace.damagedCanvasIds(), [canvasId]);
-  assert.deepEqual(workspace.listCanvases(), []);
-  assert.throws(() => workspace.snapshot(canvasId), { code: 'storage_failed' });
-  await assert.rejects(workspace.write(scope, writeInput('later', designId, null, {})), {
-    code: 'storage_failed',
-  });
-
-  // A manifest already damaged on disk is reported the same way at open.
-  await writeFile(join(root, canvasId, 'manifest.json'), '{ not json');
-  await workspace.close();
-  const reopened = await CanvasWorkspace.open(root, quietBuilds(), { ...deps, fs: undefined });
-  t.after(() => reopened.close());
-  assert.deepEqual(reopened.damagedCanvasIds(), [canvasId]);
-  assert.deepEqual(reopened.listCanvases(), []);
-});
-
 test('a lease revoked with the replacement manifest ready publishes and binds nothing', async (t) => {
   let active = true;
   const hold = holdManifestWrite('prepared');
@@ -862,6 +831,53 @@ test('close waits for a mutation that is still staging its source', async (t) =>
   // writing into storage the workspace had already given up.
   assert.equal(settled, true);
   await assert.rejects(writing, { code: 'storage_failed' });
+});
+
+test('close rejects queued and new mutations before an admitted durable write settles', async (t) => {
+  const hold = holdManifestWrite('published');
+  const { root, deps, workspace } = await openWorkspace(t, { fs: hold.fs });
+  hold.arm();
+  const active = workspace.createCanvas('active-chat');
+  await hold.reached;
+  const rejected: string[] = [];
+  const queued = workspace.createCanvas('queued-chat');
+  void queued.catch(() => rejected.push('queued'));
+  let closed = false;
+  const closing = workspace.close().then(() => {
+    closed = true;
+  });
+  const late = workspace.createCanvas('late-chat');
+  void late.catch(() => rejected.push('new'));
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual([...rejected].sort(), ['new', 'queued']);
+    assert.equal(closed, false, 'close still owns the admitted durable write');
+  } finally {
+    hold.release();
+    await Promise.allSettled([active, queued, late]);
+    await closing;
+  }
+  await assert.rejects(queued, {
+    code: 'storage_failed',
+    message: 'The Canvas workspace is closing.',
+  });
+  await assert.rejects(late, {
+    code: 'storage_failed',
+    message: 'The Canvas workspace is closing.',
+  });
+  const saved = await active;
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), deps);
+  try {
+    assert.deepEqual(
+      reopened.listCanvases().map((canvas) => canvas.canvasId),
+      [saved.canvasId],
+    );
+    assert.equal(reopened.attachedCanvasId('active-chat'), saved.canvasId);
+    assert.equal(reopened.attachedCanvasId('queued-chat'), null);
+    assert.equal(reopened.attachedCanvasId('late-chat'), null);
+  } finally {
+    await reopened.close();
+  }
 });
 
 test('a closed workspace refuses further commits', async (t) => {

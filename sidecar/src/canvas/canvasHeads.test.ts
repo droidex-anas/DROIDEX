@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import {
   canvasRoot,
   observedFileSystem,
+  quietBuilds,
   stopFlushingAfterManifestRename,
   terminateAtManifestRename,
   withFrame,
@@ -10,6 +13,7 @@ import {
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasHeads } from './canvasHeads.js';
 import { emptyCanvasManifest, type CanvasManifest } from './canvasManifest.js';
+import { CanvasWorkspace } from './CanvasWorkspace.js';
 
 const keepGoing = (): void => undefined;
 const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
@@ -101,4 +105,36 @@ test('a head recovered after a failed flush is not served until it is durable', 
   assert.deepEqual(workspace.damagedCanvasIds(), [canvasId]);
   assert.throws(() => workspace.snapshot(canvasId), { code: 'storage_failed' });
   await assert.rejects(workspace.write(scope, input), { code: 'storage_failed' });
+});
+
+test('a canvas whose head cannot be reread is held damaged until reopen', async (t) => {
+  t.mock.method(console, 'error', () => undefined);
+  let unreadable = false;
+  const { root, deps, workspace, scope, canvasId, designId } = await withFrame(t, {
+    fs: observedFileSystem((operation, path) => {
+      if (!unreadable || !path.endsWith('manifest.json')) return;
+      if (operation === 'rename' || operation === 'open') throw new Error('the volume went away');
+    }),
+  });
+  const input = {
+    mutationId: 'write-hey',
+    designId,
+    expectedRevisionId: null,
+    files: { 'main.tsx': HEY },
+    deletedPaths: [],
+  };
+  unreadable = true;
+  await assert.rejects(workspace.write(scope, input), { code: 'storage_failed' });
+  assert.deepEqual(workspace.damagedCanvasIds(), [canvasId]);
+  assert.deepEqual(workspace.listCanvases(), []);
+  assert.throws(() => workspace.snapshot(canvasId), { code: 'storage_failed' });
+  await assert.rejects(workspace.write(scope, { ...input, mutationId: 'later', files: {} }), {
+    code: 'storage_failed',
+  });
+  await writeFile(join(root, canvasId, 'manifest.json'), '{ not json');
+  await workspace.close();
+  const reopened = await CanvasWorkspace.open(root, quietBuilds(), { ...deps, fs: undefined });
+  t.after(() => reopened.close());
+  assert.deepEqual(reopened.damagedCanvasIds(), [canvasId]);
+  assert.deepEqual(reopened.listCanvases(), []);
 });

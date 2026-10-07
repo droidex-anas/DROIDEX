@@ -1398,6 +1398,12 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] Complete shutdown/profile isolation: cancel queues before awaiting external cleanup, terminate compiler workers, stop preview hosts/subscriptions, revoke MCP scopes, and release all waiters. Verify repeated close is harmless and a new session with a reused provider handle cannot accept old writes/events. Run failure cases with locked/unavailable capture, not only a visible happy-path window.
 - [ ] Run focused export, teardown and runtime tests; manually export a stateful design and confirm PNG and source describe the selected revision. Record capture limitations honestly.
 
+Settled by 10c (storage/bridge):
+
+- Physical Canvas roots have one atomic writer lease, including linked roots across profiles; live writers are refused before loading or cleanup, and close, failed open and confirmed process death release ownership.
+- Last-pane unsubscribe/page loss cancels that canvas's queued and running builds without stopping other panes or canvases. Pending subscriptions revalidate their own identity after storage opens, so unsubscribe cannot resurrect a watch or rebuild.
+- Closing the commit queue rejects queued and new callers without waiting for active I/O, while still awaiting admitted staging and durable writes. Single commit ownership, flush-before-publish and publication-time CAS remain unchanged.
+
 ## Task 11: Motion, accessibility and measured performance
 
 **Subtasks (one branch and PR each, merged in order):**
