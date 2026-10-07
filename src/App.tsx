@@ -969,7 +969,6 @@ export default function App() {
                           header: (
                             <Suspense fallback={<div className="min-w-0 flex-1" />}>
                               <LazyCanvasHeader
-                                appSessionId={activeSession.appSessionId}
                                 canvasId={activeUtilityTab.canvasId ?? canvasAttachment}
                                 onDock={() => {
                                   setExpandedPaneAppSessionId(null);

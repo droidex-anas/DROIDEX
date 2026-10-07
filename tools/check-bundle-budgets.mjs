@@ -126,9 +126,14 @@ import { join } from 'node:path';
 // lazy-surface registrations, which is what keeps the Design home, the canvases
 // sidebar, the board header and the chat bootstrap out of the entry. No
 // `src/features/canvas` module is in the entry chunk or its eager closure,
-// confirmed from Rollup module metadata. The remaining 2_000 bytes of headroom
-// is deliberately tight: 05b-05d are board work that belongs wholly in the
-// Canvas chunk, so the next entry-chunk growth has to be argued here.
+// confirmed from Rollup module metadata.
+//
+// Moving the attached-chats menu into the chat column's header (spec §4) took
+// the entry to 1_440_856, **+856**: the header reads which canvas the chat's
+// board shows, and the menu itself is a fifth lazy surface. The remaining 1_144
+// bytes of headroom is deliberately tight: 05b-05d are board work that belongs
+// wholly in the Canvas chunk, so the next entry-chunk growth has to be argued
+// here.
 const BUDGETS = {
   initialRendererJsBytes: 1_442_000,
   initialCssBytes: 101_500,

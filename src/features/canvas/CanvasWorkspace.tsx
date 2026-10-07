@@ -146,7 +146,7 @@ export function CanvasWorkspace({
           Chat | Canvas control instead (`CanvasHeader`). */}
       {!isExpanded && (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-droid-raised px-1 shadow-droid-sm">
-          {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
+          {watched !== null && <CanvasMenu canvasId={watched} />}
           <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
         </div>
       )}

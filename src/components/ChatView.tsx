@@ -1,7 +1,9 @@
-import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
+import { useRef, useEffect, useMemo, useState, useCallback, Suspense, type ReactNode } from 'react';
 import { GripVertical, ChevronRight, Square } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
+import { LazyAttachedChatsMenu } from '../lib/lazySurfaces';
+import { utilityPanelForSession } from '../lib/utilityPanel';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
@@ -159,29 +161,97 @@ function RestoreFailedBanner({ message, onRetry }: { message?: string; onRetry: 
   );
 }
 
+// The canvas this chat's board is showing, or null when it has no board open.
+// Spec §4 makes the chat column's header the place its canvas's chats are
+// listed, so the header reads that state rather than being told about it.
+function canvasOnBoard(state: AppState, appSessionId: string | null): string | null {
+  if (!appSessionId) return null;
+  const panel = utilityPanelForSession(state.utilityPanels, appSessionId);
+  if (!panel.open) return null;
+  const tab = panel.tabs.find((candidate) => candidate.id === panel.activeTabId);
+  if (tab?.tool !== 'canvas') return null;
+  return tab.canvasId ?? state.canvasAttachments[appSessionId] ?? null;
+}
+
+interface ChatHeaderSub {
+  label: string;
+  meta?: string;
+  running: boolean;
+  backTitle?: string;
+  onBack: () => void;
+  onStop?: () => void;
+}
+
+function ChatTitleText({ title, live }: { title: string; live: boolean }) {
+  return (
+    <span
+      className={`truncate text-[13px] font-medium max-w-[240px] ${live ? 'shimmer-text' : 'text-droid-text'}`}
+    >
+      {title}
+    </span>
+  );
+}
+
+/**
+ * The chat's name in its header: a crumb back to the chat that owns a child
+ * session, the attached-chats menu once this chat has a canvas on screen, or
+ * plain text.
+ */
+function HeaderTitle({
+  title,
+  live,
+  sub,
+  canvas,
+}: {
+  title: string;
+  live: boolean;
+  sub: ChatHeaderSub | undefined;
+  canvas: { appSessionId: string; canvasId: string } | undefined;
+}) {
+  if (sub)
+    return (
+      <button
+        type="button"
+        onClick={sub.onBack}
+        title={sub.backTitle ?? 'Back to primary session'}
+        className="truncate text-[13px] font-medium text-droid-text-muted transition-colors hover:text-droid-text max-w-[200px]"
+      >
+        {title}
+      </button>
+    );
+  if (canvas)
+    return (
+      <Suspense fallback={<ChatTitleText title={title} live={live} />}>
+        <LazyAttachedChatsMenu
+          appSessionId={canvas.appSessionId}
+          canvasId={canvas.canvasId}
+          title={title}
+          live={live}
+        />
+      </Suspense>
+    );
+  return <ChatTitleText title={title} live={live} />;
+}
+
 function ChatHeader({
   title,
   live,
   sub,
   leadPx,
   appSessionId,
+  canvas,
   tile,
 }: {
   title: string;
   live: boolean;
-  sub?: {
-    label: string;
-    meta?: string;
-    running: boolean;
-    backTitle?: string;
-    onBack: () => void;
-    onStop?: () => void;
-  };
+  sub?: ChatHeaderSub;
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
   // The chat whose processes the header lists; null when it lists none.
   appSessionId: string | null;
+  // The chat's own canvas, which turns the title into its attached-chats menu.
+  canvas?: { appSessionId: string; canvasId: string };
   // In a split tab the title is the tile's drag handle and close button.
   tile: TileChrome | undefined;
 }) {
@@ -199,22 +269,7 @@ function ChatHeader({
         } ${tile && !tile.focused ? 'bg-droid-elevated/25' : 'bg-droid-elevated/60'}`}
       >
         <GripVertical className="w-3.5 h-3.5 shrink-0 text-droid-text-muted/40" />
-        {sub ? (
-          <button
-            type="button"
-            onClick={sub.onBack}
-            title={sub.backTitle ?? 'Back to primary session'}
-            className="truncate text-[13px] font-medium text-droid-text-muted transition-colors hover:text-droid-text max-w-[200px]"
-          >
-            {title}
-          </button>
-        ) : (
-          <span
-            className={`truncate text-[13px] font-medium max-w-[240px] ${live ? 'shimmer-text' : 'text-droid-text'}`}
-          >
-            {title}
-          </span>
-        )}
+        <HeaderTitle title={title} live={live} sub={sub} canvas={canvas} />
         {sub && (
           <>
             <ChevronRight className="w-3.5 h-3.5 shrink-0 text-droid-text-muted/50" />
@@ -278,6 +333,7 @@ export default function ChatView({
   const state = useStoreSelector(selectState, equalChatState);
   const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
   const tabStripShown = useStoreSelector(showsTabStrip);
+  const boardCanvasId = useStoreSelector((current) => canvasOnBoard(current, appSessionId));
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -843,10 +899,11 @@ export default function ChatView({
   const leadPx =
     holdsWindowControls && (!tile || (tile.atTop && tile.atLeft)) ? WINDOW_CONTROLS_LEAD_PX : 16;
   // A lone chat in a tab is named by its tab, whose row also lists its
-  // processes, so it needs a header only for a crumb back.
+  // processes, so it needs a header only for a crumb back — or for the canvas
+  // on its board, whose chats this column's header owns (spec §4).
   const namedByTab = tabStripShown && !tile;
   let header: ReactNode = null;
-  if (activeSession && (!namedByTab || chatHeaderSub)) {
+  if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
     header = (
       <ChatHeader
         title={
@@ -859,6 +916,9 @@ export default function ChatView({
         appSessionId={namedByTab ? null : activeSession.appSessionId}
         tile={tile}
         {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
+        {...(boardCanvasId !== null
+          ? { canvas: { appSessionId: activeSession.appSessionId, canvasId: boardCanvasId } }
+          : {})}
       />
     );
   } else if (!activeSession && tile) {
