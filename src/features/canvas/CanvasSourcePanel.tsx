@@ -212,7 +212,7 @@ export function CanvasSourcePanel({
             />
           ) : null}
           {activePath === null ? (
-            <EmptyEditor readStatus={read?.status ?? null} />
+            <EmptyEditor reason={emptyReason(frame.revisionId, source)} />
           ) : (
             <>
               {conflict ? (
@@ -277,20 +277,36 @@ export function CanvasSourcePanel({
   );
 }
 
+/** Why the editor area has no file to show. */
+type EmptyReason = 'noRevision' | 'reading' | 'readFailed' | 'noFiles';
+
 /**
- * What the editor area says with no file to show: a frame that genuinely has no
- * source, or a read that has not answered yet. A failed read says so on its own
- * row, with Retry, rather than claiming the frame is empty.
+ * "No source yet" belongs only to a frame that has never built a revision. A
+ * revision the drawer does not hold yet is still arriving — including the render
+ * before the read starts, and every render while a save is in flight against a
+ * revision this frame has — and a failed read says so beside its own Retry.
  */
-function EmptyEditor({ readStatus }: { readStatus: 'loading' | 'failed' | null }) {
+function emptyReason(revisionId: string | null, source: FrameSource): EmptyReason {
+  if (revisionId === null) return 'noRevision';
+  if (source.read?.status === 'failed') return 'readFailed';
+  if (source.read?.status === 'loading' || source.revisionId !== revisionId) return 'reading';
+  return 'noFiles';
+}
+
+const EMPTY_MESSAGE: Record<EmptyReason, string> = {
+  noRevision: 'This frame has no source yet.',
+  reading: 'Reading this revision’s source…',
+  readFailed: 'Source could not be read.',
+  noFiles: 'This revision has no source files.',
+};
+
+function EmptyEditor({ reason }: { reason: EmptyReason }) {
   return (
     <p
-      role={readStatus === 'loading' ? 'status' : undefined}
+      role={reason === 'reading' ? 'status' : undefined}
       className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-surface text-[12px] text-droid-text-secondary"
     >
-      {readStatus === 'loading' ? 'Reading this revision’s source…' : null}
-      {readStatus === 'failed' ? 'Source could not be read.' : null}
-      {readStatus === null ? 'This frame has no source yet.' : null}
+      {EMPTY_MESSAGE[reason]}
     </p>
   );
 }

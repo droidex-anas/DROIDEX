@@ -184,18 +184,24 @@ export function canvasSourceReducer(
     case 'saved':
       return settle(state, action.revisionId);
     case 'saveFailed':
-    case 'saveRefused': {
-      const save = state.save;
-      if (save?.status !== 'saving') return state;
-      return {
-        ...state,
-        save:
-          action.type === 'saveRefused'
-            ? { status: 'refused', designId: save.write.designId, message: action.message }
-            : { ...save, status: 'uncertain', message: action.message },
-      };
-    }
+      return markUncertain(state, action.message);
+    case 'saveRefused':
+      return markRefused(state, action.message);
   }
+}
+
+/** No answer reached the drawer, so the request is kept for an exact replay. */
+function markUncertain(state: CanvasSourceState, message: string): CanvasSourceState {
+  const save = state.save;
+  if (save?.status !== 'saving') return state;
+  return { ...state, save: { ...save, status: 'uncertain', message } };
+}
+
+/** The runtime answered that the write did not commit, which releases it. */
+function markRefused(state: CanvasSourceState, message: string): CanvasSourceState {
+  const save = state.save;
+  if (save?.status !== 'saving') return state;
+  return { ...state, save: { status: 'refused', designId: save.write.designId, message } };
 }
 
 /** An unknown outcome owns its request until an authoritative reply settles it. */
@@ -223,10 +229,15 @@ function submit(state: CanvasSourceState, mutationId: string): CanvasSourceState
   };
 }
 
-/** Applies the receipt for the submitted write, which is the record of what it carried. */
+/**
+ * Applies the receipt for the submitted write, which is the record of what it
+ * carried. Only a write still in flight can be settled: a receipt for one the
+ * drawer has already declared uncertain or refused is a stale answer, and the
+ * retry that replays the request is what resolves it.
+ */
 function settle(state: CanvasSourceState, revisionId: string): CanvasSourceState {
   const submitted = state.save;
-  if (submitted === null || submitted.status === 'refused') return state;
+  if (submitted?.status !== 'saving') return state;
   return {
     ...withFrame(state, submitted.write.designId, (frame) =>
       save(frame, revisionId, submitted.sourceRevisionId, toMap(submitted.write.files)),
@@ -369,9 +380,11 @@ function save(
         buffers.set(path, hasNewerHead ? buffer : { ...buffer, baseRevisionId: revisionId });
       continue;
     }
+    // Without a newer head `files` already holds the written text, so only a
+    // head that landed while the write was away can disagree with it.
     const canonical = files.get(path) ?? null;
     const conflict =
-      hasNewerHead && headRevisionId !== null && canonical !== text
+      headRevisionId !== null && canonical !== text
         ? { revisionId: headRevisionId, text: canonical }
         : null;
     if (buffer.draft === text && conflict === null) continue;

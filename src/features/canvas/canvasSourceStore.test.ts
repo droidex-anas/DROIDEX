@@ -15,17 +15,24 @@ import {
   readCanvasSource,
   subscribeCanvasSource,
 } from './canvasSourceStore';
+import type { WriteReceipt } from './protocol';
 
 const ENTRY = 'App.tsx';
 
+/** A write the test answers when it chooses, with a receipt or a failure. */
 function heldWrite() {
-  let reject: (error: Error) => void = () => {
+  const unstarted = () => {
     throw new Error('Write not started');
   };
-  const promise = new Promise<never>((_, fail) => {
+  let commit: (revisionId: string) => void = unstarted;
+  let reject: (error: Error) => void = unstarted;
+  const promise = new Promise<WriteReceipt>((settle, fail) => {
+    commit = (revisionId) => {
+      settle({ designId: 'hey', revisionId, sequence: 1 });
+    };
     reject = fail;
   });
-  return { promise, reject };
+  return { promise, commit, reject };
 }
 
 /** What a mounting panel does: open the frame, then answer its read. */
@@ -135,4 +142,40 @@ test('deliberate close clears all state and a late failure cannot settle the rep
   assert.equal(saveFailure(readCanvasSource(canvasId)), 'Replacement failure');
   forgetCanvasSource(canvasId);
   assert.deepEqual(readCanvasSource(canvasId), emptyCanvasSourceState);
+});
+
+test('a receipt for a discarded save cannot settle the replacement that followed it', async () => {
+  const canvasId = 'cv_stale_receipt';
+  mount(canvasId);
+  dispatchCanvasSource(canvasId, { type: 'edit', path: ENTRY, text: 'old draft' });
+  const old = heldWrite();
+  const first = saveCanvasSource(canvasId, 'mut_old', () => old.promise);
+
+  // Close → Discard while that write is away, then the drawer is opened on the
+  // same canvas again and typed into.
+  forgetCanvasSource(canvasId);
+  mount(canvasId);
+  dispatchCanvasSource(canvasId, { type: 'edit', path: ENTRY, text: 'replacement draft' });
+  const replacement = heldWrite();
+  const second = saveCanvasSource(canvasId, 'mut_replacement', () => replacement.promise);
+
+  // The discarded write did commit. Its receipt is the record of a lifetime the
+  // user threw away: settling the replacement with it would clear the draft's
+  // dirty marker, disable Save, and let the next head read erase the typing.
+  old.commit('rev_old');
+  await first;
+  const racing = openFrameSource(readCanvasSource(canvasId));
+  assert.equal(isSaving(readCanvasSource(canvasId)), true);
+  assert.equal(racing.revisionId, 'rev_1');
+  assert.equal(sourceText(racing, ENTRY), 'replacement draft');
+  assert.deepEqual(dirtyPaths(racing), [ENTRY]);
+
+  // The replacement's own receipt still settles it.
+  replacement.commit('rev_2');
+  await second;
+  const settled = openFrameSource(readCanvasSource(canvasId));
+  assert.equal(settled.revisionId, 'rev_2');
+  assert.equal(sourceText(settled, ENTRY), 'replacement draft');
+  assert.deepEqual(dirtyPaths(settled), []);
+  forgetCanvasSource(canvasId);
 });

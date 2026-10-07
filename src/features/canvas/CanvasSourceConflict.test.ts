@@ -35,8 +35,14 @@ test('the comparison shows the agent’s own text, named by its revision', () =>
   assert.match(markup, /rev_2/);
   // Read-only: the competing version is for inspecting, never for typing into.
   assert.equal(markup.includes('<textarea'), false);
-  assert.match(markup, /tabindex="0"/);
+
+  // With no textarea over it, this text is what the user has to read to choose,
+  // so it stays in the accessibility tree and the region holding it is named and
+  // reachable by keyboard. Hiding it leaves only the caption to decide from.
   assert.doesNotMatch(markup, /<pre[^>]*aria-hidden="true"/);
+  const region = /<div[^>]*role="region"[^>]*>/.exec(markup)?.[0] ?? '';
+  assert.match(region, /aria-label="App\.tsx competing source"/);
+  assert.match(region, /tabindex="0"/);
 });
 
 test('a revision that deleted the file says so instead of showing nothing', () => {
