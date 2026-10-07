@@ -2,7 +2,7 @@
 
 An ordinary chat on Droid, Claude Code or Codex is given DROIDEX's in-app
 session tools, whether or not it belongs to a project. On Droid and Claude Code,
-`droidex-sessions` carries all eleven tools on one listener per session. Codex
+`droidex-sessions` carries all twelve tools on one listener per session. Codex
 receives the same tools as deferred dynamic tools in the `droidex_sessions`
 namespace, with no local MCP listener. Unattended automation runs, missions and
 design sessions never get it, since none of them may call its tools, and nothing
@@ -11,11 +11,12 @@ in it runs until a tool is called.
 | Tool | What it does | Below High | One Always allow covers |
 | --- | --- | --- | --- |
 | `thread_spawn` | Starts a chat that carries one task; `reportBack` is required | asks | one kind: threads or chats |
-| `thread_send` | Sends one of this chat's threads a message, or `answers` to the question `questionId` names | runs | never asks |
-| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings | runs | never asks |
+| `thread_send` | Sends one of this chat's threads a message, or `answers` to the question `questionId` names; `delivery` picks steer (the default), now or queue | runs | never asks |
+| `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings, how many messages it has not been seen to take, and whether a runtime is open for it | runs | never asks |
 | `thread_configure` | Changes a thread's model, reasoning effort or autonomy | runs | never asks |
 | `thread_stop` | Ends a thread's turn and drops its queued messages | runs | never asks |
-| `plan_set` | Writes the plan the chat shows in Projects | runs | never asks |
+| `plan_set` | Writes the plan the chat shows in Projects; `title` names the project and the chat | runs | never asks |
+| `project_done` | Marks the project done with what it achieved, once no thread is working or starting | runs | never asks |
 | `session_list` | Lists the sidebar's chats, most urgent first; `show` narrows it, `limit` caps it (30, at most 100) | runs | never asks |
 | `session_read` | Reads one chat: its status, the approval or questions it waits on word for word with the question's id, its settings, the last 4,000 characters of its latest reply | runs | never asks |
 | `session_send` | Sends one chat a message, or `answers` to the question `questionId` names | asks | that one chat |

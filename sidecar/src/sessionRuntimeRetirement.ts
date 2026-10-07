@@ -64,6 +64,21 @@ function isRetirableSession(facts: SessionRetirementFacts): boolean {
   );
 }
 
+// The runtime the next sweep would release first, other than the one a
+// delivery is about to resume.
+function oldestRetirableSession(
+  facts: Iterable<SessionRetirementFacts>,
+  excludedAppSessionId: string,
+): SessionRetirementFacts | undefined {
+  let oldest: SessionRetirementFacts | undefined;
+  for (const session of facts) {
+    if (session.appSessionId === excludedAppSessionId || session.coolingDown) continue;
+    if (!isRetirableSession(session)) continue;
+    if (!oldest || session.idleSince < oldest.idleSince) oldest = session;
+  }
+  return oldest;
+}
+
 function isDueForRetirement(facts: SessionRetirementFacts, now: number, idleMs: number): boolean {
   // Monotonic activity timestamps can lead the wall clock by a tick.
   return isRetirableSession(facts) && Math.max(0, now - facts.idleSince) >= idleMs;
@@ -212,6 +227,25 @@ export class SessionRuntimeRetirement {
       this.sweeping = null;
     });
     return this.sweeping;
+  }
+
+  // A delivery that has to resume a chat when no runtime is free releases the
+  // longest-idle one instead of waiting for the next sweep.
+  async releaseOldestForCapacity(excludedAppSessionId: string): Promise<boolean> {
+    const d = this.dependencies;
+    const candidate = oldestRetirableSession(this.facts(d.now()), excludedAppSessionId);
+    if (!candidate) return false;
+    try {
+      await d.retire(candidate.appSessionId);
+      return true;
+    } catch (error) {
+      this.releaseRetryAt.set(candidate.appSessionId, d.now() + SESSION_RUNTIME_RELEASE_RETRY_MS);
+      d.emitError(
+        candidate.appSessionId,
+        `Could not release this session's idle runtime: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
   }
 
   private async sweepOnce(): Promise<void> {

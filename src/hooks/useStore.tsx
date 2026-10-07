@@ -15,7 +15,9 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  activeDraftTileId,
   composeOrigin,
+  draftTileIds,
   enteredPlaceNavigation,
   placeCreatedChat,
   showChat,
@@ -151,7 +153,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { createSnapshotScheduler, loadSessionSnapshot } from '../lib/sessionSnapshot';
-import { createComposerSeed } from '../lib/composerReset';
+import { createComposerSeed, type ComposerSeed } from '../lib/composerReset';
 import { toast } from '../lib/toast';
 import { type DiffScope } from '../types/vcs';
 import {
@@ -224,7 +226,6 @@ export type { ImagePasteQuality } from '../lib/images';
 interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
-  referenceIds: string[];
 }
 
 export interface QueuedPrompt {
@@ -396,14 +397,15 @@ export interface AppState {
   pendingAutonomy: Record<string, Autonomy>;
   // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
-  // One-shot text seeded into the composer (welcome-screen suggestion cards,
-  // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
-  composerSeed: { text: string; id: number; replace: boolean } | null;
+  // One-shot text seeded into a composer (welcome-screen suggestion cards,
+  // saved-note clicks, the browser's prompt box), in arrival order. Each seed
+  // belongs to one chat, or one new-chat draft, and waits until its composer
+  // takes it.
+  composerSeeds: ComposerSeed[];
   workspaceCwds: string[];
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
   // resumes where it left off after an app restart, unless it was fully closed.
-  browserOpenKeys: Record<string, boolean>;
   browsers: Record<string, BrowserState>;
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
@@ -720,8 +722,15 @@ export type Action =
       branch?: string;
       project?: true;
     }
-  | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
-  | { type: 'CLEAR_COMPOSER_SEED' }
+  | {
+      type: 'SEED_COMPOSER';
+      text: string;
+      replace?: boolean;
+      appSessionId?: string;
+      send?: boolean;
+      focus?: boolean;
+    }
+  | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
   | { type: 'SESSION_NOTE_MARK_USED'; appSessionId: string; noteId: string }
   | { type: 'SESSION_NOTE_REMOVE'; appSessionId: string; noteId: string }
@@ -739,7 +748,7 @@ export type Action =
       canGoBack?: boolean;
       canGoForward?: boolean;
     }
-  | { type: 'BROWSER_CLOSED'; appSessionId: string }
+  | { type: 'BROWSER_CLOSED'; appSessionId: string; keepPane?: boolean }
   | { type: 'BROWSER_ERROR'; appSessionId?: string; message: string }
   | { type: 'TOGGLE_DESIGN_MODE'; appSessionId: string }
   | { type: 'SET_DESIGN_MODE'; appSessionId: string; open: boolean }
@@ -881,9 +890,8 @@ export const initialState: AppState = {
   draftContextWindowTokens: null,
   pendingAutonomy: {},
   pendingModelUpdates: {},
-  composerSeed: null,
+  composerSeeds: [],
   workspaceCwds: loadWorkspaceCwds(),
-  browserOpenKeys: persistedUiState.browserOpenKeys ?? {},
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
   browserGlobalError: undefined,
@@ -934,27 +942,6 @@ function activeBrowserKey(state: AppState): string | undefined {
   // (`appSessionId`), matching the backend; the provider session is swapped by
   // compaction and would desync the open state from the backend's updates.
   return state.sessions[state.activeAppSessionId]?.appSessionId ?? state.activeAppSessionId;
-}
-
-// Record an explicit open (true) or hidden (false) decision for a browser key.
-// Storing `false` (rather than deleting) lets data syncs distinguish a pane the
-// user deliberately hid from one that was never opened.
-function withBrowserOpenKey(
-  keys: Record<string, boolean>,
-  key: string,
-  open: boolean,
-): Record<string, boolean> {
-  if (keys[key] === open) return keys;
-  return { ...keys, [key]: open };
-}
-
-// Forget a browser key entirely (full reset, e.g. session closed). A later
-// update then treats the session as never-opened.
-function clearBrowserOpenKey(keys: Record<string, boolean>, key: string): Record<string, boolean> {
-  if (!(key in keys)) return keys;
-  const next = { ...keys };
-  delete next[key];
-  return next;
 }
 
 function closeActiveUtilityPanel(state: AppState): AppState {
@@ -1058,6 +1045,31 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
 }
 
 export function reducer(state: AppState, action: Action): AppState {
+  return withoutLeftDrafts(reduceAction(state, action));
+}
+
+// A draft's seeds and its sent compose wait in its tile. Once the tile closes or
+// shows something else, that draft is gone: its seeds are dropped and its
+// compose forgets the tile, so neither reaches a later draft there.
+function withoutLeftDrafts(state: AppState): AppState {
+  const waiting = [
+    ...state.composerSeeds.map((seed) => seed.draftTileId),
+    ...Object.values(state.pendingCompose).map((compose) => compose?.origin?.tileId),
+    ...Object.values(state.heldComposeOrigins).map((origin) => origin?.tileId),
+  ];
+  if (!waiting.some(Boolean)) return state;
+  const drafts = draftTileIds(state);
+  const left = new Set(waiting.filter((tileId) => tileId && !drafts.includes(tileId)));
+  if (left.size === 0) return state;
+  let next: AppState = {
+    ...state,
+    composerSeeds: state.composerSeeds.filter((seed) => !left.has(seed.draftTileId)),
+  };
+  for (const tileId of left) if (tileId) next = { ...next, ...withComposeTileClosed(next, tileId) };
+  return next;
+}
+
+function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
@@ -1135,6 +1147,15 @@ export function reducer(state: AppState, action: Action): AppState {
       }
 
       const pendingCompose = withoutKey(state.pendingCompose, action.clientRef);
+      // Seeds that arrived for the draft while it was sent go to the chat it became.
+      const draftTileId = ownsCreate ? pending.origin?.tileId : undefined;
+      const composerSeeds = draftTileId
+        ? state.composerSeeds.map((pendingSeed) =>
+            pendingSeed.draftTileId === draftTileId
+              ? { ...pendingSeed, appSessionId: action.session.appSessionId, draftTileId: null }
+              : pendingSeed,
+          )
+        : state.composerSeeds;
 
       const next: AppState = {
         ...childReset,
@@ -1160,6 +1181,7 @@ export function reducer(state: AppState, action: Action): AppState {
         childAccess,
         childRuntime,
         pendingCompose,
+        composerSeeds,
         pendingForks: withoutKey(state.pendingForks, action.clientRef),
         sideChats:
           state.pendingForks[action.clientRef]?.kind === 'side'
@@ -2043,10 +2065,6 @@ export function reducer(state: AppState, action: Action): AppState {
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
         reviewOpenAppSessionId:
           action.tool === 'review' ? appSessionId : state.reviewOpenAppSessionId,
-        browserOpenKeys:
-          action.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, true)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2066,10 +2084,6 @@ export function reducer(state: AppState, action: Action): AppState {
             : state.reviewOpenAppSessionId,
         reviewFocusPath: closing?.tool === 'review' ? null : state.reviewFocusPath,
         reviewFocusChange: closing?.tool === 'review' ? null : state.reviewFocusChange,
-        browserOpenKeys:
-          closing?.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, false)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2369,12 +2383,32 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SEED_COMPOSER':
-      return { ...state, composerSeed: createComposerSeed(action.text, action.replace) };
-    // The composer consumes the seed once; it must not linger, or remounting
+    // A seed belongs to its chat from the moment it arrives: the one named, or
+    // else the chat focused now, or else the draft in the focused tab.
+    case 'SEED_COMPOSER': {
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
+      const draftTileId = appSessionId ? null : activeDraftTileId(state);
+      if (!appSessionId && !draftTileId) return state;
+      const seed = createComposerSeed(action.text, action.replace, {
+        appSessionId,
+        draftTileId,
+        send: action.send,
+        focus: action.focus,
+      });
+      return { ...state, composerSeeds: [...state.composerSeeds, seed] };
+    }
+    // The composer consumes each seed once; it must not linger, or remounting
     // the composer (e.g. toggling Mission Control) would re-apply stale text.
-    case 'CLEAR_COMPOSER_SEED':
-      return { ...state, composerSeed: null };
+    case 'CONSUME_COMPOSER_SEED': {
+      const seed = state.composerSeeds.find((pending) => pending.id === action.id);
+      if (!seed) return state;
+      const next = { ...state, composerSeeds: state.composerSeeds.filter((s) => s !== seed) };
+      // A prompt sent with a chat's marks goes out as it is consumed, to that
+      // chat and never to a child open in it, which would get it without them.
+      return seed.send && state.selectedChild?.parentAppSessionId === seed.appSessionId
+        ? reduceSelectChild(next, { selection: null })
+        : next;
+    }
 
     case 'SESSION_NOTE_ADD': {
       const sessionNotes = addSessionNote(state.sessionNotes, action.appSessionId, action.text);
@@ -2428,7 +2462,6 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(current, 'browser', () => `browser:${key}`)
             : setUtilityPanelOpen(current, false),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, opening),
       };
     }
 
@@ -2444,36 +2477,19 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(state.utilityPanels[key], 'browser', () => `browser:${key}`)
             : removeUtilityTool(state.utilityPanels[key], 'browser'),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, action.open),
       };
     }
 
     case 'BROWSER_UPDATED': {
       if (!action.browser.appSessionId) return state;
       const appSessionId = action.browser.appSessionId;
-      // Surface a freshly opened browser, but never re-open a pane the user hid.
-      // Missing keys differ from explicitly hidden panes.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-      const hidden = state.browserOpenKeys[appSessionId] === false;
+      // Only records the page: agent work never opens or switches the pane.
       return {
         ...state,
         browsers: { ...state.browsers, [appSessionId]: action.browser },
         browserErrors: Object.fromEntries(
           Object.entries(state.browserErrors).filter(([id]) => id !== appSessionId),
         ),
-        browserOpenKeys: hidden
-          ? state.browserOpenKeys
-          : withBrowserOpenKey(state.browserOpenKeys, appSessionId, true),
-        utilityPanels: hidden
-          ? state.utilityPanels
-          : {
-              ...state.utilityPanels,
-              [appSessionId]: openUtilityTool(
-                state.utilityPanels[appSessionId],
-                'browser',
-                () => `browser:${appSessionId}`,
-              ),
-            },
       };
     }
 
@@ -2498,7 +2514,8 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'BROWSER_CLOSED':
       // Full close: drop the session's browser, design mode, and open flag so a
-      // later reopen starts fresh (and it is excluded from persistence).
+      // later reopen starts fresh (and it is excluded from persistence). A
+      // browser closed with its chat's runtime leaves the pane open.
       return {
         ...state,
         browsers: Object.fromEntries(
@@ -2508,14 +2525,15 @@ export function reducer(state: AppState, action: Action): AppState {
           Object.entries(state.browserErrors).filter(([id]) => id !== action.appSessionId),
         ),
         designModes: clearDesignMode(state.designModes, action.appSessionId),
-        browserOpenKeys: clearBrowserOpenKey(state.browserOpenKeys, action.appSessionId),
-        utilityPanels: {
-          ...state.utilityPanels,
-          [action.appSessionId]: removeUtilityTool(
-            state.utilityPanels[action.appSessionId],
-            'browser',
-          ),
-        },
+        utilityPanels: action.keepPane
+          ? state.utilityPanels
+          : {
+              ...state.utilityPanels,
+              [action.appSessionId]: removeUtilityTool(
+                state.utilityPanels[action.appSessionId],
+                'browser',
+              ),
+            },
       };
 
     case 'BROWSER_ERROR':
@@ -2523,13 +2541,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         browserErrors: { ...state.browserErrors, [action.appSessionId]: action.message },
-        // Respect an explicit hide; otherwise surface the errored browser.
-        browserOpenKeys:
-          // Missing keys differ from explicitly hidden panes.
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-          state.browserOpenKeys[action.appSessionId] === false
-            ? state.browserOpenKeys
-            : withBrowserOpenKey(state.browserOpenKeys, action.appSessionId, true),
       };
 
     case 'TOGGLE_DESIGN_MODE':
@@ -2974,7 +2985,7 @@ export function adaptEvent(ev: ServerEvent): Action | null {
     case 'browser.updated':
       return { type: 'BROWSER_UPDATED', browser: ev.state };
     case 'browser.closed':
-      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
+      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId, keepPane: ev.keepPane };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     case 'voice.answer':

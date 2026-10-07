@@ -13,6 +13,7 @@ const FREE = [
   'thread_configure',
   'thread_stop',
   'plan_set',
+  'project_done',
   'session_list',
   'session_read',
 ];

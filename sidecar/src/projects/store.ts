@@ -17,6 +17,8 @@ export const LEDGER_LIMITS = {
   stepTitle: 200,
   stepMilestone: 80,
   stepNote: 400,
+  /** What a finished project achieved, in the lead's words. */
+  outcome: 600,
   /** A message, a thread's final reply, and each earlier reply kept. */
   text: 8_192,
   /** How far back a thread's own answers stay readable: deep enough that an
@@ -91,6 +93,15 @@ const project = z
     title: z.string().min(1).max(LEDGER_LIMITS.title),
     paused: z.boolean(),
     leadStopped: z.literal(true).optional(),
+    leadFailed: z.literal(true).optional(),
+    startedAt: z.number().int().min(0).optional(),
+    done: z
+      .object({
+        at: z.number().int().min(0),
+        outcome: z.string().min(1).max(LEDGER_LIMITS.outcome),
+      })
+      .strict()
+      .optional(),
     launching: z.number().int().min(0),
     plan: z
       .array(
@@ -118,6 +129,7 @@ const project = z
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
+          owedReport: text.optional(),
           waiting: z.boolean(),
         })
         .strict(),

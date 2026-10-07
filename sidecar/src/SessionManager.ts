@@ -52,6 +52,7 @@ import { buildRuntimeSnapshot } from './runtimeSnapshot.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
+import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import { SidebarRequests } from './sidebar/sidebarRequests.js';
 import { SidebarSessions } from './sidebar/SidebarSessions.js';
 import { requireProjectService } from './projects/service.js';
@@ -203,7 +204,6 @@ export interface SessionManagerDependencies {
 
 export interface SessionManagerOptions {
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
-  assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
   dependencies?: SessionManagerDependencies;
@@ -212,6 +212,8 @@ export interface SessionManagerOptions {
   // writing under $HOME long after the answer arrives. A test that pins $HOME
   // to a temp directory must pass its own probes — usually none at all.
   providerProbes?: ProviderProbeMap;
+  /** The desktop app's browser channel; without one, browser actions fail. */
+  requestBrowser?: RequestBrowser;
 }
 
 const MAX_OPEN_CHILD_SESSIONS = boundedInt(
@@ -408,7 +410,6 @@ export class SessionManager {
         },
       });
       const browsers = new BrowserSessionManager({
-        assetUrlFor: options.assetUrlFor,
         emit: (event) => {
           this.emit(event);
         },
@@ -706,6 +707,10 @@ export class SessionManager {
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
+      settleStreaming: (appSessionId, sourceSessionId) =>
+        this.timeline.settleStreaming(appSessionId, sourceSessionId),
+      releaseRuntimeForCapacity: (excludedAppSessionId) =>
+        this.runtimeRetirement.releaseOldestForCapacity(excludedAppSessionId),
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
         this.modelSettings.hasActiveMutations(appSessionId),
@@ -730,7 +735,14 @@ export class SessionManager {
       forgetPendingSettings: (appSessionId) => {
         this.modelSettings.forget(appSessionId);
       },
-      closeBrowserSession: (appSessionId) => this.browsers.close(appSessionId),
+      // A browser closed with its chat's runtime goes from the app too, with
+      // its marks, while its pane stays for a new page. One closed by a
+      // shutdown is kept for the next sidecar to take up.
+      closeBrowserSession: async (appSessionId) => {
+        await this.browsers.close(appSessionId);
+        if (!this.shutdownPromise && !this.browsers.hasSession(appSessionId))
+          this.emit({ type: 'browser.closed', appSessionId, keepPane: true });
+      },
       stopVoiceSession: (appSessionId) => this.sessionVoice.closeSession(appSessionId),
       emit: (event) => {
         this.emit(event);
@@ -741,8 +753,8 @@ export class SessionManager {
       appendProgress: (appSessionId, text) => {
         this.timeline.appendProgress(appSessionId, text);
       },
-      appendError: (appSessionId, message) => {
-        this.timeline.appendError(appSessionId, message);
+      appendError: (appSessionId, message, details) => {
+        this.timeline.appendError(appSessionId, message, details);
       },
       appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
       catalogUpdated: (liveSession, items) => {
@@ -830,7 +842,14 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      sendPrompt: (appSessionId, prompt) => this.lifecycle.send(appSessionId, prompt),
+      framePrompt: (appSessionId, text, responseFormat) =>
+        this.sessionPrompt(appSessionId, text, responseFormat),
+      sendPrompt: (appSessionId, prompt, mentions) =>
+        this.lifecycle.send(appSessionId, prompt, mentions),
+      requestBrowser:
+        options.requestBrowser ??
+        (() =>
+          Promise.reject(new Error('The browser is only available in the DROIDEX desktop app.'))),
     });
   }
 
@@ -1178,41 +1197,23 @@ export class SessionManager {
         // Closing the last resource a session was holding can make it retirable.
         this.runtimeRetirement.arm();
         return;
+      case 'browser.restore':
+        await this.sessionBrowser.restore(cmd);
+        return;
       case 'browser.reload':
         await this.sessionBrowser.reload(cmd);
-        return;
-      case 'browser.refresh':
-        await this.sessionBrowser.refresh(cmd);
         return;
       case 'browser.resizeViewport':
         await this.sessionBrowser.resizeViewport(cmd);
         return;
-      case 'browser.click':
-        await this.sessionBrowser.click(cmd);
-        return;
-      case 'browser.type':
-        await this.sessionBrowser.type(cmd);
-        return;
-      case 'browser.keypress':
-        await this.sessionBrowser.keypress(cmd);
-        return;
-      case 'browser.scroll':
-        await this.sessionBrowser.scroll(cmd);
-        return;
-      case 'browser.screenshot':
-        await this.sessionBrowser.screenshot(cmd);
-        return;
-      case 'browser.inspectPoint':
-        await this.sessionBrowser.inspectPoint(cmd);
-        return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);
         return;
+      case 'browser.design.removeReferences':
+        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
+        return;
       case 'browser.design.sendPrompt':
         await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
-      case 'browser.native.result':
-        this.sessionBrowser.resolveNativeBrowserRequest(cmd.result);
         return;
       case 'sidebar.result':
         this.sidebarRequests.answer(cmd.result);
@@ -1247,6 +1248,15 @@ export class SessionManager {
     return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent);
   }
 
+  steerRunningTurn(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now = false,
+  ): Promise<boolean> {
+    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now);
+  }
+
   async automationSessionContext(appSessionId: string): Promise<{
     cwd: string | null;
     modelId: string | null;
@@ -1276,6 +1286,11 @@ export class SessionManager {
   /** Whether a question a conversation was asked is still waiting for an answer. */
   isQuestionPending(appSessionId: string, requestId: string): boolean {
     return this.interactions.isQuestionPending(appSessionId, requestId);
+  }
+
+  /** Whether this conversation is stopped on a permission request only the user can answer. */
+  isApprovalPending(appSessionId: string): boolean {
+    return this.interactions.hasPendingApproval(appSessionId);
   }
 
   /** Whether this conversation is open right now, rather than merely known. */

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ArrowUp, Check } from 'lucide-react';
 import { Copy, GitFork } from '@droidex/icons';
 import { HoverTooltip } from '../HoverTooltip';
@@ -107,11 +108,14 @@ export function ResponseActions({
   ts,
   onFork,
   forking = false,
+  children,
 }: {
   text: string;
   ts: number;
   onFork?: () => void;
   forking?: boolean;
+  /** What the chat is doing since this response, ahead of its time. */
+  children?: ReactNode;
 }) {
   return (
     // Pulled left so the first icon lines up with the response text.
@@ -131,6 +135,7 @@ export function ResponseActions({
           </button>
         </HoverTooltip>
       ) : null}
+      {children}
       <MessageTime ts={ts} />
     </div>
   );

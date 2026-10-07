@@ -1,12 +1,13 @@
 import type {
   BrowserNativeRequest,
-  BrowserNativeResult,
   ClientCommand,
+  ProviderMention,
+  ResponseFormat,
   ServerEvent,
 } from './protocol.js';
 import { errMsg } from './errors.js';
-import { boundedInt } from './values.js';
 import { NativeBrowserRuntime } from './browser/NativeBrowserRuntime.js';
+import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import type { BrowserSessionManager } from './browser/BrowserSessionManager.js';
 import type { BrowserViewport } from './browser/types.js';
 
@@ -19,45 +20,29 @@ export type SessionBrowsers = Pick<
   | 'closeAll'
   // Runtime retirement asks whether a session is still holding a browser.
   | 'hasSession'
+  | 'restore'
   | 'reload'
-  | 'refresh'
   | 'resizeViewport'
-  | 'click'
-  | 'type'
-  | 'keypress'
-  | 'scroll'
-  | 'screenshot'
-  | 'inspectPoint'
   | 'addReference'
+  | 'removeReferences'
   | 'designPrompt'
 >;
 
 export interface SessionBrowserDependencies {
   browsers: SessionBrowsers;
   emit: Emit;
-  sendPrompt: (appSessionId: string, prompt: string) => Promise<void>;
+  /** Frames a prompt's text for its chat: an App request or a side-chat question. */
+  framePrompt: (appSessionId: string, text: string, responseFormat?: ResponseFormat) => string;
+  sendPrompt: (appSessionId: string, prompt: string, mentions?: ProviderMention[]) => Promise<void>;
+  /** Runs a request in the desktop app, which owns the pages. */
+  requestBrowser: RequestBrowser;
 }
-
-const BROWSER_NATIVE_TIMEOUT_MS = boundedInt(
-  process.env.DROID_CONTROL_BROWSER_NATIVE_TIMEOUT_MS,
-  12_000,
-  1_000,
-  60_000,
-);
 
 let nativeBrowserSeq = 0;
 const nextNativeBrowserRequestId = () =>
   `browser-native-${Date.now().toString(36)}-${(nativeBrowserSeq++).toString(36)}`;
 
-interface PendingNativeBrowserRequest {
-  resolve: (result: BrowserNativeResult) => void;
-  reject: (err: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}
-
 export class SessionBrowser {
-  private readonly pendingNativeBrowserRequests = new Map<string, PendingNativeBrowserRequest>();
-
   constructor(private readonly d: SessionBrowserDependencies) {}
 
   createRuntime(
@@ -87,19 +72,23 @@ export class SessionBrowser {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
       await this.d.browsers.close(appSessionId);
-      this.d.emit({ type: 'browser.closed', appSessionId });
+      // A browser the chat opened again meanwhile is not the one that closed.
+      if (!this.d.browsers.hasSession(appSessionId))
+        this.d.emit({ type: 'browser.closed', appSessionId });
+    });
+  }
+
+  async restore(cmd: Extract<ClientCommand, { type: 'browser.restore' }>): Promise<void> {
+    await this.handleBrowser(undefined, () => {
+      // A browser closed while the app was away is closed for it too.
+      for (const appSessionId of this.d.browsers.restore(cmd.browsers))
+        this.d.emit({ type: 'browser.closed', appSessionId });
     });
   }
 
   async reload(cmd: Extract<ClientCommand, { type: 'browser.reload' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
       this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId)),
-    );
-  }
-
-  async refresh(cmd: Extract<ClientCommand, { type: 'browser.refresh' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.refresh(this.requireBrowserAppSessionId(cmd.appSessionId)),
     );
   }
 
@@ -114,70 +103,13 @@ export class SessionBrowser {
     );
   }
 
-  async click(cmd: Extract<ClientCommand, { type: 'browser.click' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.click({
-        ...cmd,
-        appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
-      }),
-    );
-  }
-
-  async type(cmd: Extract<ClientCommand, { type: 'browser.type' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.type(this.requireBrowserAppSessionId(cmd.appSessionId), cmd.text),
-    );
-  }
-
-  async keypress(cmd: Extract<ClientCommand, { type: 'browser.keypress' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.keypress(this.requireBrowserAppSessionId(cmd.appSessionId), cmd.key),
-    );
-  }
-
-  async scroll(cmd: Extract<ClientCommand, { type: 'browser.scroll' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.scroll(
-        this.requireBrowserAppSessionId(cmd.appSessionId),
-        cmd.direction,
-        cmd.pixels,
-        cmd.source,
-        cmd.ref,
-      ),
-    );
-  }
-
-  async screenshot(cmd: Extract<ClientCommand, { type: 'browser.screenshot' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, async () => {
-      await this.d.browsers.screenshot(this.requireBrowserAppSessionId(cmd.appSessionId), {
-        fullPage: cmd.fullPage,
-        deviceScaleFactor: cmd.deviceScaleFactor,
-      });
-    });
-  }
-
-  async inspectPoint(cmd: Extract<ClientCommand, { type: 'browser.inspectPoint' }>): Promise<void> {
-    await this.handleBrowser(cmd.appSessionId, () => {
-      const element = this.d.browsers.inspectPoint(
-        this.requireBrowserAppSessionId(cmd.appSessionId),
-        cmd.x,
-        cmd.y,
-      );
-      if (!element) throw new Error('No browser element found at that point.');
-    });
-  }
-
   async addReference(
     cmd: Extract<ClientCommand, { type: 'browser.design.addReference' }>,
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, async () => {
       await this.d.browsers.addReference(
         this.requireBrowserAppSessionId(cmd.appSessionId),
-        {
-          anchor: cmd.reference.anchor,
-          detail: cmd.reference.detail,
-          id: cmd.reference.id,
-        },
+        cmd.reference,
         cmd.reference.screenshot,
       );
     });
@@ -188,33 +120,21 @@ export class SessionBrowser {
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
-      const { prompt } = await this.d.browsers.designPrompt({ ...cmd, appSessionId });
-      await this.d.sendPrompt(appSessionId, prompt);
+      // Only the instruction is framed, so the pack stays first and the turn
+      // is still known as a design turn.
+      const { prompt } = await this.d.browsers.designPrompt({
+        ...cmd,
+        appSessionId,
+        frame: (instruction) => this.d.framePrompt(appSessionId, instruction, cmd.responseFormat),
+      });
+      await this.d.sendPrompt(appSessionId, prompt, cmd.mentions);
     });
   }
 
-  resolveNativeBrowserRequest(result: BrowserNativeResult): void {
-    const pending = this.pendingNativeBrowserRequests.get(result.requestId);
-    if (!pending) return;
-    clearTimeout(pending.timeout);
-    this.pendingNativeBrowserRequests.delete(result.requestId);
-    if (result.ok) pending.resolve(result);
-    else pending.reject(new Error(result.error ?? 'DROIDEX browser action failed.'));
-  }
-
-  private requestNativeBrowser(request: BrowserNativeRequest): Promise<BrowserNativeResult> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingNativeBrowserRequests.delete(request.requestId);
-        reject(
-          new Error(
-            `DROIDEX browser did not respond to ${request.action} within ${String(BROWSER_NATIVE_TIMEOUT_MS)}ms.`,
-          ),
-        );
-      }, BROWSER_NATIVE_TIMEOUT_MS);
-      this.pendingNativeBrowserRequests.set(request.requestId, { resolve, reject, timeout });
-      this.d.emit({ type: 'browser.native.request', request });
-    });
+  private async requestNativeBrowser(request: BrowserNativeRequest) {
+    const result = await this.d.requestBrowser(request);
+    if (!result.ok) throw new Error(result.error ?? 'DROIDEX browser action failed.');
+    return result;
   }
 
   private async handleBrowser(

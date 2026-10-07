@@ -24,7 +24,7 @@ interface CodexNamespace {
 }
 
 interface ToolReply {
-  contentItems: { type: 'inputText'; text: string }[];
+  contentItems: ({ type: 'inputText'; text: string } | { type: 'inputImage'; imageUrl: string })[];
   success: boolean;
 }
 
@@ -44,6 +44,9 @@ const TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export class CodexToolBridge {
   readonly declarations: CodexNamespace[];
+  /** Names the deferred namespaces up front; without it a chat outside a
+      project never looks them up and says DROIDEX gave it no tools. */
+  readonly instructions: string | undefined;
   private readonly tools = new Map<
     string,
     { serverName: string; tool: DroidTool; input: z.ZodObject<Record<string, z.ZodTypeAny>> }
@@ -82,6 +85,12 @@ export class CodexToolBridge {
         tools,
       };
     });
+    this.instructions = this.declarations.length
+      ? [
+          "This chat runs inside DROIDEX, the user's desktop app for coding agents, and DROIDEX has given it these tools. They are available now; only their full definitions load when you look them up. Use them whenever the user asks about DROIDEX, its chats, threads, projects, sidebar or automations:",
+          ...this.declarations.map(({ name, description }) => `- ${name}: ${description}`),
+        ].join('\n')
+      : undefined;
   }
 
   async call(params: unknown): Promise<ToolReply> {
@@ -152,9 +161,18 @@ async function run(tool: DroidTool, input: Record<string, unknown>): Promise<Too
   try {
     const result = await tool.handler(input);
     if (typeof result === 'string') return reply(result, true);
-    if (!result.content.every((item) => item.type === 'text'))
-      return reply('This tool returned content Codex cannot display.', false);
-    return reply(result.content.map((item) => item.text).join('\n'), result.isError !== true);
+    // A picture goes to Codex as a picture: a screenshot it cannot see is no answer.
+    const contentItems: ToolReply['contentItems'] = [];
+    for (const item of result.content) {
+      if (item.type === 'text') contentItems.push({ type: 'inputText', text: item.text });
+      else if (item.type === 'image')
+        contentItems.push({
+          type: 'inputImage',
+          imageUrl: `data:${item.mimeType};base64,${item.data}`,
+        });
+      else return reply('This tool returned content Codex cannot display.', false);
+    }
+    return { contentItems, success: result.isError !== true };
   } catch (error) {
     return reply(message(error), false);
   }

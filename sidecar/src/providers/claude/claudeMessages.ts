@@ -20,6 +20,11 @@ export class MessageQueue<T> implements AsyncIterable<T> {
     } else this.queued.push(message);
   }
 
+  /** What was queued and never read, taken out of the queue. */
+  drain(): T[] {
+    return this.queued.splice(0);
+  }
+
   close(error?: Error): void {
     if (this.ended) return;
     this.ended = true;

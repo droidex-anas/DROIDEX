@@ -6,7 +6,6 @@ import { PaneTransition } from './PaneTransition';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
-import { threadSubtitle } from './threadGreeting';
 import type { ProjectStep } from './types';
 import { entryForSession, useProjectBoard } from './useProjectBoard';
 import { useRelativeTimeNow } from './useRelativeTimeNow';
@@ -67,7 +66,10 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
           <ThreadList
             rows={rows}
             plan={project?.plan ?? EMPTY_PLAN}
-            subtitle={threadSubtitle(project?.title ?? 'This chat', session?.cwd, rows.length)}
+            title={project?.title}
+            cwd={session?.cwd}
+            startedAt={project?.startedAt}
+            done={project?.done}
             held={project?.paused === true}
             now={now}
             error={project?.error ?? ''}

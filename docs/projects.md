@@ -16,9 +16,9 @@ it is one of the sidebar's announcements (`src/lib/sidebarCards.ts`, id
 
 A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
 Droid and Claude Code receive the `droidex-sessions` MCP server; Codex receives
-the same tools as deferred dynamic tools in `droidex_sessions`. Six run a
+the same tools as deferred dynamic tools in `droidex_sessions`. Seven run a
 project: `thread_spawn`, `thread_send`, `thread_read`, `thread_configure`,
-`thread_stop` and `plan_set`.
+`thread_stop`, `plan_set` and `project_done`.
 The other five are the [session tools](session-tools.md) for the chats in the
 user's sidebar. A Codex chat started before these tools were added resumes
 without them because Codex cannot add dynamic tools to an existing thread;
@@ -98,6 +98,19 @@ routes nothing: its threads wait for the user.
 Permission requests are never routed. They stay with the user whatever the
 project is doing.
 
+## Steering a thread
+
+`thread_send` reaches a working thread the way the user's Steer does: the
+harness takes the message at its next step inside the running turn, with its
+own steer on Droid, Claude Code and Codex alike, or right after that turn when
+it cannot take it sooner. `delivery: 'now'` is Send now: DROIDEX
+stops the running turn and the message runs next. `delivery: 'queue'` waits for
+the turn to end. A thread with no turn running starts on the message either
+way, through the project's queue. When a working thread's turn ends or is
+stopped while the message is on its way, the send is refused rather than
+starting a new turn a Stop meant to end, and the chat reads the thread and
+sends again. The tool says whether the message was steered, sent now or queued.
+
 ## The plan
 
 The main chat keeps a plan with `plan_set`: the steps it means to take,
@@ -111,13 +124,24 @@ step without one shows only what the main chat said about it. The plan holds at
 most 60 steps, is stored in the project ledger, and appears above the threads
 wherever the project is read.
 
+`plan_set` also takes a `title`: a few words for the goal, which name the
+project and its main chat in place of the opening prompt. Once the goal is
+achieved and no thread is working or starting, the main chat calls
+`project_done` with what the project achieved. Projects then shows it as done,
+with that outcome and how long the project took. Any work after that reopens
+it: a new thread, a message to a thread, a thread starting a turn, or a plan
+with a step of the main chat's own that is not done. A project records when it
+started; one from before that shows its main chat's start.
+
 ## The Threads panel
 
 The chat's utility panel has a **Threads** tab. It opens with a short greeting
-that changes through the day and a line counting the threads that need the user,
-are working or are idle, or saying to resume the project in Projects while it is
-held. Below them come the plan and the threads, grouped the way the sidebar's
-Activity view groups chats: **Needs you**, **Working** and **Recent**. Each row
+that changes through the day, the project's name, and how long it has been
+running or how long it took, with the outcome once it is done, or a line saying to resume the
+project in Projects while it is held. Below them come the plan, headed by how
+many of its steps are done, and the threads, grouped the way the sidebar's
+Activity view groups chats: **Needs you**, **Working** and **Recent**. Each
+heading carries its count and folds its section. Each row
 carries the thread's own last step and how long ago it moved. The states come
 from the signals the sidebar reads, a pending approval or question, the session
 phase and the chat's activity digest, so the panel never claims something the
@@ -127,8 +151,13 @@ Opening a row shows that thread's conversation read-only, loading its history
 first if this window has not, with **Open** to bring it into the main pane,
 where the ordinary composer and Stop steer it. In the chat, a started thread
 renders as an inline line with its live step that stays visible after the turn
-folds, and opening it shows the thread in the Threads tab. A thread's report
-arrives as a quiet notice rather than a message wearing the user's bubble. A
+folds, and opening it shows the thread in the Threads tab. A project's chat
+reads like a group chat: a thread's report, question or message arrives as that
+thread speaking, with its harness's mark as its face and its name and what it
+did over the bubble, never in the user's bubble or the main chat's own prose.
+A message from a chat outside the project stays a quiet notice. While the main
+chat waits with its turn ended and threads of its own working, its last reply
+says **Waiting for N threads** beside Copy and Fork, naming them on hover. A
 chat started with `reportBack` false gets the same inline line without a step,
 and opening it opens that chat in the main pane. In the Projects view, opening a
 thread opens it in the main pane.
@@ -176,11 +205,17 @@ that sends it answers with `session_send`.
 **Holding a project** stops new automatic deliveries and launches, not turns
 already handed to a provider. DROIDEX holds a project when the user stops or
 closes its main chat, when that chat's turn fails, when a delivery cannot be
-made or was caught mid-flight by a restart, when a report or question arrives at
-a full inbox or the ledger cannot be saved, and when deliveries run far past the
-pace real turns could produce: 60 within five minutes reads as threads talking
-in circles rather than working. There is no wake allowance otherwise: a project
-reports as often as its threads settle, for as long as the work runs.
+made or was caught mid-flight by a restart, when a question arrives at a full
+inbox or the ledger cannot be saved, and when deliveries run far past the pace
+real turns could produce: 60 within five minutes reads as threads talking in
+circles rather than working. There is no wake allowance otherwise: a project
+reports as often as its threads settle, for as long as the work runs. A hold
+put on by the main chat's failed turn lifts by itself when that chat's next turn
+succeeds, since the chat is working again.
+
+A thread's report that finds the inbox full does not hold the project. It waits
+on the thread and queues as soon as a delivery makes room; a newer report from
+the same thread replaces it.
 
 A project runs as many threads as its work needs, and there is no limit on the
 number of projects. What keeps one from running away is the limit of three
@@ -188,7 +223,11 @@ levels of threads below the main chat, the approval a spawn needs below High,
 and that hold on threads talking in circles. A project queues at most 64
 messages, counting the ones a delivery has claimed. At most two Projects
 delivery turns run at once across all projects; ordinary interactive sends keep
-their existing behaviour.
+their existing behaviour. A delivered turn stopped on a question for its owner,
+or on a permission request only the user can answer, runs nothing and does not
+count while it waits. Once answered it carries on, so for a while the count can
+pass two. A child agent's request counts as its parent's, so a parent that keeps
+working while its child waits can also let one more turn run.
 
 Threads share their owner's workspace unless the spawn asks for a worktree, or
 DROIDEX gives one its own because another thread is already working in that
@@ -219,8 +258,9 @@ persisted before a new session receives its first task.
 The wake queue writes its claim before dispatch. **Accepted** means the provider
 acknowledged the prompt, not that the model finished. The concurrency slot stays
 held until that turn settles, except while the turn waits on a question routed
-to the chat that started it: it runs nothing then, and holding the slot could
-keep that chat from ever being woken to answer. Busy targets retain messages and
+to the chat that started it, or on the user's permission: it runs nothing then,
+and holding the slot could keep that chat from ever being woken to answer, or
+stop every other project's reports until the user comes back. Busy targets retain messages and
 retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
@@ -238,9 +278,9 @@ work and is deliberately forbidden.
 When the user stops or closes a project's main chat, the project is held too.
 That chat's own next `thread_spawn` with `reportBack` true resumes it, the way
 Resume in Projects does, because the chat is working again. Only a hold the Stop
-alone put on is lifted this way: a hold from a failure, from threads talking in
-circles or from an uncertain delivery stays until the user resumes the project
-in Projects, and a spawn that was already under way when the user pressed Stop
+alone put on is lifted this way: a hold from threads talking in circles, from an
+uncertain delivery or from a failure other than the main chat's own turn stays
+until the user resumes the project in Projects, and a spawn that was already under way when the user pressed Stop
 is refused. So is a chat's first spawn, though no project exists yet for the
 Stop to hold.
 

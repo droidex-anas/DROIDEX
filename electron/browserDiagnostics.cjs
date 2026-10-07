@@ -1,3 +1,18 @@
+// Redaction for what the browser's debug tools hand to an agent: request URLs
+// and console text.
+//
+// What it covers. A URL on its own (a request's, a console message's source)
+// loses its user and password, its fragment, and the values of parameters named
+// like secrets, in a URL passed as a parameter's value too. Console text is free text a page wrote, so it gets the shapes a
+// secret usually has there: a well-formed URL (no spaces in it), and a value
+// that follows a name like `token=` or `password:`, quoted or not, or an
+// authentication scheme such as `Bearer`.
+//
+// What it does not cover. It is not a secret detector. A page that prints a
+// secret with no name beside it, or inside a URL that is not well formed (a
+// space in its password, an encoded parameter name with a quoted value), is
+// outside it. Console text is the page's own words; the tool says so.
+
 const SENSITIVE_KEY_PARTS = [
   'token',
   'key',
@@ -20,14 +35,21 @@ function isSensitiveBrowserKey(value) {
   return SENSITIVE_KEY_PARTS.some((part) => key.includes(part));
 }
 
-function redactBrowserDiagnosticUrl(value, baseUrl) {
+// A parameter whose value is itself a URL (a `next=` or a `redirect_uri=`),
+// relative or absolute, is redacted like one, this many levels deep; deeper
+// than that it goes whole.
+const MAX_URL_DEPTH = 3;
+
+function redactBrowserDiagnosticUrl(value, baseUrl, depth = 0) {
   try {
     const url = baseUrl ? new URL(String(value), baseUrl) : new URL(String(value));
-    for (const key of [...url.searchParams.keys()]) {
-      if (isSensitiveBrowserKey(key)) {
-        url.searchParams.set(key, '[redacted]');
-      }
-    }
+    const params = [...url.searchParams];
+    const redacted = params.map(([key, inner]) => [
+      key,
+      redactParameter(key, inner, url.href, depth),
+    ]);
+    if (redacted.some(([, inner], index) => inner !== params[index][1]))
+      url.search = new URLSearchParams(redacted).toString();
     url.username = '';
     url.password = '';
     url.hash = '';
@@ -37,11 +59,50 @@ function redactBrowserDiagnosticUrl(value, baseUrl) {
   }
 }
 
+// The page a tool names: one off the web shows only its scheme, so a local
+// file's path and the user's name in it never reach the agent.
+function redactBrowserPageUrl(value) {
+  const text = String(value || '');
+  if (!URL.canParse(text)) return text.slice(0, 1000);
+  const { protocol } = new URL(text);
+  return /^(https?|about):$/.test(protocol)
+    ? redactBrowserDiagnosticUrl(text)
+    : `${protocol}[hidden]`;
+}
+
+function redactParameter(key, value, base, depth) {
+  // `sig` alone is the signature of a signed URL.
+  if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') return '[redacted]';
+  // A relative URL (`next=/continue?code=...`) is read against the enclosing one.
+  const relative = value.startsWith('/') || value.startsWith('?');
+  if (!relative && !URL.canParse(value)) return value;
+  // One that looks like a URL but will not read as one goes whole.
+  if (depth >= MAX_URL_DEPTH || !URL.canParse(value, base)) return '[redacted]';
+  const resolved = new URL(value, base).href;
+  const redacted = redactBrowserDiagnosticUrl(resolved, undefined, depth + 1);
+  return redacted === resolved ? value : redacted;
+}
+
+// Where a URL starts in text, whatever its scheme: https, wss, ftp.
+const URL_START = String.raw`\b[a-z][a-z0-9+.-]*:\/\/`;
+const URL_CREDENTIALS = new RegExp(`(${URL_START})[^\\s/?#]*@`, 'gi');
+const URL_CUT_IN_HOST = new RegExp(`${URL_START}[^\\s/?#]*$`, 'i');
+const URL_IN_TEXT = new RegExp(`${URL_START}[^\\s"'<>]+`, 'gi');
+
 function redactBrowserDiagnosticText(value) {
-  const bounded = String(value || '').slice(0, 4000);
-  return redactUnquotedAssignments(
-    redactQuotedAssignments(redactAuthenticationSchemes(bounded)),
-  ).slice(0, 1000);
+  // A URL's user and password go first and on their own, whatever characters
+  // they hold: a URL cut short at one of them would not parse, and would be
+  // left as it was.
+  const text = String(value || '');
+  const stripped = text.slice(0, 4000).replace(URL_CREDENTIALS, '$1');
+  // A URL the length limit cut before its host ended may have lost the "@"
+  // after its user and password, so what is left of it goes.
+  const bounded = text.length > 4000 ? stripped.replace(URL_CUT_IN_HOST, '') : stripped;
+  // Then values named like secrets, a quoted one whole; then what is left of
+  // each URL, like any other URL.
+  return redactUnquotedAssignments(redactQuotedAssignments(redactAuthenticationSchemes(bounded)))
+    .replace(URL_IN_TEXT, (url) => redactBrowserDiagnosticUrl(url))
+    .slice(0, 1000);
 }
 
 function redactAuthenticationSchemes(value) {
@@ -207,8 +268,10 @@ function isAuthenticationTokenChar(value) {
   );
 }
 
+const CONSOLE_LEVELS = { debug: 0, info: 1, warning: 2, error: 3 };
+
 function normalizeBrowserConsoleMessage(details) {
-  const level = { debug: 0, info: 1, warning: 2, error: 3 }[details?.level] ?? 0;
+  const level = CONSOLE_LEVELS[details?.level] ?? 0;
   return {
     level,
     message: redactBrowserDiagnosticText(details?.message),
@@ -218,8 +281,10 @@ function normalizeBrowserConsoleMessage(details) {
 }
 
 module.exports = {
+  CONSOLE_LEVELS,
   isSensitiveBrowserKey,
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticText,
   redactBrowserDiagnosticUrl,
+  redactBrowserPageUrl,
 };

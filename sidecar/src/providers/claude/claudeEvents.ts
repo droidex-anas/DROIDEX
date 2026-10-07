@@ -12,6 +12,7 @@ import type { ModelInfo, SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/clau
 import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
+import { toolResultParts } from '../../toolResultImages.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { claudeCatalogModelId } from './claudeModels.js';
 import { usageRefusal } from './claudeRateLimits.js';
@@ -73,10 +74,15 @@ export class ClaudeEventMapper {
 
   // Resets state scoped to the turn that is starting, not the long-lived
   // background task identity the session may still be tracking across turns.
-  beginTurn(turnId: string): void {
+  beginTurn(turnId: string | undefined): void {
     this.turnId = turnId;
     this.refusal = undefined;
     this.subagents.beginTurn();
+  }
+
+  // A turn no prompt of ours opened has no fork point; what it spawned stays linked.
+  forgetForkPoint(): void {
+    this.turnId = undefined;
   }
 
   // The usage limit the turn's request was refused on. The CLI still ends that
@@ -284,7 +290,7 @@ export class ClaudeEventMapper {
     return content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
-      const text = toolResultText(block.content);
+      const { text, images } = toolResultParts(block.content);
       // A call the user stopped, with Stop or Send now, is not a failure, and
       // the CLI says so in this one sentence. Reading it here keeps the renderer
       // free of text matching, and the row quiet instead of red.
@@ -293,6 +299,7 @@ export class ClaudeEventMapper {
         ...owner,
         transcript: this.transcript('tool_result', {
           text,
+          ...(images ? { images } : {}),
           isError: block.is_error === true && !interrupted,
           toolUseId: block.tool_use_id,
           ...(interrupted ? { interrupted: true } : {}),
@@ -354,6 +361,12 @@ export class ClaudeEventMapper {
     if (limit !== undefined && Number.isFinite(limit) && limit > 0 && usageEvent.tokens)
       usageEvent.tokens.maxContextTokens = limit;
     return [...missed, usageEvent];
+  }
+
+  errorEvent(message: string): NormalizedEvent {
+    return {
+      transcript: this.transcript('error', { text: message, isError: true }),
+    };
   }
 
   // A line the session itself has to say, in the row shape every provider's
@@ -482,15 +495,4 @@ function parseToolInput(json: string): unknown {
   } catch {
     return {};
   }
-}
-
-function toolResultText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return content === undefined ? '' : JSON.stringify(content);
-  return content
-    .map((block: unknown) => {
-      const text = (block as { text?: string }).text;
-      return typeof text === 'string' ? text : JSON.stringify(block);
-    })
-    .join('\n');
 }

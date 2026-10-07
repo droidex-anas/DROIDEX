@@ -29,9 +29,11 @@ export class ProjectWakeQueue {
   private closed = false;
 
   constructor(
-    private readonly sessions: Pick<ProjectPort, 'deliver'>,
+    private readonly sessions: Pick<ProjectPort, 'deliver' | 'awaitingApproval'>,
     private readonly save: () => Promise<void>,
     private readonly fail: (project: Project, error: unknown) => void,
+    /** Room opened in a project's inbox, so reports that found it full can queue. */
+    private readonly refill: (project: Project) => void,
   ) {}
 
   guard(project: Project): () => boolean {
@@ -43,8 +45,10 @@ export class ProjectWakeQueue {
     this.recent.delete(project.id);
     this.generations.set(project.id, (this.generations.get(project.id) ?? 0) + 1);
     this.queued.delete(project);
-    this.capacityWaiting.delete(project.id);
-    for (const thread of project.threads) this.busyTargets.delete(thread.appSessionId);
+    for (const thread of project.threads) {
+      this.busyTargets.delete(thread.appSessionId);
+      this.capacityWaiting.delete(thread.appSessionId);
+    }
   }
 
   /**
@@ -57,7 +61,9 @@ export class ProjectWakeQueue {
   }
 
   kick(project: Project): void {
-    if (this.closed || project.paused || project.delivery || !project.pending.length) return;
+    if (this.closed) return;
+    this.refill(project);
+    if (project.paused || project.delivery || !project.pending.length) return;
     this.queued.add(project);
     this.schedule();
   }
@@ -66,6 +72,7 @@ export class ProjectWakeQueue {
     if (this.closed) return;
     this.revisions.set(appSessionId, (this.revisions.get(appSessionId) ?? 0) + 1);
     this.busyTargets.delete(appSessionId);
+    this.capacityWaiting.delete(appSessionId);
     this.kick(project);
   }
 
@@ -74,6 +81,22 @@ export class ProjectWakeQueue {
     this.capacityRevision += 1;
     this.capacityWaiting.clear();
     for (const project of projects) this.kick(project);
+  }
+
+  /**
+   * A session went idle, so a runtime may be releasable now. It also counts for
+   * a capacity refusal still being recorded, which then retries instead of
+   * parking; the retry itself only runs while something is parked.
+   */
+  sessionIdle(projects: Iterable<Project>): void {
+    if (this.closed) return;
+    this.capacityRevision += 1;
+    if (this.capacityWaiting.size) this.capacityChanged(projects);
+  }
+
+  /** A delivered turn stopped on, or resumed from, a request only the user can answer. */
+  waitingChanged(): void {
+    if (!this.closed) this.schedule();
   }
 
   async settle(project: Project): Promise<void> {
@@ -108,9 +131,12 @@ export class ProjectWakeQueue {
           this.queued.delete(project);
           continue;
         }
-        if (this.pumping.has(project.id) || this.capacityWaiting.has(project.id)) continue;
+        if (this.pumping.has(project.id)) continue;
         const first = project.pending.find(
-          (message) => !this.busyTargets.has(message.to) && !this.active.has(message.to),
+          (message) =>
+            !this.busyTargets.has(message.to) &&
+            !this.capacityWaiting.has(message.to) &&
+            !this.active.has(message.to),
         );
         if (!first) continue;
         this.queued.delete(project);
@@ -130,8 +156,12 @@ export class ProjectWakeQueue {
 
   private running(): number {
     let count = this.pumping.size;
-    // A thread stopped on a question for its owner runs nothing until answered, so it frees its slot.
-    for (const [target, turn] of this.active) if (!isAskingOwner(turn.project, target)) count += 1;
+    // A turn stopped on a question for its owner, or on a permission only the
+    // user can give, runs nothing until answered, so it frees its slot. Once
+    // answered it carries on, and the count can briefly pass the limit.
+    for (const [target, turn] of this.active)
+      if (!isAskingOwner(turn.project, target) && !this.sessions.awaitingApproval(target))
+        count += 1;
     return count;
   }
 
@@ -199,11 +229,7 @@ export class ProjectWakeQueue {
       // A cancelled generation cannot put a resumed recipient back to sleep, and
       // a dropped question says nothing about whether the recipient is busy.
       if (receipt.status === 'cancelled' || !isCurrent() || !stillAsked()) return;
-      if (receipt.retryOn === 'capacity') {
-        if (this.capacityRevision === capacityRevision) this.capacityWaiting.add(project.id);
-      } else if (this.revisions.get(target) === targetRevision) {
-        this.busyTargets.add(target);
-      }
+      this.park(target, receipt.retryOn, capacityRevision, targetRevision);
       return;
     }
 
@@ -216,6 +242,19 @@ export class ProjectWakeQueue {
     const settled = receipt.settled.then(release, release);
     this.active.set(target, { project, settled });
     await this.save();
+  }
+
+  /** Where a refused delivery waits: for room to run its recipient, or for the recipient to settle. */
+  private park(
+    target: string,
+    retryOn: 'target' | 'capacity',
+    capacityRevision: number,
+    targetRevision: number | undefined,
+  ): void {
+    // A recipient that became available meanwhile has nothing left to wait for.
+    if (this.revisions.get(target) !== targetRevision) return;
+    if (retryOn === 'target') this.busyTargets.add(target);
+    else if (this.capacityRevision === capacityRevision) this.capacityWaiting.add(target);
   }
 }
 
@@ -257,7 +296,11 @@ const VERB: Record<ThreadMessage['kind'], string> = {
    blob addressed to a model reads as a leak. The first line is what the window
    recognises such a turn by. A thread cannot thread_send the chat that started
    it and does not talk to the user, so it is told to answer with its report. */
-function wakePrompt(project: Project, to: string, messages: readonly ThreadMessage[]): string {
+export function wakePrompt(
+  project: Project,
+  to: string,
+  messages: readonly ThreadMessage[],
+): string {
   const threads = new Map(project.threads.map((thread) => [thread.appSessionId, thread]));
   const lines = messages.map((message) => {
     const from = threads.get(message.from)?.title ?? 'A thread';

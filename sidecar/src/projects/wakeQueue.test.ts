@@ -43,12 +43,13 @@ function wakeQueue(
   options: { save?: () => Promise<void>; fail?: (error: unknown) => void } = {},
 ): ProjectWakeQueue {
   const queue = new ProjectWakeQueue(
-    { deliver },
+    { deliver, awaitingApproval: () => false },
     options.save ?? (() => Promise.resolve()),
     (_project, error) => {
       if (!options.fail) throw error;
       options.fail(error);
     },
+    () => undefined,
   );
   queue.start([]);
   t.after(async () => {
@@ -115,6 +116,33 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   await tick();
   await tick();
   assert.equal(calls, 2);
+});
+
+test('capacity waits block only that recipient until availability', async (t) => {
+  const state = project();
+  const targets: string[] = [];
+  const queue = wakeQueue(t, async (target) => {
+    targets.push(target);
+    return targets.length === 1
+      ? { status: 'busy', retryOn: 'capacity' }
+      : { status: 'accepted', settled: Promise.resolve() };
+  });
+  queue.kick(state);
+  await tick();
+  await tick();
+  assert.deepEqual(targets, ['main']);
+
+  state.pending.push(message('worker-message', 'worker'));
+  queue.kick(state);
+  await tick();
+  await tick();
+  assert.deepEqual(targets, ['main', 'worker']);
+
+  state.pending.push(message('main-again'));
+  queue.available(state, 'main');
+  await tick();
+  await tick();
+  assert.deepEqual(targets, ['main', 'worker', 'main']);
 });
 
 test('an unacknowledged delivery keeps its claim and is not retried', async (t) => {
