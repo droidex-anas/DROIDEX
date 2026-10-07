@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -123,6 +123,78 @@ test('a collision leaves the existing file byte-identical', async (t) => {
   });
   assert.deepEqual(await readFile(join(destination, 'README.md')), existing);
   assert.deepEqual(await fileSet(destination), ['README.md']);
+});
+
+test('a failed later write leaves no partial export and can be retried', async (t) => {
+  const { root, destination } = await profile(t);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  const probe = await open(join(destination, 'probe'), 'w');
+  const fileHandle = Object.getPrototypeOf(probe) as { writeFile: typeof probe.writeFile };
+  const originalWrite = fileHandle.writeFile;
+  await probe.close();
+  await rm(join(destination, 'probe'));
+  let writes = 0;
+  const failure = t.mock.method(
+    fileHandle,
+    'writeFile',
+    async function (
+      this: typeof probe,
+      content: Parameters<typeof probe.writeFile>[0],
+      options?: Parameters<typeof probe.writeFile>[1],
+    ) {
+      writes += 1;
+      if (typeof content === 'string' && content.includes('Canvas preview:'))
+        throw new Error('later write failed');
+      return originalWrite.call(this, content, options);
+    },
+  );
+
+  await assert.rejects(exportCanvasSource(canvasId, ref, destination), CanvasCommandError);
+  assert.ok(writes > 1);
+  assert.deepEqual(await fileSet(destination), []);
+  assert.deepEqual(
+    (await readdir(root)).filter((name) => name.startsWith('.export-')),
+    [],
+  );
+
+  failure.mock.restore();
+  await exportCanvasSource(canvasId, ref, destination);
+  assert.ok((await fileSet(destination)).includes('build.mjs'));
+});
+
+test('an aborted export removes its staging directory', async (t) => {
+  const { root, destination } = await profile(t);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  const probe = await open(join(destination, 'probe'), 'w');
+  const fileHandle = Object.getPrototypeOf(probe) as { writeFile: typeof probe.writeFile };
+  const originalWrite = fileHandle.writeFile;
+  await probe.close();
+  await rm(join(destination, 'probe'));
+  const abort = new AbortController();
+  let writes = 0;
+  t.mock.method(
+    fileHandle,
+    'writeFile',
+    async function (
+      this: typeof probe,
+      content: Parameters<typeof probe.writeFile>[0],
+      options?: Parameters<typeof probe.writeFile>[1],
+    ) {
+      writes += 1;
+      if (writes === 2) abort.abort();
+      return originalWrite.call(this, content, options);
+    },
+  );
+
+  await assert.rejects(exportCanvasSource(canvasId, ref, destination, abort.signal), {
+    name: 'AbortError',
+  });
+  assert.ok(writes >= 2);
+  assert.deepEqual(await fileSet(destination), []);
+  assert.deepEqual(
+    (await readdir(root)).filter((name) => name.startsWith('.export-')),
+    [],
+  );
 });
 
 test('the renderer bridge token cannot invoke host-only export', async (t) => {

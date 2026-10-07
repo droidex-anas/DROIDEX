@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readdir, rename, rm, rmdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
@@ -15,7 +15,7 @@ import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
-const COLLISION = 'The chosen folder already contains an export file. Choose another folder.';
+const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';
 const UNSAFE_PATH = 'The export contains an unsafe path. Check the saved source and try again.';
 const EXPORT_FAILED = 'The source could not be exported. Check the folder and try again.';
 const ASSET_FAILED = 'A referenced Canvas image is unavailable. Restore it and try again.';
@@ -42,12 +42,15 @@ export async function exportCanvasSource(
   canvasId: string,
   ref: RevisionRef,
   destinationDirectory: string,
+  signal?: AbortSignal,
 ): Promise<{ filesWritten: number }> {
   const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory });
   if (!parsed.success || !isAbsolute(destinationDirectory))
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
 
+  signal?.throwIfAborted();
   const saved = await new CanvasFiles(canvasDir()).readRevisionDetails(canvasId, ref);
+  signal?.throwIfAborted();
   const kit = await readDesignSystem(saved.designSystem);
   const files: ExportFile[] = [];
   for (const [path, content] of saved.files) files.push({ path: `src/${path}`, content });
@@ -65,8 +68,10 @@ export async function exportCanvasSource(
   const assetIds = new Set<string>();
   for (const content of saved.files.values())
     for (const match of content.matchAll(ASSET_REFERENCE)) assetIds.add(match[1]);
-  for (const assetId of assetIds)
+  for (const assetId of assetIds) {
+    signal?.throwIfAborted();
     files.push({ path: `assets/${assetId}`, content: await readOwnedAsset(canvasId, assetId) });
+  }
 
   const fonts = new Map<string, Buffer>();
   for (const content of Object.values(kit.files)) {
@@ -82,7 +87,7 @@ export async function exportCanvasSource(
   files.push({ path: 'package.json', content: exportPackageJson() });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README });
-  await writeExport(resolve(destinationDirectory), files);
+  await writeExport(resolve(destinationDirectory), files, signal);
   return { filesWritten: files.length };
 }
 
@@ -152,8 +157,67 @@ function exportPackageJson(): string {
   }
 }
 
-async function writeExport(directory: string, files: ExportFile[]): Promise<void> {
-  const paths = files.map(({ path }) => {
+async function writeExport(
+  directory: string,
+  files: ExportFile[],
+  signal?: AbortSignal,
+): Promise<void> {
+  assertDistinctTargets(directory, exportPaths(directory, files));
+  let staging: string | null = null;
+  try {
+    signal?.throwIfAborted();
+    const selected = await lstat(directory);
+    if (selected.isSymbolicLink() || !selected.isDirectory())
+      throw canvasError('invalid_source_path', UNSAFE_PATH);
+    const entries = await readdir(directory, { withFileTypes: true });
+    if (entries.some((entry) => entry.isSymbolicLink()))
+      throw canvasError('invalid_source_path', UNSAFE_PATH);
+    if (entries.length > 0) throw canvasError('invalid_input', COLLISION);
+    staging = await mkdtemp(join(dirname(directory), `.${basename(directory)}-staging-`));
+    await writeStagingFiles(staging, files, signal);
+    signal?.throwIfAborted();
+    await publishStaging(staging, directory, signal);
+    staging = null;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (error instanceof CanvasCommandError) throw error;
+    if (isCode(error, 'EEXIST')) throw canvasError('invalid_input', COLLISION);
+    throw storageFailure(EXPORT_FAILED, error);
+  } finally {
+    if (staging) await rm(staging, { recursive: true, force: true });
+  }
+}
+
+async function publishStaging(
+  staging: string,
+  directory: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const backup = await mkdtemp(join(dirname(directory), `.${basename(directory)}-backup-`));
+  let originalMoved = false;
+  let published = false;
+  try {
+    await rename(directory, backup);
+    originalMoved = true;
+    if ((await readdir(backup)).length > 0) throw canvasError('invalid_input', COLLISION);
+    signal?.throwIfAborted();
+    await rename(staging, directory);
+    published = true;
+    try {
+      await rmdir(backup);
+    } catch (error) {
+      console.warn('Canvas export backup cleanup failed:', error);
+    }
+  } catch (error) {
+    if (originalMoved && !published) await rename(backup, directory);
+    throw error;
+  } finally {
+    if (!originalMoved) await rmdir(backup);
+  }
+}
+
+function exportPaths(directory: string, files: ExportFile[]): string[] {
+  return files.map(({ path }) => {
     const parsed = sourcePathSchema.safeParse(path);
     if (!parsed.success) throw canvasError('invalid_source_path', UNSAFE_PATH);
     const target = join(directory, ...path.split('/'));
@@ -167,27 +231,27 @@ async function writeExport(directory: string, files: ExportFile[]): Promise<void
       throw canvasError('invalid_source_path', UNSAFE_PATH);
     return target;
   });
-  assertDistinctTargets(directory, paths);
-  try {
-    await assertDestinationAvailable(directory, paths);
-    for (let index = 0; index < files.length; index += 1) {
-      const target = paths[index];
-      await mkdir(dirname(target), { recursive: true });
-      const file = await open(
-        target,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-        0o600,
-      );
-      try {
-        await file.writeFile(files[index].content);
-      } finally {
-        await file.close();
-      }
+}
+
+async function writeStagingFiles(
+  staging: string,
+  files: ExportFile[],
+  signal?: AbortSignal,
+): Promise<void> {
+  for (const { path, content } of files) {
+    signal?.throwIfAborted();
+    const target = join(staging, ...path.split('/'));
+    await mkdir(dirname(target), { recursive: true });
+    const file = await open(
+      target,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await file.writeFile(content, { signal });
+    } finally {
+      await file.close();
     }
-  } catch (error) {
-    if (error instanceof CanvasCommandError) throw error;
-    if (isCode(error, 'EEXIST')) throw canvasError('invalid_input', COLLISION);
-    throw storageFailure(EXPORT_FAILED, error);
   }
 }
 
@@ -200,27 +264,6 @@ function assertDistinctTargets(directory: string, paths: string[]): void {
       if (planned.has(parent.normalize('NFC').toLowerCase()))
         throw canvasError('invalid_source_path', UNSAFE_PATH);
       parent = dirname(parent);
-    }
-  }
-}
-
-/** A collision is detected before the first write, then exclusive opens close the race. */
-async function assertDestinationAvailable(directory: string, paths: string[]): Promise<void> {
-  const selected = await lstat(directory);
-  if (selected.isSymbolicLink() || !selected.isDirectory())
-    throw canvasError('invalid_source_path', UNSAFE_PATH);
-  for (const target of paths) {
-    let current = target;
-    while (current !== directory) {
-      const info = await lstat(current).catch((error: unknown) => {
-        if (isCode(error, 'ENOENT')) return null;
-        throw error;
-      });
-      if (info?.isSymbolicLink()) throw canvasError('invalid_source_path', UNSAFE_PATH);
-      if (current === target && info) throw canvasError('invalid_input', COLLISION);
-      if (current !== target && info && !info.isDirectory())
-        throw canvasError('invalid_input', COLLISION);
-      current = dirname(current);
     }
   }
 }
@@ -248,6 +291,12 @@ async function answerExportRequest(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
+  const abort = new AbortController();
+  const onClose = () => {
+    abort.abort();
+  };
+  request.once('aborted', onClose);
+  response.once('close', onClose);
   try {
     let body = '';
     request.setEncoding('utf8');
@@ -268,16 +317,20 @@ async function answerExportRequest(
       parsed.data.canvasId,
       parsed.data.ref,
       parsed.data.destinationDirectory,
+      abort.signal,
     );
     if (!response.destroyed)
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
   } catch (error) {
-    if (response.destroyed) return;
+    if (response.destroyed || abort.signal.aborted) return;
     const failure =
       error instanceof CanvasCommandError ? error : storageFailure(EXPORT_FAILED, error);
     response
       .writeHead(400, { 'content-type': 'application/json' })
       .end(JSON.stringify({ code: failure.code, message: failure.message }));
+  } finally {
+    request.off('aborted', onClose);
+    response.off('close', onClose);
   }
 }
 
