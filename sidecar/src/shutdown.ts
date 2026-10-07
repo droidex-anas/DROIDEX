@@ -1,3 +1,6 @@
+import type { CanvasBuilds } from './canvas/CanvasBuilds.js';
+import type { CanvasScopes } from './canvas/canvasScopes.js';
+import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { CanvasEvent } from './canvas/protocol.js';
 import type { ClientCommand } from './protocol.js';
 
@@ -8,6 +11,25 @@ export interface SidecarShutdownStages {
   shutdownCanvas: () => Promise<void>;
   disableMetrics: () => void;
   closeBridge: () => Promise<void>;
+}
+
+/** Invalidates pane authority and publication before waiting for owned cleanup. */
+export async function shutdownCanvas(
+  builds: CanvasBuilds,
+  scopes: CanvasScopes,
+  ready: Promise<CanvasWorkspace>,
+  workspace?: CanvasWorkspace,
+): Promise<void> {
+  scopes.revokeUsers();
+  const closing = workspace?.close();
+  await Promise.all([
+    builds.close(),
+    closing ??
+      ready.then(
+        (opened) => opened.close(),
+        () => undefined,
+      ),
+  ]);
 }
 
 /** Attempts every owned cleanup stage and reports the first failure afterward. */

@@ -16,7 +16,7 @@ import {
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
-import { canvasShutdownReply, shutdownSidecar } from './shutdown.js';
+import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
 import type { ClientCommand } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
@@ -229,13 +229,8 @@ async function shutdown(): Promise<void> {
           await service?.flush();
         }
       },
-      shutdownCanvas: async () => {
-        // Builds first: a settling build still reports its outcome through the
-        // workspace, which then waits for that commit before it closes.
-        await canvasBuilds.close();
-        const workspace = await canvasReady.catch(() => undefined);
-        await workspace?.close();
-      },
+      shutdownCanvas: () =>
+        shutdownCanvas(canvasBuilds, canvasScopes, canvasReady, canvasWorkspace),
       disableMetrics: () => {
         hotPathMetrics.disable();
       },
