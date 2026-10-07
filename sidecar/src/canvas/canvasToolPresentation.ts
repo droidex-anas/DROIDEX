@@ -174,8 +174,10 @@ export class CanvasToolPresentation {
     );
   }
 
-  clearBindings(): void {
-    this.bindings.clear();
+  clearBindings(sourceSessionId: string): void {
+    for (const [key, binding] of this.bindings) {
+      if (binding.sourceSessionId === sourceSessionId) this.bindings.delete(key);
+    }
   }
 
   project(event: TranscriptEvent, provenance?: ToolProvenance): TranscriptEvent {

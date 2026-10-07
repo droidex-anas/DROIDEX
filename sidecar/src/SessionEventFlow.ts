@@ -53,9 +53,10 @@ export class SessionEventFlow {
     this.terminalSources.get(appSessionId)?.delete(sourceProviderSessionId);
     if (appSessionId === sourceProviderSessionId) {
       this.clearToolState(appSessionId, 'primary');
-      this.canvasBySession.get(appSessionId)?.clearBindings();
+      this.canvasBySession.get(appSessionId)?.clearBindings('primary');
     } else {
       this.clearToolState(appSessionId, sourceProviderSessionId);
+      this.canvasBySession.get(appSessionId)?.clearBindings(sourceProviderSessionId);
     }
   }
 
