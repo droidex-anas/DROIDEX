@@ -4,6 +4,9 @@ import test from 'node:test';
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 import type * as Protocol from './protocol.js';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { deferred } from './testing/canvasStorageSupport.js';
 import {
   nativeSnapshot,
   nativeSuccess,
@@ -513,6 +516,39 @@ test('shutdown is single-flight and finalizers continue after failure', async ()
   );
 
   await h.dispose().catch(() => undefined);
+});
+
+test('shutdown revokes turn scopes before held session-file reconciliation settles', async (t) => {
+  const turns = new CanvasTurns(new CanvasScopes(), () => null);
+  const h = createSessionManagerTestContext({ canvasTurns: turns });
+  const reconcile = deferred();
+  const reached = deferred();
+  const stream = h.runtime.deferNextCreateStream('provider-1');
+  try {
+    await h.create(chatCommand('canvas-shutdown', { goal: 'keep the turn open' }));
+    await h.provider.waitForPrompts('provider-1', 1);
+    const scope = turns.activeScope('provider-1');
+    assert.ok(scope);
+    t.mock.method(h.history, 'reconcileSessionFiles', async () => {
+      reached.resolve();
+      await reconcile.promise;
+      return 0;
+    });
+    const listing = h.handle({ type: 'sessions.list' });
+    await reached.promise;
+    const closing = h.shutdown();
+    try {
+      assert.throws(() => turns.requireScope(scope.scopeId), { code: 'scope_expired' });
+    } finally {
+      reconcile.resolve();
+      stream.resolve();
+      await Promise.all([listing, closing]);
+    }
+  } finally {
+    reconcile.resolve();
+    stream.resolve();
+    await h.dispose();
+  }
 });
 
 test('the browser stays bound to the stable session across a provider swap', async () => {
