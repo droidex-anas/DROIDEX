@@ -545,7 +545,10 @@ test('the browser stays bound to the stable session across a provider swap', asy
         .filter((call) => call.target === 'browser')
         .map((call) => [call.method, call.args[0]]),
       [
-        ['open', { type: 'browser.open', appSessionId, url: 'https://example.test' }],
+        [
+          'open',
+          { type: 'browser.open', appSessionId, url: 'https://example.test', source: 'user' },
+        ],
         ['reload', appSessionId],
       ],
     );
