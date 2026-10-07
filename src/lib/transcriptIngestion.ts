@@ -110,10 +110,18 @@ export function ingestTranscriptEvents(
     const mergeTarget = toolCallMergeTarget(events, indexes, event);
     if (mergeTarget) {
       const toolName = event.toolName ?? mergeTarget.existing.toolName;
+      let canvasActivity = event.canvasActivity ?? mergeTarget.existing.canvasActivity;
+      if (
+        mergeTarget.existing.canvasActivity?.designIds.length &&
+        !event.canvasActivity?.designIds.length
+      ) {
+        canvasActivity = mergeTarget.existing.canvasActivity;
+      }
       const mergedCall: TranscriptEvent = {
         ...mergeTarget.existing,
         ...(toolName !== undefined ? { toolName } : {}),
         toolArgs: mergeToolArgs(mergeTarget.existing.toolArgs, event.toolArgs),
+        ...(canvasActivity ? { canvasActivity } : {}),
         endTs: event.endTs ?? event.ts,
       };
       events = replaceChunkedSequenceAt(events, mergeTarget.index, mergedCall);

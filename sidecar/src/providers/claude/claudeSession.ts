@@ -53,6 +53,7 @@ export interface ClaudeSessionInput {
   defaultModel?: ClaudeDefaultModel;
   models: ModelInfo[];
   mcpServers: Record<string, McpServerConfig>;
+  canvasScopeForRead?: () => string | undefined;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
   resume?: boolean;

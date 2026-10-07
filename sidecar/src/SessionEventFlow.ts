@@ -3,10 +3,12 @@ import type { DroidStreamEvent } from '@factory/droid-sdk';
 import { normalizeNotification, normalizeStreamEvent, type NormalizedEvent } from './normalize.js';
 import type { ChildSpawnLink, SessionRole, TranscriptEvent } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
+import { CanvasToolPresentation } from './canvas/canvasToolPresentation.js';
+import { appendCanvasToolBinding } from './canvas/canvasToolBindings.js';
 
 export type NormalizedSideEffects = Omit<
   NormalizedEvent,
-  'transcript' | 'done' | 'tokens' | 'childOwner'
+  'transcript' | 'done' | 'tokens' | 'childOwner' | 'toolProvenance'
 >;
 
 // Where a row the provider marked as a child's own belongs.
@@ -36,6 +38,9 @@ export interface SessionEventFlowDependencies {
 const POST_TERMINAL_GENERATION_KINDS = new Set(['text', 'thinking', 'tool_call', 'tool_result']);
 
 export class SessionEventFlow {
+  private readonly canvasBySession = new Map<string, CanvasToolPresentation>();
+  private readonly unboundToolDeltas = new Map<string, Map<string, TranscriptEvent[]>>();
+  private readonly ordinaryToolIds = new Map<string, Set<string>>();
   private readonly terminalSources = new Map<string, Set<string>>();
   // Spawns already reported as unadmitted. Every delta of an unresolved or
   // ambient agent reaches the drop, and one line per row is a flood, not a
@@ -46,6 +51,13 @@ export class SessionEventFlow {
 
   beginTurn(appSessionId: string, sourceProviderSessionId: string): void {
     this.terminalSources.get(appSessionId)?.delete(sourceProviderSessionId);
+    if (appSessionId === sourceProviderSessionId) {
+      this.clearToolState(appSessionId, 'primary');
+      this.canvasBySession.get(appSessionId)?.clearBindings('primary');
+    } else {
+      this.clearToolState(appSessionId, sourceProviderSessionId);
+      this.canvasBySession.get(appSessionId)?.clearBindings(sourceProviderSessionId);
+    }
   }
 
   applyStreamEvent(
@@ -84,6 +96,9 @@ export class SessionEventFlow {
   }
 
   forgetSession(appSessionId: string): void {
+    this.canvasBySession.delete(appSessionId);
+    this.unboundToolDeltas.delete(appSessionId);
+    this.ordinaryToolIds.delete(appSessionId);
     this.terminalSources.delete(appSessionId);
     this.warnedSpawns.delete(appSessionId);
   }
@@ -98,6 +113,10 @@ export class SessionEventFlow {
     childSessionId?: string,
   ): void {
     if (normalized.done) {
+      this.clearToolState(
+        appSessionId,
+        role === 'primary' ? 'primary' : (childSessionId ?? sourceProviderSessionId),
+      );
       this.terminalScope(appSessionId).add(sourceProviderSessionId);
       return;
     }
@@ -120,7 +139,8 @@ export class SessionEventFlow {
       terminal && isPostTerminalGeneration(normalized.transcript)
         ? undefined
         : normalized.transcript;
-    if (transcript) this.dependencies.appendTranscript(scoped(transcript, childSessionId, owned));
+    if (transcript)
+      this.appendProjected(appSessionId, transcript, normalized, childSessionId, owned);
     if (normalized.tokens)
       this.dependencies.recordUsage(appSessionId, sourceProviderSessionId, normalized.tokens);
 
@@ -178,6 +198,88 @@ export class SessionEventFlow {
     this.terminalSources.set(appSessionId, created);
     return created;
   }
+
+  private canvasFor(appSessionId: string): CanvasToolPresentation {
+    const existing = this.canvasBySession.get(appSessionId);
+    if (existing) return existing;
+    const projector = new CanvasToolPresentation([], (binding) => {
+      appendCanvasToolBinding(appSessionId, binding);
+    });
+    this.canvasBySession.set(appSessionId, projector);
+    return projector;
+  }
+
+  private appendProjected(
+    appSessionId: string,
+    transcript: TranscriptEvent,
+    normalized: NormalizedEvent,
+    childSessionId: string | undefined,
+    owned: ChildTranscriptScope | undefined,
+  ): void {
+    const canvas = this.canvasFor(appSessionId);
+    const event = scoped(transcript, childSessionId, owned);
+    const toolUseId = event.kind === 'tool_call' ? event.toolUseId : undefined;
+    const key = toolUseId ? toolCorrelationKey(event) : undefined;
+    if (
+      key &&
+      !event.toolName &&
+      !canvas.hasBinding(event) &&
+      !this.ordinaryToolIds.get(appSessionId)?.has(key)
+    ) {
+      let pending = this.unboundToolDeltas.get(appSessionId);
+      if (!pending) {
+        pending = new Map();
+        this.unboundToolDeltas.set(appSessionId, pending);
+      }
+      const deltas = pending.get(key) ?? [];
+      // An unnamed call is held until its server is known. The named call
+      // carries the full input, so only a bounded set of partials is needed.
+      if (deltas.length < 32) deltas.push(event);
+      pending.set(key, deltas);
+      return;
+    }
+    if (key && event.toolName) {
+      const pending = this.unboundToolDeltas.get(appSessionId)?.get(key);
+      if (!normalized.toolProvenance) this.ordinaryToolIdsFor(appSessionId).add(key);
+      if (pending) {
+        for (const delta of pending)
+          this.dependencies.appendTranscript(canvas.project(delta, normalized.toolProvenance));
+        this.unboundToolDeltas.get(appSessionId)?.delete(key);
+      }
+    }
+    this.dependencies.appendTranscript(canvas.project(event, normalized.toolProvenance));
+    if (event.kind === 'tool_result' && event.toolUseId)
+      this.ordinaryToolIds.get(appSessionId)?.delete(toolCorrelationKey(event));
+  }
+
+  private ordinaryToolIdsFor(appSessionId: string): Set<string> {
+    const existing = this.ordinaryToolIds.get(appSessionId);
+    if (existing) return existing;
+    const ids = new Set<string>();
+    this.ordinaryToolIds.set(appSessionId, ids);
+    return ids;
+  }
+
+  private clearToolState(appSessionId: string, sourceSessionId: string): void {
+    const prefix = `${sourceSessionId}\0`;
+    const pending = this.unboundToolDeltas.get(appSessionId);
+    if (pending) {
+      for (const key of pending.keys()) {
+        if (key.startsWith(prefix)) pending.delete(key);
+      }
+    }
+    const ordinary = this.ordinaryToolIds.get(appSessionId);
+    if (ordinary) {
+      for (const key of ordinary) {
+        if (key.startsWith(prefix)) ordinary.delete(key);
+      }
+    }
+  }
+}
+
+function toolCorrelationKey(event: TranscriptEvent): string {
+  const sourceSessionId = event.role === 'primary' ? 'primary' : event.sourceSessionId;
+  return `${sourceSessionId}\0${event.toolUseId ?? ''}`;
 }
 
 function scoped(

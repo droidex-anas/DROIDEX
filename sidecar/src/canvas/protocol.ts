@@ -8,7 +8,12 @@ import type {
   CanvasTurnContext,
   CreateFramesInput,
   DesignSystemRef,
+  EditElementInput,
+  ElementRef,
   FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 
@@ -18,11 +23,24 @@ export type {
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
+  EditElementInput,
   ElementRef,
+  FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
   RevisionRef,
   SourceFiles,
+  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
+
+export interface ElementEdit {
+  element: ElementRef;
+  change:
+    | { kind: 'text'; value: string }
+    | { kind: 'token'; property: string; token: string }
+    | { kind: 'image'; assetId: string };
+}
 
 /**
  * What one mutation is authorized to change. A turn lease pins the references
@@ -71,7 +89,13 @@ export interface SourceElement {
 export type CanvasBuildOutcome =
   | { status: 'pending' }
   | { status: 'building'; revisionId: string }
-  | { status: 'ready'; revisionId: string; artifactId: string }
+  | {
+      status: 'ready';
+      revisionId: string;
+      artifactId: string;
+      elements: SourceElement[];
+      diagnostics: CanvasDiagnostic[];
+    }
   | {
       status: 'failed';
       revisionId: string;
@@ -111,6 +135,7 @@ export interface CanvasFrame {
   name: string;
   rect: FrameRect;
   layoutVersion: number;
+  manifestVersion: number;
   // null while the frame is reserved and has no source yet.
   revisionId: string | null;
   designSystem: DesignSystemRef;
@@ -161,11 +186,20 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
-  | 'storage_failed';
+  | 'storage_failed'
+  | 'stale_revision'
+  | 'stale_reference'
+  | 'ambiguous_element'
+  | 'invalid_edit'
+  | 'invalid_source'
+  | 'unsupported_edit'
+  | 'layout_conflict'
+  | 'not_found';
 
 export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
+  currentRect?: FrameRect;
 }
 
 // ── Bridge commands and events ───────────────────────────────────────
@@ -207,11 +241,39 @@ export type CanvasCommand =
       input: WriteFilesInput;
     }
   | {
+      type: 'canvas.editElement';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: EditElementInput;
+    }
+  | {
       type: 'canvas.arrange';
       requestId: string;
       appSessionId: string;
       canvasId: string;
       input: ArrangeFramesInput;
+    }
+  | {
+      type: 'canvas.remove';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RemoveFramesInput;
+    }
+  | {
+      type: 'canvas.undoRemoval';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: UndoRemovalInput;
+    }
+  | {
+      type: 'canvas.renameFrame';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RenameFrameInput;
     };
 
 /** What a successful command answers with, one kind per command. */
@@ -223,6 +285,9 @@ export type CanvasReply =
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'removed'; undoId: string }
+  | { kind: 'undone'; change: CanvasChange }
+  | { kind: 'renamed'; change: CanvasChange }
   | { kind: 'artifact'; artifact: PreviewArtifact | null };
 
 export type CanvasEvent =

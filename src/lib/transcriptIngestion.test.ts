@@ -108,6 +108,63 @@ test('ingestion merges one streamed tool call and keeps distinct calls separate'
   assert.equal(result.estimatedCost, estimateTranscriptCost(result.events));
 });
 
+test('ingestion keeps the latest targeted Canvas activity across tool-call snapshots', () => {
+  const activity: NonNullable<TranscriptEvent['canvasActivity']> = {
+    toolUseId: 'canvas-call',
+    action: 'write',
+    designIds: [],
+    state: 'running',
+    message: 'Writing Canvas',
+  };
+  const cases = [
+    { previous: [], next: ['design-1'], expected: ['design-1'], message: 'Updating Canvas' },
+    {
+      previous: ['design-1'],
+      next: ['design-2'],
+      expected: ['design-2'],
+      message: 'Updating Canvas',
+    },
+    { previous: ['design-1'], next: [], expected: ['design-1'], message: 'Writing Canvas' },
+    { previous: ['design-1'], next: undefined, expected: ['design-1'], message: 'Writing Canvas' },
+  ];
+
+  for (const { previous, next, expected, message } of cases) {
+    const call = toolCall(
+      'canvas-first',
+      activity.toolUseId,
+      {},
+      {
+        toolName: 'Canvas',
+        canvasActivity: { ...activity, designIds: previous },
+      },
+    );
+    const tail = transcriptEvent('tail');
+    const seeded = ingestTranscriptEvents([], estimateTranscriptCost([]), [call, tail]);
+    const snapshot = toolCall(
+      'canvas-later',
+      activity.toolUseId,
+      {},
+      {
+        canvasActivity:
+          next === undefined
+            ? undefined
+            : { ...activity, designIds: next, message: 'Updating Canvas' },
+        ts: 2,
+      },
+    );
+
+    const result = ingestTranscriptEvents(seeded.events, seeded.estimatedCost, [snapshot]);
+
+    assert.equal(result.events.length, 2);
+    assert.deepEqual(result.events[0]?.canvasActivity, {
+      ...activity,
+      designIds: expected,
+      message,
+    });
+    assert.equal(result.estimatedCost, estimateTranscriptCost(result.events));
+  }
+});
+
 test('interleaved snapshots of parallel tool calls merge by id instead of duplicating', () => {
   const callA1 = toolCall(
     'call-a-1',

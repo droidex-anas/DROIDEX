@@ -14,6 +14,7 @@ import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
 import { resetAtMillis, UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import { canvasToolProvenance } from '../../canvas/canvasToolPresentation.js';
 
 const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
 
@@ -36,6 +37,7 @@ interface ToolBlock {
   id: string;
   name: string;
   json: string;
+  emitted?: boolean;
 }
 
 // One content block of the message currently streaming. Its presence is what
@@ -161,9 +163,9 @@ export class ClaudeEventMapper {
         return this.contentDelta(blocks, event.index, event.delta, parentToolUseId);
       case 'content_block_stop': {
         const tool = blocks.get(event.index)?.tool;
-        return tool
-          ? [this.toolCall(tool.id, tool.name, parseToolInput(tool.json), parentToolUseId)]
-          : [];
+        if (!tool || tool.emitted) return [];
+        tool.emitted = true;
+        return [this.toolCall(tool.id, tool.name, parseToolInput(tool.json), parentToolUseId)];
       }
       default:
         return [];
@@ -200,18 +202,28 @@ export class ClaudeEventMapper {
       this.observedModelId = model;
     const blocks = this.blocksFor(message.parent_tool_use_id);
     // The snapshot's content is the block that just finished, not the message so
-    // far, so it cannot be matched positionally against the stream. Blocks that
-    // streamed are already in the transcript, and a tool block is matched by its
-    // id, which is stable.
+    // far, so it cannot be matched positionally against the stream. Streamed
+    // text is already in the transcript. Tool calls wait for their
+    // block stop, unless an error snapshot needs their correlation first.
     const streamed = blocks.size > 0;
-    const reported = new Set(
-      [...blocks.values()].flatMap((block) => (block.tool ? [block.tool.id] : [])),
-    );
+    const startedTools = new Map<string, ToolBlock>();
+    for (const block of blocks.values()) {
+      if (block.tool) startedTools.set(block.tool.id, block.tool);
+    }
+    const canvasTools = message.message.content
+      .map(toolBlock)
+      .filter((tool) => tool && canvasToolProvenance(tool.name, tool.id));
+    const canvasTool =
+      message.error && message.error !== 'rate_limit' && canvasTools.length === 1
+        ? canvasTools[0]
+        : undefined;
     const events: NormalizedEvent[] = [];
     for (const block of message.message.content) {
       const tool = toolBlock(block);
       if (tool) {
-        if (!reported.has(tool.id))
+        const started = startedTools.get(tool.id);
+        if (!started || (tool.id === canvasTool?.id && !started.emitted)) {
+          if (started) started.emitted = true;
           events.push(
             this.toolCall(
               tool.id,
@@ -220,9 +232,10 @@ export class ClaudeEventMapper {
               message.parent_tool_use_id,
             ),
           );
+        }
         continue;
       }
-      if (streamed) continue;
+      if (streamed || canvasTool) continue;
       const owner = this.childOwner(message.parent_tool_use_id);
       if (block.type === 'text' && block.text)
         events.push({
@@ -235,14 +248,22 @@ export class ClaudeEventMapper {
           transcript: this.transcript('thinking', { text: block.thinking }),
         });
     }
-    if (message.error)
+    if (message.error) {
+      const errorBody = canvasTool
+        ? message.message.content
+            .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+            .join('\n')
+        : undefined;
       events.push({
-        transcript: this.transcript('error', {
-          text: message.error,
+        ...this.childOwner(message.parent_tool_use_id),
+        transcript: this.transcript(canvasTool ? 'tool_result' : 'error', {
+          text: errorBody ?? message.error,
           isError: true,
+          ...(canvasTool ? { toolUseId: canvasTool.id } : {}),
           ...(message.error === 'rate_limit' ? { errorKind: 'usage_limit' } : {}),
         }),
       });
+    }
     return events;
   }
 
@@ -358,8 +379,10 @@ export class ClaudeEventMapper {
     // keeps only the fields that label the call.
     const toolArgs = isSpawnToolName(name) && isRecord(input) ? slimChildSessionArgs(input) : input;
     const pollsChildSessionId = this.subagents.pollsChildSessionId(name, input);
+    const toolProvenance = canvasToolProvenance(name, id);
     return {
       ...this.childOwner(parentToolUseId),
+      ...(toolProvenance ? { toolProvenance } : {}),
       transcript: this.transcript('tool_call', {
         toolName: name,
         toolArgs,

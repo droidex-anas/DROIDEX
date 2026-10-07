@@ -1,4 +1,3 @@
-import type { OwnedAsset } from '../features/canvas/protocol';
 import type {
   NativeBrowserAgentAction,
   NativeBrowserAgentResult,
@@ -22,6 +21,7 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
+import type { OwnedAsset, RevisionRef } from '../features/canvas/protocol';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -73,6 +73,27 @@ export interface SidecarSupervisorSnapshot {
   reason?: string;
   port?: number;
 }
+
+export interface CanvasPreviewCaptureRequest {
+  requestId: string;
+  guestId: number;
+  canvasId: string;
+  designId: string;
+  revisionId: string;
+  generation: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
+
+export type CanvasPreviewCaptureResult =
+  | { ok: true; mediaType: 'image/png'; bytes: Uint8Array }
+  | { ok: false; error: { code: 'capture_unavailable'; message: string } };
+
+export type CanvasImageSaveResult =
+  | { ok: true }
+  | { ok: false; cancelled: true }
+  | { ok: false; code: 'capture_unavailable' | 'storage_failed'; message: string };
 
 export interface TerminalSessionInfo {
   id: string;
@@ -212,6 +233,25 @@ interface DroidControlApi {
   canvasPreviewUrl: string;
   canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
+  canvasPreviewCapture: (
+    request: CanvasPreviewCaptureRequest,
+  ) => Promise<CanvasPreviewCaptureResult>;
+  canvasPreviewCancelCapture: (requestId: string) => Promise<boolean>;
+  canvasThumbnailRead: (
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+  ) => Promise<Uint8Array | null>;
+  canvasImageSave: (
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+    suggestedName: string,
+  ) => Promise<CanvasImageSaveResult>;
+  canvasExportSource: (
+    canvasId: string,
+    ref: RevisionRef,
+  ) => Promise<{ filesWritten: number } | null>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -706,4 +746,51 @@ export async function terminateCanvasPreviewGuest(guestId: number): Promise<bool
   const api = desktopApi();
   if (!api) return false;
   return api.canvasPreviewTerminate(guestId);
+}
+
+export async function captureCanvasPreview(
+  request: CanvasPreviewCaptureRequest,
+): Promise<CanvasPreviewCaptureResult> {
+  const api = desktopApi();
+  if (!api)
+    return {
+      ok: false,
+      error: { code: 'capture_unavailable', message: 'Open this design in DROIDEX to capture it.' },
+    };
+  return api.canvasPreviewCapture(request);
+}
+
+export async function cancelCanvasPreviewCapture(requestId: string): Promise<void> {
+  await desktopApi()?.canvasPreviewCancelCapture(requestId);
+}
+
+export async function readCanvasThumbnail(
+  canvasId: string,
+  designId: string,
+  revisionId: string,
+): Promise<Uint8Array | null> {
+  return (await desktopApi()?.canvasThumbnailRead(canvasId, designId, revisionId)) ?? null;
+}
+
+export async function saveCanvasImage(
+  canvasId: string,
+  designId: string,
+  revisionId: string,
+  suggestedName: string,
+): Promise<CanvasImageSaveResult> {
+  const api = desktopApi();
+  if (!api)
+    return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
+  return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
+}
+
+/** Opens the host's folder chooser, then exports the selected saved revision. */
+export function exportCanvasSource(
+  canvasId: string,
+  ref: RevisionRef,
+): Promise<{ filesWritten: number } | null> {
+  return requireDesktopApi('Canvas source export needs the desktop app.').canvasExportSource(
+    canvasId,
+    ref,
+  );
 }

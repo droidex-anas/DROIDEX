@@ -24,6 +24,7 @@ const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
 const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const CANVAS_ASSET_SECRET = requiredSecret('CANVAS_ASSET_SECRET');
+const CANVAS_EXPORT_TOKEN = process.env.CANVAS_EXPORT_TOKEN;
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
@@ -37,6 +38,7 @@ const server = startBridgeServer({
     secret: CANVAS_ASSET_SECRET,
     importImage: async (request) => (await canvasReady).importCanvasImage(request),
   },
+  canvasExportToken: CANVAS_EXPORT_TOKEN,
   onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
@@ -72,6 +74,7 @@ const manager = new SessionManager(
   },
   {
     canvasTurns,
+    canvasWorkspace: () => canvasReady,
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);

@@ -6,15 +6,10 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { quietBuilds } from '../testing/canvasStorageSupport.js';
+import { CANVAS_PNG, CANVAS_PNG_ASSET_ID, quietBuilds } from '../testing/canvasStorageSupport.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { canvasImageImportSchema, importCanvasImage, listCanvasAssets } from './canvasAssets.js';
 import { CanvasScopes } from './canvasScopes.js';
-
-const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
-  'base64',
-);
 
 test('main-attested image imports reject invalid inputs and dedupe owned bytes', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'canvas-assets-'));
@@ -23,11 +18,11 @@ test('main-attested image imports reject invalid inputs and dedupe owned bytes',
   t.after(() => workspace.close());
   const { canvasId } = await workspace.createCanvas('image-chat');
   const filePath = join(root, 'chosen.png');
-  await writeFile(filePath, PNG);
+  await writeFile(filePath, CANVAS_PNG);
   const request = {
     canvasId,
     filePath,
-    digest: createHash('sha256').update(PNG).digest('hex'),
+    digest: CANVAS_PNG_ASSET_ID,
     width: 1,
     height: 1,
   };
@@ -36,7 +31,7 @@ test('main-attested image imports reject invalid inputs and dedupe owned bytes',
   assert.deepEqual(first, {
     assetId: request.digest,
     mediaType: 'image/png',
-    byteLength: PNG.length,
+    byteLength: CANVAS_PNG.length,
     width: 1,
     height: 1,
   });
@@ -47,7 +42,7 @@ test('main-attested image imports reject invalid inputs and dedupe owned bytes',
     first.assetId,
     `${first.assetId}.json`,
   ]);
-  await writeFile(filePath, PNG);
+  await writeFile(filePath, CANVAS_PNG);
 
   await assert.rejects(importCanvasImage(root, { ...request, filePath: 'relative.png' }), {
     code: 'invalid_input',
@@ -67,7 +62,7 @@ test('main-attested image imports reject invalid inputs and dedupe owned bytes',
     { code: 'invalid_input' },
   );
   const oversized = join(root, 'large.png');
-  await writeFile(oversized, PNG);
+  await writeFile(oversized, CANVAS_PNG);
   await truncate(oversized, 10 * 1024 * 1024 + 1);
   await assert.rejects(importCanvasImage(root, { ...request, filePath: oversized }), {
     code: 'invalid_input',
@@ -92,11 +87,11 @@ for (const boundary of [
       const canvas = join(root, canvasId);
       await mkdir(canvas);
       const filePath = join(root, 'chosen.png');
-      await writeFile(filePath, PNG);
+      await writeFile(filePath, CANVAS_PNG);
       const request = {
         canvasId,
         filePath,
-        digest: createHash('sha256').update(PNG).digest('hex'),
+        digest: CANVAS_PNG_ASSET_ID,
         width: 1,
         height: 1,
       };

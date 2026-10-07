@@ -16,6 +16,7 @@ import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
 import { resolveBrowserAssetPath } from './browser/browserPaths.js';
+import { serveCanvasSourceExport } from './canvas/canvasExport.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeResetMessage,
@@ -63,6 +64,7 @@ export function startBridgeServer(options: {
   token: string;
   assetToken: string;
   canvasImages?: CanvasImages;
+  canvasExportToken?: string;
   // `pageId` identifies the renderer page the command came from, when it sent
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
@@ -87,6 +89,7 @@ export function startBridgeServer(options: {
 
   const server = createServer((req, res) => {
     if (serveCanvasImageImport(req, res, options.canvasImages)) return;
+    if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
     if (serveBrowserAsset(req, res, options.assetToken)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;

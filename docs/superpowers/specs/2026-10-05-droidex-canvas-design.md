@@ -100,7 +100,7 @@ Any chat whose harness has the Canvas tools may create React + Tailwind componen
 
 ### Board controls
 
-- Background drag/Space-drag pans. Wheel/pinch zoom anchors under the pointer. Fit and focus use the same geometry functions.
+- Background drag/Space-drag pans; plain wheel and two-finger scroll also pan, 1:1 in board pixels. Pinch and ctrl/cmd+wheel zoom anchored under the pointer. Fit and focus use the same geometry functions.
 - Select mode gives the board pointer ownership; click a frame to select it, double-click or press Enter to interact. Interact mode gives the preview real pointer/keyboard events. Escape returns to selection; Escape again clears selection. Do not intercept shortcuts typed inside an input/editor.
 - Frame headers remain draggable in both modes. Resize changes viewport dimensions, making responsive layouts real. A soft selected indicator and size label are sufficient; avoid thick permanent outlines.
 - Shift-click/rubber-band selects several frames. Align and distribute affect layout only. Arrow keys nudge selected frames; Delete removes selected frames with Undo. Source-editor undo and board undo have separate focused scopes.
@@ -144,7 +144,7 @@ The initial runtime resets component-local React state when a new revision is in
 
 Use one small virtual source project per design: `main.tsx` with a default component export, optional relative TS/TSX/CSS modules, owned assets, a pinned design-system import and a declared runtime allowlist. Compile React and the existing Tailwind generation path from bundled local assets. No arbitrary filesystem resolution, server code, package lifecycle scripts or network imports. Unsupported imports fail with the supported choices. Dynamic Tailwind classes must use explicit complete class names or system tokens.
 
-Initial limits are product contracts: 64 source files/design, 1 MiB total UTF-8 source, 256 KiB/file, 10 MiB/owned image, 20 MiB tool result or export transfer, two compiler jobs concurrently, 15 seconds/build, four live previews per board and six seconds/screenshot. Validate these at the boundary and return actionable errors. Asset libraries and historical revisions do not get silently deleted when a limit is reached. Benchmark the live-preview cap before raising it.
+Initial limits are product contracts: 64 source files/design, 1 MiB total UTF-8 source, 256 KiB/file, 8,192 mapped native JSX sites/design, 10 MiB/owned image, 20 MiB tool result or export transfer, two compiler jobs concurrently, 15 seconds/build, four live previews per board and six seconds/screenshot. Validate these at the boundary and return actionable errors. Asset libraries and historical revisions do not get silently deleted when a limit is reached. Benchmark the live-preview cap before raising it.
 
 Visible/selected frames receive the live-preview slots. Other frames use a cached image when available, otherwise a labeled static placeholder. Clicking Interact transfers a slot. Snapshot failure cannot block source saving, generation or closing a session. These constraints must work when capture is unavailable, including a sleeping/locked display.
 
@@ -256,7 +256,7 @@ These timings are proposed starting values, not measurements extracted from the 
 | Interaction | Default behavior | Reduced motion |
 | --- | --- | --- |
 | Pan/drag/resize | Pointer follows 1:1; transform updates once per animation frame; no easing behind the hand | Same direct input |
-| Zoom/fit/focus | Pointer-anchored wheel zoom; programmatic focus/fit 220 ms, cubic-bezier(0.22, 1, 0.36, 1) | Immediate fit/focus |
+| Zoom/fit/focus | Pointer-anchored pinch or ctrl/cmd+wheel zoom; programmatic focus/fit 220 ms, cubic-bezier(0.22, 1, 0.36, 1) | Immediate fit/focus |
 | Pane expand/collapse | 180–220 ms layout transition; retain frame identity and selection | Immediate layout |
 | Toolbar/popover | 120 ms opacity and at most 4 px travel | Opacity only or immediate |
 | New frame | 180 ms fade with at most 8 px travel | Immediate placement |

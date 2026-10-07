@@ -125,6 +125,9 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
       bundle: true,
       write: false,
       format: 'iife',
+      outfile: 'design.js',
+      sourcemap: 'external',
+      sourcesContent: false,
       jsx: 'automatic',
       platform: 'browser',
       target: 'es2022',
@@ -150,8 +153,17 @@ export async function bundleDesign(sources: DesignSources): Promise<DesignBundle
     if (!messages) throw error;
     return bundleFailure(diagnosticsFrom(messages, 'error'));
   }
-  const js = build.outputFiles?.[0]?.text;
-  if (js === undefined) return bundleFailure([]);
+  const script = build.outputFiles?.find((file) => file.path.endsWith('.js'))?.text;
+  const sourceMap = build.outputFiles?.find((file) => file.path.endsWith('.js.map'))?.text;
+  if (script === undefined || sourceMap === undefined) return bundleFailure([]);
+  // Runtime paths are private host paths. Only virtual design/kit names belong
+  // in a preview; sourcesContent is off so the map cannot duplicate canonical IDs.
+  const map = JSON.parse(sourceMap) as { sources: string[] };
+  map.sources = map.sources.map(
+    (source, index) => virtualFile(source) ?? `runtime/${String(index)}`,
+  );
+  const encoded = Buffer.from(JSON.stringify(map)).toString('base64');
+  const js = `${script}\n//# sourceMappingURL=data:application/json;base64,${encoded}\n`;
   return { ok: true, js, warnings: diagnosticsFrom(build.warnings, 'warning') };
 }
 
