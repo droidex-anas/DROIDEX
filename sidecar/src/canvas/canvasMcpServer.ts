@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { applyDesignSystem } from './applyDesignSystem.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
@@ -25,6 +26,7 @@ import {
   saveDesignSystem,
 } from './designSystems.js';
 
+const authoredSystemSchema = designSystemSchema.omit({ provenance: true });
 const scopeIdSchema = z.string().min(1).max(200);
 const scopeShape = { scopeId: scopeIdSchema.optional() };
 const mutationScopeShape = { scopeId: scopeIdSchema };
@@ -70,7 +72,7 @@ const themeSchema = z.discriminatedUnion('operation', [
       ...mutationScopeShape,
       operation: z.literal('save'),
       mutationId: canvasIdentifierSchema,
-      system: designSystemSchema,
+      system: authoredSystemSchema,
     })
     .strict(),
   z
@@ -286,7 +288,7 @@ export function createCanvasMcpServer(
         offset: pageSchema.optional(),
         limit: z.number().int().min(1).max(32).optional(),
         ref: designSystemRefSchema.optional(),
-        system: designSystemSchema.optional(),
+        system: authoredSystemSchema.optional(),
         mutationId: canvasIdentifierSchema.optional(),
         designId: canvasIdentifierSchema.optional(),
         expectedRevisionId: canvasIdentifierSchema.optional(),
@@ -312,18 +314,19 @@ export function createCanvasMcpServer(
                 },
               }),
             };
-          return {
-            receipt: await (
-              await workspace()
-            ).write(scope, {
-              mutationId: input.mutationId,
-              designId: input.designId,
-              expectedRevisionId: input.expectedRevisionId,
-              designSystem: input.ref,
-              files: {},
-              deletedPaths: [],
-            }),
-          };
+          const result = await applyDesignSystem(await workspace(), scope, {
+            mutationId: input.mutationId,
+            designId: input.designId,
+            expectedRevisionId: input.expectedRevisionId,
+            system: input.ref,
+          });
+          if (result.status === 'refused') {
+            const diagnostic = result.diagnostics[0];
+            const code =
+              diagnostic.code === 'version_mismatch' ? 'version_mismatch' : 'invalid_source';
+            throw canvasError(code, diagnostic.message);
+          }
+          return { receipt: result.receipt };
         }),
     ),
   ];

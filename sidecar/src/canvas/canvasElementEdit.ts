@@ -65,7 +65,7 @@ export async function editCanvasElement(
         files: changed,
         deletedPaths: [],
       },
-      input,
+      { edit: input },
     );
   } catch (error) {
     if (error instanceof CanvasCommandError && error.code === 'revision_conflict')
