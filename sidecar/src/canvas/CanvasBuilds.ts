@@ -97,7 +97,7 @@ interface RunningBuild extends BuildPin {
   readonly designSystem: DesignSystemRef;
   readonly abort: AbortController;
   /** Released the moment compilation settles; saving is bounded by storage. */
-  cancelDeadline: () => void;
+  cancelDeadline: (() => void) | null;
   /** Set by the deadline, so a cancelled compile is reported as a timeout. */
   overdue: boolean;
 }
@@ -328,7 +328,7 @@ export class CanvasBuilds {
       generation,
       designSystem: target.frame.designSystem,
       abort: new AbortController(),
-      cancelDeadline: () => undefined,
+      cancelDeadline: null,
       overdue: false,
     };
     slot.job = running;
@@ -384,6 +384,7 @@ export class CanvasBuilds {
       return await compiler.compile(input, job.abort.signal);
     } finally {
       job.cancelDeadline();
+      job.cancelDeadline = null;
     }
   }
 
@@ -451,14 +452,17 @@ export class CanvasBuilds {
     const job = slot.job;
     if (!job) return;
     slot.job = null;
-    job.cancelDeadline();
     job.abort.abort();
+    // Abort settles the caller, not the child. Graceful termination still
+    // bounds a compiler wedged where it cannot acknowledge cancellation.
+    if (job.cancelDeadline) this.processes.end(slot);
+    job.cancelDeadline?.();
   }
 
   private release(slot: BuildSlot, job: RunningBuild): void {
     if (slot.job !== job) return;
     slot.job = null;
-    job.cancelDeadline();
+    job.cancelDeadline?.();
     for (const started of this.pump()) this.announce(started);
   }
 

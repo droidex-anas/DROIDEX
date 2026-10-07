@@ -19,6 +19,8 @@ import { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
+import { CompilerWorker } from './compiler.js';
+import { mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
 
 /** A yield to the event loop, so a premature resolution becomes visible. */
 function drained(): Promise<void> {
@@ -436,6 +438,54 @@ test('cancelling a canvas releases its slots and reports its frames', async (t) 
       .slice(0, 3),
     ['pending', 'building', 'cancelled'],
   );
+});
+
+test('an abandoned compile cannot wedge or share its child with replacement work', async (t) => {
+  const children = mockCompilerProcesses(t);
+  const builds = new CanvasBuilds({
+    compiler: () => new CompilerWorker(),
+    deadline: fakeDeadlines().deadline,
+  });
+  const files = new CanvasFiles((await storage(t)).root);
+  await files.createRoot();
+  const canvas = standIn(builds);
+  canvas.revisions.set('cv_01/dsg_hey', 'rev_01');
+  await builds.load(canvas.host, files, []);
+  try {
+    builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
+    await drained();
+    const abandoned = children[0];
+    assert.ok(abandoned);
+    builds.cancelCanvas('cv_01');
+    await drained();
+    assert.deepEqual(
+      abandoned.requests.map((request) => request.type),
+      ['compile', 'cancel', 'shutdown'],
+      'cooperative cancellation retains a bounded termination route',
+    );
+
+    builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
+    await drained();
+    const replacement = children[1];
+    assert.ok(replacement, 'the freed slot forks a different compiler');
+    assert.deepEqual(
+      abandoned.requests.map((request) => request.type),
+      ['compile', 'cancel', 'shutdown'],
+    );
+    assert.deepEqual(
+      replacement.requests.map((request) => request.type),
+      ['compile'],
+    );
+    t.mock.timers.tick(2_000);
+    await drained();
+    assert.equal(abandoned.signals.length, 1, 'a child ignoring cancellation is terminated');
+    assert.deepEqual(replacement.signals, [], 'the abandoned work cannot end its replacement');
+  } finally {
+    const closing = builds.close();
+    await drained();
+    for (const child of children) child.exit();
+    await closing;
+  }
 });
 
 test('closing releases every slot and settles every waiter once', async (t) => {
