@@ -68,6 +68,7 @@ const manager = new SessionManager(
   },
   {
     canvasTurns,
+    canvasWorkspace: () => canvasReady,
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);

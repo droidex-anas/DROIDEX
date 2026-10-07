@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
+import { createCanvasMcpServer } from '../../canvas/canvasMcpServer.js';
+import { CanvasScopes } from '../../canvas/canvasScopes.js';
+import { CanvasTurns } from '../../canvas/canvasTurnContext.js';
 import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
 import { SessionInteractions } from '../../SessionInteractions.js';
 import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
@@ -32,6 +35,11 @@ function harness() {
     name: 'droidex-automations',
     tools: [tool('automation_list', 'List automations.', {}, () => 'No automations.')],
   });
+  const canvas = createCanvasMcpServer(
+    () => Promise.reject(new Error('Canvas storage unavailable')),
+    new CanvasTurns(new CanvasScopes(), () => null),
+    () => 'chat-one',
+  );
   const interactions = {
     requestApproval: async (approval: ProviderApprovalRequest) => {
       approvals.push(approval);
@@ -41,7 +49,7 @@ function harness() {
     isActive: () => live,
     cancelPending: () => {},
   };
-  const bridge = new CodexToolBridge([server, automations], {
+  const bridge = new CodexToolBridge([server, automations, canvas], {
     appSessionId: 'chat-one',
     interactions: interactions,
     threadId: () => threadId,
@@ -112,7 +120,7 @@ test('declares valid deferred namespaces and JSON Schemas once per bridge', () =
   const { bridge } = harness();
   assert.deepEqual(
     bridge.declarations.map((entry) => entry.name),
-    ['droidex_sessions', 'droidex_automations'],
+    ['droidex_sessions', 'droidex_automations', 'droidex_canvas'],
   );
   for (const namespace of bridge.declarations) {
     assert.match(namespace.name, /^[a-zA-Z0-9_-]+$/);
@@ -125,6 +133,54 @@ test('declares valid deferred namespaces and JSON Schemas once per bridge', () =
   assert.match(
     JSON.stringify(bridge.declarations[0].tools[0].inputSchema),
     /"required":\["reportBack"\]/,
+  );
+});
+
+test('a Canvas call from a settled Codex turn is refused before approval or dispatch', async () => {
+  const h = harness();
+  const invalid = await h.bridge.call({
+    threadId: 'thread-one',
+    turnId: 'turn-one',
+    namespace: 'droidex_canvas',
+    tool: 'canvas_read',
+    arguments: { unexpected: 'secret' },
+  });
+  assert.equal(invalid.success, false);
+  assert.match(invalid.contentItems[0].text, /invalid_input/);
+  h.endTurn();
+  const result = await h.bridge.call({
+    threadId: 'thread-one',
+    turnId: 'turn-one',
+    namespace: 'droidex_canvas',
+    tool: 'canvas_read',
+    arguments: {},
+  });
+  assert.equal(result.success, false);
+  assert.equal(h.approvals.length, 0);
+  assert.match(result.contentItems[0].text, /no longer active/);
+});
+
+test('Codex rejects two in-app servers with the same dynamic namespace', () => {
+  const servers = ['droidex-canvas', 'droidex_canvas'].map((name) =>
+    createSdkMcpServer({ name, tools: [tool('canvas_read', 'Read.', {}, () => '{}')] }),
+  );
+  const interactions = {
+    requestApproval: async () => 'cancel' as const,
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => true,
+    cancelPending: () => undefined,
+  };
+  assert.throws(
+    () =>
+      new CodexToolBridge(servers, {
+        appSessionId: 'chat-one',
+        interactions,
+        threadId: () => 'thread-one',
+        turnId: () => 'turn-one',
+        isLive: () => true,
+        prompts: new OpenPrompts('chat-one', interactions),
+      }),
+    /namespace collision/,
   );
 });
 
@@ -164,6 +220,11 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
         name: 'droidex-sessions',
         tools: [tool('session_list', 'List chats.', {}, () => '[]')],
       }),
+      createCanvasMcpServer(
+        () => Promise.reject(new Error('Canvas storage unavailable')),
+        new CanvasTurns(new CanvasScopes(), () => null),
+        () => 'chat-one',
+      ),
     ],
   };
   const fresh = new CodexSession(input);
@@ -176,7 +237,10 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
       name: namespace.name,
       deferred: namespace.tools.every((tool) => tool.deferLoading),
     })),
-    [{ name: 'droidex_sessions', deferred: true }],
+    [
+      { name: 'droidex_sessions', deferred: true },
+      { name: 'droidex_canvas', deferred: true },
+    ],
   );
   const resumed = new CodexSession(input);
   await resumed.open('thread-one');
