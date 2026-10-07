@@ -197,6 +197,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         captures.has(requestId) ||
         !key ||
         !guest ||
+        guest.capture ||
         guest.contents.isDestroyed() ||
         !captureAvailable() ||
         !Number.isSafeInteger(generation) ||
@@ -217,6 +218,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         const finish = () => {
           if (captures.get(requestId)?.settle !== settle) return;
           captures.delete(requestId);
+          guest.capture = null;
           releaseDeadline?.();
         };
         const complete = (result) => {
@@ -225,7 +227,9 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         };
         const isCurrent = () =>
           !settled && captures.get(requestId)?.settle === settle && guests.get(guestId) === guest;
-        captures.set(requestId, { guestId, settle, finish });
+        const capture = { guestId, settle, finish };
+        captures.set(requestId, capture);
+        guest.capture = capture;
         releaseDeadline = clock.schedule(() => {
           settle(captureFailure(TIMED_OUT));
           end(guestId, 'its capture took too long');

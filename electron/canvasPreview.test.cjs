@@ -470,6 +470,41 @@ test('a generation change while capture is in flight discards the old pixels', a
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
 });
 
+test('one native capture owns a guest slot through cancellation until its compositor settles', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const first = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+
+  for (const revisionId of ['rev_01', 'rev_02']) {
+    const refused = hosts.capture({
+      ...captureRequest,
+      requestId: `capture_${revisionId}`,
+      revisionId,
+    });
+    await new Promise(setImmediate);
+    assert.equal(guest.captures.length, 1);
+    assert.equal((await refused).ok, false);
+  }
+  assert.equal(guest.captures.length, 1);
+  hosts.cancelCapture('capture_01');
+  await first;
+  const afterCancel = hosts.capture({ ...captureRequest, requestId: 'capture_after_cancel' });
+  await new Promise(setImmediate);
+  assert.equal(guest.captures.length, 1);
+  assert.equal((await afterCancel).ok, false);
+
+  guest.captures[0].resolve(capturedImage());
+  await new Promise(setImmediate);
+  assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+  const next = hosts.capture({ ...captureRequest, requestId: 'capture_next' });
+  await new Promise(setImmediate);
+  assert.equal(guest.captures.length, 2);
+  guest.captures[1].resolve(capturedImage());
+  assert.equal((await next).ok, true);
+});
+
 test('abort and guest release settle a capture once and discard late pixels', async () => {
   const { hosts, clock } = createHosts();
   const guest = createGuest(41);
@@ -479,12 +514,13 @@ test('abort and guest release settle a capture once and discard late pixels', as
   assert.equal(hosts.cancelCapture('capture_01'), true);
   assert.equal((await first).error.code, 'capture_unavailable');
   assert.equal(hosts.cancelCapture('capture_01'), false);
+  guest.captures[0].resolve(capturedImage());
+  await new Promise(setImmediate);
 
   const second = hosts.capture({ ...captureRequest, requestId: 'capture_02' });
   await new Promise(setImmediate);
   guest.emit('destroyed');
   assert.equal((await second).error.code, 'capture_unavailable');
-  guest.captures[0].resolve(capturedImage());
   guest.captures[1].resolve(capturedImage());
   await Promise.resolve();
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
