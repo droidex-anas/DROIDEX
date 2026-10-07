@@ -195,6 +195,14 @@ test('Fit suppresses trailing wheel input until quiet, independently of reduced 
     await page.clock.runFor(140);
     await wheel(page, 400, 300, 20);
     expect(await transform(page)).not.toBe(fitted);
+
+    // Spec §11: the arrival animation is the motion tokens', so reduced motion
+    // leaves the frame with no animation at all rather than a zero-length one.
+    const animated = await page
+      .locator('[data-design-frame]')
+      .first()
+      .evaluate((node) => getComputedStyle(node).animationName);
+    expect(animated).toBe(motion === 'reduce' ? 'none' : 'canvas-frame-arrival');
   }
 });
 

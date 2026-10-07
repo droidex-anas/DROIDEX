@@ -28,6 +28,10 @@ function frame(designId: string, rect: FrameRect): CanvasFrame {
   };
 }
 
+function withBuild(base: CanvasFrame, build: CanvasFrame['build']): CanvasFrame {
+  return { ...base, build };
+}
+
 function snapshotOf(...frames: CanvasFrame[]): CanvasSnapshot {
   return { canvasId: 'cv_01', sequence: 7, frames };
 }
@@ -112,4 +116,21 @@ test('align and distribute appear only when a selection gives them work', () => 
   // Two frames have no space between them to spread, so distribute is offered
   // but not usable yet.
   assert.match(pair, /aria-label="Space evenly across" disabled=""/);
+});
+
+test('a frame with nothing built shows its real stage and never invents one', () => {
+  const base = frame('dsg_hey', ACKNOWLEDGED);
+  const queued = render(snapshotOf(base));
+  const building = render(snapshotOf(withBuild(base, { status: 'building', generation: 2 })));
+  const cancelled = render(snapshotOf(withBuild(base, { status: 'cancelled', generation: 2 })));
+
+  // A queued build is 'Queued': the wire cannot prove an agent is writing, so
+  // the board does not claim it.
+  assert.match(queued, /Queued/);
+  assert.equal(queued.includes('Writing'), false);
+  assert.match(building, /Building/);
+  // A settled frame has a sentence to say instead of a stage with dots.
+  assert.match(cancelled, /This build was cancelled\./);
+  assert.equal(cancelled.includes('canvas-bloom-dot'), false);
+  assert.match(building, /canvas-bloom-dot/);
 });

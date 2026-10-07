@@ -619,6 +619,54 @@
     }
   }
 
+  /* Canvas frame arrival and toolbar reveal. Duration, easing and travel come
+     from the motion tokens, which zero them under reduced motion so no
+     animation is set at all; the media queries below hold the same line for a
+     caller that gets it wrong. */
+  @keyframes canvas-frame-arrival {
+    from {
+      opacity: 0;
+      transform: translateY(var(--canvas-frame-travel, 8px));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes canvas-popover-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(var(--canvas-popover-travel, 4px));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Duration, easing and travel are set inline from the motion tokens, so the
+     curve is stated once in canvasMotion.ts rather than again here. */
+  .canvas-frame-arrival,
+  .canvas-popover-reveal {
+    animation-fill-mode: both;
+  }
+
+  .canvas-frame-arrival {
+    animation-name: canvas-frame-arrival;
+  }
+
+  .canvas-popover-reveal {
+    animation-name: canvas-popover-reveal;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-frame-arrival,
+    .canvas-popover-reveal {
+      animation: none;
+    }
+  }
+
   /* Stop hidden-window animation work. */
   html[data-window-hidden='true'] *,
   html[data-window-hidden='true'] *::before,

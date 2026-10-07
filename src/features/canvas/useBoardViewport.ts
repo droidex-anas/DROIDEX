@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { boardPoint, boardWheelDelta } from './boardCoordinates';
+import type { CanvasMotion } from './canvasMotion';
 import {
   fitFrames,
   interpolateViewport,
@@ -17,9 +18,6 @@ import {
   type Viewport,
 } from './canvasGeometry';
 import type { FrameRect } from './protocol';
-
-/** Spec §11: a programmatic fit or focus, eased. */
-const FOCUS_DURATION_MS = 220;
 
 /**
  * A wheel gesture has no end event — trackpad momentum keeps arriving after the
@@ -48,7 +46,8 @@ export function useBoardViewport(
   board: RefObject<HTMLElement | null>,
   /** The frames the board's single opening Fit should frame. */
   frames: readonly { rect: FrameRect }[],
-  reducedMotion: boolean,
+  /** Spec §11's timings; a zero `focusMs` is reduced motion asking for none. */
+  motion: CanvasMotion,
 ): BoardViewport {
   const [viewport, setViewport] = useState<Viewport>(IDENTITY);
   const [scrolling, setScrolling] = useState(false);
@@ -90,20 +89,20 @@ export function useBoardViewport(
       if (scroll.current.active) scroll.current.suppressed = true;
       stopAnimating();
       opening.current.navigated = true;
-      if (reducedMotion) {
+      if (motion.focusMs === 0) {
         setViewport(target);
         return;
       }
       const from = latest.current.viewport;
       const started = performance.now();
       const step = () => {
-        const progress = Math.min(1, (performance.now() - started) / FOCUS_DURATION_MS);
-        setViewport(interpolateViewport(from, target, easeFocus(progress)));
+        const progress = Math.min(1, (performance.now() - started) / motion.focusMs);
+        setViewport(interpolateViewport(from, target, easeProgress(progress, motion.ease)));
         animation.current = progress < 1 ? requestAnimationFrame(step) : null;
       };
       animation.current = requestAnimationFrame(step);
     },
-    [reducedMotion, stopAnimating],
+    [motion, stopAnimating],
   );
 
   /** Spec §4: the board may fit once, before the user has navigated. */
@@ -206,10 +205,6 @@ interface ScrollGesture {
   idle: ReturnType<typeof setTimeout> | null;
 }
 
-// cubic-bezier(0.22, 1, 0.36, 1) from spec §11, solved for y at a given x.
-const EASE_X1 = 0.22;
-const EASE_X2 = 0.36;
-
 function bezier(a: number, b: number, t: number): number {
   return ((1 - 3 * b + 3 * a) * t + (3 * b - 6 * a)) * t * t + 3 * a * t;
 }
@@ -218,16 +213,20 @@ function bezierSlope(a: number, b: number, t: number): number {
   return 3 * (1 - 3 * b + 3 * a) * t * t + 2 * (3 * b - 6 * a) * t + 3 * a;
 }
 
-function easeFocus(progress: number): number {
+/**
+ * The motion token's CSS easing curve, evaluated at `progress`. The curve is
+ * given as x and y control points, so finding y means solving the x polynomial
+ * for the parameter first; six Newton steps land well inside a pixel.
+ */
+function easeProgress(progress: number, [x1, y1, x2, y2]: CanvasMotion['ease']): number {
   if (progress <= 0) return 0;
   if (progress >= 1) return 1;
   let t = progress;
   for (let step = 0; step < 6; step += 1) {
-    const error = bezier(EASE_X1, EASE_X2, t) - progress;
-    const slope = bezierSlope(EASE_X1, EASE_X2, t);
+    const error = bezier(x1, x2, t) - progress;
+    const slope = bezierSlope(x1, x2, t);
     if (Math.abs(error) < 1e-5 || slope === 0) break;
     t -= error / slope;
   }
-  // Both y control points are 1, which collapses the curve to this.
-  return 1 - (1 - t) ** 3;
+  return bezier(y1, y2, t);
 }

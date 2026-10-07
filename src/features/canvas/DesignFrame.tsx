@@ -8,14 +8,13 @@
 // counter-scaled, because chrome that shrinks with the board is unusable on a
 // 50-frame canvas.
 
-import { useEffect, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { FrameHandle } from './canvasGeometry';
+import { activityStageOf, canvasActivity, type CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
-import { unmountedLabel } from './previewLabels';
-import type { CanvasFrame, FrameRect } from './protocol';
-
-/** Spec §11: the first working preview crossfades in. */
-const PREVIEW_FADE_MS = 120;
+import { PendingBloom } from './PendingBloom';
+import { previewRevisionId, unmountedLabel } from './previewLabels';
+import type { CanvasBuildState, CanvasFrame, FrameRect } from './protocol';
 
 /** Screen pixels a resize handle covers, whatever the board's scale is. */
 const HANDLE_PX = 10;
@@ -26,6 +25,10 @@ export interface DesignFrameProps {
   rect: FrameRect;
   /** The board's scale, so the frame's chrome stays legible at any zoom. */
   scale: number;
+  /** Spec §11's timings, resolved against the reduced-motion preference. */
+  motion: CanvasMotion;
+  /** The frame is inside the board's own box, so its bloom may run. */
+  visible: boolean;
   mode: BoardMode;
   selected: boolean;
   /** This is the frame Interact is driving. */
@@ -50,6 +53,8 @@ export function DesignFrame({
   frame,
   rect,
   scale,
+  motion,
+  visible,
   mode,
   selected,
   interacted,
@@ -65,8 +70,14 @@ export function DesignFrame({
     <div
       data-design-frame={frame.designId}
       data-selected={selected || undefined}
-      className="group absolute"
-      style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+      className={`group absolute ${motion.frameArrivalMs > 0 ? 'canvas-frame-arrival' : ''}`}
+      style={{
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        ...arrival(motion),
+      }}
     >
       <FrameHeader
         frame={frame}
@@ -91,13 +102,13 @@ export function DesignFrame({
           selected ? 'ring-1 ring-droid-accent/30' : ''
         }`}
       >
-        {preview ? (
-          <PreviewSlot>{preview}</PreviewSlot>
-        ) : (
-          <p className="flex h-full w-full items-center justify-center px-4 text-center text-[12px] leading-5 text-droid-text-secondary">
-            {unmountedLabel(frame.build, released)}
-          </p>
-        )}
+        <FrameBody
+          build={frame.build}
+          motion={motion}
+          visible={visible}
+          preview={preview}
+          released={released}
+        />
         {capturePointer && (
           <div
             data-canvas-input-overlay
@@ -264,21 +275,70 @@ function ResizeHandle({
   );
 }
 
+/**
+ * Spec §11: a new frame fades in with at most `frameArrivalTravelPx` of travel.
+ * Reduced motion zeroes both tokens, which leaves no animation to attach.
+ */
+function arrival(motion: CanvasMotion): CSSProperties | undefined {
+  if (motion.frameArrivalMs === 0) return undefined;
+  return {
+    animationDuration: `${String(motion.frameArrivalMs)}ms`,
+    animationTimingFunction: motion.easeCss,
+    '--canvas-frame-travel': `${String(motion.frameArrivalTravelPx)}px`,
+  } as CSSProperties;
+}
+
+/**
+ * What is inside the frame: its live preview, the bloom for a design still
+ * being written or built, or the line a frame with no mounted document says.
+ * A frame that failed or was cancelled has a sentence rather than a stage.
+ */
+function FrameBody({
+  build,
+  motion,
+  visible,
+  preview,
+  released,
+}: Pick<DesignFrameProps, 'motion' | 'visible' | 'preview' | 'released'> & {
+  build: CanvasBuildState;
+}) {
+  if (preview) return <PreviewSlot motion={motion}>{preview}</PreviewSlot>;
+
+  const stage = previewRevisionId(build) === null ? activityStageOf(build.status) : null;
+  if (stage !== null && (stage === 'queued' || canvasActivity[stage].bloom)) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <PendingBloom stage={stage} visible={visible} motion={motion} />
+      </div>
+    );
+  }
+  return (
+    <p className="flex h-full w-full items-center justify-center px-4 text-center text-[12px] leading-5 text-droid-text-secondary">
+      {unmountedLabel(build, released)}
+    </p>
+  );
+}
+
 /** Spec §11: a working preview crossfades in over the frame's own placeholder. */
-function PreviewSlot({ children }: { children: ReactNode }) {
-  const [shown, setShown] = useState(false);
+function PreviewSlot({ motion, children }: { motion: CanvasMotion; children: ReactNode }) {
+  const [shown, setShown] = useState(motion.readyMs === 0);
   useEffect(() => {
+    if (motion.readyMs === 0) return undefined;
     const frame = requestAnimationFrame(() => {
       setShown(true);
     });
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [motion.readyMs]);
   return (
     <div
-      className={`h-full w-full motion-safe:transition-opacity ${shown ? 'opacity-100' : 'opacity-0 motion-reduce:opacity-100'}`}
-      style={{ transitionDuration: `${String(PREVIEW_FADE_MS)}ms` }}
+      className={`h-full w-full ${shown ? 'opacity-100' : 'opacity-0'}`}
+      style={
+        motion.readyMs === 0
+          ? undefined
+          : { transition: `opacity ${String(motion.readyMs)}ms ${motion.easeCss}` }
+      }
     >
       {children}
     </div>

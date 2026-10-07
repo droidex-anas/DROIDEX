@@ -6,8 +6,9 @@
 // Align and distribute appear only when a multiple selection gives them
 // something to do, so the resting board stays quiet.
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
+import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 
 /** A guide line with two bars sitting against it: every align glyph in one shape. */
@@ -82,6 +83,8 @@ const DISTRIBUTE_ACTIONS: { axis: DistributeAxis; label: string; glyph: ReactNod
 
 export interface BoardControlsProps {
   scale: number;
+  /** Spec §11's timings; the strip reveals on the popover token. */
+  motion: CanvasMotion;
   mode: BoardMode;
   selectedCount: number;
   /** A board with no frames has nothing to interact with or fit. */
@@ -96,6 +99,7 @@ export interface BoardControlsProps {
 
 export function BoardControls({
   scale,
+  motion,
   mode,
   selectedCount,
   hasFrames,
@@ -119,7 +123,12 @@ export function BoardControls({
       </span>
       <div className="flex min-w-0 flex-col items-end gap-2">
         {selectedCount >= 2 && (
-          <div className="pointer-events-auto flex items-center gap-0.5 rounded-full bg-droid-elevated p-1">
+          <div
+            style={reveal(motion)}
+            className={`pointer-events-auto flex items-center gap-0.5 rounded-full bg-droid-elevated p-1 ${
+              motion.popoverMs > 0 ? 'canvas-popover-reveal' : ''
+            }`}
+          >
             {ALIGN_ACTIONS.map(({ edge, label, glyph }) => (
               <GlyphButton
                 key={edge}
@@ -187,6 +196,16 @@ export function BoardControls({
       </div>
     </div>
   );
+}
+
+/** Spec §11: a toolbar reveal is `popoverMs` and at most `popoverTravelPx`. */
+function reveal(motion: CanvasMotion): CSSProperties | undefined {
+  if (motion.popoverMs === 0) return undefined;
+  return {
+    animationDuration: `${String(motion.popoverMs)}ms`,
+    animationTimingFunction: motion.easeCss,
+    '--canvas-popover-travel': `${String(motion.popoverTravelPx)}px`,
+  } as CSSProperties;
 }
 
 function ModeOption({

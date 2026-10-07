@@ -1677,18 +1677,28 @@ PendingBloom(props: { stage: CanvasActivityStage; visible: boolean; motion: Canv
   user source edit) to the renderer. `activityStageOf` is written so that task adds `writing`
   by passing an actor fact, not by reinterpreting a build.
 
-**Consumers that still need to adopt these tokens** (each owned by its own subtask, none ticked
-here):
+**Consumers wired by the board composition** (11a stays unticked: presence, the artifact card
+and the pane transition are still outstanding):
 
-- `canvas/5b` board fit and focus: `focusMs`/`ease` for programmatic fit and zoom-to-frame, and
-  the first-use-only fit.
-- `canvas/5c` new frame and ready reveal: `frameArrivalMs`/`frameArrivalTravelPx` for arrival and
-  reserved variant siblings, `readyMs` for the first working-preview crossfade, `paneMs` for pane
-  expand/collapse, `popoverMs`/`popoverTravelPx` for the board toolbar and popovers, and
-  `activityStageOf` plus `PendingBloom` inside the pending frame with a real `visible` flag from
-  the board's own viewport.
+- Board fit and focus read `focusMs` and `ease`. `useBoardViewport` evaluates the token's own
+  cubic-bezier control points rather than restating the curve, and a zero `focusMs` is how
+  reduced motion asks for an immediate fit, so there is no second preference read.
+- A frame arriving uses `frameArrivalMs`/`frameArrivalTravelPx`, and the first working preview
+  crossfades on `readyMs`. Both are attached by a class whose `animation-name` lives in
+  `index.css` beside `canvas-bloom`, with duration, easing and travel set inline from the tokens;
+  zeroed tokens attach no animation, and a `prefers-reduced-motion` rule holds the same line.
+- The board's align/distribute strip reveals on `popoverMs`/`popoverTravelPx`.
+- `activityStageOf` and `PendingBloom` are inside the frame, with `visible` taken from the same
+  `visibleDesignIds` query that hands out live preview slots, so an off-screen frame's dots pause.
+  A frame with nothing built shows `Queued` or `Building`; `writing` is still unreachable, and a
+  failed or cancelled frame gets its existing sentence rather than a stage.
+
+**Still outstanding:**
+
 - `canvas/6a` artifact card: `readyMs` for the inline thumbnail reveal and `popoverMs` for the
   card's own controls.
+- `paneMs` for pane expand/collapse, which belongs to the utility pane rather than the board.
+- Presence: `presenceMs` still has no actor event to interpolate toward, so no presence UI ships.
 
 ## Task 12: Full acceptance, documentation and implementation handoff
 

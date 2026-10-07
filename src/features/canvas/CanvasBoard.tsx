@@ -18,7 +18,6 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { useReducedMotion } from 'framer-motion';
 import { BoardControls } from './BoardControls';
 import {
   alignRects,
@@ -40,6 +39,7 @@ import {
   type BoardMode,
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
+import { useCanvasMotion } from './useCanvasMotion';
 import { NO_PREVIEW_SLOTS, reducePreviewSlots, type PreviewSlotRequest } from './previewSlots';
 import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardViewport } from './useBoardViewport';
@@ -77,11 +77,11 @@ export function CanvasBoard({
   interaction,
   onInteractionChange,
 }: CanvasBoardProps) {
-  const reducedMotion = useReducedMotion() === true;
+  const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
   const { frames } = snapshot;
 
-  const view = useBoardViewport(board, frames, reducedMotion);
+  const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
   const [slots, setSlots] = useState(NO_PREVIEW_SLOTS);
   const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
@@ -301,6 +301,8 @@ export function CanvasBoard({
             frame={frame}
             rect={drawn[index].rect}
             scale={scale}
+            motion={motion}
+            visible={visible.includes(frame.designId)}
             mode={interaction.mode}
             selected={interaction.selectedFrameIds.includes(frame.designId)}
             interacted={interaction.interactedFrameId === frame.designId}
@@ -323,6 +325,7 @@ export function CanvasBoard({
 
       <BoardControls
         scale={scale}
+        motion={motion}
         mode={interaction.mode}
         selectedCount={interaction.selectedFrameIds.length}
         hasFrames={frames.length > 0}
