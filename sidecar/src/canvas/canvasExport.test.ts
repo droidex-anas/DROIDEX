@@ -58,6 +58,12 @@ async function fileSet(root: string, prefix = ''): Promise<string[]> {
   return files.sort();
 }
 
+function embeddedFontIds(css: string): string[] {
+  return [...css.matchAll(/data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g)].map((match) =>
+    createHash('sha256').update(Buffer.from(match[1], 'base64')).digest('hex'),
+  );
+}
+
 test('exports the exact revision, referenced image, and complete pinned kit', async (t) => {
   const { root, destination } = await profile(t);
   const guidance = 'Use the kit tokens and primitives.';
@@ -95,7 +101,7 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
     'canvas-export/tailwind-config.json',
     ...Object.keys(system.examples).map((path) => `canvas-export/examples/${path}`),
     ...Object.keys(system.files).map((path) => `design-system/${path}`),
-    `fonts/${fontId}.woff2`,
+    ...embeddedFontIds(system.files['tokens.css']).map((id) => `fonts/${id}.woff2`),
     'package.json',
     'src/main.tsx',
     'src/style.css',
