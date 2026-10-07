@@ -5,38 +5,34 @@
 
 import type {
   ArrangeFramesInput,
+  CanvasTurnContext,
   CreateFramesInput,
-  DesignRef,
   DesignSystemRef,
+  EditElementInput,
+  ElementRef,
   FrameRect,
   WriteFilesInput,
 } from './schema.js';
 
 export type {
   ArrangeFramesInput,
+  CanvasTurnContext,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
+  EditElementInput,
+  ElementRef,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
 } from './schema.js';
 
-// A selected element inside one rendered revision. `instancePath` distinguishes
-// repeated DOM nodes; it is a selection hint, not a second source model.
-export interface ElementRef {
-  designId: string;
-  revisionId: string;
-  elementId: string;
-  instancePath: string;
-}
-
-// The references a turn pinned when its lease was minted. Later selection
-// changes cannot retarget an earlier request, so this never changes.
-export interface CanvasTurnContext {
-  designs: DesignRef[];
-  elements: ElementRef[];
-  designSystem: DesignSystemRef;
+export interface ElementEdit {
+  element: ElementRef;
+  change:
+    | { kind: 'text'; value: string }
+    | { kind: 'token'; property: string; token: string }
+    | { kind: 'image'; assetId: string };
 }
 
 /**
@@ -86,7 +82,13 @@ export interface SourceElement {
 export type CanvasBuildOutcome =
   | { status: 'pending' }
   | { status: 'building'; revisionId: string }
-  | { status: 'ready'; revisionId: string; artifactId: string }
+  | {
+      status: 'ready';
+      revisionId: string;
+      artifactId: string;
+      elements: SourceElement[];
+      diagnostics: CanvasDiagnostic[];
+    }
   | {
       status: 'failed';
       revisionId: string;
@@ -167,7 +169,13 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
-  | 'storage_failed';
+  | 'storage_failed'
+  | 'stale_revision'
+  | 'stale_reference'
+  | 'ambiguous_element'
+  | 'invalid_edit'
+  | 'invalid_source'
+  | 'unsupported_edit';
 
 export interface CanvasError {
   code: CanvasErrorCode;
@@ -210,6 +218,13 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: WriteFilesInput;
+    }
+  | {
+      type: 'canvas.editElement';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: EditElementInput;
     }
   | {
       type: 'canvas.arrange';

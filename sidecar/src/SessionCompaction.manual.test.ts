@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import { SessionCompaction } from './SessionCompaction.js';
@@ -130,6 +132,7 @@ function createHarness(options: { adoptSucceeds?: boolean; adopt?: () => Promise
       },
     },
     runtime,
+    canvasTurns: new CanvasTurns(new CanvasScopes(), () => null),
     agentProcesses: {
       track: (_appSessionId, pid, _isAlive, kind = 'provider') => {
         tracked.set(pid, kind);

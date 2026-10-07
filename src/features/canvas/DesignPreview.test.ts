@@ -55,7 +55,13 @@ test('each build state without an artifact says what the frame is waiting for', 
 test('a revision with an artifact to load waits for it rather than guessing', () => {
   // Reading the artifact is an effect, so a first paint can only say it is
   // loading; previewRuntime.test.ts owns what happens once the guest is up.
-  const ready = render({ status: 'ready', revisionId: 'rev_02', artifactId: 'a'.repeat(64) });
+  const ready = render({
+    status: 'ready',
+    revisionId: 'rev_02',
+    artifactId: 'a'.repeat(64),
+    elements: [],
+    diagnostics: [],
+  });
   const fallback = render({
     status: 'failed',
     revisionId: 'rev_03',

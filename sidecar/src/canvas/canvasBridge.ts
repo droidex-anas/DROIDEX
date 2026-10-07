@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ServerEvent } from '../protocol.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
+import { editCanvasElement } from './canvasElementEdit.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type { CanvasCommand, CanvasError, CanvasEvent, CanvasReply } from './protocol.js';
@@ -15,6 +16,7 @@ import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
   createFramesInputSchema,
+  editElementInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -72,6 +74,14 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.editElement'),
+      ...request,
+      ...target,
+      input: editElementInputSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.arrange'),
       ...request,
       ...target,
@@ -80,7 +90,10 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
 ]);
 
-type Mutation = Extract<CanvasCommand, { type: `canvas.${'create' | 'write' | 'arrange'}` }>;
+type Mutation = Extract<
+  CanvasCommand,
+  { type: `canvas.${'create' | 'write' | 'editElement' | 'arrange'}` }
+>;
 
 /**
  * One renderer page's watch set. The set's own identity is the page's lifetime:
@@ -281,6 +294,11 @@ class CanvasDispatch {
           return { kind: 'created', created: await workspace.create(scope, command.input) };
         case 'canvas.write':
           return { kind: 'written', receipt: await workspace.write(scope, command.input) };
+        case 'canvas.editElement':
+          return {
+            kind: 'written',
+            receipt: await editCanvasElement(workspace, this.builds, scope, command.input),
+          };
         case 'canvas.arrange':
           return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };
       }

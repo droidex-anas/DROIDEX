@@ -363,6 +363,23 @@ registry's per-design `generation`, so a board can tell a build that moved from 
 frame an arrange merely re-sent, and a rebuild of identical source — which is
 content-addressed to the same artifact ID — still reads as a new attempt.
 
+Canvas source selection is derived by `sidecar/src/canvas/sourceElements.ts` with the
+TypeScript parser bundled into the owned compiler process. That process instruments native
+JSX before handing derived files to esbuild; its existing deadline contains expensive parsing.
+Canonical source is never rewritten by instrumentation; it remains the input to Tailwind.
+Revision-scoped element IDs, UTF-16 source ranges and bounded diagnostics accompany a
+successful compile into its cached ready outcome and frame. Designs above 8,192 native JSX
+sites still render, with selection unavailable for that revision. Ready cache outcomes bind the
+element map to the saved source with a digest. A changed map or source, or an element range
+outside canonical source, forces a rebuild. Inline source maps preserve canonical locations
+through bundling
+without shipping host runtime paths or canonical source content in the final artifact map.
+Direct edits reparse that source and
+replace one literal AST range; computed/shared sites require an agent edit and stale
+references require reselection. `canvas.editElement` validates the request and pinned kit
+tokens before committing through the workspace's revision compare-and-swap. Image edits
+remain unavailable until the asset store can verify ownership.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and

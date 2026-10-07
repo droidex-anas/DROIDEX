@@ -8,10 +8,17 @@ export const CANVAS_LIMITS = {
   maxSourceFilesPerDesign: 64,
   maxDesignSourceBytes: 1024 * 1024,
   maxFileBytes: 256 * 1024,
+  /** Bounds instrumented markup and element-map transfer independently of source bytes. */
+  maxSourceElements: 8192,
   maxFrameDimensionPx: 8192,
   maxIdentifierLength: 128,
   maxFrameNameLength: 120,
   maxSourcePathLength: 256,
+  /** Spec §4: the design and element chips one request pins. */
+  maxPinnedDesigns: 32,
+  maxPinnedElements: 32,
+  /** Characters, so never tighter than the 512 bytes a preview clamps a path to. */
+  maxInstancePathLength: 512,
   /** Spec §5: two compiler jobs run at once, across every open canvas. */
   buildSlots: 2,
   /** Spec §5: one build gets this long before its worker is ended. */
@@ -24,6 +31,9 @@ const IDENTIFIER_MESSAGE = `A Canvas identifier is 1 to ${String(CANVAS_LIMITS.m
 const FRAME_NAME_MESSAGE = `A frame name is 1 to ${String(CANVAS_LIMITS.maxFrameNameLength)} characters without control characters.`;
 const COORDINATE_MESSAGE = 'Frame coordinates must be finite numbers.';
 const DIMENSION_MESSAGE = `Frame width and height must be between 1 and ${String(CANVAS_LIMITS.maxFrameDimensionPx)} pixels.`;
+const INSTANCE_PATH_MESSAGE = `An element instance path is 1 to ${String(CANVAS_LIMITS.maxInstancePathLength)} characters without control characters.`;
+const PINNED_DESIGN_MESSAGE = `One request pins at most ${String(CANVAS_LIMITS.maxPinnedDesigns)} designs.`;
+const PINNED_ELEMENT_MESSAGE = `One request pins at most ${String(CANVAS_LIMITS.maxPinnedElements)} elements.`;
 const SOURCE_PATH_MESSAGE =
   'A source path must be relative, use forward slashes, and stay inside the design.';
 const RESERVED_PATH_MESSAGE =
@@ -70,6 +80,42 @@ const revisionRefSchema = z
   })
   .strict();
 
+const designRefSchema = z
+  .object({
+    designId: canvasIdentifierSchema,
+    // null while the frame is reserved and has no source yet.
+    revisionId: canvasIdentifierSchema.nullable(),
+  })
+  .strict();
+
+// A selected element inside one rendered revision. `instancePath` distinguishes
+// repeated DOM nodes; it is a selection hint, not a second source model.
+const elementRefSchema = z
+  .object({
+    designId: canvasIdentifierSchema,
+    revisionId: canvasIdentifierSchema,
+    elementId: canvasIdentifierSchema,
+    instancePath: z
+      .string()
+      .min(1, INSTANCE_PATH_MESSAGE)
+      .max(CANVAS_LIMITS.maxInstancePathLength, INSTANCE_PATH_MESSAGE)
+      .refine((path) => !hasControlCharacter(path), { message: INSTANCE_PATH_MESSAGE }),
+  })
+  .strict();
+
+// The references a turn pinned when its lease was minted. They travel beside
+// the prompt through queue, steer and send-now, so a later selection change
+// cannot retarget an earlier request, and this never changes.
+export const canvasTurnContextSchema = z
+  .object({
+    designs: z.array(designRefSchema).max(CANVAS_LIMITS.maxPinnedDesigns, PINNED_DESIGN_MESSAGE),
+    elements: z
+      .array(elementRefSchema)
+      .max(CANVAS_LIMITS.maxPinnedElements, PINNED_ELEMENT_MESSAGE),
+    designSystem: designSystemRefSchema,
+  })
+  .strict();
+
 const canvasSeedSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -107,6 +153,18 @@ export const sourcePathSchema = z
   .string()
   .refine(isSafeSourcePath, { message: SOURCE_PATH_MESSAGE })
   .refine(hasNoReservedSegment, { message: RESERVED_PATH_MESSAGE });
+
+export const sourceElementSchema = z
+  .object({
+    elementId: canvasIdentifierSchema,
+    file: sourcePathSchema,
+    start: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
+    end: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
+    tagName: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes),
+    editability: z.enum(['literal', 'computed', 'shared']),
+  })
+  .strict()
+  .refine((element) => element.end > element.start);
 
 const sourceFileSchema = z
   .string()
@@ -171,6 +229,35 @@ export const writeFilesInputSchema = z
     });
   });
 
+export const editElementInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    edit: z
+      .object({
+        element: z
+          .object({
+            designId: canvasIdentifierSchema,
+            revisionId: canvasIdentifierSchema,
+            elementId: canvasIdentifierSchema,
+            instancePath: z.string().max(512),
+          })
+          .strict(),
+        change: z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
+          z
+            .object({
+              kind: z.literal('token'),
+              property: z.string().min(1).max(64),
+              token: z.string().min(1).max(128),
+            })
+            .strict(),
+          z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
+        ]),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const arrangeFramesInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
@@ -204,15 +291,15 @@ export function mergedRevisionViolation(files: ReadonlyMap<string, string>): str
 }
 
 export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
-export interface DesignRef {
-  designId: string;
-  revisionId: string | null;
-}
+export type DesignRef = z.infer<typeof designRefSchema>;
+export type ElementRef = z.infer<typeof elementRefSchema>;
+export type CanvasTurnContext = z.infer<typeof canvasTurnContextSchema>;
 export type RevisionRef = z.infer<typeof revisionRefSchema>;
 export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
+export type EditElementInput = z.infer<typeof editElementInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any

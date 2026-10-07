@@ -1,4 +1,6 @@
 import type { AutomationDeliveryReceipt } from './automations/types.js';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -201,6 +203,10 @@ export interface SessionManagerDependencies {
 
 export interface SessionManagerOptions {
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
+  // The Canvas lease owner turns mint into. The sidecar entry passes the one the
+  // Canvas workspace checks; a harness that opens no workspace gets its own, so
+  // turns still mint and revoke exactly as they do in production.
+  canvasTurns?: CanvasTurns;
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -306,6 +312,7 @@ export class SessionManager {
   // provider in the order they were requested.
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
+  private readonly canvasTurns: CanvasTurns;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -358,6 +365,7 @@ export class SessionManager {
       },
     );
     this.onSessionAvailable = options.onSessionAvailable;
+    this.canvasTurns = options.canvasTurns ?? new CanvasTurns(new CanvasScopes(), () => null);
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -516,6 +524,7 @@ export class SessionManager {
       timeline: this.timeline,
       runtime: this.runtime,
       agentProcesses: this.agentProcesses,
+      canvasTurns: this.canvasTurns,
       interactionsFor: (ref) => this.interactions.interactionsFor(ref),
       emitError: (error) => {
         this.emitError(error);
@@ -678,6 +687,7 @@ export class SessionManager {
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
       waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
+      canvasTurns: this.canvasTurns,
       eventFlow: this.eventFlow,
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
@@ -985,6 +995,7 @@ export class SessionManager {
           this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
           cmd.steerId,
+          cmd.canvasContext,
         );
         return;
       case 'session.repairApp':

@@ -283,7 +283,7 @@ Changed by 02b (landed in `sidecar/src/canvas/{CanvasWorkspace.ts,canvasFiles.ts
 - `attachedCanvasId(appSessionId): string | null` reads the persisted attachment, which `beginCanvasTurn` needs when a turn starts. Attachments live in the owning canvas's manifest, as spec §7 states, so an unattached create commits the canvas and the attachment in one write; moving a chat between canvases writes two manifests, and a crash between them leaves the chat unattached rather than attached twice.
 - `invalid_input` was missing from `CanvasErrorCode` and is now part of it on both sides of the mirror. The workspace reports an unknown canvas, design or revision, a merged revision over its limits, a reused mutation ID and an unsupported seed with that code; a lease that is settled, names a canvas the workspace does not hold, or does not cover a frame reports `scope_expired`; a layout compare-and-swap failure reports `revision_conflict`. Storage failures report `storage_failed` with a recovery sentence and never a path.
 - A lease restricted to named designs may change those frames and may not add new ones.
-- Retries are retained per lease, not per count. Each record carries the `scopeId` that issued it and a sha256 digest of its command's canonical arguments; the same ID with the same digest answers the original result and the same ID with a different digest or a different command is `invalid_input`. A record whose scope is still active is never retired, so a retry under a live lease always finds its receipt; records whose scope has settled give way oldest first past 256. There is no list of retired IDs: once a lease is gone nothing can retry under it, so an ID that is no longer found is executed as the new request it now is. Nothing retires an unsettled record: past 4096 of them on one canvas the ledger refuses the new mutation with `storage_failed` ("too many unsettled mutations") instead, because retiring one would let its retry run a second time. Settled records still give way, so the refusal clears as turns finish or are interrupted.
+- Mutation receipts track scope liveness and bounded history. Each record carries the `scopeId` that issued it and a sha256 digest of its command's canonical arguments; the same ID with the same digest answers the original result and the same ID with a different digest or a different command is `invalid_input`. A record whose turn scope is still active is never retired, so its retry always finds the receipt. A pane retry can use a retained receipt under a fresh scope while its chat remains attached. Records with inactive scopes give way oldest first past 256; an ID no longer found is treated as a new request. Nothing retires an unsettled record: past 4096 of them on one canvas the ledger refuses the new mutation with `storage_failed` ("too many unsettled mutations") instead, because retiring one would let its retry run a second time. Settled records still give way, so the refusal clears as turns finish or are interrupted.
 - A retained arrange keeps only what it acknowledged, `{ sequence, placements: [{ designId, layoutVersion, rect }] }`, which bounds the manifest at a measured 8.37 MiB for the worst legal history (256 records of 256 frames; 18.17 MiB for full frame records). A retried arrange answers the original sequence and the original layout, while a frame's other fields show the current head; the renderer's sequence handling (02c) discards a change older than its projection.
 
 - A manifest write that fails anywhere past its rename may still have landed, so the head on disk is reread before any further commit on that canvas, and the flushes that save still owed are redone: reading a head back proves it is visible, not that it is durable. A canvas whose head cannot be reread, or whose directory entry cannot be flushed, is held damaged until the workspace is reopened, and the original failure is still reported as a failure. A damaged canvas keeps the attachments it has on disk: `attachedCanvasId` still answers with it, so the chat waits for recovery with `storage_failed` on every mutation, including `detach`, rather than being handed a second canvas and ending up attached twice. A commit whose canvas was never created in the first place is the one case that holds nothing back, because there is nothing on disk to recover. `damagedCanvasIds()` lists what the workspace holds but will not serve, both from a damaged load at open and from a failed reread.
@@ -974,7 +974,7 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
+- [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
 - [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
@@ -1018,6 +1018,125 @@ These variables are outputs collected by the owning existing harness fixtures, n
 
 - [ ] Exercise queue→selection-change→send, steer with different selected frames, retry after lost mutation response, provider replacement during a pending write, child scope escape and close during server startup. Verify one shared tool schema and stable canvas IDs across create/resume for all providers. Future providers must pass this same suite through their existing adapter boundary.
 - [ ] Run focused MCP/context/presentation/native-parser/race tests and both typechecks. Perform a real tool-discovery/create/write/inspect/resume smoke for each already authorized harness account using a low-cost available model. If account access or paid smoke authorization is missing, keep the deterministic fixtures and report the live provider row unverified; never mark the release gate passed from mocks alone.
+
+Settled by 04a (landed in `sidecar/src/canvas/{canvasTurnContext.ts,schema.ts,protocol.ts}`,
+`sidecar/src/{SessionLifecycle.ts,SessionManager.ts,sessionCompactionExecution.ts,bridgeServer.ts,protocol.ts,index.ts}`
+and `src/{types/bridge.ts,lib/commands.ts}`):
+
+- **The interfaces, as the real seams took them.** `CanvasTurns` in `canvasTurnContext.ts`
+  composes over the existing `CanvasScopes`; it adds no second registry and keeps only which
+  turn and which provider era minted which lease. `beginCanvasTurn(appSessionId, generation,
+  context)` became `canvasTurns.beginTurn(appSessionId, context)` returning a
+  `CanvasTurnLeases` handle, because the generation is the owner's to assign rather than the
+  lifecycle's to pass: the lifecycle has no per-chat provider-era counter, and mirroring one
+  into Canvas would give one invariant two owners. The handle is also what a steer joins
+  (`addSteer`) and what every settlement path revokes (`revoke`), so a turn's leases are one
+  unit. `revokeCanvasScope(scopeId)` has no caller and was not added; `CanvasScopes.revoke`
+  stays the primitive underneath, and the pane still uses it for its own user scope.
+  `getCanvasScope(scopeId)` is `requireScope(scopeId)`, matching `canvasLeases.ts`'s
+  `require*` convention for a lookup that throws `scope_expired`. 04b additionally gets
+  `activeScope(appSessionId)`.
+- **A lease is registered exactly while it is live, and that is the whole check.** Every
+  settlement path revokes, and a provider replacement revokes the chat, so `requireScope` asks
+  only whether the registry still holds the scope. A `generation !== current` comparison there
+  was written first and removed: nothing can produce a registered turn scope from a past era, so
+  the branch was unreachable, and the late-steer bug review found (below) never moved the
+  generation. Each new provider era takes the next process-wide generation, while `endSession`
+  revokes and deletes its chat record. A stale steer handle checks that its original record is
+  still current before minting; the recorded generation remains available for 04b's dispatch
+  binding without retaining ended chats.
+- **Every turn mints a lease.** A prompt with no pinned context uses empty design and element
+  references and `DEFAULT_DESIGN_SYSTEM_REF` from the design-system owner, giving an ordinary
+  chat authority over its canvas without opening the pane. A delivered steer with no pinned
+  context gets the same default. For an unattached chat the lease starts with `canvasId: null`;
+  the workspace's first `canvas_create` fills the binding through the existing
+  `CanvasLeases.claim` → `CanvasScopes.bindScopeCanvas` path. A Canvas call outside an active
+  turn is still refused with `scope_expired` (spec §6).
+- **`allowedDesignIds`** is every design the chips named, whether as a frame or as an element
+  inside one, and `'canvas'` only when the prompt pinned neither — which is what
+  `CanvasLeases.requireDesigns` already expects (02b). Deriving it from `designs` alone, as the
+  first version did, turned a one-element selection into write authority over every design on
+  the board.
+- **The lease lifecycle, seam by seam.**
+
+  | Seam | Mint | Revoke |
+  | --- | --- | --- |
+  | `SessionLifecycle.runTurn`, at the streaming transition | the turn's lease, from `prompt.canvasContext` or the default context | — |
+  | `SessionLifecycle.steer`, once `session.steer` resolved true | the steer's own lease, through the running turn's handle | — |
+  | `subscribeBackgroundEvents`, `onDelegatedTurn(true)`, only when no typed turn runs | the turn's default lease | — |
+  | `runTurn`'s `finally`, first statement | — | the turn and its steers, before anything awaits and before the queue advances |
+  | `onDelegatedTurn(false)`, only when no typed turn runs | — | the same, for a turn the provider started |
+  | `interrupt`, before `await session.interrupt()` | — | the running turn, before the external cleanup await |
+  | `sendNow`, before `await session.interrupt()` | — | the turn being stopped to send now |
+  | `beginClose` (close, relaunch) | — | every lease the chat holds; its record is removed before the next era |
+  | `closeAll`, before its concurrent process kills | — | every captured chat's leases, even if its kill later fails |
+  | `sessionCompactionExecution.adoptProvider`, before `oldSession.close()` | — | the same, so the replacement starts a new era |
+
+  Revocation is idempotent everywhere, and a handle reaches only the leases it minted (each
+  carries the turn that owns it), so a settlement that lands late cannot revoke a later turn's
+  or a replacement's. `closeAll` invalidates its captured chats before its first process-kill
+  await; later `beginClose` calls may repeat the idempotent revocation.
+- **One owner for `liveSession.canvasTurn`.** Codex starts a delegated turn for any
+  `turn/started` whose id differs from the adopted typed one, "however close behind the typed
+  one it arrives" (`codexSession.ts`), so `onDelegatedTurn(true)` can fire while a typed turn is
+  running. Both halves of that handler are therefore guarded on `liveSession.turnPromise`: the
+  typed turn's handle keeps the field, so the delegated turn neither orphans that lease — which
+  would leave a dead turn's pinned designs answering `activeScope`, the retargeting §6 forbids —
+  nor revokes it mid-turn. `turnPromise` is a sound guard because `runTurn` assigns it with only
+  synchronous statements between it and the mint, so no provider notification can land in
+  between.
+- **A Stop or a Send now the provider refuses** leaves its turn running with no lease, and no
+  steer it takes in afterwards leases either. Both revoke before awaiting the interrupt, as spec
+  §6 requires; failing closed is the safe direction, and undoing a revoke would give one lease
+  two lives.
+- **The steer binding rule.** A Canvas call that presents no scope ID binds to the chat's
+  newest live lease, which is a pending steer's while the running turn holds a steer the model
+  took in. Dispatch carries no steer discriminator on Droid (spec §6), and the newest lease is
+  the user's latest instruction for the turn that is running. Every earlier lease stays valid
+  and may still be presented by ID, so a call already in flight is answered rather than
+  retargeted. Steer delivery captures its original turn handle before awaiting the harness and
+  checks the provider and handle again afterward; a result delivered after that turn or provider
+  ended cannot lease the next turn, including after compaction keeps the same `LiveSession`.
+- **The sidecar queue carries the received context.** `SessionPrompt` is the one shape behind
+  `pendingSends`, `steers`, send-now reordering, `relaunch`'s waiting list, post-compaction
+  `settleAfterCompaction` and `redeliverQueuedSends`. Reordering and redelivery move that prompt
+  without changing its references. `sessionPrompt()` omits the field when none arrived.
+- **Renderer handoff to Tasks 5/7b.** `QueuedPrompt` in `src/hooks/useStore.tsx` and its
+  delivery/edit/reorder paths do not yet carry `canvasContext`, and the first-turn
+  `session.create` goal has no context field. Snapshot the selected design and element chips
+  and the current design-system version when composing each request; carry that value through
+  queue, edit, reorder, steer, send-now and first-turn create. The disconnected bridge currently
+  retains a command object by reference, so capture an immutable value before enqueueing it.
+  Add a queue → selection change → delivery regression at the renderer owner. This is renderer
+  transport work; 04a preserves references only after the request reaches the sidecar.
+- **The boundary.** `session.send` gained `canvasContext?: CanvasTurnContext`; `bridgeServer`
+  checks it with `assertCanvasTurnContext` beside its existing `assertValid*` checks, and a
+  `CanvasCommandError` now travels as `canvas.<code>` so a refusal keeps its stable code.
+  `canvasTurnContextSchema` lives in `schema.ts` with the other boundary parsers, which also
+  made `DesignRef`, `ElementRef` and `CanvasTurnContext` Zod-inferred there and re-exported
+  from `protocol.ts`; `schema.test.ts`'s mirror check still compares them to the renderer's.
+  New §4/§5 limits: 32 pinned designs, 32 pinned elements, and a 512-character instance path,
+  never tighter than the 512 bytes a preview clamps a reported path to.
+- **The expiry message has one owner.** `EXPIRED_TURN` moved to `canvasError.ts`, which
+  `canvasScopes.ts`, `canvasLeases.ts` and `canvasTurnContext.ts` all already import; the first
+  two held byte-identical copies of a §8 message the model and the user both read.
+- **Nothing is concatenated into the prompt.** `primaryTurn.ts` is untouched: it still streams
+  `prompt.text` alone, and no hidden user message is fabricated (spec §9).
+- **Wiring.** `SessionManager` takes the lease owner as an option; `sidecar/src/index.ts`
+  passes the one the Canvas workspace checks and reads the chat's attachment from the opened
+  workspace, so a chat reads as unattached until Canvas storage opens. A harness that opens no
+  workspace gets its own owner, so turns mint and revoke there exactly as in production.
+- **Verification.** `canvasTurnContext.test.ts` owns the lease contract (pinning, the steer
+  rule, era refusal, the unattached binding against a real `CanvasWorkspace`, and the §8
+  rejection message). `SessionLifecycle.test.ts` owns the seams through the real lifecycle with
+  gated streams: a reordered queue running under each prompt's own references, a delivered
+  steer beside the running turn, Stop revoking before the provider is asked to unwind, a
+  close/resume replacement revoking the old lease while the redelivered prompt mints under the
+  next generation, and a provider-started turn beside a typed one leaving the typed turn's lease
+  alone (that last case fails without the `turnPromise` guard). `bridgeServer.test.ts` holds the boundary refusal, and
+  `src/lib/commands.test.ts` the renderer pass-through.
+- **Not covered.** The pane that composes a context is Task 5's; the six tools, their dispatch
+  and the Claude `PreToolUse` read binding are 04b's; transcript projection is 04c's.
 
 ## Task 5: Persistent Canvas in the utility pane
 
@@ -1094,7 +1213,7 @@ Settled by 06b (`canvas/06b-chart-runtime`):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
+- [x] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
   Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
 - [ ] `canvas/07b-design-system-picker`: Add the composer picker popover (search, light/dark preview toggle, presets then user kits with two swatches each, “Manage design systems” footer) and removable system/reference chips with persisted future-request selection; wire the image drop/picker path to 07d's `importCanvasImage`.
   Done: A queued request retains its pinned kit version after the user changes selection; the picker matches spec §10 and V3 in light and dark.
@@ -1131,11 +1250,56 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+
+Settled by 07a (`canvas/07a-design-kits`):
+
+- The three built-in version-1 kits are `droidex`, `openai-inspired` and
+  `claude-inspired`. The latter two are locally authored interpretations, not official
+  presets. Each owns complete matching light/dark token maps, including typography,
+  spacing, radius, shadow and motion. App chrome is unchanged.
+- `readDesignSystem` returns a detached snapshot of the exact pinned version. Built-ins
+  are validated and snapshotted on load; user saves retain the existing atomic immutable
+  version contract. Schema validation also refuses unmatched mode token names.
+- Shared source primitives are copied into each executable kit: native-prop Button
+  (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
+  Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
+  Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
+  `title`, `children`, optional `returnFocusId`/`fallbackFocusId`) using native modal
+  behavior, explicit focus cycling at the preview-frame edge, Escape and enabled,
+  visible-destination restoration.
+  Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
+  Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
+- Each light/dark kit provides translucent `--ds-lift` and `--ds-press` layers for
+  control hover and press over its own background; hover-only accent colours are gone.
+  The guest stylesheet reserves a stable scrollbar gutter so opening a dialog does
+  not move the card, and primitives do not lock `body` scrolling.
+- Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
+  for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
+  SIL OFL files both in the repository and the kit's virtual source files. Provenance is
+  in `presets/fonts/README.md`; other scripts use the local font stack.
+  Inline fonts are accepted for 07a: 64 KB of Inter, or 115 KB of Inter plus Lora,
+  per artifact is within every current limit. 07d owns serving each immutable font
+  once through a preview-host asset URL and changing the matching `font-src`/CSS allowlist.
+- `lucide-react` is pinned to 0.460.0, the app's existing version. The shared browser
+  module graph stages its ESM files, package metadata and ISC licence alongside Recharts;
+  unused Lucide CJS is absent. The flat design import allowlist includes `lucide-react`
+  and `recharts`, resolving their internal ESM entries through the owned runtime while
+  refusing public deep imports. `designStylesheet.ts` already scans the complete
+  snapshot with Tailwind 3 and needed no replacement path or dynamic-class guessing.
+- Compiler coverage exercises all six kit/mode starters and bounds a single named icon's
+  incremental output to 10 KiB. Contrast coverage checks the actual primitive foreground,
+  muted, primary, lifted, pressed, badge and error pairs against AA 4.5:1. The staged
+  offline probe compiles all six starters and the chart, checks font and Lucide notices,
+  and retains both damaged-runtime and resolver-isolation checks. Electron interaction
+  checks cover state, disabled controls, tabs, dialog focus cycling, Escape, restoration
+  and font load.
+
+
 ## Task 8: Element selection, direct edits and source/history UI
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
+- [x] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
   Done: Round-trip tests preserve surrounding source and reject stale, repeated or computed edits honestly.
 - [ ] `canvas/08b-element-selection`: Add bounded preview selection events, board overlays and the direct inspector with scoped composer references.
   Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
@@ -1147,6 +1311,65 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 **Files:** Create `sidecar/src/canvas/{sourceElements.ts,sourceElements.test.ts}` and `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx}`. Extend `compiler.ts`, preview runtime/event schemas, `CanvasWorkspace.ts`, `canvasMcpServer.ts` and Canvas integration tests.
 
 **Interfaces:** Uses Task 2 `SourceElement`. `instrumentSource(files: SourceFiles, revisionId: string): { files: SourceFiles; elements: SourceElement[] }` produces derived instrumented source without modifying canonical files. `ElementEdit = { element: ElementRef; change: { kind: 'text'; value: string } | { kind: 'token'; property: string; token: string } | { kind: 'image'; assetId: string } }`. `applyElementEdit(files: SourceFiles, elements: SourceElement[], edit: ElementEdit): SourceFiles` returns complete changed files or a typed ambiguity/stale-reference error; the caller commits through `write` with the reference's revision.
+
+Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache path):
+
+- `instrumentSource` uses TypeScript 5.9.3 from the existing lockfile, bundled into the
+  existing owned compiler entry. It derives instrumented files before esbuild; Tailwind still
+  scans canonical source. The parser adds about 9.6 MiB to that worker bundle. It is compiled
+  application code, with no external parser require/package or extra staging/resolution path.
+  TypeScript initializes its Node system using `__filename`; the compiler build binds that to
+  Node 22's `import.meta.filename`, so it names the owned worker rather than a checkout module.
+  The existing runtime manifest/verifier still owns every external package. The sidecar placement
+  was measured first and rejected after dense JSX blocked it for two seconds: the existing
+  compiler process and deadline must contain parsing too. Sonatype was unavailable; no dependency
+  security verdict is implied.
+- Every owned native JSX site carries `data-droidex-element`. IDs hash the revision, complete
+  canonical source tree, file and offset; offsets are UTF-16 positions in canonical source.
+  The inline insertion map carries canonical content into esbuild's composed artifact map.
+  Artifact maps omit source content and replace host runtime paths with opaque runtime names.
+  IDs are selection hints, never authorization; callers must still commit edits with the selected
+  revision as `expectedRevisionId`.
+- `applyElementEdit` returns complete contents of changed paths only. It reparses canonical
+  source and checks the selection map before replacing one AST range. `SourceElementError.code`
+  distinguishes `stale_reference` (reselect), `ambiguous_element` (ask the agent with the original
+  reference), `invalid_source`, and `invalid_edit`. There is one edit per call, no batch API.
+- Direct scope is a literal site in the entry's default function/arrow. Other component
+  definitions, callbacks/maps, JSX stored in variables/arrays, loops, and children passed through
+  custom components are shared. Reused/imported entry components are shared too. JSX spreads,
+  spread children, computed or split text, computed class names/styles, duplicate attributes or
+  style properties, and `children`/`dangerouslySetInnerHTML`/`srcset` overrides are not directly
+  editable. An image inside `picture` is computed because a source alternative can override it. Fragments have no DOM marker; native children in conditional branches keep distinct
+  sites. A literal site still requires the requested property to have a supported literal range.
+- Text editing supports a single JSX text node or string/no-substitution-template expression,
+  plus empty paired tags. Token editing replaces an existing literal `var(--token)` in an
+  allowlisted React style property; it does not rewrite utility classes or invent style objects.
+  Image editing replaces a literal `img src="canvas-asset:<assetId>"`; the bridge refuses image
+  edits until 07d's asset store can verify ownership. The edit boundary checks token membership
+  against the pinned kit's mode and CSS declarations before committing.
+- Ready build frames and restored snapshots carry the exact element map and up to 64 compiler
+  diagnostics. Older outcomes without these fields are cache misses and rebuild; cached ranges
+  must fit their canonical file. No historical reader or migration was added. `canvas.editElement`
+  resolves the current built map, rejects malformed/stale/computed references with curated codes,
+  applies the AST edit in the owned compiler worker, and commits changed source through the
+  workspace's normal scope and revision CAS. The edit's original request fingerprint and receipt
+  live in the mutation ledger, so a retry returns that receipt before checking the now-stale
+  selection; ordinary mutation-history pruning applies. A direct edit forks a compiler worker
+  for its request so parsing cannot block the sidecar's main loop; the worker is ended after
+  settlement.
+  The renderer protocol mirror and inbound validator share this contract; preview selection
+  events and inspector behavior remain in 08b.
+- Measurements on this arm64 checkout, Node 22: kit example (928 bytes, four sites) first
+  instrumentation 8.65 ms, warm median 0.43 ms across 29 runs; 1 MiB of source across four
+  maximum-sized files 33.91 ms. These exclude parser module loading and worker startup and
+  vary with host load. Exact-column inline maps expand that 1 MiB input to 9,438,320 bytes
+  inside the worker; esbuild composes them down to the output locations it emits. A deliberately
+  dense 256 KiB file with 65,529 JSX sites took 2.02 seconds in the initial probe. Parsing now
+  runs in the deadline-owned compiler process. Above `maxSourceElements: 8192`, the worker
+  compiles canonical source, returns an empty map, and reports `selection_unavailable` rather
+  than publishing a partial map or failing the preview.
+  This independent bound also applies at the worker reply and cache boundaries. These are
+  probes, not timing assertions in unit tests.
 
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.
