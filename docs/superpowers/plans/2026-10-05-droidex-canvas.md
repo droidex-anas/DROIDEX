@@ -1396,6 +1396,8 @@ Also cover escaping `<`, `&`, quotes and Unicode without changing surrounding so
 
 ## Task 9: Variants, local library and durable board undo
 
+**Settled by 09a (sidecar):** `create` copies pinned revision seeds into independent first revisions, persists source canvas/design/revision provenance, and answers mutation retries without adding frames. `placeBeside: { designId }` reserves collision-free two-column rows below the source with the existing 80 px gap; placement uses the live board at commit and never moves existing frames. The bridge validates seeds, placement and the 1–4 count. Current leases authorize one canvas, so cross-canvas seeds are refused. Follow-up turns already pin the returned designs/revisions through `CanvasTurnContext.designs` and `allowedDesignIds`; no additional targets or presence field was added. The renderer popover still needs layout/style/color choices, direction, count (default two), one pinned source revision/system, one creation request and one ordinary composer action targeting the returned designs. Task 04b still needs to expose `seed` and `placeBeside` through `canvas_create` MCP wiring and bind tool calls to the existing turn scope. UI, MCP and end-to-end acceptance remain open; no checklist items are ticked here.
+
 **Subtasks (one branch and PR each, merged in order):**
 
 - [ ] `canvas/09a-variants`: Add pinned layout/style/color variant requests, deterministic adjacent placement and explicit target scopes.

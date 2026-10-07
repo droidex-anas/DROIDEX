@@ -6,7 +6,6 @@ import {
   board,
   COMPILE_FAILED,
   CompilerFleet,
-  failNextManifestWrite,
   fakeDeadlines,
   holdBuildOutput,
   holdOutcomeWrite,
@@ -16,6 +15,7 @@ import {
   type Board,
 } from '../testing/canvasBuildSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
+import { terminateAtManifestRename } from '../testing/canvasStorageSupport.js';
 import { CanvasFiles, REVISION_METADATA_VERSION } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
@@ -236,7 +236,7 @@ test('an overdue build takes down only its own slot', async (t) => {
 });
 
 test('a build whose commit fails leaves memory and disk agreeing', async (t) => {
-  const storage = failNextManifestWrite();
+  const storage = terminateAtManifestRename('before');
   const canvas = await board(t, { fs: storage.fs });
   const [designId] = await canvas.create('Hey');
   assert.ok(designId);
@@ -819,7 +819,7 @@ test('closing waits for a termination it has already started', async (t) => {
   assert.deepEqual(canvas.fleet.ended, ['client-1', 'closed']);
 });
 
-test('a frame seeded from a saved revision is built like a write', async (t) => {
+test('seeded siblings build independently when one fails', async (t) => {
   const canvas = await board(t);
   const [source] = await canvas.create('Source');
   assert.ok(source);
@@ -828,19 +828,28 @@ test('a frame seeded from a saved revision is built like a write', async (t) => 
   await canvas.reported(source, 'ready');
 
   const seeded = await canvas.createSeeded('Copy', source, receipt.revisionId);
+  const sibling = await canvas.createSeeded('Sibling', source, receipt.revisionId);
   const copy = await canvas.fleet.compile(2);
+  const other = await canvas.fleet.compile(3);
   assert.equal(copy.input.designId, seeded);
   assert.notEqual(copy.input.revisionId, receipt.revisionId, 'the copy owns its own revision');
-  copy.ready('artifact-copy');
-  await canvas.reported(seeded, 'ready');
-  assert.deepEqual(canvas.frame(seeded).build, {
+  const failed = canvas.reported(seeded, 'failed');
+  copy.failed('unsupported_import');
+  await failed;
+  assert.equal(canvas.frame(sibling).build.status, 'building');
+  const ready = canvas.reported(sibling, 'ready');
+  other.ready('artifact-copy');
+  await ready;
+  assert.deepEqual(canvas.frame(sibling).build, {
     status: 'ready',
-    revisionId: copy.input.revisionId,
+    revisionId: other.input.revisionId,
     artifactId: 'artifact-copy',
     elements: [],
     diagnostics: [],
     generation: 1,
   });
+  assert.equal(canvas.frame(source).build.status, 'ready');
+  assert.deepEqual(diagnosticCodes(canvas, seeded), ['unsupported_import']);
 });
 
 test('a rebuild sweep from an old projection leaves the current state alone', async (t) => {

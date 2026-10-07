@@ -154,6 +154,7 @@ export interface WriteReceipt {
 
 export interface CreateFramesInput {
   mutationId: string;
+  placeBeside?: { designId: string };
   frames: {
     name: string;
     width: number;

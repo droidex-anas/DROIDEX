@@ -19,6 +19,7 @@ import {
   canvasIdentifierSchema,
   designSystemRefSchema,
   frameRectSchema,
+  revisionSeedSchema,
 } from './schema.js';
 
 const CANVAS_MANIFEST_VERSION = 1;
@@ -50,6 +51,8 @@ const persistedDesignSchema = z
     // The artifact itself is a derived cache that `CanvasBuilds` rebuilds.
     lastWorkingRevisionId: canvasIdentifierSchema.nullable(),
     designSystem: designSystemRefSchema,
+    // Provenance only: this design owns its source copy independently.
+    seed: revisionSeedSchema.optional(),
   })
   .strict();
 
