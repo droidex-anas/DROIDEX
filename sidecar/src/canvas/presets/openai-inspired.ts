@@ -1,5 +1,5 @@
 import type { DesignSystem } from '../designSystems.js';
-import inter from './fonts/inter.json';
+import inter from './fonts/inter.json' with { type: 'json' };
 import { PRIMITIVES_TSX } from './primitives.js';
 import { HEY_TSX, UNIVERSAL_GUIDANCE } from './starter.js';
 import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
