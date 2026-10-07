@@ -1,4 +1,4 @@
-import type { CanvasCommand, CanvasEvent } from '../features/canvas/protocol';
+import type { CanvasCommand, CanvasEvent, CanvasTurnContext } from '../features/canvas/protocol';
 import type { ProjectCommand, ProjectEvent } from '../features/projects/protocol';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
@@ -823,6 +823,10 @@ export type ClientCommand =
       // the renderer chose for its own row. Absent, a send while a turn runs
       // waits for the turn to end.
       steerId?: string;
+      // What the Canvas pane had selected when this prompt was composed. It
+      // travels beside the text and is never concatenated into it; the turn that
+      // runs this prompt mints its lease from it.
+      canvasContext?: CanvasTurnContext;
     }
   // Stops the running turn so a steer the model has not taken in yet goes first.
   | { type: 'session.sendNow'; appSessionId: string; steerId: string }

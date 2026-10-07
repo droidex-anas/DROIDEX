@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
 import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
 import { DROIDEX_DESIGN_SYSTEM } from '../../sidecar/src/canvas/presets/droidex';
@@ -28,6 +28,7 @@ import {
 } from './canvasPreviewHost';
 import {
   bounded,
+  focusHost,
   processAlive,
   withCanvasHost,
   withDatagramListener,
@@ -97,18 +98,6 @@ async function drainGuest(page: Page, instance: PreviewInstance) {
   const snapshot = readPreviewSnapshot(answer, instance);
   assert.ok(snapshot, 'the guest answered with a snapshot for this instance');
   return snapshot;
-}
-
-/** Brings the app window forward, so pointer input has somewhere to land. */
-async function focusHost(app: ElectronApplication): Promise<void> {
-  await bounded(
-    app.evaluate(({ BrowserWindow }) => {
-      const window = BrowserWindow.getAllWindows()[0];
-      window.show();
-      window.focus();
-    }),
-    'focus host window',
-  );
 }
 
 function newInstance(designId: string): PreviewInstance {

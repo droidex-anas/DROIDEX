@@ -21,6 +21,7 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
+import type { RevisionRef } from '../features/canvas/protocol';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -244,6 +245,10 @@ interface DroidControlApi {
     revisionId: string,
     suggestedName: string,
   ) => Promise<CanvasImageSaveResult>;
+  canvasExportSource: (
+    canvasId: string,
+    ref: RevisionRef,
+  ) => Promise<{ filesWritten: number } | null>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -768,4 +773,15 @@ export async function saveCanvasImage(
   if (!api)
     return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
   return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
+}
+
+/** Opens the host's folder chooser, then exports the selected saved revision. */
+export function exportCanvasSource(
+  canvasId: string,
+  ref: RevisionRef,
+): Promise<{ filesWritten: number } | null> {
+  return requireDesktopApi('Canvas source export needs the desktop app.').canvasExportSource(
+    canvasId,
+    ref,
+  );
 }

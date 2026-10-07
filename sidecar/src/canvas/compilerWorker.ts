@@ -5,6 +5,7 @@
 // compiler.ts.
 
 import { createHash } from 'node:crypto';
+import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
 import {
@@ -18,7 +19,8 @@ import {
 } from './compiler.js';
 import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
-import { readDesignSystem } from './designSystems.js';
+import { readDesignSystem, type DesignSystem } from './designSystems.js';
+import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
@@ -37,7 +39,29 @@ export async function compileDesign(
   const system = await readDesignSystem(input.designSystem);
   stopIfCancelled(signal);
 
-  const bundle = await bundleDesign({ files: input.files, kitFiles: system.files });
+  let instrumented: ReturnType<typeof instrumentSource>;
+  const selectionDiagnostics: CanvasDiagnostic[] = [];
+  try {
+    instrumented = instrumentSource(input.files, input.revisionId);
+  } catch (error) {
+    if (!(error instanceof SourceElementError)) throw error;
+    if (error.code === 'selection_limit') {
+      instrumented = { files: input.files, elements: [] };
+      selectionDiagnostics.push({ code: 'selection_unavailable', message: error.message });
+    } else {
+      throw new CompileFailedError([
+        {
+          code: 'syntax_error',
+          message: error.message,
+          file: error.file,
+          line: error.line,
+          column: error.column,
+        },
+      ]);
+    }
+  }
+  stopIfCancelled(signal);
+  const bundle = await bundleDesign({ files: instrumented.files, kitFiles: system.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
 
@@ -49,8 +73,8 @@ export async function compileDesign(
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
-    diagnostics: bundle.warnings,
-    elements: [],
+    diagnostics: [...selectionDiagnostics, ...bundle.warnings],
+    elements: instrumented.elements,
   };
 }
 
@@ -126,10 +150,73 @@ process.on('message', (request: CompilerRequest) => {
   }
   const controller = new AbortController();
   running.set(request.requestId, controller);
-  void runCompile(request.requestId, request.input, controller.signal).finally(() => {
-    running.delete(request.requestId);
-  });
+  if (request.type === 'edit') {
+    void runEdit(request, controller.signal).finally(() => running.delete(request.requestId));
+  } else {
+    void runCompile(request.requestId, request.input, controller.signal).finally(() => {
+      running.delete(request.requestId);
+    });
+  }
 });
+
+async function runEdit(
+  request: Extract<CompilerRequest, { type: 'edit' }>,
+  signal: AbortSignal,
+): Promise<void> {
+  const { requestId, files, elements, edit, designSystem } = request;
+  try {
+    stopIfCancelled(signal);
+    if (edit.change.kind === 'token') {
+      const kit = await readDesignSystem(designSystem);
+      stopIfCancelled(signal);
+      if (!hasKitToken(kit, designSystem.mode, edit.change.token))
+        throw new SourceElementError('invalid_edit', 'Choose a token in this design’s pinned kit.');
+    }
+    const changed = applyElementEdit(files, elements, edit);
+    stopIfCancelled(signal);
+    send({ requestId, status: 'edited', files: changed } satisfies CompilerResponse);
+  } catch (error) {
+    if (error instanceof SourceElementError) {
+      const code = error.code === 'selection_limit' ? 'stale_reference' : error.code;
+      send({
+        requestId,
+        status: 'edit_failed',
+        code,
+        message: error.message,
+      } satisfies CompilerResponse);
+    } else if (error instanceof CompileCancelledError) {
+      send({ requestId, status: 'cancelled' } satisfies CompilerResponse);
+    } else if (error instanceof CanvasCommandError && error.code !== 'storage_failed') {
+      send({
+        requestId,
+        status: 'edit_failed',
+        code: 'invalid_edit',
+        message: error.message,
+      } satisfies CompilerResponse);
+    } else {
+      console.error('Canvas element edit failed:', error);
+      send({
+        requestId,
+        status: 'unavailable',
+        reason: 'lost-compiler',
+        message: COMPILER_RECOVERY,
+      } satisfies CompilerResponse);
+    }
+  }
+}
+
+function hasKitToken(kit: DesignSystem, mode: DesignSystemRef['mode'], token: string): boolean {
+  if (Object.hasOwn(kit.modes[mode], token)) return true;
+  for (const [path, css] of Object.entries(kit.files)) {
+    if (!path.endsWith('.css')) continue;
+    const tokens = new Set<string>();
+    postcss.parse(css).walkDecls((declaration) => {
+      tokens.add(declaration.prop);
+    });
+    if (tokens.has(token)) return true;
+  }
+  return false;
+}
 
 /** Releases the compiler's service process before the parent ends it. */
 async function shutdown(requestId: number): Promise<void> {

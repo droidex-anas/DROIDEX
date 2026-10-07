@@ -8,6 +8,8 @@ test('a frame without a document says which of these it is', () => {
     status: 'ready',
     revisionId: 'rev_02',
     artifactId: 'a'.repeat(64),
+    elements: [],
+    diagnostics: [],
   };
   const failed: CanvasBuildState = {
     status: 'failed',

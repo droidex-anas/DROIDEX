@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import type { PermissionOutcome } from './protocol.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
@@ -89,6 +91,7 @@ function createHarness(
       },
     },
     runtime,
+    canvasTurns: new CanvasTurns(new CanvasScopes(), () => null),
     agentProcesses: {
       track: () => undefined,
       untrack: () => undefined,

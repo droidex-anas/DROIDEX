@@ -38,6 +38,7 @@ const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
+const { createCanvasSourceExport } = require('./canvasSourceExport.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -555,6 +556,17 @@ function registerCanvasPreviewProtocol() {
 }
 
 function registerIpc() {
+  const exportCanvasSource = createCanvasSourceExport({
+    chooseDirectory: () =>
+      dialog.showOpenDialog(mainWindow, {
+        title: 'Export Canvas source',
+        buttonLabel: 'Export here',
+        properties: ['openDirectory'],
+      }),
+    getBridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
+    exportToken: () => sidecarSupervisor.canvasExportToken(),
+    fetchRequest: fetch,
+  });
   ipcMain.handle('bridge-info', (event) => {
     assertMainRenderer(event);
     return sidecarSupervisor.getBridgeInfo();
@@ -682,6 +694,10 @@ function registerIpc() {
   ipcMain.handle('canvas-image-save', (event, request) => {
     assertMainRenderer(event);
     return saveCanvasImage(request);
+  });
+  ipcMain.handle('canvas-export-source', (event, input) => {
+    assertMainRenderer(event);
+    return exportCanvasSource(input);
   });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);

@@ -99,8 +99,13 @@ export function useQueuedPromptDelivery({
               ),
               head.sideChatReplies ?? [],
             ),
-            responseFormatForPrompt(head.text, hasAppContextForTranscript(transcript, null)),
-            head.mentions,
+            {
+              responseFormat: responseFormatForPrompt(
+                head.text,
+                hasAppContextForTranscript(transcript, null),
+              ),
+              mentions: head.mentions,
+            },
           );
           dispatch({
             type: 'SESSION_TRANSCRIPT',
