@@ -976,9 +976,9 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 - [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
-- [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
+- [x] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
-- [ ] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
+- [x] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
   Done: All three provider canaries stay absent from app-owned surfaces while matching user text remains visible.
 - [ ] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
   Done: Each provider records live scope/routing results; unavailable account access remains explicitly unverified.
