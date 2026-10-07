@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   board,
+  buildHost,
   COMPILE_FAILED,
   CompilerFleet,
   failNextManifestWrite,
@@ -11,8 +12,6 @@ import {
   holdBuildOutput,
   holdOutcomeWrite,
   refuseOutcomeReads,
-  standIn,
-  storage,
   type Board,
 } from '../testing/canvasBuildSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
@@ -21,6 +20,7 @@ import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
 import { CompilerWorker } from './compiler.js';
 import { mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
+import { deferred, observedFileSystem } from '../testing/canvasStorageSupport.js';
 
 /** A yield to the event loop, so a premature resolution becomes visible. */
 function drained(): Promise<void> {
@@ -446,12 +446,9 @@ test('abandoned compilers retain both slots until exit without receiving replace
     compiler: () => new CompilerWorker(),
     deadline: fakeDeadlines().deadline,
   });
-  const files = new CanvasFiles((await storage(t)).root);
-  await files.createRoot();
-  const canvas = standIn(builds);
+  const canvas = await buildHost(t, builds);
   canvas.revisions.set('cv_01/dsg_hey', 'rev_01');
   canvas.revisions.set('cv_01/dsg_two', 'rev_02');
-  await builds.load(canvas.host, files, []);
   try {
     builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
     builds.enqueue('cv_01', 'dsg_two', 'rev_02');
@@ -561,6 +558,43 @@ test('close starts compiler termination before held artifact storage settles', a
   assert.equal(
     reportedStates(canvas, designId).some((build) => build.status === 'ready'),
     false,
+  );
+  assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, null);
+});
+
+test('close cancels a ready build at the final manifest publication gate', async (t) => {
+  const reached = deferred();
+  const released = deferred();
+  let armed = false;
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed || operation !== 'open' || !path.includes('/manifest.json.')) return;
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  });
+  const canvas = await board(t, { fs });
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  await canvas.write(designId, null, 'v1');
+  const compile = await canvas.fleet.compile(1);
+  armed = true;
+  compile.ready('artifact-one');
+  await reached.promise;
+  let closed = false;
+  const closing = canvas.builds.close().then(() => {
+    closed = true;
+  });
+  try {
+    await drained();
+    assert.equal(closed, false, 'close still owns the held publication run');
+  } finally {
+    released.resolve();
+    await closing;
+  }
+  assert.equal(
+    reportedStates(canvas, designId).some((build) => build.status === 'ready'),
+    false,
+    'no ready change lands after close begins',
   );
   assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, null);
 });
@@ -871,13 +905,9 @@ test('a design that leaves its canvas mid-build publishes nothing', async (t) =>
   const fleet = new CompilerFleet();
   const deadlines = fakeDeadlines();
   const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
-  t.after(() => builds.close());
-  const files = new CanvasFiles((await storage(t)).root);
-  await files.createRoot();
-  const canvas = standIn(builds);
+  const canvas = await buildHost(t, builds);
   for (const designId of ['one', 'two', 'three'])
     canvas.revisions.set(`cv_01/${designId}`, `rev_${designId}`);
-  await builds.load(canvas.host, files, []);
 
   for (const designId of ['one', 'two', 'three'])
     builds.enqueue('cv_01', designId, `rev_${designId}`);
@@ -896,7 +926,7 @@ test('a design that leaves its canvas mid-build publishes nothing', async (t) =>
     'nothing was published for the design that left',
   );
   assert.deepEqual(builds.stateOf('cv_01', 'one'), { status: 'pending', generation: 0 });
-  assert.deepEqual([...(await files.listBuildOutputs('cv_01'))], []);
+  assert.deepEqual([...(await canvas.files.listBuildOutputs('cv_01'))], []);
   assert.equal(deadlines.live(), 2, 'the orphaned build released its slot and its deadline');
 });
 
@@ -904,13 +934,9 @@ test('one design ID on two canvases keeps two build states', async (t) => {
   const fleet = new CompilerFleet();
   const deadlines = fakeDeadlines();
   const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
-  t.after(() => builds.close());
-  const files = new CanvasFiles((await storage(t)).root);
-  await files.createRoot();
-  const canvas = standIn(builds);
+  const canvas = await buildHost(t, builds);
   canvas.revisions.set('cv_01/dsg_hey', 'rev_01');
   canvas.revisions.set('cv_02/dsg_hey', 'rev_02');
-  await builds.load(canvas.host, files, []);
 
   builds.enqueue('cv_01', 'dsg_hey', 'rev_01');
   builds.enqueue('cv_02', 'dsg_hey', 'rev_02');
@@ -927,9 +953,12 @@ test('one design ID on two canvases keeps two build states', async (t) => {
     generation: 1,
   });
   assert.equal(builds.stateOf('cv_02', 'dsg_hey').status, 'failed');
-  assert.deepEqual([...(await files.listBuildOutputs('cv_01'))].sort(), [
+  assert.deepEqual([...(await canvas.files.listBuildOutputs('cv_01'))].sort(), [
     'artifact-one.html',
     'rev_01.json',
   ]);
-  assert.match((await files.readBuildOutput('cv_02', 'rev_02.json')) ?? '', /"status":"failed"/);
+  assert.match(
+    (await canvas.files.readBuildOutput('cv_02', 'rev_02.json')) ?? '',
+    /"status":"failed"/,
+  );
 });

@@ -5,7 +5,8 @@
 // nothing published. `canvasHeads.ts` owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
-import type { BuildCommit, BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
+import type { CanvasBuilds } from './CanvasBuilds.js';
+import type { BuildCommit, BuildTarget } from './canvasBuildHost.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
@@ -384,15 +385,22 @@ export class CanvasWorkspace {
           if (committed.workingRevisionId !== null)
             target.lastWorkingRevisionId = committed.workingRevisionId;
           next.sequence += 1;
-          await this.heads.install(next, this.openGate());
+          await this.heads.install(next, () => {
+            this.commits.requireOpen();
+            if (!committed.isCurrent())
+              throw canvasError('scope_expired', 'That Canvas build is no longer wanted.');
+          });
           return { value: undefined, change: canvasChange(next, [target], this.builds) };
         }),
       )
       .catch((error: unknown) => {
-        // A workspace that closed under this build has nothing left to publish
-        // to. Anything else leaves the frame's state in memory, where the pane
-        // reads it on its next snapshot; nothing canonical was saved here.
-        if (error instanceof CanvasCommandError && error.message === CLOSING) return;
+        // Closing or a superseded build cancels publication. Other failures
+        // leave derived memory state for the pane's next snapshot.
+        if (
+          error instanceof CanvasCommandError &&
+          (error.message === CLOSING || error.code === 'scope_expired')
+        )
+          return;
         console.error(`A Canvas ${canvasId} build state was not published:`, error);
       });
   }

@@ -17,6 +17,7 @@ import {
   type BuildOutcome,
 } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
+import type { BuildCommit, BuildTarget, CanvasBuildHost } from './canvasBuildHost.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CompiledDesign, CompileInput } from './compiler.js';
@@ -28,44 +29,12 @@ import type {
   CanvasSnapshot,
   DesignSystemRef,
   PreviewArtifact,
-  RevisionRef,
   SourceFiles,
 } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** Starts one build's deadline and returns the call that cancels it. */
 export type BuildDeadline = (onOverdue: () => void) => () => void;
-
-/** What a build pins its result to, as the canvas stands right now. */
-export interface BuildTarget {
-  frame: CanvasFrame;
-  /** The revision this design falls back to, as the manifest records it. */
-  lastWorkingRevisionId: string | null;
-}
-
-/** What a published build asks the manifest to keep. */
-export interface BuildCommit {
-  /** The revision the design now falls back to, or null to keep the current one. */
-  workingRevisionId: string | null;
-}
-
-/** What `CanvasBuilds` needs from the canvas that owns a design. */
-export interface CanvasBuildHost {
-  /** One design's build target, or null once its canvas or frame is gone. */
-  buildTarget(canvasId: string, designId: string): BuildTarget | null;
-  readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles>;
-  /**
-   * Publishes one frame on this canvas's commit queue, the queue a write
-   * commits on, so `publish` runs with the head held still and answers with
-   * what the manifest keeps, or null to publish nothing. It never rejects: a
-   * commit that cannot be made is the workspace's to report.
-   */
-  commitBuild(
-    canvasId: string,
-    designId: string,
-    publish: () => Promise<BuildCommit | null>,
-  ): Promise<void>;
-}
 
 export interface CanvasBuildsDeps {
   /** One slot's compiler, forked on its first build and after one is ended. */
@@ -116,9 +85,6 @@ interface BuildSlot {
 const UNBUILT: ReadonlySet<CanvasBuildState['status']> = new Set(['pending', 'cancelled']);
 /** A document the manifest still vouches for has gone from the derived cache. */
 const LOST_ARTIFACT: ReadonlySet<CanvasBuildState['status']> = new Set(['ready']);
-
-/** A publication with nothing new for the manifest to keep. */
-const announceFrame = (): Promise<BuildCommit> => Promise.resolve({ workingRevisionId: null });
 
 /**
  * The plan's publication predicate: a result belongs to the frame only while
@@ -342,7 +308,12 @@ export class CanvasBuilds {
 
   /** Reports one design's current build state, with nothing to persist. */
   private announce(job: QueuedBuild | RunningBuild): void {
-    void this.owner.host.commitBuild(job.canvasId, job.designId, announceFrame);
+    const publish = (): Promise<BuildCommit> =>
+      Promise.resolve({
+        workingRevisionId: null,
+        isCurrent: () => !this.closed,
+      });
+    void this.owner.host.commitBuild(job.canvasId, job.designId, publish);
   }
 
   private async run(slot: BuildSlot, job: RunningBuild): Promise<void> {
@@ -426,7 +397,10 @@ export class CanvasBuilds {
         job.designId,
         builtState(job.revisionId, result, target.lastWorkingRevisionId),
       );
-      return { workingRevisionId: result.status === 'ready' ? job.revisionId : null };
+      return {
+        workingRevisionId: result.status === 'ready' ? job.revisionId : null,
+        isCurrent: () => !this.closed && slot.job === job,
+      };
     });
   }
 
