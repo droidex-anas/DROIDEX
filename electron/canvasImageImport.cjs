@@ -66,6 +66,9 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     const expectedType = EXTENSIONS[extname(filePath).toLowerCase()];
     if (!expectedType || imageMediaType(bytes) !== expectedType)
       throw invalidImage('Choose a PNG, JPEG or WebP image whose extension matches its contents.');
+    const declared = imageDimensions(bytes, expectedType);
+    if (!declared) throw invalidImage('Choose a valid PNG, JPEG or WebP image.');
+    assertImageDimensions(declared.width, declared.height);
 
     let width;
     let height;
@@ -74,15 +77,13 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
         const { createCanvas, loadImage } = require('@napi-rs/canvas');
         const decoded = await loadImage(bytes);
         ({ width, height } = decoded);
-        if (width < 1 || height < 1 || width > 8192 || height > 8192)
-          throw invalidImage('Choose an image at most 8192 pixels per side.');
+        assertImageDimensions(width, height);
         createCanvas(1, 1).getContext('2d').drawImage(decoded, 0, 0, 1, 1);
       } else {
         const decoded = nativeImage.createFromBuffer(bytes);
         if (decoded.isEmpty()) throw invalidImage('Choose a valid PNG or JPEG image.');
         ({ width, height } = decoded.getSize());
-        if (width < 1 || height < 1 || width > 8192 || height > 8192)
-          throw invalidImage('Choose an image at most 8192 pixels per side.');
+        assertImageDimensions(width, height);
         // Force pixel decode, so a plausible header with a broken body is refused.
         if (decoded.toBitmap().length !== width * height * 4)
           throw invalidImage('The selected image could not be decoded.');
@@ -129,6 +130,80 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     }
     return answer;
   };
+}
+
+function assertImageDimensions(width, height) {
+  if (width < 1 || height < 1 || width > 8192 || height > 8192)
+    throw invalidImage('Choose an image at most 8192 pixels per side.');
+}
+
+function imageDimensions(bytes, mediaType) {
+  if (mediaType === 'image/png') {
+    if (
+      bytes.length < 33 ||
+      bytes.readUInt32BE(8) !== 13 ||
+      bytes.toString('ascii', 12, 16) !== 'IHDR'
+    )
+      return null;
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  if (mediaType === 'image/jpeg') return jpegDimensions(bytes);
+  return webpDimensions(bytes);
+}
+
+function jpegDimensions(bytes) {
+  let offset = 2;
+  while (offset + 4 <= bytes.length) {
+    if (bytes[offset++] !== 0xff) return null;
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset++];
+    if (marker === 0xda || marker === 0xd9) return null;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > bytes.length) return null;
+    const length = bytes.readUInt16BE(offset);
+    if (length < 2 || offset + length > bytes.length) return null;
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      if (length < 8) return null;
+      return {
+        width: bytes.readUInt16BE(offset + 5),
+        height: bytes.readUInt16BE(offset + 3),
+      };
+    }
+    offset += length;
+  }
+  return null;
+}
+
+function webpDimensions(bytes) {
+  const end = bytes.readUInt32LE(4) + 8;
+  if (end > bytes.length) return null;
+  let offset = 12;
+  while (offset + 8 <= end) {
+    const chunk = bytes.toString('ascii', offset, offset + 4);
+    const length = bytes.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (body + length > end) return null;
+    if (chunk === 'VP8X' && length >= 10)
+      return {
+        width: bytes.readUIntLE(body + 4, 3) + 1,
+        height: bytes.readUIntLE(body + 7, 3) + 1,
+      };
+    if (chunk === 'VP8L' && length >= 5 && bytes[body] === 0x2f) {
+      const dimensions = bytes.readUInt32LE(body + 1);
+      return { width: (dimensions & 0x3fff) + 1, height: ((dimensions >>> 14) & 0x3fff) + 1 };
+    }
+    if (
+      chunk === 'VP8 ' &&
+      length >= 10 &&
+      bytes.subarray(body + 3, body + 6).equals(Buffer.from('9d012a', 'hex'))
+    )
+      return {
+        width: bytes.readUInt16LE(body + 6) & 0x3fff,
+        height: bytes.readUInt16LE(body + 8) & 0x3fff,
+      };
+    offset = body + length + (length % 2);
+  }
+  return null;
 }
 
 async function canvasImageImportResult(importImage, canvasId, filePath) {
