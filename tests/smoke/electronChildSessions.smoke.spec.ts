@@ -4,12 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import {
-  _electron as electron,
-  expect,
-  test,
-  type ElectronApplication,
-} from '@playwright/test';
+import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
 type RecordedCommand = {
   type: string;
