@@ -1669,9 +1669,8 @@ export class SessionManager {
     };
   }
 
-  // Design turns are a single focused task (extra prompts queue), so the model
-  // does not need TodoWrite — it otherwise loops updating the list after it has
-  // already answered. Disable TodoWrite for design turns and restore it for
+  // Design turns do not need TodoWrite: it can loop updating the list after
+  // the model has answered. Disable it for design turns and restore it for
   // normal turns, calling updateSettings only when the policy changes.
   private async applyDesignToolPolicy(liveSession: LiveSession, design: boolean): Promise<boolean> {
     // When the in-memory flag is unset (cold start / page reload) we don't

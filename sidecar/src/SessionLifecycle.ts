@@ -94,6 +94,7 @@ export interface StartedLocalMcpResources {
 }
 export interface SessionPrompt {
   text: string;
+  display: ReturnType<typeof userPromptDisplay>;
   mentions?: ProviderMention[];
   // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
   notice?: string;
@@ -1741,6 +1742,7 @@ function sessionPrompt(
 ): SessionPrompt {
   return {
     text,
+    display: userPromptDisplay(text),
     ...(mentions?.length ? { mentions } : {}),
     ...(steerId ? { steerId } : {}),
     order: ++promptOrder,
@@ -1758,9 +1760,8 @@ function queueSummary(
 ): Pick<SessionSummary, 'queuedSends' | 'pendingSteers'> {
   const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends]
     .sort((a, b) => a.order - b.order)
-    .flatMap(({ steerId, text }) => {
+    .flatMap(({ steerId, display }) => {
       if (!steerId) return [];
-      const display = userPromptDisplay(text);
       return [
         {
           id: steerId,

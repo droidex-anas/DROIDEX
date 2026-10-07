@@ -18,7 +18,6 @@ import {
   type AppState,
   type QueuedPrompt,
 } from '../hooks/useStore';
-import { isDesignModeOpen } from '../hooks/designModeState';
 import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
@@ -67,6 +66,7 @@ import {
   restartDesignMarkNumbers,
   setDesignMarks,
   useDesignMarks,
+  useQuickPromptMarkIds,
   withDesignShots,
 } from './browser/designMarks';
 import { DesignMarkChip } from './composer/DesignMarkChip';
@@ -169,7 +169,7 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo } from '../types/bridge';
+import type { Autonomy, DesignReference, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import {
   promptWithSideChatReplies,
@@ -308,11 +308,6 @@ export default function PromptInput({
             effectiveProvider(current.draftProvider, current.providerStatuses)
         ],
       childSessions: appSessionId ? current.childSessions[appSessionId] : undefined,
-      // With the prompt box on, design mode's picks are asked about beside
-      // them on the page, not here.
-      designPicksInPromptBox:
-        current.designSelectionBehavior === 'prompt-box' &&
-        isDesignModeOpen(current.designModes, appSessionId ?? undefined),
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
@@ -446,10 +441,10 @@ export default function PromptInput({
     fileAttachments.files.length > 0;
   // Marks picked in this chat's browser, which go out with the next prompt.
   // Their chips lead the row, so Backspace takes them last. Picks made into the
-  // prompt box show as chips once design mode ends.
-  const designMarks = useDesignMarks(
-    state.designPicksInPromptBox ? undefined : state.activeSession?.appSessionId,
-  );
+  // prompt box show as chips once that box closes.
+  const stagedMarks = useDesignMarks(state.activeSession?.appSessionId);
+  const quickPromptMarkIds = useQuickPromptMarkIds(state.activeSession?.appSessionId);
+  const designMarks = stagedMarks.filter((mark) => !quickPromptMarkIds.includes(mark.id));
   const hasChips = hasSelection || hasAttachmentChips || designMarks.length > 0;
 
   const removeLastChip = () => {
@@ -503,7 +498,11 @@ export default function PromptInput({
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
   // The draft a seed that goes out at once makes, sent in its mode once it is the draft.
-  const seedToSend = useRef<{ text: string; mode: SubmitMode } | null>(null);
+  const seedToSend = useRef<{
+    text: string;
+    mode: SubmitMode;
+    designReferences?: readonly DesignReference[];
+  } | null>(null);
   // A seed that came while a submit was going out, or a seed was about to be
   // sent, waits for it to settle, so it is not added to that prompt's text.
   // The count moves as it settles.
@@ -1019,8 +1018,18 @@ export default function PromptInput({
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
     setInput(text);
+    if (composerSeed.designReferences && composerSeed.appSessionId) {
+      const references = new Map(
+        [...composerSeed.designReferences, ...stagedDesignMarks(composerSeed.appSessionId)].map(
+          (mark) => [mark.id, mark],
+        ),
+      );
+      setDesignMarks(composerSeed.appSessionId, [...references.values()]);
+    }
     if (composerSeed.focus) pendingCaret.current = text.length;
-    seedToSend.current = composerSeed.send ? { text, mode: composerSeed.send } : null;
+    seedToSend.current = composerSeed.send
+      ? { text, mode: composerSeed.send, designReferences: composerSeed.designReferences }
+      : null;
     setVisualizeSelected(false);
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
@@ -1207,13 +1216,17 @@ export default function PromptInput({
 
   // Re-entry guard: submit still awaits in-flight image encodes before the
   // input is cleared, so a second Enter during that window would resend.
-  const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
+  const handleSubmit = async (
+    mode: SubmitMode = 'queue',
+    autonomyOverride?: Autonomy,
+    designReferences?: readonly DesignReference[],
+  ) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
     // Only a send without a chat creates one, so only it needs a place held.
     const originHoldId = activeSession ? null : holdComposeOrigin();
     try {
-      await runSubmit(originHoldId, mode, autonomyOverride);
+      await runSubmit(originHoldId, mode, autonomyOverride, designReferences);
     } finally {
       if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
       settleSubmit();
@@ -1227,7 +1240,7 @@ export default function PromptInput({
     const seed = seedToSend.current;
     if (seed?.text !== input || targetChildSessionId) return;
     seedToSend.current = null;
-    void handleSubmit(seed.mode);
+    void handleSubmit(seed.mode, undefined, seed.designReferences);
   });
 
   // The chat a send creates opens in the place it was sent from, even if the
@@ -1328,6 +1341,7 @@ export default function PromptInput({
     originHoldId: string | null,
     mode: SubmitMode,
     autonomyOverride?: Autonomy,
+    designReferences?: readonly DesignReference[],
   ) => {
     const text = input.trim();
     // The app's own commands run at once, before any attachment settles, and
@@ -1375,7 +1389,9 @@ export default function PromptInput({
     // picked while it settles is the next prompt's. Crops still being taken of
     // them are waited for with the attachments.
     const marksPromise = withDesignShots(
-      activeSession && !targetChildSessionId ? stagedDesignMarks(activeSession.appSessionId) : [],
+      activeSession && !targetChildSessionId
+        ? (designReferences ?? stagedDesignMarks(activeSession.appSessionId))
+        : [],
     );
     const [readyImages, readyFiles, marks] = await Promise.all([
       readyImagesPromise,
@@ -1648,12 +1664,27 @@ export default function PromptInput({
       // Only the marks this prompt carries go; one picked while it settles stays.
       const sent = new Set(marks.map((mark) => mark.id));
       const clearDesign = () => {
+        const draftKept = composerRevisionRef.current !== composerRevision;
         clearAfterSubmit();
         setDesignMarks(
           appSessionId,
           stagedDesignMarks(appSessionId).filter((mark) => !sent.has(mark.id)),
         );
         dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
+        // Numbering starts again once no queued prompt or edited draft can say @N.
+        if (!draftKept && !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design))
+          restartDesignMarkNumbers(appSessionId);
+      };
+      const sendDesignCommand = () => {
+        sendDesignPrompt(
+          appSessionId,
+          composed,
+          design.references,
+          responseFormat,
+          mentions,
+          steerId,
+        );
+        armTurnStartingTimeout();
       };
       if (isLive && !steerId) {
         dispatch({
@@ -1675,45 +1706,41 @@ export default function PromptInput({
         return;
       }
       if (!isLive) startTurnStarting();
+      if (steerId) {
+        // Pending steers have no local transcript echo to recover from, so
+        // keep the draft and marks until the command has actually gone out.
+        try {
+          if (workingDirectory) await markGitTurnStart(workingDirectory, appSessionId);
+          if (updateInterruptedSubmit()) return;
+          sendDesignCommand();
+          if (sideChatReplies.length > 0) detachSideChatReplies();
+          clearDesign();
+        } catch (err) {
+          stopTurnStarting();
+          console.error('[PromptInput] sendDesignPrompt failed:', err);
+        }
+        return;
+      }
       const committed = await commitPrimaryPromptAfterBaseline({
         waitForBaseline: () =>
           workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
         canCommit: () => !updateInterruptedSubmit(),
         appendTranscript: () => {
-          if (!steerId)
-            dispatch({
-              type: 'SESSION_TRANSCRIPT',
-              event: createLocalDesignTranscriptEvent(
-                appSessionId,
-                displayText,
-                browserTranscriptReferencesFromDesignReferences(design.references),
-                { skills: skillNames, files: allFiles, sideChatReplies },
-              ),
-            });
+          dispatch({
+            type: 'SESSION_TRANSCRIPT',
+            event: createLocalDesignTranscriptEvent(
+              appSessionId,
+              displayText,
+              browserTranscriptReferencesFromDesignReferences(design.references),
+              { skills: skillNames, files: allFiles, sideChatReplies },
+            ),
+          });
           if (sideChatReplies.length > 0) detachSideChatReplies();
         },
-        resetComposer: () => {
-          const draftKept = composerRevisionRef.current !== composerRevision;
-          clearDesign();
-          // Numbering starts again once nothing can still say @N: no queued
-          // prompt, and no draft the user went on writing while this one settled.
-          if (
-            !draftKept &&
-            !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design)
-          )
-            restartDesignMarkNumbers(appSessionId);
-        },
+        resetComposer: clearDesign,
         sendCommand: () => {
           try {
-            sendDesignPrompt(
-              appSessionId,
-              composed,
-              design.references,
-              responseFormat,
-              mentions,
-              steerId,
-            );
-            armTurnStartingTimeout();
+            sendDesignCommand();
           } catch (err) {
             stopTurnStarting();
             console.error('[PromptInput] sendDesignPrompt failed:', err);

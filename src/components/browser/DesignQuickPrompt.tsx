@@ -7,6 +7,7 @@ import type { BrowserBox, DesignReference } from '../../types/bridge';
 import { CompactComposer } from '../composer/CompactComposer';
 import type { Size } from './browserGeometry';
 import { useElementSize } from './useElementSize';
+import { setQuickPromptMarkIds } from './designMarks';
 
 // A small prompt box by the mark just picked, so the change can be asked for
 // right there. It sends through the composer, as the composer's own prompt
@@ -55,6 +56,9 @@ export function useDesignQuickPrompt({
   const [prompt, setPrompt] = useState<QuickPrompt | null>(null);
   const promptRef = useRef(prompt);
   promptRef.current = prompt;
+  // Keep the box's snapshots even if closing the browser drops its staged marks.
+  const referencesRef = useRef(marks);
+  if (browserSessionId) referencesRef.current = marks;
   const drawingRef = useRef(drawing);
   drawingRef.current = drawing;
   // The sketch being drawn gets the box once drawing stops, not on every stroke.
@@ -81,7 +85,13 @@ export function useDesignQuickPrompt({
     promptRef.current = null;
     setPrompt(null);
     if (current && text) {
-      dispatch({ type: 'SEED_COMPOSER', appSessionId: current.appSessionId, text, focus: false });
+      dispatch({
+        type: 'SEED_COMPOSER',
+        appSessionId: current.appSessionId,
+        text,
+        designReferences: referencesRef.current,
+        focus: false,
+      });
     }
   }, [dispatch]);
 
@@ -101,6 +111,7 @@ export function useDesignQuickPrompt({
         text,
         send: submitModeForEnter(liveEnterBehavior, withCommand),
         focus: false,
+        designReferences: referencesRef.current,
       });
     },
     [dispatch, liveEnterBehavior],
@@ -153,6 +164,17 @@ export function useDesignQuickPrompt({
   useEffect(() => {
     if (stale) close();
   }, [close, stale]);
+
+  useEffect(() => {
+    if (!prompt || stale) return;
+    setQuickPromptMarkIds(
+      prompt.appSessionId,
+      marks.map((mark) => mark.id),
+    );
+    return () => {
+      setQuickPromptMarkIds(prompt.appSessionId, []);
+    };
+  }, [prompt, stale, marks]);
 
   return { prompt: stale ? null : prompt, number, setText, close, send };
 }

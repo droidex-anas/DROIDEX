@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { activeDraftTileId } from '../features/tabs/tabNavigation';
-import type { SessionSummary } from '../types/bridge';
+import type { DesignReference, SessionSummary } from '../types/bridge';
 import { initialState, reducer, type Action, type AppState } from './useStore';
 
 const seedsFor = (state: AppState, appSessionId: string | null) =>
@@ -31,14 +31,30 @@ test('a composer seed records its intent and clears once consumed', () => {
 
   // The browser's prompt box sends its seed at once, in the mode it chose, and
   // leaves the focus alone.
+  const references: DesignReference[] = [
+    {
+      id: 'heading-pick',
+      anchor: {
+        id: 'heading',
+        kind: 'element',
+        label: 'Heading',
+        box: { x: 0, y: 0, width: 200, height: 48 },
+      },
+      url: 'https://example.test',
+    },
+  ];
   const sending = reducer(initialState, {
     type: 'SEED_COMPOSER',
+    appSessionId: 'owner',
     text: 'make this bolder',
     send: 'steer',
     focus: false,
+    designReferences: references,
   });
   assert.equal(sending.composerSeeds[0]?.send, 'steer');
   assert.equal(sending.composerSeeds[0]?.focus, false);
+  const closed = reducer(sending, { type: 'BROWSER_CLOSED', appSessionId: 'owner' });
+  assert.deepEqual(closed.composerSeeds[0]?.designReferences, references);
 });
 
 test('each seed is bound to its chat as it arrives and waits there in order', () => {

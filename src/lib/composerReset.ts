@@ -1,3 +1,5 @@
+import type { DesignReference } from '../types/bridge';
+
 // The composer consumes a seed once by comparing ids, so two seeds created in
 // the same millisecond must still differ: the id is a monotonic sequence rather
 // than a timestamp.
@@ -27,15 +29,26 @@ export function createComposerSeed(
     draftTileId = null,
     send = null,
     focus = true,
+    designReferences,
   }: {
     appSessionId?: string | null;
     draftTileId?: string | null;
     send?: SubmitMode | null;
     focus?: boolean;
+    designReferences?: readonly DesignReference[];
   } = {},
 ) {
   seedSequence += 1;
-  return { text, id: seedSequence, replace, appSessionId, draftTileId, send, focus };
+  return {
+    text,
+    id: seedSequence,
+    replace,
+    appSessionId,
+    draftTileId,
+    send,
+    focus,
+    designReferences,
+  };
 }
 
 /**

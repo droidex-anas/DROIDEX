@@ -26,6 +26,7 @@ import {
   type SessionLifecycleDependencies,
 } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
+import { userPromptDisplay } from './sessionTranscriptParser.js';
 import {
   FakeFactoryRuntime,
   FakeFactorySession,
@@ -964,7 +965,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = [{ text: 'drop', order: 0 }];
+  live.pendingSends = [{ text: 'drop', display: userPromptDisplay('drop'), order: 0 }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1362,7 +1363,13 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = [{ text: 'preserve unless user closes', order: 0 }];
+  live.pendingSends = [
+    {
+      text: 'preserve unless user closes',
+      display: userPromptDisplay('preserve unless user closes'),
+      order: 0,
+    },
+  ];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1536,7 +1543,11 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.pendingSends.push({ text: 'user prompt', order: 0 });
+  live.pendingSends.push({
+    text: 'user prompt',
+    display: userPromptDisplay('user prompt'),
+    order: 0,
+  });
   await busy();
   assert.deepEqual(
     live.pendingSends.map((pending) => pending.text),
