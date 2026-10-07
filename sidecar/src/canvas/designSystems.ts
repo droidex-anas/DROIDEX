@@ -159,6 +159,11 @@ export async function saveDesignSystem(
     if (!options.mutationId || !(await sameSavedMutation(path, options.mutationId, kit)))
       throw error;
   }
+  try {
+    await flushAncestors(dirname(path));
+  } catch (error) {
+    throw storageFailure(SAVE_RECOVERY, error);
+  }
   // A reference also names a mode; a saved kit has both, so the light one is
   // the selection a caller gets back until the user picks otherwise.
   return { id: kit.id, version: kit.version, mode: 'light' };
@@ -247,7 +252,6 @@ async function writeVersion(
     beforePublish();
     await link(temporary, path);
     await unlink(temporary);
-    await flushAncestors(directory);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
     if (isExisting(error)) throw canvasError('invalid_input', IMMUTABLE_MESSAGE);
