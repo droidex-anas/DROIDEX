@@ -319,6 +319,7 @@ export class CanvasWorkspace {
   async readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles> {
     this.design(this.canvas(canvasId), ref.designId);
     const tree = await this.files.readRevision(canvasId, ref);
+    this.design(this.canvas(canvasId), ref.designId);
     // A null-prototype tree, so a source path can never reach an inherited
     // member even if the path rules change.
     const files = Object.create(null) as SourceFiles;

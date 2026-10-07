@@ -3,7 +3,12 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { CompilerFleet, fakeDeadlines } from '../testing/canvasBuildSupport.js';
-import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
+import {
+  canvasRoot,
+  deferred,
+  observedFileSystem,
+  quietBuilds,
+} from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from './CanvasWorkspace.js';
@@ -93,6 +98,38 @@ test('remove and retry publish once; Undo restores source, name and location', a
   await assert.rejects(workspace.undoRemoval(scope, 'undo-again', removed.undoId), {
     code: 'invalid_input',
   });
+});
+
+test('a source read pending across frame removal rejects with the Undo hint', async (t) => {
+  const reached = deferred();
+  const released = deferred();
+  let armed = false;
+  const fs = observedFileSystem(async (operation, path) => {
+    if (armed && operation === 'open' && path.endsWith('/files/main.tsx')) {
+      reached.resolve();
+      await released.promise;
+    }
+  });
+  const { workspace, builds, canvasId, scope } = await opened(t, quietBuilds(), fs);
+  const original = await frame(workspace, scope, 'create-hey');
+  const written = await workspace.write(scope, {
+    mutationId: 'write-hey',
+    designId: original.designId,
+    expectedRevisionId: null,
+    files: { 'main.tsx': SOURCE },
+    deletedPaths: [],
+  });
+  await builds.close();
+  armed = true;
+  const reading = workspace.readFiles(canvasId, written);
+  try {
+    await reached.promise;
+    await workspace.removeFrames(scope, 'remove-hey', [original.designId]);
+    assert.deepEqual(workspace.snapshot(canvasId).frames, []);
+  } finally {
+    released.resolve();
+  }
+  await assert.rejects(reading, { code: 'not_found', message: /Undo/ });
 });
 
 test('Undo survives closing and reopening the workspace', async (t) => {
