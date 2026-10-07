@@ -12,6 +12,13 @@ export interface DesignSystemRef {
   mode: 'light' | 'dark';
 }
 
+export interface CreateCanvasResult {
+  /** The canvas this mutation originally created, unchanged by a replay. */
+  canvasId: string;
+  /** The chat's attachment when this request settled; only this updates its cache. */
+  attachedCanvasId: string | null;
+}
+
 export interface DesignRef {
   designId: string;
   revisionId: string | null;
@@ -197,6 +204,7 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
+  | 'unknown_chat'
   | 'storage_failed'
   | 'stale_revision'
   | 'stale_reference'
@@ -237,7 +245,7 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
-  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
+  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string; mutationId: string }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
   | {
@@ -274,6 +282,7 @@ export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
   | { kind: 'attachment'; canvasId: string | null }
+  | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }

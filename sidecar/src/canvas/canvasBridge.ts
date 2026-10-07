@@ -62,7 +62,14 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
       revisionId: canvasIdentifierSchema,
     })
     .strict(),
-  z.object({ type: z.literal('canvas.createCanvas'), ...request, ...session }).strict(),
+  z
+    .object({
+      type: z.literal('canvas.createCanvas'),
+      ...request,
+      ...session,
+      mutationId: canvasIdentifierSchema,
+    })
+    .strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
   z.object({ type: z.literal('canvas.detach'), ...request, ...session }).strict(),
   z
@@ -252,8 +259,12 @@ class CanvasDispatch {
       case 'canvas.createCanvas': {
         // Explicit Create in the pane: the canvas and the chat's attachment in
         // one commit, with no lease behind it (spec §6).
-        const snapshot = await workspace.createCanvas(command.appSessionId);
-        return { kind: 'attachment', canvasId: snapshot.canvasId };
+        const created = await workspace.createCanvas(command.appSessionId, command.mutationId);
+        return {
+          kind: 'canvasCreated',
+          canvasId: created.canvasId,
+          attachedCanvasId: workspace.attachedCanvasId(command.appSessionId),
+        };
       }
       case 'canvas.attach':
         await workspace.attach(command.appSessionId, command.canvasId);
@@ -362,6 +373,12 @@ export function createCanvasCommandHandler(
         }),
       );
       return true;
+    }
+    // The durable mutation deduplicates Create; a settled request's attachment
+    // is not a receipt and must be read again on replay.
+    if (entry?.done && command.type === 'canvas.createCanvas') {
+      requests.delete(command.requestId);
+      entry = undefined;
     }
     if (!entry) {
       for (const [key, pending] of requests) {

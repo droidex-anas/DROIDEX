@@ -6,6 +6,7 @@
 import type {
   ArrangeFramesInput,
   CanvasTurnContext,
+  CreateCanvasResult,
   CreateFramesInput,
   DesignSystemRef,
   EditElementInput,
@@ -18,6 +19,7 @@ import type {
 export type {
   ArrangeFramesInput,
   CanvasTurnContext,
+  CreateCanvasResult,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
@@ -170,6 +172,7 @@ export type CanvasErrorCode =
   | 'build_timeout'
   | 'capture_unavailable'
   | 'scope_expired'
+  | 'unknown_chat'
   | 'storage_failed'
   | 'stale_revision'
   | 'stale_reference'
@@ -212,7 +215,7 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
-  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
+  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string; mutationId: string }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
   | {
@@ -249,6 +252,7 @@ export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
   | { kind: 'attachment'; canvasId: string | null }
+  | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }

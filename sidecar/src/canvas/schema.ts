@@ -294,6 +294,13 @@ export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
 export type DesignRef = z.infer<typeof designRefSchema>;
 export type ElementRef = z.infer<typeof elementRefSchema>;
 export type CanvasTurnContext = z.infer<typeof canvasTurnContextSchema>;
+
+export interface CreateCanvasResult {
+  /** The canvas this mutation originally created, unchanged by a replay. */
+  canvasId: string;
+  /** The chat's attachment when this request settled; only this updates its cache. */
+  attachedCanvasId: string | null;
+}
 export type RevisionRef = z.infer<typeof revisionRefSchema>;
 export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;

@@ -39,6 +39,10 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../components/agents/AgentsWorkspace');
     return { default: module.AgentsWorkspace };
   },
+  canvas: async () => {
+    const module = await import('../features/canvas/CanvasWorkspace');
+    return { default: module.CanvasWorkspace };
+  },
   threads: async () => {
     const module = await import('../features/projects/ThreadsWorkspace');
     return { default: module.ThreadsWorkspace };
@@ -72,6 +76,7 @@ export const LazyBrowserFocusWorkspace = lazy(LAZY_SURFACE_LOADERS.browser);
 export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
+export const LazyCanvasWorkspace = lazy(LAZY_SURFACE_LOADERS.canvas);
 export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
 export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
 export const LazySideChatsWorkspace = lazy(LAZY_SURFACE_LOADERS.sideChats);
@@ -87,6 +92,8 @@ export function utilityToolFallback(tool: UtilityTool) {
       return <UtilityPaneSkeleton />;
     case 'files':
       return <PanelSkeleton title="files" />;
+    case 'canvas':
+      return <PanelSkeleton title="canvas" />;
     case 'agents':
     case 'threads':
     case 'side':
