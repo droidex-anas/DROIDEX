@@ -155,9 +155,8 @@ export function PreviewGuestFrame({
     const thumbnailCapture = new AbortController();
     let thumbnailTimer: ReturnType<typeof setTimeout> | null = null;
     const updateCapture = () => {
-      const bounds = guest.getBoundingClientRect();
-      const width = Math.round(bounds.width);
-      const height = Math.round(bounds.height);
+      const width = guest.offsetWidth;
+      const height = guest.offsetHeight;
       const scaleFactor = window.devicePixelRatio;
       const size = `${String(width)}:${String(height)}:${String(scaleFactor)}`;
       if (captureSize === size) return;

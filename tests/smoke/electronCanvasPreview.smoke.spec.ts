@@ -24,6 +24,7 @@ import {
   guestUrl,
   inspectGuest,
   mountPreviewGuest,
+  mountZoomedPreview,
 } from './canvasPreviewHost';
 import {
   bounded,
@@ -398,6 +399,61 @@ test('a transparent design keeps its alpha in the captured PNG', async () => {
     );
     assert.equal(alpha.outside, 0);
     assert.ok(alpha.inside > 0 && alpha.inside < 255);
+  });
+});
+
+test('a scale(0.5) board preview captures the full layout viewport and far edge', async () => {
+  const design = await compileDesign({
+    'main.tsx': `export default () => <div style={{ display: 'flex', width: 720, height: 720 }}>
+      <div style={{ width: 360, background: 'red' }} />
+      <div style={{ width: 360, background: 'blue' }} />
+    </div>;`,
+  });
+  await withCanvasHost(async (app, page) => {
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setContentSize(900, 900),
+    );
+    await mountZoomedPreview(page, design.html);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() =>
+            window.droidControl?.canvasThumbnailRead('cv_zoom', 'dsg_zoom', 'rev_zoom'),
+          ),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .not.toBeNull();
+    const probe = await page.evaluate(async () => {
+      const capture = Reflect.get(window, '__canvasZoomCapture') as () => Promise<{
+        bytes: Uint8Array;
+      }>;
+      const image = await capture();
+      const bitmap = await createImageBitmap(new Blob([image.bytes], { type: 'image/png' }));
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Missing image decoder');
+      context.drawImage(bitmap, 0, 0);
+      const guest = document.querySelector<HTMLElement>('#canvas-zoom-probe webview');
+      if (!guest) throw new Error('Missing zoomed guest');
+      return {
+        layoutWidth: guest.offsetWidth,
+        layoutHeight: guest.offsetHeight,
+        displayedWidth: guest.getBoundingClientRect().width,
+        pngWidth: bitmap.width,
+        pngHeight: bitmap.height,
+        scaleFactor: window.devicePixelRatio,
+        rightPixel: [...context.getImageData(bitmap.width - 1, 10, 1, 1).data],
+      };
+    });
+    console.log(`ZOOM_PROBE ${JSON.stringify(probe)}`);
+    assert.equal(probe.displayedWidth, 360);
+    assert.equal(probe.layoutWidth, 720);
+    assert.equal(probe.layoutHeight, 720);
+    assert.equal(probe.pngWidth, 720 * probe.scaleFactor);
+    assert.equal(probe.pngHeight, 720 * probe.scaleFactor);
+    assert.deepEqual(probe.rightPixel, [0, 0, 255, 255]);
   });
 });
 
