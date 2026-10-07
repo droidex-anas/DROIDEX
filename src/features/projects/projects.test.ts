@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { adaptEvent, initialState, reducer, type AppState } from '../../hooks/useStore';
-import { serverWireMessage } from '../../lib/bridgeWireValidation';
+import { isServerEvent } from '../../lib/bridgeWireValidation';
 import type { SessionSummary } from '../../types/bridge';
 import type { ProjectView } from './types';
 import { projectPulse } from './projectBoard';
@@ -21,14 +21,9 @@ const project: ProjectView = {
   queued: 0,
   uncertain: 0,
 };
+// Each event in a batch is validated on its own.
 function wire(event: unknown) {
-  return serverWireMessage({
-    type: 'events.batch',
-    generation: 'test',
-    firstSeq: 1,
-    lastSeq: 1,
-    events: [{ seq: 1, event }],
-  });
+  return isServerEvent(event) ? event : null;
 }
 function session(id: string): SessionSummary {
   return {
