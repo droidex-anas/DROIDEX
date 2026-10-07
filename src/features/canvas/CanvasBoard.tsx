@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { boardPoint } from './boardCoordinates';
+import { boardPoint, boardWheelDelta } from './boardCoordinates';
 import {
   fitFrames,
   interpolateViewport,
@@ -173,10 +173,18 @@ export function CanvasBoard({
       if (scroll.current.suppressed) return;
       stopAnimation();
       const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
+      const delta = boardWheelDelta(root, event);
       view.current.navigated = true;
-      setViewport((current) =>
-        zoomAtPoint(current, pointer, wheelZoomScale(current.scale, event.deltaY, event.ctrlKey)),
-      );
+      setViewport((current) => {
+        if (event.ctrlKey || event.metaKey) {
+          return zoomAtPoint(
+            current,
+            pointer,
+            wheelZoomScale(current.scale, delta.y, event.ctrlKey),
+          );
+        }
+        return { ...current, x: current.x - delta.x, y: current.y - delta.y };
+      });
     };
     root.addEventListener('wheel', onWheel, { passive: false });
     return () => {

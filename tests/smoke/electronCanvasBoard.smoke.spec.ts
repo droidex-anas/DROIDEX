@@ -79,7 +79,13 @@ async function drag(page: Page, name: string, x = 60, y = 40, release = true) {
   if (release) await page.mouse.up();
 }
 
-async function wheel(page: Page, x: number, y: number, deltaY: number) {
+async function wheel(
+  page: Page,
+  x: number,
+  y: number,
+  deltaY: number,
+  options: WheelEventInit = { ctrlKey: true },
+) {
   await page.getByTestId('canvas-board').evaluate(
     (root, point) => {
       root.dispatchEvent(
@@ -87,13 +93,13 @@ async function wheel(page: Page, x: number, y: number, deltaY: number) {
           clientX: point.x,
           clientY: point.y,
           deltaY: point.deltaY,
-          ctrlKey: true,
+          ...point.options,
           bubbles: true,
           cancelable: true,
         }),
       );
     },
-    { x, y, deltaY },
+    { x, y, deltaY, options },
   );
   await page.clock.runFor(32);
 }
@@ -137,7 +143,7 @@ test('Fit suppresses trailing wheel input until quiet, independently of reduced 
     await clickFit(page);
     for (let trailing = 0; trailing < 5; trailing += 1) {
       await page.clock.runFor(48);
-      await wheel(page, 400, 300, 20);
+      await wheel(page, 400, 300, 20, trailing % 2 === 0 ? { deltaX: 15 } : { ctrlKey: true });
     }
     expect(await transform(page)).toBe(fitted);
     await page.clock.runFor(140);
@@ -263,5 +269,42 @@ test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13
     const afterPan = await box(frame(page, 'A'));
     expect(afterPan.x - afterDrag.x).toBeCloseTo(60, 1);
     expect(afterPan.y - afterDrag.y).toBeCloseTo(40, 1);
+    await wheel(page, 400, 300, 40, { deltaX: 60 });
+    const afterWheelPan = await box(frame(page, 'A'));
+    expect(afterWheelPan.x - afterPan.x).toBeCloseTo(-60, 1);
+    expect(afterWheelPan.y - afterPan.y).toBeCloseTo(-40, 1);
   }
+});
+
+test('plain wheel pans in pixel, line and page units; cmd-wheel zoom stays pointer anchored', async ({
+  page,
+}) => {
+  await openBoard(page);
+  let before = await box(frame(page, 'A'));
+  await wheel(page, 400, 300, 40, { deltaX: 60 });
+  let after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-60, 1);
+  expect(after.y - before.y).toBeCloseTo(-40, 1);
+  expect(after.width).toBeCloseTo(before.width, 1);
+  const linePx = await page
+    .getByTestId('canvas-board')
+    .evaluate((root) => parseFloat(getComputedStyle(root).lineHeight));
+  before = after;
+  await wheel(page, 400, 300, 2, { deltaX: 1, deltaMode: 1 });
+  after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-linePx, 1);
+  expect(after.y - before.y).toBeCloseTo(-2 * linePx, 1);
+  before = after;
+  await wheel(page, 400, 300, 0.1, { deltaX: 0.1, deltaMode: 2 });
+  after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-100, 1);
+  expect(after.y - before.y).toBeCloseTo(-80, 1);
+  before = after;
+  await wheel(page, 400, 300, 20, { metaKey: true });
+  after = await box(frame(page, 'A'));
+  const ratio = after.width / before.width;
+  expect(ratio).toBeLessThan(1);
+  expect(after.x).toBeCloseTo(400 + (before.x - 400) * ratio, 1);
+  expect(after.y).toBeCloseTo(300 + (before.y - 300) * ratio, 1);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
