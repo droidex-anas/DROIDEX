@@ -193,13 +193,7 @@ export class CanvasBuildCache {
       if (sourceMapDigest(source, result.elements) !== result.sourceMapDigest) return null;
       for (const element of result.elements) {
         const file = source.get(element.file);
-        if (
-          !file ||
-          element.end > file.length ||
-          !file.startsWith(`<${element.tagName}`, element.start) ||
-          !/[\s/>]/.test(file[element.start + element.tagName.length + 1] ?? '')
-        )
-          return null;
+        if (!file || element.end > file.length) return null;
       }
     }
     return { designId, revisionId, result };

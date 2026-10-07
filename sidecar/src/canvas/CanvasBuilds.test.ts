@@ -57,11 +57,13 @@ function readyState(revisionId: string, artifactId: string, generation: number):
   return { status: 'ready', revisionId, artifactId, elements: [], diagnostics: [], generation };
 }
 
-async function readyElementMap(t: TestContext) {
+async function readyElementMap(
+  t: TestContext,
+  source = 'export default function App(){ return <h1>v1</h1> }',
+) {
   const canvas = await board(t);
   const [designId] = await canvas.create('Hey');
   assert.ok(designId);
-  const source = 'export default function App(){ return <h1>v1</h1> }';
   const receipt = await canvas.write(designId, null, source);
   const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
   (await canvas.fleet.compile(1)).ready('artifact-one', elements);
@@ -356,14 +358,7 @@ test('a failed revision keeps the last working artifact and its revision', async
 });
 
 test('a restart serves a cached artifact and rebuilds one that is gone', async (t) => {
-  const canvas = await board(t);
-  const [designId] = await canvas.create('Hey');
-  assert.ok(designId);
-  const source = 'export default function App(){ return <h1>v1</h1> }';
-  const receipt = await canvas.write(designId, null, source);
-  const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
-  (await canvas.fleet.compile(1)).ready('artifact-one', elements);
-  await canvas.reported(designId, 'ready');
+  const { canvas, designId, receipt, elements } = await readyElementMap(t);
   const published = reportedStates(canvas, designId).find((state) => state.status === 'ready');
   assert.ok(published?.status === 'ready');
   assert.deepEqual(published.elements, elements);
@@ -407,6 +402,24 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
   assert.equal(rebuild.input.revisionId, receipt.revisionId);
   rebuild.ready('artifact-again');
   await recovered.reported(designId, 'ready');
+});
+
+test('valid JSX with an adjacent spread serves its artifact without rebuilding', async (t) => {
+  const { canvas, designId, receipt } = await readyElementMap(
+    t,
+    'export default function App(p){ return <div{...p}>hi</div> }',
+  );
+  await drained();
+  const ready = canvas.frame(designId).build;
+
+  const artifact = await canvas.builds.readArtifact(canvas.canvasId, designId, receipt.revisionId);
+  assert.deepEqual(artifact, {
+    artifactId: 'artifact-one',
+    html: `<html>${receipt.revisionId}</html>`,
+  });
+  await drained();
+  assert.deepEqual(canvas.frame(designId).build, ready);
+  assert.equal(canvas.fleet.held.length, 1, 'reading a valid artifact queued no rebuild');
 });
 
 test('a cached selection range beyond its source forces a rebuild', async (t) => {
