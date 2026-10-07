@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { drain, harness, input } from '../testing/projectServiceHarness.js';
+import {
+  drain,
+  git,
+  gitRepository,
+  harness,
+  input,
+  summary,
+} from '../testing/projectServiceHarness.js';
 import { registerProjectService } from './service.js';
 import { threadTools } from './threadMcpTools.js';
 import type { Project } from './types.js';
@@ -50,14 +57,33 @@ const recovered: Project = {
   ],
 };
 
-test('thread_list returns controlled threads, runtime load and lead to-dos without starting work', async (t) => {
-  const h = await harness(t, [recovered]);
+test('thread_list stays compact for 86 threads and all returns the controlled inventory', async (t) => {
+  const saved = structuredClone(recovered);
+  for (let index = saved.threads.length; index < 86; index += 1)
+    saved.threads.push({
+      appSessionId: `idle-${index}`,
+      ownerAppSessionId: 'lead0000-main',
+      title: `Idle ${index}`,
+      reply: '',
+      waiting: false,
+    });
+  const h = await harness(t, [saved], false);
   registerProjectService(Promise.resolve(h.projects));
-  const list = await call('lead0000-main', 'thread_list');
-  assert.ok(Array.isArray(list.threads));
-  assert.deepEqual(list, {
+  const compact = await call('lead0000-main', 'thread_list');
+  assert.deepEqual(compact, {
     ok: true,
-    threads: recovered.threads.slice(1).map((thread) => ({
+    threads: [],
+    summary: '85 inactive threads; pass all: true to list them',
+    runtimeLoad: { live: 0, limit: 12 },
+    todos: [],
+  });
+  const list = await call('lead0000-main', 'thread_list', { all: true });
+  assert.ok(Array.isArray(list.threads));
+  assert.equal(list.threads.length, 85);
+  assert.equal(list.summary, undefined);
+  assert.deepEqual(
+    list.threads.slice(0, 3),
+    recovered.threads.slice(1).map((thread) => ({
       threadId: thread.appSessionId,
       title: thread.title,
       ownerId: thread.ownerAppSessionId,
@@ -66,10 +92,28 @@ test('thread_list returns controlled threads, runtime load and lead to-dos witho
       lastReply: thread.reply,
       queued: 0,
     })),
-    runtimeLoad: { live: 0, limit: 12 },
-    todos: [],
-  });
-  assert.deepEqual((await call('worker00-alpha', 'thread_list')).threads, [list.threads[2]]);
+  );
+  assert.deepEqual((await call('worker00-alpha', 'thread_list', { all: true })).threads, [
+    list.threads[2],
+  ]);
+  h.sessions.set('worker00-alpha', summary('worker00-alpha'));
+  await h.streaming('worker00-alpha', true);
+  await h.finish('worker00-alpha', `Done.\n\n${'Details '.repeat(30)}`);
+  h.sessions.set('worker00-bravo', { ...summary('worker00-bravo'), streaming: true });
+  h.sessions.set('worker00-child', { ...summary('worker00-child'), phase: 'failed' });
+  const active = await call('lead0000-main', 'thread_list');
+  assert.ok(Array.isArray(active.threads));
+  assert.deepEqual(
+    active.threads.map((thread) => [thread.threadId, thread.state]),
+    [
+      ['worker00-alpha', 'idle'],
+      ['worker00-bravo', 'working'],
+      ['worker00-child', 'failed'],
+    ],
+  );
+  assert.equal(active.threads[0].lastReply.length, 120);
+  assert.doesNotMatch(active.threads[0].lastReply, /\n/);
+  assert.equal(active.summary, '82 inactive threads; pass all: true to list them');
   assert.equal(h.sent.length, 0);
   assert.equal(h.launched.length, 0);
 });
@@ -183,4 +227,81 @@ test('thread_spawn reports a real queued start with its position and a matching-
   assert.equal(waiting.position, 1);
   assert.equal(waiting.waitReason, 'waiting for a free slot · 1st in line (12 running, limit 12)');
   assert.deepEqual(waiting.runtimeLoad, { live: 12, limit: 12 });
+});
+
+test('cancelling a queued spawn removes its thread, plan link and reserved checkout', async (t) => {
+  const repository = await gitRepository(t);
+  const h = await harness(t);
+  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  await h.projects.setPlan('ordinary', [{ title: 'Parser' }]);
+  h.state.capacity = 'busy';
+  const queued = await h.projects.spawn('ordinary', {
+    ...input,
+    title: 'Parser',
+    step: '1',
+    workspace: 'worktree',
+  });
+  assert.equal(queued.delivery, 'queued');
+  assert.ok(queued.branch);
+  registerProjectService(Promise.resolve(h.projects));
+  assert.deepEqual(await call('ordinary', 'thread_stop', { threadId: queued.appSessionId }), {
+    ok: true,
+    threadId: queued.appSessionId,
+    state: 'cancelled',
+  });
+  assert.equal(
+    h.state.saved[0]?.threads.some((thread) => thread.appSessionId === queued.appSessionId),
+    false,
+  );
+  assert.equal(
+    h.projects.list()[0]?.threads.some((thread) => thread.appSessionId === queued.appSessionId),
+    false,
+  );
+  assert.equal(h.state.saved[0]?.plan[0]?.threadAppSessionId, undefined);
+  const sent = await call('ordinary', 'thread_send', {
+    threadId: queued.appSessionId,
+    text: 'Continue',
+  });
+  assert.equal(sent.ok, false);
+  assert.match(String(sent.error), /outside/);
+  assert.equal((await git(repository, ['branch', '--list', queued.branch])).stdout.trim(), '');
+  assert.equal(
+    (await git(repository, ['worktree', 'list', '--porcelain'])).stdout.match(/^worktree /gm)
+      ?.length,
+    1,
+  );
+  assert.equal(h.projects.list()[0]?.paused, false);
+});
+
+test('thread_configure persists queued settings and uses them when capacity opens', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  h.state.capacity = 'busy';
+  const queued = await h.projects.spawn(main, input);
+  registerProjectService(Promise.resolve(h.projects));
+  const tuned = await call(main, 'thread_configure', {
+    threadId: queued.appSessionId,
+    modelId: 'droid-core',
+    reasoningEffort: 'high',
+    autonomy: 'off',
+  });
+  assert.equal(tuned.ok, true);
+  assert.equal(tuned.state, 'queued');
+  assert.equal(tuned.modelId, 'droid-core');
+  assert.equal(tuned.reasoningEffort, 'high');
+  assert.equal(tuned.autonomy, 'off');
+  assert.equal(tuned.pending, undefined);
+  assert.equal(h.state.saved[0]?.threads[1]?.queuedSpawn?.input.autonomy, 'off');
+  const elevated = await call(main, 'thread_configure', {
+    threadId: queued.appSessionId,
+    autonomy: 'high',
+  });
+  assert.equal(elevated.ok, false);
+  assert.match(String(elevated.error), /cannot exceed/);
+  h.state.capacity = 'free';
+  h.projects.capacityChanged();
+  await drain();
+  assert.equal(h.launched.at(-1)?.modelId, 'droid-core');
+  assert.equal(h.launched.at(-1)?.reasoningEffort, 'high');
+  assert.equal(h.launched.at(-1)?.autonomy, 'off');
 });

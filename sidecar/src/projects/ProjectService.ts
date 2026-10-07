@@ -708,6 +708,7 @@ export class ProjectService {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const session = this.sessions.get(target);
+    const selection = thread.queuedSpawn?.input ?? session;
     const kept = thread.reply ? [...(thread.earlierReplies ?? []), thread.reply] : [];
     const wanted = Math.min(Math.max(replies, 1), LEDGER_LIMITS.earlierReplies + 1);
     return {
@@ -726,35 +727,52 @@ export class ProjectService {
         : {}),
       ...(thread.error ? { error: thread.error } : {}),
       ...(thread.ask ? { questionId: thread.ask.requestId, question: thread.ask.questions } : {}),
-      ...(session
+      ...(selection
         ? {
-            cwd: session.cwd,
-            modelId: session.modelId,
-            reasoningEffort: session.reasoningEffort,
-            autonomy: session.autonomy,
+            cwd: selection.cwd,
+            modelId: selection.modelId,
+            reasoningEffort: selection.reasoningEffort,
+            autonomy: selection.autonomy,
           }
         : {}),
     };
   }
 
-  listThreads(source: string) {
+  listThreads(source: string, all = false) {
     this.requireOpen();
     const project = this.requireProjectFor(source);
     const caller = requireThread(project, source);
-    return {
-      threads: scopedThreads(project, source).map((thread) => {
-        const status = this.threadStatus(project, thread);
-        return {
+    let omitted = 0;
+    const threads = scopedThreads(project, source).flatMap((thread) => {
+      const status = this.threadStatus(project, thread);
+      const queued = this.queuedMessages(project, thread.appSessionId);
+      if (
+        !all &&
+        (status.state === 'idle' || status.state === 'stopped') &&
+        !this.hasUndeliveredReport(project, thread.appSessionId) &&
+        !queued
+      ) {
+        omitted += 1;
+        return [];
+      }
+      return [
+        {
           threadId: thread.appSessionId,
           title: thread.title,
           ownerId: thread.ownerAppSessionId,
           state: status.state,
           ...(status.position ? { position: status.position } : {}),
           ...(status.waitReason ? { waitReason: status.waitReason } : {}),
-          lastReply: thread.reply.slice(0, 160),
-          queued: this.queuedMessages(project, thread.appSessionId),
-        };
-      }),
+          lastReply: thread.reply.replace(/\s+/g, ' ').trim().slice(0, 120),
+          queued,
+        },
+      ];
+    });
+    return {
+      threads,
+      ...(omitted
+        ? { summary: `${String(omitted)} inactive threads; pass all: true to list them` }
+        : {}),
       runtimeLoad: this.sessions.runtimeLoad(),
       todos: caller.ownerAppSessionId ? [] : this.openTodos(project),
     };
@@ -929,18 +947,29 @@ export class ProjectService {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     const caller = this.requireSession(source);
-    const session = this.requireSession(target);
+    const thread = requireThread(project, target);
+    const queued = thread.queuedSpawn;
+    const selection = queued?.input ?? this.requireSession(target);
     const modelId = settings.modelId
-      ? resolveModelId(await this.sessions.catalog(), caller, session.provider, settings.modelId)
+      ? resolveModelId(await this.sessions.catalog(), caller, selection.provider, settings.modelId)
       : undefined;
     // A lead can retune a thread its own thread started, and that thread is the
     // ceiling, not the lead.
-    const owner = requireThread(project, target).ownerAppSessionId ?? source;
+    const owner = thread.ownerAppSessionId ?? source;
     if (settings.autonomy) checkWithinAutonomy(this.requireSession(owner), settings.autonomy);
     const model = {
       ...(modelId ? { modelId } : {}),
       ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
     };
+    if (queued) {
+      this.requireOpen();
+      if (thread.queuedSpawn !== queued)
+        throw new Error('The queued thread changed while configuring it. Try again.');
+      Object.assign(queued.input, model);
+      if (settings.autonomy) queued.input.autonomy = settings.autonomy;
+      await this.save();
+      return this.read(source, target);
+    }
     const modelChanged = Object.keys(model).length > 0;
     // Handed over before the autonomy change is awaited, so it applies from the
     // thread's next turn. The thread's own chat reports a change that fails, as
@@ -964,12 +993,12 @@ export class ProjectService {
     };
   }
 
-  async stop(source: string, target: string): Promise<void> {
+  async stop(source: string, target: string): Promise<'stopped' | 'cancelled'> {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     this.wakes.invalidate(project);
     await this.sessions.interrupt(target);
-    await this.quiet(project, target);
+    return this.quiet(project, target);
   }
 
   async setPaused(id: string, paused: boolean, acknowledgeDelivery = false): Promise<void> {
@@ -1182,16 +1211,30 @@ export class ProjectService {
   }
 
   /** Drops what was queued for a stopped thread once admission has settled. */
-  private async quiet(project: Project, target: string): Promise<void> {
+  private async quiet(project: Project, target: string): Promise<'stopped' | 'cancelled'> {
     await this.wakes.settle(project);
     const thread = requireThread(project, target);
     clearAsk(project, thread);
-    delete thread.queuedSpawn;
+    const queued = thread.queuedSpawn;
+    const checkoutOwner = queued?.workspace
+      ? this.requireSession(thread.ownerAppSessionId ?? '')
+      : undefined;
+    if (queued) {
+      delete thread.queuedSpawn;
+      project.threads = project.threads.filter((candidate) => candidate !== thread);
+      this.membership.delete(target);
+      for (const step of project.plan)
+        if (step.threadAppSessionId === target) delete step.threadAppSessionId;
+      for (const todo of project.todos) if (todo.after === target) delete todo.after;
+    }
     project.pending = project.pending.filter((message) => message.to !== target);
     for (const thread of project.threads)
       if (thread.ownerAppSessionId === target) delete thread.owedReport;
     await this.save();
+    if (queued?.workspace && checkoutOwner)
+      await discardThreadCheckout(checkoutOwner.cwd, queued.workspace);
     this.wakes.kick(project);
+    return queued ? 'cancelled' : 'stopped';
   }
 
   /** Starts a lead, or with `spawn` a thread of the chat that asked for it. */

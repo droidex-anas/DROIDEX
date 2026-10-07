@@ -46,7 +46,7 @@ export const LEAD_BRIEF = [
   'Investigate here and decide the work before delegating. Ask the user when scope or priorities are unclear.',
   'Write concrete steps with plan_set and give the project a short goal title. Then use thread_spawn with reportBack true for decided tasks, naming the plan step. Include the full task, context, files and completion criteria; threads cannot see this conversation.',
   "Choose each thread's model, reasoning and autonomy for its task. DROIDEX uses a separate worktree when another thread is working in the checkout; workspace overrides that choice.",
-  'After compaction or restart, use thread_list to recover ids, states, queue positions, wait reasons, runtime load and open to-dos. Thread tools accept full ids or unique prefixes of at least 8 characters within your control scope.',
+  'After compaction or restart, use thread_list to recover active threads and unseen reports, ids, states, queue positions, wait reasons, runtime load and open to-dos. Inactive threads are counted; pass all: true for the full list. Thread tools accept full ids or unique prefixes of at least 8 characters within your control scope.',
   'A queued spawn has not started. Wait for its reports instead of spawning it again. Use thread_send to continue an existing thread; sending to a queued spawn adds work after its initial task.',
   'Reports may arrive during your turn. Handle them as they arrive; end your turn when no work remains. Do not poll thread_read.',
   'Keep follow-ups with todo_add. after makes a to-do due when that thread reports; inMinutes schedules a reminder. With both, the first trigger wins. Reminders reach a running lead like reports, otherwise start a lead turn; a held project waits for Resume. Use todo_done when handled.',

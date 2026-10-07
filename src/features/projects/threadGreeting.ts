@@ -5,12 +5,13 @@ import type { ProjectDone } from './types';
 
 // The panel's greeting, which changes through the day; the lines under it have the facts.
 
-type Mood = 'attention' | 'done' | 'working' | 'settled' | 'empty';
+type Mood = 'attention' | 'done' | 'working' | 'waiting' | 'settled' | 'empty';
 
 const LINES: Record<Mood, readonly string[]> = {
   attention: ['Your turn.', 'Someone needs a word.', 'One call to make.', 'A thread is holding.'],
   done: ['Goal reached.', 'All done.', 'Finished.'],
   working: ['Heads down.', 'Work in flight.', 'The team has it.', 'Wheels turning.'],
+  waiting: ['Work is waiting.'],
   settled: ['All quiet.', 'Nothing pending.', 'Bench is clear.', 'Everything landed.'],
   empty: ['No threads yet.', 'Nothing running.', 'An empty bench.'],
 };
@@ -37,6 +38,7 @@ function mood(rows: readonly ThreadRow[], counts: ThreadCounts, done?: ProjectDo
   if (counts.attention > 0) return 'attention';
   if (done) return 'done';
   if (counts.working > 0) return 'working';
+  if (counts.queued > 0 || counts.waiting > 0) return 'waiting';
   return rows.length > 0 ? 'settled' : 'empty';
 }
 

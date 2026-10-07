@@ -225,7 +225,7 @@ export interface SessionLifecycleDependencies {
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
-  private readonly automaticCreates = new Set<string>();
+  private automaticCreates = 0;
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
   // How often each chat was stopped or discarded. A prompt that was accepted
@@ -244,27 +244,31 @@ export class SessionLifecycle {
   // Provisional opens stop counting once registration turns them into live runtimes.
   runtimeLoad(): { live: number; limit: number } {
     const registry = this.dependencies.registry;
-    const opening = [...this.automaticCreates, ...this.resumeOperations.keys()].filter(
-      (id) => !registry.getLive(id),
-    ).length;
-    return { live: registry.liveCount + opening, limit: MAX_SCHEDULED_SESSION_RUNTIMES };
+    const opening = [...this.resumeOperations.keys()].filter((id) => !registry.getLive(id)).length;
+    return {
+      live: registry.liveCount + this.automaticCreates + opening,
+      limit: MAX_SCHEDULED_SESSION_RUNTIMES,
+    };
   }
 
   private canStartAutomaticRuntime(): boolean {
     return this.runtimeLoad().live < MAX_SCHEDULED_SESSION_RUNTIMES;
   }
 
-  async createAutomatic(
-    command: SessionCreateCommand,
-    appSessionId: string = randomUUID(),
-  ): Promise<boolean> {
+  async createAutomatic(command: SessionCreateCommand, appSessionId?: string): Promise<boolean> {
     if (!this.canStartAutomaticRuntime()) return false;
-    this.automaticCreates.add(appSessionId);
+    this.automaticCreates += 1;
+    let reserved = true;
+    const release = () => {
+      if (!reserved) return;
+      reserved = false;
+      this.automaticCreates -= 1;
+    };
     try {
-      await this.create(command, undefined, appSessionId);
+      await this.create(command, undefined, appSessionId, release);
       return true;
     } finally {
-      this.automaticCreates.delete(appSessionId);
+      release();
       this.dependencies.onScheduledCapacityChanged?.();
     }
   }
@@ -280,6 +284,7 @@ export class SessionLifecycle {
     command: SessionCreateCommand,
     branch?: SessionBranch,
     requestedAppSessionId?: string,
+    onRegistered?: () => void,
   ): Promise<void> {
     const d = this.dependencies;
     d.ensureConnected();
@@ -393,6 +398,7 @@ export class SessionLifecycle {
       await d.registry.register(liveSession, () => {
         this.requireOpenAdmission();
       });
+      onRegistered?.();
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -689,16 +695,27 @@ export class SessionLifecycle {
     delivery?: ScheduledTurnDelivery,
   ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (delivery && (!liveSession || !this.canReceiveReport(liveSession) || !isCurrent())) {
+      delivery.declined('stale');
+      return false;
+    }
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
     const steerId = randomUUID();
     const prompt = { ...sessionPrompt(text, undefined, steerId), isCurrent, delivery };
-    const admitted = await this.admitPrompt(appSessionId, prompt);
+    // Reports stay with their sender while the chat is unavailable; they never
+    // resume a runtime or join a typed prompt's relaunch queue.
+    const admitted = delivery
+      ? { liveSession, stops: this.stopCount(appSessionId) }
+      : await this.admitPrompt(appSessionId, prompt);
     if (admitted === 'held') return true;
     if (!admitted) return false;
     // A Stop or the caller's guard can change between admission and this line.
-    if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) return false;
+    if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) {
+      delivery?.declined('stale');
+      return false;
+    }
     if (now) {
       // A runtime replaced during admission would carry the prompt off with it.
       if (this.dependencies.registry.getLive(appSessionId) !== admitted.liveSession) return false;
@@ -761,7 +778,8 @@ export class SessionLifecycle {
       if (
         this.stopCount(requestedAppSessionId) !== admitted.stops ||
         this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession ||
-        isWithdrawn(prompt)
+        isWithdrawn(prompt) ||
+        (prompt.delivery && !this.canReceiveReport(liveSession))
       ) {
         prompt.delivery?.declined('stale');
         return;
@@ -908,7 +926,8 @@ export class SessionLifecycle {
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
     this.noteStop(requestedAppSessionId);
-    this.relaunches.get(this.chatKey(requestedAppSessionId))?.waiting.splice(0);
+    const waiting = this.relaunches.get(this.chatKey(requestedAppSessionId))?.waiting.splice(0);
+    for (const prompt of waiting ?? []) prompt.delivery?.declined('stale');
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
@@ -986,7 +1005,9 @@ export class SessionLifecycle {
     // Closing a chat for good takes back whatever was about to be sent to it.
     if (mode === 'discard-pending') {
       this.noteStop(appSessionId);
+      const relaunch = this.relaunches.get(appSessionId);
       this.relaunches.delete(appSessionId);
+      for (const prompt of relaunch?.waiting.splice(0) ?? []) prompt.delivery?.declined('stale');
     }
     const pendingResume = this.resumeOperations.get(appSessionId);
     if (pendingResume) this.canceledResumes.add(appSessionId);
@@ -1654,6 +1675,7 @@ export class SessionLifecycle {
       await liveSession.providerClosePromise.catch(() => undefined);
     }
     if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
+      this.declinePendingDeliveries(liveSession);
       liveSession.pendingSends = [];
     } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
       const queued = liveSession.pendingSends.splice(0);
@@ -1702,6 +1724,20 @@ export class SessionLifecycle {
     );
   }
 
+  private canReceiveReport(liveSession: LiveSession): boolean {
+    return (
+      !this.dependencies.isShutdownStarted() &&
+      liveSession.streaming &&
+      !liveSession.session.isClosed &&
+      !liveSession.closeMode &&
+      !liveSession.compacting &&
+      !liveSession.autoCompacting &&
+      !liveSession.interrupting &&
+      !liveSession.interruptingToSend &&
+      !this.relaunches.has(liveSession.summary.appSessionId)
+    );
+  }
+
   private declinePendingDeliveries(liveSession: LiveSession): void {
     // A Stop cannot know whether an in-flight steer was consumed. Its provider
     // acknowledgement settles it; shutdown leaves it uncertain instead.
@@ -1722,7 +1758,12 @@ export class SessionLifecycle {
     const d = this.dependencies;
     const appSessionId = stale.summary.appSessionId;
     const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
-    const waiting = [prompt, ...stale.pendingSends.splice(0)];
+    const queued = [prompt, ...stale.pendingSends.splice(0)];
+    const waiting = queued.filter((pending) => {
+      if (!pending.delivery) return true;
+      pending.delivery.declined('stale');
+      return false;
+    });
     const relaunch = { waiting, usageLimit: stale.summary.usageLimit };
     this.relaunches.set(appSessionId, relaunch);
     // A discarding close removes the queue; a Stop only empties it.
@@ -1769,11 +1810,13 @@ export class SessionLifecycle {
     else await this.runTurn(liveSession, first);
   }
 
-  // True when the chat is relaunching and the prompt now waits for it.
+  // A relaunch queues typed prompts; reports stay pending with their sender.
   private waitForRelaunch(id: string, prompt: SessionPrompt): boolean {
     const relaunch = this.relaunches.get(this.chatKey(id));
-    relaunch?.waiting.push(prompt);
-    return relaunch !== undefined;
+    if (!relaunch) return false;
+    if (prompt.delivery) prompt.delivery.declined('stale');
+    else relaunch.waiting.push(prompt);
+    return true;
   }
 
   private stopCount(id: string): number {

@@ -13,7 +13,8 @@ import {
 import { LEDGER_LIMITS } from './store.js';
 import type { ProjectPort } from './ProjectService.js';
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
-import { ProjectWakeQueue } from './ProjectWakeQueue.js';
+import { threadReports } from '../../../src/features/projects/threadNotices.js';
+import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
 import type { Project, ThreadMessage } from './types.js';
 
 function deferred<T>() {
@@ -574,4 +575,52 @@ test('a resume behind its own report claim does not block another project from s
   consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
   await drain();
   assert.deepEqual(startedBeforeConsumption, ['worker']);
+});
+
+test('a busy streaming recipient retries only after availability changes', async (t) => {
+  const state = project();
+  const pending = structuredClone(state.pending);
+  let attempts = 0;
+  let saves = 0;
+  const queue = wakeQueue(
+    t,
+    async () => {
+      attempts += 1;
+      return { status: 'busy', retryOn: 'target' };
+    },
+    {
+      sessions: { get: () => sessionSummary({ streaming: true }) },
+      save: async () => {
+        saves += 1;
+      },
+    },
+  );
+  queue.kick(state);
+  await drain();
+  assert.equal(attempts, 1);
+  assert.deepEqual(state.pending, pending);
+  assert.equal(state.delivery, undefined);
+  const parkedSaves = saves;
+  queue.kick(state);
+  await drain();
+  assert.equal(attempts, 1);
+  assert.equal(saves, parkedSaves);
+  queue.available(state, 'main');
+  await drain();
+  assert.equal(attempts, 2);
+});
+
+test('wake to-dos are separate from the last worker report rendered in the chat', () => {
+  const state = project();
+  state.todos = [{ id: 'review', text: 'Review the parser' }];
+  state.pending[0].text = 'Done.';
+  const prompt = wakePrompt(state, 'main', state.pending);
+  assert.match(prompt, /Open to-dos:\n- review: Review the parser/);
+  assert.deepEqual(threadReports(prompt), [
+    {
+      lead: 'Worker reported back',
+      body: 'Done.',
+      from: { threadId: 'worker', name: 'Worker', action: 'reported back' },
+    },
+  ]);
 });

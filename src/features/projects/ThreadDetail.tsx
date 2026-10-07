@@ -37,8 +37,9 @@ export function ThreadDetail({
   // same way the chat loads one. A load that failed is not retried on its own:
   // it would spin against the same failure.
   useEffect(() => {
+    if (row.status === 'queued') return;
     if (transcript === undefined && !historyError) loadSessionHistory(row.appSessionId);
-  }, [transcript, historyError, row.appSessionId]);
+  }, [transcript, historyError, row.appSessionId, row.status]);
 
   return (
     <div data-testid="thread-detail" className="flex min-h-0 flex-1 flex-col">
@@ -58,6 +59,7 @@ export function ThreadDetail({
         <button
           type="button"
           onClick={onOpenInChat}
+          disabled={row.status === 'queued'}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
         >
           Open
@@ -78,7 +80,9 @@ export function ThreadDetail({
             />
           ) : (
             <p className="text-[12px] leading-5 text-droid-text-muted">
-              {historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}
+              {row.status === 'queued'
+                ? row.detail
+                : historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}
             </p>
           )}
         </div>

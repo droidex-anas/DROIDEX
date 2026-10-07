@@ -12,7 +12,7 @@ in it runs until a tool is called.
 | --- | --- | --- | --- |
 | `thread_spawn` | Starts a chat that carries one task; `reportBack` is required | asks | one kind: threads or chats |
 | `thread_send` | Sends one of this chat's threads a message, or `answers` to the question `questionId` names; `delivery` picks steer (the default), now or queue | runs | never asks |
-| `thread_list` | Lists all controlled threads, their ids, owners, states, wait reasons, reply previews and queued messages, runtime load and the lead’s open to-dos; observes even when full, stopped or held | runs | never asks |
+| `thread_list` | Lists active or failed controlled threads and unseen reports, plus a count of inactive threads; `all: true` lists every thread. Includes ids, owners, states, wait reasons, one-line reply previews, queued messages, runtime load and the lead’s open to-dos; observes even when full, stopped or held | runs | never asks |
 | `todo_add` | Keeps a durable lead follow-up; `after` marks it due with a thread report, `inMinutes` schedules a wake (1–1440); at most 40 open, text 1–400; busy/full/held delivery follows reports | runs | never asks |
 | `todo_done` | Removes an open lead follow-up and its queued reminder, even when full, stopped or held | runs | never asks |
 | `thread_read` | Reads a thread: its latest replies (the last 8,192 characters of each), its question and its id, its settings, how many messages it has not been seen to take, whether a runtime is open, its wait reason and runtime load; never starts it | runs | never asks |

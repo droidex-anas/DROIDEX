@@ -246,10 +246,11 @@ export function threadWaitReason(
   paused: boolean,
   queued: number,
 ): string | undefined {
+  if (wait?.kind === 'start')
+    return `queued to start · ${ordinal(wait.position)}${paused ? ' · project held' : ''}`;
   if (paused) return 'project held · waits for the user to resume it';
   if (wait?.kind === 'slot')
     return `waiting for a free slot · ${ordinal(wait.position)} in line (${String(load.live)} running, limit ${String(load.limit)})`;
-  if (wait?.kind === 'start') return `queued to start · ${ordinal(wait.position)}`;
   if (wait?.kind === 'turn') return 'message waits for its turn to end';
   if (queued)
     return state === 'working'
@@ -293,6 +294,7 @@ export function threadState(
   wait?: ThreadWait,
 ): ThreadState {
   if (wait?.kind === 'start') return 'queued';
+  if (wait?.kind === 'slot') return 'waiting';
   if (thread.ask) return 'waiting';
   if (session?.streaming) return 'working';
   if (session?.phase === 'failed') return 'failed';

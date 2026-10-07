@@ -120,11 +120,13 @@ continuing it; title matching ignores case and a trailing number or `(retry)`.
 
 ## Recovering the project and keeping follow-ups
 
-After compaction or a restart, `thread_list` returns every thread the caller can
-control in one call: full id, title, owner id, state, wait reason, the first 160
-characters of its latest reply and its queued message count. It also returns
-runtime load (`live` and `limit`) and the lead's open to-dos. A main chat reaches
-all other threads in its project; a thread lists only its direct children.
+After compaction or a restart, `thread_list` returns controlled threads that are
+working, queued, waiting, failed or still owe an unseen report. The remaining
+threads are counted in one line; pass `all: true` to list them too. Each row
+includes its full id, title, owner id, state, wait reason, a one-line preview of
+up to 120 characters of its latest reply and its queued message count. It also
+returns runtime load (`live` and `limit`) and the lead's open to-dos. A main chat
+reaches all other threads in its project; a thread lists only its direct children.
 `thread_read` returns the same wait reason and runtime load with the full reply
 readout. Both tools only observe: they never start or resume a runtime, even
 when capacity is full, a thread is stopped or the project is held.
@@ -142,17 +144,20 @@ time, so DROIDEX rearms the reminder after a restart once session history is
 ready. If both triggers are present, the first one makes it due. With neither,
 it stays in the open list until handled.
 
-Every wake ends with the open to-dos, due ones first and marked `[DUE]`. A timed
-reminder uses the same delivery path as a report: a busy lead receives it when
-that path can deliver, a held project waits for Resume, and a full inbox retains
+Every wake lists the open to-dos in its own section before the thread reports,
+due ones first and marked `[DUE]`. A timed reminder uses the same delivery path
+as a report: a busy lead receives it when that path can deliver, a held project
+waits for Resume, and a full inbox retains
 the due reminder until room opens. Each reminder queues once; it remains due
 until `todo_done` removes it. Removing a to-do also drops its pending reminder;
 a reminder already handed over may still arrive. Use these follow-ups instead
 of polling `thread_read` in a loop. Reports may arrive during the lead's turn.
 
 The project snapshot exposes open to-dos, runtime load, thread state (including
-`queued`) and wait reasons for the Threads panel. Rendering these new fields is
-a separate UI change.
+`queued`) and wait reasons for the Threads panel. Queued starts show their
+position (for example, **Queued · 2nd**); runtime-slot waits show **Waiting for a
+slot · 1st**. Cancelling a queued spawn removes its thread and releases its
+reserved checkout. `thread_configure` updates its settings before it starts.
 
 ## The plan
 

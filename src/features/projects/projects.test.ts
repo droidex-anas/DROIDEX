@@ -5,7 +5,7 @@ import { isServerEvent } from '../../lib/bridgeWireValidation';
 import type { SessionSummary } from '../../types/bridge';
 import type { ProjectView } from './types';
 import { projectPulse } from './projectBoard';
-import { leadRow, threadCounts, threadRows } from './threadBoard';
+import { leadRow, threadCounts, threadGroups, threadRows } from './threadBoard';
 import { threadReports } from './threadNotices';
 
 const project: ProjectView = {
@@ -206,5 +206,45 @@ test('a project reads its lead: working before any thread, and idle threads are 
   const idle = { ...session('worker'), streaming: false, phase: 'idle' as const };
   const rows = threadRows(project, { ...signals, sessions: { worker: idle } });
   assert.equal(rows[0]?.status, 'ready');
-  assert.deepEqual(threadCounts(rows), { attention: 0, working: 0, idle: 1 });
+  assert.deepEqual(threadCounts(rows), {
+    attention: 0,
+    working: 0,
+    queued: 0,
+    waiting: 0,
+    idle: 1,
+  });
+});
+
+test('queued spawns and slot waits show their published positions rather than Recent or idle', () => {
+  const snapshot = structuredClone(project);
+  snapshot.threads[1].state = 'queued';
+  snapshot.threads[1].waitReason = 'queued to start · 2nd';
+  snapshot.threads.push({
+    appSessionId: 'slot',
+    ownerAppSessionId: 'main',
+    title: 'Slot',
+    waiting: false,
+    state: 'waiting',
+    waitReason: 'waiting for a free slot · 1st in line (12 running, limit 12)',
+  });
+  const rows = threadRows(snapshot, {
+    sessions: { slot: { ...session('slot'), streaming: false, phase: 'failed' } },
+    attention: () => null,
+    digests: {},
+  });
+  assert.deepEqual(
+    Object.fromEntries(rows.map((row) => [row.appSessionId, [row.status, row.detail]])),
+    {
+      worker: ['queued', 'Queued · 2nd'],
+      slot: ['waiting', 'Waiting for a slot · 1st'],
+    },
+  );
+  assert.deepEqual(
+    threadGroups(rows).map((group) => group.label),
+    ['Waiting', 'Queued'],
+  );
+  assert.equal(threadCounts(rows).idle, 0);
+  const pulse = projectPulse(snapshot, rows, undefined);
+  assert.match(pulse.summary, /Waiting for a free slot/);
+  assert.doesNotMatch(pulse.summary, /idle/);
 });

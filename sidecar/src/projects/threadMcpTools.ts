@@ -209,11 +209,11 @@ export function threadTools(appSessionId: () => string) {
   return [
     tool(
       'thread_list',
-      "List threads you control: full ids, owners, states, queue positions, wait reasons, reply previews and queued message counts. Includes runtime load and the lead's open to-dos. Starts no work. Use after compaction or restart; do not poll.",
-      {},
-      safeTool(async () => {
+      "List controlled threads that are working, queued, waiting, failed or have an unseen report, plus a count of inactive threads. Pass all: true for every thread. Returns full ids, owners, states, queue positions, wait reasons, one-line reply previews, queued messages, runtime load and the lead's open to-dos. Starts no work. Use after compaction or restart; do not poll.",
+      { all: z.boolean().optional() },
+      safeTool(async ({ all }: { all?: boolean }) => {
         const projects = await requireProjectService();
-        return jsonResult({ ok: true, ...projects.listThreads(appSessionId()) });
+        return jsonResult({ ok: true, ...projects.listThreads(appSessionId(), all) });
       }),
     ),
     tool(
@@ -343,7 +343,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_configure',
-      "Change a controlled thread's settings without starting work. Autonomy applies now within its owner's limit. Model and effort apply after a running turn, or immediately when idle. pending describes an unapplied change.",
+      "Change a controlled thread's settings without starting work. Autonomy applies now within its owner's limit. Model and effort apply after a running turn, or immediately when idle. Queued spawns update their launch settings. pending describes an unapplied change.",
       configureInput.shape,
       safeTool(async ({ threadId, ...settings }: z.infer<typeof configureInput>) => {
         const projects = await requireProjectService();
@@ -355,14 +355,14 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_stop',
-      'Stop a controlled thread and cancel its queued start and messages, even when full or held. Continue its conversation with thread_send after it has started.',
+      'Stop a controlled thread and cancel its messages, even when full or held. A queued spawn is removed and its checkout released; use thread_spawn for a replacement. A started conversation continues with thread_send.',
       stopInput.shape,
       safeTool(async (input: z.infer<typeof stopInput>) => {
         const projects = await requireProjectService();
         const caller = appSessionId();
         const id = projects.resolveThreadId(caller, input.threadId);
-        await projects.stop(caller, id);
-        return jsonResult({ ok: true, threadId: id, state: 'stopped' });
+        const state = await projects.stop(caller, id);
+        return jsonResult({ ok: true, threadId: id, state });
       }),
     ),
   ];

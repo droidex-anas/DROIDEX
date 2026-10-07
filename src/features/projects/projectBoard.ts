@@ -49,6 +49,7 @@ function summarize(
   if (counts.attention > 0)
     parts.push(plural(counts.attention, 'thread needs you', 'threads need you'));
   if (counts.working > 0) parts.push(plural(counts.working, 'thread working', 'threads working'));
+  if (counts.queued + counts.waiting > 0) parts.push('Waiting for a free slot');
   if (project.launching > 0) parts.push('Starting a thread');
   if (parts.length === 0)
     parts.push(total === 0 ? 'No threads yet' : plural(total, 'thread idle', 'threads idle'));
