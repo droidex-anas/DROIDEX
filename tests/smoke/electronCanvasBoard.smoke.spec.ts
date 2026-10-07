@@ -15,6 +15,31 @@ test.beforeAll(async () => {
   url = `http://127.0.0.1:${address.port}/tests/smoke/board/index.html`;
 });
 
+test('window blur and focus leaving the board cancel without arranging and release capture', async ({
+  page,
+}) => {
+  for (const loss of ['window', 'outside']) {
+    await openBoard(page);
+    const board = page.getByTestId('canvas-board');
+    await board.focus();
+    const acknowledged = await box(frame(page, 'A'));
+    await drag(page, 'A', 60, 40, false);
+    expect((await box(frame(page, 'A'))).x).toBeGreaterThan(acknowledged.x);
+    expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(true);
+    if (loss === 'window') await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    else await page.locator('#outside').focus();
+    await page.mouse.up();
+    await page.clock.runFor(32);
+    expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+    const restored = await box(frame(page, 'A'));
+    expect(restored.x).toBeCloseTo(acknowledged.x, 1);
+    expect(restored.y).toBeCloseTo(acknowledged.y, 1);
+    expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(false);
+    await drag(page, 'A');
+    expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  }
+});
+
 test.afterAll(async () => {
   await server?.close();
 });

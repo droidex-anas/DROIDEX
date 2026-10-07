@@ -11,15 +11,14 @@ import { boardPoint } from './boardCoordinates';
 import {
   fitFrames,
   interpolateViewport,
-  reduceFrameDrag,
   wheelZoomScale,
   zoomAtPoint,
-  type FrameDrag,
   type Point,
   type Viewport,
 } from './canvasGeometry';
 import { waitingLabel } from './previewLabels';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
+import { useBoardGestures } from './useBoardGestures';
 
 /** Spec §11: a programmatic fit or focus, eased. */
 const FOCUS_DURATION_MS = 220;
@@ -56,16 +55,10 @@ export function CanvasBoard({
   const board = useRef<HTMLDivElement>(null);
 
   const [viewport, setViewport] = useState<Viewport>(IDENTITY);
-  const [drag, setDrag] = useState<DraggedFrame | null>(null);
-  const [pending, setPending] = useState<PendingLayout | null>(null);
-  const [panning, setPanning] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
-  const [layoutError, setLayoutError] = useState('');
   const [overlayCapture, setOverlayCapture] = useState(capturePointer);
   const [scrollActive, setScrollActive] = useState(false);
 
-  const gesture = useRef<Gesture | null>(null);
-  const move = useRef<Coalesced>({ pointer: null, frame: null });
   const animation = useRef<number | null>(null);
   const scroll = useRef<ScrollGesture>({ active: false, idle: null });
   const size = useRef<Point>({ x: 0, y: 0 });
@@ -80,6 +73,21 @@ export function CanvasBoard({
     if (animation.current !== null) cancelAnimationFrame(animation.current);
     animation.current = null;
   }, []);
+
+  const gestures = useBoardGestures({
+    board,
+    frames: snapshot.frames,
+    scale: viewport.scale,
+    spaceHeld,
+    onStart: () => {
+      view.current.navigated = true;
+      stopAnimation();
+    },
+    onPan: (delta) => {
+      setViewport((current) => ({ ...current, x: current.x + delta.x, y: current.y + delta.y }));
+    },
+    onArrangeFrames,
+  });
 
   /** Fit and focus are the same operation; focus just passes one rect. */
   const fitTo = useCallback(
@@ -197,164 +205,10 @@ export function CanvasBoard({
   useEffect(
     () => () => {
       if (animation.current !== null) cancelAnimationFrame(animation.current);
-      if (move.current.frame !== null) cancelAnimationFrame(move.current.frame);
       if (scroll.current.idle !== null) clearTimeout(scroll.current.idle);
     },
     [],
   );
-
-  /** Applies a pointer position to whichever gesture is running. */
-  const applyPointer = (pointer: Point) => {
-    const active = gesture.current;
-    if (active === null) return;
-    if (active.kind === 'pan') {
-      const deltaX = pointer.x - active.last.x;
-      const deltaY = pointer.y - active.last.y;
-      active.last = pointer;
-      setViewport((current) => ({ ...current, x: current.x + deltaX, y: current.y + deltaY }));
-      return;
-    }
-    const stepped = reduceFrameDrag(active.drag, {
-      type: 'move',
-      pointerId: active.drag.pointerId,
-      pointer,
-      scale: latest.current.viewport.scale,
-    }).drag;
-    if (stepped === null) return;
-    active.drag = stepped;
-    setDrag({ designId: stepped.designId, rect: stepped.rect });
-  };
-
-  const flushMove = () => {
-    move.current.frame = null;
-    if (move.current.pointer !== null) applyPointer(move.current.pointer);
-  };
-
-  const stopCoalescing = useCallback(() => {
-    if (move.current.frame !== null) cancelAnimationFrame(move.current.frame);
-    move.current = { pointer: null, frame: null };
-  }, []);
-
-  const startPan = (pointerId: number, client: Point) => {
-    const root = board.current;
-    if (!root) return;
-    root.setPointerCapture(pointerId);
-    gesture.current = { kind: 'pan', pointerId, last: client };
-    view.current.navigated = true;
-    stopAnimation();
-    setPanning(true);
-  };
-
-  const onBackgroundPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || gesture.current !== null) return;
-    startPan(
-      event.pointerId,
-      boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }),
-    );
-  };
-
-  const onFramePointerDown = (frame: CanvasFrame, event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0 || gesture.current !== null) return;
-    event.stopPropagation();
-    const root = board.current;
-    if (!root) return;
-    const client = boardPoint(root, { x: event.clientX, y: event.clientY });
-    if (spaceHeld) {
-      startPan(event.pointerId, client);
-      return;
-    }
-    root.setPointerCapture(event.pointerId);
-    stopAnimation();
-    // The gesture starts from where the user sees the frame, which is not the
-    // snapshot's rect while an earlier drag is still unacknowledged.
-    const rect = renderedRect(frame, drag, pending);
-    gesture.current = {
-      kind: 'frame',
-      drag: {
-        designId: frame.designId,
-        pointerId: event.pointerId,
-        expectedLayoutVersion: frame.layoutVersion,
-        origin: client,
-        startRect: rect,
-        rect,
-      },
-    };
-    setDrag({ designId: frame.designId, rect });
-  };
-
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const active = gesture.current;
-    if (active === null || event.pointerId !== pointerIdOf(active)) return;
-    move.current.pointer = boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY });
-    // Spec §11: the transform updates once per animation frame, and the pointer
-    // is followed 1:1 with no easing behind the hand.
-    move.current.frame ??= requestAnimationFrame(flushMove);
-  };
-
-  const endGesture = (event: React.PointerEvent<HTMLDivElement>, released: boolean) => {
-    const active = gesture.current;
-    if (active === null || event.pointerId !== pointerIdOf(active)) return;
-    stopCoalescing();
-    // The release carries the hand's last position, and the frame coalescing it
-    // may never have run; this settles `active.drag` on its final rect.
-    if (released) {
-      applyPointer(boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }));
-    }
-    gesture.current = null;
-    if (active.kind === 'pan') {
-      setPanning(false);
-      return;
-    }
-    const { commit } = reduceFrameDrag(
-      active.drag,
-      released ? { type: 'release', pointerId: active.drag.pointerId } : { type: 'cancel' },
-    );
-    setDrag(null);
-    if (commit === null) return;
-    const { designId, expectedLayoutVersion } = active.drag;
-    setPending({ designId, rect: commit, afterLayoutVersion: expectedLayoutVersion });
-    setLayoutError('');
-    onArrangeFrames({
-      mutationId: crypto.randomUUID(),
-      frames: [{ designId, expectedLayoutVersion, rect: commit }],
-    }).catch((error: unknown) => {
-      // The snapshot's rect is authoritative again, so the frame returns to it.
-      setPending((held) => (held?.rect === commit ? null : held));
-      setLayoutError(layoutFailure(error));
-    });
-  };
-
-  const cancelGesture = useCallback(() => {
-    const active = gesture.current;
-    if (active === null) return;
-    gesture.current = null;
-    stopCoalescing();
-    board.current?.releasePointerCapture(pointerIdOf(active));
-    setPanning(false);
-    setDrag(null);
-  }, [stopCoalescing]);
-
-  // Escape has to reach a drag whatever has focus, so it is listened for only
-  // while one is running.
-  const dragging = drag !== null;
-  useEffect(() => {
-    if (!dragging) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') cancelGesture();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [cancelGesture, dragging]);
-
-  // A released drag is drawn where the user left it until the sidecar answers;
-  // a newer layout version is that answer, whatever rect it settled on.
-  useEffect(() => {
-    if (pending === null) return;
-    const frame = snapshot.frames.find((candidate) => candidate.designId === pending.designId);
-    if (!frame || frame.layoutVersion > pending.afterLayoutVersion) setPending(null);
-  }, [pending, snapshot]);
 
   const { frames } = snapshot;
   return (
@@ -364,17 +218,17 @@ export function CanvasBoard({
       tabIndex={0}
       aria-label="Design board"
       className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg outline-none"
-      style={{ cursor: boardCursor(panning, spaceHeld), touchAction: 'none' }}
-      onPointerDown={onBackgroundPointerDown}
-      onPointerMove={onPointerMove}
+      style={{ cursor: boardCursor(gestures.panning, spaceHeld), touchAction: 'none' }}
+      onPointerDown={gestures.onBackgroundPointerDown}
+      onPointerMove={gestures.onPointerMove}
       onPointerUp={(event) => {
-        endGesture(event, true);
+        gestures.endGesture(event, true);
       }}
       onPointerCancel={(event) => {
-        endGesture(event, false);
+        gestures.endGesture(event, false);
       }}
       onLostPointerCapture={(event) => {
-        endGesture(event, false);
+        gestures.endGesture(event, false);
       }}
       onKeyDown={(event) => {
         // Space-pan belongs to the board itself. Spec §4: a control or an editor
@@ -386,8 +240,9 @@ export function CanvasBoard({
       onKeyUp={(event) => {
         if (event.key === ' ') setSpaceHeld(false);
       }}
-      onBlur={() => {
+      onBlur={(event) => {
         setSpaceHeld(false);
+        gestures.onBlur(event);
       }}
     >
       <div
@@ -402,9 +257,9 @@ export function CanvasBoard({
           <BoardFrame
             key={frame.designId}
             frame={frame}
-            rect={renderedRect(frame, drag, pending)}
+            rect={gestures.rectFor(frame)}
             capturePointer={overlayCapture}
-            onHeaderPointerDown={onFramePointerDown}
+            onHeaderPointerDown={gestures.onFramePointerDown}
           />
         ))}
       </div>
@@ -421,12 +276,12 @@ export function CanvasBoard({
           {Math.round(viewport.scale * 100)}%
         </span>
         <div className="flex min-w-0 items-center gap-2">
-          {layoutError && (
+          {gestures.layoutError && (
             <p
               role="alert"
               className="truncate rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-red"
             >
-              {layoutError}
+              {gestures.layoutError}
             </p>
           )}
           <button
@@ -495,55 +350,14 @@ function BoardFrame({
   );
 }
 
-/** The frame the hand is holding, as the board draws it. */
-interface DraggedFrame {
-  designId: string;
-  rect: FrameRect;
-}
-
-/** A released drag the sidecar has not acknowledged yet. */
-interface PendingLayout {
-  designId: string;
-  rect: FrameRect;
-  /** The layout version the commit expected; anything newer is the answer. */
-  afterLayoutVersion: number;
-}
-
-type Gesture = { kind: 'pan'; pointerId: number; last: Point } | { kind: 'frame'; drag: FrameDrag };
-
-/** The hand's latest position and the frame that will apply it. */
-interface Coalesced {
-  pointer: Point | null;
-  frame: number | null;
-}
-
 interface ScrollGesture {
   active: boolean;
   idle: ReturnType<typeof setTimeout> | null;
 }
 
-function pointerIdOf(gesture: Gesture): number {
-  return gesture.kind === 'pan' ? gesture.pointerId : gesture.drag.pointerId;
-}
-
-/** Where a frame is drawn: under the hand, awaiting an answer, or acknowledged. */
-function renderedRect(
-  frame: CanvasFrame,
-  drag: DraggedFrame | null,
-  pending: PendingLayout | null,
-): FrameRect {
-  if (drag?.designId === frame.designId) return drag.rect;
-  if (pending?.designId === frame.designId) return pending.rect;
-  return frame.rect;
-}
-
 function boardCursor(panning: boolean, spaceHeld: boolean): string {
   if (panning) return 'grabbing';
   return spaceHeld ? 'grab' : 'default';
-}
-
-function layoutFailure(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : 'That frame could not be moved.';
 }
 
 // cubic-bezier(0.22, 1, 0.36, 1) from spec §11, solved for y at a given x.
