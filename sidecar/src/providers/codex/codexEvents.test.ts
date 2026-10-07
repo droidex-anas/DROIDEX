@@ -110,12 +110,10 @@ test('a server that failed before the first turn is still reported in it', async
   await events.return(undefined);
 });
 
-test('Codex steers wait for delivery and RPC settlement across turn completion', async (t) => {
+test('Codex steers wait for delivery and the RPC reply, and a new turn starts a fresh queue', async (t) => {
   const steers: Record<string, unknown>[] = [];
-  let finishFirstRequest: () => void = () => undefined;
-  const firstRequest = new Promise<void>((resolve) => {
-    finishFirstRequest = resolve;
-  });
+  // Codex never answers the first steer's request.
+  const firstRequest = new Promise<void>(() => undefined);
   const { client, notifications } = fakeClient((method, params) => {
     if (method === 'thread/start') return { thread: { id: 'thread-1' } };
     if (method !== 'turn/steer') return undefined;
@@ -150,11 +148,8 @@ test('Codex steers wait for delivery and RPC settlement across turn completion',
   const third = session.steer('third');
   const fourth = session.steer('fourth');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(steers.length, 1, 'a new turn must still wait for the previous RPC reply');
-
-  finishFirstRequest();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(steers.length, 2, 'an early RPC reply must still wait for delivery');
+  // The first steer's reply never came; it named turn-1 and cannot hold turn-2 back.
+  assert.equal(steers.length, 2, 'a new turn must not wait for a reply from the last one');
   assert.equal(steers[1].expectedTurnId, 'turn-2');
   assert.deepEqual(steers[1].input, [{ type: 'text', text: 'third' }]);
   notifications.get('item/started')?.({

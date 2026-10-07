@@ -408,6 +408,8 @@ export class CodexSession implements ProviderSession {
   private dropSteers(): void {
     for (const clientUserMessageId of this.steers.keys())
       this.settleSteer(clientUserMessageId, false);
+    // A reply Codex never sends would otherwise hold back every later steer.
+    this.steerTail = Promise.resolve();
   }
 
   async interrupt(): Promise<void> {
@@ -417,10 +419,7 @@ export class CodexSession implements ProviderSession {
     // thread, and the user can see its work in the chat.
     if (!this.turn) {
       const delegated = this.delegatedTurnId;
-      if (delegated) {
-        this.interruptedTurnId = delegated;
-        await this.sendInterrupt(delegated);
-      }
+      if (delegated) await this.interruptTurn(delegated);
       return;
     }
     // A stale pair would end a turn that already settled, or none at all.
@@ -428,8 +427,18 @@ export class CodexSession implements ProviderSession {
       this.pendingInterrupt = true;
       return;
     }
-    this.interruptedTurnId = this.turnId;
-    await this.sendInterrupt(this.turnId);
+    await this.interruptTurn(this.turnId);
+  }
+
+  // A refused interrupt leaves the turn running, so steering into it reopens.
+  private async interruptTurn(turnId: string): Promise<void> {
+    this.interruptedTurnId = turnId;
+    try {
+      await this.sendInterrupt(turnId);
+    } catch (error) {
+      if (this.interruptedTurnId === turnId) this.interruptedTurnId = undefined;
+      throw error;
+    }
   }
 
   close(): Promise<void> {
