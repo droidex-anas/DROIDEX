@@ -223,3 +223,28 @@ test('macOS requires Touch ID after consent and never decrypts after its cancell
     },
   );
 });
+
+test('capture invalidation during the temporary write prevents publishing the vault', async (t) => {
+  let valid = true;
+  const writeFile = fs.writeFile;
+  t.mock.method(fs, 'writeFile', async (...args) => {
+    await writeFile(...args);
+    valid = false;
+  });
+  await withVault(
+    async ({ vault, userDataPath }) => {
+      assert.equal(
+        await vault.capture({
+          url: 'https://example.test/login',
+          username: 'account',
+          password: 'secret',
+          isStillValid: () => valid,
+        }),
+        false,
+      );
+      assert.deepEqual(await vault.origins(), []);
+      assert.deepEqual(await fs.readdir(userDataPath), []);
+    },
+    { responses: [0] },
+  );
+});

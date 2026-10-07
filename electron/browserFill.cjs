@@ -1,4 +1,8 @@
-const { sensitiveFieldKind, SENSITIVE_INPUT } = require('./browserFormSafety.cjs');
+const {
+  sensitiveFieldKind,
+  sensitiveFieldDescription,
+  SENSITIVE_INPUT,
+} = require('./browserFormSafety.cjs');
 
 // Run on the ref's own element. A value goes through the element's own
 // setter and the input and change events, so frameworks that track it (React
@@ -6,7 +10,7 @@ const { sensitiveFieldKind, SENSITIVE_INPUT } = require('./browserFormSafety.cjs
 // change. Nothing is read back, so a masked field stays unread.
 const FILL = `function (value, startBy) {
   const refuseSensitive = () => {
-    if ((${sensitiveFieldKind})(this)) throw new Error(${JSON.stringify(SENSITIVE_INPUT)});
+    if ((${sensitiveFieldKind})(this, ${sensitiveFieldDescription})) throw new Error(${JSON.stringify(SENSITIVE_INPUT)});
   };
   // The page can run this late, and its focus handlers can take their time;
   // nothing changes once the caller has given up, or once a focus handler has

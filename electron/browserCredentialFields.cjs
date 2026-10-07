@@ -16,7 +16,7 @@ function submittedCredential(form) {
   return { username: username?.value || '', password: passwords[0].value };
 }
 
-function fillCredentialForm(document, payload) {
+function fillCredentialForm(document, payload, canFill) {
   const { location, HTMLInputElement, Event } = document.defaultView;
   if (payload.origin !== location.origin)
     return { ok: false, error: 'The page changed before the login was filled.' };
@@ -47,6 +47,7 @@ function fillCredentialForm(document, payload) {
     usernameFields.filter((field) => scope.indexOf(field) < scope.indexOf(passwordField)).at(-1);
 
   function assertCurrent(field) {
+    if (!canFill()) throw new Error('The saved-login fill was canceled before writing.');
     if (Date.now() >= payload.startBy) throw new Error('The browser page did not finish in time.');
     if (!field.isConnected || passwordField.form !== form || location.origin !== payload.origin)
       throw new Error('The login form changed before it was filled.');

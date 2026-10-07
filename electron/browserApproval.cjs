@@ -16,7 +16,7 @@ function browserApproval(contents, entry, request) {
 
   function assertCurrent() {
     if (controller.signal.aborted || Date.now() >= request.startBy || request.runEnded()) {
-      throw new Error('The browser request ended before approval completed. Nothing was sent.');
+      throw new Error('The browser request ended before the action completed.');
     }
     if (
       entry.contents !== contents ||
@@ -24,7 +24,7 @@ function browserApproval(contents, entry, request) {
       entry.documents !== documents ||
       contents.getURL() !== url
     ) {
-      throw new Error('The page changed while approval was open. Nothing was sent.');
+      throw new Error('The page changed before the action completed.');
     }
   }
 

@@ -428,6 +428,7 @@ function createNativeBrowserManager(options) {
     forgetWatchers: preview.forget,
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,
+    canFillCredential: credentials.canFill,
     listCredentials: credentials.list,
     deleteCredential: credentials.deleteLogin,
     sessionIdForWebContents: guests.sessionIdFor,

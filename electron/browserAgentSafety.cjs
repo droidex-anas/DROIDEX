@@ -1,6 +1,7 @@
 const { send, documentFrames, focusedFrame } = require('./browserFrames.cjs');
 const {
   sensitiveFieldKind,
+  sensitiveFieldDescription,
   inspectAuthenticationIntent,
   SENSITIVE_INPUT,
 } = require('./browserFormSafety.cjs');
@@ -9,8 +10,13 @@ const {
   approveAuthentication,
 } = require('./browserAuthenticationIntent.cjs');
 
-const INSPECT = `function (activation) {
-  const sensitiveKind = ${sensitiveFieldKind};
+const INSPECT = `function (activation, requireFocus) {
+  if (requireFocus) {
+    let focused = this.ownerDocument.activeElement;
+    while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
+    if (focused !== this) throw new Error('The input target lost focus.');
+  }
+  const sensitiveKind = (field) => (${sensitiveFieldKind})(field, ${sensitiveFieldDescription});
   return {
     sensitive: sensitiveKind(this),
     intent: activation ? (${inspectAuthenticationIntent})(this, activation, sensitiveKind) : null
@@ -18,7 +24,7 @@ const INSPECT = `function (activation) {
 }`;
 
 function createBrowserAgentSafety({ reading, showPrompt }) {
-  async function inspectNode(dbg, target, activation) {
+  async function inspectNode(dbg, target, activation, dispatch, requireFocus = false) {
     const { backendNodeId, sessionId, document } = target;
     if (!backendNodeId || target.closedShadow)
       throw new Error(
@@ -40,19 +46,21 @@ function createBrowserAgentSafety({ reading, showPrompt }) {
       const { result, exceptionDetails } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
         objectId: object.objectId,
         functionDeclaration: INSPECT,
-        arguments: [{ value: activation }],
+        arguments: [{ value: activation }, { value: requireFocus }],
         returnByValue: true,
       });
       if (exceptionDetails || !result?.value)
         throw new Error('The input target could not be inspected. Hand this step to the user.');
       const { sensitive, intent } = result.value;
-      return {
+      const inspected = {
         backendNodeId,
         sessionId,
         document,
         sensitive,
         intent: intent ? validateAgentAuthenticationIntent(intent, frame.url) : null,
       };
+      // Dispatch before releasing the object or making any other CDP request.
+      return dispatch ? await dispatch(inspected) : inspected;
     } finally {
       await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
         () => undefined,
@@ -60,10 +68,10 @@ function createBrowserAgentSafety({ reading, showPrompt }) {
     }
   }
 
-  async function inspectPointer(dbg, entry, request, point) {
+  async function inspectPointer(dbg, entry, request, point, dispatch) {
     if (request.ref) {
       const target = await reading.lookupRef(dbg, entry, request.ref);
-      return inspectNode(dbg, { ...target, sessionId: target.frame.sessionId }, 'click');
+      return inspectNode(dbg, { ...target, sessionId: target.frame.sessionId }, 'click', dispatch);
     }
     const { cssLayoutViewport } = await dbg.sendCommand('Page.getLayoutMetrics');
     const hit = await dbg.sendCommand('DOM.getNodeForLocation', {
@@ -79,12 +87,13 @@ function createBrowserAgentSafety({ reading, showPrompt }) {
       dbg,
       { backendNodeId: hit.backendNodeId, document: frame.loaderId },
       'click',
+      dispatch,
     );
   }
 
-  async function inspectFocus(dbg, activation) {
+  async function inspectFocus(dbg, activation, dispatch) {
     const focused = await focusedFrame(dbg);
-    return inspectNode(dbg, focused, activation);
+    return inspectNode(dbg, focused, activation, dispatch, true);
   }
 
   async function authorize(contents, entry, request, inspected) {

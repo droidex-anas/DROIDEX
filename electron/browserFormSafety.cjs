@@ -1,35 +1,37 @@
 const SENSITIVE_INPUT =
-  'Agent typing into passwords, one-time codes or payment card fields is blocked. Hand this step to the user, or use browser_fill_login for a saved login.';
+  'Agent typing into passwords, one-time codes, payment details or other secret fields is blocked. Hand this step to the user, or use browser_fill_login for a saved login.';
 
 // Ported from #215's sensitiveFields and authIntent preload helpers. These
 // functions run on the actual CDP target, including fields inside child frames.
-function sensitiveFieldKind(element) {
+function sensitiveFieldKind(element, classify) {
   for (let field = element; field; field = field.parentElement || field.getRootNode?.().host) {
     if (!['input', 'textarea', 'select'].includes(field.localName) && !field.isContentEditable)
       continue;
-    const attribute = (name) => (field.getAttribute(name) || '').toLowerCase();
-    const type = attribute('type');
-    const autocomplete = attribute('autocomplete');
+    const attribute = (name) => field.getAttribute(name) || '';
     const labels = [...(field.labels || [])].map((label) => label.textContent);
     for (const id of attribute('aria-labelledby').split(/\s+/).filter(Boolean))
       labels.push(field.ownerDocument.getElementById(id)?.textContent || '');
     const description = [...['name', 'id', 'aria-label', 'placeholder'].map(attribute), ...labels]
       .join(' ')
       .toLowerCase();
-    if (
-      type === 'password' ||
-      autocomplete.includes('password') ||
-      /password|passwd/.test(description)
-    )
-      return 'password';
-    if (
-      autocomplete.includes('one-time-code') ||
-      /otp|verification|passcode|2fa|mfa|auth.?code/.test(description)
-    )
-      return 'one-time code';
-    if (/\bcc-/.test(autocomplete) || /card|cvv|cvc|csc|cc.?num|security.?code/.test(description))
-      return 'payment card';
+    const kind = classify([attribute('type'), attribute('autocomplete'), description].join(' '));
+    if (kind) return kind;
   }
+  return null;
+}
+
+// Shared by DOM input checks and CDP field masking, including accessible names.
+function sensitiveFieldDescription(description) {
+  if (/password|passwd/i.test(description)) return 'password';
+  if (/one[\s_-]?time|otp|verif|passcode|2fa|mfa|auth.?code/i.test(description))
+    return 'one-time code';
+  if (/card|cvv|cvc|csc|cc[-_]|cc.?num|security.?code/i.test(description)) return 'payment card';
+  if (
+    /pass|token|secret|credential|auth(?!or)|authori[sz]|api.?key|access.?key|private.?key|\bkey\b|\bpin\b|ssn|iban/i.test(
+      description,
+    )
+  )
+    return 'secret';
   return null;
 }
 
@@ -42,7 +44,8 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
     );
   const selector =
     'button,a,input[type="submit"],input[type="button"],input[type="image"],[role="button"],[role="link"]';
-  const control = target.closest(selector) || target;
+  const candidate = target.closest(selector) || target.closest('label') || target;
+  const control = candidate.localName === 'label' ? candidate.control || candidate : candidate;
   const form = control.form || control.closest('form');
   if (activation !== 'enter' && !control.matches(selector)) return null;
   const label = [
@@ -85,4 +88,9 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
   return { kind, targetUrl: targetUrl || null };
 }
 
-module.exports = { sensitiveFieldKind, inspectAuthenticationIntent, SENSITIVE_INPUT };
+module.exports = {
+  sensitiveFieldKind,
+  sensitiveFieldDescription,
+  inspectAuthenticationIntent,
+  SENSITIVE_INPUT,
+};

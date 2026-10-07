@@ -1,6 +1,7 @@
 const { ipcRenderer } = require('electron');
 const { randomUUID } = require('node:crypto');
 const { submittedCredential, fillCredentialForm } = require('./browserCredentialFields.cjs');
+const { sensitiveFieldKind, sensitiveFieldDescription } = require('./browserFormSafety.cjs');
 const credentialDocumentId = randomUUID();
 const { isSensitiveBrowserKey, redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createDesignOverlay, INTERNAL_ATTR } = require('./browserDesignOverlay.cjs');
@@ -66,7 +67,9 @@ Object.assign(globalThis, {
   __droidexFillCredentials: (payload) => {
     if (payload.documentId !== credentialDocumentId)
       throw new Error('The page changed before the login was filled.');
-    return fillCredentialForm(document, payload);
+    return fillCredentialForm(document, payload, () =>
+      ipcRenderer.sendSync('native-browser-credential-fill-valid', payload.token),
+    );
   },
   __droidexNextChange: nextChange,
 });
@@ -705,7 +708,7 @@ function verifySelector(el, selector) {
 
 function attrsFor(el) {
   const out = {};
-  const secret = isSensitiveField(el);
+  const secret = sensitiveFieldKind(el, sensitiveFieldDescription);
   for (const name of [
     'id',
     'class',
@@ -760,16 +763,6 @@ function isMetaRefreshContent(name, el) {
     el.tagName === 'META' &&
     String(el.getAttribute('http-equiv') || '').toLowerCase() === 'refresh'
   );
-}
-
-// Password and one-time-code fields must never reach the agent transcript, so
-// their live values are redacted from every snapshot/detail payload.
-function isSensitiveField(el) {
-  if (!el || el.tagName !== 'INPUT') return false;
-  const type = (el.getAttribute('type') || '').toLowerCase();
-  if (type === 'password') return true;
-  const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
-  return auto.includes('password') || auto === 'one-time-code';
 }
 
 function stylesFor(el) {

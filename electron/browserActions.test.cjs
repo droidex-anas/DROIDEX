@@ -9,9 +9,13 @@ const { refFor } = require('./browserRefs.cjs');
 function fixture() {
   const fields = new Map();
   const document = { defaultView: {}, activeElement: null };
+  const mainDocument = { defaultView: {}, activeElement: null };
+  let afterCommand = () => {};
+  let onInput = () => {};
   class Element {
     constructor(tag, attributes = {}) {
       this.localName = tag;
+      this.ownerDocument = document;
       this.attributes = attributes;
       this.type = attributes.type || 'text';
       this.textContent = '';
@@ -43,6 +47,7 @@ function fixture() {
     }
     focus() {
       document.activeElement = this;
+      mainDocument.activeElement = this;
       this.onFocus?.();
     }
     dispatchEvent() {}
@@ -88,10 +93,14 @@ function fixture() {
       return { node: { backendNodeId: id, localName: fields.get(id).localName } };
     }
     if (method === 'Runtime.evaluate' && params.expression === 'document')
-      return { result: { objectId: 'document' } };
+      return { result: { objectId: params.contextId ? 'document' : 'main-document' } };
     if (method === 'Runtime.callFunctionOn') {
       const target =
-        params.objectId === 'document' ? document : fields.get(Number(params.objectId));
+        params.objectId === 'document'
+          ? document
+          : params.objectId === 'main-document'
+            ? mainDocument
+            : fields.get(Number(params.objectId));
       try {
         const fn = vm.runInNewContext(`(${params.functionDeclaration})`, context);
         const value = fn.apply(
@@ -110,9 +119,16 @@ function fixture() {
     }
     if (method.startsWith('Input.')) {
       input.push({ method, ...params });
+      onInput(params);
       return {};
     }
     throw new Error(`Unexpected CDP command ${method}`);
+  };
+  const command = dbg.sendCommand;
+  dbg.sendCommand = async (method, params) => {
+    const result = await command(method, params);
+    afterCommand(method, params);
+    return result;
   };
   const contents = Object.assign(new EventEmitter(), {
     getURL: () => frame.url,
@@ -130,7 +146,11 @@ function fixture() {
   const actions = createBrowserActions({
     reading,
     runWithWebContentsDebugger,
-    credentials: {},
+    credentials: {
+      fillForAgent: async () => {
+        contents.getTitle = () => 'saved-secret';
+      },
+    },
     showPrompt: async (prompt, options) => {
       prompts.push(prompt);
       return answer(prompt, options);
@@ -168,6 +188,18 @@ function fixture() {
     entry,
     contents,
     request,
+    mainDocument,
+    document,
+    afterCommand: (fn) => {
+      afterCommand = fn;
+    },
+    onInput: (fn) => {
+      onInput = fn;
+    },
+    label: (control) => {
+      hit = new Element('label');
+      hit.control = control;
+    },
     answer: (fn) => {
       answer = fn;
     },
@@ -178,6 +210,7 @@ test('type, fill and key input refuse password, code and card fields without wri
   for (const attributes of [
     { type: 'password' },
     { autocomplete: 'one-time-code' },
+    { name: 'one-time-code', 'aria-label': 'One-time code' },
     { autocomplete: 'cc-number' },
   ]) {
     const f = fixture();
@@ -296,4 +329,76 @@ test('closing a request dismisses its pending approval without sending input', a
   );
   assert.equal(f.contents.listenerCount('did-start-navigation'), 0);
   assert.equal(f.contents.listenerCount('destroyed'), 0);
+});
+
+test('saved-login fill returns success without reading the title the page copied from its password', async () => {
+  const f = fixture();
+  assert.deepEqual(await f.act({ action: 'fillCredentials' }), { requestId: 'request', ok: true });
+  assert.equal(f.contents.getTitle(), 'saved-secret');
+});
+
+test('main-world activeElement spoofing cannot redirect sensitive-field inspection', async () => {
+  const f = fixture();
+  const decoy = f.field({}).node;
+  f.field({ type: 'password' });
+  f.mainDocument.activeElement = decoy;
+  for (const action of [
+    { action: 'type', text: 'secret' },
+    { action: 'press', key: 'cmd+v' },
+  ])
+    await assert.rejects(f.act(action), /blocked/);
+  assert.deepEqual(f.input, []);
+});
+
+test('a field changing between inspection and dispatch never receives sensitive input', async () => {
+  for (const action of [
+    { action: 'type', text: 'secret' },
+    { action: 'press', key: 'cmd+v' },
+  ]) {
+    const f = fixture();
+    const { node } = f.field({});
+    let inspections = 0;
+    const receivedBy = [];
+    f.afterCommand((method, params) => {
+      if (method === 'Runtime.callFunctionOn' && params.returnByValue && params.arguments)
+        inspections++;
+      if (inspections === 2 && method === 'Runtime.releaseObject')
+        node.attributes.type = 'password';
+    });
+    f.onInput(() => receivedBy.push(node.attributes.type || 'text'));
+    await f.act(action).catch((error) => assert.match(error.message, /blocked|target changed/));
+    assert.equal(receivedBy.includes('password'), false);
+  }
+});
+
+test('mousedown cannot change the approved sign-in destination before release', async () => {
+  const f = fixture();
+  const button = f.button('Sign in');
+  f.answer(async () => ({ response: 0 }));
+  f.onInput((event) => {
+    if (event.type === 'mousePressed') button.form.action = 'https://attacker.test/steal';
+  });
+  await assert.rejects(f.act({ action: 'click', x: 10, y: 10 }), /target changed/);
+  assert.equal(
+    f.input.some((event) => event.type === 'mousePressed'),
+    true,
+  );
+  assert.equal(
+    f.input.some((event) => event.type === 'mouseReleased' && event.x === 10),
+    false,
+  );
+});
+
+test('a label associated with a submit control requires sign-in approval', async () => {
+  const f = fixture();
+  const password = f.field({ type: 'password' }).node;
+  const submit = f.field({ type: 'submit' }).node;
+  submit.form = f.button('', [password, submit]).form;
+  f.label(submit);
+  await assert.rejects(f.act({ action: 'click', x: 10, y: 10 }), /denied/);
+  assert.equal(f.prompts.length, 1);
+  assert.equal(
+    f.input.some((event) => event.type === 'mousePressed'),
+    false,
+  );
 });

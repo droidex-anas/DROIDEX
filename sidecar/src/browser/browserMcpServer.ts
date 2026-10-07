@@ -204,14 +204,14 @@ export function createBrowserMcpServer(
         'browser_fill',
         [
           'Set a field by ref in one step: text, a select option (its value or visible label), a checkbox or radio (true or false), or a date (YYYY-MM-DD).',
-          'Passwords, one-time codes and payment card fields require the user or browser_fill_login. Frameworks see the change as typed input. To type into the focused element use browser_type; for keys, browser_press.',
+          'Passwords, one-time codes, payment details and other secret fields require the user or browser_fill_login. Frameworks see the change as typed input. To type into the focused element use browser_type; for keys, browser_press.',
         ].join(' '),
         fillShape,
         safeTool(async (input) => said(await act.fill(appSessionId(), input))),
       ),
       tool(
         'browser_type',
-        'Type text into a field by ref, or into whatever has focus, and optionally press Enter after. Passwords, one-time codes and payment card fields require the user or browser_fill_login. Sensitive submits require user approval. The page gets it as text input, not a key event per character; for keys use browser_press.',
+        'Type text into a field by ref, or into whatever has focus, and optionally press Enter after. Passwords, one-time codes, payment details and other secret fields require the user or browser_fill_login. Sensitive submits require user approval. The page gets it as text input, not a key event per character; for keys use browser_press.',
         typeShape,
         safeTool(async (input) => said(await act.type(appSessionId(), input))),
       ),
@@ -321,17 +321,15 @@ export function createBrowserMcpServer(
         'browser_fill_login',
         [
           'Fill the saved login for the current site in the live DROIDEX browser.',
-          'You never see the username or password: the app writes them into the form, and every read masks them. This lets you authorize a sign-in without reading the secret.',
+          'DROIDEX fills the form without sending the login to the model. This tool returns only success; subsequent text reads redact the exact filled values until navigation. A hostile page that receives a login can still leak it, for example by encoding it.',
           'Saved logins are strictly opt-in. Use only when a sign-in form is visible and the user has enabled saved logins and saved one for this site.',
           'Asks the user on every fill, with Touch ID when available. Never fills automatically on page load. Returns an error if saved logins are off or none is saved; then ask the user to sign in once and accept the save-login prompt. After filling, submit with browser_click or browser_press.',
         ].join(' '),
         {},
-        safeTool(async () =>
-          said({
-            done: 'Filled the saved login.',
-            outcome: await manager.fillCredentials(appSessionId()),
-          }),
-        ),
+        safeTool(async () => {
+          await manager.fillCredentials(appSessionId());
+          return 'Filled the saved login.';
+        }),
       ),
       tool(
         'design-mode',

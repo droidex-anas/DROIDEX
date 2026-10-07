@@ -1,3 +1,4 @@
+const { secretsOn, redactSecrets } = require('./nativeBrowserCredentials.cjs');
 const { createBrowserReading } = require('./browserReading.cjs');
 const { createBrowserScreenshot } = require('./browserScreenshot.cjs');
 const { redactBrowserPageUrl } = require('./browserDiagnostics.cjs');
@@ -85,6 +86,20 @@ function createNativeBrowserPage({
     // Waking the page can outlast the caller; then nothing more is done.
     if (Date.now() >= request.startBy || request.runEnded?.())
       throw new Error('The browser page did not finish in time.');
+    const secrets = secretsOn(entry, contents);
+    try {
+      const outcome = await performOnPage(contents, entry, request);
+      const protectedValues = new Set([...secrets, ...(entry.credentialSecrets?.values ?? [])]);
+      return redactSecrets(outcome, protectedValues);
+    } catch (error) {
+      const protectedValues = new Set([...secrets, ...(entry.credentialSecrets?.values ?? [])]);
+      throw new Error(
+        redactSecrets(error instanceof Error ? error.message : String(error), protectedValues),
+      );
+    }
+  }
+
+  async function performOnPage(contents, entry, request) {
     if (request.action === 'find') {
       const found = await reading.find(contents, entry, request.query);
       return { requestId: request.requestId, ok: true, ...found };
@@ -174,15 +189,22 @@ function createNativeBrowserPage({
     // A read hands over what came in since the last one, so one whose caller
     // has given up takes nothing.
     if (Date.now() >= request.startBy) throw new Error('The browser page did not finish in time.');
+    const secrets = entry.credentialSecrets?.values ?? new Set();
     if (request.action === 'network')
-      return {
-        requestId: request.requestId,
-        ok: true,
-        networkEvents: entry.networkEvents.splice(0),
-      };
+      return redactSecrets(
+        {
+          requestId: request.requestId,
+          ok: true,
+          networkEvents: entry.networkEvents.splice(0),
+        },
+        secrets,
+      );
     // What a read hands over is no longer news for an action's answer.
     entry.errorTimes.length = 0;
-    return { requestId: request.requestId, ok: true, consoleEvents: entry.consoleEvents.splice(0) };
+    return redactSecrets(
+      { requestId: request.requestId, ok: true, consoleEvents: entry.consoleEvents.splice(0) },
+      secrets,
+    );
   }
 
   // Records the size's name or the scheme and answers once a live guest has

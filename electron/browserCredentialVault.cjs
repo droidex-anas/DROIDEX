@@ -56,12 +56,12 @@ class BrowserCredentialVault {
           title: `Save login in ${this.options.appName}?`,
           message: `Save this login for ${origin}?`,
           detail:
-            'The login is encrypted with the operating system credential store. The agent can request a consent-gated fill but never receives the username or password.',
+            'The login is encrypted with the operating system credential store. DROIDEX does not send it to the agent, but a hostile page that receives it can still leak it.',
         },
         { signal },
       );
       if (response.response !== 0 || signal?.aborted || !isStillValid()) return false;
-      return this.upsert(origin, username, password, isStillValid);
+      return this.upsert(origin, username, password, () => !signal?.aborted && isStillValid());
     } finally {
       this.promptActive = false;
     }
@@ -84,7 +84,7 @@ class BrowserCredentialVault {
         title: 'Use saved login?',
         message: `Allow DROIDEX to fill your saved login for ${origin}?`,
         detail:
-          'The login is injected directly into this page. Its username and password are never returned to the agent.',
+          'DROIDEX fills the login directly into this page without sending it to the agent. A hostile page that receives it can still leak it.',
       },
       { signal },
     );
@@ -112,11 +112,14 @@ class BrowserCredentialVault {
       if (!isStillValid()) return false;
       if (rows.length >= 500 && !rows.some((row) => row.origin === origin))
         throw new Error('Saved login storage is full. Delete a login in Settings > Browser first.');
-      await writeRows(this.filePath, [
-        ...rows.filter((row) => row.origin !== origin),
-        { origin, enc: encrypted.toString('base64') },
-      ]);
-      return true;
+      return writeRows(
+        this.filePath,
+        [
+          ...rows.filter((row) => row.origin !== origin),
+          { origin, enc: encrypted.toString('base64') },
+        ],
+        isStillValid,
+      );
     });
   }
 
@@ -229,11 +232,17 @@ async function readRows(filePath) {
   return parsed;
 }
 
-async function writeRows(filePath, rows) {
+async function writeRows(filePath, rows, isStillValid = () => true) {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
-  await fsp.writeFile(temporaryPath, JSON.stringify(rows, null, 2), { mode: 0o600 });
-  await fsp.rename(temporaryPath, filePath);
+  try {
+    await fsp.writeFile(temporaryPath, JSON.stringify(rows, null, 2), { mode: 0o600 });
+    if (!isStillValid()) return false;
+    await fsp.rename(temporaryPath, filePath);
+    return true;
+  } finally {
+    await fsp.rm(temporaryPath, { force: true });
+  }
 }
 
 module.exports = { createBrowserCredentialVault, secureCredentialOrigin };

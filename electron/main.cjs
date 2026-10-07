@@ -1050,6 +1050,13 @@ function registerIpc() {
       .catch(() => undefined)
       .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
+  ipcMain.on('native-browser-credential-fill-valid', (event, token) => {
+    event.returnValue = nativeBrowserManager.canFillCredential(
+      event.sender,
+      event.senderFrame,
+      token,
+    );
+  });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
     void nativeBrowserManager
       .handleCredentialCapture(event.sender, event.senderFrame, payload)

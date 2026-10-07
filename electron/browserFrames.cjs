@@ -143,8 +143,19 @@ async function focusedFrame(dbg) {
   let sessionId;
   let frameId; // the same-process frame in the session that holds the focus
   const held = [];
-  const documentOf = async (session) => {
-    const { result } = await send(dbg, session, 'Runtime.evaluate', { expression: 'document' });
+  const documentOf = async (session, id) => {
+    if (!id) {
+      const { frameTree } = await send(dbg, session, 'Page.getFrameTree');
+      id = frameTree.frame.id;
+    }
+    const { executionContextId } = await send(dbg, session, 'Page.createIsolatedWorld', {
+      frameId: id,
+      worldName: 'droidex-agent-safety',
+    });
+    const { result } = await send(dbg, session, 'Runtime.evaluate', {
+      expression: 'document',
+      contextId: executionContextId,
+    });
     if (!result?.objectId)
       throw new Error('The page changed before the action ran; call browser_read_page.');
     held.push({ sessionId: session, objectId: result.objectId });
@@ -166,11 +177,7 @@ async function focusedFrame(dbg) {
         pierce: true,
       });
       if (!owner.contentDocument) break;
-      const { object } = await send(dbg, sessionId, 'DOM.resolveNode', {
-        backendNodeId: owner.contentDocument.backendNodeId,
-      });
-      held.push({ sessionId, objectId: object.objectId });
-      [frameId, documentId] = [owner.frameId, object.objectId];
+      [frameId, documentId] = [owner.frameId, await documentOf(sessionId, owner.frameId)];
     }
     const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
     const document = loaderOf(frameTree, frameId) ?? frameTree.frame.loaderId;
@@ -205,9 +212,6 @@ const TAKES_TEXT = `function (a) {
   const notText = ['button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'];
   return a.localName === 'input' && !notText.includes(a.type);
 }`;
-
-// Whether the element it is called on takes typed text.
-const ELEMENT_TAKES_TEXT = `function () { return (${TAKES_TEXT})(this); }`;
 
 // Null once the document has left its frame; otherwise whether the element
 // with its focus, inside open shadow roots too, takes typed text.
@@ -310,7 +314,6 @@ module.exports = {
   framePainted,
   frameHolds,
   focusedFrame,
-  ELEMENT_TAKES_TEXT,
   frameStep,
   scrollFrameIntoView,
   axTree,

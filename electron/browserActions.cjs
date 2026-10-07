@@ -5,9 +5,9 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const { send, frameHolds, focusedFrame, ELEMENT_TAKES_TEXT } = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
-const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
+const { keyOf, modifiersOf, pressKey } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { createBrowserCover } = require('./browserCover.cjs');
 const { createBrowserAgentSafety, refuseSensitiveInput } = require('./browserAgentSafety.cjs');
@@ -37,6 +37,10 @@ function createBrowserActions({
     if (request.action === 'snapshot')
       return result(request, contents, entry, request.receivedAt ?? Date.now());
     if (request.action === 'inspect') return inspect(contents, entry, request);
+    if (request.action === 'fillCredentials') {
+      await unthrottled(contents, () => credentials.fillForAgent(contents, entry, request));
+      return { requestId: request.requestId, ok: true };
+    }
     const since = Date.now();
     const urlBefore = contents.getURL();
     const navigation = observeNavigation(contents);
@@ -95,9 +99,6 @@ function createBrowserActions({
           FILL,
           () => startInput(step),
         );
-      case 'fillCredentials':
-        startInput(step);
-        return credentials.fillForAgent(contents, entry, request);
       default:
         throw new Error(`Unsupported browser action: ${request.action}`);
     }
@@ -130,8 +131,13 @@ function createBrowserActions({
       await safety.authorize(contents, entry, request, inspected);
       notLate(step);
       if (request.ref) await refuseCovered(contents, entry, request.ref, target);
-      const verifyTarget = async (dbg) =>
-        safety.verify(inspected, await safety.inspectPointer(dbg, entry, request, target));
+      const dispatch = (dbg, event, holding) =>
+        safety.inspectPointer(dbg, entry, request, target, (current) => {
+          safety.verify(inspected, current);
+          if (!holding()) throw new Error(LATE);
+          startInput(step);
+          return dbg.sendCommand('Input.dispatchMouseEvent', event);
+        });
       const press = { x, y, button, clickCount, modifiers };
       await dispatchMouse(
         contents,
@@ -141,7 +147,7 @@ function createBrowserActions({
           { type: 'mousePressed', ...press },
           { type: 'mouseReleased', ...press },
         ],
-        verifyTarget,
+        dispatch,
       );
     }
   }
@@ -223,12 +229,10 @@ function createBrowserActions({
         if (!holding()) throw new Error(LATE);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
-        await keepsFocus(dbg, sessionId, document);
-        if (!(await hasFocus(dbg, sessionId, target.backendNodeId)))
+        const focused = await keepsFocus(dbg, sessionId, document);
+        if (focused.backendNodeId !== target.backendNodeId)
           throw new Error(`${request.ref} did not keep the focus; read the page again.`);
-        // Asked of the node itself, which the focused frame cannot reach
-        // inside a closed shadow root.
-        takesText = await callOnNode(dbg, sessionId, target.backendNodeId, ELEMENT_TAKES_TEXT);
+        takesText = focused.takesText;
       } else {
         ({ sessionId, document, takesText } = await focusedFrame(dbg));
       }
@@ -249,30 +253,33 @@ function createBrowserActions({
     await safety.authorize(contents, entry, request, prepared.inspected);
     await runWithWebContentsDebugger(contents, async (dbg, holding) => {
       const { sessionId, document, refNode, inspected } = prepared;
-      const inspect = () =>
-        request.ref
-          ? safety.inspectNode(
-              dbg,
-              { sessionId, document, backendNodeId: refNode },
-              request.submit ? 'enter' : null,
-            )
-          : safety.inspectFocus(dbg, request.submit ? 'enter' : null);
-      await keepsFocus(dbg, sessionId, document);
-      if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
+      const focused = await keepsFocus(dbg, sessionId, document);
+      if (request.ref && focused.backendNodeId !== refNode)
         throw new Error(`${request.ref} lost the focus; read the page again.`);
-      safety.verify(inspected, await inspect());
       const stillOn = onSamePage(dbg, holding, sessionId, document);
       await inputReady(dbg, step, holding, sessionId, document);
-      if (text) await send(dbg, sessionId, 'Input.insertText', { text });
+      if (text)
+        await safety.inspectFocus(dbg, request.submit ? 'enter' : null, (current) => {
+          safety.verify(inspected, current);
+          refuseSensitiveInput(current);
+          if (!holding()) throw new Error(LATE);
+          startInput(step);
+          return send(dbg, sessionId, 'Input.insertText', { text });
+        });
       if (request.submit) {
-        await keepsFocus(dbg, sessionId, document);
+        const focused = await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
-        if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
+        if (request.ref && focused.backendNodeId !== refNode)
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
-        safety.verify(inspected, await inspect());
-        // The page check comes last, right before the key.
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
+        await pressKey(keyOf('Enter'), stillOn, (event) =>
+          safety.inspectFocus(dbg, 'enter', (current) => {
+            safety.verify(inspected, current);
+            if (!holding()) throw new Error(LATE);
+            startInput(step);
+            return send(dbg, sessionId, 'Input.dispatchKeyEvent', event);
+          }),
+        );
       }
     });
   }
@@ -296,11 +303,18 @@ function createBrowserActions({
       if (!['Tab', 'Escape', 'Enter'].includes(key.key)) refuseSensitiveInput(inspected);
       await safety.authorize(contents, entry, request, inspected);
       await runWithWebContentsDebugger(contents, async (dbg, holding) => {
-        const current = await safety.inspectFocus(dbg, activation);
-        safety.verify(inspected, current);
-        const { sessionId, document } = current;
+        const { sessionId, document } = inspected;
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, key, onSamePage(dbg, holding, sessionId, document));
+        await pressKey(key, onSamePage(dbg, holding, sessionId, document), (event) =>
+          safety.inspectFocus(dbg, activation, (current) => {
+            if (event.type !== 'keyUp' || !['Tab', 'Escape'].includes(key.key))
+              safety.verify(inspected, current);
+            if (!['Tab', 'Escape', 'Enter'].includes(key.key)) refuseSensitiveInput(current);
+            if (!holding()) throw new Error(LATE);
+            startInput(step);
+            return send(dbg, sessionId, 'Input.dispatchKeyEvent', event);
+          }),
+        );
       });
     }
   }
@@ -327,18 +341,30 @@ function createBrowserActions({
 
   // Before each event, inside the debugger queue, a new page or a replaced
   // ref document stops the gesture.
-  function dispatchMouse(contents, step, target, events, verifyTarget) {
+  function dispatchMouse(contents, step, target, events, dispatch) {
     return runWithWebContentsDebugger(contents, async (dbg, holding) => {
       const stillOn = onSamePage(dbg, holding, target.sessionId, target.document);
       for (const event of events) {
-        // A press that went out is always released, on the page that took it.
         if (event.type === 'mouseReleased') {
-          if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
+          if (await stillOn()) {
+            try {
+              if (dispatch) await dispatch(dbg, event, holding);
+              else await dbg.sendCommand('Input.dispatchMouseEvent', event);
+            } catch (error) {
+              // Release away from the control so a refused click does not leave the button held.
+              if (await stillOn())
+                await dbg.sendCommand('Input.dispatchMouseEvent', { ...event, x: -1, y: -1 });
+              throw error;
+            }
+          }
           continue;
         }
-        if (verifyTarget) await verifyTarget(dbg);
         await inputReady(dbg, step, holding, target.sessionId, target.document);
-        await dbg.sendCommand('Input.dispatchMouseEvent', event);
+        if (dispatch) await dispatch(dbg, event, holding);
+        else {
+          startInput(step);
+          await dbg.sendCommand('Input.dispatchMouseEvent', event);
+        }
       }
     });
   }
@@ -348,29 +374,6 @@ function createBrowserActions({
   // Once the debugger queue has moved on, nothing is released either.
   function onSamePage(dbg, holding, sessionId, document) {
     return async () => (!document || (await frameHolds(dbg, sessionId, document))) && holding();
-  }
-
-  // Whether a node is what its own document or shadow root has focused.
-  async function hasFocus(dbg, sessionId, backendNodeId) {
-    const focused = 'function () { return this.getRootNode().activeElement === this; }';
-    return callOnNode(dbg, sessionId, backendNodeId, focused);
-  }
-
-  // Whether a function called on a node returns true.
-  async function callOnNode(dbg, sessionId, backendNodeId, functionDeclaration) {
-    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
-    try {
-      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: object.objectId,
-        functionDeclaration,
-        returnByValue: true,
-      });
-      return result?.value === true;
-    } finally {
-      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
-        () => undefined,
-      );
-    }
   }
 
   // Keys go on only while the frame they were aimed at still has the focus.
@@ -386,7 +389,8 @@ function createBrowserActions({
   async function inputReady(dbg, step, holding, sessionId, document) {
     if (document && !(await frameHolds(dbg, sessionId, document))) throw new Error(PAGE_CHANGED);
     if (!holding()) throw new Error(LATE);
-    startInput(step);
+    if (step.navigation.started()) throw new Error(PAGE_CHANGED);
+    notLate(step);
   }
 
   async function inspect(contents, entry, request) {

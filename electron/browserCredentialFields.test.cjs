@@ -64,18 +64,49 @@ test('fill refuses ambiguous, new-password and changed-origin forms', () => {
     password: 'saved',
     startBy: Date.now() + 10_000,
   };
-  assert.equal(fillCredentialForm(document, payload).ok, false);
+  assert.equal(fillCredentialForm(document, payload, () => true).ok, false);
   inputs = [other];
-  assert.equal(fillCredentialForm(document, payload).ok, false);
+  assert.equal(fillCredentialForm(document, payload, () => true).ok, false);
   inputs = [current];
   assert.equal(
-    fillCredentialForm(document, { ...payload, origin: 'https://attacker.test' }).ok,
+    fillCredentialForm(document, { ...payload, origin: 'https://attacker.test' }, () => true).ok,
     false,
   );
   current.onFocus = () => {
     current.type = 'text';
   };
-  assert.throws(() => fillCredentialForm(document, payload), /form changed/);
+  assert.throws(() => fillCredentialForm(document, payload, () => true), /form changed/);
   assert.equal(current.value, '');
   assert.equal(other.value, '');
+});
+
+test('revoking the fill during focus prevents the isolated world from writing', () => {
+  const password = new Input('password', '', 'current-password');
+  let valid = true;
+  const document = {
+    defaultView: {
+      location: { origin: 'https://example.test' },
+      HTMLInputElement: Input,
+      Event: class {},
+    },
+    querySelectorAll: () => [password],
+  };
+  password.onFocus = () => {
+    valid = false;
+  };
+  assert.throws(
+    () =>
+      fillCredentialForm(
+        document,
+        {
+          origin: 'https://example.test',
+          username: '',
+          password: 'saved',
+          startBy: Date.now() + 10_000,
+        },
+        () => valid,
+      ),
+    /canceled before writing/,
+  );
+  assert.equal(password.value, '');
 });

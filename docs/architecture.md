@@ -81,19 +81,31 @@ capabilities only; `browserCredentialsDelete(origin)` deletes one exact site's l
 Both commands require the trusted main renderer, with types in
 `src/lib/browserSettings.ts`. The settings UI is a separate stack change.
 
-Capture takes its origin from the registered guest's main frame, requires HTTPS
+Capture takes its security origin from the registered guest's main frame, rejects
+opaque origins (including sandboxed HTTPS pages), requires HTTPS
 (except localhost/loopback), and considers only the submitted form's current
 password. New-password and ambiguous forms are not saved. Each save asks first.
 There is no page-load autofill. `browser_fill_login` asks through the credential
 priority queue on every use, then requires Touch ID when available on macOS.
-The secret goes only from main to the preload's isolated world; a document token
-prevents a delayed fill from reaching a new page, even at the same URL. Navigation,
-closure, expiry and policy changes invalidate pending use. Existing field and
-screenshot masking still hides saved values from agent reads.
+DROIDEX sends the login to the preload's isolated world for filling, never to the
+model. A document token prevents a delayed fill from reaching a new page, even at
+the same URL. A revocable use token is checked synchronously with main immediately
+before each write; navigation, closure, cancellation, expiry and policy changes
+invalidate it. Capture revalidates the document and policy immediately before the
+vault rename publishes a saved login.
 
-Agent type, fill and editing keys refuse password, one-time-code and payment-card
-fields. Click, Enter and Space inspect sign-in, sign-up, OAuth, passkey and payment
-controls, request single-use approval, then recheck the target before sending input.
+`browser_fill_login` returns only success. Agent text results, snapshots, titles,
+accessibility reads, inspections and console/network diagnostics redact the exact
+filled values for that document until navigation. Existing field and screenshot
+masking remains in place. A hostile page that receives a login can still leak it,
+including through encoding or painting it outside a field; these protections do
+not make an untrusted site safe to receive a password.
+
+Agent type, fill and editing keys share the read path's sensitive-field classifier
+and refuse password, one-time-code, payment-card and other secret fields. Click,
+Enter and Space inspect sign-in, sign-up, OAuth, passkey and payment controls,
+request single-use approval, then recheck the real focus or activation target
+immediately before dispatch, including the destination before mouse release.
 Detection uses form fields and control wording, so sites with custom controls may
 need a user handoff. CDP inspects and fills in isolated worlds; unreadable input
 focus is refused. These checks run only on agent actions; direct user input is not
