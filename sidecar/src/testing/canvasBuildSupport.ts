@@ -12,12 +12,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
-import {
-  CanvasBuilds,
-  type BuildDeadline,
-  type BuildTarget,
-  type CanvasBuildHost,
-} from '../canvas/CanvasBuilds.js';
+import { CanvasBuilds, type BuildDeadline } from '../canvas/CanvasBuilds.js';
+import type { BuildTarget, CanvasBuildHost } from '../canvas/canvasBuildHost.js';
 import {
   COMPILER_UNAVAILABLE,
   CompileCancelledError,
@@ -28,7 +24,11 @@ import {
   type CompileInput,
 } from '../canvas/compiler.js';
 import type { DesignCompiler } from '../canvas/canvasCompilerProcesses.js';
-import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
+import {
+  CanvasFiles,
+  REVISION_METADATA_VERSION,
+  type CanvasFileSystem,
+} from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import type {
@@ -223,7 +223,8 @@ export function standIn(builds: CanvasBuilds) {
     commitBuild: async (canvasId, designId, publish) => {
       // The workspace publishes nothing for a design its head has lost.
       if (!buildTarget(canvasId, designId)) return;
-      if (!(await publish())) return;
+      const committedBuild = await publish();
+      if (!committedBuild?.isCurrent()) return;
       committed.push(`${canvasId}/${designId}:${builds.stateOf(canvasId, designId).status}`);
       for (const waiter of [...waiters]) waiter();
     },
@@ -344,6 +345,35 @@ export async function storage(t: TestContext): Promise<Storage> {
 export interface BoardOptions {
   store?: Storage;
   fs?: CanvasFileSystem;
+}
+
+/** A loaded build host with owned scratch storage and registry cleanup. */
+export async function buildHost(
+  t: TestContext,
+  builds: CanvasBuilds,
+  revisions: readonly { canvasId: string; designId: string; revisionId: string }[] = [],
+) {
+  t.after(() => builds.close());
+  const files = new CanvasFiles((await storage(t)).root);
+  await files.createRoot();
+  const canvas = standIn(builds);
+  for (const { canvasId, designId, revisionId } of revisions) {
+    await files.publishRevision(
+      canvasId,
+      {
+        version: REVISION_METADATA_VERSION,
+        designId,
+        revisionId,
+        parentRevisionId: null,
+        designSystem,
+        createdAt: 1_767_225_600_000,
+      },
+      new Map([['main.tsx', 'export default () => null']]),
+    );
+    canvas.revisions.set(`${canvasId}/${designId}`, revisionId);
+  }
+  await builds.load(canvas.host, files, []);
+  return { ...canvas, files };
 }
 
 /** A real workspace over scratch storage, with the compiler under test control. */

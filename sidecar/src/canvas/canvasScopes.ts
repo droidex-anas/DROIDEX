@@ -27,6 +27,13 @@ export class CanvasScopes implements CanvasLeaseRegistry {
     this.active.delete(scopeId);
   }
 
+  /** Pane requests lose their authority as soon as app shutdown starts. */
+  revokeUsers(): void {
+    for (const [scopeId, scope] of this.active) {
+      if (scope.origin === 'user') this.active.delete(scopeId);
+    }
+  }
+
   isScopeActive(scopeId: string): boolean {
     return this.active.has(scopeId);
   }

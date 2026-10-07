@@ -218,7 +218,7 @@ function hasKitToken(kit: DesignSystem, mode: DesignSystemRef['mode'], token: st
   return false;
 }
 
-/** Releases the compiler's service process before the parent ends it. */
+/** Releases the service process, flushes the acknowledgement, and exits. */
 async function shutdown(requestId: number): Promise<void> {
   for (const controller of running.values()) controller.abort();
   try {
@@ -226,7 +226,9 @@ async function shutdown(requestId: number): Promise<void> {
   } catch (error) {
     console.error('Canvas compiler shutdown failed:', error);
   }
-  send({ requestId, status: 'stopped' } satisfies CompilerResponse);
+  send({ requestId, status: 'stopped' } satisfies CompilerResponse, () => {
+    process.exit(0);
+  });
 }
 
 async function runCompile(
