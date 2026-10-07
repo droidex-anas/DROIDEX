@@ -95,6 +95,7 @@ export function createCanvasMcpServer(
 ) {
   const dispatch = async (
     input: unknown,
+    completion: 'read' | 'mutation',
     handler: (
       scope: Extract<CanvasScope, { origin: 'turn' }>,
     ) => Promise<Record<string, unknown>> | Record<string, unknown>,
@@ -106,7 +107,8 @@ export function createCanvasMcpServer(
       if (scope?.origin !== 'turn' || scope.appSessionId !== appSessionId)
         throw canvasError('scope_expired', EXPIRED_TURN);
       const value = await handler(scope);
-      turns.requireScope(scope.scopeId);
+      // Successful mutations have already crossed their owner's publication gate.
+      if (completion === 'read') turns.requireScope(scope.scopeId);
       return JSON.stringify({ ok: true, ...value });
     } catch (error) {
       const failure = toolFailure(error);
@@ -142,7 +144,7 @@ export function createCanvasMcpServer(
       'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn with canvas_read to get its scopeId, attached canvas and pinned references. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, submit complete working files, then inspect the result. Preserve unrelated frames and cite revision IDs when updating existing work.',
       readSchema.shape,
       (raw) =>
-        dispatch(raw, async (scope) => {
+        dispatch(raw, 'read', async (scope) => {
           const input = readSchema.parse(raw);
           const snapshot = await board(scope);
           if (!snapshot)
@@ -206,7 +208,7 @@ export function createCanvasMcpServer(
       'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read. Use placeBeside to place variants below an existing frame and seed to copy a revision from this canvas. Create a small working composition first; retry with the same mutationId and scopeId after a lost response.',
       createSchema.shape,
       (raw) =>
-        dispatch(raw, async (scope) => {
+        dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, frames, placeBeside } = createSchema.parse(raw);
           return {
             created: await (await workspace()).create(scope, { mutationId, frames, placeBeside }),
@@ -218,7 +220,7 @@ export function createCanvasMcpServer(
       'Submit complete changed files for a named frame using the scopeId from this turn’s canvas_read and its current revisionId. Preserve unrelated frames and reuse mutationId and scopeId on retry.',
       writeSchema.shape,
       (raw) =>
-        dispatch(raw, async (scope) => {
+        dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, designId, expectedRevisionId, files, deletedPaths, designSystem } =
             writeSchema.parse(raw);
           const input = writeFilesInputSchema.parse({
@@ -237,7 +239,7 @@ export function createCanvasMcpServer(
       'Inspect a design build and its diagnostics before revising it. Screenshot and element capture report when no agent capture is available.',
       inspectSchema.shape,
       (raw) =>
-        dispatch(raw, async (scope) => {
+        dispatch(raw, 'read', async (scope) => {
           const input = inspectSchema.parse(raw);
           if (
             scope.allowedDesignIds !== 'canvas' &&
@@ -272,7 +274,7 @@ export function createCanvasMcpServer(
       'Move or resize existing frames using the scopeId from this turn’s canvas_read and their current layout versions. This changes board layout only.',
       arrangeSchema.shape,
       (raw) =>
-        dispatch(raw, async (scope) => {
+        dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, frames } = arrangeSchema.parse(raw);
           return { change: await (await workspace()).arrange(scope, { mutationId, frames }) };
         }),
@@ -292,39 +294,43 @@ export function createCanvasMcpServer(
         expectedRevisionId: canvasIdentifierSchema.optional(),
       },
       (raw) =>
-        dispatch(raw, async (scope) => {
-          const input = themeSchema.parse(raw);
-          if (input.operation === 'list') {
-            const systems = await listDesignSystems();
+        dispatch(
+          raw,
+          raw.operation === 'save' || raw.operation === 'apply' ? 'mutation' : 'read',
+          async (scope) => {
+            const input = themeSchema.parse(raw);
+            if (input.operation === 'list') {
+              const systems = await listDesignSystems();
+              return {
+                systems: systems.slice(input.offset, input.offset + input.limit),
+                total: systems.length,
+                selected: scope.context.designSystem,
+              };
+            }
+            if (input.operation === 'read') return { system: await readDesignSystem(input.ref) };
+            if (input.operation === 'save')
+              return {
+                ref: await saveDesignSystem(input.system, {
+                  mutationId: input.mutationId,
+                  beforePublish: () => {
+                    turns.requireScope(scope.scopeId);
+                  },
+                }),
+              };
             return {
-              systems: systems.slice(input.offset, input.offset + input.limit),
-              total: systems.length,
-              selected: scope.context.designSystem,
-            };
-          }
-          if (input.operation === 'read') return { system: await readDesignSystem(input.ref) };
-          if (input.operation === 'save')
-            return {
-              ref: await saveDesignSystem(input.system, {
+              receipt: await (
+                await workspace()
+              ).write(scope, {
                 mutationId: input.mutationId,
-                beforePublish: () => {
-                  turns.requireScope(scope.scopeId);
-                },
+                designId: input.designId,
+                expectedRevisionId: input.expectedRevisionId,
+                designSystem: input.ref,
+                files: {},
+                deletedPaths: [],
               }),
             };
-          return {
-            receipt: await (
-              await workspace()
-            ).write(scope, {
-              mutationId: input.mutationId,
-              designId: input.designId,
-              expectedRevisionId: input.expectedRevisionId,
-              designSystem: input.ref,
-              files: {},
-              deletedPaths: [],
-            }),
-          };
-        }),
+          },
+        ),
     ),
   ];
   return new CanvasMcpServer({

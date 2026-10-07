@@ -4,6 +4,7 @@ import {
   canvasRoot,
   deferred,
   observedFileSystem,
+  holdManifestWrite,
   quietBuilds,
 } from '../testing/canvasStorageSupport.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
@@ -382,4 +383,108 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
     'invalid_input',
   );
   assert.equal(h.workspace.snapshot(canvasId).frames.length, 2);
+});
+
+for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange'] as const) {
+  test(`a published ${name} keeps its MCP success after turn revocation`, async (t) => {
+    const held = holdManifestWrite('published');
+    const h = await harness(t, held.fs);
+    h.turns.beginTurn('chat-one', undefined);
+    const scopeId = (await h.call('canvas_read', {})).scopeId;
+    const created = await h.call('canvas_create', {
+      scopeId,
+      mutationId: 'initial',
+      frames: [frame],
+    });
+    assert.ok(created.ok && created.created);
+    const first = created.created.frames[0];
+    assert.ok(first);
+    const { canvasId } = created.created;
+    const designId = first.designId;
+    const inputs = {
+      canvas_create: {
+        scopeId,
+        mutationId: 'published-create',
+        frames: [{ ...frame, name: 'Next' }],
+      },
+      canvas_write: {
+        scopeId,
+        mutationId: 'published-write',
+        designId,
+        expectedRevisionId: null,
+        files: { 'main.tsx': 'export default () => null' },
+        deletedPaths: [],
+      },
+      canvas_arrange: {
+        scopeId,
+        mutationId: 'published-arrange',
+        frames: [
+          { designId, expectedLayoutVersion: 0, rect: { x: 800, y: 0, width: 720, height: 520 } },
+        ],
+      },
+    };
+    held.arm();
+    const pending = h.call(name, inputs[name]);
+    await held.reached;
+    h.turns.endSession('chat-one');
+    const closing = h.workspace.close();
+    held.release();
+    const result = await pending;
+    await closing;
+    assert.equal(result.ok, true);
+    assert.equal((await h.call(name, inputs[name])).code, 'scope_expired');
+    const snapshot = h.workspace.snapshot(canvasId);
+    if (name === 'canvas_create') assert.equal(snapshot.frames.length, 2);
+    if (name === 'canvas_write') {
+      assert.ok(result.receipt);
+      assert.equal(snapshot.frames[0]?.revisionId, result.receipt.revisionId);
+    }
+    if (name === 'canvas_arrange') assert.equal(snapshot.frames[0]?.rect.x, 800);
+  });
+}
+
+test('a source read loses its captured lease while waiting and cannot borrow a replacement', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'initial',
+    frames: [frame],
+  });
+  assert.ok(created.created);
+  const first = created.created.frames[0];
+  assert.ok(first);
+  const written = await h.call('canvas_write', {
+    scopeId,
+    mutationId: 'source',
+    designId: first.designId,
+    expectedRevisionId: null,
+    files: { 'main.tsx': 'export default () => <h1>READ_SENTINEL</h1>' },
+    deletedPaths: [],
+  });
+  assert.ok(written.receipt);
+  const readFiles = h.workspace.readFiles.bind(h.workspace);
+  const reached = deferred();
+  const released = deferred();
+  t.mock.method(h.workspace, 'readFiles', async (...args: Parameters<typeof readFiles>) => {
+    const files = await readFiles(...args);
+    reached.resolve();
+    await released.promise;
+    return files;
+  });
+  const reading = h.call('canvas_read', {
+    scopeId,
+    view: 'design',
+    designId: first.designId,
+    revisionId: written.receipt.revisionId,
+  });
+  await reached.promise;
+  h.turns.endSession('chat-one');
+  h.turns.beginTurn('chat-one', undefined);
+  released.resolve();
+  const reply = await reading;
+  assert.equal(reply.code, 'scope_expired');
+  assert.equal(reply.ok, false);
+  assert.ok(!JSON.stringify(reply).includes('READ_SENTINEL'));
 });

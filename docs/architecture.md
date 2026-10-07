@@ -357,6 +357,9 @@ write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn star
 `canvas_read` returns that chat's newest live lease. Every mutation requires its
 explicit `scopeId`; retries keep the original scope and cannot borrow a later
 turn's authority. Named leases expire when their turn or provider ends.
+Read replies revalidate that lease after awaited work. Mutation owners check it
+at publication; a mutation already published durably returns its receipt even
+if shutdown revokes the turn while the final flush finishes.
 `canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
 `CanvasWorkspace` owns board
 mutations, including retry receipts and attachment bootstrap; the design-system
