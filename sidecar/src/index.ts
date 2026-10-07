@@ -119,7 +119,9 @@ function reportProjectError(error: unknown): void {
 // Builds are projected into every frame the workspace hands out, so the
 // registry exists before the workspace that reads it.
 const canvasBuilds = new CanvasBuilds();
-const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
+// Annotated because `isChatKnown` below reads the manager that was handed this
+// promise, which leaves TypeScript nothing to infer either type from.
+const canvasReady: Promise<CanvasWorkspace> = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
   isScopeActive: (scopeId) => canvasScopes.isScopeActive(scopeId),
   bindScopeCanvas: (scopeId, canvasId) => {
     canvasScopes.bindScopeCanvas(scopeId, canvasId);

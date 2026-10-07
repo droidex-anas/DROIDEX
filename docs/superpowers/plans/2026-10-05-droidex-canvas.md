@@ -1214,6 +1214,74 @@ Settled by 05b (`canvas/05b-board-geometry-and-gestures`, landed in
 - `tests/smoke/electronCanvasBoard.smoke.spec.ts` exercises the real board in the existing Playwright Canvas runner, with `page.clock` and controlled arrange replies. The real Fit-click regression fails against `c0974cdf` and passes against `c98acf67`; retained cases cover UI zoom, focus loss including a Space hold left latched by window blur, independent holds, re-drag cancellation, obsolete rejections, trailing wheels, wheel units, keyboard pan and public frame focus. Initial-render unit tests do not claim gesture coverage. The board remains unmounted in this branch's production entry; 5a must rerun bundle budgets after mounting it lazily, and full app/webview composition and 50-frame performance remain integration verification.
 - Left to 5c and 5d: Select/Interact and the mode that drives `capturePointer`, selection, multiselect, resize, align/distribute, keyboard nudge, the frame context menu, the live `DesignPreview` slots, and the navigator.
 
+Settled by 05c (`canvas/05c-frames-selection-previews`, composed onto the
+reviewed 05b owners and landed in
+`src/features/canvas/{DesignFrame.tsx,BoardControls.tsx,CanvasPaneStates.tsx,previewSlots.ts,useBoardGestures.ts,useBoardViewport.ts,canvasGeometry.ts,canvasState.ts,CanvasBoard.tsx,CanvasWorkspace.tsx,previewLabels.ts}`):
+
+- The names 5d consumes are in `canvasState.ts`: `BoardInteraction` holds `mode`
+  (`'select' | 'interact'`), `selectedFrameIds` (in pick order) and
+  `interactedFrameId`; `reduceBoardInteraction` is the only way to change them;
+  `SELECT_MODE` is the resting value. `CanvasBoardHandle.focusFrame(designId)`,
+  which 05b established and `CanvasBoard.tsx` still exports, is how a sibling
+  moves the board — the navigator calls it through the board's `ref`, as the pane
+  already does for an opener's `frameId`. `CanvasWorkspace` owns mode and
+  selection and passes `interaction` / `onInteractionChange` down, so the toolbar
+  and the navigator read the same values the board does without reaching into it.
+- Spec §4's two steps out of Interact are literal: Escape leaves Interact and
+  keeps the selection, Escape again clears it, and an Escape with a gesture in
+  flight is spent cancelling that gesture instead. Picking while interacting
+  moves Interact to the frame picked; picking several leaves Interact, because
+  it drives one frame. Nothing may point at a design the canvas has lost.
+- Slot policy (spec §11, at most four live previews): the interacted frame
+  first, then selected frames that are visible, then frames already live and
+  still visible, then the rest of what is visible, nearest the board's centre
+  first. Keeping a mounted preview mounted outranks mounting a nearer one, so
+  panning does not churn guests. A frame that held a slot and lost it says so
+  rather than silently reloading, because the design restarts from its own
+  beginning; `unmountedLabel` carries that line and the honest waiting line for
+  a frame with nothing built yet. `visibleDesignIds` is the only input that
+  measures the board, so the policy itself is pure.
+- The frame header is the keyboard's way onto the board: it is a `role="button"`
+  tab stop reporting `aria-pressed`, Enter picks it and Enter on the frame
+  already picked starts interacting, Space toggles it in a multiple selection,
+  and the board reads arrows, Escape and Enter from whichever header holds focus.
+  A control, an input or an editor inside the board keeps its own keys. The
+  frame body is never board background either: in Interact the pointer belongs
+  to the preview, and in Select the overlay above it has already decided what
+  the press meant.
+- Every layout write — a released drag or resize, a nudge, an align, a
+  distribute — is one `arrangeFrames` carrying the `expectedLayoutVersion` each
+  frame was read at, and `useBoardGestures` is its single owner, because 05b's
+  review left the deferred holds and error settlement with the hook that owns
+  pointer capture. 05c's separate `useFrameLayout` was therefore not taken: its
+  `reducePendingRects` dropped 05b's reviewed suppression of an obsolete refusal,
+  so the hook's per-frame holds, mutation-ID identity and operation counter stand
+  as the renderer's side of the CAS. A commit is drawn until the sidecar
+  publishes a newer layout version for that frame; a refusal restores only the
+  frames it still describes and names the failure only when no newer operation
+  has started; a frame the canvas has lost keeps nothing. Frames an operation did
+  not actually move are left out of the write.
+- Nudge is 1 world unit, 10 with Shift, in world units rather than screen
+  pixels so a nudge means the same thing at every zoom. Arrows pan the board by
+  32 board-local pixels only while nothing is selected, which is the contract
+  05b's `onNudgeSelection` prop expressed; with `interaction` now a board prop
+  the selection itself is the signal, so that prop is gone and the board writes
+  the nudge through the layout owner that holds the drawn rects. Resize is east,
+  south and southeast, clamped to the dimensions the sidecar accepts (120 to
+  8192). Align uses the selection's own bounds and never resizes; distribute
+  equalises the gaps between the outermost two and leaves fewer than three
+  frames alone.
+- `CanvasBoard` owns no state: the viewport is `useBoardViewport`, the hand's
+  gesture and every layout write `useBoardGestures`, mode and selection
+  `canvasState`, slots `previewSlots`, the strip `BoardControls`.
+  `useBoardViewport` is 05b's reviewed viewport moved out of `CanvasBoard`
+  unchanged, so `boardCoordinates` still normalises app CSS zoom and pixel/line/
+  page wheel units, the wheel and pinch zoom rates stay separate, and Fit's
+  quiet-window suppression still outlives its own animation and holds under
+  reduced motion. 05c's single-rate `wheelZoomScale` and `panBy` were not taken
+  for the same reason. `CanvasPaneStates` took the pane's non-board states out of
+  `CanvasWorkspace`; every production file here is under 500 lines.
+
 ## Task 6: Canvas artifacts in every chat
 
 **Subtasks (one branch and PR each, merged in order):**

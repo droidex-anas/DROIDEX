@@ -1,35 +1,52 @@
-// The board: one transformed world layer, the pan/zoom/Fit gestures on it, and
-// transient frame dragging that writes layout once, on release.
+// The board: one transformed world layer holding the frames, the keyboard
+// commands over it, and the control strip along its bottom edge.
 //
-// Frames render a placeholder body here. 5c mounts `DesignPreview` in the same
-// slot and toggles `capturePointer` for Select and Interact; the header stays
-// the drag handle in both modes (spec §4).
+// It owns no state of its own. The viewport belongs to `useBoardViewport`, the
+// hand's gesture and every layout write to `useBoardGestures`, mode and
+// selection to `canvasState`, which frames are live to `previewSlots`, and the
+// strip to `BoardControls`. Spec §4's Select overlay is painted by
+// `DesignFrame`; the board decides when flipping it is safe, because only it
+// knows whether a wheel gesture is still arriving.
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
-import { useReducedMotion } from 'framer-motion';
-import { boardPoint, boardWheelDelta } from './boardCoordinates';
 import {
-  fitFrames,
-  interpolateViewport,
-  wheelZoomScale,
-  zoomAtPoint,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from 'react';
+import { useReducedMotion } from 'framer-motion';
+import { BoardControls } from './BoardControls';
+import {
+  alignRects,
+  arrowDirection,
+  distributeRects,
+  framesInBand,
+  nudgeStep,
+  visibleDesignIds,
+  type AlignEdge,
+  type DistributeAxis,
+  type PlacedFrame,
   type Point,
   type Viewport,
 } from './canvasGeometry';
-import { waitingLabel } from './previewLabels';
+import {
+  reduceBoardInteraction,
+  type BoardInteraction,
+  type BoardInteractionEvent,
+  type BoardMode,
+} from './canvasState';
+import { DesignFrame } from './DesignFrame';
+import { NO_PREVIEW_SLOTS, reducePreviewSlots, type PreviewSlotRequest } from './previewSlots';
+import { useBoardGestures, type Band } from './useBoardGestures';
+import { useBoardViewport } from './useBoardViewport';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
-import { useBoardGestures } from './useBoardGestures';
 
-/** Spec §11: a programmatic fit or focus, eased. */
-const FOCUS_DURATION_MS = 220;
-
-/**
- * A wheel gesture has no end event — trackpad momentum keeps arriving after the
- * fingers lift — so going quiet is the only honest sign that one is over.
- */
-const SCROLL_IDLE_MS = 140;
-
-const IDENTITY: Viewport = { x: 0, y: 0, scale: 1 };
+/** Board-local pixels one arrow key pans by when nothing is selected. */
+const ARROW_PAN_PX = 32;
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -40,211 +57,220 @@ export interface CanvasBoardProps {
   ref?: Ref<CanvasBoardHandle>;
   snapshot: CanvasSnapshot;
   /**
-   * The one layout write a frame drag makes, sent on pointer release. 5a's
-   * shell binds it to `CanvasClient.arrangeFrames` for this canvas.
+   * The one layout write the board makes, for a released gesture as much as for
+   * a nudge, an align or a distribute. `CanvasWorkspace` binds it to
+   * `CanvasClient.arrangeFrames` for this canvas.
    */
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
-  /**
-   * Spec §4: Select mode installs a transparent input overlay over the guest
-   * previews and Interact removes it. 5c owns the modes; the board owns when
-   * flipping hit-testing is safe to do.
-   */
-  capturePointer?: boolean;
-  /** 5c supplies this only with a selection; arrow deltas are one world unit. */
-  onNudgeSelection?: (delta: Point) => void;
+  /** One frame's live preview, mounted only while that frame holds a slot. */
+  renderPreview: (frame: CanvasFrame) => ReactNode;
+  /** Mode and selection, so the toolbar and navigator read the same values. */
+  interaction: BoardInteraction;
+  onInteractionChange: (next: BoardInteraction) => void;
 }
 
 export function CanvasBoard({
   ref,
   snapshot,
   onArrangeFrames,
-  capturePointer = true,
-  onNudgeSelection,
+  renderPreview,
+  interaction,
+  onInteractionChange,
 }: CanvasBoardProps) {
   const reducedMotion = useReducedMotion() === true;
   const board = useRef<HTMLDivElement>(null);
+  const { frames } = snapshot;
 
-  const [viewport, setViewport] = useState<Viewport>(IDENTITY);
-  const [overlayCapture, setOverlayCapture] = useState(capturePointer);
-  const [scrollActive, setScrollActive] = useState(false);
+  const view = useBoardViewport(board, frames, reducedMotion);
+  const { fitTo } = view;
+  const [slots, setSlots] = useState(NO_PREVIEW_SLOTS);
+  const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
+  // What the callbacks the gesture machine holds read, since they cannot close
+  // over the render that registered them. Filled in below, once the rects the
+  // board actually draws are known.
+  const latest = useRef<BoardReads>({ interaction, drawn: [], viewport: view.viewport });
 
-  const animation = useRef<number | null>(null);
-  const scroll = useRef<ScrollGesture>({ active: false, suppressed: false, idle: null });
-  const size = useRef<Point>({ x: 0, y: 0 });
-  const view = useRef({ fitted: false, navigated: false });
-  // What the event handlers below need from the current render; they are
-  // registered once, or run from an animation frame, so they cannot close over
-  // it. The frames are also how a resize finds something to fit.
-  const latest = useRef({ viewport, frames: snapshot.frames });
-  latest.current = { viewport, frames: snapshot.frames };
+  const dispatch = useCallback(
+    (event: BoardInteractionEvent) => {
+      const current = latest.current.interaction;
+      const next = reduceBoardInteraction(current, event);
+      if (next !== current) onInteractionChange(next);
+    },
+    [onInteractionChange],
+  );
 
-  const stopAnimation = useCallback(() => {
-    if (animation.current !== null) cancelAnimationFrame(animation.current);
-    animation.current = null;
-  }, []);
+  const pickBand = useCallback(
+    (origin: Point, current: Point, additive: boolean) => {
+      const { drawn, viewport } = latest.current;
+      dispatch({
+        type: 'pick-band',
+        designIds: framesInBand(drawn, viewport, origin, current),
+        additive,
+      });
+    },
+    [dispatch],
+  );
+
+  const clearSelection = useCallback(() => {
+    dispatch({ type: 'clear' });
+  }, [dispatch]);
 
   const gestures = useBoardGestures({
     board,
-    frames: snapshot.frames,
-    scale: viewport.scale,
+    frames,
+    scale: view.viewport.scale,
+    mode: interaction.mode,
     onStart: () => {
-      view.current.navigated = true;
-      stopAnimation();
+      view.markNavigated();
+      view.stopAnimating();
     },
-    onPan: (delta) => {
-      setViewport((current) => ({ ...current, x: current.x + delta.x, y: current.y + delta.y }));
-    },
+    onPan: view.panByScreen,
+    onClear: clearSelection,
+    onBand: pickBand,
     onArrangeFrames,
   });
 
-  /** Fit and focus are the same operation; focus just passes one rect. */
-  const fitTo = useCallback(
-    (rects: FrameRect[]) => {
-      if (rects.length === 0) return;
-      const target = fitFrames(rects, size.current);
-      if (scroll.current.active) scroll.current.suppressed = true;
-      stopAnimation();
-      view.current.navigated = true;
-      if (reducedMotion) {
-        setViewport(target);
-        return;
-      }
-      const from = latest.current.viewport;
-      const started = performance.now();
-      const step = () => {
-        const progress = Math.min(1, (performance.now() - started) / FOCUS_DURATION_MS);
-        setViewport(interpolateViewport(from, target, easeFocus(progress)));
-        animation.current = progress < 1 ? requestAnimationFrame(step) : null;
-      };
-      animation.current = requestAnimationFrame(step);
-    },
-    [reducedMotion, stopAnimation],
-  );
+  const { scale } = view.viewport;
+  // Where every frame is drawn, which is what the queries below measure and
+  // what a finished placement starts from.
+  const drawn: PlacedFrame[] = frames.map((frame) => ({
+    designId: frame.designId,
+    rect: gestures.rectFor(frame),
+  }));
+  latest.current = { interaction, drawn, viewport: view.viewport };
 
-  /** Spec §4: the board may fit once, before the user has navigated. */
-  const fitOnce = useCallback(() => {
-    const { frames } = latest.current;
-    if (view.current.fitted || view.current.navigated) return;
-    if (frames.length === 0 || size.current.x === 0) return;
-    view.current.fitted = true;
-    setViewport(
-      fitFrames(
-        frames.map((frame) => frame.rect),
-        size.current,
-      ),
-    );
-  }, []);
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      focusFrame: (frameId) => {
-        const frame = latest.current.frames.find((candidate) => candidate.designId === frameId);
-        if (!frame) return;
-        board.current?.focus({ preventScroll: true });
-        fitTo([frame.rect]);
-      },
-    }),
-    [fitTo],
-  );
-
+  // Selection and Interact must never point at a design the canvas has lost.
+  const designIds = useMemo(() => frames.map((frame) => frame.designId), [frames]);
   useEffect(() => {
-    fitOnce();
-  }, [fitOnce, snapshot]);
+    dispatch({ type: 'frames', designIds });
+  }, [designIds, dispatch]);
 
+  const [focusRequest, setFocusRequest] = useState<string | null>(null);
+  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest }), []);
+
+  // A focus asked for before its frame arrived waits for it rather than being
+  // dropped: Open on an artifact card reaches the pane before the snapshot does.
   useEffect(() => {
-    const root = board.current;
-    if (!root) return undefined;
-    const observer = new ResizeObserver(() => {
-      size.current = { x: root.clientWidth, y: root.clientHeight };
-      fitOnce();
-    });
-    observer.observe(root);
-    return () => {
-      observer.disconnect();
-    };
-  }, [fitOnce]);
+    if (focusRequest === null) return;
+    const target = frames.find((frame) => frame.designId === focusRequest);
+    if (!target) return;
+    setFocusRequest(null);
+    board.current?.focus({ preventScroll: true });
+    // The acknowledged rect, not an optimistic hold: focus shows where the
+    // canvas says the frame is.
+    fitTo([target.rect]);
+    dispatch({ type: 'pick', designId: focusRequest, additive: false });
+  }, [dispatch, fitTo, focusRequest, frames]);
 
-  /**
-   * Extends the wheel gesture in flight. `scroll.current` is what the wheel
-   * handler reads synchronously while one is running; `scrollActive` mirrors it
-   * for the effects that have to wait until it is over.
-   */
-  const markScrolling = useCallback(() => {
-    if (scroll.current.idle !== null) clearTimeout(scroll.current.idle);
-    if (!scroll.current.active) {
-      scroll.current.active = true;
-      setScrollActive(true);
-    }
-    scroll.current.idle = setTimeout(() => {
-      scroll.current = { active: false, suppressed: false, idle: null };
-      setScrollActive(false);
-    }, SCROLL_IDLE_MS);
-  }, []);
-
-  // Wheel has to be a non-passive listener of its own: React's root listener is
-  // passive, so the default Electron page zoom could not be prevented there.
+  // Spec §11: at most four live previews. The request is a plain value, so the
+  // key below is the whole of it and the reducer runs exactly when it changes.
+  const visible = visibleDesignIds(drawn, view.viewport, view.size);
+  const slotRequest: PreviewSlotRequest = {
+    designIds,
+    visible,
+    interacted: interaction.interactedFrameId,
+    selected: interaction.selectedFrameIds,
+  };
+  const slotKey = [
+    designIds.join(),
+    visible.join(),
+    slotRequest.interacted,
+    interaction.selectedFrameIds.join(),
+  ].join('|');
+  const pendingSlots = useRef(slotRequest);
+  pendingSlots.current = slotRequest;
   useEffect(() => {
-    const root = board.current;
-    if (!root) return undefined;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      markScrolling();
-      // Fit owns the rest of this wheel gesture, even after its animation ends.
-      if (scroll.current.suppressed) return;
-      stopAnimation();
-      const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
-      const delta = boardWheelDelta(root, event);
-      view.current.navigated = true;
-      setViewport((current) => {
-        if (event.ctrlKey || event.metaKey) {
-          return zoomAtPoint(
-            current,
-            pointer,
-            wheelZoomScale(current.scale, delta.y, event.ctrlKey),
-          );
-        }
-        return { ...current, x: current.x - delta.x, y: current.y - delta.y };
-      });
-    };
-    root.addEventListener('wheel', onWheel, { passive: false });
-    return () => {
-      root.removeEventListener('wheel', onWheel);
-    };
-  }, [markScrolling, stopAnimation]);
+    setSlots((current) => reducePreviewSlots(current, pendingSlots.current));
+  }, [slotKey]);
 
+  // Spec §4: the overlay's hit-test flip waits for an arriving wheel gesture to
+  // go quiet and then for the frame that paints it, so it is committed before
+  // any later input is read against it.
+  const capturePointer = interaction.mode === 'select';
   useEffect(() => {
-    if (overlayCapture === capturePointer) return undefined;
-    // Flipping hit-testing mid-gesture would hand the rest of that gesture to a
-    // different target, so the change waits for the wheel gesture to go quiet.
-    // The frame after that paints the new state, so it is committed before any
-    // later input is read against it.
-    if (scrollActive) return undefined;
+    if (overlayCapture === capturePointer || view.scrolling) return undefined;
     const frame = requestAnimationFrame(() => {
       setOverlayCapture(capturePointer);
     });
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [capturePointer, overlayCapture, scrollActive]);
+  }, [capturePointer, overlayCapture, view.scrolling]);
 
-  useEffect(
-    () => () => {
-      if (animation.current !== null) cancelAnimationFrame(animation.current);
-      if (scroll.current.idle !== null) clearTimeout(scroll.current.idle);
-    },
-    [],
-  );
+  /**
+   * One layout write for the selection, computed from the rects it is drawn at.
+   */
+  const placeSelection = (nextRects: (rects: FrameRect[]) => FrameRect[]) => {
+    const selected = frames.filter((frame) =>
+      interaction.selectedFrameIds.includes(frame.designId),
+    );
+    const placed = nextRects(selected.map((frame) => gestures.rectFor(frame)));
+    gestures.place(
+      selected.map((frame, index) => ({
+        designId: frame.designId,
+        expectedLayoutVersion: frame.layoutVersion,
+        rect: placed[index],
+      })),
+    );
+  };
 
-  const { frames } = snapshot;
+  const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Spec §4: the board's keys belong to the board and to its frames' headers,
+    // which are the frames' tab stops. A control, an input or an editor inside
+    // the board keeps its own.
+    if (event.target !== event.currentTarget && !isFrameHeader(event.target)) return;
+    if (event.key === ' ') {
+      event.preventDefault();
+      gestures.holdSpace(true);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // A gesture in flight is what Escape cancels first, which leaves the
+      // acknowledged rect as the only one the board can draw. Only an Escape
+      // with no gesture to spend on reaches the mode and the selection.
+      if (!gestures.cancel()) dispatch({ type: 'escape' });
+      return;
+    }
+    if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
+      event.preventDefault();
+      dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
+      return;
+    }
+    const direction = arrowDirection(event.key);
+    if (!direction) return;
+    event.preventDefault();
+    if (interaction.selectedFrameIds.length === 0) {
+      view.markNavigated();
+      view.stopAnimating();
+      view.panByScreen({ x: -direction.x * ARROW_PAN_PX, y: -direction.y * ARROW_PAN_PX });
+      return;
+    }
+    const step = nudgeStep(direction, event.shiftKey);
+    placeSelection((rects) =>
+      rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
+    );
+  };
+
+  const onMode = (next: BoardMode) => {
+    if (next === interaction.mode) return;
+    if (next === 'select') {
+      dispatch({ type: 'escape' });
+      return;
+    }
+    const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
+    if (target !== undefined) dispatch({ type: 'interact', designId: target });
+  };
+
   return (
     <div
       ref={board}
       data-testid="canvas-board"
+      data-board-mode={interaction.mode}
       tabIndex={0}
       aria-label="Design board"
       className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/10"
-      style={{ cursor: boardCursor(gestures.panning, gestures.spaceHeld), touchAction: 'none' }}
+      style={{ cursor: gestures.cursor, touchAction: 'none' }}
       onPointerDown={gestures.onBackgroundPointerDown}
       onPointerMove={gestures.onPointerMove}
       onPointerUp={(event) => {
@@ -256,29 +282,7 @@ export function CanvasBoard({
       onLostPointerCapture={(event) => {
         gestures.endGesture(event, false);
       }}
-      onKeyDown={(event) => {
-        // Descendant controls and editors retain their own keyboard input.
-        if (event.target !== event.currentTarget) return;
-        if (event.key === ' ') {
-          event.preventDefault();
-          gestures.holdSpace(true);
-          return;
-        }
-        const delta = arrowDelta(event.key);
-        if (!delta) return;
-        event.preventDefault();
-        if (onNudgeSelection) {
-          onNudgeSelection(delta);
-          return;
-        }
-        stopAnimation();
-        view.current.navigated = true;
-        setViewport((current) => ({
-          ...current,
-          x: current.x - delta.x * 32,
-          y: current.y - delta.y * 32,
-        }));
-      }}
+      onKeyDown={onBoardKeyDown}
       onKeyUp={(event) => {
         if (event.key === ' ') gestures.holdSpace(false);
       }}
@@ -287,155 +291,79 @@ export function CanvasBoard({
       <div
         className="absolute left-0 top-0"
         style={{
-          transform: `translate(${String(viewport.x)}px, ${String(viewport.y)}px) scale(${String(viewport.scale)})`,
+          transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
           transformOrigin: '0 0',
         }}
       >
-        {frames.map((frame) => (
-          <BoardFrame
+        {frames.map((frame, index) => (
+          <DesignFrame
             key={frame.designId}
             frame={frame}
-            rect={gestures.rectFor(frame)}
+            rect={drawn[index].rect}
+            scale={scale}
+            mode={interaction.mode}
+            selected={interaction.selectedFrameIds.includes(frame.designId)}
+            interacted={interaction.interactedFrameId === frame.designId}
+            held={gestures.heldDesignId === frame.designId}
             capturePointer={overlayCapture}
-            onHeaderPointerDown={gestures.onFramePointerDown}
+            preview={slots.live.includes(frame.designId) ? renderPreview(frame) : null}
+            released={slots.released.includes(frame.designId)}
+            onHold={gestures.onFramePointerDown}
+            onPick={(picked, additive) => {
+              dispatch({ type: 'pick', designId: picked.designId, additive });
+            }}
+            onInteract={(picked) => {
+              dispatch({ type: 'interact', designId: picked.designId });
+            }}
           />
         ))}
       </div>
 
-      <div
-        // The board's own controls are not background: a pan started here would
-        // capture the pointer and the button would never see its click.
-        onPointerDown={(event) => {
-          event.stopPropagation();
+      {gestures.band && <RubberBand band={gestures.band} />}
+
+      <BoardControls
+        scale={scale}
+        mode={interaction.mode}
+        selectedCount={interaction.selectedFrameIds.length}
+        hasFrames={frames.length > 0}
+        error={gestures.layoutError}
+        onMode={onMode}
+        onFit={() => {
+          fitTo(drawn.map(({ rect }) => rect));
         }}
-        className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-3"
-      >
-        <span className="rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text-secondary">
-          {Math.round(viewport.scale * 100)}%
-        </span>
-        <div className="flex min-w-0 items-center gap-2">
-          {gestures.layoutError && (
-            <p
-              role="alert"
-              className="truncate rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-red"
-            >
-              {gestures.layoutError}
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={frames.length === 0}
-            onClick={() => {
-              fitTo(frames.map((frame) => frame.rect));
-            }}
-            className="pointer-events-auto rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-active disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-          >
-            Fit
-          </button>
-        </div>
-      </div>
+        onAlign={(edge: AlignEdge) => {
+          placeSelection((rects) => alignRects(rects, edge));
+        }}
+        onDistribute={(axis: DistributeAxis) => {
+          placeSelection((rects) => distributeRects(rects, axis));
+        }}
+      />
     </div>
   );
 }
 
-/**
- * One frame on the board. The header is the drag handle in every mode, and the
- * body carries the transparent overlay that gives the board pointer ownership
- * in Select (spec §4); 5c mounts the live preview under it.
- */
-function BoardFrame({
-  frame,
-  rect,
-  capturePointer,
-  onHeaderPointerDown,
-}: {
-  frame: CanvasFrame;
-  rect: FrameRect;
-  capturePointer: boolean;
-  onHeaderPointerDown: (frame: CanvasFrame, event: React.PointerEvent<HTMLElement>) => void;
-}) {
+/** The rubber band, drawn in screen space above the world layer. */
+function RubberBand({ band: { origin, current } }: { band: Band }) {
   return (
     <div
-      className="absolute flex flex-col gap-1"
-      style={{ left: rect.x, top: rect.y, width: rect.width }}
-    >
-      <div
-        onPointerDown={(event) => {
-          onHeaderPointerDown(frame, event);
-        }}
-        className="flex items-center justify-between gap-2 rounded-lg px-1.5 py-0.5 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-elevated"
-        style={{ cursor: 'grab', touchAction: 'none' }}
-      >
-        <span className="truncate">{frame.name}</span>
-        <span className="shrink-0 text-droid-text-muted">
-          {Math.round(rect.width)} × {Math.round(rect.height)}
-        </span>
-      </div>
-      <div
-        className="relative overflow-hidden rounded-xl bg-droid-raised shadow-droid-sm"
-        style={{ height: rect.height }}
-      >
-        <div className="flex h-full w-full items-center justify-center px-4 text-center text-[12px] text-droid-text-secondary">
-          {waitingLabel(frame.build)}
-        </div>
-        <div
-          data-canvas-input-overlay
-          className="absolute inset-0"
-          style={{ pointerEvents: capturePointer ? 'auto' : 'none' }}
-        />
-      </div>
-    </div>
+      aria-hidden
+      className="pointer-events-none absolute rounded-md bg-droid-accent/10 ring-1 ring-droid-accent/30"
+      style={{
+        left: Math.min(origin.x, current.x),
+        top: Math.min(origin.y, current.y),
+        width: Math.abs(current.x - origin.x),
+        height: Math.abs(current.y - origin.y),
+      }}
+    />
   );
 }
 
-interface ScrollGesture {
-  active: boolean;
-  suppressed: boolean;
-  idle: ReturnType<typeof setTimeout> | null;
+interface BoardReads {
+  interaction: BoardInteraction;
+  drawn: PlacedFrame[];
+  viewport: Viewport;
 }
 
-function boardCursor(panning: boolean, spaceHeld: boolean): string {
-  if (panning) return 'grabbing';
-  return spaceHeld ? 'grab' : 'default';
-}
-
-function arrowDelta(key: string): Point | null {
-  switch (key) {
-    case 'ArrowLeft':
-      return { x: -1, y: 0 };
-    case 'ArrowRight':
-      return { x: 1, y: 0 };
-    case 'ArrowUp':
-      return { x: 0, y: -1 };
-    case 'ArrowDown':
-      return { x: 0, y: 1 };
-    default:
-      return null;
-  }
-}
-
-// cubic-bezier(0.22, 1, 0.36, 1) from spec §11, solved for y at a given x.
-const EASE_X1 = 0.22;
-const EASE_X2 = 0.36;
-
-function bezier(a: number, b: number, t: number): number {
-  return ((1 - 3 * b + 3 * a) * t + (3 * b - 6 * a)) * t * t + 3 * a * t;
-}
-
-function bezierSlope(a: number, b: number, t: number): number {
-  return 3 * (1 - 3 * b + 3 * a) * t * t + 2 * (3 * b - 6 * a) * t + 3 * a;
-}
-
-function easeFocus(progress: number): number {
-  if (progress <= 0) return 0;
-  if (progress >= 1) return 1;
-  let t = progress;
-  for (let step = 0; step < 6; step += 1) {
-    const error = bezier(EASE_X1, EASE_X2, t) - progress;
-    const slope = bezierSlope(EASE_X1, EASE_X2, t);
-    if (Math.abs(error) < 1e-5 || slope === 0) break;
-    t -= error / slope;
-  }
-  // Both y control points are 1, which collapses the curve to this.
-  return 1 - (1 - t) ** 3;
+function isFrameHeader(target: EventTarget): boolean {
+  return target instanceof HTMLElement && target.dataset.frameHeader !== undefined;
 }

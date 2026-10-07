@@ -83,6 +83,26 @@ async function openBoard(
   await page.clock.runFor(32);
 }
 
+/** A board with more frames than there are live preview slots. */
+async function openCrowdedBoard(page: Page, frames: number) {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install({ time: new Date('2026-10-07T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
+  await page.goto(`${url}?font=14&frames=${String(frames)}`);
+  await expect(page.getByTestId('canvas-board')).toBeVisible();
+  await expect(page.locator('[data-harness-preview]').first()).toBeVisible();
+  await page.clock.runFor(32);
+}
+
+function mountedPreviews(page: Page) {
+  return page
+    .locator('[data-harness-preview]')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node instanceof HTMLElement ? node.dataset.harnessPreview : null)),
+    );
+}
+
 function frame(page: Page, name: string): Locator {
   return page.getByText(`Design ${name}`, { exact: true }).locator('..').locator('..');
 }
@@ -351,18 +371,95 @@ test('keyboard arrows pan only without a selection, with a visible soft board fo
   expect(after.x - before.x).toBeCloseTo(-32, 1);
   expect(after.y - before.y).toBeCloseTo(-32, 1);
   expect(await board.evaluate((root) => getComputedStyle(root).boxShadow)).not.toBe('none');
-  await page.evaluate(() => window.boardHarness.setSelection(true));
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+
+  // With a selection the arrows stop panning and nudge it instead: one world
+  // unit, ten with Shift, each written at the layout version it was read at.
+  await page.evaluate(() => window.boardHarness.select(['a']));
   await expect(page.locator('#outside')).toHaveAttribute('aria-pressed', 'true');
-  await page.clock.runFor(32);
+  await board.focus();
   const selectedView = await transform(page);
   await page.keyboard.press('ArrowRight');
-  await expect
-    .poll(() => page.evaluate(() => window.boardHarness.nudges))
-    .toEqual([{ x: 1, y: 0 }]);
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
+  const nudged = await page.evaluate(() => window.boardHarness.calls.map((call) => call.frames));
+  expect(nudged).toEqual([
+    [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 101, y: 50, width: 400, height: 300 } }],
+    [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 111, y: 50, width: 400, height: 300 } }],
+  ]);
   expect(await transform(page)).toBe(selectedView);
+
+  // A descendant control keeps its own arrows, and they neither pan nor nudge.
   await page.getByRole('button', { name: 'Fit', exact: true }).focus();
   await page.keyboard.press('ArrowDown');
+  await page.clock.runFor(32);
   expect(await transform(page)).toBe(selectedView);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
+});
+
+test('at most four previews stay mounted and the interacted frame keeps its slot', async ({
+  page,
+}) => {
+  await openCrowdedBoard(page, 6);
+  const live = await mountedPreviews(page);
+  expect(live).toHaveLength(4);
+
+  // Interact drives one frame, so it holds a slot wherever the board is looking.
+  const board = page.getByTestId('canvas-board');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await board.focus();
+  await page.keyboard.press('Enter');
+  await expect(board).toHaveAttribute('data-board-mode', 'interact');
+
+  // Pan the interacted frame clear off the top of the board, leaving plenty of
+  // other visible frames to compete for the four slots.
+  await wheel(page, 400, 300, 330, { deltaX: 0 });
+  await page.clock.runFor(200);
+  const boardBox = await box(board);
+  const frameA = await box(frame(page, 'A'));
+  expect(frameA.y + frameA.height).toBeLessThanOrEqual(boardBox.y);
+
+  const panned = await mountedPreviews(page);
+  expect(panned).toHaveLength(4);
+  expect(panned).toContain('a');
+});
+
+test('Interact gives the pointer to the preview and two Escapes undo mode then selection', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const header = frame(page, 'A').locator('[data-frame-header]');
+  await header.focus();
+  // Enter picks the frame, and Enter on the frame already picked interacts.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  const board = page.getByTestId('canvas-board');
+  await expect(board).toHaveAttribute('data-board-mode', 'interact');
+  // Spec §4: the hit-test flip is committed on the frame after the mode change,
+  // so both frames' overlays are still there until that frame paints.
+  expect(await page.locator('[data-canvas-input-overlay]').count()).toBe(2);
+  await page.clock.runFor(32);
+  await expect(page.locator('[data-canvas-input-overlay]')).toHaveCount(0);
+
+  const preview = await box(page.locator('[data-harness-preview="a"]'));
+  await page.mouse.move(preview.x + preview.width / 2, preview.y + preview.height / 2);
+  await page.mouse.down();
+  await page.clock.runFor(32);
+  expect(await page.evaluate(() => window.boardHarness.previewClicks)).toEqual(['a']);
+  expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(false);
+  await page.mouse.up();
+
+  await header.focus();
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
+    'a',
+  ]);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.interaction().selectedFrameIds))
+    .toEqual([]);
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
 

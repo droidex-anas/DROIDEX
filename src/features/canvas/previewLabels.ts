@@ -42,3 +42,16 @@ export function waitingLabel(build: CanvasBuildState): string {
       return 'Waiting to build…';
   }
 }
+
+/**
+ * What a frame holding no live preview slot says. A frame with nothing built
+ * yet is still waiting to build; one whose design is ready says that opening it
+ * is what runs it, and names the reload when a slot was taken away, because the
+ * design restarts from its own beginning rather than where the user left it.
+ */
+export function unmountedLabel(build: CanvasBuildState, released: boolean): string {
+  if (previewRevisionId(build) === null) return waitingLabel(build);
+  return released
+    ? 'This preview was stopped to keep four running. Opening it starts the design again.'
+    : 'Open this design to run its preview.';
+}

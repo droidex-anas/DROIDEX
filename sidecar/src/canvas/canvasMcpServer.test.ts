@@ -26,11 +26,14 @@ type Reply = {
   build?: unknown;
 };
 
+const CHAT = 'chat-one';
+
 async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const scopes = new CanvasScopes();
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
     fs,
+    isChatKnown: (appSessionId) => appSessionId === CHAT,
     isScopeActive: (id) => scopes.isScopeActive(id),
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
   });
@@ -38,7 +41,7 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const server = createCanvasMcpServer(
     () => Promise.resolve(workspace),
     turns,
-    () => 'chat-one',
+    () => CHAT,
   );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
     const target = server.tools.find((entry) => entry.name === name);
