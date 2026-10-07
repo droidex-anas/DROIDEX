@@ -13,7 +13,8 @@ export function claudeCanvasHook(
       (input) => {
         if (
           input.hook_event_name !== 'PreToolUse' ||
-          input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_read`
+          (input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_read` &&
+            input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_inspect`)
         )
           return Promise.resolve({});
         const provided =

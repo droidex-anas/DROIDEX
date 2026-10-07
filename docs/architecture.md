@@ -324,9 +324,10 @@ turn's authority. Named leases expire when their turn or provider ends.
 mutations, including retry receipts and attachment bootstrap; the design-system
 store owns immutable kit versions. Droid and Claude use
 the per-chat loopback endpoint; Codex declares the same tools through dynamic
-tools on thread start. Claude's session-local `PreToolUse` hook pins each read's
-tool-use ID to its original lease. Child runtimes do not inherit the parent's
-Canvas endpoint without an assigned child scope. Agent inspection currently
+tools on thread start. Claude's session-local `PreToolUse` hook pins both
+`canvas_read` and `canvas_inspect` tool-use IDs to their original leases. Child
+runtimes do not inherit the parent's Canvas endpoint without an assigned child
+scope. Agent inspection currently
 returns build diagnostics; screenshot and element capture report
 `capture_unavailable` until a scoped capture API exists.
 
