@@ -1459,7 +1459,7 @@ export class SessionManager {
     // run has nobody watching, and only an ordinary chat may call them, so no
     // other session carries their schemas.
     const managesChats = attended && (ref.purpose === undefined || ref.purpose === 'chat');
-    const canvas = createCanvasMcpServer(this.canvasWorkspace, this.canvasTurns, ref.id);
+    const canvas = createCanvasMcpServer(this.canvasWorkspace, this.canvasTurns, () => ref.id);
     if (kind === 'codex') {
       const inAppServers = [
         ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),

@@ -34,7 +34,11 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
   });
   t.after(() => workspace.close());
-  const server = createCanvasMcpServer(() => Promise.resolve(workspace), turns, 'chat-one');
+  const server = createCanvasMcpServer(
+    () => Promise.resolve(workspace),
+    turns,
+    () => 'chat-one',
+  );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
     const target = server.tools.find((entry) => entry.name === name);
     assert.ok(target, name);

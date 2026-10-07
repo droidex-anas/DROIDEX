@@ -85,7 +85,7 @@ type ToolReply = string | { isError: true; content: [{ type: 'text'; text: strin
 export function createCanvasMcpServer(
   workspace: () => Promise<CanvasWorkspace>,
   turns: Pick<CanvasTurns, 'activeScope' | 'requireScope'>,
-  appSessionId: string,
+  getAppSessionId: () => string,
 ) {
   const dispatch = async (
     input: unknown,
@@ -94,6 +94,7 @@ export function createCanvasMcpServer(
     ) => Promise<Record<string, unknown>> | Record<string, unknown>,
   ): Promise<ToolReply> => {
     try {
+      const appSessionId = getAppSessionId();
       const { scopeId } = scopeArgumentSchema.parse(input);
       const scope = scopeId ? turns.requireScope(scopeId) : turns.activeScope(appSessionId);
       if (scope?.origin !== 'turn' || scope.appSessionId !== appSessionId)

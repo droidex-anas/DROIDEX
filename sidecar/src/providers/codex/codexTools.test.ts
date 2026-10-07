@@ -38,7 +38,7 @@ function harness() {
   const canvas = createCanvasMcpServer(
     () => Promise.reject(new Error('Canvas storage unavailable')),
     new CanvasTurns(new CanvasScopes(), () => null),
-    'chat-one',
+    () => 'chat-one',
   );
   const interactions = {
     requestApproval: async (approval: ProviderApprovalRequest) => {
@@ -223,7 +223,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
       createCanvasMcpServer(
         () => Promise.reject(new Error('Canvas storage unavailable')),
         new CanvasTurns(new CanvasScopes(), () => null),
-        'chat-one',
+        () => 'chat-one',
       ),
     ],
   };
