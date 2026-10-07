@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import postcss from 'postcss';
 import { DESIGN_SYSTEM_LIMITS, readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
@@ -148,6 +149,33 @@ test('a wrapper around an imported kit primitive is reported instead of copying 
   assert.ok(!Object.hasOwn(result.system.files, 'source/button.tsx'));
   assert.ok(result.diagnostics.some((entry) => entry.code === 'not_source_owned'));
   assert.deepEqual(result.system.modes, DROIDEX_DESIGN_SYSTEM.modes);
+});
+
+test('extraction filters imported stylesheets to primitive rules regardless of source record order', () => {
+  const button =
+    'import "./button.css";\nexport function Button() { return <button className="ds-button">Owned</button>; }';
+  for (const { css, selectors } of [
+    {
+      css: '.ds-button { padding: 8px; }\nbody { background: hotpink; }\n.scene { margin: 40px; }',
+      selectors: ['.ds-button'],
+    },
+    { css: 'body { background: hotpink; }\n.scene { margin: 40px; }', selectors: [] },
+  ]) {
+    const cssFirst = extractDesignSystem({ 'button.css': css, 'button.tsx': button }, input);
+    const moduleFirst = extractDesignSystem({ 'button.tsx': button, 'button.css': css }, input);
+    assert.equal(cssFirst.status, 'extracted');
+    assert.equal(moduleFirst.status, 'extracted');
+    if (cssFirst.status !== 'extracted' || moduleFirst.status !== 'extracted') return;
+    assert.equal(
+      cssFirst.system.files['source/button.css'],
+      moduleFirst.system.files['source/button.css'],
+    );
+    const actualSelectors: string[] = [];
+    postcss.parse(cssFirst.system.files['source/button.css']).walkRules((rule) => {
+      actualSelectors.push(rule.selector);
+    });
+    assert.deepEqual(actualSelectors, selectors);
+  }
 });
 
 test('extraction maps shared root defaults and an explicit dark override without ambiguity', () => {

@@ -235,6 +235,10 @@ function ownedModules(entry: string, source: SourceFiles): OwnedModulesResult {
   const visit = (file: string): void => {
     if (Object.hasOwn(files, `source/${file}`)) return;
     const text = source[file];
+    if (file.endsWith('.css')) {
+      files[`source/${file}`] = primitiveCss(text);
+      return;
+    }
     files[`source/${file}`] = text;
     const code = codeOnly(file, text);
     if (/\b(?:require|import)\s*\(/.test(code)) {
