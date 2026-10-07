@@ -26,7 +26,6 @@ import {
   type SessionLifecycleDependencies,
 } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
-import { userPromptDisplay } from './sessionTranscriptParser.js';
 import {
   FakeFactoryRuntime,
   FakeFactorySession,
@@ -965,7 +964,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.streaming = false;
   live.interrupting = false;
   live.compacting = true;
-  live.pendingSends = [{ text: 'drop', display: userPromptDisplay('drop'), order: 0 }];
+  live.pendingSends = [{ text: 'drop', order: 0 }];
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.pendingSends, []);
@@ -1366,7 +1365,6 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   live.pendingSends = [
     {
       text: 'preserve unless user closes',
-      display: userPromptDisplay('preserve unless user closes'),
       order: 0,
     },
   ];
@@ -1545,7 +1543,6 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(false);
   live.pendingSends.push({
     text: 'user prompt',
-    display: userPromptDisplay('user prompt'),
     order: 0,
   });
   await busy();

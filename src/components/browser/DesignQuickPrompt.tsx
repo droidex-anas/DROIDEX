@@ -58,7 +58,8 @@ export function useDesignQuickPrompt({
   promptRef.current = prompt;
   // Keep the box's snapshots even if closing the browser drops its staged marks.
   const referencesRef = useRef(marks);
-  if (browserSessionId) referencesRef.current = marks;
+  if (browserSessionId && (!prompt || prompt.appSessionId === appSessionId))
+    referencesRef.current = marks;
   const drawingRef = useRef(drawing);
   drawingRef.current = drawing;
   // The sketch being drawn gets the box once drawing stops, not on every stroke.
@@ -160,7 +161,11 @@ export function useDesignQuickPrompt({
   // from the composer, or taken away.
   const stale =
     prompt !== null &&
-    (!enabled || drawing || number === undefined || prompt.browserSessionId !== browserSessionId);
+    (!enabled ||
+      drawing ||
+      number === undefined ||
+      prompt.appSessionId !== appSessionId ||
+      prompt.browserSessionId !== browserSessionId);
   useEffect(() => {
     if (stale) close();
   }, [close, stale]);

@@ -71,6 +71,22 @@ test('a sent prompt shows Visualize and skill chips instead of slash text', () =
   assert.ok(html.indexOf('review') < html.indexOf('PR #100'));
 });
 
+test('a pending steer with design marks and side-chat replies offers Send now without text', () => {
+  const html = renderToStaticMarkup(
+    createElement(UserBubble, {
+      event: {
+        text: '',
+        browserRefs: [{ id: 'heading', kind: 'element', label: 'Heading' }],
+        sideChatReplies: ['Use the same spacing as the title.'],
+      },
+      onSendNow: () => {},
+    }),
+  );
+  assert.match(html, /@Heading/);
+  assert.match(html, /1 message/);
+  assert.match(html, /aria-label="Send now"/);
+});
+
 test('a pinned spec alone never produces an empty Worked disclosure', () => {
   const spec = '# Plan\n\nImplement the feature';
   const events = [userMsg('plan'), asst(spec)];

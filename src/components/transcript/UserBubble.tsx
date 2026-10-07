@@ -268,7 +268,7 @@ export function UserBubble({
           </div>
           {/* The pending preview of a first message has no ts, and no actions yet;
               a pending steer has actions but no time. */}
-          {message.text && (event.ts !== undefined || onSendNow) ? (
+          {onSendNow || (message.text && event.ts !== undefined) ? (
             <PromptActions text={message.text} ts={event.ts} onSendNow={onSendNow} />
           ) : null}
         </div>
