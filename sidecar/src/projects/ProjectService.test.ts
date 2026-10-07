@@ -40,23 +40,29 @@ test('idle projects produce no turns; one completed child wakes its owner once',
   assert.equal(h.launched[1]?.cwd, '/workspace');
 });
 
-test('busy owners retain messages; sibling completions batch into one later turn', async (t) => {
+test('running owners receive sibling reports through one steer without a competing turn', async (t) => {
   const h = await harness(t);
   const { main } = await h.root();
   const a = await h.projects.spawn(main, input);
   const b = await h.projects.spawn(main, input);
+  const later = await h.projects.addTodo(main, { text: 'Tell the user' });
+  const after = await h.projects.addTodo(main, { text: 'Review A', after: a.appSessionId });
   await h.streaming(main, true);
   await h.finish(a.appSessionId, 'A');
   await h.finish(b.appSessionId, 'B');
   await drain();
   assert.equal(h.sent.length, 0);
-  assert.equal(h.projects.list()[0]?.queued, 2);
+  assert.equal(h.steered.length, 1);
+  assert.match(h.steered[0]?.prompt ?? '', /\bA\b/);
+  assert.match(h.steered[0]?.prompt ?? '', /\bB\b/);
+  assert.match(h.steered[0]?.prompt ?? '', /\[DUE\].*Review A/);
+  assert.deepEqual(
+    h.projects.listThreads(main).todos.map((todo) => todo.id),
+    [after.id, later.id],
+  );
   await h.finish(main);
   await drain();
-  assert.equal(h.sent.length, 1);
-  // One wake, carrying both: batching them is the point, so assert the text.
-  assert.match(h.sent[0]?.prompt ?? '', /\bA\b/);
-  assert.match(h.sent[0]?.prompt ?? '', /\bB\b/);
+  assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
@@ -286,19 +292,21 @@ test('stop waits for a cancelled claim before removing target messages', async (
   );
 });
 
-test('holding a project cancels every spawn still starting before it reaches the provider', async (t) => {
+test('holding a project cancels in-flight starts and holds queued threads', async (t) => {
   const h = await harness(t);
   const { id, main } = await h.root();
   const gate = deferred();
   h.state.bindGate = gate.promise;
-  // No count caps a project: all twelve are admitted and starting at once.
+  // The lead occupies one slot; eleven starts reserve the rest and the last queues.
   const requests = Array.from({ length: 12 }, () => h.projects.spawn(main, input));
-  await tick();
-  assert.equal(h.projects.list()[0]?.launching, 12);
+  // Hold after the queued request has durably answered; the other eleven are still binding.
+  await requests[11];
+  assert.equal(h.projects.list()[0]?.launching, 11);
   await h.projects.setPaused(id, true);
   gate.resolve();
   const outcomes = await Promise.allSettled(requests);
-  assert.ok(outcomes.every((result) => result.status === 'rejected'));
+  assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 11);
+  assert.equal(h.state.saved[0]?.threads.filter((thread) => thread.queuedSpawn).length, 1);
   assert.equal(h.launched.length, 1, 'no child goal reached the provider');
   assert.equal(h.projects.list()[0]?.launching, 0);
 });
@@ -344,55 +352,6 @@ test('persistence failure fails closed without delivering a queued wake', async 
   assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.paused, true);
   assert.match(h.projects.list()[0]?.error ?? '', /Disk full/);
-});
-
-test('restart preserves an uncertain delivery and never replays it implicitly', async (t) => {
-  const h = await harness(t);
-  const { id, main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  const gate = deferred();
-  h.state.gate = gate.promise;
-  await h.finish(child.appSessionId);
-  await tick();
-  const disk = structuredClone(h.state.saved);
-  assert.equal(disk[0]?.delivery?.state, 'sending');
-  const recovered = await harness(t, disk);
-  assert.equal(recovered.projects.list()[0]?.paused, true);
-  assert.equal(recovered.projects.list()[0]?.uncertain, 1);
-  await assert.rejects(recovered.projects.setPaused(id, false), /uncertain/);
-  await recovered.projects.setPaused(id, false, true);
-  await drain();
-  assert.equal(recovered.sent.length, 0);
-  assert.equal(recovered.projects.list()[0]?.uncertain, 0);
-  h.projects.close();
-  gate.resolve();
-  await h.projects.flush();
-});
-
-test('messages a restart left queued go out once session history is ready, and not before', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  // The lead is busy, so the thread's report is still queued when DROIDEX stops.
-  await h.streaming(main, true);
-  await h.finish(child.appSessionId, 'Parsed the config.');
-  await drain();
-  const disk = structuredClone(h.state.saved);
-  assert.equal(disk[0]?.pending.length, 1);
-  assert.equal(disk[0]?.delivery, undefined);
-
-  const recovered = await harness(t, disk, false);
-  recovered.sessions.set(main, summary(main));
-  // The lead settling would wake it, but history does not know its threads yet.
-  await recovered.streaming(main, false);
-  await drain();
-  assert.equal(recovered.sent.length, 0);
-
-  recovered.projects.historyReady();
-  await drain();
-  assert.equal(recovered.sent.at(-1)?.id, main);
-  assert.match(recovered.sent.at(-1)?.prompt ?? '', /Parsed the config/);
-  assert.equal(recovered.projects.list()[0]?.paused, false);
 });
 
 test('work keeps flowing, and only a runaway loop holds the project', async (t) => {
@@ -484,18 +443,15 @@ test('a closed recipient unparks the delivery that waited on its turn', async (t
   const h = await harness(t);
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
-  const owner = h.sessions.get(main);
-  assert.ok(owner);
-  owner.streaming = true;
-  await h.finish(child.appSessionId, 'Done');
+  await h.projects.send(main, child.appSessionId, 'Continue', undefined, undefined, 'queue');
   await drain();
   assert.equal(h.sent.length, 0);
-
-  // The owner closes mid-turn, so no settlement ever frees the delivery.
-  owner.streaming = false;
-  await h.projects.observe({ type: 'session.closed', appSessionId: main });
+  const recipient = h.sessions.get(child.appSessionId);
+  assert.ok(recipient);
+  recipient.streaming = false;
+  await h.projects.observe({ type: 'session.closed', appSessionId: child.appSessionId });
   await drain();
-  assert.equal(h.sent.at(-1)?.id, main);
+  assert.equal(h.sent.at(-1)?.id, child.appSessionId);
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 

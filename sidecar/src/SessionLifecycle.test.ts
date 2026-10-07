@@ -1759,17 +1759,17 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
 });
 
 test('scheduled historical resumes honor the runtime cap without restricting live targets', async () => {
-  const summaries = Array.from({ length: 9 }, (_, index) => summary(`bounded-${index}`));
+  const summaries = Array.from({ length: 13 }, (_, index) => summary(`bounded-${index}`));
   const harness = createHarness(summaries);
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 12; index += 1) {
     queueLoad(harness, `bounded-${index}`);
     await harness.lifecycle.resume(`bounded-${index}`);
   }
   assert.deepEqual(
-    await harness.lifecycle.deliverScheduled('bounded-8', 'wait for capacity', () => true),
+    await harness.lifecycle.deliverScheduled('bounded-12', 'wait for capacity', () => true),
     { status: 'busy', retryOn: 'capacity' },
   );
-  assert.equal(harness.runtime.loadCalls.length, 8);
+  assert.equal(harness.runtime.loadCalls.length, 12);
   const live = await harness.lifecycle.deliverScheduled(
     'bounded-0',
     'already resident',
@@ -1778,9 +1778,9 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   assert.equal(live.status, 'accepted');
   if (live.status === 'accepted') await live.settled;
   await harness.lifecycle.close('bounded-0');
-  const provider = queueLoad(harness, 'bounded-8');
+  const provider = queueLoad(harness, 'bounded-12');
   const receipt = await harness.lifecycle.deliverScheduled(
-    'bounded-8',
+    'bounded-12',
     'capacity freed',
     () => true,
   );
@@ -1792,17 +1792,17 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
 
 test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {
   const harness = createHarness([
-    ...Array.from({ length: 7 }, (_, index) => summary(`held-${index}`)),
+    ...Array.from({ length: 11 }, (_, index) => summary(`held-${index}`)),
     summary('doomed'),
     summary('waiting'),
   ]);
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 11; index += 1) {
     queueLoad(harness, `held-${index}`);
     await harness.lifecycle.resume(`held-${index}`);
   }
   assert.equal(harness.capacityReleases(), 0);
 
-  // Seven resident plus one resume in flight is the whole scheduled budget.
+  // Eleven resident plus one resume in flight is the whole scheduled budget.
   harness.runtime.loadQueue.set('doomed', [new Error('provider is gone')]);
   const gate = harness.runtime.deferNextLoad();
   const doomed = harness.lifecycle.resume('doomed');
@@ -2137,4 +2137,73 @@ test('dependent ownership is committed before the first provider turn, and a fai
       (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
     ),
   );
+});
+
+test('automatic creates and resumes reserve the same twelve slots while user starts remain open', async () => {
+  const h = createHarness([summary('cold'), summary('other-cold')]);
+  for (let index = 0; index < 10; index += 1) {
+    queueCreate(h, `resident-${index}`);
+    await h.lifecycle.createAutomatic(createCommand(), `thread-${index}`);
+  }
+  let releaseCreate: () => void = () => undefined;
+  const compactionReady = new Promise<number>((resolve) => {
+    releaseCreate = () => resolve(1000);
+  });
+  h.setCompactionLimit(() => compactionReady);
+  queueCreate(h, 'new-provider');
+  const opening = h.lifecycle.createAutomatic(createCommand(), 'queued-identity');
+  const resumeGate = h.runtime.deferNextLoad();
+  queueLoad(h, 'cold');
+  const resuming = h.lifecycle.resume('cold', true);
+  await h.runtime.waitForLoad('cold');
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 12, limit: 12 });
+  assert.equal(await h.lifecycle.createAutomatic(createCommand(), 'excess'), false);
+  assert.deepEqual(await h.lifecycle.deliverScheduled('other-cold', 'wait', () => true), {
+    status: 'busy',
+    retryOn: 'capacity',
+  });
+  releaseCreate();
+  resumeGate.resolve();
+  assert.equal(await opening, true);
+  assert.equal(await resuming, true);
+  assert.equal(
+    h.registry.getCanonicalSummary('queued-identity')?.providerSessionId,
+    'new-provider',
+  );
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 12, limit: 12 });
+  h.setCompactionLimit(() => Promise.resolve(1000));
+  queueCreate(h, 'user-chat');
+  await h.lifecycle.create(createCommand());
+  assert.ok(h.registry.getLive('user-chat'));
+  await h.lifecycle.closeAll();
+});
+
+test('report steering acknowledges consumption separately from admission', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'owner');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  let consume: (accepted: boolean) => void = () => undefined;
+  requireLive(h, 'owner').session.steer = () =>
+    new Promise<boolean>((resolve) => {
+      consume = resolve;
+    });
+  let accepted = 0;
+  const admitted = await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
+    isCurrent: () => true,
+    accepted: () => {
+      accepted += 1;
+    },
+    declined: () => undefined,
+  });
+  assert.equal(admitted, true);
+  assert.equal(accepted, 0);
+  assert.deepEqual(provider.prompts, ['working']);
+  consume(true);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(accepted, 1);
+  assert.equal(requireLive(h, 'owner').pendingSends.length, 0);
+  turn.resolve();
+  await h.lifecycle.closeAll();
 });

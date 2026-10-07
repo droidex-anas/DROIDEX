@@ -307,6 +307,12 @@ stop every other project's reports until the user comes back. Busy targets retai
 retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
+Automatic runtime opens and resumes share a limit of 12, including opens still
+in flight. Queued spawns keep their task and position in the ledger; they start
+when capacity opens, after pending resumes. Reports and due reminders can steer
+into a busy owner's turn without starting a competing turn. Interrupted threads
+receive a restart continuation only when they have no instruction already queued.
+
 A delivery the runtime could not take holds the project with its claim retained
 as uncertain. One withdrawn before any turn was dispatched, by a Stop, a hold or
 a question its thread stopped asking, holds nothing: its messages go back to the
@@ -327,12 +333,10 @@ until the user resumes the project in Projects, and a spawn that was already und
 is refused. So is a chat's first spawn, though no project exists yet for the
 Stop to hold.
 
-Malformed or incompatible ledgers fail visibly and are left untouched. There is
-no migration from the earlier prototypes, so back up an old `projects.json`
-before opening it with this version. Every project now requires a `todos` array,
-even when empty. To recover a ledger missing only that field, stop DROIDEX, back
-up the file, explicitly add `todos: []` to each project and restart. Leave all
-other fields and session identities intact.
+Malformed ledgers fail visibly and are left untouched. A ledger without `todos`
+loads with an empty list; a thread without `queuedSpawn` has no queued launch.
+If a to-do's `after` thread has left the project, only that link is removed; the
+note and any time trigger remain.
 
 ## Ownership in code
 

@@ -10,7 +10,7 @@ const threadId = z
   .string()
   .min(1)
   .max(200)
-  .describe('Full thread id or unique prefix of at least 8 characters in your scope.');
+  .describe('Full thread id or unique prefix (at least 8 characters) among threads you control.');
 
 const spawnInput = z.object({
   title: z
@@ -28,7 +28,7 @@ const spawnInput = z.object({
   reportBack: z
     .boolean()
     .describe(
-      'true: a thread of this chat that reports here. false: an ordinary sidebar chat. A thread can only pass true.',
+      'true: reports to this chat. false: a sidebar chat with no reports. Threads must use true.',
     ),
   provider: z.enum(PROVIDER_KINDS).optional().describe("Harness. Omit for this chat's."),
   modelId: z
@@ -36,7 +36,9 @@ const spawnInput = z.object({
     .min(1)
     .max(200)
     .optional()
-    .describe("Model id or display name. Omit for this chat's model. An unknown name is refused."),
+    .describe(
+      "Model id or display name. Omit to inherit this chat's model. Unknown models are refused.",
+    ),
   reasoningEffort: reasoningSchema.optional(),
   autonomy: autonomySchema.optional().describe("At most this chat's. Omit to inherit it."),
   workspace: z
@@ -76,7 +78,7 @@ const sendInput = z.object({
     .string()
     .trim()
     .max(LEDGER_LIMITS.text)
-    .describe('The message. May be empty when you only send answers.'),
+    .describe('Instructions, or empty when sending only answers.'),
   answers: z
     .array(z.string().max(2_000))
     .max(16)
@@ -92,7 +94,7 @@ const sendInput = z.object({
     .enum(['steer', 'now', 'queue'])
     .optional()
     .describe(
-      "steer (default): into its running turn at the harness's next step, as the user's Steer does. now: stop its running turn and run this instead, for work that must not continue. queue: after its current turn. A stopped or idle thread queues it for a runtime slot; a held project keeps it until Resume.",
+      'steer (default): hand to the running turn. now: stop that turn and run this next. queue: wait for that turn to end. Without a running turn, all modes queue a new turn; a held project waits for Resume.',
     ),
 });
 
@@ -157,7 +159,7 @@ const readInput = z.object({
     .max(LEDGER_LIMITS.earlierReplies + 1)
     .optional()
     .describe(
-      'How many final replies, oldest first. The latest alone when omitted; moreReplies says how many remain.',
+      'Number of final replies to read, oldest first. Default: latest only. moreReplies counts older replies.',
     ),
 });
 
@@ -172,22 +174,29 @@ const stopInput = z.object({ threadId });
 
 const todoInput = z.object({
   text: z.string().trim().min(1).max(LEDGER_LIMITS.todoText),
-  after: threadId.optional().describe('Mark due when this thread reports.'),
+  after: threadId
+    .optional()
+    .describe('Make due when this thread reports. A report already queued also makes it due.'),
   inMinutes: z
     .number()
     .int()
     .min(1)
     .max(1440)
     .optional()
-    .describe('Wake the lead after this many minutes, including across restarts.'),
+    .describe(
+      'Make due after this many minutes and deliver a reminder to the lead. Survives restarts.',
+    ),
 });
 
 const DELIVERY_NOTES: Partial<Record<string, string>> = {
-  steered: 'Handed to its running turn; an unread steer may wait until that turn ends.',
-  'sent-now': 'Asked its current turn to stop; this message runs next.',
+  answered: 'Answers delivered. Any accompanying instructions are queued.',
+  'already-answered':
+    'The question was already answered. Any accompanying instructions are queued.',
+  steered: 'Handed to the running turn. If unread, it may run after that turn ends.',
+  'sent-now': 'Requested that the current turn stop; this message runs next.',
   queued:
-    'Queued for delivery, not started yet. It waits for its turn or a free runtime slot; do not respawn it.',
-  held: 'The project is held. It waits for the user to resume the project.',
+    'Queued for a new turn. Delivery has not started; waitReason describes the wait. Do not resend.',
+  held: 'Queued in a held project. Waits for the user to press Resume.',
 };
 
 /**
@@ -200,7 +209,7 @@ export function threadTools(appSessionId: () => string) {
   return [
     tool(
       'thread_list',
-      'List every thread you can control, with full ids, owners, states, wait reasons, reply previews, queued messages, runtime load and your open to-dos. Observational even when full, stopped or held. Use after compaction or restart; do not poll.',
+      "List threads you control: full ids, owners, states, queue positions, wait reasons, reply previews and queued message counts. Includes runtime load and the lead's open to-dos. Starts no work. Use after compaction or restart; do not poll.",
       {},
       safeTool(async () => {
         const projects = await requireProjectService();
@@ -209,7 +218,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'todo_add',
-      'Keep a durable lead follow-up (text 1..400, at most 40 open). after marks it due with that thread report; inMinutes (1..1440) wakes you when due. A full inbox retains it; a busy lead gets the same delivery as reports; a stopped or held project waits for Resume. Refuses when 40 are open.',
+      'Save a lead to-do (at most 40 open). after makes it due with a thread report; inMinutes schedules a reminder. With both, the first trigger wins. Due reminders reach the running lead as reports do, or start a new lead turn. A full inbox retains them; a held project waits for Resume.',
       todoInput.shape,
       safeTool(async (input: z.infer<typeof todoInput>) => {
         const projects = await requireProjectService();
@@ -218,7 +227,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'todo_done',
-      'Remove one open lead to-do by its id, including its queued reminder. Works when full, stopped or held; a reminder already handed over may still arrive.',
+      'Remove a lead to-do and its queued reminder by id, even when full or held. A reminder already sent may still arrive.',
       { id: z.string().min(1).max(200) },
       safeTool(async ({ id }: { id: string }) => {
         const projects = await requireProjectService();
@@ -228,7 +237,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_spawn',
-      'Start one decided task in a separate DROIDEX chat; its prompt must include the full task and context. reportBack true reports here; false makes a sidebar chat followed with session_read. Inherits your settings unless specified. Full capacity queues a thread with its position; a held project refuses. Use thread_send to continue a stopped, idle or queued thread. A matching title adds a reuse hint but still spawns.',
+      'Create a separate chat for a decided task; include all task context in prompt. reportBack true creates a thread that reports here; false creates a sidebar chat read with session_read. Settings inherit unless specified. Threads queue at full capacity and return a position; held projects refuse. A matching title returns a reuse hint but still creates the thread.',
       spawnInput.shape,
       safeTool(async ({ reportBack, ...input }: z.infer<typeof spawnInput>) => {
         const projects = await requireProjectService();
@@ -241,7 +250,7 @@ export function threadTools(appSessionId: () => string) {
             title: chat.title,
             ...(chat.cwd ? { cwd: chat.cwd } : {}),
             ...(chat.branch ? { branch: chat.branch } : {}),
-            note: "It runs as its own chat in the user's sidebar and will not report here. Check on it with session_read.",
+            note: 'Started a sidebar chat. It will not report here; read it with session_read.',
           });
         }
         const started = await projects.spawn(appSessionId(), input);
@@ -252,6 +261,7 @@ export function threadTools(appSessionId: () => string) {
           title: started.title,
           state: started.state,
           delivery: started.delivery,
+          runtimeLoad: started.runtimeLoad,
           ...(started.position ? { position: started.position } : {}),
           ...(started.waitReason ? { waitReason: started.waitReason } : {}),
           ...(started.reuseNote ? { reuseNote: started.reuseNote } : {}),
@@ -260,14 +270,14 @@ export function threadTools(appSessionId: () => string) {
           ...(started.step ? { step: started.step } : {}),
           note:
             started.delivery === 'queued'
-              ? 'Queued to start; do not respawn it. Its reports arrive here when it runs.'
-              : 'Started. Its reports arrive here, possibly mid-turn; end your turn when there is no other work.',
+              ? 'Queued to start. Reports will arrive here after it runs; do not respawn it.'
+              : 'Started. Reports arrive here, including during your turn. End your turn when no work remains.',
         });
       }),
     ),
     tool(
       'thread_send',
-      'Send instructions to a thread you control. steer reaches its running turn; now stops that turn first; queue waits for it to end. Stopped or idle threads queue for a slot when capacity is full; held projects wait for Resume. A waiting question needs answers in order and its questionId. A full inbox refuses the message.',
+      'Send instructions to a controlled thread. steer hands them to its running turn; now stops that turn first; queue waits for it to end. Without a running turn, all modes queue a new turn. Held projects wait for Resume. Answer a waiting question with answers in order and questionId. Queuing requires inbox space.',
       sendInput.shape,
       safeTool(async (input: z.infer<typeof sendInput>) => {
         const projects = await requireProjectService();
@@ -294,7 +304,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'plan_set',
-      'Replace the whole project plan (at most 60 steps); title names the project and lead chat. Link a step with threadId or spawn with step. The first plan creates a project. A full inbox or stopped/held project does not block plan updates; more than 60 steps is refused.',
+      "Replace the lead's whole plan (at most 60 steps). title names the project and lead chat. Link steps with threadId or thread_spawn.step. A first nonempty plan creates a project. Works when full or held; starts no work.",
       planInput.shape,
       safeTool(async (input: z.infer<typeof planInput>) => {
         const projects = await requireProjectService();
@@ -311,7 +321,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'project_done',
-      'Mark the project done with its outcome. Refuses while threads are working, starting, waiting on decisions or have undelivered messages. Works when stopped/held if no work remains; a full inbox of messages to threads blocks completion. New work reopens it.',
+      "Mark the lead's project done with its outcome. Refuses while threads work, wait to start, need an answer or approval, or have undelivered messages. New work reopens it.",
       doneInput.shape,
       safeTool(async (input: z.infer<typeof doneInput>) => {
         const projects = await requireProjectService();
@@ -321,7 +331,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_read',
-      'Read a controlled thread without starting or resuming it: final replies, questions, settings, state, wait reason, runtime load and queued message count. Read even when full, stopped or held. A message may wait for a slot or its turn to end; do not resend it or poll this tool in a loop.',
+      "Read a controlled thread's final replies, question, settings, state, wait reason, queue position, runtime load and queued message count. Starts no work, even when full or held. Do not poll.",
       readInput.shape,
       safeTool(async (input: z.infer<typeof readInput>) => {
         const projects = await requireProjectService();
@@ -333,7 +343,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_configure',
-      "Retune a controlled thread; its history stays. Autonomy applies now within its owner's limit; model and effort apply after its running turn. A full inbox or stopped/held project does not block settings changes or start work.",
+      "Change a controlled thread's settings without starting work. Autonomy applies now within its owner's limit. Model and effort apply after a running turn, or immediately when idle. pending describes an unapplied change.",
       configureInput.shape,
       safeTool(async ({ threadId, ...settings }: z.infer<typeof configureInput>) => {
         const projects = await requireProjectService();
@@ -345,7 +355,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_stop',
-      'Stop a controlled thread and drop its queued messages, even when full or held. An already stopped thread stays stopped; thread_send continues its conversation.',
+      'Stop a controlled thread and cancel its queued start and messages, even when full or held. Continue its conversation with thread_send after it has started.',
       stopInput.shape,
       safeTool(async (input: z.infer<typeof stopInput>) => {
         const projects = await requireProjectService();

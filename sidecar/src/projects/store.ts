@@ -149,6 +149,10 @@ const project = z
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
           owedReport: text.optional(),
           waiting: z.boolean(),
+          queuedSpawn: z
+            .object({ input: threadInputSchema, order: z.number().int().min(0) })
+            .strict()
+            .optional(),
         })
         .strict(),
     ),

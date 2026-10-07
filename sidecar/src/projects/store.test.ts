@@ -158,7 +158,7 @@ test('corrupt ledgers, unknown owners, duplicates, cycles and foreign targets ar
   );
 });
 
-test('to-dos restore their triggers, and older or stale ledgers still load', async (t) => {
+test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do links still load', async (t) => {
   const path = await ledgerPath(t);
   const saved = project();
   saved.todos = [
@@ -167,9 +167,30 @@ test('to-dos restore their triggers, and older or stale ledgers still load', asy
   const store = new ProjectStore(path);
   await store.save([saved]);
   assert.deepEqual((await store.load())[0]?.todos, saved.todos);
-  const { todos: _todos, ...older } = saved;
+  const older = {
+    id: saved.id,
+    title: saved.title,
+    paused: saved.paused,
+    launching: saved.launching,
+    plan: saved.plan,
+    threads: saved.threads,
+    pending: saved.pending,
+  };
   await writeFile(path, JSON.stringify([older]));
-  assert.deepEqual((await store.load())[0]?.todos, []);
+  assert.deepEqual(await store.load(), [{ ...older, todos: [] }]);
+  saved.threads.push({
+    appSessionId: 'queued',
+    ownerAppSessionId: 'main',
+    title: 'Worker',
+    reply: '',
+    waiting: false,
+    queuedSpawn: {
+      input: { title: 'Worker', prompt: 'Build the parser', provider: 'droid', autonomy: 'low' },
+      order: 1,
+    },
+  });
+  await store.save([saved]);
+  assert.deepEqual(await store.load(), [saved]);
   await writeFile(
     path,
     JSON.stringify([{ ...saved, todos: [{ id: 'todo', text: 'Review', after: 'gone' }] }]),

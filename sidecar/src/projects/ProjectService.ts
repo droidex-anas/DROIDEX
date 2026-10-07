@@ -44,15 +44,24 @@ import type {
 } from './types.js';
 
 export interface ProjectPort {
-  get(appSessionId: string): SessionSummary | undefined;
   runtimeLoad(): RuntimeLoad;
+  makeRoom(appSessionId: string): Promise<boolean>;
+  deliverReport(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+  ): Promise<AutomationDeliveryReceipt>;
+  get(appSessionId: string): SessionSummary | undefined;
   /** What each provider can run right now, so a spawn cannot name a model that is not there. */
   catalog(): Promise<ProviderStatus[]>;
+  /** Null means capacity refused the start; undefined means the open was withdrawn. */
   create(
     input: ThreadInput,
     bind: (session: SessionSummary) => Promise<void>,
     clientRef?: string,
-  ): Promise<SessionSummary | undefined>;
+    appSessionId?: string,
+    start?: 'user' | 'automatic',
+  ): Promise<SessionSummary | null | undefined>;
   deliver(
     appSessionId: string,
     prompt: string,
@@ -106,6 +115,7 @@ interface StartedThread {
   step?: string;
   state: ThreadState;
   delivery: 'started' | 'queued';
+  runtimeLoad: RuntimeLoad;
   position?: number;
   waitReason?: string;
   reuseNote?: string;
@@ -157,7 +167,7 @@ export class ProjectService {
      fails leaves no project behind. */
   private readonly adopting = new Map<string, Project>();
   private readonly launches = new Set<Promise<string>>();
-  /** The folder each thread still starting will share or join; memory only, as a restart starts none. */
+  /** Checkout claims last until a spawn is queued or running. */
   private readonly checkoutClaims = new Set<CheckoutClaim>();
   private readonly spawnsUnderWay = new Set<SpawnUnderWay>();
   private readonly wakes: ProjectWakeQueue;
@@ -165,6 +175,8 @@ export class ProjectService {
   private readonly chats: SpawnedChats;
   private todoTimer?: NodeJS.Timeout;
   private historyLoaded = false;
+  private spawnOrder = 0;
+  private readonly restartRecovery = new Set<string>();
   private closed = false;
 
   private constructor(
@@ -180,6 +192,25 @@ export class ProjectService {
       },
       (project) => {
         this.refill(project);
+        this.refillRestartRecovery(project);
+      },
+      async (project, thread) => {
+        const queued = thread.queuedSpawn;
+        if (!queued) return true;
+        if (!thread.ownerAppSessionId) throw new Error('A queued thread must have an owner.');
+        const isCurrent = this.wakes.guard(project);
+        const load = this.sessions.runtimeLoad();
+        if (load.live >= load.limit && !(await this.sessions.makeRoom(thread.appSessionId)))
+          return false;
+        if (!isCurrent() || thread.queuedSpawn !== queued) return false;
+        await this.launch(
+          project,
+          queued.input,
+          { source: thread.ownerAppSessionId, stopped: false },
+          undefined,
+          thread,
+        );
+        return !thread.queuedSpawn;
       },
     );
     this.turns = new ProjectTurns({
@@ -225,7 +256,11 @@ export class ProjectService {
         delete project.leadFailed;
       }
       owner.projects.set(project.id, project);
-      for (const thread of project.threads) owner.membership.set(thread.appSessionId, project);
+      for (const thread of project.threads) {
+        owner.membership.set(thread.appSessionId, project);
+        owner.spawnOrder = Math.max(owner.spawnOrder, thread.queuedSpawn?.order ?? 0);
+      }
+      owner.wakes.kick(project);
     }
     if (saved.length) await owner.save();
     return owner;
@@ -401,13 +436,16 @@ export class ProjectService {
     const title = uniqueTitle(project, input.title);
     let appSessionId: string;
     try {
-      appSessionId = await this.launch(project, { ...input, title, prompt, cwd }, spawn);
+      appSessionId = await this.launch(
+        project,
+        { ...input, title, prompt, ...(cwd ? { cwd } : {}) },
+        spawn,
+      );
     } catch (error) {
       if (workspace) await discardThreadCheckout(owner.cwd, workspace);
       throw error;
     } finally {
-      // A launch returns once the thread's first turn is running, so from here
-      // its session's own streaming flag says it works in that folder.
+      // A queued launch keeps its checkout in the ledger; a running one owns it through its session.
       this.checkoutClaims.delete(claim);
     }
     // The step resolved before the launch, unless plan_set replaced the plan
@@ -439,6 +477,7 @@ export class ProjectService {
       title,
       state: status.state,
       delivery: status.state === 'queued' ? 'queued' : 'started',
+      runtimeLoad: this.sessions.runtimeLoad(),
       ...(status.wait?.kind === 'start' ? { position: status.wait.position } : {}),
       ...(status.waitReason ? { waitReason: status.waitReason } : {}),
       ...(reuseNote ? { reuseNote } : {}),
@@ -510,7 +549,8 @@ export class ProjectService {
     const project = this.requireProjectFor(source);
     if (requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the chat that leads a project can mark it done.');
-    if (project.launching > 0) throw new Error('A thread of this project is still starting.');
+    if (project.launching > 0 || project.threads.some((thread) => thread.queuedSpawn))
+      throw new Error('A thread of this project is still starting or queued to start.');
     const waiting = project.threads.find(
       (thread) =>
         thread.appSessionId !== source &&
@@ -699,6 +739,7 @@ export class ProjectService {
           title: thread.title,
           ownerId: thread.ownerAppSessionId,
           state: status.state,
+          ...(status.position ? { position: status.position } : {}),
           ...(status.waitReason ? { waitReason: status.waitReason } : {}),
           lastReply: thread.reply.slice(0, 160),
           queued: this.queuedMessages(project, thread.appSessionId),
@@ -1021,9 +1062,56 @@ export class ProjectService {
 
   /** Session history knows every thread now, so what a restart left queued can go out. */
   historyReady(): void {
-    this.historyLoaded = true;
-    this.wakes.start(this.projects.values());
-    this.armTodoTimer();
+    void this.recoverAfterRestart().then(
+      () => {
+        if (this.closed) return;
+        this.historyLoaded = true;
+        this.wakes.start(this.projects.values());
+        this.armTodoTimer();
+      },
+      (error: unknown) => {
+        for (const project of this.projects.values()) this.fail(project, error);
+      },
+    );
+  }
+
+  private async recoverAfterRestart(): Promise<void> {
+    for (const project of this.projects.values()) {
+      if (this.closed || project.paused) continue;
+      for (const thread of project.threads) {
+        if (!thread.ownerAppSessionId || thread.queuedSpawn) continue;
+        const session = this.sessions.get(thread.appSessionId);
+        if (session?.interruptReason && !session.streaming && session.phase === 'paused')
+          this.restartRecovery.add(thread.appSessionId);
+      }
+      this.refillRestartRecovery(project);
+    }
+    if (
+      this.restartRecovery.size ||
+      [...this.projects.values()].some((project) => project.pending.length)
+    )
+      await this.save();
+  }
+
+  private refillRestartRecovery(project: Project): void {
+    for (const thread of project.threads) {
+      if (!this.restartRecovery.has(thread.appSessionId) || !thread.ownerAppSessionId) continue;
+      // Interrupted projects can exceed the inbox bound; the rest queue as claims settle.
+      if (inboxFull(project)) return;
+      const text =
+        'DROIDEX restarted while you were working. Continue from where you stopped; your worktree and history are intact.';
+      const alreadyQueued = [...project.pending, ...(project.delivery?.messages ?? [])].some(
+        (message) => message.to === thread.appSessionId && message.kind === 'message',
+      );
+      if (!alreadyQueued)
+        this.enqueue(project, {
+          from: thread.ownerAppSessionId,
+          to: thread.appSessionId,
+          kind: 'message',
+          text,
+        });
+      this.restartRecovery.delete(thread.appSessionId);
+    }
   }
 
   sessionAvailable(appSessionId: string): void {
@@ -1039,6 +1127,7 @@ export class ProjectService {
     this.closed = true;
     if (this.todoTimer) clearTimeout(this.todoTimer);
     this.todoTimer = undefined;
+    this.restartRecovery.clear();
     this.wakes.close();
     this.turns.clear();
   }
@@ -1084,7 +1173,9 @@ export class ProjectService {
   /** Drops what was queued for a stopped thread once admission has settled. */
   private async quiet(project: Project, target: string): Promise<void> {
     await this.wakes.settle(project);
-    clearAsk(project, requireThread(project, target));
+    const thread = requireThread(project, target);
+    clearAsk(project, thread);
+    delete thread.queuedSpawn;
     project.pending = project.pending.filter((message) => message.to !== target);
     for (const thread of project.threads)
       if (thread.ownerAppSessionId === target) delete thread.owedReport;
@@ -1098,8 +1189,9 @@ export class ProjectService {
     input: ThreadInput,
     spawn?: SpawnUnderWay,
     clientRef?: string,
+    queuedThread?: ProjectThread,
   ): Promise<string> {
-    const work = this.launchOnce(project, input, spawn, clientRef);
+    const work = this.launchOnce(project, input, spawn, clientRef, queuedThread);
     this.launches.add(work);
     const release = () => {
       this.launches.delete(work);
@@ -1113,10 +1205,12 @@ export class ProjectService {
     input: ThreadInput,
     spawn?: SpawnUnderWay,
     clientRef?: string,
+    queuedThread?: ProjectThread,
   ): Promise<string> {
     this.requireOpen();
     this.checkAdmission(project);
     const ownerAppSessionId = spawn?.source;
+    const queuedSpawn = queuedThread?.queuedSpawn;
     // The guard is taken here, after the checkout was cut, so a Stop on the
     // spawning chat meanwhile is known only from its spawn's own record.
     const guard = this.wakes.guard(project);
@@ -1126,6 +1220,38 @@ export class ProjectService {
     try {
       await this.save();
       if (!isCurrent()) throw new Error('Project launch was cancelled.');
+      const queueSpawn = async (): Promise<string> => {
+        if (!isCurrent()) throw new Error('Project launch was cancelled.');
+        if (!ownerAppSessionId)
+          throw new Error(
+            'All automatic runtime slots are occupied. Try starting the project again when a slot is free.',
+          );
+        const thread = queuedThread ?? {
+          appSessionId: randomUUID(),
+          ownerAppSessionId,
+          title: input.title,
+          reply: '',
+          waiting: false,
+          queuedSpawn: { input, order: ++this.spawnOrder },
+        };
+        if (!queuedThread) {
+          this.commitAdoption(ownerAppSessionId, project);
+          project.threads.push(thread);
+          this.membership.set(thread.appSessionId, project);
+          bound = thread.appSessionId;
+        }
+        await this.save();
+        if (!isCurrent()) throw new Error('Project launch was cancelled.');
+        this.wakes.kick(project);
+        return thread.appSessionId;
+      };
+      const load = this.sessions.runtimeLoad();
+      if (
+        !queuedThread &&
+        ownerAppSessionId &&
+        (load.live >= load.limit || this.wakes.hasWaitingStarts())
+      )
+        return await queueSpawn();
       const brief = ownerAppSessionId ? THREAD_BRIEF : LEAD_BRIEF;
       const session = await this.sessions.create(
         { ...input, prompt: `${brief}\n\nTask:\n${input.prompt}` },
@@ -1133,17 +1259,22 @@ export class ProjectService {
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
           if (ownerAppSessionId)
             checkWithinAutonomy(this.requireSession(ownerAppSessionId), input.autonomy);
-          if (this.membership.has(created.appSessionId))
+          if (
+            this.membership.has(created.appSessionId) &&
+            queuedThread?.appSessionId !== created.appSessionId
+          )
             throw new Error('The harness reused an existing thread identity.');
           if (ownerAppSessionId) this.commitAdoption(ownerAppSessionId, project);
           bound = created.appSessionId;
-          project.threads.push({
-            appSessionId: bound,
-            ownerAppSessionId,
-            title: input.title,
-            reply: '',
-            waiting: false,
-          });
+          if (queuedThread) delete queuedThread.queuedSpawn;
+          else
+            project.threads.push({
+              appSessionId: bound,
+              ownerAppSessionId,
+              title: input.title,
+              reply: '',
+              waiting: false,
+            });
           this.membership.set(bound, project);
           await this.save();
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
@@ -1154,12 +1285,16 @@ export class ProjectService {
           });
         },
         clientRef,
+        queuedThread?.appSessionId,
+        ownerAppSessionId ? 'automatic' : 'user',
       );
+      if (session === null) return await queueSpawn();
       if (!session || !bound)
         throw new Error('The selected harness did not start this thread and reported no reason.');
       return session.appSessionId;
     } catch (error) {
-      if (bound) {
+      if (queuedThread && queuedSpawn) queuedThread.queuedSpawn = queuedSpawn;
+      else if (bound) {
         project.threads = project.threads.filter((thread) => thread.appSessionId !== bound);
         this.membership.delete(bound);
       }

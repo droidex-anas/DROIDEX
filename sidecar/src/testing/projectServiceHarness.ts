@@ -50,6 +50,14 @@ export function summary(id: string, selection: ThreadInput = input): SessionSumm
   });
 }
 
+export function interruptedSummary(id: string): SessionSummary {
+  return {
+    ...summary(id),
+    phase: 'paused',
+    interruptReason: 'The agent runtime restarted and this turn did not continue.',
+  };
+}
+
 export const git = (cwd: string, args: string[]) =>
   promisify(execFile)('git', ['-C', cwd, ...args]);
 
@@ -103,7 +111,15 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
-    runtimeLoad: () => ({ live: sessions.size, limit: 12 }),
+    runtimeLoad: () => ({ live: state.capacity === 'busy' ? 12 : sessions.size, limit: 12 }),
+    makeRoom: () => Promise.resolve(state.capacity === 'free'),
+    deliverReport: async (id, prompt, isCurrent) => {
+      if (state.gate) await state.gate;
+      if (!isCurrent()) return { status: 'cancelled' };
+      if (!sessions.get(id)?.streaming) return { status: 'busy', retryOn: 'target' };
+      steered.push({ id, prompt, now: false });
+      return { status: 'accepted', settled: Promise.resolve() };
+    },
     awaitingApproval: (id) => state.awaitingApproval.has(id),
     isLive: (id) => sessions.has(id),
     catalog: async () => {
@@ -124,8 +140,9 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
         },
       ];
     },
-    create: async (selection, bind) => {
-      const session = summary(`session-${String(++next)}`, selection);
+    create: async (selection, bind, _clientRef, appSessionId) => {
+      if (state.capacity === 'busy') return null;
+      const session = summary(appSessionId ?? `session-${String(++next)}`, selection);
       sessions.set(session.appSessionId, session);
       if (state.bindGate) await state.bindGate;
       if (state.createFailure === 'before-bind') throw new Error('The harness refused to start.');
