@@ -4,7 +4,7 @@ const { randomUUID } = require('node:crypto');
 // decides everything about them. The renderer may only mount a guest with a
 // one-time token main issued for a browser session; main then replaces the
 // guest's preferences and parameters wholesale (a partial override let a
-// page-chosen user agent and popups through), claims the guest for its session
+// page-chosen user agent through), claims the guest for its session
 // the moment it is created, binds it once it attaches, and navigates it itself.
 
 const TOKEN_SRC_PREFIX = 'about:blank#droidex=';
@@ -48,7 +48,8 @@ function createBrowserGuests({ partition, preloadPath, onBound }) {
       webSecurity: true,
       webviewTag: false,
       plugins: false,
-      disablePopups: true,
+      // Main's window-open handler admits only user or approved sign-in popups.
+      disablePopups: false,
     });
     // Electron loads `src` once the guest attaches, after main's own
     // navigation; an empty one leaves every navigation to main.

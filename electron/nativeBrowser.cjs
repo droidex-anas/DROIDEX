@@ -12,9 +12,7 @@ const { createBrowserPreview } = require('./browserPreview.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 const { createNativeBrowserViewFactory } = require('./nativeBrowserView.cjs');
 
-// A single persistent partition keeps cookies, localStorage, and registered
-// passkeys alive across reloads, dev-server restarts, and app restarts so the
-// user does not have to sign in again every time.
+// The page and its sign-in popups share persistent cookies and localStorage.
 const BROWSER_PARTITION = 'persist:droidex-browser';
 const VIEWPORT_MODES = ['fit', 'desktop', 'laptop', 'tablet', 'mobile'];
 
@@ -57,6 +55,8 @@ function createNativeBrowserManager(options) {
     onCrashed: reportNativeBrowserCrash,
     onInput: options.onBrowserInput,
     listEntries: () => nativeBrowsers.values(),
+    isAllowedUrl,
+    getMainWindow: options.getMainWindow,
   });
   const devTools = createBrowserDevTools({
     appName: options.appName,
@@ -123,6 +123,7 @@ function createNativeBrowserManager(options) {
   function releaseNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    views.closePopups(entry);
     guests.release(entry.browserSessionId);
     entry.contents = null;
     preview.sync(entry.browserSessionId);
@@ -241,6 +242,7 @@ function createNativeBrowserManager(options) {
     // A restore still waiting on the guest's setup never runs, and an action
     // still waiting on the page never reaches it.
     forgetLoad(entry);
+    views.closePopups(entry);
     preview.watch(entry.browserSessionId, false);
     guests.release(entry.browserSessionId);
     entry.contents = null;
@@ -391,6 +393,7 @@ function createNativeBrowserManager(options) {
   function closeAllNativeBrowsers() {
     preview.forget();
     for (const entry of nativeBrowsers.values()) {
+      views.closePopups(entry);
       entry.contents = null;
       forgetLoad(entry);
       guests.release(entry.browserSessionId);

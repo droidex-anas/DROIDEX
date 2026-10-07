@@ -9,6 +9,7 @@ const {
   validateAgentAuthenticationIntent,
   approveAuthentication,
 } = require('./browserAuthenticationIntent.cjs');
+const { grantAuthenticationPopup } = require('./browserAuthenticationPopup.cjs');
 
 const INSPECT = `function (activation, requireFocus) {
   if (requireFocus) {
@@ -97,8 +98,15 @@ function createBrowserAgentSafety({ reading, showPrompt }) {
   }
 
   async function authorize(contents, entry, request, inspected) {
-    if (inspected.intent)
-      await approveAuthentication(showPrompt, contents, entry, request, inspected.intent);
+    if (!inspected.intent) return;
+    const intent = inspected.intent;
+    if (intent.kind === 'oauth' && !intent.targetUrl)
+      throw new Error(
+        'The OAuth popup destination could not be verified, so it was blocked. Hand this step to the user.',
+      );
+    await approveAuthentication(showPrompt, contents, entry, request, intent);
+    if (intent.kind === 'oauth')
+      grantAuthenticationPopup(entry, contents, intent.targetUrl, request);
   }
 
   function verify(approved, current) {

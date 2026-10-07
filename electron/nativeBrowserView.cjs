@@ -2,6 +2,7 @@
 // keep the entry's URL, history, console and load state current. The partition
 // handlers stay as they were for views: permissions and devices are denied.
 const { CONSOLE_LEVELS } = require('./browserDiagnostics.cjs');
+const { createBrowserAuthenticationPopups } = require('./browserAuthenticationPopup.cjs');
 
 function createNativeBrowserViewFactory({
   session,
@@ -16,9 +17,17 @@ function createNativeBrowserViewFactory({
   onCrashed,
   onInput,
   listEntries,
+  isAllowedUrl,
+  getMainWindow,
 }) {
   let browserSessionConfigured = false;
   const requestStarts = new Map(); // webRequest id -> when its headers went out
+  const popups = createBrowserAuthenticationPopups({
+    partition,
+    loadUrl,
+    isAllowedUrl,
+    getMainWindow,
+  });
 
   function configureSession() {
     if (browserSessionConfigured) return;
@@ -83,6 +92,7 @@ function createNativeBrowserViewFactory({
       // Documents the page has loaded, so a design crop is never taken of a
       // later one, a reload of the same URL included.
       documents: 0,
+      authenticationPopupCapability: null,
       loadingUrl: null,
       loadingPromise: null,
       networkEvents: [],
@@ -96,10 +106,7 @@ function createNativeBrowserViewFactory({
     entry.contents = contents;
     entry.crashed = false;
     const current = () => entry.contents === contents && !contents.isDestroyed();
-    contents.setWindowOpenHandler(({ url: nextUrl }) => {
-      if (current()) void loadUrl(entry, nextUrl);
-      return { action: 'deny' };
-    });
+    popups.bind(entry, contents);
     // Only the page the browser shows forwards app shortcuts, not one let go.
     contents.on('before-input-event', (event, input) => {
       if (current()) onInput(event, input);
@@ -170,6 +177,7 @@ function createNativeBrowserViewFactory({
     });
     contents.on('render-process-gone', (_event, details) => {
       if (entry.contents !== contents || details?.reason === 'clean-exit') return;
+      popups.close(entry);
       entry.crashed = true;
       entry.loadingUrl = null;
       entry.loadingPromise = null;
@@ -180,7 +188,7 @@ function createNativeBrowserViewFactory({
     });
   }
 
-  return { bindGuest, configureSession, createEntry };
+  return { bindGuest, configureSession, createEntry, closePopups: popups.close };
 }
 
 // The size the server states for a response; many state none.

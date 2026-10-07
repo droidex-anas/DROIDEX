@@ -111,7 +111,33 @@ need a user handoff. CDP inspects and fills in isolated worlds; unreadable input
 focus is refused. These checks run only on agent actions; direct user input is not
 gated. Actions that can ask approval receive an additional 120 seconds in the
 sidecar request deadline, and abandoned requests dismiss their queued prompts.
-OAuth popup handling, passkey sheets and site permissions belong to later ports.
+Site permissions belong to a later port.
+
+OAuth popups use `electron/browserAuthenticationPopup.cjs`. An agent's approved
+OAuth control grants one exact HTTP(S) popup URL for at most 10 seconds, bound to
+the guest, document and live request. Unknown OAuth destinations require a user
+handoff. Direct user mouse or activation-key input permits a sign-in popup for
+one second; CDP actions and developer evaluation never create that user grant.
+Popup detection uses an explicit window disposition, popup dimensions or an
+authentication URL path; ordinary blank-target links still load in the pane.
+Electron creates the native child window, preserving `window.opener`, form POST
+data and `postMessage`, subject to the site's normal opener-isolation policies.
+It shares the browser partition, has no app preload or Node integration, is
+sandboxed, and refuses nested windows, webviews and non-HTTP(S) navigation.
+Navigation, replacement, crashes and release of the opener close its popups.
+Blank-first popups are refused because Electron inherits the opener's preferences
+for `about:blank` without allowing overrides.
+
+Electron 39.8.10 does not expose `app.configureWebAuthn` or
+`select-webauthn-account`. Consequently #215's Touch ID configuration and account
+picker cannot be ported to this runtime, and signing entitlements alone would
+not enable them. Platform Touch ID and iCloud passkeys are unavailable. Native
+Chromium security-key ceremonies remain enabled and need the user's physical
+interaction; WebHID's `select-hid-device` is a different API and granting generic
+HID/USB access would not enable passkeys. No virtual authenticator or automatic
+device/account selection is installed. Agent passkey controls reuse the existing
+sensitive-submit approval. Real keys, native PIN/verification UI and provider
+sign-in flows require device testing.
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.

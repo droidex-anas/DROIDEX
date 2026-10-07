@@ -5,6 +5,7 @@ const { EventEmitter } = require('node:events');
 const { createBrowserActions } = require('./browserActions.cjs');
 const { createBrowserReading } = require('./browserReading.cjs');
 const { refFor } = require('./browserRefs.cjs');
+const { consumeAuthenticationPopup } = require('./browserAuthenticationPopup.cjs');
 
 function fixture() {
   const fields = new Map();
@@ -252,8 +253,14 @@ test('a field becoming sensitive in its focus handler refuses fill and type', as
   assert.deepEqual(f.input, []);
 });
 
-test('sign-in, sign-up and payment clicks require a fresh approval each time', async () => {
-  for (const label of ['Sign in', 'Create an account', 'Pay now']) {
+test('sign-in, sign-up, passkey, OAuth and payment clicks require a fresh approval each time', async () => {
+  for (const label of [
+    'Sign in',
+    'Create an account',
+    'Use a passkey',
+    'Sign in with Google',
+    'Pay now',
+  ]) {
     const f = fixture();
     f.button(label);
     await assert.rejects(f.act({ action: 'click', x: 10, y: 10 }), /denied/);
@@ -278,6 +285,25 @@ test('Enter can submit a saved password only after approval', async () => {
   await f.act({ action: 'press', key: 'Enter' });
   assert.equal(f.input.filter((event) => event.type === 'keyDown').length, 1);
   assert.equal(f.prompts.length, 2);
+});
+
+test('OAuth approval grants the inspected popup URL and unresolved destinations require user handoff', async () => {
+  const f = fixture();
+  const button = f.button('Sign in with Google');
+  f.answer(async () => ({ response: 0 }));
+  await f.act({ action: 'click', x: 10, y: 10 });
+  assert.equal(consumeAuthenticationPopup(f.entry, f.contents, button.form.action), true);
+  button.form.action = '';
+  f.input.length = 0;
+  await assert.rejects(
+    f.act({ action: 'click', x: 10, y: 10 }),
+    /destination could not be verified/,
+  );
+  assert.equal(
+    f.input.some((event) => event.type === 'mousePressed'),
+    false,
+  );
+  assert.equal(f.prompts.length, 1);
 });
 
 test('type with submit cannot send its Enter without approving the sign-in form', async () => {

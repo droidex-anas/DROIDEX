@@ -48,7 +48,7 @@ test('a reserved guest attaches once, hardened, and binds to its session', async
   assert.equal(webPreferences.partition, 'persist:droidex-browser');
   assert.equal(webPreferences.preload, '/app/page.cjs');
   assert.equal(webPreferences.webSecurity, true);
-  assert.equal(webPreferences.disablePopups, true);
+  assert.equal(webPreferences.disablePopups, false);
   assert.deepEqual(params, { instanceId: '7', src: '' });
   assert.equal(await waiting, guest);
   assert.deepEqual(bound, [['browser-1', guest]]);

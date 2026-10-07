@@ -156,6 +156,7 @@ const nativeBrowserManager = createNativeBrowserManager({
   getSettings: () => browserSettings.snapshot(),
   showPrompt: browserPrompts.request,
   onBrowserInput: nativeBrowserShortcuts.handleInput,
+  getMainWindow: () => mainWindow,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
   getHostAppUrl: () => process.env.ELECTRON_START_URL || mainWindow?.webContents.getURL(),
   sendToRenderer: (channel, payload) => {
