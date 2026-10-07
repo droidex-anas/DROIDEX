@@ -14,7 +14,6 @@ import { CanvasFrameEdits } from './CanvasFrameEdits.js';
 import { placeFrames, requireSeedFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
-import { CanvasRevisionCleanup } from './canvasRevisionCleanup.js';
 import {
   canvasChange,
   canvasSnapshot,
@@ -59,9 +58,8 @@ export class CanvasWorkspace {
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
-    cleanup: CanvasRevisionCleanup,
   ) {
-    this.frameEdits = new CanvasFrameEdits(cleanup, heads, leases, builds, this.commits);
+    this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
   }
 
   /**
@@ -74,23 +72,9 @@ export class CanvasWorkspace {
     deps: CanvasWorkspaceDeps,
   ): Promise<CanvasWorkspace> {
     const files = new CanvasFiles(directory, deps.fs);
-    const cleanup = new CanvasRevisionCleanup(directory, deps.fs);
     const heads = await CanvasHeads.load(files);
-    const workspace = new CanvasWorkspace(
-      files,
-      heads,
-      new CanvasLeases(deps, heads),
-      builds,
-      cleanup,
-    );
+    const workspace = new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads), builds);
     await builds.load(workspace, files, heads.all());
-    for (const manifest of heads.all()) {
-      try {
-        await cleanup.collect(manifest);
-      } catch {
-        console.error(`Canvas ${manifest.canvasId} source cleanup will retry on the next open.`);
-      }
-    }
     return workspace;
   }
 

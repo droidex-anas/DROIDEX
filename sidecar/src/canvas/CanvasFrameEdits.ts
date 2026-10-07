@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasCommits } from './canvasCommits.js';
 import { canvasError } from './canvasError.js';
-import type { CanvasRevisionCleanup } from './canvasRevisionCleanup.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import {
@@ -31,7 +30,6 @@ import {
 
 export class CanvasFrameEdits {
   constructor(
-    private readonly cleanup: CanvasRevisionCleanup,
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
@@ -100,10 +98,10 @@ export class CanvasFrameEdits {
       const recorded = recordedRemove(manifest, mutationId, fingerprint);
       if (recorded) return recorded;
 
-      const result = await this.commits.publish(async () => {
+      return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, input.designIds);
         const again = recordedRemove(live, mutationId, fingerprint);
-        if (again) return { value: { undoId: again.undoId, expiredDesignIds: [] as string[] } };
+        if (again) return { value: again };
         const next = structuredClone(live);
         const removed = input.designIds.map((id) => requireDesign(next, id));
         const occupants = next.designs.filter(
@@ -124,7 +122,7 @@ export class CanvasFrameEdits {
           designs: removed,
           consumed: false,
         });
-        const expired = next.tombstones.splice(
+        next.tombstones.splice(
           0,
           Math.max(0, next.tombstones.length - CANVAS_TOMBSTONE_LIMIT),
         );
@@ -147,12 +145,7 @@ export class CanvasFrameEdits {
           for (const id of input.designIds) this.builds.cancelDesign(next.canvasId, id);
         }
         return {
-          value: {
-            undoId,
-            expiredDesignIds: expired.flatMap((entry) =>
-              entry.designs.map((design) => design.designId),
-            ),
-          },
+          value: { undoId },
           change: {
             canvasId: next.canvasId,
             sequence: next.sequence,
@@ -161,21 +154,6 @@ export class CanvasFrameEdits {
           },
         };
       });
-      if (result.expiredDesignIds.length > 0) {
-        // A concurrent create may have published an uncommitted revision.
-        // Only retired designs are eligible here; an open sweeps other orphans.
-        const current = this.heads.find(manifest.canvasId);
-        if (current) {
-          try {
-            await this.cleanup.collect(current, new Set(result.expiredDesignIds));
-          } catch {
-            console.error(
-              `Canvas ${manifest.canvasId} source cleanup will retry on the next open.`,
-            );
-          }
-        }
-      }
-      return { undoId: result.undoId };
     });
   }
 

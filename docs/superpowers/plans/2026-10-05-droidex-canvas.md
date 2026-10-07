@@ -1192,7 +1192,7 @@ Settled by 09c (sidecar workspace and protocol):
 
 - Delete and Undo commit persisted tombstones and retry receipts through the existing scope gate and sequence queue; deleting a frame cancels its build, and Undo restores its revision, name and rect after checking for new or moved occupants under that rect (`layout_conflict` carries the current occupant rect).
 - Rename takes `expectedManifestVersion` as a fifth workspace argument and on the bridge input, since the four-argument draft had no caller-supplied CAS token; source, layout and build commits advance that version.
-- The last 50 removals retain Undo; after an older tombstone expires, source is collected only when no live frame, retained tombstone or surviving frame revision references it. Library items own independent source copies, so collection does not remove their bytes.
+- The last 50 removals retain Undo; retiring an older tombstone drops only its Undo entry. Undo is bounded by count, not time, and survives reopening. Canonical revisions and assets remain until explicit deletion of the owning canvas or library item; derived-cache cleanup never touches source (spec §7).
 - `canvas_read` is owned by Task 4 and is absent on this base; `CanvasWorkspace.readFiles` already returns a curated not-found with an Undo hint for a removed frame, which that tool must pass through.
 
 - [ ] Implement a variants popover with layout/style/color choices, user direction and count 1–4 (default two). Capture the original revision/system once, reserve all sibling frames through one idempotent `create`, then submit one user-requested action through the current composer/session machinery with those explicit targets. This action is ordinary user intent, not hidden system text.

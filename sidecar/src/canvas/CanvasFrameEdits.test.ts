@@ -203,8 +203,8 @@ test('a failed post-rename flush still cancels the removed frame build', async (
   assert.equal(running.signal.aborted, true);
 });
 
-test('retiring the oldest Undo reclaims its unreferenced source', async (t) => {
-  const { root, workspace, canvasId, scope } = await opened(t);
+test('retiring the oldest Undo retains every source revision across reopen', async (t) => {
+  const { root, deps, workspace, builds, canvasId, scope } = await opened(t);
   const first = await frame(workspace, scope, 'create-0');
   const written = await workspace.write(scope, {
     mutationId: 'write-0',
@@ -213,16 +213,38 @@ test('retiring the oldest Undo reclaims its unreferenced source', async (t) => {
     files: { 'main.tsx': SOURCE },
     deletedPaths: [],
   });
+  const revisionIds = [written.revisionId];
   const removed = await workspace.removeFrames(scope, 'remove-0', [first.designId]);
   for (let index = 1; index <= 50; index += 1) {
     const design = await frame(workspace, scope, `create-${String(index)}`);
+    const revision = await workspace.write(scope, {
+      mutationId: `write-${String(index)}`,
+      designId: design.designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': SOURCE },
+      deletedPaths: [],
+    });
+    revisionIds.push(revision.revisionId);
     await workspace.removeFrames(scope, `remove-${String(index)}`, [design.designId]);
   }
   await assert.rejects(workspace.undoRemoval(scope, 'undo-oldest', removed.undoId), {
     code: 'invalid_input',
   });
-  assert.deepEqual(await readdir(join(root, canvasId, 'revisions')), []);
+  const revisionsDirectory = join(root, canvasId, 'revisions');
+  assert.deepEqual((await readdir(revisionsDirectory)).sort(), revisionIds.sort());
   await assert.rejects(workspace.readFiles(canvasId, written), { code: 'not_found' });
+  await builds.close();
+  await workspace.close();
+  const reopenedBuilds = quietBuilds();
+  const reopened = await CanvasWorkspace.open(root, reopenedBuilds, deps);
+  t.after(async () => {
+    await reopenedBuilds.close();
+    await reopened.close();
+  });
+  assert.deepEqual((await readdir(revisionsDirectory)).sort(), revisionIds);
+  await assert.rejects(reopened.undoRemoval(scope, 'undo-oldest-reopened', removed.undoId), {
+    code: 'invalid_input',
+  });
 });
 
 test('retiring Undo keeps source a surviving frame references', async (t) => {
