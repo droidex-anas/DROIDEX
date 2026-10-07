@@ -340,6 +340,15 @@ captured turn lease covering the design is still current after the read.
 Replacement panes and turns cannot revive an abandoned read. Reads without a
 live owner can still serve cached artifacts but admit no recovery work.
 
+Canvas compiler slots stay occupied until their child processes physically exit.
+IPC failure retires the same child; new compile or edit requests wait for its exit
+and recheck cancellation and final shutdown before starting a replacement. A
+shutdown acknowledgement, live-child close, or delivered kill cannot release
+capacity. Only a PID-less failed spawn may settle on close. Shutdown revokes
+turn and watch authority and closes workspace publication synchronously before
+awaiting process and storage cleanup. Already-renamed durable mutations finish
+successfully; build publication checks the captured job at the final manifest rename.
+
 ### Canvas live previews
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it

@@ -392,6 +392,40 @@ test('concurrent termination waits for child exit, not a stopped acknowledgement
   assert.deepEqual(child.signals, [], 'exit clears the shutdown grace timer');
 });
 
+for (const failure of ['IPC error', 'malformed reply'] as const) {
+  test(`a live compiler ${failure} retains ownership through close and kill until exit`, async (t) => {
+    t.mock.method(console, 'error', () => undefined);
+    const children = mockCompilerProcesses(t);
+    const worker = new CompilerWorker();
+    const rejected = assert.rejects(
+      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+      CompilerUnavailableError,
+    );
+    const child = children[0];
+    assert.ok(child);
+    Object.defineProperty(child, 'pid', { value: 1234 });
+    if (failure === 'IPC error') child.emit('error', new Error('IPC failed with a live process'));
+    else child.emit('message', { status: 'not-a-compiler-reply' });
+    await rejected;
+    const replacement = worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
+    const refused = assert.rejects(replacement, CompilerUnavailableError);
+    let closed = false;
+    const closing = worker.terminate().then(() => {
+      closed = true;
+    });
+    child.emit('close', 1, null);
+    t.mock.timers.tick(2_000);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(children.length, 1, 'replacement work must not fork over the living child');
+    assert.equal(closed, false, 'neither IPC failure, close, nor SIGKILL proves physical exit');
+    assert.deepEqual(child.signals, ['SIGKILL']);
+    child.exit();
+    await Promise.all([closing, refused]);
+    assert.equal(closed, true);
+    assert.equal(children.length, 1, 'shutdown invalidates the replacement waiting for exit');
+  });
+}
+
 test('a failed spawn close settles concurrent termination and the process drain', async (t) => {
   const children = mockCompilerProcesses(t);
   const processes = new CompilerProcesses();

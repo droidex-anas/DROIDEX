@@ -11,6 +11,7 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError } from './canvasError.js';
 import type { CanvasDiagnostic, DesignSystemRef, ElementEdit, SourceElement } from './protocol.js';
@@ -123,14 +124,11 @@ export const COMPILER_UNAVAILABLE = 'The Canvas compiler is unavailable; restart
 export const RUNTIME_UNAVAILABLE =
   'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
-// How long a shutdown may take before the process is forcibly ended. This is
-// cleanup, not the build deadline Task 3b owns.
-const SHUTDOWN_GRACE_MS = 2_000;
-
 export class CompilerWorker {
   private compiler: ChildProcess | null = null;
   private readonly pending = new Map<number, PendingCompile>();
   private readonly pendingEdits = new Map<number, PendingEdit>();
+  private retiring: Promise<void> | null = null;
   private termination: Promise<void> | null = null;
   private nextRequestId = 1;
 
@@ -143,6 +141,7 @@ export class CompilerWorker {
     if (this.termination !== null)
       return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
+    if (this.retiring !== null) return this.retiring.then(() => this.compile(input, signal));
 
     const requestId = this.nextRequestId++;
     const compiler = this.liveCompiler();
@@ -178,6 +177,8 @@ export class CompilerWorker {
     if (this.termination !== null)
       return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
+    if (this.retiring !== null)
+      return this.retiring.then(() => this.edit(files, elements, edit, designSystem, signal));
     const requestId = this.nextRequestId++;
     const compiler = this.liveCompiler();
     return new Promise<SourceFiles>((resolve, reject) => {
@@ -211,32 +212,12 @@ export class CompilerWorker {
     if (this.termination !== null) return this.termination;
     const compiler = this.compiler;
     this.compiler = null;
-    this.termination = new Promise<void>((resolve) => {
-      if (compiler === null) {
-        resolve();
-        return;
-      }
-      // Give the compiler time to stop and reap esbuild before forcing its exit.
-      const grace = setTimeout(() => compiler.kill('SIGKILL'), SHUTDOWN_GRACE_MS);
-      grace.unref();
-      const onExit = (): void => {
-        clearTimeout(grace);
-        compiler.off('exit', onExit);
-        compiler.off('close', onClose);
-        resolve();
-      };
-      const onClose = (): void => {
-        // A failed fork has no PID and emits close without ever emitting exit.
-        if (compiler.pid === undefined) onExit();
-      };
-      compiler.once('exit', onExit);
-      compiler.once('close', onClose);
-    });
+    this.termination =
+      this.retiring ??
+      (compiler === null
+        ? Promise.resolve()
+        : terminateCompilerProcess(compiler, this.nextRequestId++));
     this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-    if (compiler !== null) {
-      const requestId = this.nextRequestId++;
-      compiler.send({ type: 'shutdown', requestId } satisfies CompilerRequest);
-    }
     return this.termination;
   }
 
@@ -261,7 +242,6 @@ export class CompilerWorker {
       // the process is ended, and the next build forks a replacement.
       if (response === null) {
         this.loseCompiler(compiler, new Error('The compiler sent a reply it does not define.'));
-        compiler.kill();
         return;
       }
       this.receive(response);
@@ -270,7 +250,13 @@ export class CompilerWorker {
       this.loseCompiler(compiler, error);
     });
     compiler.on('exit', (code) => {
-      this.loseCompiler(compiler, new Error(`The compiler exited with code ${String(code)}.`));
+      if (this.compiler !== compiler || this.retiring !== null) return;
+      this.compiler = null;
+      console.error(
+        'Canvas compiler lost:',
+        new Error(`The compiler exited with code ${String(code)}.`),
+      );
+      this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     });
     this.compiler = compiler;
     return compiler;
@@ -323,10 +309,15 @@ export class CompilerWorker {
 
   /** The cause goes to the sidecar log; the caller learns only what to do. */
   private loseCompiler(compiler: ChildProcess, cause: Error): void {
-    if (this.compiler !== compiler) return;
-    this.compiler = null;
+    if (this.compiler !== compiler || this.retiring !== null) return;
     console.error('Canvas compiler lost:', cause);
+    const ending = terminateCompilerProcess(compiler, this.nextRequestId++);
+    this.retiring = ending;
     this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    void ending.then(() => {
+      if (this.compiler === compiler) this.compiler = null;
+      if (this.retiring === ending) this.retiring = null;
+    });
   }
 
   private failAll(error: Error): void {
