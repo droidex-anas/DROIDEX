@@ -193,8 +193,10 @@ test('macOS protected project folders have truthful permission descriptions', ()
   assert.match(config.mac.extendInfo.NSDesktopFolderUsageDescription, /choose them/);
   assert.match(config.mac.extendInfo.NSDocumentsFolderUsageDescription, /choose them/);
   assert.match(config.mac.extendInfo.NSDownloadsFolderUsageDescription, /choose them/);
-  assert.equal(config.mac.extendInfo.NSCameraUsageDescription, undefined);
+  assert.match(config.mac.extendInfo.NSCameraUsageDescription, /websites you explicitly allow/);
   assert.match(config.mac.extendInfo.NSMicrophoneUsageDescription, /voice conversation/);
+  assert.match(config.mac.extendInfo.NSMicrophoneUsageDescription, /websites you explicitly allow/);
+  assert.match(config.mac.extendInfo.NSLocationUsageDescription, /websites you explicitly allow/);
 });
 
 test('website DMG includes a direct Privacy & Security shortcut', () => {

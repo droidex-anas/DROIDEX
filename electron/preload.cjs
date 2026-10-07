@@ -225,6 +225,8 @@ contextBridge.exposeInMainWorld('droidControl', {
 
   browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
   browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
+  browserSitePermissionRevoke: (origin, permission) =>
+    ipcRenderer.invoke('browser-site-permission-revoke', { origin, permission }),
   browserPermissionPromptReady: (ready) =>
     ipcRenderer.invoke('browser-permission-prompt-ready', ready),
   browserPermissionPromptResolve: (requestId, response) =>

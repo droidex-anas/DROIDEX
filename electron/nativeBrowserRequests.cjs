@@ -278,7 +278,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
-  return { handle, workingSessions: () => [...waiting.keys()] };
+  return {
+    handle,
+    workingSessions: () => [...waiting.keys()],
+  };
 }
 
 function sidecarTimeoutMs(value) {

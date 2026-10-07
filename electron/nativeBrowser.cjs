@@ -44,6 +44,7 @@ function createNativeBrowserManager(options) {
   const views = createNativeBrowserViewFactory({
     session: options.session,
     partition: BROWSER_PARTITION,
+    permissions: options.permissions,
     normalizeBrowserConsoleMessage,
     redactBrowserDiagnosticUrl,
     urls,
@@ -120,6 +121,7 @@ function createNativeBrowserManager(options) {
   function releaseNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    options.permissions.revokeForContents(entry.contents);
     guests.release(entry.browserSessionId);
     entry.contents = null;
     preview.sync(entry.browserSessionId);
@@ -235,6 +237,7 @@ function createNativeBrowserManager(options) {
   function closeNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    options.permissions.revokeForContents(entry.contents);
     // A restore still waiting on the guest's setup never runs, and an action
     // still waiting on the page never reaches it.
     forgetLoad(entry);
@@ -386,6 +389,7 @@ function createNativeBrowserManager(options) {
   }
 
   function closeAllNativeBrowsers() {
+    options.permissions.revokeAll();
     preview.forget();
     for (const entry of nativeBrowsers.values()) {
       forgetLoad(entry);
