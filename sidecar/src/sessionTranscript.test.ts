@@ -153,14 +153,14 @@ test('corrupt lines are skipped without losing their neighbors', () => {
   );
 });
 
-test('eager and paged replay hide internal user messages and restore skill activations', () => {
+test('eager and paged replay hide internal user messages and Droid notices, and restore skill activations', () => {
   // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
     ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
-    userMessage('user-only prompt', 'user_only'),
+    userMessage('Unable to reach https://api.factory.ai.', 'user_only'),
     userMessage('shared prompt', 'both'),
     userMessage('Skill "review" activated: PR #100', 'user_only'),
     userMessage(notification),
@@ -180,7 +180,6 @@ test('eager and paged replay hide internal user messages and restore skill activ
       ]),
       [
         ['ordinary user prompt', 'user', undefined, 'user'],
-        ['user-only prompt', 'user', undefined, 'user'],
         ['shared prompt', 'user', undefined, 'user'],
         // A user-only skill activation restores the prompt and the harness
         // acknowledgement as separate rows.

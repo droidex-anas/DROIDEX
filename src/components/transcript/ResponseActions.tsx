@@ -46,7 +46,7 @@ function MessageTime({ ts }: { ts: number }) {
     <time
       dateTime={new Date(ts).toISOString()}
       title={detailFormat.format(ts)}
-      className="px-1.5 text-[12px] tabular-nums text-droid-text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
+      className="whitespace-nowrap px-1.5 text-[12px] tabular-nums text-droid-text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
     >
       {formatResponseTime(ts, Date.now())}
     </time>

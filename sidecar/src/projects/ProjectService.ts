@@ -908,6 +908,8 @@ export class ProjectService {
       );
       if (!session || !bound)
         throw new Error('The selected harness did not start this thread and reported no reason.');
+      // A new chat is named after its first prompt, which here is DROIDEX's brief.
+      await this.sessions.rename(bound, input.title).catch(() => undefined);
       return session.appSessionId;
     } catch (error) {
       if (bound) {

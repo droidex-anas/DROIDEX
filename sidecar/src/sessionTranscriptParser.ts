@@ -281,11 +281,15 @@ export function parseSessionLineEvents(
     ];
   }
 
+  // Droid stores its own notices ("Unable to reach…", BYOK errors, budget
+  // switches) as user text only the user sees. They are not the user's words,
+  // and the live session already reported them as errors.
+  const droidNotice = messageRole === 'user' && message?.visibility === 'user_only';
   const forkPointId = line.forkPointId ?? line.id;
   const events: TranscriptEvent[] = [];
   content.forEach((item, index) => {
     const block = objectValue(item);
-    if (!block) return;
+    if (!block || (droidNotice && block.type === 'text')) return;
     const parsed =
       messageRole === 'assistant'
         ? assistantBlockEvent(base, index, block, forkPointId)

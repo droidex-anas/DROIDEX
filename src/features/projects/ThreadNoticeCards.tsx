@@ -1,6 +1,8 @@
+import type { CSSProperties } from 'react';
 import { MessageSquareText } from '@droidex/icons';
 import { MessageBody } from '../../components/MessageBody';
 import { ModelIcon } from '../../components/ModelIcon';
+import { ClampedBlock } from '../../components/transcript/ClampedBlock';
 import { useStoreSelector } from '../../hooks/useStore';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
 import type { ThreadBrief, ThreadReport, ThreadSender } from './threadNotices';
@@ -16,19 +18,21 @@ export function ThreadBriefNotice({ brief }: { brief: ThreadBrief }) {
   );
 }
 
-/* A project reads like a group chat: the user's bubbles on the right, the
-   main chat's replies as its own prose, and each thread as a member with its
-   harness's mark for a face. A message from a chat outside the project stays
-   a notice. */
+/* A project reads like a group chat: the user's filled bubbles on the right,
+   the main chat's replies as its own prose, and each thread as a member on
+   the left, its harness's mark for a face and an outlined bubble so it never
+   reads as the user. A message from a chat outside the project stays a
+   notice. */
 export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport[] }) {
   return (
-    <div data-testid="thread-report-notice" className="flex flex-col gap-3">
-      {reports.map((report) =>
+    <div data-testid="thread-report-notice" className="flex flex-col gap-4">
+      {reports.map((report, index) =>
         report.from ? (
           <ThreadMessage
             key={`${report.from.threadId}:${report.body.slice(0, 40)}`}
             from={report.from}
             text={report.body}
+            index={index}
           />
         ) : (
           <NoticeCard
@@ -43,7 +47,10 @@ export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport
   );
 }
 
-function ThreadMessage({ from, text }: { from: ThreadSender; text: string }) {
+// 13px text at 24px leading, as the bubble sets it.
+const BUBBLE_LINE_PX = 24;
+
+function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string; index: number }) {
   const provider = useStoreSelector((state) =>
     Object.hasOwn(state.sessions, from.threadId)
       ? state.sessions[from.threadId].provider
@@ -51,11 +58,16 @@ function ThreadMessage({ from, text }: { from: ThreadSender; text: string }) {
   );
   const asks = from.action === 'needs a decision';
   return (
-    <div data-testid="thread-message" className="flex items-end gap-2.5">
+    <div
+      data-testid="thread-message"
+      // A row that just arrived pops its bubbles in one after another.
+      style={{ '--bubble-index': index } as CSSProperties}
+      className="thread-bubble flex items-start gap-2.5 pr-[12%]"
+    >
       <span
         role="img"
         aria-label={provider ? `${PROVIDER_LABELS[provider]} thread` : 'Thread'}
-        className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-droid-border bg-droid-surface"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-droid-border bg-droid-surface"
       >
         {provider ? (
           <ModelIcon provider={PROVIDER_MARKS[provider]} size={14} />
@@ -63,15 +75,25 @@ function ThreadMessage({ from, text }: { from: ThreadSender; text: string }) {
           <MessageSquareText className="h-3.5 w-3.5 text-droid-text-muted" />
         )}
       </span>
-      <div className="min-w-0 max-w-[88%]">
-        <p className="flex min-w-0 items-baseline gap-1.5 pb-1 pl-1 text-[12px] leading-4">
-          <span className="truncate font-medium text-droid-text-secondary">{from.name}</span>
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-baseline gap-1.5 pb-1 pl-1 pt-1 text-[12px] leading-5">
+          <span className="truncate font-medium text-droid-text">{from.name}</span>
           <span className={`shrink-0 ${asks ? 'text-droid-orange' : 'text-droid-text-muted'}`}>
             {from.action}
           </span>
         </p>
-        <div className="rounded-2xl rounded-bl-md bg-droid-elevated/70 px-3.5 py-2.5 text-[13px] leading-6 text-droid-text-secondary">
-          <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
+        <div
+          className={`rounded-2xl rounded-tl-md border bg-droid-bg px-3.5 py-2.5 text-[13px] leading-6 text-droid-text-secondary ${
+            asks ? 'border-droid-orange/40' : 'border-droid-border'
+          }`}
+        >
+          <ClampedBlock
+            lines={8}
+            lineHeightPx={BUBBLE_LINE_PX}
+            fade="from-droid-bg via-droid-bg/90"
+          >
+            <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
+          </ClampedBlock>
         </div>
       </div>
     </div>
