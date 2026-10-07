@@ -2,11 +2,10 @@ import { browserToolOf } from '../../lib/browserTools';
 import { transcriptEventIsVisible } from '../../lib/childSessions';
 import { sessionIsLive } from '../../lib/sessions';
 import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
-import { startsTurn } from '../chatFeed';
 
 export interface Turn {
-  // The prompt or settings change that opened the turn, unless the loaded
-  // part of the chat no longer reaches back to it.
+  // The prompt that opened the turn, unless the loaded part of the chat no
+  // longer reaches back to it. A model change mid-run stays inside the turn.
   start?: TranscriptEvent;
   events: TranscriptEvent[];
 }
@@ -27,7 +26,7 @@ export function currentTurn(transcript: TranscriptEvent[]): Turn {
   for (let index = transcript.length - 1; index >= 0 && !start; index -= 1) {
     const event = transcript[index];
     if (!transcriptEventIsVisible(event, null)) continue;
-    if (startsTurn(event) && !event.steered) start = event;
+    if (event.author === 'user' && !event.steered) start = event;
     else since.push(event);
   }
   const turn = { start, events: since.reverse() };
