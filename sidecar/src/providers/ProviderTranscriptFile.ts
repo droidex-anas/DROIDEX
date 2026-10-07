@@ -43,6 +43,7 @@ type ContentBlock =
       pollsChildSessionId?: string;
       interrupted?: true;
       canvasActivity?: TranscriptEvent['canvasActivity'];
+      canvasOccurrenceId?: string;
     }
   | {
       type: 'tool_result';
@@ -391,7 +392,9 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
       input: event.toolArgs,
       ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
       ...(event.interrupted ? { interrupted: true } : {}),
-      ...(event.canvasActivity ? { canvasActivity: event.canvasActivity } : {}),
+      ...(event.canvasActivity
+        ? { canvasActivity: event.canvasActivity, canvasOccurrenceId: event.id }
+        : {}),
     };
   }
   if (!event.text) return null;

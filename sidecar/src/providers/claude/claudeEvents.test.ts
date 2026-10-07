@@ -172,6 +172,32 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
     }),
   );
   for (const event of events) flow.apply('app-1', 'app-1', 'primary', event);
+  const streamedCall = {
+    type: 'tool_use',
+    id: 'canvas-streamed-error',
+    name: 'mcp__droidex-canvas__canvas_write',
+    input: { designId: 'design-2' },
+  };
+  for (const entry of [
+    streamEvent({ type: 'content_block_start', index: 0, content_block: streamedCall }, 'spawn-1'),
+    streamEvent(
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '{"designId":"design-2"}' },
+      },
+      'spawn-1',
+    ),
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'spawn-1',
+      error: 'unknown',
+      message: { content: [streamedCall, { type: 'text', text: `Tool failed: ${canary}` }] },
+    }),
+    streamEvent({ type: 'content_block_stop', index: 0 }, 'spawn-1'),
+  ]) {
+    for (const event of mapper.map(entry)) flow.apply('app-1', 'app-1', 'primary', event);
+  }
   await timeline.settleStreaming('app-1', 'app-1');
   const childPath = join(directory, 'provider-sessions', 'child-1.jsonl');
   const replay = parseFullSessionTranscript('app-1', 'child-1', childPath, 'worker');
@@ -181,6 +207,16 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
     assert.equal(result?.canvasActivity?.state, 'failed');
     assert.deepEqual(result?.canvasActivity?.designIds, ['design-1']);
     assert.equal(result?.sourceSessionId, 'child-1');
+    assert.deepEqual(
+      rows.filter((row) => row.kind === 'tool_result').map((row) => row.canvasActivity?.state),
+      ['failed', 'failed'],
+    );
+    assert.equal(rows.filter((row) => row.kind === 'tool_call').length, 2);
+    const streamedResult = rows.find(
+      (row) => row.toolUseId === streamedCall.id && row.kind === 'tool_result',
+    );
+    assert.deepEqual(streamedResult?.canvasActivity?.designIds, ['design-2']);
+    assert.equal(streamedResult?.sourceSessionId, 'child-1');
   }
   assert.ok(!readFileSync(childPath, 'utf8').includes(canary));
   assert.equal(recorded.find((row) => row.kind === 'text')?.text, 'Ordinary reply.');

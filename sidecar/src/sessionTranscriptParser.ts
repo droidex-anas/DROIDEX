@@ -128,6 +128,8 @@ function assistantBlockEvent(
     return event(base, index, 'text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
   if (type === 'tool_use') {
+    const canvas = canvasActivityField(block);
+    const occurrenceId = stringValue(block.canvasOccurrenceId);
     return event(base, index, 'tool_call', {
       toolName: nonEmpty(stringValue(block.name), 'tool'),
       toolArgs: block.input,
@@ -136,7 +138,8 @@ function assistantBlockEvent(
       toolUseId: stringValue(block.id),
       pollsChildSessionId: stringValue(block.pollsChildSessionId),
       ...(block.interrupted === true ? { interrupted: true } : {}),
-      ...canvasActivityField(block),
+      ...canvas,
+      ...(canvas.canvasActivity && occurrenceId ? { id: occurrenceId } : {}),
     });
   }
   return null;

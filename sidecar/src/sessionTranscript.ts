@@ -92,27 +92,30 @@ export function parseFullSessionTranscript(
   role: SessionRole,
 ): TranscriptEvent[] {
   const stat = statSync(path);
-  const window = readSessionRawWindow(path, stat.size);
   const events: TranscriptEvent[] = [];
-  const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
-  if (window.trimmed) {
+  if (stat.size > MAX_SESSION_BYTES) {
     events.push(oversizedStatusEvent(appSessionId, providerSessionId, role, stat.mtimeMs));
-  }
-  for (const raw of window.text.split(/\r?\n/)) {
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
-    try {
-      events.push(
-        ...parseSessionLineEvents(
-          appSessionId,
-          providerSessionId,
-          role,
-          JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart,
-          canvas,
-        ),
-      );
-    } catch {
-      /* skip partial/corrupt JSONL rows */
+    events.push(
+      ...new SessionTranscriptReader(appSessionId, providerSessionId, path, role).readTail(),
+    );
+  } else {
+    const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
+    for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      try {
+        events.push(
+          ...parseSessionLineEvents(
+            appSessionId,
+            providerSessionId,
+            role,
+            JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart,
+            canvas,
+          ),
+        );
+      } catch {
+        /* skip partial/corrupt JSONL rows */
+      }
     }
   }
   const notices = readSessionNotices(appSessionId, providerSessionId, role);
@@ -201,6 +204,25 @@ export class SessionTranscriptReader {
       : [];
   }
 
+  // Eager history keeps its byte cap, but result provenance can precede it.
+  readTail(): TranscriptEvent[] {
+    const firstLine = this.lineStarts.findIndex(
+      (start) => start > this.sizeBytes - MAX_SESSION_BYTES,
+    );
+    if (firstLine < 0) return [];
+    const file: LazyFile = { fd: null };
+    const events: TranscriptEvent[] = [];
+    try {
+      for (let line = firstLine; line < this.lineStarts.length; line += 1) {
+        for (const candidate of this.parseLine(file, line))
+          events.push(this.projectEvent(file, line, candidate));
+      }
+    } finally {
+      if (file.fd !== null) closeSync(file.fd);
+    }
+    return events;
+  }
+
   // Serve up to `limit` events ending at `from` (or the segment tail),
   // walking backward. Returned events are in forward (chronological) order
   // with seq = seqBase + segment-local position. `older` is set when the
@@ -281,7 +303,7 @@ export class SessionTranscriptReader {
   private projectEvent(file: LazyFile, line: number, candidate: TranscriptEvent): TranscriptEvent {
     if (candidate.kind !== 'tool_call' && candidate.kind !== 'tool_result') return candidate;
     const canvas = new CanvasToolPresentation(this.canvasBindings);
-    if (candidate.kind === 'tool_call' || candidate.canvasActivity || !candidate.toolUseId)
+    if (candidate.kind === 'tool_call' || !candidate.toolUseId)
       return canvas.project(candidate, undefined, candidate.id);
     // Resolve against the preceding occurrence, not whichever page was visited
     // last. Calls outside the requested page remain available through the memo.
