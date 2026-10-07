@@ -56,6 +56,7 @@ function createNativeBrowserManager(options) {
     onCrashed: reportNativeBrowserCrash,
     onInput: options.onBrowserInput,
     listEntries: () => nativeBrowsers.values(),
+    history: options.history,
   });
   const devTools = createBrowserDevTools({
     appName: options.appName,
@@ -222,7 +223,11 @@ function createNativeBrowserManager(options) {
     if (nativeBrowsers.get(entry.browserSessionId) !== entry)
       throw new Error(`${options.appName} browser is not open.`);
     before?.();
-    await loadNativeBrowserUrl(entry, url, { force: true });
+    const contents = liveContents(entry);
+    const typedUrl = entry.typedUrl;
+    const loaded = await loadNativeBrowserUrl(entry, url, { force: true });
+    if (!loaded.ok && entry.contents === contents && entry.typedUrl === typedUrl)
+      entry.typedUrl = null;
   }
 
   // Only an open browser is shown or hidden: the renderer hides a page it
@@ -413,6 +418,10 @@ function createNativeBrowserManager(options) {
       navigateNativeBrowserHistory(browserSessionId, 'back', before),
     goForward: (browserSessionId, before) =>
       navigateNativeBrowserHistory(browserSessionId, 'forward', before),
+    recordTyped(browserSessionId, url) {
+      urls.validateUrl(url);
+      ensureNativeBrowserEntry(browserSessionId).typedUrl = new URL(url).href;
+    },
     setDesignState: page.setDesignState,
     runAgentAction: page.runAgentAction,
     waitForPaint: page.waitForPaint,

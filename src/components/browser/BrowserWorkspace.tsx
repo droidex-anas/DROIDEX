@@ -11,6 +11,7 @@ import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { getBrowserHistory } from '../../lib/browserHistory';
 import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
 import type { BrowserViewportMode } from '../../types/bridge';
 import {
@@ -281,7 +282,7 @@ export default function BrowserWorkspace({
       });
   };
 
-  const openCurrentUrl = () => {
+  const openCurrentUrl = async () => {
     const normalizedUrl = normalizeUrl(urlInput);
     if (browserKey && isSelfBrowserUrl(normalizedUrl, appOrigin)) {
       setUrlInput(normalizedUrl);
@@ -299,6 +300,13 @@ export default function BrowserWorkspace({
     setUrlInput(browserAddressValue(url));
     setActiveUrl(url);
     if (browserKey) {
+      if (isDesktop()) {
+        try {
+          await getBrowserHistory().recordTyped(browserKey, url);
+        } catch (error) {
+          console.error('Could not record the browser address in history:', error);
+        }
+      }
       openBrowser({
         appSessionId: browserKey,
         url,
@@ -390,13 +398,13 @@ export default function BrowserWorkspace({
         pencilMode={pencilMode}
         expanded={expanded}
         onUrlInputChange={setUrlInput}
-        onOpen={openCurrentUrl}
+        onOpen={() => void openCurrentUrl()}
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
         onReload={() => {
           startLoading();
           if (browserKey && browser) reloadBrowser(browserKey);
-          else openCurrentUrl();
+          else void openCurrentUrl();
         }}
         onToggleDesignMode={() => {
           if (browserKey) dispatch({ type: 'TOGGLE_DESIGN_MODE', appSessionId: browserKey });
@@ -432,7 +440,7 @@ export default function BrowserWorkspace({
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
               startLoading();
               if (browserKey && browser) reloadBrowser(browserKey);
-              else openCurrentUrl();
+              else void openCurrentUrl();
             }}
           >
             Retry

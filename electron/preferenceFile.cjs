@@ -25,11 +25,11 @@ function saveBooleanPreference(options) {
 
 // Writes through a temporary file and a rename, with owner-only permissions, so
 // a crash mid-write can never leave a truncated file behind.
-async function writeJsonFile(fileSystem, filePath, value) {
+async function writeJsonFile(fileSystem, filePath, value, space = 2) {
   const temporaryPath = `${filePath}.${crypto.randomUUID()}.tmp`;
   await fileSystem.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   try {
-    await fileSystem.writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+    await fileSystem.writeFile(temporaryPath, `${JSON.stringify(value, null, space)}\n`, {
       mode: 0o600,
     });
     await fileSystem.rename(temporaryPath, filePath);
