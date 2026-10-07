@@ -1,5 +1,5 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpServer.js';
+import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
 import { EXPIRED_TURN } from '../../canvas/canvasError.js';
 
 /** Each Claude process keeps its own tool-use binding until that process closes. */

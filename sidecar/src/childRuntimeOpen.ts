@@ -1,5 +1,5 @@
 import type { FactorySession } from './DroidRuntime.js';
-import { CANVAS_MCP_SERVER_NAME } from './canvas/canvasMcpServer.js';
+import { CANVAS_MCP_SERVER_NAME } from './canvas/canvasMcpNames.js';
 import { normalizeMcpServerName } from './automations/permissionPolicy.js';
 import type { PersistedChildSession } from './history.js';
 import type { ServerEvent } from './protocol.js';

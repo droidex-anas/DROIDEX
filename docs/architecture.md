@@ -318,7 +318,9 @@ Each chat gets one local `droidex-canvas` MCP server with six tools: read, creat
 write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
 `canvas_read` returns that chat's newest live lease. Every mutation requires its
 explicit `scopeId`; retries keep the original scope and cannot borrow a later
-turn's authority. Named leases expire when their turn or provider ends. `CanvasWorkspace` owns board
+turn's authority. Named leases expire when their turn or provider ends.
+`canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
+`CanvasWorkspace` owns board
 mutations, including retry receipts and attachment bootstrap; the design-system
 store owns immutable kit versions. Droid and Claude use
 the per-chat loopback endpoint; Codex declares the same tools through dynamic

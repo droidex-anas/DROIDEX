@@ -7,7 +7,8 @@ import {
   quietBuilds,
 } from '../testing/canvasStorageSupport.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
-import { CANVAS_MCP_SERVER_NAME, createCanvasMcpServer } from './canvasMcpServer.js';
+import { createCanvasMcpServer } from './canvasMcpServer.js';
+import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
@@ -59,14 +60,7 @@ test('six Canvas tools are discoverable and an inactive chat cannot read', async
   assert.equal(h.server.name, CANVAS_MCP_SERVER_NAME);
   assert.deepEqual(
     h.server.tools.map((entry) => entry.name),
-    [
-      'canvas_read',
-      'canvas_create',
-      'canvas_write',
-      'canvas_inspect',
-      'canvas_arrange',
-      'canvas_theme',
-    ],
+    [...CANVAS_TOOL_NAMES],
   );
   assert.equal((await h.call('canvas_read', {})).code, 'scope_expired');
 });

@@ -7,6 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
+import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
 import type { CanvasScope } from './protocol.js';
@@ -23,8 +24,6 @@ import {
   readDesignSystem,
   saveDesignSystem,
 } from './designSystems.js';
-
-export const CANVAS_MCP_SERVER_NAME = 'droidex-canvas';
 
 const scopeIdSchema = z.string().min(1).max(200);
 const scopeShape = { scopeId: scopeIdSchema.optional() };
