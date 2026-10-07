@@ -34,8 +34,7 @@ function createNativeBrowserManager(options) {
     app: options.app,
     appName: options.appName,
     safeStorage: options.safeStorage,
-    dialog: options.dialog,
-    getMainWindow: options.getMainWindow,
+    showPrompt: options.showPrompt,
   });
   const guests = createBrowserGuests({
     partition: BROWSER_PARTITION,
@@ -59,8 +58,7 @@ function createNativeBrowserManager(options) {
   });
   const devTools = createBrowserDevTools({
     appName: options.appName,
-    dialog: options.dialog,
-    getMainWindow: options.getMainWindow,
+    showPrompt: options.showPrompt,
     isHostAppUrl: urls.isHostAppUrl,
     runWithWebContentsDebugger,
   });
