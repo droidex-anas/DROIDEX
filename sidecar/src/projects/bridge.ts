@@ -39,10 +39,11 @@ export function createProjectCommandHandler(
     if (!isProjectRequest(value)) return false;
     const parsed = commandSchema.safeParse(value);
     if (!parsed.success) {
-      if ('requestId' in value && typeof value.requestId === 'string') {
+      const parsedRequestId = id.safeParse(value.requestId);
+      if (parsedRequestId.success) {
         emit({
           type: 'project.result',
-          requestId: value.requestId,
+          requestId: parsedRequestId.data,
           ok: false,
           error: 'Invalid Projects command.',
         });
@@ -141,7 +142,8 @@ async function runCommand(
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  return message.slice(0, 8_192) || 'Projects command failed.';
 }
 
 function isProjectRequest(value: unknown): value is Record<string, unknown> {
