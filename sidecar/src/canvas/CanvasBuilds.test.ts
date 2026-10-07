@@ -16,7 +16,8 @@ import {
   type Board,
 } from '../testing/canvasBuildSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
-import { CanvasFiles, REVISION_METADATA_VERSION } from './canvasFiles.js';
+import { CanvasFiles } from './canvasFiles.js';
+import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasBuildState } from './protocol.js';
 import { instrumentSource } from './sourceElements.js';

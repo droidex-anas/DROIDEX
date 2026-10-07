@@ -11,7 +11,12 @@ import type {
   CanvasFrame,
   CanvasSnapshot,
   CanvasSummary,
+  CanvasScope,
   CreateFramesResult,
+  EditElementInput,
+  RestoreRevisionInput,
+  RevisionAuthor,
+  RevisionSummary,
   WriteReceipt,
 } from './protocol.js';
 import {
@@ -57,6 +62,19 @@ const fingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
 // A lease ID never reaches a filesystem path, so it is bounded, not charset-checked.
 const scopeIdSchema = z.string().min(1).max(200);
 
+const revisionRecordSchema = z
+  .object({
+    designId: canvasIdentifierSchema,
+    revisionId: canvasIdentifierSchema,
+    sequence: z.number().int().positive(),
+    author: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('user') }).strict(),
+      z.object({ kind: z.literal('agent'), scopeRef: canvasIdentifierSchema }).strict(),
+    ]),
+    mutationKind: z.enum(['create', 'write', 'edit', 'restore']),
+  })
+  .strict();
+
 // What one accepted arrange acknowledged, and all it has to retain: the layout
 // an arrange changes is the layout a retry has to answer for.
 const placementSchema = z
@@ -101,6 +119,17 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('restore'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+      sequence: versionSchema,
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('arrange'),
       mutationId: canvasIdentifierSchema,
       scopeId: scopeIdSchema,
@@ -123,6 +152,8 @@ export const canvasManifestSchema = z
     // chat's first create commits the canvas and the attachment in one write.
     attachedAppSessionIds: z.array(appSessionIdSchema),
     designs: z.array(persistedDesignSchema),
+    // Canonical commit index, retained independently of the bounded retry ledger.
+    revisions: z.array(revisionRecordSchema),
     mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.unsettled),
   })
   .strict()
@@ -131,12 +162,22 @@ export const canvasManifestSchema = z
   })
   .refine((manifest) => !hasDuplicate(manifest.mutations.map((record) => record.mutationId)), {
     message: 'A canvas manifest holds each mutation ID once.',
+  })
+  .refine((manifest) => !hasDuplicate(manifest.revisions.map((record) => record.revisionId)), {
+    message: 'A canvas manifest holds each revision ID once.',
+  })
+  .refine(hasOrderedRevisions, {
+    message: 'Revision history must follow the canvas commit sequence.',
   });
 
 export type PersistedDesign = z.infer<typeof persistedDesignSchema>;
 export type Placement = z.infer<typeof placementSchema>;
 export type PersistedMutation = z.infer<typeof persistedMutationSchema>;
 export type CanvasManifest = z.infer<typeof canvasManifestSchema>;
+
+export type SourceRevisionMutation =
+  | { kind: 'edit'; input: EditElementInput }
+  | { kind: 'restore'; input: RestoreRevisionInput };
 
 export function emptyCanvasManifest(canvasId: string, name: string, now: number): CanvasManifest {
   return {
@@ -148,6 +189,7 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     sequence: 0,
     attachedAppSessionIds: [],
     designs: [],
+    revisions: [],
     mutations: [],
   };
 }
@@ -217,16 +259,40 @@ export function recordedCreate(
   };
 }
 
-/** The original receipt for a source write or direct edit. */
+/** The original receipt for a source mutation. */
 export function recordedRevision(
   manifest: CanvasManifest,
   mutationId: string,
-  kind: 'write' | 'edit',
+  kind: 'write' | 'edit' | 'restore',
   fingerprint: string,
 ): WriteReceipt | null {
   const record = findMutation(manifest, mutationId, kind, fingerprint);
-  if (record?.kind !== 'write' && record?.kind !== 'edit') return null;
+  if (record?.kind !== 'write' && record?.kind !== 'edit' && record?.kind !== 'restore')
+    return null;
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
+}
+
+/** Records only revisions whose manifest commit will publish them. */
+export function recordRevisions(
+  manifest: CanvasManifest,
+  scope: CanvasScope,
+  mutationKind: RevisionSummary['mutationKind'],
+  designs: readonly { designId: string; revisionId: string | null }[],
+): void {
+  const author: RevisionAuthor =
+    scope.origin === 'user'
+      ? { kind: 'user' }
+      : { kind: 'agent', scopeRef: `scope-${mutationFingerprint(scope.scopeId)}` };
+  for (const design of designs) {
+    if (design.revisionId === null) continue;
+    manifest.revisions.push({
+      designId: design.designId,
+      revisionId: design.revisionId,
+      sequence: manifest.sequence,
+      author,
+      mutationKind,
+    });
+  }
 }
 
 export function recordedArrange(
@@ -324,4 +390,16 @@ function canonicalJson(value: unknown): string {
 
 function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
+}
+
+function hasOrderedRevisions(manifest: {
+  sequence: number;
+  revisions: { sequence: number }[];
+}): boolean {
+  let previous = 0;
+  for (const revision of manifest.revisions) {
+    if (revision.sequence < previous || revision.sequence > manifest.sequence) return false;
+    previous = revision.sequence;
+  }
+  return true;
 }

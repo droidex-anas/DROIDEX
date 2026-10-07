@@ -1,8 +1,5 @@
-// The durable owner of every canvas: frames, layout, immutable source
-// revisions, attachments and mutation retries (spec §7). Commits run one at a
-// time, each one writes and flushes its revision tree before it replaces a
-// manifest, and the lease is checked once more with the replacement ready and
-// nothing published. `canvasHeads.ts` owns which manifest is current.
+// Durable commits publish complete source before the manifest, with a final
+// lease check. `canvasHeads.ts` owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
 import type { BuildCommit, BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
@@ -13,6 +10,7 @@ import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
 import {
   canvasChange,
   canvasSnapshot,
@@ -23,10 +21,12 @@ import {
   recordedCreate,
   recordedRevision,
   recordMutation,
+  recordRevisions,
   toFrame,
   toPlacements,
   type CanvasManifest,
   type PersistedDesign,
+  type SourceRevisionMutation,
 } from './canvasManifest.js';
 import type {
   ArrangeFramesInput,
@@ -36,7 +36,6 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
-  EditElementInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -53,18 +52,18 @@ export class CanvasWorkspace {
   /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
   private readonly commits = new CanvasCommits(this.changes);
+  readonly history: CanvasRevisionHistory;
 
   private constructor(
     private readonly files: CanvasFiles,
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
-  ) {}
+  ) {
+    this.history = new CanvasRevisionHistory(this, heads, files);
+  }
 
-  /**
-   * Opens the storage root and hands the build registry the canvases it serves,
-   * so every frame projected from here reports a real build state.
-   */
+  /** Opens canonical storage and restores the derived build states. */
   static async open(
     directory: string,
     builds: CanvasBuilds,
@@ -95,11 +94,7 @@ export class CanvasWorkspace {
     return this.heads.attachedCanvasId(appSessionId);
   }
 
-  /**
-   * A new canvas, attached in the same commit so explicit Create leaves either
-   * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
-   * first: a crash between the two writes must leave it unattached, not twice.
-   */
+  /** A crash between detaching and creating leaves the chat unattached, never twice. */
   createCanvas(appSessionId: string): Promise<CanvasSnapshot> {
     return this.commits.admit(() =>
       this.commits.run(async () => {
@@ -199,6 +194,7 @@ export class CanvasWorkspace {
         next.designs.push(...designs);
         next.sequence += 1;
         next.updatedAt = Date.now();
+        recordRevisions(next, scope, 'create', designs);
         recordMutation(
           next,
           {
@@ -236,24 +232,33 @@ export class CanvasWorkspace {
     });
   }
 
-  recordedEdit(scope: CanvasScope, input: EditElementInput): WriteReceipt | null {
+  recordedSourceMutation(
+    scope: CanvasScope,
+    designId: string,
+    mutation: SourceRevisionMutation,
+  ): WriteReceipt | null {
     this.commits.requireOpen();
-    const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
-    return recordedRevision(manifest, input.mutationId, 'edit', mutationFingerprint(input));
+    const manifest = this.leases.requireDesigns(scope, [designId]);
+    return recordedRevision(
+      manifest,
+      mutation.input.mutationId,
+      mutation.kind,
+      mutationFingerprint(mutation.input),
+    );
   }
 
-  // Direct edits retain their original request fingerprint, not the derived file write.
+  // Edits and restores retain the original request identity, not their derived files.
   write(
     scope: CanvasScope,
     input: WriteFilesInput,
-    edit?: EditElementInput,
+    mutation?: SourceRevisionMutation,
   ): Promise<WriteReceipt> {
     return this.commits.admit(async () => {
       this.commits.requireOpen();
       const manifest = this.leases.requireDesigns(scope, [input.designId]);
       const canvasId = manifest.canvasId;
-      const kind = edit ? 'edit' : 'write';
-      const fingerprint = mutationFingerprint(edit ?? input);
+      const kind = mutation?.kind ?? 'write';
+      const fingerprint = mutationFingerprint(mutation?.input ?? input);
       const recorded = recordedRevision(manifest, input.mutationId, kind, fingerprint);
       if (recorded) return recorded;
 
@@ -277,6 +282,7 @@ export class CanvasWorkspace {
           revisionId: revision.revisionId,
           sequence: next.sequence,
         };
+        recordRevisions(next, scope, kind, [receipt]);
         recordMutation(
           next,
           {
@@ -289,9 +295,7 @@ export class CanvasWorkspace {
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, [input.designId]));
-        // The revision is durable, so it can be built. Queuing it here is what
-        // makes the change below report this revision's own build and never the
-        // previous one's artifact (spec §4).
+        // Enqueue only durable revisions, so this change carries its own build.
         this.builds.enqueue(canvasId, receipt.designId, receipt.revisionId);
         return { value: receipt, change: canvasChange(next, [target], this.builds) };
       });
@@ -351,8 +355,7 @@ export class CanvasWorkspace {
     // An unreferenced revision still reads, but only from a canvas we hold.
     this.canvas(canvasId);
     const tree = await this.files.readRevision(canvasId, ref);
-    // A null-prototype tree, so a source path can never reach an inherited
-    // member even if the path rules change.
+    // Source paths must never reach inherited members.
     const files = Object.create(null) as SourceFiles;
     for (const [path, content] of tree) files[path] = content;
     return files;
@@ -432,11 +435,7 @@ export class CanvasWorkspace {
     }
   }
 
-  /**
-   * The receipt this create already has, if it has one. An unattached lease
-   * finds it through the attachment its first create committed, which is also
-   * the only record of a canvas whose response was lost.
-   */
+  /** An unattached create finds its receipt through the attachment it committed. */
   private recordedCreate(
     scope: CanvasScope,
     mutationId: string,

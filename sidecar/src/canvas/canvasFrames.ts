@@ -5,7 +5,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { canvasError, CanvasCommandError } from './canvasError.js';
-import { REVISION_METADATA_VERSION, type CanvasFiles, type NewRevision } from './canvasFiles.js';
+import type { CanvasFiles } from './canvasFiles.js';
+import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMetadata.js';
 import type { PersistedDesign } from './canvasManifest.js';
 import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation } from './schema.js';

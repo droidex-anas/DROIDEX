@@ -8,7 +8,8 @@ import {
   type CanvasFileSystemOperation,
 } from '../testing/canvasStorageSupport.js';
 import { canvasError } from './canvasError.js';
-import { CanvasFiles, REVISION_METADATA_VERSION, type NewRevision } from './canvasFiles.js';
+import { CanvasFiles } from './canvasFiles.js';
+import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMetadata.js';
 import { emptyCanvasManifest, type CanvasManifest } from './canvasManifest.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;

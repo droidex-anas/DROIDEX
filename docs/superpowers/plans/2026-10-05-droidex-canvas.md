@@ -1349,6 +1349,27 @@ Also cover escaping `<`, `&`, quotes and Unicode without changing surrounding so
 - [ ] Implement history list and diff using canonical revision files. Viewing a revision is read-only; Restore copies it into a new head through the normal commit/build path, retaining all later history. Include system version and build status in the revision summary.
 - [ ] Verify literal edit→source→build→reload, ambiguous selection, a remote agent edit while the source drawer is dirty, stale element IDs, repeated instances, and restore-as-new-revision. Run focused source-element/workspace tests and the real click/edit flow in Electron; source and rendered result must agree.
 
+Settled by 08d (sidecar) (`sidecar/src/canvas/canvasRevisionHistory.ts`):
+
+- The canonical manifest indexes committed revisions independently of retained mutation
+  receipts; immutable revision files supply source, timestamps and pinned design-system
+  versions. History pages are newest first, capped at 50, with an exclusive `before`
+  canvas commit sequence. Author references expose only user/agent and an opaque scope hash.
+  Cache outcomes determine each revision's ready/failed status; a miss is building.
+- `canvas.listRevisions`, `canvas.diffRevisions`, `canvas.readRevision` and
+  `canvas.restoreRevision` are validated bridge commands mirrored by the renderer protocol.
+  Reads do not change the head. Restore copies complete files and the pinned kit through
+  the normal write/CAS/build path, creates a new head, keeps later history and replays the
+  original receipt by mutation ID. Removed designs return `not_found`; 09c owns tombstones.
+- Diffs report added/removed/modified files with exact replacement hunks and three lines
+  of surrounding context. Linear prefix/suffix comparison avoids quadratic matching on
+  maximum-sized files; hunks need not be minimal. Diff text is capped at 256 KiB total
+  UTF-8 bytes, with whole-line omission explicitly reported by `truncated`.
+  No dependency or second source reader was added.
+- Renderer work left: `CanvasHistory` UI, revision picker/read-only source presentation,
+  diff viewer and Restore controls, including loading/error/conflict states and Electron
+  interaction/visual verification. No Task 8 checkbox is settled by this sidecar change.
+
 ## Task 9: Variants, local library and durable board undo
 
 **Subtasks (one branch and PR each, merged in order):**

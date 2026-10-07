@@ -9,6 +9,7 @@ import type { ServerEvent } from '../protocol.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { editCanvasElement } from './canvasElementEdit.js';
+import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type { CanvasCommand, CanvasError, CanvasEvent, CanvasReply } from './protocol.js';
@@ -17,6 +18,8 @@ import {
   canvasIdentifierSchema,
   createFramesInputSchema,
   editElementInputSchema,
+  revisionPageSchema,
+  restoreRevisionInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -38,6 +41,42 @@ const target = { ...session, canvasId: canvasIdentifierSchema };
 const canvasCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('canvas.list'), ...request }).strict(),
   z.object({ type: z.literal('canvas.attachment'), ...request, ...session }).strict(),
+  z
+    .object({
+      type: z.literal('canvas.listRevisions'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      page: revisionPageSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.diffRevisions'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      from: canvasIdentifierSchema,
+      to: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readRevision'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.restoreRevision'),
+      ...request,
+      ...target,
+      input: restoreRevisionInputSchema,
+    })
+    .strict(),
   z
     .object({ type: z.literal('canvas.subscribe'), ...request, canvasId: canvasIdentifierSchema })
     .strict(),
@@ -92,7 +131,7 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
 
 type Mutation = Extract<
   CanvasCommand,
-  { type: `canvas.${'create' | 'write' | 'editElement' | 'arrange'}` }
+  { type: `canvas.${'create' | 'write' | 'editElement' | 'restoreRevision' | 'arrange'}` }
 >;
 
 /**
@@ -238,6 +277,34 @@ class CanvasDispatch {
     switch (command.type) {
       case 'canvas.list':
         return { kind: 'summaries', summaries: workspace.listCanvases() };
+      case 'canvas.listRevisions':
+        return {
+          kind: 'revisions',
+          revisions: await workspace.history.listRevisions(
+            command.canvasId,
+            command.designId,
+            command.page,
+          ),
+        };
+      case 'canvas.diffRevisions':
+        return {
+          kind: 'revisionDiff',
+          diff: await workspace.history.diffRevisions(
+            command.canvasId,
+            command.designId,
+            command.from,
+            command.to,
+          ),
+        };
+      case 'canvas.readRevision':
+        return {
+          kind: 'revisionFiles',
+          files: await workspace.history.readRevisionFiles(
+            command.canvasId,
+            command.designId,
+            command.revisionId,
+          ),
+        };
       case 'canvas.attachment':
         return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
       case 'canvas.createCanvas': {
@@ -298,6 +365,11 @@ class CanvasDispatch {
           return {
             kind: 'written',
             receipt: await editCanvasElement(workspace, this.builds, scope, command.input),
+          };
+        case 'canvas.restoreRevision':
+          return {
+            kind: 'written',
+            receipt: await restoreRevision(workspace, scope, command.input),
           };
         case 'canvas.arrange':
           return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };

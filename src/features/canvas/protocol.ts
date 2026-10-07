@@ -187,6 +187,40 @@ export interface ArrangeFramesInput {
   frames: { designId: string; expectedLayoutVersion: number; rect: FrameRect }[];
 }
 
+export type RevisionAuthor = { kind: 'user' } | { kind: 'agent'; scopeRef: string };
+
+export interface RevisionSummary {
+  revisionId: string;
+  /** Canvas commit sequence, also used as the exclusive pagination cursor. */
+  sequence: number;
+  createdAt: number;
+  author: RevisionAuthor;
+  designSystem: DesignSystemRef;
+  /** A cache miss is building; it never borrows another revision's artifact. */
+  buildStatus: 'ready' | 'failed' | 'building';
+  mutationKind: 'create' | 'write' | 'edit' | 'restore';
+}
+
+export interface RevisionDiff {
+  from: string;
+  to: string;
+  files: { path: string; kind: 'added' | 'removed' | 'modified'; diff: string }[];
+  /** Some unified diff lines were omitted to respect the total UTF-8 byte cap. */
+  truncated: boolean;
+}
+
+export interface RevisionPage {
+  limit: number;
+  before?: number;
+}
+
+export interface RestoreRevisionInput {
+  mutationId: string;
+  designId: string;
+  revisionId: string;
+  expectedRevisionId: string | null;
+}
+
 // The stable codes from spec §8. Every failure carries a short recovery message
 // and never a stack trace, private path or provider prompt.
 export type CanvasErrorCode =
@@ -203,7 +237,8 @@ export type CanvasErrorCode =
   | 'ambiguous_element'
   | 'invalid_edit'
   | 'invalid_source'
-  | 'unsupported_edit';
+  | 'unsupported_edit'
+  | 'not_found';
 
 export interface CanvasError {
   code: CanvasErrorCode;
@@ -219,6 +254,28 @@ export type CanvasCommand =
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
+  | {
+      type: 'canvas.listRevisions';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      page: RevisionPage;
+    }
+  | {
+      type: 'canvas.diffRevisions';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      from: string;
+      to: string;
+    }
+  | {
+      type: 'canvas.readRevision';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    }
   // A derived read, authorized like `canvas.subscribe` by the page asking: the
   // artifact is a projection of a canvas any renderer page may watch.
   | {
@@ -253,6 +310,13 @@ export type CanvasCommand =
       input: EditElementInput;
     }
   | {
+      type: 'canvas.restoreRevision';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RestoreRevisionInput;
+    }
+  | {
       type: 'canvas.arrange';
       requestId: string;
       appSessionId: string;
@@ -268,6 +332,9 @@ export type CanvasReply =
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'revisions'; revisions: RevisionSummary[] }
+  | { kind: 'revisionDiff'; diff: RevisionDiff }
+  | { kind: 'revisionFiles'; files: SourceFiles }
   | { kind: 'artifact'; artifact: PreviewArtifact | null };
 
 export type CanvasEvent =

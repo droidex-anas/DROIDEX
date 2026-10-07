@@ -19,6 +19,7 @@ const ERROR_CODES = new Set([
   'invalid_edit',
   'invalid_source',
   'unsupported_edit',
+  'not_found',
 ]);
 
 const REPLY_KINDS = new Set([
@@ -29,6 +30,9 @@ const REPLY_KINDS = new Set([
   'written',
   'arranged',
   'artifact',
+  'revisions',
+  'revisionDiff',
+  'revisionFiles',
 ]);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
@@ -36,6 +40,10 @@ const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_ELEMENTS = 8192;
 const MAX_BUILD_DIAGNOSTICS = 64;
 const MAX_SOURCE_FILE_BYTES = 256 * 1024;
+const MAX_REVISION_PAGE_SIZE = 50;
+const MAX_REVISION_DIFF_BYTES = 256 * 1024;
+const MAX_DESIGN_SOURCE_BYTES = 1024 * 1024;
+const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
   switch (value.type) {
@@ -71,9 +79,68 @@ function isReply(value: unknown): boolean {
       return isChange(value.change);
     case 'artifact':
       return value.artifact === null || isArtifact(value.artifact);
+    case 'revisions':
+      return boundedList(value.revisions, MAX_REVISION_PAGE_SIZE, isRevisionSummary);
+    case 'revisionDiff':
+      return isRevisionDiff(value.diff);
+    case 'revisionFiles':
+      return isSourceFiles(value.files);
     default:
       return true;
   }
+}
+
+function isRevisionSummary(value: unknown): boolean {
+  if (!record(value) || !record(value.author)) return false;
+  return (
+    id(value.revisionId) &&
+    count(value.sequence) &&
+    count(value.createdAt) &&
+    (value.author.kind === 'user' ||
+      (value.author.kind === 'agent' && id(value.author.scopeRef))) &&
+    isDesignSystem(value.designSystem) &&
+    typeof value.buildStatus === 'string' &&
+    ['ready', 'failed', 'building'].includes(value.buildStatus) &&
+    typeof value.mutationKind === 'string' &&
+    ['create', 'write', 'edit', 'restore'].includes(value.mutationKind)
+  );
+}
+
+function isRevisionDiff(value: unknown): boolean {
+  if (!record(value) || !id(value.from) || !id(value.to) || typeof value.truncated !== 'boolean')
+    return false;
+  let bytes = 0;
+  return boundedList(value.files, 128, (file) => {
+    if (
+      !record(file) ||
+      !boundedText(file.path, 256) ||
+      typeof file.diff !== 'string' ||
+      typeof file.kind !== 'string' ||
+      !['added', 'removed', 'modified'].includes(file.kind)
+    )
+      return false;
+    if (file.diff.length > MAX_REVISION_DIFF_BYTES) return false;
+    bytes += utf8.encode(file.diff).byteLength;
+    return bytes <= MAX_REVISION_DIFF_BYTES;
+  });
+}
+
+function isSourceFiles(value: unknown): boolean {
+  if (!record(value)) return false;
+  const files = Object.entries(value);
+  if (files.length > 64) return false;
+  let totalBytes = 0;
+  return files.every(([path, source]) => {
+    if (
+      !boundedText(path, 256) ||
+      typeof source !== 'string' ||
+      source.length > MAX_SOURCE_FILE_BYTES
+    )
+      return false;
+    const bytes = utf8.encode(source).byteLength;
+    totalBytes += bytes;
+    return bytes <= MAX_SOURCE_FILE_BYTES && totalBytes <= MAX_DESIGN_SOURCE_BYTES;
+  });
 }
 
 function isArtifact(value: unknown): boolean {

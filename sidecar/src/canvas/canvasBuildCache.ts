@@ -146,6 +146,21 @@ export class CanvasBuildCache {
     return html === null ? null : { artifactId, html };
   }
 
+  /** Status of this exact revision; an orphan artifact cannot prove a build. */
+  async revisionStatus(
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+  ): Promise<'ready' | 'failed' | 'building'> {
+    const outcome = await this.readOutcome(canvasId, outcomeName(revisionId));
+    if (outcome?.designId !== designId || outcome.revisionId !== revisionId) return 'building';
+    if (outcome.result.status === 'failed') return 'failed';
+    const artifact = await this.files
+      .readBuildOutput(canvasId, artifactName(outcome.result.artifactId))
+      .catch(() => null);
+    return artifact === null ? 'building' : 'ready';
+  }
+
   /**
    * The build state every design on these canvases can be served with. Only the
    * manifest decides that: an outcome it does not vouch for is ignored, which

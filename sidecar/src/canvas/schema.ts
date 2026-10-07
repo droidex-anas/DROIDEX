@@ -19,6 +19,8 @@ export const CANVAS_LIMITS = {
   maxPinnedElements: 32,
   /** Characters, so never tighter than the 512 bytes a preview clamps a path to. */
   maxInstancePathLength: 512,
+  maxRevisionPageSize: 50,
+  maxRevisionDiffBytes: 256 * 1024,
   /** Spec §5: two compiler jobs run at once, across every open canvas. */
   buildSlots: 2,
   /** Spec §5: one build gets this long before its worker is ended. */
@@ -258,6 +260,22 @@ export const editElementInputSchema = z
   })
   .strict();
 
+export const revisionPageSchema = z
+  .object({
+    limit: z.number().int().min(1).max(CANVAS_LIMITS.maxRevisionPageSize),
+    before: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export const restoreRevisionInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designId: canvasIdentifierSchema,
+    revisionId: canvasIdentifierSchema,
+    expectedRevisionId: canvasIdentifierSchema.nullable(),
+  })
+  .strict();
+
 export const arrangeFramesInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
@@ -300,6 +318,8 @@ export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type EditElementInput = z.infer<typeof editElementInputSchema>;
+export type RevisionPage = z.infer<typeof revisionPageSchema>;
+export type RestoreRevisionInput = z.infer<typeof restoreRevisionInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
