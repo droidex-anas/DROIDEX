@@ -5,17 +5,15 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { Check, ChevronDown } from '@droidex/icons';
-import { usePopover } from '../../components/environment/usePopover';
-import {
-  shallowEqual,
-  useStoreDispatch,
-  useStoreSelector,
-  type AppState,
-} from '../../hooks/useStore';
+import { Popover } from '../../components/environment/Popover';
+import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';
 import { useOpenCanvas } from './useOpenCanvas';
+
+/** Wide enough for a canvas name; the same picker width the pane's tools use. */
+const PICKER_WIDTH_PX = 248;
 
 export function CanvasMenu({
   appSessionId,
@@ -29,11 +27,8 @@ export function CanvasMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => {
     setOpen(false);
-    triggerRef.current?.focus();
   }, []);
-  const ref = usePopover(open, close);
-  const dispatch = useStoreDispatch();
-  const { openCanvas, startCanvasChat } = useOpenCanvas();
+  const { openCanvas, showCanvasInChat, startCanvasChat } = useOpenCanvas();
   // Read only while the picker is open: the list is a request, not pane state.
   const { canvases } = useCanvases(open);
   const summaries = canvases.status === 'listed' ? searchCanvases(canvases.summaries, '') : [];
@@ -42,7 +37,7 @@ export function CanvasMenu({
   const titles = useStoreSelector((current) => chatTitles(current, attached), shallowEqual);
 
   return (
-    <div ref={ref} className="relative flex min-w-0">
+    <div className="flex min-w-0">
       <button
         ref={triggerRef}
         type="button"
@@ -58,12 +53,17 @@ export function CanvasMenu({
         <ChevronDown aria-hidden className="h-3 w-3 shrink-0 text-droid-text-muted" />
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="Canvas"
-          className="absolute left-0 top-full z-50 mt-1 w-[248px] rounded-xl bg-droid-raised p-1 shadow-droid"
-        >
+      {/* The docked pane clips its overflow, so the picker is portalled and
+          hangs from the trigger's right edge like the pane's own tool menu. */}
+      <Popover
+        open={open}
+        onClose={close}
+        anchorRef={triggerRef}
+        align="right"
+        width={PICKER_WIDTH_PX}
+        label="Canvas"
+      >
+        <div role="menu" aria-label="Canvas" className="min-h-0 overflow-y-auto p-1">
           {canvasId !== null && (
             <>
               <MenuHeading>{canvas?.name ?? 'This canvas'}</MenuHeading>
@@ -82,7 +82,10 @@ export function CanvasMenu({
                     disabled={!reachable}
                     onRun={() => {
                       close();
-                      if (id !== appSessionId) dispatch({ type: 'SET_ACTIVE_SESSION', id });
+                      // The board on screen travels with the switch, so the
+                      // other chat opens on this canvas rather than on
+                      // whatever its pane last showed.
+                      if (id !== appSessionId) showCanvasInChat(id, canvasId);
                     }}
                   />
                 );
@@ -115,22 +118,20 @@ export function CanvasMenu({
               {canvases.message}
             </p>
           )}
-          <div className="max-h-48 overflow-y-auto">
-            {summaries
-              .filter((summary) => summary.canvasId !== canvasId)
-              .map((summary) => (
-                <MenuRow
-                  key={summary.canvasId}
-                  label={summary.name}
-                  onRun={() => {
-                    close();
-                    openCanvas(summary);
-                  }}
-                />
-              ))}
-          </div>
+          {summaries
+            .filter((summary) => summary.canvasId !== canvasId)
+            .map((summary) => (
+              <MenuRow
+                key={summary.canvasId}
+                label={summary.name}
+                onRun={() => {
+                  close();
+                  openCanvas(summary);
+                }}
+              />
+            ))}
         </div>
-      )}
+      </Popover>
     </div>
   );
 }

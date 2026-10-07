@@ -6,17 +6,16 @@
 
 import type { CanvasSnapshot } from './protocol';
 
-export const CREATE_RECOVERY_MESSAGE = 'Canvas creation may still be in progress.';
-
 export type CanvasPaneState =
   // Reading which canvas this chat is attached to.
   | { status: 'opening' }
   // No canvas yet: the Create / Open saved canvas empty state.
   | { status: 'unattached'; error: string }
-  // Explicit Create in flight.
-  | { status: 'creating' }
-  // The reply was lost or Create failed; only the same mutation may be retried.
-  | { status: 'create-recovering'; message: string }
+  // Explicit Create or an attach the user asked for, in flight.
+  | { status: 'attaching' }
+  // The reply was lost or the attachment failed; `canvasChats` retains the
+  // operation, so Try again replays exactly it.
+  | { status: 'attach-recovering'; message: string }
   // Attached, waiting for the first snapshot.
   | { status: 'loading'; canvasId: string }
   | { status: 'ready'; canvasId: string; snapshot: CanvasSnapshot }
@@ -25,23 +24,25 @@ export type CanvasPaneState =
 export type CanvasPaneEvent =
   // The attachment as the sidecar reports it, which outranks any cached id.
   | { type: 'attached'; canvasId: string | null }
-  | { type: 'created'; canvasId: string }
+  | { type: 'settled'; canvasId: string }
   | { type: 'selected'; canvasId: string }
-  | { type: 'creating' }
-  | { type: 'create-failed'; message: string }
+  | { type: 'attaching' }
+  | { type: 'attach-failed'; message: string }
   | { type: 'snapshot'; snapshot: CanvasSnapshot }
   | { type: 'failed'; message: string }
   | { type: 'reopened' };
 
 /**
  * A cached attachment lets a reopened pane show its canvas instead of blinking
- * through the empty state; the sidecar is still asked, and its answer wins.
+ * through the empty state; the sidecar is still asked, and its answer wins. An
+ * attachment this chat still owes outranks the cache: the pane has to offer its
+ * recovery rather than a second Create.
  */
 export function initialCanvasPaneState(
   cachedCanvasId: string | null,
-  pendingCreate = false,
+  owedMessage: string | null = null,
 ): CanvasPaneState {
-  if (pendingCreate) return { status: 'create-recovering', message: CREATE_RECOVERY_MESSAGE };
+  if (owedMessage !== null) return { status: 'attach-recovering', message: owedMessage };
   return cachedCanvasId === null
     ? { status: 'opening' }
     : { status: 'loading', canvasId: cachedCanvasId };
@@ -54,12 +55,12 @@ export function watchedCanvasId(state: CanvasPaneState): string | null {
 
 export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent): CanvasPaneState {
   switch (event.type) {
-    case 'created':
+    case 'settled':
     case 'selected':
     case 'attached': {
       if (
         event.type === 'attached' &&
-        (state.status === 'creating' || state.status === 'create-recovering')
+        (state.status === 'attaching' || state.status === 'attach-recovering')
       )
         return state;
       if (event.canvasId === null)
@@ -69,10 +70,10 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
       if (watchedCanvasId(state) === event.canvasId) return state;
       return { status: 'loading', canvasId: event.canvasId };
     }
-    case 'creating':
-      return { status: 'creating' };
-    case 'create-failed':
-      return { status: 'create-recovering', message: event.message };
+    case 'attaching':
+      return { status: 'attaching' };
+    case 'attach-failed':
+      return { status: 'attach-recovering', message: event.message };
     case 'snapshot': {
       const { snapshot } = event;
       if (watchedCanvasId(state) !== snapshot.canvasId) return state;

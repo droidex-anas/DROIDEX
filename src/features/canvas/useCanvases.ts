@@ -2,7 +2,9 @@
 // `canvas.list` is a read: it mints nothing and starts no compiler.
 
 import { useEffect, useState } from 'react';
-import { canvasClient, canvasMessage } from './canvasClient';
+import { useStoreSelector } from '../../hooks/useStore';
+import { canvasClient } from './canvasClient';
+import { canvasMessage } from './client';
 import type { CanvasSummary } from './protocol';
 
 export type Canvases =
@@ -11,28 +13,34 @@ export type Canvases =
   | { status: 'failed'; message: string };
 
 /**
- * Reads the list while `enabled`, and again each time it turns back on, so a
- * menu that only needs it while open does not list on every pane render. The
- * last answer stays on screen through a refresh rather than blinking.
+ * Reads the list while `enabled`, and watches the sidecar's summary broadcasts
+ * for as long as it stays on screen, so a canvas created or renamed elsewhere
+ * appears without a polling loop. It reads again whenever the bridge connects,
+ * which is what recovers a list that was asked for too early. The last answer
+ * stays on screen through a refresh rather than blinking.
  */
 export function useCanvases(enabled = true): { canvases: Canvases } {
   const [canvases, setCanvases] = useState<Canvases>({ status: 'loading' });
+  const connection = useStoreSelector((current) => current.connection);
 
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    const absorb = (summaries: CanvasSummary[]) => {
+      if (active) setCanvases({ status: 'listed', summaries });
+    };
+    const stopWatching = canvasClient.subscribeSummaries(absorb);
     canvasClient
       .listCanvases()
-      .then((summaries) => {
-        if (active) setCanvases({ status: 'listed', summaries });
-      })
+      .then(absorb)
       .catch((error: unknown) => {
         if (active) setCanvases({ status: 'failed', message: canvasMessage(error) });
       });
     return () => {
       active = false;
+      stopWatching();
     };
-  }, [enabled]);
+  }, [connection, enabled]);
 
   return { canvases };
 }

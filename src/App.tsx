@@ -155,6 +155,16 @@ function ContextListIcon({ className }: { className?: string }) {
 }
 
 const UTILITY_PANE_MIN = 420;
+// Spec §4: the canvas workspace's docked chat column. Narrower than the pane's
+// own minimum, because here the board takes the rest of the row.
+const DESIGN_CHAT_COLUMN = 360;
+
+/** How wide an expanded pane is: the whole row, or the row beside the board's
+ * chat column. */
+function expandedPaneWidth(contentRowWidth: number, besideChatColumn: boolean): number {
+  if (!besideChatColumn) return contentRowWidth;
+  return Math.max(contentRowWidth - DESIGN_CHAT_COLUMN, Math.round(contentRowWidth / 2));
+}
 const UTILITY_PANE_MAX = 980;
 const UTILITY_PANE_DEFAULT = 560;
 const UTILITY_PANE_CONTENT_RESERVE = 520;
@@ -200,7 +210,7 @@ export default function App() {
       sidebarCollapsed: current.sidebarCollapsed,
       productMode: current.productMode,
       // A design draft's canvas lands only once its chat exists.
-      canvasChatRequest: current.canvasChatRequest,
+      canvasChatRequests: current.canvasChatRequests,
       tabStripShown: showsTabStrip(current),
       theme: current.theme,
       utilityPanels: current.utilityPanels,
@@ -284,6 +294,17 @@ export default function App() {
     showUtilityPane &&
     isExpandableTool(activeUtilityTab?.tool) &&
     expandedPaneAppSessionId === activeSession.appSessionId;
+  // The expanded board is the canvas workspace, not a full-content takeover:
+  // the chat column stays beside it at its docked width so the transcript and
+  // composer never move (spec §4). Every other expandable tool still covers
+  // the row and leaves the chat behind it inert.
+  const canvasExpanded = paneExpanded && activeUtilityTab?.tool === 'canvas';
+  const chatObscured = paneExpanded && !canvasExpanded;
+  // Only a request whose create has replied has a chat to attach.
+  const canvasRequests = Object.entries(state.canvasChatRequests).filter(
+    (entry): entry is [string, { appSessionId: string; canvasId: string | null }] =>
+      entry[1].appSessionId !== null,
+  );
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
   // been sent (the first transcript is seeded from the opening prompt).
@@ -866,9 +887,10 @@ export default function App() {
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
-              aria-hidden={paneExpanded}
+              aria-hidden={chatObscured}
+              style={canvasExpanded ? { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` } : undefined}
               className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
-                paneExpanded ? 'pointer-events-none' : ''
+                chatObscured ? 'pointer-events-none' : ''
               }`}
             >
               {!embedded && state.mainView === 'projects' ? (
@@ -911,7 +933,7 @@ export default function App() {
                 <>
                   <ChatTiles
                     rightInset={rightPanelVisible}
-                    isObscured={paneExpanded}
+                    isObscured={chatObscured}
                     besidePane={showUtilityPane}
                   />
                   {activeSession && state.sideChatPlacement === 'floating' ? (
@@ -929,7 +951,10 @@ export default function App() {
                   key="utility-pane"
                   initial={{ width: 0, opacity: 0 }}
                   animate={{
-                    width: paneExpanded && contentRowWidth > 0 ? contentRowWidth : utilityPaneWidth,
+                    width:
+                      paneExpanded && contentRowWidth > 0
+                        ? expandedPaneWidth(contentRowWidth, canvasExpanded)
+                        : utilityPaneWidth,
                     opacity: 1,
                   }}
                   exit={{ width: 0, opacity: 0 }}
@@ -1210,16 +1235,18 @@ export default function App() {
       <Suspense fallback={null}>
         <LazySpecWikiModal />
       </Suspense>
-      {/* A design draft's chat now exists, so the canvas it was started for
-          can be committed and the board opened beside it (spec §4). */}
-      {!embedded && state.canvasChatRequest?.appSessionId != null && (
-        <Suspense fallback={null}>
-          <LazyCanvasChatBootstrap
-            appSessionId={state.canvasChatRequest.appSessionId}
-            canvasId={state.canvasChatRequest.canvasId}
-          />
-        </Suspense>
-      )}
+      {/* Each design draft whose chat now exists: the canvas it was started
+          for is committed and the board opens beside it (spec §4). Two drafts
+          sent in a row each keep their own canvas. */}
+      {!embedded &&
+        canvasRequests.map(([clientRef, request]) => (
+          <Suspense key={clientRef} fallback={null}>
+            <LazyCanvasChatBootstrap
+              appSessionId={request.appSessionId}
+              canvasId={request.canvasId}
+            />
+          </Suspense>
+        ))}
       {/* Watches project threads for a block that needs the user. Nothing to
           watch until a project exists, so it loads with the first one. */}
       {hasProjects && !embedded && !showWizard && (

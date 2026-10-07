@@ -1,12 +1,15 @@
-// The Design home (spec §4): one large composer, a few starting points, and
-// the canvases the user already has. Sending from here creates the chat, and
-// `CanvasChatBootstrap` gives that chat its canvas.
+// The Design draft area (spec §4). Two surfaces share its centred composer:
+// the Design home, where every prompt makes a new canvas, and the draft a
+// chosen canvas pins, where the prompt joins that canvas instead. They are
+// deliberately separate: the home promises a canvas it has not got yet, so it
+// declares that promise itself rather than trusting whoever navigated here —
+// a restored window and a new tab reach this home with no draft of their own.
 
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { BrandMark } from '../../components/BrandMark';
 import PromptInput from '../../components/PromptInput';
 import { Search } from '@droidex/icons';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
 import { useCanvases } from './useCanvases';
@@ -22,18 +25,114 @@ const EXAMPLES = [
 ];
 
 export function DesignHome() {
+  // A canvas the user named by pressing a card, or by New chat with this
+  // canvas, is already chosen; anything else here makes a new one.
+  const pinnedCanvasId = useStoreSelector((current) => current.canvasDraft?.canvasId ?? null);
+  return pinnedCanvasId === null ? (
+    <NewCanvasHome />
+  ) : (
+    <CanvasChatDraft canvasId={pinnedCanvasId} />
+  );
+}
+
+function NewCanvasHome() {
   const dispatch = useStoreDispatch();
   const { canvases } = useCanvases();
   const { openCanvas } = useOpenCanvas();
   const [query, setQuery] = useState('');
-  // A canvas the user named by pressing a card is already chosen; a plain
-  // Design home prompt makes a new one.
-  const { pinnedCanvasId } = useStoreSelector(
-    (current) => ({ pinnedCanvasId: current.canvasChatRequest?.canvasId ?? null }),
-    shallowEqual,
-  );
+  const promised = useStoreSelector((current) => current.canvasDraft !== null);
   const summaries = canvases.status === 'listed' ? searchCanvases(canvases.summaries, query) : [];
 
+  // What this home promises its next prompt, on whichever path led here.
+  useEffect(() => {
+    if (!promised) dispatch({ type: 'SET_CANVAS_DRAFT', canvasId: null });
+  }, [dispatch, promised]);
+
+  return (
+    <DesignDraftShell
+      title="What should we design?"
+      hint="Every prompt here starts a new canvas and a chat attached to it."
+    >
+      <div className="droid-rise mt-12" style={{ animationDelay: '160ms' }}>
+        <div className="flex items-center justify-between gap-3 px-1">
+          <h2 className="text-[13px] font-medium text-droid-text">Your canvases</h2>
+          <label className="flex min-w-0 items-center gap-1.5 rounded-lg bg-droid-elevated/50 px-2 py-1">
+            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+            <input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              placeholder="Search canvases"
+              aria-label="Search canvases"
+              className="w-32 min-w-0 bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+            />
+          </label>
+        </div>
+
+        {canvases.status === 'loading' && (
+          <p role="status" className="px-1 pt-3 text-[12px] text-droid-text-muted">
+            Reading your canvases…
+          </p>
+        )}
+        {canvases.status === 'failed' && (
+          <p role="alert" className="px-1 pt-3 text-[12px] text-droid-red">
+            {canvases.message}
+          </p>
+        )}
+        {canvases.status === 'listed' && summaries.length === 0 && (
+          <p className="px-1 pt-3 text-[12px] leading-relaxed text-droid-text-muted">
+            {query
+              ? 'No canvas by that name.'
+              : 'Nothing designed yet. Your first prompt makes the first one.'}
+          </p>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {summaries.map((summary) => (
+            <CanvasCard
+              key={summary.canvasId}
+              summary={summary}
+              onOpen={() => {
+                openCanvas(summary);
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </DesignDraftShell>
+  );
+}
+
+/**
+ * The draft a chosen canvas pins: "New chat with this canvas", and a card whose
+ * own chats this window does not hold. Its prompt joins that canvas, so it
+ * never offers the home's new-canvas promise or its grid.
+ */
+function CanvasChatDraft({ canvasId }: { canvasId: string }) {
+  const { canvases } = useCanvases();
+  const canvas =
+    canvases.status === 'listed'
+      ? (canvases.summaries.find((summary) => summary.canvasId === canvasId) ?? null)
+      : null;
+  return (
+    <DesignDraftShell
+      title={canvas ? `New chat on ${canvas.name}` : 'New chat on this canvas'}
+      hint="This prompt starts a fresh chat on the canvas you opened; its designs stay as they are."
+    />
+  );
+}
+
+/** The centred composer both design drafts are sent from. */
+function DesignDraftShell({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children?: ReactNode;
+}) {
+  const dispatch = useStoreDispatch();
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div data-electron-drag-region className="h-9 shrink-0" />
@@ -41,13 +140,9 @@ export function DesignHome() {
         <div className="droid-rise flex flex-col items-center pt-[6vh]">
           <BrandMark size={30} className="text-droid-accent" />
           <h1 className="mt-5 text-[22px] leading-snug font-semibold tracking-tight text-droid-text">
-            What should we design?
+            {title}
           </h1>
-          <p className="mt-2 text-center text-[13px] text-droid-text-muted">
-            {pinnedCanvasId
-              ? 'This prompt starts a new chat on the canvas you opened.'
-              : 'Every prompt here starts a new canvas and a chat attached to it.'}
-          </p>
+          <p className="mt-2 text-center text-[13px] text-droid-text-muted">{hint}</p>
         </div>
 
         <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
@@ -70,52 +165,7 @@ export function DesignHome() {
           </ul>
         </div>
 
-        <div className="droid-rise mt-12" style={{ animationDelay: '160ms' }}>
-          <div className="flex items-center justify-between gap-3 px-1">
-            <h2 className="text-[13px] font-medium text-droid-text">Your canvases</h2>
-            <label className="flex min-w-0 items-center gap-1.5 rounded-lg bg-droid-elevated/50 px-2 py-1">
-              <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-              <input
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                }}
-                placeholder="Search canvases"
-                aria-label="Search canvases"
-                className="w-32 min-w-0 bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
-              />
-            </label>
-          </div>
-
-          {canvases.status === 'loading' && (
-            <p role="status" className="px-1 pt-3 text-[12px] text-droid-text-muted">
-              Reading your canvases…
-            </p>
-          )}
-          {canvases.status === 'failed' && (
-            <p role="alert" className="px-1 pt-3 text-[12px] text-droid-red">
-              {canvases.message}
-            </p>
-          )}
-          {canvases.status === 'listed' && summaries.length === 0 && (
-            <p className="px-1 pt-3 text-[12px] leading-relaxed text-droid-text-muted">
-              {query
-                ? 'No canvas by that name.'
-                : 'Nothing designed yet. Your first prompt makes the first one.'}
-            </p>
-          )}
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {summaries.map((summary) => (
-              <CanvasCard
-                key={summary.canvasId}
-                summary={summary}
-                onOpen={() => {
-                  openCanvas(summary);
-                }}
-              />
-            ))}
-          </div>
-        </div>
+        {children}
       </div>
     </div>
   );

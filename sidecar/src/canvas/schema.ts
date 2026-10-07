@@ -46,7 +46,8 @@ export const canvasIdentifierSchema = z
   .max(CANVAS_LIMITS.maxIdentifierLength, IDENTIFIER_MESSAGE)
   .regex(/^[A-Za-z0-9_-]+$/, IDENTIFIER_MESSAGE);
 
-const frameNameSchema = z
+// A canvas and a frame are named by the same rule; the manifest holds both.
+export const canvasNameSchema = z
   .string()
   .trim()
   .min(1, FRAME_NAME_MESSAGE)
@@ -136,7 +137,7 @@ export const createFramesInputSchema = z
       .array(
         z
           .object({
-            name: frameNameSchema,
+            name: canvasNameSchema,
             width: dimensionPxSchema,
             height: dimensionPxSchema,
             designSystem: designSystemRefSchema,

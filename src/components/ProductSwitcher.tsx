@@ -32,16 +32,12 @@ export function ProductSwitcher() {
   }, []);
   const ref = usePopover(open, close);
 
+  // The store owns what each product opens on: Design its home, Chat the chat
+  // it was left on (spec §4).
   const select = (mode: ProductMode) => {
     close();
     if (mode === productMode) return;
     dispatch({ type: 'SET_PRODUCT_MODE', mode });
-    // Design opens on its home, the way Chat opens on a chat. That home is the
-    // new-canvas draft, so entering the product starts one: folder-less, and
-    // asking for a canvas of its own on the first send (spec §4).
-    if (mode === 'design') {
-      dispatch({ type: 'START_CHAT', cwd: '', executionMode: 'local', canvas: { canvasId: null } });
-    }
   };
 
   // Arrows walk the two rows; the menu is short enough that wrapping at either

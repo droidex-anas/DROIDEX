@@ -6,9 +6,15 @@ import { sessionSummary } from '../test/sessionSummary';
 const chat = (appSessionId: string) =>
   sessionSummary(appSessionId, { providerSessionId: `provider-${appSessionId}`, goal: 'design' });
 
-/** Sends the draft's first message, which is what creates its session. */
-function sendDraft(state: AppState, clientRef: string, appSessionId: string): AppState {
-  const composed = reducer(state, {
+/** Starts a draft the way the Design home does: it promises a new canvas. */
+function designHome(state: AppState): AppState {
+  const drafted = reducer(state, { type: 'START_CHAT', cwd: '', executionMode: 'local' });
+  return reducer(drafted, { type: 'SET_CANVAS_DRAFT', canvasId: null });
+}
+
+/** Sends a draft's first message, which is what hands its canvas to a create. */
+function send(state: AppState, clientRef: string): AppState {
+  return reducer(state, {
     type: 'SET_PENDING_COMPOSE',
     clientRef,
     text: 'Design a pricing card',
@@ -16,7 +22,15 @@ function sendDraft(state: AppState, clientRef: string, appSessionId: string): Ap
     files: [],
     originHoldId: `hold-${clientRef}`,
   });
-  return reducer(composed, { type: 'SESSION_CREATED', clientRef, session: chat(appSessionId) });
+}
+
+/** The create's reply: the chat now exists. */
+function created(state: AppState, clientRef: string, appSessionId: string): AppState {
+  return reducer(state, { type: 'SESSION_CREATED', clientRef, session: chat(appSessionId) });
+}
+
+function sendDraft(state: AppState, clientRef: string, appSessionId: string): AppState {
+  return created(send(state, clientRef), clientRef, appSessionId);
 }
 
 test('the product mode persists as a sidebar preference', () => {
@@ -28,48 +42,142 @@ test('the product mode persists as a sidebar preference', () => {
   assert.equal(reducer(design, { type: 'SET_PRODUCT_MODE', mode: 'chat' }).productMode, 'chat');
 });
 
-test('returning to Chat abandons a canvas no chat has taken yet', () => {
-  const design = reducer(initialState, { type: 'SET_PRODUCT_MODE', mode: 'design' });
-  const drafted = reducer(design, {
-    type: 'START_CHAT',
-    cwd: '',
-    executionMode: 'local',
-    canvas: { canvasId: null },
+test('entering Design opens its home on a folder-less draft', () => {
+  const onChat = reducer(
+    { ...initialState, sessions: { 'session-a': chat('session-a') }, sessionOrder: ['session-a'] },
+    { type: 'SET_ACTIVE_SESSION', id: 'session-a' },
+  );
+  const design = reducer(onChat, { type: 'SET_PRODUCT_MODE', mode: 'design' });
+  assert.equal(design.activeAppSessionId, null);
+  assert.deepEqual(design.draftChat, { cwd: '', executionMode: 'local', branch: undefined });
+  // The home has not been mounted yet, so nothing is owed any canvas.
+  assert.equal(design.canvasDraft, null);
+});
+
+test('Chat returns to the chat Design was entered from', () => {
+  const onChat = reducer(
+    { ...initialState, sessions: { 'session-a': chat('session-a') }, sessionOrder: ['session-a'] },
+    { type: 'SET_ACTIVE_SESSION', id: 'session-a' },
+  );
+  const design = designHome(reducer(onChat, { type: 'SET_PRODUCT_MODE', mode: 'design' }));
+  const back = reducer(design, { type: 'SET_PRODUCT_MODE', mode: 'chat' });
+  assert.equal(back.activeAppSessionId, 'session-a');
+  assert.equal(back.productMode, 'chat');
+  // The unsent design draft is abandoned on the way out.
+  assert.equal(back.canvasDraft, null);
+  // A second visit has to capture the target again rather than reuse this one.
+  assert.equal(back.chatModeAppSessionId, null);
+});
+
+test('Chat stays on a draft when Design was entered from one', () => {
+  const design = designHome(reducer(initialState, { type: 'SET_PRODUCT_MODE', mode: 'design' }));
+  const back = reducer(design, { type: 'SET_PRODUCT_MODE', mode: 'chat' });
+  assert.equal(back.activeAppSessionId, null);
+  assert.equal(back.canvasDraft, null);
+});
+
+test('a Design home prompt asks for a new canvas and hands it the chat it created', () => {
+  const home = designHome(reducer(initialState, { type: 'SET_PRODUCT_MODE', mode: 'design' }));
+  assert.deepEqual(home.canvasDraft, { canvasId: null });
+
+  const sent = send(home, 'ref-design');
+  // The obligation belongs to this create request, and the draft is discharged.
+  assert.deepEqual(sent.canvasChatRequests, {
+    'ref-design': { appSessionId: null, canvasId: null },
   });
-  assert.equal(
-    reducer(drafted, { type: 'SET_PRODUCT_MODE', mode: 'chat' }).canvasChatRequest,
-    null,
+  assert.equal(sent.canvasDraft, null);
+
+  const chatExists = created(sent, 'ref-design', 'session-design');
+  assert.deepEqual(chatExists.canvasChatRequests, {
+    'ref-design': { appSessionId: 'session-design', canvasId: null },
+  });
+
+  const settled = reducer(chatExists, {
+    type: 'CANVAS_CHAT_SETTLED',
+    appSessionId: 'session-design',
+  });
+  assert.deepEqual(settled.canvasChatRequests, {});
+});
+
+test('an unrelated create cannot consume a design draft its prompt never started', () => {
+  // An ordinary chat is sent first, then the user enters Design; the ordinary
+  // chat's reply arrives last.
+  const ordinarySent = send(
+    reducer(initialState, { type: 'START_CHAT', cwd: '/repo', executionMode: 'local' }),
+    'ref-ordinary',
+  );
+  const home = designHome(reducer(ordinarySent, { type: 'SET_PRODUCT_MODE', mode: 'design' }));
+  const landed = created(home, 'ref-ordinary', 'session-ordinary');
+
+  assert.deepEqual(landed.canvasChatRequests, {});
+  assert.deepEqual(landed.canvasDraft, { canvasId: null });
+});
+
+test('overlapping design drafts keep their own canvas, whichever reply lands first', () => {
+  const first = send(
+    reducer(initialState, {
+      type: 'START_CHAT',
+      cwd: '',
+      executionMode: 'local',
+      canvas: { canvasId: 'canvas-a' },
+    }),
+    'ref-a',
+  );
+  const second = send(
+    reducer(first, {
+      type: 'START_CHAT',
+      cwd: '',
+      executionMode: 'local',
+      canvas: { canvasId: 'canvas-b' },
+    }),
+    'ref-b',
   );
 
-  // One already handed to a chat still has to land, whichever product is shown.
-  const sent = sendDraft(drafted, 'ref-design', 'session-design');
-  assert.deepEqual(reducer(sent, { type: 'SET_PRODUCT_MODE', mode: 'chat' }).canvasChatRequest, {
+  const afterA = created(second, 'ref-a', 'chat-a');
+  const afterB = created(afterA, 'ref-b', 'chat-b');
+  assert.deepEqual(afterB.canvasChatRequests, {
+    'ref-a': { appSessionId: 'chat-a', canvasId: 'canvas-a' },
+    'ref-b': { appSessionId: 'chat-b', canvasId: 'canvas-b' },
+  });
+
+  // Each obligation is discharged by its own chat.
+  const settledA = reducer(afterB, { type: 'CANVAS_CHAT_SETTLED', appSessionId: 'chat-a' });
+  assert.deepEqual(settledA.canvasChatRequests, {
+    'ref-b': { appSessionId: 'chat-b', canvasId: 'canvas-b' },
+  });
+});
+
+test('a submitted canvas request survives navigation and the next draft', () => {
+  const sent = send(designHome(initialState), 'ref-design');
+  const elsewhere = reducer(sent, { type: 'SET_ACTIVE_SESSION', id: 'session-other' });
+  assert.deepEqual(elsewhere.canvasChatRequests, sent.canvasChatRequests);
+
+  const nextDraft = designHome(elsewhere);
+  assert.deepEqual(nextDraft.canvasChatRequests, sent.canvasChatRequests);
+
+  // And it still learns its chat once that create replies.
+  const landed = created(nextDraft, 'ref-design', 'session-design');
+  assert.deepEqual(landed.canvasChatRequests['ref-design'], {
     appSessionId: 'session-design',
     canvasId: null,
   });
 });
 
-test('a Design home prompt asks for a new canvas and hands it the chat it created', () => {
-  const draft = reducer(initialState, {
-    type: 'START_CHAT',
-    cwd: '',
-    executionMode: 'local',
-    canvas: { canvasId: null },
-  });
-  assert.deepEqual(draft.canvasChatRequest, { appSessionId: null, canvasId: null });
+test('returning to Chat abandons only the unsent canvas intent', () => {
+  const home = designHome(reducer(initialState, { type: 'SET_PRODUCT_MODE', mode: 'design' }));
+  const sent = send(home, 'ref-design');
+  // The home promises the next prompt a canvas too, so it has both kinds now.
+  const drafting = reducer(sent, { type: 'SET_CANVAS_DRAFT', canvasId: null });
 
-  const sent = sendDraft(draft, 'ref-design', 'session-design');
-  // Null canvasId is the request to mint one; the chat is now named.
-  assert.deepEqual(sent.canvasChatRequest, {
-    appSessionId: 'session-design',
-    canvasId: null,
-  });
+  const back = reducer(drafting, { type: 'SET_PRODUCT_MODE', mode: 'chat' });
+  assert.equal(back.canvasDraft, null);
+  assert.deepEqual(back.canvasChatRequests, sent.canvasChatRequests);
+});
 
-  const settled = reducer(sent, {
-    type: 'CANVAS_CHAT_SETTLED',
-    appSessionId: 'session-design',
-  });
-  assert.equal(settled.canvasChatRequest, null);
+test('a create that never produced a chat takes its canvas request with it', () => {
+  const sent = send(designHome(initialState), 'ref-design');
+  const failed = reducer(sent, { type: 'SESSION_CREATE_FAILED', clientRef: 'ref-design' });
+  assert.deepEqual(failed.canvasChatRequests, {});
 });
 
 test('new chat with this canvas attaches the same canvas; an ordinary new chat attaches none', () => {
@@ -83,7 +191,7 @@ test('new chat with this canvas attaches the same canvas; an ordinary new chat a
     'ref-second',
     'session-second',
   );
-  assert.deepEqual(withCanvas.canvasChatRequest, {
+  assert.deepEqual(withCanvas.canvasChatRequests['ref-second'], {
     appSessionId: 'session-second',
     canvasId: 'canvas-shared',
   });
@@ -93,27 +201,21 @@ test('new chat with this canvas attaches the same canvas; an ordinary new chat a
     'ref-plain',
     'session-plain',
   );
-  assert.equal(ordinary.canvasChatRequest, null);
+  assert.equal(ordinary.canvasChatRequests['ref-plain'], undefined);
 });
 
-test('leaving an unsent design draft drops its canvas request, a handed-over one survives', () => {
+test('leaving an unsent design draft drops its canvas intent', () => {
   const draft = reducer(initialState, {
     type: 'START_CHAT',
     cwd: '',
     executionMode: 'local',
     canvas: { canvasId: 'canvas-a' },
   });
+  assert.deepEqual(draft.canvasDraft, { canvasId: 'canvas-a' });
   assert.equal(
-    reducer(draft, { type: 'SET_ACTIVE_SESSION', id: 'session-other' }).canvasChatRequest,
+    reducer(draft, { type: 'SET_ACTIVE_SESSION', id: 'session-other' }).canvasDraft,
     null,
   );
-
-  const sent = sendDraft(draft, 'ref-a', 'session-a');
-  const elsewhere = reducer(sent, { type: 'SET_ACTIVE_SESSION', id: 'session-other' });
-  assert.deepEqual(elsewhere.canvasChatRequest, {
-    appSessionId: 'session-a',
-    canvasId: 'canvas-a',
-  });
 });
 
 test('a deleted chat cannot leave an attachment waiting for it', () => {
@@ -128,5 +230,20 @@ test('a deleted chat cannot leave an attachment waiting for it', () => {
     'session-a',
   );
   const archived = reducer(sent, { type: 'ARCHIVE_CHAT', appSessionId: 'session-a' });
-  assert.equal(archived.canvasChatRequest, null);
+  assert.deepEqual(archived.canvasChatRequests, {});
+});
+
+test('a deleted chat is not the one Chat returns to', () => {
+  const onChat = reducer(
+    { ...initialState, sessions: { 'session-a': chat('session-a') }, sessionOrder: ['session-a'] },
+    { type: 'SET_ACTIVE_SESSION', id: 'session-a' },
+  );
+  const design = reducer(onChat, { type: 'SET_PRODUCT_MODE', mode: 'design' });
+  assert.equal(design.chatModeAppSessionId, 'session-a');
+  const archived = reducer(design, { type: 'ARCHIVE_CHAT', appSessionId: 'session-a' });
+  assert.equal(archived.chatModeAppSessionId, null);
+  assert.equal(
+    reducer(archived, { type: 'SET_PRODUCT_MODE', mode: 'chat' }).activeAppSessionId,
+    null,
+  );
 });

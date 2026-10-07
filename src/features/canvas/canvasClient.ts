@@ -6,10 +6,3 @@ import { bridge } from '../../lib/bridge';
 import { CanvasClient } from './client';
 
 export const canvasClient = new CanvasClient(bridge);
-
-/** The short recovery line a Canvas failure carries; never a stack trace. */
-export function canvasMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : 'Canvas could not finish that request.';
-}

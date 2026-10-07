@@ -111,6 +111,24 @@ async function createCanvas(harnessed: Harness, requestId = 'req-create-canvas')
   return reply.canvasId;
 }
 
+test('a Create carries the provisional name its prompt gave the canvas', async (t) => {
+  const canvas = await harness(t);
+  const command = { type: 'canvas.createCanvas', requestId: 'named', appSessionId: APP };
+  assert.equal(await canvas.handle({ ...command, mutationId: 'm1', name: 'A pricing card' }), true);
+  // Without one the canvas is named by storage, and a control character in a
+  // name is refused at the boundary like any other invalid field.
+  assert.equal(await canvas.handle({ ...command, requestId: 'plain', mutationId: 'm2' }), true);
+  assert.equal(
+    await canvas.handle({ ...command, requestId: 'bad', mutationId: 'm3', name: 'a\u0000b' }),
+    true,
+  );
+  assert.equal(errorOf(canvas, 'bad').code, 'invalid_input');
+  assert.deepEqual(
+    canvas.workspace.listCanvases().map((item) => item.name),
+    ['A pricing card', 'Canvas 2'],
+  );
+});
+
 test('a lost Create reply replays its durable canvas while the first commit is in flight', async (t) => {
   const reached = deferred();
   const release = deferred();

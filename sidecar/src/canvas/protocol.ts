@@ -198,7 +198,14 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
-  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string; mutationId: string }
+  | {
+      type: 'canvas.createCanvas';
+      requestId: string;
+      appSessionId: string;
+      mutationId: string;
+      /** The provisional name the prompt gave it; storage names it otherwise. */
+      name?: string;
+    }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
   | {

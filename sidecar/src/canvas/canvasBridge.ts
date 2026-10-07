@@ -14,6 +14,7 @@ import type { CanvasCommand, CanvasError, CanvasEvent, CanvasReply } from './pro
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
+  canvasNameSchema,
   createFramesInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
@@ -57,6 +58,7 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ...session,
       mutationId: canvasIdentifierSchema,
+      name: canvasNameSchema.optional(),
     })
     .strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
@@ -237,7 +239,11 @@ class CanvasDispatch {
       case 'canvas.createCanvas': {
         // Explicit Create in the pane: the canvas and the chat's attachment in
         // one commit, with no lease behind it (spec §6).
-        const snapshot = await workspace.createCanvas(command.appSessionId, command.mutationId);
+        const snapshot = await workspace.createCanvas(
+          command.appSessionId,
+          command.mutationId,
+          command.name,
+        );
         return { kind: 'attachment', canvasId: snapshot.canvasId };
       }
       case 'canvas.attach':

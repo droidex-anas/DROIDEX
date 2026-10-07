@@ -106,8 +106,10 @@ export class CanvasWorkspace {
    * A new canvas, attached in the same commit so explicit Create leaves either
    * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
    * first: a crash between the two writes must leave it unattached, not twice.
+   * `name` is the provisional name a Design prompt supplies (spec §4); without
+   * one the canvas is named by its position in storage.
    */
-  createCanvas(appSessionId: string, mutationId: string): Promise<CanvasSnapshot> {
+  createCanvas(appSessionId: string, mutationId: string, name?: string): Promise<CanvasSnapshot> {
     return this.commits.admit(() =>
       this.commits.run(async () => {
         this.requireChat(appSessionId);
@@ -118,7 +120,11 @@ export class CanvasWorkspace {
           return canvasSnapshot(previous, this.builds);
         }
         await this.detachFrom(appSessionId, null);
-        const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
+        const manifest = emptyCanvasManifest(
+          randomUUID(),
+          name ?? this.nextCanvasName(),
+          Date.now(),
+        );
         manifest.creation = { mutationId, appSessionId };
         manifest.attachedAppSessionIds.push(appSessionId);
         await this.heads.install(manifest, this.chatGate(appSessionId));

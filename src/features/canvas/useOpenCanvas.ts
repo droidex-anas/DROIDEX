@@ -14,6 +14,8 @@ import type { CanvasSummary } from './protocol';
 export function useOpenCanvas(): {
   /** Opens this canvas, starting a chat on it when none of its chats is loaded here. */
   openCanvas: (summary: CanvasSummary) => void;
+  /** Shows `canvasId` through one of the chats already attached to it. */
+  showCanvasInChat: (appSessionId: string, canvasId: string) => void;
   /** Drafts a chat for `canvasId`, or for a canvas minted on its first send. */
   startCanvasChat: (canvasId: string | null) => void;
   /** The canvas the chat on screen is working on, so a list can mark it. */
@@ -39,6 +41,17 @@ export function useOpenCanvas(): {
     [dispatch],
   );
 
+  // Selecting the chat is only half of it: the board has to be opened on that
+  // same chat's pane, or the user lands on whatever tool it last showed.
+  const showCanvasInChat = useCallback(
+    (appSessionId: string, canvasId: string) => {
+      if (appSessionId !== activeAppSessionId)
+        dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
+      openPane({ appSessionId, canvasId });
+    },
+    [activeAppSessionId, dispatch, openPane],
+  );
+
   const openCanvas = useCallback(
     (summary: CanvasSummary) => {
       const attached = recentAttachedChat(summary, (id) =>
@@ -50,11 +63,10 @@ export function useOpenCanvas(): {
         startCanvasChat(summary.canvasId);
         return;
       }
-      if (attached !== activeAppSessionId) dispatch({ type: 'SET_ACTIVE_SESSION', id: attached });
-      openPane({ appSessionId: attached, canvasId: summary.canvasId });
+      showCanvasInChat(attached, summary.canvasId);
     },
-    [activeAppSessionId, dispatch, openPane, sessions, startCanvasChat],
+    [sessions, showCanvasInChat, startCanvasChat],
   );
 
-  return { openCanvas, startCanvasChat, activeCanvasId };
+  return { openCanvas, showCanvasInChat, startCanvasChat, activeCanvasId };
 }

@@ -340,9 +340,16 @@ export function pruneRemovedSessionState(
       : null;
   // An attachment on its way to a chat the list no longer reports has nowhere
   // to land; one still waiting for its chat to exist is not addressed to any.
-  const awaitingChat = state.canvasChatRequest?.appSessionId ?? null;
-  const canvasChatRequest =
-    awaitingChat === null || retainedSessionIds.has(awaitingChat) ? state.canvasChatRequest : null;
+  const canvasChatRequests = Object.fromEntries(
+    Object.entries(state.canvasChatRequests).filter(
+      ([, request]) =>
+        request.appSessionId === null || retainedSessionIds.has(request.appSessionId),
+    ),
+  );
+  const chatModeAppSessionId =
+    state.chatModeAppSessionId && retainedSessionIds.has(state.chatModeAppSessionId)
+      ? state.chatModeAppSessionId
+      : null;
   return {
     ...state,
     sessionLastSeen: pruneSessionRecord(state.sessionLastSeen, retainedSessionIds),
@@ -374,7 +381,8 @@ export function pruneRemovedSessionState(
     sessionNotes: pruneSessionRecord(state.sessionNotes, retainedSessionIds),
     utilityPanels: pruneSessionRecord(state.utilityPanels, retainedSessionIds),
     canvasAttachments: pruneSessionRecord(state.canvasAttachments, retainedSessionIds),
-    canvasChatRequest,
+    canvasChatRequests,
+    chatModeAppSessionId,
     reviewOpenAppSessionId,
     pendingAutonomy: pruneSessionRecord(state.pendingAutonomy, retainedSessionIds),
     pendingModelUpdates: pruneSessionRecord(state.pendingModelUpdates, retainedSessionIds),
