@@ -2,11 +2,19 @@ type BrowserNavigationApproval = 'follow_autonomy' | 'always_ask' | 'new_sites' 
 type BrowserLoginFillApproval = 'always_ask' | 'never';
 type BrowserSitePermissionMode = 'block' | 'ask';
 
-interface BrowserSitePermissionRule {
+type BrowserSitePermission =
+  | 'camera'
+  | 'microphone'
+  | 'geolocation'
+  | 'notifications'
+  | 'clipboard-read'
+  | 'midi'
+  | 'midiSysex';
+type BrowserSitePermissionDecision = 'allow' | 'ask' | 'deny';
+
+type BrowserSitePermissionRule = Record<BrowserSitePermission, BrowserSitePermissionDecision> & {
   origin: string;
-  camera: 'allow' | 'ask' | 'deny';
-  microphone: 'allow' | 'ask' | 'deny';
-}
+};
 
 export interface BrowserSettingsSnapshot {
   agentAccessEnabled: boolean;
@@ -39,4 +47,8 @@ export type BrowserSettingsPatch = Partial<
 export interface BrowserSettingsCommands {
   browserSettingsGet: () => Promise<BrowserSettingsSnapshot>;
   browserSettingsUpdate: (patch: BrowserSettingsPatch) => Promise<BrowserSettingsSnapshot>;
+  browserSitePermissionRevoke: (
+    origin: string,
+    permission: BrowserSitePermission,
+  ) => Promise<BrowserSettingsSnapshot>;
 }

@@ -36,7 +36,7 @@ flowchart LR
 
 ## Data and control boundaries
 
-Browser policy lives in the versioned `browser-settings.json` in the Electron
+Browser policy lives in schema version 6 of `browser-settings.json` in the Electron
 profile directory (`electron/browserSettingsSchema.cjs`, `electron/browserSettings.cjs`).
 Unknown fields, malformed values and unsupported versions stop startup with a
 recovery message; no prior schema is migrated or silently reset. Writes are
@@ -50,14 +50,14 @@ API; their contracts live in `src/lib/browserSettings.ts`.
 waiting, a 120-second deadline from enqueue, and credentials ahead of queued
 permissions. Timeout, cancellation, renderer replacement and shutdown choose the
 declared cancel action with `cancelled: true`; only explicit user decisions are
-remembered for developer-tools access. The prompt UI must subscribe to both prompt
+remembered for developer-tools and site permissions. The prompt UI must subscribe to both prompt
 events before calling `browserPermissionPromptReady(true)`, then call it with
 `false` on unmount.
 Only the trusted main renderer can register or answer the active prompt. Until the
 prompt UI ships in the next agent-controls stack PR, an unregistered UI uses the
 existing native dialogs with the same buttons and defaults. Remove that temporary
 presentation when the UI is mounted for every desktop session. This foundation
-routes saved-login and developer-tools questions through the queue; it adds no
+routes saved-login, developer-tools and site permission questions through the queue; it adds no
 visible settings or prompt components.
 
 Agent access is enforced at the private browser request boundary, including work
@@ -65,11 +65,41 @@ waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
-saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
-are retained for subsequent runtime ports; this foundation enforces only the agent
-access switch. The removed native cursor overlay's style and size fields are absent
-from schema version 4. Grants and cookie import receipts remain validated data,
-without restoring the old engine's services or claiming unsupported capabilities.
+saved-login, diagnostics, downloads, homepage and cursor policies are retained for
+subsequent runtime ports. The agent access switch and site permission policy are
+enforced. Removed cursor overlay settings and cookie import receipts are absent.
+
+`electron/browserPermissions.cjs` handles both permission requests and checks on
+`persist:droidex-browser`. Camera, microphone, location, notifications, clipboard
+read, MIDI and MIDI system exclusive access default to **Ask me**, with exact-origin
+approvals (**Block** in Settings > Browser denies them all): **Allow** remembers the
+requested permissions, **Allow once** lasts until a document navigates, **Don't allow**
+denies this request, and **Always block this site** remembers a denial. Only Electron's
+requesting frame URL determines the origin. Same-origin frames share the site's
+policy; cross-origin frames and unsupported permissions, including HID, USB, serial
+and screen capture, remain denied. Notification checks without a WebContents use
+only existing exact-origin approvals and reject cross-origin embedding.
+
+Each agent execution requires a fresh user decision, even for a remembered grant.
+Follow-up checks may reuse that answer only for the executions present when the
+question was asked; new executions must ask again.
+Execution remains marked as agent work until it settles, including after a tool
+timeout. Pending approvals are invalidated on document navigation, guest replacement,
+crash, release, renderer teardown and shutdown. Each permission request has a
+120-second deadline, including OS consent; automatic cancellation never records a
+denial. Camera and microphone additionally require macOS media consent. OS denial
+explains how to enable DROIDEX in System Settings and restart it. Packaged builds
+declare camera and audio-input entitlements plus camera, microphone and location
+usage descriptions.
+
+The renderer lists saved decisions through `browserSettingsGet().sitePermissionRules`
+and revokes one with `browserSitePermissionRevoke(origin, permission)`. Revocation
+returns the updated snapshot, cancels affected pending approvals, clears temporary
+grants and prevents a queued approval from restoring the revoked permission. It
+affects subsequent access; reload or close a page to stop an already active capture.
+The renderer contract exposes data and commands without implementing settings UI.
+Older settings versions stop startup with the existing explicit recovery
+message; no grants or settings are silently migrated or reset.
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.

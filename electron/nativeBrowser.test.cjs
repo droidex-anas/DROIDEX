@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
 
 const ERROR_PAGE = 'chrome-error://chromewebdata/';
 const HOST = { id: 1 };
@@ -31,6 +32,13 @@ function createBrowser() {
     session,
     dialog: {},
     safeStorage: {},
+    permissions: createBrowserPermissionController({
+      isNativeBrowserContents: (contents) => Boolean(manager.sessionIdForWebContents(contents)),
+      agentActionsFor: () => undefined,
+      getSiteDecision: () => 'ask',
+      showPrompt: async () => ({ response: 1 }),
+      systemPreferences: { getMediaAccessStatus: () => 'granted' },
+    }),
     getMainWindow: () => ({ isDestroyed: () => false }),
     onBrowserInput() {},
     preloadPath: '/app/nativeBrowserPreload.cjs',
@@ -73,7 +81,7 @@ function createBrowser() {
   return { manager, mountGuest, unreachable, loads, loadFailures, sessions };
 }
 
-test('browser pages use their own persistent partition and are denied every permission', async () => {
+test('browser partition permissions require an owned page and navigation or release clears one-time grants', async () => {
   const { manager, mountGuest, sessions } = createBrowser();
   const guest = mountGuest('tab');
   await manager.open('tab', 'https://example.test/');
@@ -85,6 +93,20 @@ test('browser pages use their own persistent partition and are denied every perm
   let granted;
   ses.request(null, 'geolocation', (value) => (granted = value));
   assert.equal(granted, false);
+  const origin = 'https://example.test';
+  const request = () =>
+    new Promise((resolve) => {
+      ses.request(guest, 'media', resolve, { requestingUrl: guest.url, mediaTypes: ['video'] });
+    });
+  const check = () =>
+    ses.check(guest, 'media', origin, { requestingUrl: guest.url, mediaType: 'video' });
+  assert.equal(await request(), true);
+  assert.equal(check(), true);
+  guest.emit('did-start-navigation', {}, guest.url, false, true);
+  assert.equal(check(), false);
+  assert.equal(await request(), true);
+  manager.release('tab');
+  assert.equal(check(), false);
 });
 
 test('a remounted page reopens its URL, but not one that failed until it is retried', async () => {

@@ -59,6 +59,7 @@ const MAX_SIDECAR_TIMEOUT_MS = 75_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
+  const activeAgentActions = new Map(); // browserSessionId -> execution tokens, even after timeout
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
 
@@ -106,6 +107,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
         const queue = queues.get(request.browserSessionId);
         if (queue) queue.closed = true;
         queues.delete(request.browserSessionId);
+        activeAgentActions.delete(request.browserSessionId);
         manager.close(request.browserSessionId);
         notifyRenderer('native-browser-closed', { browserSessionId: request.browserSessionId });
         return result(request, true);
@@ -212,6 +214,22 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
 
   async function performOnPage(request) {
     assertAccess(request);
+    if (request.initiator === 'user') return performPageAction(request);
+    const { browserSessionId } = request;
+    const active = activeAgentActions.get(browserSessionId) ?? new Set();
+    const execution = {};
+    activeAgentActions.set(browserSessionId, active);
+    active.add(execution);
+    try {
+      return await performPageAction(request);
+    } finally {
+      active.delete(execution);
+      if (active.size === 0 && activeAgentActions.get(browserSessionId) === active)
+        activeAgentActions.delete(browserSessionId);
+    }
+  }
+
+  async function performPageAction(request) {
     const { browserSessionId } = request;
     // A navigation goes out only while its caller still waits for it.
     const stillWanted = () => {
@@ -278,7 +296,11 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
-  return { handle, workingSessions: () => [...waiting.keys()] };
+  return {
+    handle,
+    workingSessions: () => [...waiting.keys()],
+    agentActionsFor: (browserSessionId) => activeAgentActions.get(browserSessionId),
+  };
 }
 
 function sidecarTimeoutMs(value) {

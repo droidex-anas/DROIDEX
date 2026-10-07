@@ -1,7 +1,16 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const SETTINGS_VERSION = 5;
+const SETTINGS_VERSION = 6;
+const SITE_PERMISSIONS = [
+  'camera',
+  'microphone',
+  'geolocation',
+  'notifications',
+  'clipboard-read',
+  'midi',
+  'midiSysex',
+];
 const NAVIGATION_APPROVALS = new Set(['follow_autonomy', 'always_ask', 'new_sites', 'never_ask']);
 const LOGIN_FILL_APPROVALS = new Set(['always_ask', 'never']);
 const SITE_PERMISSION_MODES = new Set(['block', 'ask']);
@@ -12,7 +21,7 @@ function createDefaultBrowserSettings(downloadDirectory) {
     navigationApproval: 'follow_autonomy',
     loginFillApproval: 'always_ask',
     diagnosticsEnabled: false,
-    sitePermissionMode: 'block',
+    sitePermissionMode: 'ask',
     askDownloadLocation: true,
     showAgentCursor: true,
     homePage: 'https://www.google.com/',
@@ -138,13 +147,17 @@ function validateSitePermissions(value) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
       throw new Error('Invalid browser settings: site permission must be an object.');
     }
-    if (Object.keys(candidate).some((key) => !['origin', 'camera', 'microphone'].includes(key))) {
+    if (Object.keys(candidate).some((key) => !['origin', ...SITE_PERMISSIONS].includes(key))) {
       throw new Error('Invalid browser settings: site permission contains an unknown value.');
     }
     return {
       origin: validateExactOrigin(candidate.origin),
-      camera: validateSiteDecision(candidate.camera),
-      microphone: validateSiteDecision(candidate.microphone),
+      ...Object.fromEntries(
+        SITE_PERMISSIONS.map((permission) => [
+          permission,
+          validateSiteDecision(candidate[permission]),
+        ]),
+      ),
     };
   });
   if (new Set(rules.map(({ origin }) => origin)).size !== rules.length) {
@@ -158,6 +171,17 @@ function validateSiteDecision(value) {
     throw new Error('Invalid browser settings: site permission decision is invalid.');
   }
   return value;
+}
+
+function validateSitePermissionSelection(origin, permissions) {
+  validateExactOrigin(origin);
+  if (
+    !Array.isArray(permissions) ||
+    permissions.length === 0 ||
+    permissions.some((permission) => !SITE_PERMISSIONS.includes(permission))
+  ) {
+    throw new Error('Browser site permission is invalid.');
+  }
 }
 
 const AUTONOMY_LEVELS = ['high', 'medium', 'low'];
@@ -204,7 +228,7 @@ function browserProtectionReductions(current, patch) {
   if (patch.loginFillApproval === 'always_ask' && current.loginFillApproval === 'never')
     reductions.push('Agent login fill: Never use → Always ask');
   if (patch.sitePermissionMode === 'ask' && current.sitePermissionMode === 'block')
-    reductions.push('Camera and microphone: Block → Ask me');
+    reductions.push('Site permissions: Block → Ask me');
   if (patch.askDownloadLocation === false && current.askDownloadLocation)
     reductions.push('Ask where to save downloads: On → Off');
   return reductions;
@@ -231,6 +255,9 @@ function validateAbsoluteDirectory(value) {
 }
 
 module.exports = {
+  SITE_PERMISSIONS,
+  validateSitePermissionSelection,
+  validateSiteDecision,
   createDefaultBrowserSettings,
   readSettings,
   validateSettings,
