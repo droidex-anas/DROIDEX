@@ -149,8 +149,8 @@ function StepChip({
 
 // Places the cursor's box at the target and glides it there from where it
 // is drawn. The glide and ring in flight are owned here: a new point, a new
-// drawing or the cursor going away cancels them, and nothing else of the
-// cursor's (its fade) is touched. A late point as the cursor fades, or one on
+// drawing, the turn ending or the cursor going away cancels them, and nothing
+// else of the cursor's (its fade) is touched. A late point as the cursor fades, or one on
 // a new drawing, is placed at once.
 function useGlide(
   target: Point | null,
@@ -186,6 +186,12 @@ function useGlide(
     box.style.transform = translate(to);
     if (from && presentRef.current) motion.current = move(box, ringRef.current, from, to, click);
   }, [tx, ty, pointed, click, scale, size, visible]);
+  // Once the turn is over the cursor only lingers and fades, still.
+  useEffect(() => {
+    if (present) return;
+    for (const animation of motion.current) animation.cancel();
+    motion.current = [];
+  }, [present]);
   useEffect(
     () => () => {
       for (const animation of motion.current) animation.cancel();
@@ -221,7 +227,9 @@ function translate({ x, y }: Point): string {
   return `translate(${String(x)}px, ${String(y)}px)`;
 }
 
-// Where the box is drawn right now, partway along a glide or at rest.
+// Where the box is placed right now, partway along a glide or at rest. Every
+// frame is translate() then the lean and press, and a computed transform
+// leaves out the transform origin, so its translation is the place itself.
 function onScreen(box: HTMLElement): Point {
   const matrix = new DOMMatrixReadOnly(getComputedStyle(box).transform);
   return { x: matrix.m41, y: matrix.m42 };

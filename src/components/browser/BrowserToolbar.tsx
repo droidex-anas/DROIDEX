@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -170,7 +170,8 @@ export function BrowserToolbar({
 // The omnibox: the site's icon, its address read as host and path, and a lock
 // for https. Editing shows the full address, selected, and a go button; Esc
 // puts back the page's address. Focused, the pill only lifts a touch, with a
-// faint hairline, rather than wearing a ring.
+// faint hairline, rather than wearing a ring; reached from the keyboard it
+// also takes the app's quiet 1px focus ring, so the focus can be found.
 function AddressBar({
   inputRef,
   value,
@@ -193,10 +194,11 @@ function AddressBar({
     value !== browserAddressValue(pageUrl) && normalizeUrl(value).startsWith(SEARCH_URL);
   // A click that focuses the field selects the address instead of placing the caret.
   const selectOnRelease = useRef(false);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
 
   return (
     <form
-      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-droid-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-droid-elevated focus-within:!bg-droid-raised focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--droid-text)_5%,transparent)] motion-reduce:transition-none`}
+      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-droid-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-droid-elevated focus-within:!bg-droid-raised focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--droid-text)_5%,transparent)] motion-reduce:transition-none ${keyboardFocus ? 'ring-1 ring-droid-accent/40' : ''}`}
       onSubmit={(event) => {
         event.preventDefault();
         onOpen();
@@ -224,7 +226,12 @@ function AddressBar({
             selectOnRelease.current = false;
           }}
           onFocus={(event) => {
+            // A press focusing the field marks itself first; any other focus is the keyboard's.
+            setKeyboardFocus(!selectOnRelease.current);
             event.currentTarget.select();
+          }}
+          onBlur={() => {
+            setKeyboardFocus(false);
           }}
           onKeyDown={(event) => {
             // An input method still composing keeps its own Escape.
