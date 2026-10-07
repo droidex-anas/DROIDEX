@@ -109,12 +109,12 @@ export function CanvasWorkspace({
     dispatch({ type: 'creating' });
     canvas
       .createCanvas(appSessionId, mutationId)
-      .then((created) => {
+      .then(({ attachedCanvasId }) => {
         if (!mounted.current || currentTarget.current.appSessionId !== appSessionId) return;
         pendingCreateMutationIds.delete(appSessionId);
-        onAttachmentChange(appSessionId, created);
+        onAttachmentChange(appSessionId, attachedCanvasId);
         if (currentTarget.current.namedCanvasId === undefined)
-          dispatch({ type: 'created', canvasId: created });
+          dispatch({ type: 'created', canvasId: attachedCanvasId });
       })
       .catch((error: unknown) => {
         if (

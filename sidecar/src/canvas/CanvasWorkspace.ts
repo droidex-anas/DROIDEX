@@ -106,8 +106,9 @@ export class CanvasWorkspace {
    * A new canvas, attached in the same commit so explicit Create leaves either
    * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
    * first: a crash between the two writes must leave it unattached, not twice.
+   * A retry returns its original canvas identity without changing attachments.
    */
-  createCanvas(appSessionId: string, mutationId: string): Promise<CanvasSnapshot> {
+  createCanvas(appSessionId: string, mutationId: string): Promise<{ canvasId: string }> {
     return this.commits.admit(() =>
       this.commits.run(async () => {
         this.requireChat(appSessionId);
@@ -115,14 +116,14 @@ export class CanvasWorkspace {
         if (previous) {
           if (previous.creation?.appSessionId !== appSessionId)
             throw canvasError('invalid_input', 'That Canvas mutation ID belongs to another chat.');
-          return canvasSnapshot(previous, this.builds);
+          return { canvasId: previous.canvasId };
         }
         await this.detachFrom(appSessionId, null);
         const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
         manifest.creation = { mutationId, appSessionId };
         manifest.attachedAppSessionIds.push(appSessionId);
         await this.heads.install(manifest, this.chatGate(appSessionId));
-        return canvasSnapshot(manifest, this.builds);
+        return { canvasId: manifest.canvasId };
       }),
     );
   }

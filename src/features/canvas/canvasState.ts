@@ -25,7 +25,7 @@ export type CanvasPaneState =
 export type CanvasPaneEvent =
   // The attachment as the sidecar reports it, which outranks any cached id.
   | { type: 'attached'; canvasId: string | null }
-  | { type: 'created'; canvasId: string }
+  | { type: 'created'; canvasId: string | null }
   | { type: 'selected'; canvasId: string }
   | { type: 'creating' }
   | { type: 'create-failed'; message: string }

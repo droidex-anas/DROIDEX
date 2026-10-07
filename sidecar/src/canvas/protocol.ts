@@ -5,6 +5,7 @@
 
 import type {
   ArrangeFramesInput,
+  CreateCanvasResult,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
@@ -14,6 +15,7 @@ import type {
 
 export type {
   ArrangeFramesInput,
+  CreateCanvasResult,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
@@ -225,6 +227,7 @@ export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
   | { kind: 'attachment'; canvasId: string | null }
+  | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }

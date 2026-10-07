@@ -13,6 +13,7 @@ import type {
   CanvasReply,
   CanvasSnapshot,
   CanvasSummary,
+  CreateCanvasResult,
   CreateFramesInput,
   CreateFramesResult,
   PreviewArtifact,
@@ -98,17 +99,15 @@ export class CanvasClient {
     );
   }
 
-  /** Explicit Create in the pane: a new canvas, attached to this chat. */
-  async createCanvas(appSessionId: string, mutationId: string): Promise<string> {
+  /** The Create receipt and this chat's attachment at the time it settled. */
+  async createCanvas(appSessionId: string, mutationId: string): Promise<CreateCanvasResult> {
     const event = await this.request({
       type: 'canvas.createCanvas',
       requestId: requestId(),
       appSessionId,
       mutationId,
     });
-    const canvasId = reply(event, 'attachment').canvasId;
-    if (canvasId === null) throw wrongReply();
-    return canvasId;
+    return reply(event, 'canvasCreated');
   }
 
   async attachCanvas(appSessionId: string, canvasId: string): Promise<void> {

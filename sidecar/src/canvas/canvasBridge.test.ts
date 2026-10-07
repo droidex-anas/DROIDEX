@@ -107,7 +107,7 @@ async function createCanvas(harnessed: Harness, requestId = 'req-create-canvas')
     true,
   );
   const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
+  assert.ok(reply.kind === 'canvasCreated');
   return reply.canvasId;
 }
 
@@ -141,13 +141,82 @@ test('a lost Create reply replays its durable canvas while the first commit is i
   const firstReply = okReply(canvas, 'first');
   const replay = okReply(canvas, 'retry');
   assert.deepEqual(replay, firstReply);
-  assert.ok(firstReply.kind === 'attachment');
+  assert.ok(firstReply.kind === 'canvasCreated');
   assert.deepEqual(
     canvas.workspace.listCanvases().map((item) => item.canvasId),
     [firstReply.canvasId],
   );
   assert.equal(canvas.workspace.attachedCanvasId(APP), firstReply.canvasId);
   assert.equal((await readdir(canvas.root)).length, 1);
+});
+
+test('a replayed Create reports its canvas and the chat’s current attachment separately', async (t) => {
+  const canvas = await harness(t);
+  const ids: string[] = [];
+  for (const mutationId of ['create-A', 'create-B']) {
+    await canvas.handle({
+      type: 'canvas.createCanvas',
+      requestId: mutationId,
+      appSessionId: APP,
+      mutationId,
+    });
+    const created = okReply(canvas, mutationId);
+    assert.ok('canvasId' in created && created.canvasId !== null);
+    ids.push(created.canvasId);
+  }
+  const [firstCanvasId, currentCanvasId] = ids;
+  assert.ok(firstCanvasId && currentCanvasId);
+
+  await canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'replay-A',
+    appSessionId: APP,
+    mutationId: 'create-A',
+  });
+
+  assert.deepEqual(okReply(canvas, 'replay-A'), {
+    kind: 'canvasCreated',
+    canvasId: firstCanvasId,
+    attachedCanvasId: currentCanvasId,
+  });
+  assert.equal(canvas.workspace.attachedCanvasId(APP), currentCanvasId);
+  assert.equal(canvas.workspace.listCanvases().length, 2);
+});
+
+test('a replayed Create reports a detached chat without creating or reattaching a canvas', async (t) => {
+  const canvas = await harness(t);
+  await canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'first-create',
+    appSessionId: APP,
+    mutationId: 'detached-create',
+  });
+  const created = okReply(canvas, 'first-create');
+  assert.ok('canvasId' in created && created.canvasId !== null);
+  await canvas.handle({ type: 'canvas.detach', requestId: 'detach', appSessionId: APP });
+  assert.deepEqual(okReply(canvas, 'detach'), { kind: 'attachment', canvasId: null });
+
+  for (const requestId of ['retry-create', 'first-create']) {
+    canvas.events.length = 0;
+    await canvas.handle({
+      type: 'canvas.createCanvas',
+      requestId,
+      appSessionId: APP,
+      mutationId: 'detached-create',
+    });
+    const replay = okReply(canvas, requestId);
+    assert.ok('canvasId' in replay);
+    const attachedCanvasId =
+      'attachedCanvasId' in replay ? replay.attachedCanvasId : replay.canvasId;
+    assert.equal(attachedCanvasId, null);
+    assert.deepEqual(replay, {
+      kind: 'canvasCreated',
+      canvasId: created.canvasId,
+      attachedCanvasId: null,
+    });
+  }
+  assert.equal(canvas.workspace.attachedCanvasId(APP), null);
+  assert.equal(canvas.workspace.listCanvases().length, 1);
 });
 
 test('attachment mutations refuse a chat the sidecar does not know', async (t) => {

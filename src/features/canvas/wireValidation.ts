@@ -19,6 +19,7 @@ const REPLY_KINDS = new Set([
   'ok',
   'summaries',
   'attachment',
+  'canvasCreated',
   'created',
   'written',
   'arranged',
@@ -52,6 +53,8 @@ function isReply(value: unknown): boolean {
       return list(value.summaries, isSummary);
     case 'attachment':
       return value.canvasId === null || id(value.canvasId);
+    case 'canvasCreated':
+      return id(value.canvasId) && (value.attachedCanvasId === null || id(value.attachedCanvasId));
     case 'created':
       return (
         record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame)

@@ -204,6 +204,13 @@ export function mergedRevisionViolation(files: ReadonlyMap<string, string>): str
 }
 
 export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
+export interface CreateCanvasResult {
+  /** The canvas this mutation originally created, unchanged by a replay. */
+  canvasId: string;
+  /** The chat's attachment when this request settled; only this updates its cache. */
+  attachedCanvasId: string | null;
+}
+
 export interface DesignRef {
   designId: string;
   revisionId: string | null;
