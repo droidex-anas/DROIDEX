@@ -5,8 +5,8 @@
 
 import type {
   ArrangeFramesInput,
+  CanvasTurnContext,
   CreateFramesInput,
-  DesignRef,
   DesignSystemRef,
   FrameRect,
   RemoveFramesInput,
@@ -17,34 +17,19 @@ import type {
 
 export type {
   ArrangeFramesInput,
+  CanvasTurnContext,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
+  ElementRef,
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
-  UndoRemovalInput,
   RevisionRef,
   SourceFiles,
+  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
-
-// A selected element inside one rendered revision. `instancePath` distinguishes
-// repeated DOM nodes; it is a selection hint, not a second source model.
-export interface ElementRef {
-  designId: string;
-  revisionId: string;
-  elementId: string;
-  instancePath: string;
-}
-
-// The references a turn pinned when its lease was minted. Later selection
-// changes cannot retarget an earlier request, so this never changes.
-export interface CanvasTurnContext {
-  designs: DesignRef[];
-  elements: ElementRef[];
-  designSystem: DesignSystemRef;
-}
 
 /**
  * What one mutation is authorized to change. A turn lease pins the references

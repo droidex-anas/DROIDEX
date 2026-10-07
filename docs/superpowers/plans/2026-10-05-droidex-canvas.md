@@ -974,7 +974,7 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
+- [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
 - [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
@@ -1018,6 +1018,125 @@ These variables are outputs collected by the owning existing harness fixtures, n
 
 - [ ] Exercise queue→selection-change→send, steer with different selected frames, retry after lost mutation response, provider replacement during a pending write, child scope escape and close during server startup. Verify one shared tool schema and stable canvas IDs across create/resume for all providers. Future providers must pass this same suite through their existing adapter boundary.
 - [ ] Run focused MCP/context/presentation/native-parser/race tests and both typechecks. Perform a real tool-discovery/create/write/inspect/resume smoke for each already authorized harness account using a low-cost available model. If account access or paid smoke authorization is missing, keep the deterministic fixtures and report the live provider row unverified; never mark the release gate passed from mocks alone.
+
+Settled by 04a (landed in `sidecar/src/canvas/{canvasTurnContext.ts,schema.ts,protocol.ts}`,
+`sidecar/src/{SessionLifecycle.ts,SessionManager.ts,sessionCompactionExecution.ts,bridgeServer.ts,protocol.ts,index.ts}`
+and `src/{types/bridge.ts,lib/commands.ts}`):
+
+- **The interfaces, as the real seams took them.** `CanvasTurns` in `canvasTurnContext.ts`
+  composes over the existing `CanvasScopes`; it adds no second registry and keeps only which
+  turn and which provider era minted which lease. `beginCanvasTurn(appSessionId, generation,
+  context)` became `canvasTurns.beginTurn(appSessionId, context)` returning a
+  `CanvasTurnLeases` handle, because the generation is the owner's to assign rather than the
+  lifecycle's to pass: the lifecycle has no per-chat provider-era counter, and mirroring one
+  into Canvas would give one invariant two owners. The handle is also what a steer joins
+  (`addSteer`) and what every settlement path revokes (`revoke`), so a turn's leases are one
+  unit. `revokeCanvasScope(scopeId)` has no caller and was not added; `CanvasScopes.revoke`
+  stays the primitive underneath, and the pane still uses it for its own user scope.
+  `getCanvasScope(scopeId)` is `requireScope(scopeId)`, matching `canvasLeases.ts`'s
+  `require*` convention for a lookup that throws `scope_expired`. 04b additionally gets
+  `activeScope(appSessionId)`.
+- **A lease is registered exactly while it is live, and that is the whole check.** Every
+  settlement path revokes, and a provider replacement revokes the chat, so `requireScope` asks
+  only whether the registry still holds the scope. A `generation !== current` comparison there
+  was written first and removed: nothing can produce a registered turn scope from a past era, so
+  the branch was unreachable, and the late-steer bug review found (below) never moved the
+  generation. Each new provider era takes the next process-wide generation, while `endSession`
+  revokes and deletes its chat record. A stale steer handle checks that its original record is
+  still current before minting; the recorded generation remains available for 04b's dispatch
+  binding without retaining ended chats.
+- **Every turn mints a lease.** A prompt with no pinned context uses empty design and element
+  references and `DEFAULT_DESIGN_SYSTEM_REF` from the design-system owner, giving an ordinary
+  chat authority over its canvas without opening the pane. A delivered steer with no pinned
+  context gets the same default. For an unattached chat the lease starts with `canvasId: null`;
+  the workspace's first `canvas_create` fills the binding through the existing
+  `CanvasLeases.claim` → `CanvasScopes.bindScopeCanvas` path. A Canvas call outside an active
+  turn is still refused with `scope_expired` (spec §6).
+- **`allowedDesignIds`** is every design the chips named, whether as a frame or as an element
+  inside one, and `'canvas'` only when the prompt pinned neither — which is what
+  `CanvasLeases.requireDesigns` already expects (02b). Deriving it from `designs` alone, as the
+  first version did, turned a one-element selection into write authority over every design on
+  the board.
+- **The lease lifecycle, seam by seam.**
+
+  | Seam | Mint | Revoke |
+  | --- | --- | --- |
+  | `SessionLifecycle.runTurn`, at the streaming transition | the turn's lease, from `prompt.canvasContext` or the default context | — |
+  | `SessionLifecycle.steer`, once `session.steer` resolved true | the steer's own lease, through the running turn's handle | — |
+  | `subscribeBackgroundEvents`, `onDelegatedTurn(true)`, only when no typed turn runs | the turn's default lease | — |
+  | `runTurn`'s `finally`, first statement | — | the turn and its steers, before anything awaits and before the queue advances |
+  | `onDelegatedTurn(false)`, only when no typed turn runs | — | the same, for a turn the provider started |
+  | `interrupt`, before `await session.interrupt()` | — | the running turn, before the external cleanup await |
+  | `sendNow`, before `await session.interrupt()` | — | the turn being stopped to send now |
+  | `beginClose` (close, relaunch) | — | every lease the chat holds; its record is removed before the next era |
+  | `closeAll`, before its concurrent process kills | — | every captured chat's leases, even if its kill later fails |
+  | `sessionCompactionExecution.adoptProvider`, before `oldSession.close()` | — | the same, so the replacement starts a new era |
+
+  Revocation is idempotent everywhere, and a handle reaches only the leases it minted (each
+  carries the turn that owns it), so a settlement that lands late cannot revoke a later turn's
+  or a replacement's. `closeAll` invalidates its captured chats before its first process-kill
+  await; later `beginClose` calls may repeat the idempotent revocation.
+- **One owner for `liveSession.canvasTurn`.** Codex starts a delegated turn for any
+  `turn/started` whose id differs from the adopted typed one, "however close behind the typed
+  one it arrives" (`codexSession.ts`), so `onDelegatedTurn(true)` can fire while a typed turn is
+  running. Both halves of that handler are therefore guarded on `liveSession.turnPromise`: the
+  typed turn's handle keeps the field, so the delegated turn neither orphans that lease — which
+  would leave a dead turn's pinned designs answering `activeScope`, the retargeting §6 forbids —
+  nor revokes it mid-turn. `turnPromise` is a sound guard because `runTurn` assigns it with only
+  synchronous statements between it and the mint, so no provider notification can land in
+  between.
+- **A Stop or a Send now the provider refuses** leaves its turn running with no lease, and no
+  steer it takes in afterwards leases either. Both revoke before awaiting the interrupt, as spec
+  §6 requires; failing closed is the safe direction, and undoing a revoke would give one lease
+  two lives.
+- **The steer binding rule.** A Canvas call that presents no scope ID binds to the chat's
+  newest live lease, which is a pending steer's while the running turn holds a steer the model
+  took in. Dispatch carries no steer discriminator on Droid (spec §6), and the newest lease is
+  the user's latest instruction for the turn that is running. Every earlier lease stays valid
+  and may still be presented by ID, so a call already in flight is answered rather than
+  retargeted. Steer delivery captures its original turn handle before awaiting the harness and
+  checks the provider and handle again afterward; a result delivered after that turn or provider
+  ended cannot lease the next turn, including after compaction keeps the same `LiveSession`.
+- **The sidecar queue carries the received context.** `SessionPrompt` is the one shape behind
+  `pendingSends`, `steers`, send-now reordering, `relaunch`'s waiting list, post-compaction
+  `settleAfterCompaction` and `redeliverQueuedSends`. Reordering and redelivery move that prompt
+  without changing its references. `sessionPrompt()` omits the field when none arrived.
+- **Renderer handoff to Tasks 5/7b.** `QueuedPrompt` in `src/hooks/useStore.tsx` and its
+  delivery/edit/reorder paths do not yet carry `canvasContext`, and the first-turn
+  `session.create` goal has no context field. Snapshot the selected design and element chips
+  and the current design-system version when composing each request; carry that value through
+  queue, edit, reorder, steer, send-now and first-turn create. The disconnected bridge currently
+  retains a command object by reference, so capture an immutable value before enqueueing it.
+  Add a queue → selection change → delivery regression at the renderer owner. This is renderer
+  transport work; 04a preserves references only after the request reaches the sidecar.
+- **The boundary.** `session.send` gained `canvasContext?: CanvasTurnContext`; `bridgeServer`
+  checks it with `assertCanvasTurnContext` beside its existing `assertValid*` checks, and a
+  `CanvasCommandError` now travels as `canvas.<code>` so a refusal keeps its stable code.
+  `canvasTurnContextSchema` lives in `schema.ts` with the other boundary parsers, which also
+  made `DesignRef`, `ElementRef` and `CanvasTurnContext` Zod-inferred there and re-exported
+  from `protocol.ts`; `schema.test.ts`'s mirror check still compares them to the renderer's.
+  New §4/§5 limits: 32 pinned designs, 32 pinned elements, and a 512-character instance path,
+  never tighter than the 512 bytes a preview clamps a reported path to.
+- **The expiry message has one owner.** `EXPIRED_TURN` moved to `canvasError.ts`, which
+  `canvasScopes.ts`, `canvasLeases.ts` and `canvasTurnContext.ts` all already import; the first
+  two held byte-identical copies of a §8 message the model and the user both read.
+- **Nothing is concatenated into the prompt.** `primaryTurn.ts` is untouched: it still streams
+  `prompt.text` alone, and no hidden user message is fabricated (spec §9).
+- **Wiring.** `SessionManager` takes the lease owner as an option; `sidecar/src/index.ts`
+  passes the one the Canvas workspace checks and reads the chat's attachment from the opened
+  workspace, so a chat reads as unattached until Canvas storage opens. A harness that opens no
+  workspace gets its own owner, so turns mint and revoke there exactly as in production.
+- **Verification.** `canvasTurnContext.test.ts` owns the lease contract (pinning, the steer
+  rule, era refusal, the unattached binding against a real `CanvasWorkspace`, and the §8
+  rejection message). `SessionLifecycle.test.ts` owns the seams through the real lifecycle with
+  gated streams: a reordered queue running under each prompt's own references, a delivered
+  steer beside the running turn, Stop revoking before the provider is asked to unwind, a
+  close/resume replacement revoking the old lease while the redelivered prompt mints under the
+  next generation, and a provider-started turn beside a typed one leaving the typed turn's lease
+  alone (that last case fails without the `turnPromise` guard). `bridgeServer.test.ts` holds the boundary refusal, and
+  `src/lib/commands.test.ts` the renderer pass-through.
+- **Not covered.** The pane that composes a context is Task 5's; the six tools, their dispatch
+  and the Claude `PreToolUse` read binding are 04b's; transcript projection is 04c's.
 
 ## Task 5: Persistent Canvas in the utility pane
 
@@ -1094,7 +1213,7 @@ Settled by 06b (`canvas/06b-chart-runtime`):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
+- [x] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
   Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
 - [ ] `canvas/07b-design-system-picker`: Add the composer picker popover (search, light/dark preview toggle, presets then user kits with two swatches each, “Manage design systems” footer) and removable system/reference chips with persisted future-request selection; wire the image drop/picker path to 07d's `importCanvasImage`.
   Done: A queued request retains its pinned kit version after the user changes selection; the picker matches spec §10 and V3 in light and dark.
@@ -1130,6 +1249,51 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Implement `canvas_theme` list/read/save/apply. Applying to one existing design uses a normal source revision/CAS with a new system reference and preserves behavior. A version mismatch or unsupported token mapping returns diagnostics; never mutate the global kit to restyle one design. Extract only source-owned tokens/primitives into a new user kit with provenance.
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
+
+
+Settled by 07a (`canvas/07a-design-kits`):
+
+- The three built-in version-1 kits are `droidex`, `openai-inspired` and
+  `claude-inspired`. The latter two are locally authored interpretations, not official
+  presets. Each owns complete matching light/dark token maps, including typography,
+  spacing, radius, shadow and motion. App chrome is unchanged.
+- `readDesignSystem` returns a detached snapshot of the exact pinned version. Built-ins
+  are validated and snapshotted on load; user saves retain the existing atomic immutable
+  version contract. Schema validation also refuses unmatched mode token names.
+- Shared source primitives are copied into each executable kit: native-prop Button
+  (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
+  Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
+  Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
+  `title`, `children`, optional `returnFocusId`/`fallbackFocusId`) using native modal
+  behavior, explicit focus cycling at the preview-frame edge, Escape and enabled,
+  visible-destination restoration.
+  Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
+  Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
+- Each light/dark kit provides translucent `--ds-lift` and `--ds-press` layers for
+  control hover and press over its own background; hover-only accent colours are gone.
+  The guest stylesheet reserves a stable scrollbar gutter so opening a dialog does
+  not move the card, and primitives do not lock `body` scrolling.
+- Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
+  for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
+  SIL OFL files both in the repository and the kit's virtual source files. Provenance is
+  in `presets/fonts/README.md`; other scripts use the local font stack.
+  Inline fonts are accepted for 07a: 64 KB of Inter, or 115 KB of Inter plus Lora,
+  per artifact is within every current limit. 07d owns serving each immutable font
+  once through a preview-host asset URL and changing the matching `font-src`/CSS allowlist.
+- `lucide-react` is pinned to 0.460.0, the app's existing version. The shared browser
+  module graph stages its ESM files, package metadata and ISC licence alongside Recharts;
+  unused Lucide CJS is absent. The flat design import allowlist includes `lucide-react`
+  and `recharts`, resolving their internal ESM entries through the owned runtime while
+  refusing public deep imports. `designStylesheet.ts` already scans the complete
+  snapshot with Tailwind 3 and needed no replacement path or dynamic-class guessing.
+- Compiler coverage exercises all six kit/mode starters and bounds a single named icon's
+  incremental output to 10 KiB. Contrast coverage checks the actual primitive foreground,
+  muted, primary, lifted, pressed, badge and error pairs against AA 4.5:1. The staged
+  offline probe compiles all six starters and the chart, checks font and Lucide notices,
+  and retains both damaged-runtime and resolver-isolation checks. Electron interaction
+  checks cover state, disabled controls, tabs, dialog focus cycling, Escape, restoration
+  and font load.
+
 
 ## Task 8: Element selection, direct edits and source/history UI
 

@@ -81,7 +81,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
         interactionMode: 'auto',
       });
     }
-    if (text) sendToSession(req.appSessionId, text, undefined, undefined, crypto.randomUUID());
+    if (text) sendToSession(req.appSessionId, text, { steerId: crypto.randomUUID() });
     finish();
   };
 
