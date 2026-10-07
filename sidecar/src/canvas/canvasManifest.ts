@@ -66,6 +66,7 @@ const revisionRecordSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
+    restoredFromRevisionId: canvasIdentifierSchema.optional(),
     sequence: z.number().int().positive(),
     author: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('user') }).strict(),
@@ -277,7 +278,11 @@ export function recordRevisions(
   manifest: CanvasManifest,
   scope: CanvasScope,
   mutationKind: RevisionSummary['mutationKind'],
-  designs: readonly { designId: string; revisionId: string | null }[],
+  designs: readonly {
+    designId: string;
+    revisionId: string | null;
+    restoredFromRevisionId?: string;
+  }[],
 ): void {
   const author: RevisionAuthor =
     scope.origin === 'user'
@@ -288,6 +293,7 @@ export function recordRevisions(
     manifest.revisions.push({
       designId: design.designId,
       revisionId: design.revisionId,
+      restoredFromRevisionId: design.restoredFromRevisionId,
       sequence: manifest.sequence,
       author,
       mutationKind,

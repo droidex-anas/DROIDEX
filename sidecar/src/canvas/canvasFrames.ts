@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMetadata.js';
-import type { PersistedDesign } from './canvasManifest.js';
+import type { PersistedDesign, SourceRevisionMutation } from './canvasManifest.js';
 import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation } from './schema.js';
 
@@ -46,6 +46,7 @@ export async function stageRevision(
   canvasId: string,
   design: PersistedDesign,
   input: WriteFilesInput,
+  mutation?: SourceRevisionMutation,
 ): Promise<NewRevision> {
   const merged = mergeSource(await currentSource(files, canvasId, design), input);
   const violation = mergedRevisionViolation(merged);
@@ -55,6 +56,7 @@ export async function stageRevision(
     designId: input.designId,
     revisionId: randomUUID(),
     parentRevisionId: design.revisionId,
+    restoredFromRevisionId: mutation?.kind === 'restore' ? mutation.input.revisionId : undefined,
     designSystem: input.designSystem ?? design.designSystem,
     createdAt: Date.now(),
   };

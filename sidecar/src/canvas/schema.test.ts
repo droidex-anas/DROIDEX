@@ -247,6 +247,7 @@ const wire: SidecarWire = {
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
   revision: {
     revisionId: 'rev_02',
+    restoredFromRevisionId: 'rev_01',
     sequence: 7,
     createdAt: 1_767_225_600_000,
     author: { kind: 'agent', scopeRef: 'scope-safe' },
@@ -436,6 +437,23 @@ test('the renderer accepts a ready element map and rejects incomplete or unbound
     false,
   );
   assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
+});
+
+test('the renderer bounds restored-from revision identities in history replies', () => {
+  const event = (restoredFromRevisionId: unknown) => ({
+    type: 'canvas.result',
+    requestId: 'req_01',
+    ok: true,
+    reply: {
+      kind: 'revisions',
+      revisions: [{ ...wire.revision, restoredFromRevisionId }],
+    },
+  });
+  assert.equal(isCanvasEvent(event('rev_01')), true);
+  assert.equal(isCanvasEvent(event(undefined)), true);
+  for (const invalid of [null, '', 'r'.repeat(129), 1]) {
+    assert.equal(isCanvasEvent(event(invalid)), false);
+  }
 });
 
 test('the create, write, edit and arrange fixtures parse and fit the mirror', () => {

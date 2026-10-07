@@ -276,16 +276,18 @@ test('restore commits a new head and build, retaining later history and its orig
     deletedPaths: ['original.txt'],
     designSystem: { ...designSystem, version: 2 },
   });
+  const third = await canvas.write('three', second.revisionId, { 'main.tsx': 'three' });
   const input = {
     mutationId: 'restore',
     designId: canvas.designId,
     revisionId: first.revisionId,
-    expectedRevisionId: second.revisionId,
+    expectedRevisionId: third.revisionId,
   };
   const restored = await restoreRevision(canvas.workspace, canvas.scope, input);
   assert.notEqual(restored.revisionId, first.revisionId);
   assert.notEqual(restored.revisionId, second.revisionId);
-  assert.equal(restored.sequence, second.sequence + 1);
+  assert.notEqual(restored.revisionId, third.revisionId);
+  assert.equal(restored.sequence, third.sequence + 1);
   assert.deepEqual(
     { ...(await canvas.workspace.readFiles(canvas.canvasId, restored)) },
     { 'main.tsx': 'one', 'original.txt': 'original' },
@@ -299,6 +301,7 @@ test('restore commits a new head and build, retaining later history and its orig
     ).map((revision) => [revision.revisionId, revision.mutationKind]),
     [
       [restored.revisionId, 'restore'],
+      [third.revisionId, 'write'],
       [second.revisionId, 'write'],
       [first.revisionId, 'write'],
     ],
@@ -313,13 +316,34 @@ test('restore commits a new head and build, retaining later history and its orig
     )['later.txt'],
     'later',
   );
-  const later = await canvas.write('three', restored.revisionId, { 'main.tsx': 'three' });
+  const later = await canvas.write('four', restored.revisionId, { 'main.tsx': 'four' });
   const reopenedBuilds = quietBuilds();
   const reopened = await CanvasWorkspace.open(canvas.root, reopenedBuilds, canvas.deps);
   t.after(async () => {
     await reopenedBuilds.close();
     await reopened.close();
   });
+  const metadata = await reopened.history.readRevisionMetadata(
+    canvas.canvasId,
+    canvas.designId,
+    restored.revisionId,
+  );
+  assert.equal(metadata.restoredFromRevisionId, first.revisionId);
+  assert.equal(metadata.parentRevisionId, third.revisionId);
+  const loaded = await new CanvasFiles(canvas.root).loadManifest(canvas.canvasId);
+  assert.ok(loaded.state === 'loaded');
+  assert.equal(
+    loaded.manifest.revisions.find((revision) => revision.revisionId === restored.revisionId)
+      ?.restoredFromRevisionId,
+    first.revisionId,
+  );
+  const history = await reopened.history.listRevisions(canvas.canvasId, canvas.designId, {
+    limit: 50,
+  });
+  assert.equal(
+    history.find((revision) => revision.revisionId === restored.revisionId)?.restoredFromRevisionId,
+    first.revisionId,
+  );
   assert.deepEqual(await restoreRevision(reopened, canvas.scope, input), restored);
   assert.equal(reopened.snapshot(canvas.canvasId).frames[0]?.revisionId, later.revisionId);
   await assert.rejects(

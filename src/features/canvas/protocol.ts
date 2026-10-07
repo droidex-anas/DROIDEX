@@ -191,6 +191,7 @@ export type RevisionAuthor = { kind: 'user' } | { kind: 'agent'; scopeRef: strin
 
 export interface RevisionSummary {
   revisionId: string;
+  restoredFromRevisionId?: string;
   /** Canvas commit sequence, also used as the exclusive pagination cursor. */
   sequence: number;
   createdAt: number;

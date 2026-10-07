@@ -51,6 +51,7 @@ export class CanvasRevisionHistory {
         const metadata = await this.files.readRevisionMetadata(canvasId, record);
         return {
           revisionId: record.revisionId,
+          restoredFromRevisionId: record.restoredFromRevisionId,
           sequence: record.sequence,
           createdAt: metadata.createdAt,
           author: { ...record.author },

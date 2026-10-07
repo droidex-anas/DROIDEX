@@ -10,6 +10,7 @@ export const revisionMetadataSchema = z
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
     parentRevisionId: canvasIdentifierSchema.nullable(),
+    restoredFromRevisionId: canvasIdentifierSchema.optional(),
     designSystem: designSystemRefSchema,
     createdAt: z.number().int().nonnegative(),
     files: z.array(sourcePathSchema),

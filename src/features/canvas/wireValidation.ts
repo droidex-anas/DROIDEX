@@ -94,6 +94,7 @@ function isRevisionSummary(value: unknown): boolean {
   if (!record(value) || !record(value.author)) return false;
   return (
     id(value.revisionId) &&
+    (value.restoredFromRevisionId === undefined || id(value.restoredFromRevisionId)) &&
     count(value.sequence) &&
     count(value.createdAt) &&
     (value.author.kind === 'user' ||

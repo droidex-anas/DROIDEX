@@ -264,7 +264,7 @@ export class CanvasWorkspace {
 
       const design = this.design(manifest, input.designId);
       requireExpectedRevision(design, input.expectedRevisionId);
-      const revision = await stageRevision(this.files, canvasId, design, input);
+      const revision = await stageRevision(this.files, canvasId, design, input, mutation);
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);
@@ -282,7 +282,7 @@ export class CanvasWorkspace {
           revisionId: revision.revisionId,
           sequence: next.sequence,
         };
-        recordRevisions(next, scope, kind, [receipt]);
+        recordRevisions(next, scope, kind, [revision]);
         recordMutation(
           next,
           {
