@@ -56,7 +56,7 @@ export function createDesktopBrowserChannel(
     // A wait is given its own length on top. Main gets the expiry too, so the
     // time a request spends on the way counts against it.
     const mayAskApproval =
-      ['fillCredentials', 'click', 'press'].includes(request.action) ||
+      ['open', 'fillCredentials', 'click', 'press'].includes(request.action) ||
       (request.action === 'type' && request.submit);
     const limitMs = timeoutMs + (mayAskApproval ? 120_000 : 0) + (request.waitMs ?? 0);
     const expiresAt = Date.now() + limitMs;

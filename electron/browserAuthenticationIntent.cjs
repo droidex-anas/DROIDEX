@@ -8,6 +8,22 @@ const ACTIONS = {
   payment: 'submit a payment',
 };
 
+function authenticationIntentForUrl(value) {
+  const url = new URL(value);
+  if (!['https:', 'http:'].includes(url.protocol)) return null;
+  const pathname = decodeURIComponent(url.pathname);
+  let kind;
+  if (
+    (url.searchParams.has('client_id') &&
+      (url.searchParams.has('redirect_uri') || url.searchParams.has('response_type'))) ||
+    /\/(?:authorize|oauth2\/auth)\/?$/i.test(pathname)
+  )
+    kind = 'oauth';
+  else if (/\/(?:sign[ _-]?in|log[ _-]?in)(?:\/|$)/i.test(pathname)) kind = 'signin';
+  if (!kind) return null;
+  return validateAgentAuthenticationIntent({ kind, targetUrl: url.href, method: null }, url.href);
+}
+
 function validateAgentAuthenticationIntent(intent, currentUrl) {
   if (!ACTIONS[intent?.kind]) throw new Error('Unknown browser authentication action.');
   if (intent.method !== null && !['get', 'post', 'dialog'].includes(intent.method))
@@ -63,4 +79,8 @@ function httpUrl(value) {
   return url;
 }
 
-module.exports = { validateAgentAuthenticationIntent, approveAuthentication };
+module.exports = {
+  authenticationIntentForUrl,
+  validateAgentAuthenticationIntent,
+  approveAuthentication,
+};

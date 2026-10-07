@@ -110,12 +110,17 @@ including through encoding or painting it outside a field; these protections do
 not make an untrusted site safe to receive a password.
 
 Agent type, fill and editing keys share the read path's sensitive-field classifier
-and refuse password, one-time-code, payment-card and other secret fields. Click,
-Enter and Space inspect sign-in, sign-up, OAuth, passkey and payment controls,
+and refuse password, one-time-code, payment-card and other secret fields. Type and
+fill also refuse button controls. Click, Enter and Space inspect sign-in, sign-up,
+OAuth, passkey and payment controls,
 request single-use approval, then recheck the real focus or activation target
 immediately before dispatch, including the destination before mouse release.
 Clicks classify the hit-tested control at the click point, even for ancestor refs.
 Implicit Enter submissions use the default submit button's action and method overrides.
+Control wording includes accessible names from referenced labels, ARIA labels and
+image alternatives. Direct agent navigation to sign-in paths or OAuth authorization
+URLs uses the same single-use approval; OAuth detection uses authorization query
+parameters or endpoint paths, without a provider list.
 Detection uses form fields and control wording, so sites with custom controls may
 need a user handoff. CDP inspects and fills in isolated worlds; unreadable input
 focus is refused. These checks run only on agent actions; direct user input is not

@@ -28,6 +28,8 @@ const FILL = `function (value, startBy) {
   inTime();
   refuseSensitive();
   if (!this.isConnected) throw new Error('the field is not on the page any more; read the page again');
+  if (this.closest('button,input[type="submit"],input[type="button"],input[type="reset"],input[type="image"]'))
+    throw new Error('Buttons cannot be filled; use browser_click.');
   if (this instanceof HTMLSelectElement) {
     const wanted = String(value);
     const options = [...this.options];

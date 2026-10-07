@@ -167,6 +167,7 @@ const nativeBrowserManager = createNativeBrowserManager({
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
+  showPrompt: browserPrompts.request,
   assertAgentAccess: () => browserSettings.assertAgentAccess(),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);

@@ -12,6 +12,7 @@ function fixture() {
     defaultView: {},
     activeElement: null,
     querySelectorAll: (selector) => [...fields.values()].filter((node) => node.matches(selector)),
+    getElementById: (id) => [...fields.values()].find((node) => node.getAttribute('id') === id),
   };
   const mainDocument = { defaultView: {}, activeElement: null };
   let afterCommand = () => {};
@@ -33,6 +34,13 @@ function fixture() {
     }
     getRootNode() {
       return document;
+    }
+    querySelectorAll(selector) {
+      return document.querySelectorAll(selector).filter((node) => {
+        for (let parent = node.parentElement; parent; parent = parent.parentElement)
+          if (parent === this) return true;
+        return false;
+      });
     }
     matches(selector) {
       return selector.split(',').some((part) => {
@@ -203,6 +211,10 @@ function fixture() {
     request,
     mainDocument,
     document,
+    element: (tag, attributes) => {
+      hit = tag === 'input' ? new Input(attributes) : new Element(tag, attributes);
+      return { node: hit, ref: refFor(entry, frame.loaderId, hit.id) };
+    },
     afterCommand: (fn) => {
       afterCommand = fn;
     },
@@ -257,6 +269,71 @@ test('a card field identified only by its visible label still refuses agent inpu
   await assert.rejects(f.act({ action: 'type', ref, text: '4242' }), /blocked/);
   assert.equal(node.value, '');
   assert.deepEqual(f.input, []);
+});
+
+test('fill and type cannot relabel button controls to evade payment approval', async () => {
+  for (const [tag, type] of [
+    ['input', 'submit'],
+    ['input', 'button'],
+    ['input', 'reset'],
+    ['input', 'image'],
+    ['button', 'submit'],
+  ]) {
+    const f = fixture();
+    const { node, ref } = f.element(tag, { type });
+    node.value = node.textContent = 'Pay now';
+    node.isContentEditable = tag === 'button';
+    for (const action of [
+      { action: 'fill', ref, value: 'Continue' },
+      { action: 'type', ref, text: 'Continue' },
+    ])
+      await assert.rejects(f.act(action), /button|not a field|does not take typed text/i);
+    assert.equal(node.value, 'Pay now');
+    assert.equal(node.textContent, 'Pay now');
+    assert.deepEqual(f.input, []);
+  }
+});
+
+test('sensitive clicks use accessible control names, including referenced labels and images', async () => {
+  for (const source of [
+    'aria-labelledby',
+    'aria-label',
+    'image',
+    'img',
+    'title',
+    'text',
+    'value',
+  ]) {
+    const f = fixture();
+    const label = 'Sign in with Google';
+    const first = f.element('span', { id: 'first' }).node;
+    first.textContent = 'Sign in';
+    const second = f.element('span', { id: 'second' }).node;
+    second.textContent = 'with Google';
+    const image = f.element('img', { alt: label }).node;
+    const isInput = source === 'image' || source === 'value';
+    const { node } = f.element(isInput ? 'input' : 'button', {
+      type: source === 'image' ? 'image' : 'submit',
+    });
+    if (source === 'aria-labelledby') node.attributes[source] = 'first missing second';
+    else if (source === 'image') node.attributes.alt = label;
+    else if (source === 'img') image.parentElement = node;
+    else if (source === 'text') {
+      node.textContent = label;
+      image.attributes.alt = 'Brand logo';
+      image.parentElement = node;
+    } else if (source === 'value') node.value = label;
+    else node.attributes[source] = label;
+
+    await assert.rejects(f.act({ action: 'click', x: 10, y: 10 }), /denied/, source);
+    assert.equal(f.prompts.length, 1, source);
+    assert.match(f.prompts[0].message, /start an OAuth sign-in/);
+    assert.equal(
+      f.input.some((event) => event.type === 'mousePressed'),
+      false,
+      source,
+    );
+  }
 });
 
 test('a field becoming sensitive in its focus handler refuses fill and type', async () => {

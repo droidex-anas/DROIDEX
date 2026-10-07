@@ -4,6 +4,11 @@
 // keeps the page mounted and rendering while it is above zero, whether or not
 // the pane is open.
 
+const {
+  authenticationIntentForUrl,
+  approveAuthentication,
+} = require('./browserAuthenticationIntent.cjs');
+
 const ACTIONS = new Set([
   'open',
   'reload',
@@ -57,7 +62,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 // Includes the two-minute approval window for sensitive actions.
 const MAX_SIDECAR_TIMEOUT_MS = 180_000;
 
-function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
+function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess, showPrompt }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
   const activeRequests = new Map(); // browserSessionId -> AbortControllers
   const painting = new Map(); // browserSessionId -> its first paint after waking
@@ -234,9 +239,26 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
     };
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
-      await manager.waitForPage(browserSessionId);
+      const entry = await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url, stillWanted);
+      let beforeOpen = stillWanted;
+      const intent = request.initiator !== 'user' && authenticationIntentForUrl(url);
+      if (intent) {
+        const { contents, documents } = entry;
+        const currentUrl = contents.getURL();
+        await approveAuthentication(showPrompt, contents, entry, request, intent);
+        beforeOpen = () => {
+          stillWanted();
+          if (
+            entry.contents !== contents ||
+            entry.documents !== documents ||
+            contents.isDestroyed() ||
+            contents.getURL() !== currentUrl
+          )
+            throw new Error('The page changed before the action completed.');
+        };
+      }
+      await manager.open(browserSessionId, url, beforeOpen);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {

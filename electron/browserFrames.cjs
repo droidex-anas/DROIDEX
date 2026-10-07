@@ -208,6 +208,7 @@ async function focusedFrame(dbg) {
 // Whether an element takes typed text.
 const TAKES_TEXT = `function (a) {
   if (!a || a.matches(':disabled') || a.readOnly) return false;
+  if (a.closest('button,input[type="submit"],input[type="button"],input[type="reset"],input[type="image"]')) return false;
   if (a.isContentEditable || a.localName === 'textarea') return true;
   const notText = ['button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'];
   return a.localName === 'input' && !notText.includes(a.type);

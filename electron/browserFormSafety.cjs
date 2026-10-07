@@ -61,16 +61,28 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
     );
     if (submitter) control = submitter;
   }
-  const label = [
-    control.getAttribute('aria-label'),
-    control.getAttribute('title'),
-    control.matches('input[type="submit"],input[type="button"]') ? control.value : '',
-    control.textContent,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .slice(0, 500)
-    .toLowerCase();
+  function accessibleName(control) {
+    const labelledBy = (control.getAttribute('aria-labelledby') || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((id) => control.getRootNode().getElementById(id)?.textContent || '')
+      .join(' ')
+      .trim();
+    const imageAlt = control.matches('input[type="image"]')
+      ? control.getAttribute('alt')
+      : [...control.querySelectorAll('img')].map((image) => image.getAttribute('alt')).join(' ');
+    return [
+      labelledBy,
+      control.getAttribute('aria-label'),
+      imageAlt,
+      control.getAttribute('title'),
+      control.textContent,
+      control.value,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  const label = accessibleName(control).slice(0, 500).toLowerCase();
   const context = `${label} ${form?.textContent?.slice(0, 1000) || ''}`.toLowerCase();
   const fields = form ? [...form.elements] : [];
   const kinds = fields.map(sensitiveKind);

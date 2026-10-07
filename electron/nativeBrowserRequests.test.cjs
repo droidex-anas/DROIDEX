@@ -1,15 +1,23 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { EventEmitter } = require('node:events');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 
 function fixture() {
   const actions = [];
   const events = [];
+  const prompts = [];
+  let answer = async () => ({ response: 1 });
+  const contents = Object.assign(new EventEmitter(), {
+    getURL: () => 'about:blank',
+    isDestroyed: () => false,
+  });
+  const entry = { contents, documents: 1 };
   let enabled = true;
   const manager = {
     waitForPaint: async () => {},
-    waitForPage: async () => {},
+    waitForPage: async () => entry,
     open: async (_id, _url, before) => {
       before();
       actions.push('open');
@@ -23,6 +31,10 @@ function fixture() {
   };
   const requests = createNativeBrowserRequests({
     manager,
+    showPrompt: async (prompt, options) => {
+      prompts.push(prompt);
+      return answer(prompt, options);
+    },
     notifyRenderer: (channel, payload) => events.push({ channel, ...payload }),
     assertAgentAccess: () => {
       if (!enabled)
@@ -30,7 +42,7 @@ function fixture() {
     },
   });
   let sequence = 0;
-  async function send(action, initiator = 'agent') {
+  async function send(action, initiator = 'agent', url) {
     const id = `request-${++sequence}`;
     let reply;
     await requests.handle(
@@ -43,6 +55,7 @@ function fixture() {
           browserSessionId: 'browser',
           action,
           initiator,
+          url,
         },
       },
       (message) => (reply = message.result),
@@ -50,8 +63,55 @@ function fixture() {
     );
     return reply;
   }
-  return { manager, actions, events, requests, send, disable: () => (enabled = false) };
+  return {
+    manager,
+    actions,
+    events,
+    requests,
+    send,
+    prompts,
+    disable: () => (enabled = false),
+    answer: (fn) => {
+      answer = fn;
+    },
+  };
 }
+
+test('agent navigation to sign-in and OAuth URLs requires single-use approval before opening', async () => {
+  for (const path of [
+    '/session?client_id=app&redirect_uri=https%3A%2F%2Fapp.test%2Fcallback',
+    '/session?client_id=app&response_type=code',
+    '/tenant/authorize',
+    '/tenant/%61uthorize',
+    '/oauth2/auth',
+    '/account/sign-in',
+    '/login',
+  ]) {
+    const f = fixture();
+    const url = `https://identity.test${path}`;
+    const denied = await f.send('open', 'agent', url);
+    assert.equal(denied.ok, false, path);
+    assert.match(denied.error, /Sensitive action was denied/);
+    assert.deepEqual(f.actions, []);
+    assert.equal(f.prompts[0].kind, 'credential');
+    assert.match(
+      f.prompts[0].message,
+      /(?:start an OAuth sign-in|submit a sign-in) on https:\/\/identity.test/,
+    );
+
+    f.answer(async () => ({ response: 0 }));
+    assert.equal((await f.send('open', 'agent', url)).ok, true);
+    assert.deepEqual(f.actions, ['open', 'snapshot']);
+    assert.equal(f.prompts.length, 2);
+    assert.equal((await f.send('open', 'user', url)).ok, true);
+    assert.equal(f.prompts.length, 2);
+    assert.equal(
+      (await f.send('open', 'agent', 'https://identity.test/help?client_id=app')).ok,
+      true,
+    );
+    assert.equal(f.prompts.length, 2);
+  }
+});
 
 test('disabled agent requests cannot wake pages or read diagnostics, while closing stays available', async () => {
   const { actions, events, send, disable } = fixture();
