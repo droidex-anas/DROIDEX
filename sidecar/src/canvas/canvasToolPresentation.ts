@@ -21,6 +21,7 @@ export interface ToolProvenance {
 }
 
 export interface CanvasToolBinding {
+  occurrenceId: string;
   toolUseId: string;
   sourceSessionId: string;
   action: CanvasActivity['action'];
@@ -116,8 +117,8 @@ function bindingSource(event: TranscriptEvent): string {
   return event.role === 'primary' ? 'primary' : event.sourceSessionId;
 }
 
-function bindingKey(sourceSessionId: string, toolUseId: string): string {
-  return `${sourceSessionId}\0${toolUseId}`;
+function bindingKey(sourceSessionId: string, toolUseId: string, occurrenceId: string): string {
+  return `${sourceSessionId}\0${toolUseId}\0${occurrenceId}`;
 }
 
 function bindingFrom(
@@ -128,6 +129,7 @@ function bindingFrom(
   const toolName = CANVAS_TOOL_NAMES.find((name) => name === provenance.toolName);
   if (!toolName) return undefined;
   return {
+    occurrenceId: event.id,
     toolUseId: provenance.toolUseId,
     sourceSessionId: bindingSource(event),
     action: ACTIONS[toolName],
@@ -159,28 +161,54 @@ function activity(binding: CanvasToolBinding, event: TranscriptEvent): CanvasAct
 
 export class CanvasToolPresentation {
   private readonly bindings = new Map<string, CanvasToolBinding>();
+  private readonly active = new Map<string, CanvasToolBinding>();
+  private readonly settled = new Set<string>();
 
   constructor(
     bindings: Iterable<CanvasToolBinding> = [],
     private readonly remember?: (binding: CanvasToolBinding) => void,
   ) {
-    for (const binding of bindings)
-      this.bindings.set(bindingKey(binding.sourceSessionId, binding.toolUseId), binding);
+    const candidates = new Map<string, Map<string, CanvasToolBinding>>();
+    for (const binding of bindings) {
+      this.bindings.set(
+        bindingKey(binding.sourceSessionId, binding.toolUseId, binding.occurrenceId),
+        binding,
+      );
+      const key = `${binding.sourceSessionId}\0${binding.toolUseId}`;
+      const occurrences = candidates.get(key) ?? new Map<string, CanvasToolBinding>();
+      occurrences.set(binding.occurrenceId, binding);
+      candidates.set(key, occurrences);
+    }
+    for (const [key, occurrences] of candidates) {
+      if (occurrences.size === 1) {
+        for (const binding of occurrences.values()) this.active.set(key, binding);
+      }
+    }
   }
 
   hasBinding(event: TranscriptEvent): boolean {
     return Boolean(
-      event.toolUseId && this.bindings.has(bindingKey(bindingSource(event), event.toolUseId)),
+      event.toolUseId && this.active.has(`${bindingSource(event)}\0${event.toolUseId}`),
     );
   }
 
   clearBindings(sourceSessionId: string): void {
+    for (const [key, binding] of this.active) {
+      if (binding.sourceSessionId === sourceSessionId) this.active.delete(key);
+    }
     for (const [key, binding] of this.bindings) {
-      if (binding.sourceSessionId === sourceSessionId) this.bindings.delete(key);
+      if (binding.sourceSessionId === sourceSessionId) {
+        this.bindings.delete(key);
+        this.settled.delete(key);
+      }
     }
   }
 
-  project(event: TranscriptEvent, provenance?: ToolProvenance): TranscriptEvent {
+  project(
+    event: TranscriptEvent,
+    provenance?: ToolProvenance,
+    occurrenceId?: string,
+  ): TranscriptEvent {
     if (event.kind !== 'tool_call' && event.kind !== 'tool_result' && event.kind !== 'error')
       return event;
     if (canvasToolName(event.toolName) && !event.toolUseId) {
@@ -195,14 +223,24 @@ export class CanvasToolPresentation {
     }
     provenance ??= canvasToolProvenance(event.toolName, event.toolUseId);
     const toolUseId = event.canvasActivity?.toolUseId ?? event.toolUseId;
-    const key = toolUseId ? bindingKey(bindingSource(event), toolUseId) : undefined;
-    let binding = key ? this.bindings.get(key) : undefined;
-    if (binding && event.toolName && !provenance && !event.canvasActivity) {
-      if (key) this.bindings.delete(key);
+    const source = bindingSource(event);
+    const activeKey = toolUseId ? `${source}\0${toolUseId}` : undefined;
+    if (event.toolName && !provenance && !event.canvasActivity) {
+      if (activeKey) this.active.delete(activeKey);
       return event;
     }
+    let binding = activeKey ? this.active.get(activeKey) : undefined;
+    if (occurrenceId && toolUseId)
+      binding = this.bindings.get(bindingKey(source, toolUseId, occurrenceId));
+    if (
+      event.kind === 'tool_call' &&
+      binding &&
+      this.settled.has(bindingKey(source, binding.toolUseId, binding.occurrenceId))
+    )
+      binding = undefined;
     if (event.canvasActivity && !binding)
       binding = {
+        occurrenceId: occurrenceId ?? event.id,
         toolUseId: event.canvasActivity.toolUseId,
         sourceSessionId: bindingSource(event),
         action: event.canvasActivity.action,
@@ -211,25 +249,32 @@ export class CanvasToolPresentation {
     if (provenance && (event.kind === 'tool_call' || !binding)) {
       const next = bindingFrom(provenance, event);
       if (next) {
+        next.occurrenceId = occurrenceId ?? binding?.occurrenceId ?? event.id;
         let selected = binding;
         if (selected?.action !== next.action) selected = next;
-        else if (next.designIds.length) {
+        else {
           selected = {
             ...selected,
+            occurrenceId: next.occurrenceId,
             designIds: [...new Set([...selected.designIds, ...next.designIds])],
           };
         }
         if (
-          binding?.action !== selected.action ||
+          binding?.occurrenceId !== selected.occurrenceId ||
+          binding.action !== selected.action ||
           binding.designIds.join() !== selected.designIds.join()
         ) {
           binding = selected;
           this.remember?.(binding);
-          this.bindings.set(bindingKey(binding.sourceSessionId, binding.toolUseId), binding);
+          this.bindings.set(
+            bindingKey(binding.sourceSessionId, binding.toolUseId, binding.occurrenceId),
+            binding,
+          );
         }
       }
     }
     if (!binding) return event;
+    if (activeKey) this.active.set(activeKey, binding);
     if (event.kind === 'tool_result') {
       const { designIds: ids, revisionId, frameNames } = resultReferences(event.text);
       const knownIds = binding.designIds;
@@ -246,10 +291,16 @@ export class CanvasToolPresentation {
           ...(frameNames ? { frameNames } : {}),
         };
         this.remember?.(binding);
-        this.bindings.set(bindingKey(binding.sourceSessionId, binding.toolUseId), binding);
+        this.bindings.set(
+          bindingKey(binding.sourceSessionId, binding.toolUseId, binding.occurrenceId),
+          binding,
+        );
+        if (activeKey) this.active.set(activeKey, binding);
       }
     }
     const shown = activity(binding, event);
+    if (event.kind !== 'tool_call')
+      this.settled.add(bindingKey(source, binding.toolUseId, binding.occurrenceId));
     return {
       ...event,
       kind: event.kind === 'error' ? 'tool_result' : event.kind,

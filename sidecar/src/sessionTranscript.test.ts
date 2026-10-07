@@ -11,6 +11,8 @@ import {
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import type { TranscriptEvent } from './protocol.js';
+import { SessionEventFlow } from './SessionEventFlow.js';
+import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'droid-transcript-'));
 let fileCount = 0;
@@ -151,6 +153,84 @@ test('corrupt lines are skipped without losing their neighbors', () => {
     all.map((e) => e.text),
     ['a1', 'a2'],
   );
+});
+
+test('Canvas results with reused tool IDs project by occurrence regardless of page traversal', () => {
+  const appSessionId = 'canvas-reused-occurrence';
+  const flow = new SessionEventFlow({
+    appendTranscript: () => undefined,
+    flushTranscript: () => undefined,
+    applySideEffects: () => undefined,
+    resolveChildScope: () => undefined,
+    recordUsage: () => undefined,
+  });
+  const tool = 'droidex-canvas___canvas_write';
+  const call = (name: string, designId = 'design-1') => ({
+    type: 'tool_use' as const,
+    id: 'same',
+    name,
+    input: { designId },
+  });
+  const result = (content: string) => ({ type: 'tool_result', tool_use_id: 'same', content });
+  const line = (id: string, role: string, content: unknown[]) =>
+    JSON.stringify({
+      type: 'message',
+      id,
+      timestamp: new Date(1000).toISOString(),
+      message: { role, content },
+    });
+  flow.beginTurn(appSessionId, appSessionId);
+  flow.applyStreamEvent(appSessionId, appSessionId, 'primary', {
+    type: 'tool_call',
+    toolUse: call(tool),
+  });
+  flow.applyStreamEvent(appSessionId, appSessionId, 'primary', {
+    type: 'tool_result',
+    toolName: tool,
+    toolUseId: 'same',
+    content: 'CANVAS_INTERNAL_GUIDANCE_7E4B',
+    isError: false,
+  });
+  flow.beginTurn(appSessionId, appSessionId);
+  flow.applyStreamEvent(appSessionId, appSessionId, 'primary', {
+    type: 'tool_call',
+    toolUse: call(tool, 'design-2'),
+  });
+  const bindings = readCanvasToolBindings(appSessionId);
+  assert.equal(new Set(bindings.map((binding) => binding.occurrenceId)).size, 2);
+  const path = writeSession([
+    line('call-1', 'assistant', [call(tool)]),
+    line('result-1', 'user', [result('CANVAS_INTERNAL_GUIDANCE_7E4B')]),
+    userMessage('Next turn'),
+    line('call-2', 'assistant', [call('Bash')]),
+    line('result-2', 'user', [result('ordinary output')]),
+    userMessage('Another Canvas turn'),
+    line('call-3', 'assistant', [call(tool, 'design-2')]),
+    line('result-3', 'user', [result('CANVAS_INTERNAL_GUIDANCE_7E4B')]),
+  ]);
+  const r = new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary');
+  const newest = r.windowBackward(4, 0);
+  assert.equal(newest.events[0]?.text, 'ordinary output');
+  assert.equal(newest.events[0]?.canvasActivity, undefined);
+  const older = r.windowBackward(20, 0, newest.older);
+  assert.equal(older.events.find((entry) => entry.kind === 'tool_result')?.text, 'Updated design');
+  for (const events of [
+    r.windowBackward(20, 0).events,
+    new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary').windowBackward(20, 0)
+      .events,
+    parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary'),
+  ]) {
+    assert.deepEqual(
+      events.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
+      ['Updated design', 'ordinary output', 'Updated design'],
+    );
+    assert.deepEqual(
+      events
+        .filter((entry) => entry.kind === 'tool_result')
+        .map((entry) => entry.canvasActivity?.designIds),
+      [['design-1'], undefined, ['design-2']],
+    );
+  }
 });
 
 test('eager and paged replay hide internal user messages and restore skill activations', () => {

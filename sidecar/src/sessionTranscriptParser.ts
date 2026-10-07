@@ -203,7 +203,9 @@ export function parseSessionLineEvents(
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
-  canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId)),
+  canvas: CanvasToolPresentation | null = new CanvasToolPresentation(
+    readCanvasToolBindings(appSessionId),
+  ),
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -291,8 +293,13 @@ export function parseSessionLineEvents(
         : nonAssistantBlockEvent(base, index, block, messageRole);
     if (parsed) events.push(parsed);
   });
+  if (!canvas) return events;
   return events.map((entry) =>
-    canvas.project(entry, canvasToolProvenance(entry.toolName, entry.toolUseId)),
+    canvas.project(
+      entry,
+      canvasToolProvenance(entry.toolName, entry.toolUseId),
+      entry.kind === 'tool_call' ? entry.id : undefined,
+    ),
   );
 }
 

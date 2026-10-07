@@ -324,7 +324,7 @@ function nativeDroidFile(path: string): void {
         {
           type: 'tool_result',
           tool_use_id: 'call-1',
-          content: JSON.stringify({ designId: 'design-1', source: CANARY }),
+          content: JSON.stringify({ designId: 'design-1', revisionId: 'rev-1', source: CANARY }),
         },
       ]),
       line('failure', 'assistant', [

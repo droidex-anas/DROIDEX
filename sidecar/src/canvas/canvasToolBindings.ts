@@ -45,6 +45,8 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
       const value = objectValue(JSON.parse(line));
       if (
         !value ||
+        typeof value.occurrenceId !== 'string' ||
+        !value.occurrenceId ||
         typeof value.toolUseId !== 'string' ||
         !value.toolUseId ||
         typeof value.sourceSessionId !== 'string' ||
@@ -66,6 +68,7 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
         (name): name is string => typeof name === 'string' && safeFrameName(name) === name,
       );
       bindings.push({
+        occurrenceId: value.occurrenceId,
         toolUseId: value.toolUseId,
         sourceSessionId: value.sourceSessionId,
         action,

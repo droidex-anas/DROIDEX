@@ -16,7 +16,11 @@ import {
 } from './sessionTranscriptParser.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { readSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
-import { CanvasToolPresentation } from './canvas/canvasToolPresentation.js';
+import {
+  CanvasToolPresentation,
+  canvasToolProvenance,
+  type CanvasToolBinding,
+} from './canvas/canvasToolPresentation.js';
 import { canvasToolBindingsRevision, readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 
 // Stored-row shapes are owned by the parser module but re-exported here so
@@ -177,7 +181,7 @@ export class SessionTranscriptReader {
   private readonly notices: TranscriptEvent[];
   private readonly lineStarts: number[];
   private readonly parsedLines = new Map<number, TranscriptEvent[]>();
-  private readonly canvas: CanvasToolPresentation;
+  private readonly canvasBindings: CanvasToolBinding[];
 
   constructor(
     private readonly appSessionId: string,
@@ -191,7 +195,7 @@ export class SessionTranscriptReader {
     this.lineStarts = scanLineStarts(path, stat.size);
     this.noticesRevision = sessionNoticesRevision(providerSessionId);
     this.canvasBindingsRevision = canvasToolBindingsRevision(appSessionId);
-    this.canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
+    this.canvasBindings = readCanvasToolBindings(appSessionId);
     this.notices = this.noticesRevision
       ? readSessionNotices(appSessionId, providerSessionId, role)
       : [];
@@ -256,7 +260,7 @@ export class SessionTranscriptReader {
         notice -= 1;
       } else if (candidate) {
         if (!candidate.spoken || !seenSpoken.has(candidate.id)) {
-          collected.push(candidate);
+          collected.push(this.projectEvent(file, line, candidate));
           if (candidate.spoken) seenSpoken.add(candidate.id);
         }
         skip += 1;
@@ -272,6 +276,28 @@ export class SessionTranscriptReader {
         ? { older: { line, skip, ...(this.notices.length ? { notice } : {}) } }
         : {}),
     };
+  }
+
+  private projectEvent(file: LazyFile, line: number, candidate: TranscriptEvent): TranscriptEvent {
+    if (candidate.kind !== 'tool_call' && candidate.kind !== 'tool_result') return candidate;
+    const canvas = new CanvasToolPresentation(this.canvasBindings);
+    if (candidate.kind === 'tool_call' || candidate.canvasActivity || !candidate.toolUseId)
+      return canvas.project(candidate, undefined, candidate.id);
+    // Resolve against the preceding occurrence, not whichever page was visited
+    // last. Calls outside the requested page remain available through the memo.
+    for (let index = line; index >= 0; index -= 1) {
+      const events = this.parseLine(file, index);
+      const before = index === line ? events.indexOf(candidate) : events.length;
+      for (let block = before - 1; block >= 0; block -= 1) {
+        const call = events[block];
+        if (call.kind !== 'tool_call' || call.toolUseId !== candidate.toolUseId) continue;
+        const provenance = canvasToolProvenance(call.toolName, call.toolUseId);
+        if (!provenance && !call.canvasActivity) return candidate;
+        canvas.project(call, provenance, call.id);
+        return canvas.project(candidate, undefined, call.id);
+      }
+    }
+    return canvas.project(candidate);
   }
 
   private parseLine(file: LazyFile, index: number): TranscriptEvent[] {
@@ -295,7 +321,7 @@ export class SessionTranscriptReader {
             this.providerSessionId,
             this.role,
             JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
-            this.canvas,
+            null,
           );
         } catch {
           /* skip partial/corrupt JSONL rows */
