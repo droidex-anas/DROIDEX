@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Code2, Globe, KeyRound, type LucideIcon } from 'lucide-react';
-import { useEffect, useId, useRef, type CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { BrowserPermissionPrompt } from '../../lib/browserPrompt';
 import { BrowserPromptActions, BrowserPromptDeadline } from './BrowserPromptActions';
@@ -22,15 +22,6 @@ function siteLabel(origin: string): string {
   }
 }
 
-// Taking focus while the user types would let Enter answer by accident.
-function isTyping(element: Element | null): boolean {
-  if (!(element instanceof HTMLElement)) return false;
-  return (
-    element.isContentEditable ||
-    ['INPUT', 'TEXTAREA', 'WEBVIEW', 'IFRAME'].includes(element.tagName)
-  );
-}
-
 // Over the top-right corner of the page the browser pane shows, anchored to the
 // same slot as the page itself.
 function paneStyle(anchor: string): CSSProperties {
@@ -45,8 +36,8 @@ function paneStyle(anchor: string): CSSProperties {
 
 /**
  * An agent's browser request: a compact card over the browser pane, or in the
- * window's top-right corner when no pane is showing. Escape declines while the
- * card has focus.
+ * window's top-right corner when no pane is showing. It never takes focus: it
+ * answers a click, or Enter and Escape once the user has moved focus into it.
  */
 export function BrowserPromptCard({
   prompt,
@@ -57,24 +48,16 @@ export function BrowserPromptCard({
   paneAnchor: string | null;
   onAnswer: (requestId: string, response: number) => void;
 }) {
-  const cardRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const messageId = useId();
+  const detailId = useId();
   const Icon = KIND_ICON[prompt.kind];
-
-  useEffect(() => {
-    if (isTyping(document.activeElement)) return;
-    cardRef.current
-      ?.querySelector<HTMLElement>('[data-default-action]')
-      ?.focus({ preventScroll: true });
-  }, []);
 
   return createPortal(
     <motion.div
-      ref={cardRef}
       role="alertdialog"
       aria-labelledby={titleId}
-      aria-describedby={messageId}
+      aria-describedby={`${messageId} ${detailId}`}
       style={paneAnchor ? paneStyle(paneAnchor) : undefined}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
@@ -106,7 +89,7 @@ export function BrowserPromptCard({
             {prompt.message}
           </p>
           {prompt.detail && (
-            <p className="mt-1 text-[11.5px] leading-[17px] text-droid-text-muted">
+            <p id={detailId} className="mt-1 text-[11.5px] leading-[17px] text-droid-text-muted">
               {prompt.detail}
             </p>
           )}

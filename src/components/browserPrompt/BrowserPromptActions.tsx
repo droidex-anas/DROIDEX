@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BrowserPermissionPrompt } from '../../lib/browserPrompt';
 
 const BUTTON =
@@ -18,10 +18,18 @@ function buttonStyle(prompt: BrowserPermissionPrompt, response: number, primary:
   return 'bg-droid-accent text-droid-bg hover:opacity-90 focus-visible:ring-droid-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-droid-raised';
 }
 
+function secondsLeft(expiresAt: number): number {
+  return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+}
+
+function formatSeconds(seconds: number): string {
+  return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 /**
- * The prompt's buttons, first on the right as in a native dialog. The first
- * non-cancel button is the primary one; the default button takes focus, so
- * Enter answers with it.
+ * The prompt's buttons, first on the right as in a native dialog, with the
+ * time left before main answers with the cancel action. The first non-cancel
+ * button is the primary one.
  */
 export function BrowserPromptActions({
   prompt,
@@ -30,22 +38,37 @@ export function BrowserPromptActions({
   prompt: BrowserPermissionPrompt;
   onAnswer: (requestId: string, response: number) => void;
 }) {
+  const [remaining, setRemaining] = useState(() => secondsLeft(prompt.expiresAt));
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRemaining(secondsLeft(prompt.expiresAt));
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [prompt.expiresAt]);
+
   const primary = prompt.buttons.findIndex((_, response) => response !== prompt.cancelId);
   return (
-    <div className="flex flex-row-reverse flex-wrap items-center gap-1.5">
-      {prompt.buttons.map((label, response) => (
-        <button
-          key={`${String(response)}-${label}`}
-          type="button"
-          data-default-action={response === prompt.defaultId ? true : undefined}
-          onClick={() => {
-            onAnswer(prompt.requestId, response);
-          }}
-          className={`${BUTTON} ${buttonStyle(prompt, response, primary)}`}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="flex items-center gap-3">
+      <span className="min-w-0 flex-1 text-[11px] tabular-nums text-droid-text-muted">
+        Expires in {formatSeconds(remaining)}
+      </span>
+      <div className="flex flex-row-reverse flex-wrap items-center gap-1.5">
+        {prompt.buttons.map((label, response) => (
+          <button
+            key={`${String(response)}-${label}`}
+            type="button"
+            data-default-action={response === prompt.defaultId ? true : undefined}
+            onClick={() => {
+              onAnswer(prompt.requestId, response);
+            }}
+            className={`${BUTTON} ${buttonStyle(prompt, response, primary)}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -206,11 +206,7 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
 
   // ── Browser ──────────────────────────────────────────────────────────────
   e('Browser', 'Agent browser access', ['native browser', 'web browser', 'browser pane', 'agents']),
-  e('Browser', 'Website opening approval', ['navigation', 'sites', 'approval', 'autonomy']),
   e('Browser', 'Agent login fill', ['saved logins', 'passwords', 'credentials', 'sign in']),
-  e('Browser', 'Show DROIDEX agent cursor', ['pointer', 'cursor']),
-  e('Browser', 'Ask where to save downloads', ['downloads', 'save dialog']),
-  e('Browser', 'Agent diagnostics', ['developer tools', 'devtools', 'console', 'network']),
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   ...SHORTCUT_DEFINITIONS.map((definition) =>

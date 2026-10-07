@@ -1,8 +1,4 @@
-export type BrowserNavigationApproval =
-  | 'follow_autonomy'
-  | 'always_ask'
-  | 'new_sites'
-  | 'never_ask';
+type BrowserNavigationApproval = 'follow_autonomy' | 'always_ask' | 'new_sites' | 'never_ask';
 export type BrowserLoginFillApproval = 'always_ask' | 'never';
 type BrowserSitePermissionMode = 'block' | 'ask';
 
@@ -51,24 +47,4 @@ export interface BrowserSettingsCommands {
   browserCredentialsDelete: (origin: string) => Promise<BrowserCredentialsSnapshot>;
   browserSettingsGet: () => Promise<BrowserSettingsSnapshot>;
   browserSettingsUpdate: (patch: BrowserSettingsPatch) => Promise<BrowserSettingsSnapshot>;
-}
-
-function settingsApi(): BrowserSettingsCommands {
-  const api = window.droidControl;
-  if (!api) throw new Error('Browser settings are available in the DROIDEX desktop app.');
-  return api;
-}
-
-export async function loadBrowserSettings(): Promise<BrowserSettingsSnapshot> {
-  return settingsApi().browserSettingsGet();
-}
-
-/**
- * Resolves with the saved snapshot. A change that reduces protection waits for
- * the user's answer in the prompt UI and resolves unchanged if they decline.
- */
-export async function saveBrowserSettings(
-  patch: BrowserSettingsPatch,
-): Promise<BrowserSettingsSnapshot> {
-  return settingsApi().browserSettingsUpdate(patch);
 }

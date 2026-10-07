@@ -16,7 +16,8 @@ function createBrowserPromptController(options) {
     if (requestOptions.signal?.aborted)
       return Promise.resolve({ response: prompt.cancelId, cancelled: true });
     // Without a window there is no one to ask, now or later.
-    if (!options.isAvailable()) return Promise.resolve({ response: prompt.cancelId, cancelled: true });
+    if (!options.isAvailable())
+      return Promise.resolve({ response: prompt.cancelId, cancelled: true });
     expireQueuedPrompts();
     if ((active || !rendererReady) && queue.length >= maxQueuedPrompts) {
       return Promise.resolve({ response: prompt.cancelId, cancelled: true });

@@ -23,6 +23,11 @@ export interface BrowserPromptCommands {
   onBrowserPermissionPromptDismiss: (handler: (requestId: string) => void) => () => void;
 }
 
+// An unregistration waiting out the current task. StrictMode replays effects as
+// unmount then mount; telling main "not ready" in between would cancel the
+// prompt on screen, so a registration in the same task cancels it instead.
+let pendingUnregister: ReturnType<typeof setTimeout> | null = null;
+
 /**
  * Registers the app's one prompt UI with main: both listeners first, then
  * ready. The returned cleanup unregisters, which cancels any open prompt.
@@ -35,21 +40,22 @@ export function registerBrowserPromptUi(
   if (!api) return () => undefined;
   const stopPrompt = api.onBrowserPermissionPrompt(onPrompt);
   const stopDismiss = api.onBrowserPermissionPromptDismiss(onDismiss);
-  api.browserPermissionPromptReady(true).catch((error: unknown) => {
-    console.error('Could not register the browser prompt UI.', error);
-  });
+  if (pendingUnregister) {
+    clearTimeout(pendingUnregister);
+    pendingUnregister = null;
+  } else {
+    api.browserPermissionPromptReady(true).catch((error: unknown) => {
+      console.error('Could not register the browser prompt UI.', error);
+    });
+  }
   return () => {
     stopPrompt();
     stopDismiss();
-    api.browserPermissionPromptReady(false).catch((error: unknown) => {
-      console.error('Could not unregister the browser prompt UI.', error);
-    });
+    pendingUnregister = setTimeout(() => {
+      pendingUnregister = null;
+      api.browserPermissionPromptReady(false).catch((error: unknown) => {
+        console.error('Could not unregister the browser prompt UI.', error);
+      });
+    }, 0);
   };
-}
-
-/** False when main no longer has this prompt open, such as after its deadline. */
-export async function answerBrowserPrompt(requestId: string, response: number): Promise<boolean> {
-  const api = window.droidControl;
-  if (!api) return false;
-  return api.browserPermissionPromptResolve(requestId, response);
 }
