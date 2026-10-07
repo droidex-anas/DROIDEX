@@ -1094,6 +1094,69 @@ Settled by 05b (`canvas/05b-board-geometry-and-gestures`, landed in
 - Verified by driving the real board in Chromium: the zoom anchor holds to 0.0007 px of drift read off the live transform, a released drag produced exactly one `arrangeFrames` with the correct world-unit delta, Escape restored the acknowledged rect and committed nothing, Fit returned 128% to the fitted 88%, and reduced motion landed Fit within one frame. Light and dark both inspected. Entry chunk unchanged (1,431,743 bytes with and without these files); initial CSS +36 bytes.
 - Left to 5c and 5d: Select/Interact and the mode that drives `capturePointer`, selection, multiselect, resize, align/distribute, keyboard nudge, the frame context menu, the live `DesignPreview` slots, and the navigator.
 
+Settled by 05c (`canvas/05c-frames-selection-previews`, landed in
+`src/features/canvas/{DesignFrame.tsx,BoardControls.tsx,CanvasPaneStates.tsx,previewSlots.ts,useBoardGestures.ts,useBoardViewport.ts,useFrameLayout.ts,canvasGeometry.ts,canvasState.ts,CanvasBoard.tsx,CanvasWorkspace.tsx,previewLabels.ts}`):
+
+- The names 5d consumes are in `canvasState.ts`: `BoardInteraction` holds `mode`
+  (`'select' | 'interact'`), `selectedFrameIds` (in pick order) and
+  `interactedFrameId`; `reduceBoardInteraction` is the only way to change them;
+  `SELECT_MODE` is the resting value. `BoardHandle.focusFrame(designId)` is how a
+  sibling moves the board — the navigator calls it, as the pane already does for
+  an opener's `frameId`. `CanvasWorkspace` owns the state and passes
+  `interaction` / `onInteractionChange` / `boardRef` down, so the toolbar and the
+  navigator read the same values the board does without reaching into it.
+- Spec §4's two steps out of Interact are literal: Escape leaves Interact and
+  keeps the selection, Escape again clears it, and an Escape with a gesture in
+  flight is spent cancelling that gesture instead. Picking while interacting
+  moves Interact to the frame picked; picking several leaves Interact, because
+  it drives one frame. Nothing may point at a design the canvas has lost.
+- Slot policy (spec §11, at most four live previews): the interacted frame
+  first, then selected frames that are visible, then frames already live and
+  still visible, then the rest of what is visible, nearest the board's centre
+  first. Keeping a mounted preview mounted outranks mounting a nearer one, so
+  panning does not churn guests. A frame that held a slot and lost it says so
+  rather than silently reloading, because the design restarts from its own
+  beginning; `unmountedLabel` carries that line and the honest waiting line for
+  a frame with nothing built yet. `visibleDesignIds` is the only input that
+  measures the board, so the policy itself is pure.
+- The frame header is the keyboard's way onto the board: it is a `role="button"`
+  tab stop reporting `aria-pressed`, Enter picks it and Enter on the frame
+  already picked starts interacting, Space toggles it in a multiple selection,
+  and the board reads arrows, Escape and Enter from whichever header holds focus.
+  A control, an input or an editor inside the board keeps its own keys.
+- Every layout write — a released drag or resize, a nudge, an align, a
+  distribute — goes through `useFrameLayout.place` as one `arrangeFrames` with
+  the `expectedLayoutVersion` each frame was read at. `reducePendingRects` owns
+  the renderer's side of the CAS: the committed rect is drawn until the sidecar
+  publishes a newer layout version, any newer version is the answer whatever
+  rect it settled on, a refusal drops only its own rects, and a frame the canvas
+  has lost keeps none. Frames an operation did not actually move are left out of
+  the write.
+- Nudge is 1 world unit, 10 with Shift, in world units rather than screen
+  pixels so a nudge means the same thing at every zoom. Resize is east, south
+  and southeast, clamped to the dimensions the sidecar accepts (120 to 8192).
+  Align uses the selection's own bounds and never resizes; distribute equalises
+  the gaps between the outermost two and leaves fewer than three frames alone.
+- `CanvasBoard` owns no state: the viewport is `useBoardViewport`, the hand's
+  gesture `useBoardGestures` (pointer capture, one transform per animation
+  frame, release / cancel / lost-capture), layout `useFrameLayout`, mode and
+  selection `canvasState`, slots `previewSlots`, the strip `BoardControls`.
+  `CanvasPaneStates` took the pane's non-board states out of `CanvasWorkspace`,
+  which 05c had pushed to 529 lines; every production file here is now under 500.
+- Measured after the change: initial CSS 101,409 bytes against the 101,500
+  budget, initial renderer JS 1,433,626 against 1,434,000, and no board string
+  in the entry chunk — Canvas is still entirely lazy. The selection ring and the
+  resize handles reuse accent alphas the app already emits (`/30`, `/70`)
+  instead of minting new ones, which is what brought CSS back under its line.
+- Not verified: light and dark pixels. The board renders and behaves correctly
+  in a real Electron renderer (mode flip, overlay removal, the two Escapes, the
+  header tab stops were all read off the live DOM), but every screenshot of a
+  filled full-viewport subtree came back as flat 128/128/128 in both headless
+  Chromium and Electron on this machine, and macOS screen capture is not
+  permitted here. A hand-written mimic containing none of this subtask's code
+  reproduces it, so it is the capture path rather than the board. 5d should look
+  at the board in the running app before building on top of it.
+
 ## Task 6: Canvas artifacts in every chat
 
 **Subtasks (one branch and PR each, merged in order):**
