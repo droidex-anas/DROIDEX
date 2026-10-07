@@ -80,7 +80,7 @@ export default function BrowserWorkspace({
   const browserError = browserKey ? state.browserErrors[browserKey] : state.browserGlobalError;
   const designMode = isDesignModeOpen(state.designModes, browserKey);
   const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
-  const agentPresence = useBrowserAgentPresence(browser?.browserSessionId);
+  const agentPresence = useBrowserAgentPresence([browser?.browserSessionId]);
   const designMarks = useDesignMarks(browserKey);
   const nativeBrowser = isDesktop();
   const frameRef = useRef<HTMLDivElement>(null);

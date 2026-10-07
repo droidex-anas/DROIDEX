@@ -19,9 +19,9 @@ interface TabItem {
   id: string;
   kind: FocusedPage['kind'];
   label: string;
-  // Chat tabs only: the chat's browser page (a split tab's focused chat's), its
-  // harness mark, and whether a turn is running.
-  browserSessionId?: string;
+  // Chat tabs only: the chats' browser pages (every tile's in a split tab),
+  // the harness mark, and whether a turn is running.
+  browserSessionIds: string[];
   provider: ProviderKind | null;
   live: boolean;
   // A split tab names every tile in its tooltip and shows its tile count.
@@ -68,7 +68,7 @@ const VIEW_LABELS = {
 } as const;
 
 function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
-  const item = { id, provider: null, live: false, tileCount: 1 };
+  const item = { id, browserSessionIds: [], provider: null, live: false, tileCount: 1 };
   if (page.kind !== 'chat') {
     const label = VIEW_LABELS[page.kind];
     return { ...item, kind: page.kind, label, title: label };
@@ -81,9 +81,9 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   return {
     ...item,
     kind: 'chat',
-    browserSessionId: Object.hasOwn(state.browsers, page.appSessionId)
-      ? state.browsers[page.appSessionId].browserSessionId
-      : undefined,
+    browserSessionIds: Object.hasOwn(state.browsers, page.appSessionId)
+      ? [state.browsers[page.appSessionId].browserSessionId]
+      : [],
     label,
     title: label,
     provider: session.provider,
@@ -91,13 +91,15 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   };
 }
 
-// A split tab reads as its focused tile, and is live while any tile is.
+// A split tab reads as its focused tile, and is live, or at work in a
+// browser, while any tile is.
 function tabItem(state: AppState, id: string, page: TabPage): TabItem {
   if (page.kind !== 'tiles') return pageItem(state, id, page);
   const items = gridTiles(page.grid).map((tile) => pageItem(state, id, tile.page));
   return {
     ...pageItem(state, id, focusedTile(page.grid).page),
     live: items.some((item) => item.live),
+    browserSessionIds: items.flatMap((item) => item.browserSessionIds),
     title: items.map((item) => item.label).join(', '),
     tileCount: items.length,
   };
@@ -118,7 +120,7 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
       return (
         item.id === other.id &&
         item.kind === other.kind &&
-        item.browserSessionId === other.browserSessionId &&
+        item.browserSessionIds.join() === other.browserSessionIds.join() &&
         item.label === other.label &&
         item.provider === other.provider &&
         item.live === other.live &&
@@ -129,25 +131,26 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
   );
 }
 
+// An agent at work in a browser of the tab's chats shows on the tab unless
+// that page is in front of the reader already.
 function TabGlyph({ item, active }: { item: TabItem; active: boolean }) {
+  return (
+    <ChatBrowserWorkingMark
+      browserSessionIds={item.browserSessionIds}
+      whenShown={!active}
+      className="h-[13px] w-[13px]"
+      fallback={<PageGlyph item={item} />}
+    />
+  );
+}
+
+function PageGlyph({ item }: { item: TabItem }) {
   switch (item.kind) {
-    case 'chat': {
-      const glyph = item.live ? (
-        <Spinner size={13} className="motion-safe:animate-spin-slow" />
-      ) : (
-        item.provider && <ModelIcon provider={PROVIDER_MARKS[item.provider]} size={13} />
-      );
-      // An agent at work in the chat's browser shows on the tab unless the
-      // page is in front of the reader already.
-      return (
-        <ChatBrowserWorkingMark
-          browserSessionId={item.browserSessionId}
-          whenShown={!active}
-          className="h-[13px] w-[13px]"
-          fallback={glyph}
-        />
-      );
-    }
+    case 'chat':
+      if (item.live) return <Spinner size={13} className="motion-safe:animate-spin-slow" />;
+      return item.provider ? (
+        <ModelIcon provider={PROVIDER_MARKS[item.provider]} size={13} />
+      ) : null;
     case 'new-chat':
       return <SquarePen className="h-3.5 w-3.5" />;
     case 'projects':

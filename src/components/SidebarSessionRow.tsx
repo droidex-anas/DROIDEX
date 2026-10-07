@@ -158,7 +158,7 @@ export const SessionRow = memo(function SessionRow({
   );
   const timeTone = unread ? 'text-droid-text font-medium' : 'text-droid-text-muted';
   // Beside the status: an agent at work in the chat's browser, seen from anywhere.
-  const browserMark = <ChatBrowserWorkingMark browserSessionId={browserSessionId} whenShown />;
+  const browserMark = <ChatBrowserWorkingMark browserSessionIds={[browserSessionId]} whenShown />;
 
   // Return focus to the row when the inline editor closes, unless the user
   // already moved focus elsewhere (e.g. clicked another row).

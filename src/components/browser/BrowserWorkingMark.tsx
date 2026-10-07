@@ -27,22 +27,22 @@ export function BrowserWorkingMark({ className = '' }: { className?: string }) {
 }
 
 /**
- * The mark for a chat's browser page while an agent's turn uses it: always
- * when the page is out of sight, and also while the pane shows it when
+ * The mark for chat browser pages while an agent's turn uses one: always when
+ * that page is out of sight, and also while the pane shows it when
  * `whenShown` is set. Otherwise it is `fallback`.
  */
 export function ChatBrowserWorkingMark({
-  browserSessionId,
+  browserSessionIds,
   whenShown,
   className,
   fallback = null,
 }: {
-  browserSessionId?: string;
+  browserSessionIds: readonly (string | undefined)[];
   whenShown: boolean;
   className?: string;
   fallback?: ReactNode;
 }) {
-  const presence = useBrowserAgentPresence(browserSessionId);
+  const presence = useBrowserAgentPresence(browserSessionIds);
   if (presence === 'none' || (presence === 'shown' && !whenShown)) return fallback;
   return <BrowserWorkingMark className={className} />;
 }

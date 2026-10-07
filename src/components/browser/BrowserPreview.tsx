@@ -43,7 +43,7 @@ export function BrowserPreview({
   const [onScreen, setOnScreen] = useState(false);
   const [width, setWidth] = useState(0);
   const visible = useDocumentVisible();
-  const present = useBrowserAgentPresence(browserSessionId) !== 'none';
+  const present = useBrowserAgentPresence([browserSessionId]) !== 'none';
 
   useEffect(() => {
     const box = boxRef.current;
@@ -101,7 +101,9 @@ export function BrowserPreview({
             key={browserSessionId}
             browserSessionId={browserSessionId}
             scale={fit}
-            shown={live && frame !== null}
+            // Off screen or with the window hidden it is not drawn, and
+            // takes no points.
+            shown={live && frame !== null && onScreen && visible}
             present={present}
             step={step}
             rest={frame ? { x: frame.width / 2, y: frame.height / 2 } : undefined}

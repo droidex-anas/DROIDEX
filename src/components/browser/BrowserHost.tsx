@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { BrowserAgentCursor } from './BrowserAgentCursor';
 import {
   closeBrowserPage,
   isBrowserPageAwake,
-  releaseBrowserPageAgent,
+  engageBrowserPage,
+  releaseBrowserPage,
   setBrowserPageCrashed,
   setBrowserPageWorking,
   useBrowserHost,
@@ -15,6 +16,7 @@ import {
 import { browserStepLabel } from '../../lib/browserTools';
 import { addDesignReference } from '../../lib/commands';
 import { sessionIsLive } from '../../lib/sessions';
+import { currentTurn } from './browserTurn';
 import {
   addDesignMark,
   attachDesignShot,
@@ -41,8 +43,22 @@ interface PageSize {
 }
 
 const DEFAULT_PAGE_SIZE: PageSize = { width: 1280, height: 800 };
-// Enough of a chat's newest events to find the browser step in flight.
-const STEP_EVENTS = 40;
+const NO_EVENTS: AppState['transcripts'][string] = [];
+
+// The turn each page's chat has running, named by the prompt that opened it,
+// as [page, turn] pairs. A chat with no turn running has none, so work from
+// a turn that has ended, or from an earlier one, never counts as current.
+function selectLiveTurns(state: AppState): string {
+  const pairs = Object.entries(state.browsers).flatMap(([appSessionId, browser]) => {
+    const session = Object.hasOwn(state.sessions, appSessionId)
+      ? state.sessions[appSessionId]
+      : undefined;
+    if (!session || !sessionIsLive(session)) return [];
+    const transcript = state.transcripts[appSessionId] ?? NO_EVENTS;
+    return [[browser.browserSessionId, currentTurn(transcript).start?.id ?? '']];
+  });
+  return JSON.stringify(pairs);
+}
 
 /**
  * The Browser host layer: every live chat browser page, mounted once at the
@@ -70,26 +86,21 @@ export function BrowserHost() {
       ),
     [browsers],
   );
-  // The pages whose chat has a turn running, one id after another.
-  const livePages = useStoreSelector((state) =>
-    Object.entries(state.browsers)
-      .filter(([appSessionId]) => {
-        const session = Object.hasOwn(state.sessions, appSessionId)
-          ? state.sessions[appSessionId]
-          : undefined;
-        return session !== undefined && sessionIsLive(session);
-      })
-      .map(([, browser]) => browser.browserSessionId)
-      .join(' '),
+  const liveTurnsJson = useStoreSelector(selectLiveTurns);
+  const liveTurns = useMemo(
+    () => new Map(JSON.parse(liveTurnsJson) as [string, string][]),
+    [liveTurnsJson],
   );
+  const liveTurnsRef = useRef(liveTurns);
+  liveTurnsRef.current = liveTurns;
 
-  // An agent's turn holds on to its page between steps; once the chat's turn
-  // is over and no request is left on the page, the agent is done with it.
+  // A request ties the page to the turn running in its chat, which holds on
+  // to it between steps. Once that turn is over or another has begun, and no
+  // request is left on the page, the agent is done with it.
   useEffect(() => {
-    const live = new Set(livePages.split(' '));
-    for (const browserSessionId of Object.keys(host.engaged))
-      if (!live.has(browserSessionId)) releaseBrowserPageAgent(browserSessionId);
-  }, [livePages, host.engaged, host.working]);
+    for (const [browserSessionId, turn] of Object.entries(host.engaged))
+      if (liveTurns.get(browserSessionId) !== turn) releaseBrowserPage(browserSessionId);
+  }, [liveTurns, host.engaged, host.working]);
 
   // Marks picked in a browser go when it closes. Marks a queued prompt brings
   // back to the composer after that stay: they are its own snapshots.
@@ -112,6 +123,8 @@ export function BrowserHost() {
       const appSessionId = appSessionIdFor(browserSessionId);
       const saved = appSessionId ? browsersRef.current[appSessionId] : undefined;
       setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
+      if (working)
+        engageBrowserPage(browserSessionId, liveTurnsRef.current.get(browserSessionId) ?? '');
     };
     const heard = new Set<string>();
     // Picks waiting on their crop, by main's number for the pick.
@@ -218,9 +231,10 @@ function BrowserPageFrame({
 }) {
   const webviewRef = useRef<HTMLWebViewElement>(null);
   const shown = placement === 'shown';
+  // The step in flight in the chat's current turn.
   const step = useStoreSelector((state) =>
     present && shown && appSessionId && Object.hasOwn(state.transcripts, appSessionId)
-      ? browserStepLabel(state.transcripts[appSessionId].slice(-STEP_EVENTS))
+      ? browserStepLabel(currentTurn(state.transcripts[appSessionId]).events)
       : null,
   );
 
@@ -246,6 +260,7 @@ function BrowserPageFrame({
         step={step}
         named
         rest={{ x: size.width / 2, y: size.height / 2 }}
+        follow
       />
     </div>
   );

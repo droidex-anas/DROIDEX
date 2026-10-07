@@ -40,11 +40,11 @@ export interface BrowserHostState {
   /** Sessions main has agent work in flight on, as main last reported. */
   working: Readonly<Record<string, true>>;
   /**
-   * Sessions an agent's turn is using: from its first request on the page
-   * until the chat's turn ends, so the pause while the model thinks between
-   * two steps still counts.
+   * Sessions an agent's turn is using, each with the turn it belongs to: from
+   * its first request on the page until that turn is over, so the pause while
+   * the model thinks between two steps still counts.
    */
-  engaged: Readonly<Record<string, true>>;
+  engaged: Readonly<Record<string, string>>;
   /** Sessions whose page crashed and has not loaded since, even with the pane closed. */
   crashed: Readonly<Record<string, true>>;
 }
@@ -129,7 +129,6 @@ export function setBrowserPageWorking(
   if (browserSessionId in state.working !== working) {
     update({
       working: withFlag(state.working, browserSessionId, working),
-      engaged: working ? withFlag(state.engaged, browserSessionId, true) : state.engaged,
     });
   }
   if (working) void ensureBrowserPage(browserSessionId, savedUrl, savedMode).catch(() => undefined);
@@ -141,7 +140,7 @@ export function closeBrowserPage(browserSessionId: string): void {
   lastUsed.delete(browserSessionId);
   setBrowserPageCrashed(browserSessionId, false);
   if (browserSessionId in state.engaged)
-    update({ engaged: withFlag(state.engaged, browserSessionId, false) });
+    update({ engaged: without(state.engaged, browserSessionId) });
   if (state.slot?.browserSessionId === browserSessionId) setSlot(null);
   if (!state.pages.some((page) => page.browserSessionId === browserSessionId)) return;
   update({ pages: state.pages.filter((page) => page.browserSessionId !== browserSessionId) });
@@ -152,10 +151,16 @@ export function setBrowserPageCrashed(browserSessionId: string, crashed: boolean
   update({ crashed: withFlag(state.crashed, browserSessionId, crashed) });
 }
 
-/** The chat's turn ended: its agent is done with the page once no request is left on it. */
-export function releaseBrowserPageAgent(browserSessionId: string): void {
+/** A request of the chat's turn `turn` reached the page. */
+export function engageBrowserPage(browserSessionId: string, turn: string): void {
+  if (state.engaged[browserSessionId] !== turn)
+    update({ engaged: { ...state.engaged, [browserSessionId]: turn } });
+}
+
+/** The page's turn is over: its agent is done with it once no request is left on it. */
+export function releaseBrowserPage(browserSessionId: string): void {
   if (browserSessionId in state.engaged && !(browserSessionId in state.working))
-    update({ engaged: withFlag(state.engaged, browserSessionId, false) });
+    update({ engaged: without(state.engaged, browserSessionId) });
 }
 
 function withFlag(
@@ -163,22 +168,26 @@ function withFlag(
   browserSessionId: string,
   on: boolean,
 ): Readonly<Record<string, true>> {
-  if (on) return { ...flags, [browserSessionId]: true };
-  return Object.fromEntries(Object.entries(flags).filter(([id]) => id !== browserSessionId));
+  return on ? { ...flags, [browserSessionId]: true } : without(flags, browserSessionId);
+}
+
+function without<T>(record: Readonly<Record<string, T>>, browserSessionId: string) {
+  return Object.fromEntries(Object.entries(record).filter(([id]) => id !== browserSessionId));
 }
 
 /**
- * Where an agent's turn is using the session's page: nowhere, in the page the
- * pane shows, or in a page out of sight (another chat's pane, or none open).
+ * Where an agent's turn is using any of these pages: nowhere, only in the page
+ * the pane shows, or in a page out of sight (another chat's pane, or none open).
  */
 export type BrowserAgentPresence = 'none' | 'shown' | 'background';
 
 export function useBrowserAgentPresence(
-  browserSessionId: string | undefined,
+  browserSessionIds: readonly (string | undefined)[],
 ): BrowserAgentPresence {
   const presence = (): BrowserAgentPresence => {
-    if (browserSessionId === undefined || !(browserSessionId in state.engaged)) return 'none';
-    return state.slot?.browserSessionId === browserSessionId ? 'shown' : 'background';
+    const used = browserSessionIds.filter((id) => id !== undefined && id in state.engaged);
+    if (used.length === 0) return 'none';
+    return used.every((id) => id === state.slot?.browserSessionId) ? 'shown' : 'background';
   };
   return useSyncExternalStore(subscribe, presence, presence);
 }
