@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { BuildCommit, BuildTarget, CanvasBuilds } from './CanvasBuilds.js';
+import { CanvasAttachments } from './canvasAttachments.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
@@ -53,14 +54,17 @@ export class CanvasWorkspace {
   /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
   private readonly commits = new CanvasCommits(this.changes);
+  private readonly attachments: CanvasAttachments;
 
   private constructor(
     private readonly files: CanvasFiles,
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
-    private readonly isChatKnown: (appSessionId: string) => boolean,
-  ) {}
+    isChatKnown: (appSessionId: string) => boolean,
+  ) {
+    this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
+  }
 
   /**
    * Opens the storage root and hands the build registry the canvases it serves,
@@ -102,55 +106,21 @@ export class CanvasWorkspace {
     return this.heads.attachedCanvasId(appSessionId);
   }
 
-  /**
-   * A new canvas, attached in the same commit so explicit Create leaves either
-   * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
-   * first: a crash between the two writes must leave it unattached, not twice.
-   * A retry returns its original canvas identity without changing attachments.
-   */
+  /** Explicit creation retries return the same durable identity, without reattaching. */
   createCanvas(appSessionId: string, mutationId: string): Promise<{ canvasId: string }> {
     return this.commits.admit(() =>
-      this.commits.run(async () => {
-        this.requireChat(appSessionId);
-        const previous = this.heads.all().find((head) => head.creation?.mutationId === mutationId);
-        if (previous) {
-          if (previous.creation?.appSessionId !== appSessionId)
-            throw canvasError('invalid_input', 'That Canvas mutation ID belongs to another chat.');
-          return { canvasId: previous.canvasId };
-        }
-        await this.detachFrom(appSessionId, null);
-        const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
-        manifest.creation = { mutationId, appSessionId };
-        manifest.attachedAppSessionIds.push(appSessionId);
-        await this.heads.install(manifest, this.chatGate(appSessionId));
-        return { canvasId: manifest.canvasId };
-      }),
+      this.commits.run(() => this.attachments.createCanvas(appSessionId, mutationId)),
     );
   }
 
   attach(appSessionId: string, canvasId: string): Promise<void> {
     return this.commits.admit(() =>
-      this.commits.run(async () => {
-        this.requireChat(appSessionId);
-        // Refuse an unknown canvas before detaching the chat from its current one.
-        this.canvas(canvasId);
-        await this.detachFrom(appSessionId, canvasId);
-        const next = structuredClone(this.canvas(canvasId));
-        if (next.attachedAppSessionIds.includes(appSessionId)) return;
-        next.attachedAppSessionIds.push(appSessionId);
-        next.updatedAt = Date.now();
-        await this.heads.install(next, this.chatGate(appSessionId));
-      }),
+      this.commits.run(() => this.attachments.attach(appSessionId, canvasId)),
     );
   }
 
   detach(appSessionId: string): Promise<void> {
-    return this.commits.admit(() =>
-      this.commits.run(() => {
-        this.requireChat(appSessionId);
-        return this.detachFrom(appSessionId, null);
-      }),
-    );
+    return this.commits.admit(() => this.commits.run(() => this.attachments.detach(appSessionId)));
   }
 
   create(scope: CanvasScope, input: CreateFramesInput): Promise<CreateFramesResult> {
@@ -169,7 +139,7 @@ export class CanvasWorkspace {
       // a later create under it extends that canvas instead of making another.
       const target = this.leases.pinnedCanvas(scope);
       const bootstrapping = target === null;
-      if (bootstrapping) this.requireChat(scope.appSessionId);
+      if (bootstrapping) this.attachments.requireChat(scope.appSessionId);
       const canvasId = target ?? randomUUID();
       if (!bootstrapping) {
         this.leases.requireAttachment(scope, canvasId);
@@ -196,13 +166,13 @@ export class CanvasWorkspace {
             throw canvasError('scope_expired', ATTACHED_SINCE);
           }
           this.leases.requireActive(scope);
-          next = emptyCanvasManifest(canvasId, this.nextCanvasName(), Date.now());
+          next = emptyCanvasManifest(canvasId, this.attachments.nextCanvasName(), Date.now());
           // Spec §6: the canvas, the chat's attachment and the lease's binding
           // are one commit, so a half-attached canvas never exists.
           next.attachedAppSessionIds.push(scope.appSessionId);
           beforeRename = () => {
             this.commits.requireOpen();
-            this.requireChat(scope.appSessionId);
+            this.attachments.requireChat(scope.appSessionId);
             this.leases.requireActive(scope);
             if (this.attachedCanvasId(scope.appSessionId) !== null)
               throw canvasError('scope_expired', ATTACHED_SINCE);
@@ -429,21 +399,6 @@ export class CanvasWorkspace {
     this.changes.clear();
   }
 
-  /** Canvas files are kept: detaching a chat only drops the reference. */
-  private async detachFrom(appSessionId: string, keep: string | null): Promise<void> {
-    const attached = this.attachedCanvasId(appSessionId);
-    if (attached !== null && attached !== keep && this.heads.isDamaged(attached))
-      throw canvasError('storage_failed', UNREADABLE_CANVAS);
-    for (const manifest of this.heads.all()) {
-      if (manifest.canvasId === keep) continue;
-      if (!manifest.attachedAppSessionIds.includes(appSessionId)) continue;
-      const next = structuredClone(manifest);
-      next.attachedAppSessionIds = next.attachedAppSessionIds.filter((id) => id !== appSessionId);
-      next.updatedAt = Date.now();
-      await this.heads.install(next, this.chatGate(appSessionId));
-    }
-  }
-
   /**
    * The receipt this create already has, if it has one. An unattached lease
    * finds it through the attachment its first create committed, which is also
@@ -476,21 +431,6 @@ export class CanvasWorkspace {
     };
   }
 
-  private chatGate(appSessionId: string): () => void {
-    return () => {
-      this.commits.requireOpen();
-      this.requireChat(appSessionId);
-    };
-  }
-
-  private requireChat(appSessionId: string): void {
-    if (!this.isChatKnown(appSessionId))
-      throw canvasError(
-        'unknown_chat',
-        'This chat no longer exists. Open a saved chat and try again.',
-      );
-  }
-
   /** The final check a leased commit runs, with its replacement manifest ready. */
   private scopedGate(scope: CanvasScope, designIds: readonly string[]): () => void {
     return () => {
@@ -510,10 +450,6 @@ export class CanvasWorkspace {
     const design = manifest.designs.find((entry) => entry.designId === designId);
     if (!design) throw canvasError('invalid_input', 'That frame is not on this canvas.');
     return design;
-  }
-
-  private nextCanvasName(): string {
-    return `Canvas ${String(this.heads.all().length + 1)}`;
   }
 }
 
