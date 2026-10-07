@@ -2,11 +2,17 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { CompilerFleet, fakeDeadlines } from '../testing/canvasBuildSupport.js';
-import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
+import {
+  canvasRoot,
+  deferred,
+  observedFileSystem,
+  quietBuilds,
+} from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
+import { CanvasTurns } from './canvasTurnContext.js';
 import { CompileCancelledError } from './compiler.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasEvent, CanvasReply, CanvasScope } from './protocol.js';
@@ -71,6 +77,24 @@ async function harness(
       for (const listener of listeners) listener(pageId);
     },
   };
+}
+
+async function buildingCanvas(t: TestContext, fs?: CanvasFileSystem) {
+  const fleet = new CompilerFleet();
+  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: fakeDeadlines().deadline });
+  const canvas = await harness(t, { builds, fs });
+  const turns = new CanvasTurns(canvas.scopes, (id) => canvas.workspace.attachedCanvasId(id));
+  return { ...canvas, fleet, turns };
+}
+
+function readyFrames(canvas: Harness, canvasId: string, designIds: string[]): Promise<void> {
+  return new Promise((resolve) => {
+    const stop = canvas.workspace.changes.subscribe(() => {
+      if (!designIds.every((id) => canvas.builds.stateOf(canvasId, id).status === 'ready')) return;
+      stop();
+      resolve();
+    });
+  });
 }
 
 /** The event answering one request, which every command produces exactly one of. */
@@ -409,15 +433,6 @@ test('a command that is not Canvas is left to the next handler', async (t) => {
   assert.equal(reported.code, 'canvas.invalid_input');
 });
 
-/** A promise a test resolves itself, to hold an awaited filesystem call open. */
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve = (): void => undefined;
-  const promise = new Promise<void>((settle) => {
-    resolve = settle;
-  });
-  return { promise, resolve };
-}
-
 /** A filesystem that holds the next write of one source file open until released. */
 function pauseAtSource(path: string) {
   const reached = deferred();
@@ -568,9 +583,8 @@ test('one page unsubscribing leaves another page watching the same canvas', asyn
 
 for (const leaving of ['unsubscribe', 'page-gone'] as const) {
   test(`the last pane ${leaving} cancels running and queued builds without stopping another canvas`, async (t) => {
-    const fleet = new CompilerFleet();
-    const builds = new CanvasBuilds({ compiler: fleet.client, deadline: fakeDeadlines().deadline });
-    const canvas = await harness(t, { builds });
+    const canvas = await buildingCanvas(t);
+    const { fleet, builds } = canvas;
     const canvasId = await createCanvas(canvas);
     const ids = await Promise.all(
       ['one', 'two', 'three'].map((name) => createFrame(canvas, canvasId, `req-frame-${name}`)),
@@ -580,6 +594,8 @@ for (const leaving of ['unsubscribe', 'page-gone'] as const) {
     const first = await fleet.compile(1);
     const second = await fleet.compile(2);
     const other = await canvas.workspace.createCanvas('app-2');
+    const otherTurn = canvas.turns.beginTurn('app-2', undefined);
+    t.after(() => otherTurn.revoke());
     await canvas.handle(
       { type: 'canvas.subscribe', requestId: 'req-watch-other', canvasId: other.canvasId },
       'page-2',
@@ -625,6 +641,65 @@ for (const leaving of ['unsubscribe', 'page-gone'] as const) {
     );
     assert.ok(answer(canvas, 'req-watch-other').type === 'canvas.snapshot');
     await builds.close();
+  });
+
+  test(`an active turn keeps running and queued builds after the last pane ${leaving}`, async (t) => {
+    const canvas = await buildingCanvas(t);
+    const canvasId = await createCanvas(canvas);
+    const turn = canvas.turns.beginTurn(APP, undefined);
+    t.after(() => turn.revoke());
+    const scope = canvas.turns.activeScope(APP);
+    assert.ok(scope);
+    const created = await canvas.workspace.create(scope, {
+      mutationId: 'create-turn-frames',
+      frames: ['One', 'Two', 'Three'].map((name) => ({
+        name,
+        width: 720,
+        height: 720,
+        designSystem,
+      })),
+    });
+    const ids = created.frames.map((frame) => frame.designId);
+    await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
+    for (const designId of ids) {
+      await canvas.workspace.write(scope, {
+        mutationId: `turn-write-${designId}`,
+        designId,
+        expectedRevisionId: null,
+        files: { 'main.tsx': HEY },
+        deletedPaths: [],
+      });
+    }
+    const first = await canvas.fleet.compile(1);
+    const second = await canvas.fleet.compile(2);
+    if (leaving === 'unsubscribe')
+      await canvas.handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId });
+    else canvas.pageGone(PAGE);
+
+    assert.equal(canvas.scopes.isScopeActive(scope.scopeId), true);
+    assert.equal(first.signal.aborted, false);
+    assert.equal(second.signal.aborted, false);
+    assert.deepEqual(
+      ids.map((id) => canvas.builds.stateOf(canvasId, id).status),
+      ['building', 'building', 'pending'],
+    );
+    canvas.events.length = 0;
+    const ready = readyFrames(canvas, canvasId, ids);
+    first.ready('artifact-one');
+    second.ready('artifact-two');
+    const third = await canvas.fleet.compile(3);
+    assert.equal(third.input.designId, ids[2]);
+    assert.equal(third.signal.aborted, false);
+    third.ready('artifact-three');
+    await ready;
+    assert.deepEqual(
+      ids.map((id) => canvas.builds.stateOf(canvasId, id).status),
+      ['ready', 'ready', 'ready'],
+    );
+    assert.deepEqual(
+      canvas.events.filter((event) => event.type === 'canvas.change'),
+      [],
+    );
   });
 }
 

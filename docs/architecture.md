@@ -327,8 +327,10 @@ the lease; a failed open releases it too.
 
 The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
 remove watches synchronously. Removing the last pane watching a canvas cancels
-its queued and running builds through `cancelCanvas`, without stopping builds
-for another watched canvas or another pane on the same canvas.
+its queued and running builds through `cancelCanvas` only when `CanvasScopes`
+holds no active turn lease for that canvas. Accepted builds remain wanted while
+an agent turn owns the canvas, even with its pane closed. Cancellation leaves
+another watched canvas and another pane on the same canvas alone.
 A subscribe captures its own subscription identity before awaiting storage.
 Unsubscribe, page loss or a replacement subscription invalidates that identity,
 so a late answer cannot reinstall a watch or schedule rebuilds for a closed pane.

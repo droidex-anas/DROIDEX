@@ -97,7 +97,10 @@ interface CanvasWatch {
 class CanvasWatches {
   private readonly byPage = new Map<string, Map<string, CanvasWatch>>();
 
-  constructor(private readonly builds: CanvasBuilds) {}
+  constructor(
+    private readonly builds: CanvasBuilds,
+    private readonly scopes: CanvasScopes,
+  ) {}
 
   begin(pageId: string, canvasId: string): CanvasWatch {
     const open = this.byPage.get(pageId) ?? new Map<string, CanvasWatch>();
@@ -120,8 +123,7 @@ class CanvasWatches {
 
   /** By page ID, because unsubscribing awaits nothing and needs no token. */
   unwatch(pageId: string, canvasId: string): void {
-    if (this.byPage.get(pageId)?.delete(canvasId) && !this.isWatched(canvasId))
-      this.builds.cancelCanvas(canvasId);
+    if (this.byPage.get(pageId)?.delete(canvasId)) this.cancelUnowned(canvasId);
   }
 
   /** A page that reloaded or closed holds nothing; its watches go with it. */
@@ -129,14 +131,18 @@ class CanvasWatches {
     const open = this.byPage.get(pageId);
     this.byPage.delete(pageId);
     if (!open) return;
-    for (const canvasId of open.keys())
-      if (!this.isWatched(canvasId)) this.builds.cancelCanvas(canvasId);
+    for (const canvasId of open.keys()) this.cancelUnowned(canvasId);
   }
 
   isWatched(canvasId: string): boolean {
     for (const open of this.byPage.values())
       if (open.get(canvasId)?.state === 'watching') return true;
     return false;
+  }
+
+  private cancelUnowned(canvasId: string): void {
+    if (this.isWatched(canvasId) || this.scopes.activeTurns(canvasId).length > 0) return;
+    this.builds.cancelCanvas(canvasId);
   }
 }
 
@@ -155,7 +161,7 @@ class CanvasDispatch {
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
-    this.watches = new CanvasWatches(builds);
+    this.watches = new CanvasWatches(builds, scopes);
     onPageGone((pageId) => {
       this.watches.forget(pageId);
     });

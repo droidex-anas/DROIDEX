@@ -1,8 +1,8 @@
 // Which Canvas mutations are still authorized. The pane registers a user scope
 // for the length of one request; `CanvasTurns` registers a turn lease at the
 // turn's admission seam and revokes it when that turn settles. `CanvasWorkspace`
-// reads this registry through `CanvasLeaseRegistry` and concludes nothing else
-// from it.
+// reads this registry through `CanvasLeaseRegistry`; the bridge also consults
+// its turn leases before cancelling preview work when the last pane closes.
 
 import { canvasError, EXPIRED_TURN } from './canvasError.js';
 import type { CanvasLeaseRegistry } from './canvasLeases.js';
@@ -14,6 +14,13 @@ export class CanvasScopes implements CanvasLeaseRegistry {
   /** The scope while it is still authorized, which is all a caller may act on. */
   get(scopeId: string): CanvasScope | undefined {
     return this.active.get(scopeId);
+  }
+
+  /** The live turns that still own work on this canvas, independent of panes. */
+  activeTurns(canvasId: string): CanvasScope[] {
+    return [...this.active.values()].filter(
+      (scope) => scope.origin === 'turn' && scope.canvasId === canvasId,
+    );
   }
 
   register(scope: CanvasScope): void {
