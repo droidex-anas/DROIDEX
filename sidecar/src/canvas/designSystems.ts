@@ -10,6 +10,8 @@ import { dirname, join, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { canvasDir } from '../droidexPaths.js';
 import type { DesignSystemRef } from './protocol.js';
@@ -65,7 +67,19 @@ export const designSystemSchema = z
     id: canvasIdentifierSchema,
     version: z.number().int().positive(),
     name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
-    modes: z.object({ light: modeTokensSchema, dark: modeTokensSchema }).strict(),
+    modes: z
+      .object({ light: modeTokensSchema, dark: modeTokensSchema })
+      .strict()
+      .refine(
+        ({ light, dark }) => {
+          const names = Object.keys(light);
+          return (
+            names.length === Object.keys(dark).length &&
+            names.every((name) => Object.hasOwn(dark, name))
+          );
+        },
+        { message: 'Light and dark modes must declare the same design tokens.' },
+      ),
     files: kitFilesSchema,
     guidance: z
       .string()
@@ -81,7 +95,12 @@ const savedDesignSystemSchema = designSystemSchema.extend({
   mutationId: canvasIdentifierSchema.optional(),
 });
 
-const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [DROIDEX_DESIGN_SYSTEM];
+// Parsing snapshots the authored kits and validates their limits at startup.
+const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
+  DROIDEX_DESIGN_SYSTEM,
+  OPENAI_INSPIRED_DESIGN_SYSTEM,
+  CLAUDE_INSPIRED_DESIGN_SYSTEM,
+].map((system) => designSystemSchema.parse(system));
 
 /** Summaries only; files and guidance are read when a specific version is requested. */
 export async function listDesignSystems(): Promise<
@@ -121,7 +140,7 @@ export async function readDesignSystem(ref: DesignSystemRef): Promise<DesignSyst
   const builtIn = BUILT_IN_DESIGN_SYSTEMS.find(
     (system) => system.id === ref.id && system.version === ref.version,
   );
-  if (builtIn) return builtIn;
+  if (builtIn) return structuredClone(builtIn);
 
   const text = await readSavedText(versionPath(ref.id, ref.version));
   if (text === null) throw canvasError('invalid_input', UNKNOWN_MESSAGE);

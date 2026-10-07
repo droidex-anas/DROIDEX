@@ -203,12 +203,14 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_create',
-      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read. Create a small working composition first; retry with the same mutationId and scopeId after a lost response.',
+      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read. Use placeBeside to place variants below an existing frame and seed to copy a revision from this canvas. Create a small working composition first; retry with the same mutationId and scopeId after a lost response.',
       createSchema.shape,
       (raw) =>
         dispatch(raw, async (scope) => {
-          const { mutationId, frames } = createSchema.parse(raw);
-          return { created: await (await workspace()).create(scope, { mutationId, frames }) };
+          const { mutationId, frames, placeBeside } = createSchema.parse(raw);
+          return {
+            created: await (await workspace()).create(scope, { mutationId, frames, placeBeside }),
+          };
         }),
     ),
     tool(

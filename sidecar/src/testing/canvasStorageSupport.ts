@@ -9,6 +9,7 @@ import type { TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
+import type { WriteFilesInput } from '../canvas/protocol.js';
 import {
   canvasManifestSchema,
   CANVAS_MUTATION_RETENTION,
@@ -38,6 +39,16 @@ export function quietBuilds(): CanvasBuilds {
     }),
     deadline: () => () => undefined,
   });
+}
+
+export function writeInput(
+  mutationId: string,
+  designId: string,
+  expectedRevisionId: string | null,
+  files: Record<string, string>,
+  deletedPaths: string[] = [],
+): WriteFilesInput {
+  return { mutationId, designId, expectedRevisionId, files, deletedPaths };
 }
 
 /** A promise a test resolves itself, to hold or release an awaited call. */
@@ -76,6 +87,37 @@ export function observedFileSystem(
     lstat: (path) => observe('lstat', path, () => nodeCanvasFileSystem.lstat(path)),
     rename: (from, to) => observe('rename', to, () => nodeCanvasFileSystem.rename(from, to)),
     rm: (path, options) => observe('rm', path, () => nodeCanvasFileSystem.rm(path, options)),
+  };
+}
+
+/** Fails one manifest save before its rename or on the flush just after it. */
+export function terminateAtManifestRename(side: 'before' | 'after') {
+  let armed = false;
+  let renamed = false;
+  const failed = deferred();
+  const fail = (): never => {
+    armed = false;
+    failed.resolve();
+    throw new Error('power lost');
+  };
+  const fs = observedFileSystem((operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      if (side === 'before') fail();
+      renamed = true;
+      return;
+    }
+    if (side === 'after' && renamed && operation === 'open') {
+      renamed = false;
+      fail();
+    }
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+    failed: failed.promise,
   };
 }
 

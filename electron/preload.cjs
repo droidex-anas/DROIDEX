@@ -150,6 +150,8 @@ contextBridge.exposeInMainWorld('droidControl', {
   // attached, so an ID it does not recognise is refused.
   canvasPreviewUrl: CANVAS_PREVIEW_URL,
   canvasPreviewTerminate: (guestId) => ipcRenderer.invoke('canvas-preview-terminate', { guestId }),
+  canvasExportSource: (canvasId, ref) =>
+    ipcRenderer.invoke('canvas-export-source', { canvasId, ref }),
   systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),
   powerTier: () => ipcRenderer.invoke('power-tier'),
   onPowerTier: (handler) => on('power-tier', handler),

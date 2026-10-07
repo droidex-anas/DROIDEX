@@ -21,6 +21,7 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
+import type { RevisionRef } from '../features/canvas/protocol';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -208,6 +209,10 @@ interface DroidControlApi {
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   canvasPreviewUrl: string;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
+  canvasExportSource: (
+    canvasId: string,
+    ref: RevisionRef,
+  ) => Promise<{ filesWritten: number } | null>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -696,4 +701,15 @@ export async function terminateCanvasPreviewGuest(guestId: number): Promise<bool
   const api = desktopApi();
   if (!api) return false;
   return api.canvasPreviewTerminate(guestId);
+}
+
+/** Opens the host's folder chooser, then exports the selected saved revision. */
+export function exportCanvasSource(
+  canvasId: string,
+  ref: RevisionRef,
+): Promise<{ filesWritten: number } | null> {
+  return requireDesktopApi('Canvas source export needs the desktop app.').canvasExportSource(
+    canvasId,
+    ref,
+  );
 }

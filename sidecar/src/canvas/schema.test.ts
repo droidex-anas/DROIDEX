@@ -6,6 +6,9 @@ import type * as Renderer from '../../../src/features/canvas/protocol.js';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import type {
   ArrangeFramesInput,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   CanvasChange,
   CanvasCommand,
   CanvasError,
@@ -18,6 +21,7 @@ import type {
   CreateFramesResult,
   DesignRef,
   DesignSystemRef,
+  EditElementInput,
   ElementRef,
   SourceElement,
   WriteFilesInput,
@@ -26,6 +30,10 @@ import type {
 import {
   arrangeFramesInputSchema,
   createFramesInputSchema,
+  editElementInputSchema,
+  removeFramesInputSchema,
+  renameFrameInputSchema,
+  undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -41,6 +49,9 @@ type SidecarWire = {
   createResult: CreateFramesResult;
   write: WriteFilesInput;
   arrange: ArrangeFramesInput;
+  remove: RemoveFramesInput;
+  undo: UndoRemovalInput;
+  rename: RenameFrameInput;
   snapshot: CanvasSnapshot;
   change: CanvasChange;
   summary: CanvasSummary;
@@ -49,6 +60,7 @@ type SidecarWire = {
   designRef: DesignRef;
   elementRef: ElementRef;
   element: SourceElement;
+  edit: EditElementInput;
   error: CanvasError;
   command: CanvasCommand;
   reply: CanvasReply;
@@ -60,6 +72,9 @@ type RendererWire = {
   createResult: Renderer.CreateFramesResult;
   write: Renderer.WriteFilesInput;
   arrange: Renderer.ArrangeFramesInput;
+  remove: Renderer.RemoveFramesInput;
+  undo: Renderer.UndoRemovalInput;
+  rename: Renderer.RenameFrameInput;
   snapshot: Renderer.CanvasSnapshot;
   change: Renderer.CanvasChange;
   summary: Renderer.CanvasSummary;
@@ -68,6 +83,7 @@ type RendererWire = {
   designRef: Renderer.DesignRef;
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
+  edit: Renderer.EditElementInput;
   error: Renderer.CanvasError;
   command: Renderer.CanvasCommand;
   reply: Renderer.CanvasReply;
@@ -86,6 +102,7 @@ const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' 
 const wire: SidecarWire = {
   create: {
     mutationId: 'create-hey',
+    placeBeside: { designId: 'dsg_hey' },
     frames: [
       { name: 'Hey', width: 720, height: 720, designSystem },
       {
@@ -109,6 +126,7 @@ const wire: SidecarWire = {
         name: 'Hey',
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 0,
+        manifestVersion: 0,
         revisionId: null,
         designSystem,
         build: { status: 'pending', generation: 0 },
@@ -136,6 +154,14 @@ const wire: SidecarWire = {
       },
     ],
   },
+  remove: { mutationId: 'remove-hey', designIds: ['dsg_hey'] },
+  undo: { mutationId: 'undo-hey', undoId: 'undo_01' },
+  rename: {
+    mutationId: 'rename-hey',
+    designId: 'dsg_hey',
+    name: 'Hey again',
+    expectedManifestVersion: 2,
+  },
   snapshot: {
     canvasId: 'cv_01',
     sequence: 7,
@@ -145,15 +171,24 @@ const wire: SidecarWire = {
         name: 'Hey',
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 2,
+        manifestVersion: 2,
         revisionId: 'rev_02',
         designSystem,
-        build: { status: 'ready', revisionId: 'rev_02', artifactId: 'art_02', generation: 1 },
+        build: {
+          status: 'ready',
+          revisionId: 'rev_02',
+          artifactId: 'art_02',
+          elements: [],
+          diagnostics: [],
+          generation: 1,
+        },
       },
       {
         designId: 'dsg_reserved',
         name: 'Cards',
         rect: { x: 760, y: 0, width: 720, height: 720 },
         layoutVersion: 1,
+        manifestVersion: 1,
         revisionId: null,
         designSystem,
         build: { status: 'pending', generation: 0 },
@@ -169,6 +204,7 @@ const wire: SidecarWire = {
         name: 'Hey',
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 2,
+        manifestVersion: 2,
         revisionId: 'rev_03',
         designSystem,
         build: {
@@ -214,6 +250,13 @@ const wire: SidecarWire = {
     tagName: 'h1',
     editability: 'literal',
   },
+  edit: {
+    mutationId: 'edit-hey',
+    edit: {
+      element: { designId: 'dsg_hey', revisionId: 'rev_02', elementId: 'el_17', instancePath: '0' },
+      change: { kind: 'text', value: 'Welcome' },
+    },
+  },
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
   command: {
     type: 'canvas.write',
@@ -243,6 +286,9 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     createResult: true,
     write: true,
     arrange: true,
+    remove: true,
+    undo: true,
+    rename: true,
     snapshot: true,
     change: true,
     summary: true,
@@ -251,6 +297,7 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     designRef: true,
     elementRef: true,
     element: true,
+    edit: true,
     error: true,
     command: true,
     reply: true,
@@ -304,6 +351,34 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_01',
       ok: true,
+      reply: { kind: 'removed', undoId: 'undo_01' },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'undone', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'renamed', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: false,
+      error: {
+        code: 'layout_conflict',
+        message: 'Move the occupant.',
+        currentRect: { x: 0, y: 0, width: 720, height: 720 },
+      },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
       reply: {
         kind: 'artifact',
         artifact: { artifactId: 'a'.repeat(64), html: '<!doctype html><body>Hey</body>' },
@@ -316,6 +391,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       reply: { kind: 'artifact', artifact: null },
     },
     wire.event,
+    {
+      type: 'canvas.result',
+      requestId: 'req_02',
+      ok: false,
+      error: { code: 'stale_revision', message: 'Reselect the element.' },
+    },
     { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },
     { type: 'canvas.summaries', summaries },
     { type: 'canvas.change', change: wire.change },
@@ -332,13 +413,64 @@ test('every serialized event the sidecar emits passes the renderer validator', (
   assert.equal(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(129) }), false);
 });
 
-test('the create, write and arrange fixtures parse, and the parsed value fits the mirror', () => {
+test('the renderer accepts a ready element map and rejects incomplete or unbounded maps', () => {
+  const ready = {
+    status: 'ready',
+    revisionId: 'rev_02',
+    artifactId: 'art_02',
+    elements: [wire.element],
+    diagnostics: [{ code: 'selection_unavailable', message: 'Reselect after rebuilding.' }],
+    generation: 1,
+  };
+  const event = (build: unknown) => ({
+    type: 'canvas.snapshot',
+    requestId: 'req_01',
+    snapshot: {
+      ...wire.snapshot,
+      frames: [{ ...wire.snapshot.frames[0], build }],
+    },
+  });
+
+  assert.equal(isCanvasEvent(event(ready)), true);
+  assert.equal(
+    isCanvasEvent(
+      event({
+        status: 'ready',
+        revisionId: 'rev_02',
+        artifactId: 'art_02',
+        diagnostics: [],
+        generation: 1,
+      }),
+    ),
+    false,
+  );
+  assert.equal(isCanvasEvent(event({ ...ready, diagnostics: undefined })), false);
+  assert.equal(
+    isCanvasEvent(event({ ...ready, elements: new Array(8193).fill(wire.element) })),
+    false,
+  );
+  assert.equal(
+    isCanvasEvent(event({ ...ready, diagnostics: new Array(65).fill(ready.diagnostics[0]) })),
+    false,
+  );
+  assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
+});
+
+test('the mutation fixtures parse, and the parsed values fit the mirror', () => {
   const create: Renderer.CreateFramesInput = createFramesInputSchema.parse(wire.create);
   const write: Renderer.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
   const arrange: Renderer.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
+  const edit: Renderer.EditElementInput = editElementInputSchema.parse(wire.edit);
+  const remove: Renderer.RemoveFramesInput = removeFramesInputSchema.parse(wire.remove);
+  const undo: Renderer.UndoRemovalInput = undoRemovalInputSchema.parse(wire.undo);
+  const rename: Renderer.RenameFrameInput = renameFrameInputSchema.parse(wire.rename);
   assert.deepEqual(create, wire.create);
   assert.deepEqual(write, wire.write);
   assert.deepEqual(arrange, wire.arrange);
+  assert.deepEqual(edit, wire.edit);
+  assert.deepEqual(remove, wire.remove);
+  assert.deepEqual(undo, wire.undo);
+  assert.deepEqual(rename, wire.rename);
 });
 
 test('create rejects more than four frames and an out-of-range dimension', () => {

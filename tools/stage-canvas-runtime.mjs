@@ -41,6 +41,7 @@ const BUNDLED_SPECIFIERS = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
 ];
 

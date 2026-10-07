@@ -320,3 +320,66 @@ test('provider replacement while a write is staged refuses its old lease and lea
   assert.equal((await pending).code, 'scope_expired');
   assert.equal(h.workspace.snapshot(created.created.canvasId).frames[0].revisionId, null);
 });
+
+test('Canvas create preserves seeded variant placement and mutation retry identity', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const source = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'create-source',
+    frames: [frame],
+  });
+  assert.ok(source.created);
+  const { canvasId, frames } = source.created;
+  const designId = frames[0].designId;
+  const files = { 'main.tsx': 'export default function Hey(){return <h1>Hey</h1>}' };
+  const written = await h.call('canvas_write', {
+    scopeId,
+    mutationId: 'write-source',
+    designId,
+    expectedRevisionId: null,
+    files,
+    deletedPaths: [],
+  });
+  assert.ok(written.receipt);
+  const input = {
+    scopeId,
+    mutationId: 'create-variant',
+    placeBeside: { designId },
+    frames: [
+      {
+        ...frame,
+        name: 'Variant',
+        seed: {
+          kind: 'revision',
+          canvasId,
+          revision: { designId, revisionId: written.receipt.revisionId },
+        },
+      },
+    ],
+  };
+  const variant = await h.call('canvas_create', input);
+  assert.ok(variant.created);
+  const [created] = variant.created.frames;
+  assert.ok(created.revisionId);
+  assert.deepEqual(
+    h.workspace.snapshot(canvasId).frames.find((item) => item.designId === created.designId)?.rect,
+    { x: 0, y: 600, width: 720, height: 520 },
+  );
+  assert.deepEqual(
+    {
+      ...(await h.workspace.readFiles(canvasId, {
+        designId: created.designId,
+        revisionId: created.revisionId,
+      })),
+    },
+    files,
+  );
+  assert.deepEqual((await h.call('canvas_create', input)).created, variant.created);
+  assert.equal(
+    (await h.call('canvas_create', { ...input, placeBeside: undefined })).code,
+    'invalid_input',
+  );
+  assert.equal(h.workspace.snapshot(canvasId).frames.length, 2);
+});
