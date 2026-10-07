@@ -233,10 +233,14 @@ export class ProjectService {
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
       launching: project.launching,
-      plan: project.plan,
+      plan: project.plan.map(({ milestone, note, ...step }) => ({
+        ...step,
+        ...(milestone ? { milestone } : {}),
+        ...(note ? { note } : {}),
+      })),
       threads: project.threads.map((thread) => ({
         appSessionId: thread.appSessionId,
-        title: thread.title,
+        title: thread.title || 'Untitled thread',
         waiting: thread.waiting,
         ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
       })),
