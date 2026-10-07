@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { SourceMap } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
 import {
@@ -16,8 +17,11 @@ import {
 } from './compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
+import { applyElementEdit } from './sourceElements.js';
 import type { SourceFiles } from './schema.js';
 
 // One real worker for every case that only reads its answer; the cases that
@@ -55,7 +59,11 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   const design = await compile(STATEFUL_DESIGN);
 
   assert.deepEqual(design.diagnostics, []);
-  assert.deepEqual(design.elements, []);
+  assert.equal(design.elements.length, 1);
+  assert.equal(design.elements[0]?.tagName, 'p');
+  assert.equal(design.elements[0]?.editability, 'shared');
+  for (const element of design.elements)
+    assert.equal(design.html.split(element.elementId).length - 1, 1);
   assert.match(design.artifactId, /^[0-9a-f]{64}$/);
   assert.ok(design.html.includes('id="canvas-root"'), 'the document mounts into a root element');
   assert.ok(design.html.includes('data-mode="dark"'), 'the document carries the pinned mode');
@@ -63,6 +71,74 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   assert.ok(design.html.includes('letter-spacing: 0.04em'), "the design's own CSS is included");
   assert.ok(design.html.includes("[data-mode='dark']"), 'the kit tokens are included');
   assert.ok(design.html.includes('--ds-accent'), 'the kit tokens carry semantic names');
+});
+
+test('a design above the selection limit still compiles with an honest diagnostic', async () => {
+  const source = `export default function Dense(){ return <main>${'<i/>'.repeat(8193)}</main> }`;
+  const design = await compile({ 'main.tsx': source });
+  assert.match(design.html, /id="canvas-root"/);
+  assert.deepEqual(design.elements, []);
+  assert.deepEqual(
+    design.diagnostics.map((entry) => entry.code),
+    ['selection_unavailable'],
+  );
+  assert.match(design.diagnostics[0]?.message ?? '', /8,192/);
+});
+
+test('direct edits compile through the worker and its map points to canonical source', async () => {
+  const cases: { source: string; change: ElementEdit['change']; rendered: string }[] = [
+    { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
+    {
+      source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
+      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      rendered: 'var(--ds-accent)',
+    },
+    {
+      source: '<img src="canvas-asset:before" />',
+      change: { kind: 'image', assetId: 'after' },
+      rendered: 'canvas-asset:after',
+    },
+  ];
+  for (const fixture of cases) {
+    const files = { 'main.tsx': `export default function App(){\n  return ${fixture.source};\n}` };
+    const original = await compile(files);
+    const element = original.elements[0];
+    assert.ok(element);
+    const changed = applyElementEdit(files, original.elements, {
+      element: {
+        designId: 'design',
+        revisionId: compileInput(files).revisionId,
+        elementId: element.elementId,
+        instancePath: '0',
+      },
+      change: fixture.change,
+    });
+    const rebuilt = await compile(changed);
+    assert.ok(rebuilt.html.includes(fixture.rendered));
+    for (const site of rebuilt.elements)
+      assert.equal(rebuilt.html.split(site.elementId).length - 1, 1);
+    const script = original.html.slice(
+      original.html.indexOf('<script>') + '<script>\n'.length,
+      original.html.indexOf('</script>'),
+    );
+    const encoded = script.split('base64,')[1];
+    assert.ok(encoded);
+    const payload = JSON.parse(Buffer.from(encoded.trim(), 'base64').toString());
+    assert.ok(payload.sources.includes('main.tsx'));
+    assert.ok(
+      payload.sources.every(
+        (path: string) => !path.includes('node_modules') && !path.includes(tmpdir()),
+      ),
+    );
+    const lines = script.split('\n');
+    const line = lines.findIndex((text) => text.includes(element.elementId));
+    const column = lines[line]?.indexOf(element.elementId);
+    assert.ok(column !== undefined && column >= 0);
+    const entry = new SourceMap(payload).findEntry(line, column);
+    assert.ok('originalSource' in entry);
+    assert.equal(entry.originalSource, 'main.tsx');
+    assert.equal(entry.originalLine, 1);
+  }
 });
 
 test('the compiled document is self-contained', async () => {
@@ -90,13 +166,42 @@ test('Tailwind emits exactly the utilities the source spells out', async () => {
   assert.equal(/\.grid \{/.test(html), false, 'an unused utility is not emitted');
 });
 
-test("the kit's own example compiles", async () => {
-  const example = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
-  assert.ok(example, 'the kit ships a starter example');
-  const design = await compile({ 'main.tsx': example });
+test('every kit starter compiles in both pinned modes with offline fonts', async () => {
+  for (const kit of [
+    DROIDEX_DESIGN_SYSTEM,
+    OPENAI_INSPIRED_DESIGN_SYSTEM,
+    CLAUDE_INSPIRED_DESIGN_SYSTEM,
+  ]) {
+    const example = kit.examples['Hey.tsx'];
+    assert.ok(example);
+    for (const mode of ['light', 'dark'] as const) {
+      const input = {
+        ...compileInput({ 'main.tsx': example }),
+        designSystem: { id: kit.id, version: kit.version, mode },
+      };
+      const design = await shared.compile(input, new AbortController().signal);
+      assert.deepEqual(design.diagnostics, []);
+      assert.ok(design.html.includes("You're all set"));
+      assert.ok(design.html.includes('data-mode="' + mode + '"'));
+      assert.match(design.html, /data:font\/woff2;base64,/);
+      assert.doesNotMatch(design.html, /url\(\s*['"]?https?:/);
+    }
+  }
+});
 
-  assert.deepEqual(design.diagnostics, []);
-  assert.ok(design.html.includes("You're all set"), 'the example renders its own states');
+test('a named Lucide import adds only the used icon code', async () => {
+  const base = await compile({
+    'main.tsx': 'export default function Hey() { return <p>Hey</p>; }',
+  });
+  const icon = await compile({
+    'main.tsx':
+      "import { Activity } from 'lucide-react'; export default function Hey() { return <Activity aria-label='Activity' />; }",
+  });
+  const addedBytes = Buffer.byteLength(icon.html) - Buffer.byteLength(base.html);
+  assert.ok(
+    addedBytes > 0 && addedBytes < 10_000,
+    'one icon adds under 10 KiB, not the full catalog: ' + addedBytes,
+  );
 });
 
 test('an allowed chart import compiles into a self-contained document', async () => {
@@ -148,7 +253,13 @@ export default function Hey() {
   assert.equal(diagnostic?.code, 'unsupported_import');
   assert.equal(diagnostic?.file, 'main.tsx');
   assert.equal(diagnostic?.line, 1);
-  for (const supported of ['react', 'react-dom/client', 'recharts', '@droidex/design-system']) {
+  for (const supported of [
+    'react',
+    'react-dom/client',
+    'lucide-react',
+    'recharts',
+    '@droidex/design-system',
+  ]) {
     assert.ok(diagnostic?.message.includes(supported), `names ${supported}`);
   }
 });
@@ -160,6 +271,7 @@ test('an import that leaves the design is refused', async () => {
     ['https://cdn.example.com/widget.js', 'unsupported_import'],
     ['node:fs', 'unsupported_import'],
     ['fs', 'unsupported_import'],
+    ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
     ['recharts/es6/index.js', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
@@ -299,6 +411,8 @@ test('a reply the protocol does not define is not an answer', () => {
     requestId: 2,
     status: 'stopped',
   });
+  const edited = { requestId: 3, status: 'edited', files: { 'main.tsx': '<h1>Changed</h1>' } };
+  assert.deepEqual(compilerResponse(edited), edited);
 
   for (const malformed of [
     null,
@@ -313,6 +427,8 @@ test('a reply the protocol does not define is not an answer', () => {
     { requestId: 1, status: 'ready' },
     { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
     { requestId: 1, status: 'failed' },
+    { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
+    { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
   ]) {
     assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));
   }

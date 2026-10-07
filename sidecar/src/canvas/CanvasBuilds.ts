@@ -9,13 +9,8 @@
 // its gate runs again after every await there, so nothing lands once a newer
 // attempt, a cancellation or shutdown has taken the frame.
 
-import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
-import {
-  buildFailure,
-  readyBuild,
-  unsavedBuild,
-  type BuildOutcome,
-} from './canvasBuildFailures.js';
+import { builtState, CanvasBuildCache, MAX_BUILD_DIAGNOSTICS } from './canvasBuildCache.js';
+import { buildFailure, unsavedBuild, type BuildOutcome } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
@@ -219,6 +214,15 @@ export class CanvasBuilds {
     for (const started of this.pump()) this.announce(started);
   }
 
+  /** A removed frame owns no queued work, running compiler or build state. */
+  cancelDesign(canvasId: string, designId: string): void {
+    this.queued.delete(designKey(canvasId, designId));
+    const slot = this.slotOf(canvasId, designId);
+    if (slot) this.abandon(slot);
+    this.states.forget(canvasId, designId);
+    for (const started of this.pump()) this.announce(started);
+  }
+
   /**
    * What a preview loads: the document one revision's build produced, or null
    * once the derived cache has lost it. Keyed by revision because a `failed`
@@ -391,7 +395,15 @@ export class CanvasBuilds {
   private async saveArtifact(job: RunningBuild, compiled: CompiledDesign): Promise<BuildOutcome> {
     try {
       await this.owner.cache.saveArtifact(job.canvasId, compiled.artifactId, compiled.html);
-      return readyBuild(compiled.artifactId);
+      return {
+        result: {
+          status: 'ready',
+          artifactId: compiled.artifactId,
+          elements: compiled.elements,
+          diagnostics: compiled.diagnostics.slice(0, MAX_BUILD_DIAGNOSTICS),
+        },
+        persists: true,
+      };
     } catch (error) {
       // Nothing can load an artifact that is not there, so the frame reports
       // the save rather than a working preview.

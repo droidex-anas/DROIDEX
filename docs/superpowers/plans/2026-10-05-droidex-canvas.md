@@ -283,7 +283,7 @@ Changed by 02b (landed in `sidecar/src/canvas/{CanvasWorkspace.ts,canvasFiles.ts
 - `attachedCanvasId(appSessionId): string | null` reads the persisted attachment, which `beginCanvasTurn` needs when a turn starts. Attachments live in the owning canvas's manifest, as spec §7 states, so an unattached create commits the canvas and the attachment in one write; moving a chat between canvases writes two manifests, and a crash between them leaves the chat unattached rather than attached twice.
 - `invalid_input` was missing from `CanvasErrorCode` and is now part of it on both sides of the mirror. The workspace reports an unknown canvas, design or revision, a merged revision over its limits, a reused mutation ID and an unsupported seed with that code; a lease that is settled, names a canvas the workspace does not hold, or does not cover a frame reports `scope_expired`; a layout compare-and-swap failure reports `revision_conflict`. Storage failures report `storage_failed` with a recovery sentence and never a path.
 - A lease restricted to named designs may change those frames and may not add new ones.
-- Retries are retained per lease, not per count. Each record carries the `scopeId` that issued it and a sha256 digest of its command's canonical arguments; the same ID with the same digest answers the original result and the same ID with a different digest or a different command is `invalid_input`. A record whose scope is still active is never retired, so a retry under a live lease always finds its receipt; records whose scope has settled give way oldest first past 256. There is no list of retired IDs: once a lease is gone nothing can retry under it, so an ID that is no longer found is executed as the new request it now is. Nothing retires an unsettled record: past 4096 of them on one canvas the ledger refuses the new mutation with `storage_failed` ("too many unsettled mutations") instead, because retiring one would let its retry run a second time. Settled records still give way, so the refusal clears as turns finish or are interrupted.
+- Mutation receipts track scope liveness and bounded history. Each record carries the `scopeId` that issued it and a sha256 digest of its command's canonical arguments; the same ID with the same digest answers the original result and the same ID with a different digest or a different command is `invalid_input`. A record whose turn scope is still active is never retired, so its retry always finds the receipt. A pane retry can use a retained receipt under a fresh scope while its chat remains attached. Records with inactive scopes give way oldest first past 256; an ID no longer found is treated as a new request. Nothing retires an unsettled record: past 4096 of them on one canvas the ledger refuses the new mutation with `storage_failed` ("too many unsettled mutations") instead, because retiring one would let its retry run a second time. Settled records still give way, so the refusal clears as turns finish or are interrupted.
 - A retained arrange keeps only what it acknowledged, `{ sequence, placements: [{ designId, layoutVersion, rect }] }`, which bounds the manifest at a measured 8.37 MiB for the worst legal history (256 records of 256 frames; 18.17 MiB for full frame records). A retried arrange answers the original sequence and the original layout, while a frame's other fields show the current head; the renderer's sequence handling (02c) discards a change older than its projection.
 
 - A manifest write that fails anywhere past its rename may still have landed, so the head on disk is reread before any further commit on that canvas, and the flushes that save still owed are redone: reading a head back proves it is visible, not that it is durable. A canvas whose head cannot be reread, or whose directory entry cannot be flushed, is held damaged until the workspace is reopened, and the original failure is still reported as a failure. A damaged canvas keeps the attachments it has on disk: `attachedCanvasId` still answers with it, so the chat waits for recovery with `storage_failed` on every mutation, including `detach`, rather than being handed a second canvas and ending up attached twice. A commit whose canvas was never created in the first place is the one case that holds nothing back, because there is nothing on disk to recover. `damagedCanvasIds()` lists what the workspace holds but will not serve, both from a damaged load at open and from a failed reread.
@@ -1213,7 +1213,7 @@ Settled by 06b (`canvas/06b-chart-runtime`):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
+- [x] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
   Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
 - [ ] `canvas/07b-design-system-picker`: Add the composer picker popover (search, light/dark preview toggle, presets then user kits with two swatches each, “Manage design systems” footer) and removable system/reference chips with persisted future-request selection; wire the image drop/picker path to 07d's `importCanvasImage`.
   Done: A queued request retains its pinned kit version after the user changes selection; the picker matches spec §10 and V3 in light and dark.
@@ -1250,11 +1250,56 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+
+Settled by 07a (`canvas/07a-design-kits`):
+
+- The three built-in version-1 kits are `droidex`, `openai-inspired` and
+  `claude-inspired`. The latter two are locally authored interpretations, not official
+  presets. Each owns complete matching light/dark token maps, including typography,
+  spacing, radius, shadow and motion. App chrome is unchanged.
+- `readDesignSystem` returns a detached snapshot of the exact pinned version. Built-ins
+  are validated and snapshotted on load; user saves retain the existing atomic immutable
+  version contract. Schema validation also refuses unmatched mode token names.
+- Shared source primitives are copied into each executable kit: native-prop Button
+  (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
+  Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
+  Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
+  `title`, `children`, optional `returnFocusId`/`fallbackFocusId`) using native modal
+  behavior, explicit focus cycling at the preview-frame edge, Escape and enabled,
+  visible-destination restoration.
+  Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
+  Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
+- Each light/dark kit provides translucent `--ds-lift` and `--ds-press` layers for
+  control hover and press over its own background; hover-only accent colours are gone.
+  The guest stylesheet reserves a stable scrollbar gutter so opening a dialog does
+  not move the card, and primitives do not lock `body` scrolling.
+- Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
+  for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
+  SIL OFL files both in the repository and the kit's virtual source files. Provenance is
+  in `presets/fonts/README.md`; other scripts use the local font stack.
+  Inline fonts are accepted for 07a: 64 KB of Inter, or 115 KB of Inter plus Lora,
+  per artifact is within every current limit. 07d owns serving each immutable font
+  once through a preview-host asset URL and changing the matching `font-src`/CSS allowlist.
+- `lucide-react` is pinned to 0.460.0, the app's existing version. The shared browser
+  module graph stages its ESM files, package metadata and ISC licence alongside Recharts;
+  unused Lucide CJS is absent. The flat design import allowlist includes `lucide-react`
+  and `recharts`, resolving their internal ESM entries through the owned runtime while
+  refusing public deep imports. `designStylesheet.ts` already scans the complete
+  snapshot with Tailwind 3 and needed no replacement path or dynamic-class guessing.
+- Compiler coverage exercises all six kit/mode starters and bounds a single named icon's
+  incremental output to 10 KiB. Contrast coverage checks the actual primitive foreground,
+  muted, primary, lifted, pressed, badge and error pairs against AA 4.5:1. The staged
+  offline probe compiles all six starters and the chart, checks font and Lucide notices,
+  and retains both damaged-runtime and resolver-isolation checks. Electron interaction
+  checks cover state, disabled controls, tabs, dialog focus cycling, Escape, restoration
+  and font load.
+
+
 ## Task 8: Element selection, direct edits and source/history UI
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
+- [x] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
   Done: Round-trip tests preserve surrounding source and reject stale, repeated or computed edits honestly.
 - [ ] `canvas/08b-element-selection`: Add bounded preview selection events, board overlays and the direct inspector with scoped composer references.
   Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
@@ -1266,6 +1311,65 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 **Files:** Create `sidecar/src/canvas/{sourceElements.ts,sourceElements.test.ts}` and `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx}`. Extend `compiler.ts`, preview runtime/event schemas, `CanvasWorkspace.ts`, `canvasMcpServer.ts` and Canvas integration tests.
 
 **Interfaces:** Uses Task 2 `SourceElement`. `instrumentSource(files: SourceFiles, revisionId: string): { files: SourceFiles; elements: SourceElement[] }` produces derived instrumented source without modifying canonical files. `ElementEdit = { element: ElementRef; change: { kind: 'text'; value: string } | { kind: 'token'; property: string; token: string } | { kind: 'image'; assetId: string } }`. `applyElementEdit(files: SourceFiles, elements: SourceElement[], edit: ElementEdit): SourceFiles` returns complete changed files or a typed ambiguity/stale-reference error; the caller commits through `write` with the reference's revision.
+
+Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache path):
+
+- `instrumentSource` uses TypeScript 5.9.3 from the existing lockfile, bundled into the
+  existing owned compiler entry. It derives instrumented files before esbuild; Tailwind still
+  scans canonical source. The parser adds about 9.6 MiB to that worker bundle. It is compiled
+  application code, with no external parser require/package or extra staging/resolution path.
+  TypeScript initializes its Node system using `__filename`; the compiler build binds that to
+  Node 22's `import.meta.filename`, so it names the owned worker rather than a checkout module.
+  The existing runtime manifest/verifier still owns every external package. The sidecar placement
+  was measured first and rejected after dense JSX blocked it for two seconds: the existing
+  compiler process and deadline must contain parsing too. Sonatype was unavailable; no dependency
+  security verdict is implied.
+- Every owned native JSX site carries `data-droidex-element`. IDs hash the revision, complete
+  canonical source tree, file and offset; offsets are UTF-16 positions in canonical source.
+  The inline insertion map carries canonical content into esbuild's composed artifact map.
+  Artifact maps omit source content and replace host runtime paths with opaque runtime names.
+  IDs are selection hints, never authorization; callers must still commit edits with the selected
+  revision as `expectedRevisionId`.
+- `applyElementEdit` returns complete contents of changed paths only. It reparses canonical
+  source and checks the selection map before replacing one AST range. `SourceElementError.code`
+  distinguishes `stale_reference` (reselect), `ambiguous_element` (ask the agent with the original
+  reference), `invalid_source`, and `invalid_edit`. There is one edit per call, no batch API.
+- Direct scope is a literal site in the entry's default function/arrow. Other component
+  definitions, callbacks/maps, JSX stored in variables/arrays, loops, and children passed through
+  custom components are shared. Reused/imported entry components are shared too. JSX spreads,
+  spread children, computed or split text, computed class names/styles, duplicate attributes or
+  style properties, and `children`/`dangerouslySetInnerHTML`/`srcset` overrides are not directly
+  editable. An image inside `picture` is computed because a source alternative can override it. Fragments have no DOM marker; native children in conditional branches keep distinct
+  sites. A literal site still requires the requested property to have a supported literal range.
+- Text editing supports a single JSX text node or string/no-substitution-template expression,
+  plus empty paired tags. Token editing replaces an existing literal `var(--token)` in an
+  allowlisted React style property; it does not rewrite utility classes or invent style objects.
+  Image editing replaces a literal `img src="canvas-asset:<assetId>"`; the bridge refuses image
+  edits until 07d's asset store can verify ownership. The edit boundary checks token membership
+  against the pinned kit's mode and CSS declarations before committing.
+- Ready build frames and restored snapshots carry the exact element map and up to 64 compiler
+  diagnostics. Older outcomes without these fields are cache misses and rebuild; cached ranges
+  must fit their canonical file. No historical reader or migration was added. `canvas.editElement`
+  resolves the current built map, rejects malformed/stale/computed references with curated codes,
+  applies the AST edit in the owned compiler worker, and commits changed source through the
+  workspace's normal scope and revision CAS. The edit's original request fingerprint and receipt
+  live in the mutation ledger, so a retry returns that receipt before checking the now-stale
+  selection; ordinary mutation-history pruning applies. A direct edit forks a compiler worker
+  for its request so parsing cannot block the sidecar's main loop; the worker is ended after
+  settlement.
+  The renderer protocol mirror and inbound validator share this contract; preview selection
+  events and inspector behavior remain in 08b.
+- Measurements on this arm64 checkout, Node 22: kit example (928 bytes, four sites) first
+  instrumentation 8.65 ms, warm median 0.43 ms across 29 runs; 1 MiB of source across four
+  maximum-sized files 33.91 ms. These exclude parser module loading and worker startup and
+  vary with host load. Exact-column inline maps expand that 1 MiB input to 9,438,320 bytes
+  inside the worker; esbuild composes them down to the output locations it emits. A deliberately
+  dense 256 KiB file with 65,529 JSX sites took 2.02 seconds in the initial probe. Parsing now
+  runs in the deadline-owned compiler process. Above `maxSourceElements: 8192`, the worker
+  compiles canonical source, returns an empty map, and reports `selection_unavailable` rather
+  than publishing a partial map or failing the preview.
+  This independent bound also applies at the worker reply and cache boundaries. These are
+  probes, not timing assertions in unit tests.
 
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.
@@ -1292,13 +1396,15 @@ Also cover escaping `<`, `&`, quotes and Unicode without changing surrounding so
 
 ## Task 9: Variants, local library and durable board undo
 
+**Settled by 09a (sidecar):** `create` copies pinned revision seeds into independent first revisions, persists source canvas/design/revision provenance, and answers mutation retries without adding frames. `placeBeside: { designId }` reserves collision-free two-column rows below the source with the existing 80 px gap; placement uses the live board at commit and never moves existing frames. The bridge validates seeds, placement and the 1–4 count. Current leases authorize one canvas, so cross-canvas seeds are refused. Follow-up turns already pin the returned designs/revisions through `CanvasTurnContext.designs` and `allowedDesignIds`; no additional targets or presence field was added. The renderer popover still needs layout/style/color choices, direction, count (default two), one pinned source revision/system, one creation request and one ordinary composer action targeting the returned designs. Task 04b still needs to expose `seed` and `placeBeside` through `canvas_create` MCP wiring and bind tool calls to the existing turn scope. UI, MCP and end-to-end acceptance remain open; no checklist items are ticked here.
+
 **Subtasks (one branch and PR each, merged in order):**
 
 - [ ] `canvas/09a-variants`: Add pinned layout/style/color variant requests, deterministic adjacent placement and explicit target scopes.
   Done: Idempotent creation leaves the original and siblings independent, including a failed sibling build.
 - [ ] `canvas/09b-duplicate-rename-library`: Implement duplicate/rename and searchable immutable local library copies with independent insertion.
   Done: Reuse still works after original-canvas deletion and empty-library guidance explains Add to library.
-- [ ] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
+- [x] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
   Done: Undo restores source/location and surfaces remote-layout conflicts without replaying stale moves.
 - [ ] `canvas/09d-saved-canvases-and-deletion`: Add Open saved canvas and explicit whole-canvas deletion with affected attachment disclosure.
   Done: Deletion unlinks attachments and cancels work while preserving independent library items; chat deletion retains canvas source.
@@ -1306,6 +1412,13 @@ Also cover escaping `<`, `&`, quotes and Unicode without changing surrounding so
 **Files:** Create `src/features/canvas/CanvasVariants.tsx` and `sidecar/src/canvas/{canvasLibrary.ts,canvasLibrary.test.ts}`. Extend Task 2 workspace/schema/protocol, Task 5 navigator/toolbar and Task 8 history UI. Add focused cases to `CanvasWorkspace.test.ts` and `tests/integration/canvas.spec.ts`.
 
 **Interfaces:** `LibraryItem = { itemId: string; name: string; sourceCanvasId: string; source: RevisionRef; designSystem: DesignSystemRef }`. `saveLibraryItem(input: Omit<LibraryItem, 'itemId'>): Promise<LibraryItem>` stores an independent immutable copy of source/assets plus revision provenance; `listLibraryItems(query: string): Promise<LibraryItem[]>` returns bounded summaries. Insertion uses `create` with `{ kind: 'library', itemId }` and makes an independent design. Workspace additions: `removeFrames(scope: CanvasScope, mutationId: string, designIds: string[]): Promise<{ undoId: string }>`, `undoRemoval(scope: CanvasScope, mutationId: string, undoId: string): Promise<CanvasChange>`, `renameFrame(scope: CanvasScope, mutationId: string, designId: string, name: string): Promise<CanvasChange>`, and `removeCanvas(canvasId: string): Promise<void>` behind an explicit app deletion action.
+
+Settled by 09c (sidecar workspace and protocol):
+
+- Delete and Undo commit persisted tombstones and retry receipts through the existing scope gate and sequence queue; deleting a frame cancels its build, and Undo restores its revision, name and rect after checking for new or moved occupants under that rect (`layout_conflict` carries the current occupant rect).
+- Rename takes `expectedManifestVersion` as a fifth workspace argument and on the bridge input, since the four-argument draft had no caller-supplied CAS token; source, layout and build commits advance that version.
+- The last 50 removals retain Undo; retiring an older tombstone drops only its Undo entry. Undo is bounded by count, not time, and survives reopening. Canonical revisions and assets remain until explicit deletion of the owning canvas or library item; derived-cache cleanup never touches source (spec §7).
+- `canvas_read` is owned by Task 4 and is absent on this base; `CanvasWorkspace.readFiles` already returns a curated not-found with an Undo hint for a removed frame, which that tool must pass through.
 
 - [ ] Implement a variants popover with layout/style/color choices, user direction and count 1–4 (default two). Capture the original revision/system once, reserve all sibling frames through one idempotent `create`, then submit one user-requested action through the current composer/session machinery with those explicit targets. This action is ordinary user intent, not hidden system text.
 - [ ] Place variants adjacent to their source with collision-free deterministic spacing. Never move the source or existing user-arranged frames. Child agents may be assigned separate frame scopes when the current harness supports them; sequential generation remains a complete supported flow. Derive presence from actual actors and mutations.
@@ -1335,12 +1448,20 @@ Then write to one returned variant and assert the source and other variant remai
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/10a-source-export`: Export the selected source revision, owned assets, kit/fonts/licenses and minimal locked-runtime README to a chosen directory.
+- [x] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
   Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
 - [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
   Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
 - [ ] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
   Done: Repeated close is harmless and reused provider handles reject old writes/events; committed source survives failures.
+
+Settled by 10a (`thread/canvas-10a-source-export`):
+
+- Source export reads the immutable revision and its pinned kit version from Canvas storage. It writes the source unchanged under `src/`, all kit files under `design-system/`, guidance and examples under `canvas-export/`, selected mode values under `canvas-export/`, referenced owned images under `assets/`, and embedded kit fonts under `fonts/`. Conversation records and build artifacts are excluded.
+- Electron main alone chooses the destination through `showOpenDialog` and calls the sidecar's validated HTTP route with a separate per-sidecar secret. The renderer receives only the result; that secret is stripped from agent and terminal child environments. The ordinary Canvas WebSocket has no export command.
+- The export includes a local build/preview script, a README and exact direct dependency versions resolved from the owned Canvas runtime. Generating a complete lockfile would require package resolution at export time, so export does not invoke npm or the network; the README explains that transitive packages resolve during installation. `lucide-react` uses the exact version in the root lockfile until Task 7 stages it in the Canvas runtime. An export requires an empty chosen folder, stages beside it, and publishes the complete project by rename.
+- An in-flight export pins an immutable revision and completes as that snapshot even if the whole canvas is deleted; deletion must not cancel it.
+- The current integration branch has no Canvas board controls yet. Task 5's board context action must call `exportCanvasSource` from `src/lib/desktop.ts` for its selected revision when that branch lands. The 10a test builds and serves the Hey starter from a temporary directory with local installed packages; it does not exercise a browser render or a packaged runtime.
 
 **Files:** Create `sidecar/src/canvas/{canvasExport.ts,canvasExport.test.ts}`. Extend the existing Electron file-save/capture bridge at its actual owner and Canvas context actions; inspect `electron/main.cjs` and `electron/preload.cjs` before placing code. Extend runtime smoke and workspace/build teardown tests.
 
