@@ -54,11 +54,12 @@ const LOAD_WAIT_MS = 8_000;
 // page, and whatever it does afterwards is dropped.
 const DEADLINE_MARGIN_MS = 3_000;
 const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
-// The sidecar's longest timeout, 60 s, and the longest wait it adds to one.
-const MAX_SIDECAR_TIMEOUT_MS = 75_000;
+// Includes the two-minute approval window for sensitive actions.
+const MAX_SIDECAR_TIMEOUT_MS = 180_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
+  const activeRequests = new Map(); // browserSessionId -> AbortControllers
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
 
@@ -77,22 +78,34 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       receivedAt + timeoutMs,
       Number.isFinite(message.expiresAt) ? message.expiresAt : Infinity,
     );
-    reply({
-      type: 'browser.result',
-      id: request.requestId,
-      result: await perform(
-        {
-          ...request,
-          receivedAt,
-          startBy,
-          runEnded: () => {
-            assertAccess(request);
-            return runEnded();
+    const controller = new AbortController();
+    const active = activeRequests.get(request.browserSessionId) ?? new Set();
+    active.add(controller);
+    activeRequests.set(request.browserSessionId, active);
+    try {
+      reply({
+        type: 'browser.result',
+        id: request.requestId,
+        result: await perform(
+          {
+            ...request,
+            receivedAt,
+            startBy,
+            signal: controller.signal,
+            runEnded: () => {
+              assertAccess(request);
+              return controller.signal.aborted || runEnded();
+            },
           },
-        },
-        timeoutMs,
-      ),
-    });
+          timeoutMs,
+        ),
+      });
+    } finally {
+      controller.abort();
+      active.delete(controller);
+      if (!active.size && activeRequests.get(request.browserSessionId) === active)
+        activeRequests.delete(request.browserSessionId);
+    }
   }
 
   function assertAccess(request) {
@@ -102,6 +115,8 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   async function perform(request, timeoutMs) {
     try {
       if (request.action === 'close') {
+        for (const controller of activeRequests.get(request.browserSessionId) ?? [])
+          controller.abort();
         // Actions still queued on it never start.
         const queue = queues.get(request.browserSessionId);
         if (queue) queue.closed = true;
@@ -321,6 +336,7 @@ function agentAction(request) {
     receivedAt: request.receivedAt,
     startBy: request.startBy,
     runEnded: request.runEnded,
+    signal: request.signal,
     value: request.value,
     submit: request.submit,
     key: request.key,

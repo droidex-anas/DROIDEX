@@ -152,8 +152,9 @@ async function focusedFrame(dbg) {
   };
   let documentId = await documentOf(undefined); // the document walked, as a remote object
   try {
+    let node;
     for (;;) {
-      const node = await activeElement(dbg, sessionId, documentId);
+      node = await activeElement(dbg, sessionId, documentId);
       if (node?.localName !== 'iframe' && node?.localName !== 'frame') break;
       const child = await crossSiteChild(dbg, sessions, sessionId, node.backendNodeId);
       if (child) {
@@ -182,7 +183,13 @@ async function focusedFrame(dbg) {
     });
     if (typeof result?.value !== 'boolean')
       throw new Error('The page changed before the action ran; call browser_read_page.');
-    return { sessionId, document, takesText: result.value };
+    return {
+      sessionId,
+      document,
+      takesText: result.value,
+      backendNodeId: node?.backendNodeId,
+      closedShadow: node?.shadowRoots?.some((root) => root.shadowRootType === 'closed'),
+    };
   } finally {
     for (const object of held)
       await send(dbg, object.sessionId, 'Runtime.releaseObject', {

@@ -119,3 +119,24 @@ test('disabling agent access during guest restoration prevents reading the resto
   assert.equal(reads, 0);
   assert.deepEqual(requests.workingSessions(), []);
 });
+
+test('closing a browser aborts its pending approval before it can send input', async () => {
+  const { manager, send, requests } = fixture();
+  const shown = Promise.withResolvers();
+  manager.runAgentAction = (request) =>
+    new Promise((resolve) => {
+      shown.resolve();
+      request.signal.addEventListener(
+        'abort',
+        () => resolve({ ok: false, error: 'approval canceled' }),
+        { once: true },
+      );
+    });
+  const pending = send('fillCredentials');
+  await shown.promise;
+  await send('close', 'user');
+  const result = await pending;
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'approval canceled');
+  assert.deepEqual(requests.workingSessions(), []);
+});
