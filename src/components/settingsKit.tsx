@@ -127,6 +127,7 @@ export function Dropdown({
     <div className={`relative ${width === 'w-full' ? 'w-full' : 'shrink-0'}`} ref={ref}>
       <button
         ref={triggerRef}
+        aria-label={`${ariaLabel}: ${sel?.label ?? placeholder}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => {

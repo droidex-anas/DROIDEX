@@ -1,5 +1,5 @@
 type BrowserNavigationApproval = 'follow_autonomy' | 'always_ask' | 'new_sites' | 'never_ask';
-type BrowserLoginFillApproval = 'always_ask' | 'never';
+export type BrowserLoginFillApproval = 'always_ask' | 'never';
 type BrowserSitePermissionMode = 'block' | 'ask';
 
 interface BrowserSitePermissionRule {

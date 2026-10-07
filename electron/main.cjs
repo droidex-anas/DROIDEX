@@ -139,12 +139,6 @@ const browserPrompts = createBrowserPromptController({
   send: (prompt) => mainWindow.webContents.send('browser-permission-prompt', prompt),
   dismiss: (requestId) =>
     mainWindow?.webContents.send('browser-permission-prompt-dismiss', requestId),
-  showNative: ({ kind, ...prompt }, signal) =>
-    dialog.showMessageBox(mainWindow, {
-      ...prompt,
-      type: kind === 'warning' ? 'warning' : 'question',
-      signal,
-    }),
 });
 const nativeBrowserManager = createNativeBrowserManager({
   app,

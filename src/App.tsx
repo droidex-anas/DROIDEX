@@ -17,6 +17,7 @@ import { isEmbedded } from './lib/embed';
 import { getApiKey, isDesktop, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { forwardNativeBrowserShortcuts } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
+import { BrowserPromptHost } from './components/browserPrompt/BrowserPromptHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
@@ -1135,6 +1136,7 @@ export default function App() {
       {/* Every chat's browser page. Last, so the pane's slot is laid out before
           the pages anchored to it. */}
       {!embedded && isDesktop() && <BrowserHost />}
+      {!embedded && isDesktop() && <BrowserPromptHost />}
     </div>
   );
 }
