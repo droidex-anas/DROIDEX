@@ -14,6 +14,7 @@ import {
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
+import { CompilerProcesses } from './canvasCompilerProcesses.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
@@ -317,6 +318,42 @@ test('concurrent termination waits for child exit, not a stopped acknowledgement
   assert.deepEqual(child.signals, [], 'exit clears the shutdown grace timer');
 });
 
+test('a failed spawn close settles concurrent termination and the process drain', async (t) => {
+  const children = mockCompilerProcesses(t);
+  const processes = new CompilerProcesses();
+  const slot = { compiler: null };
+  const worker = processes.of(slot);
+  const rejected = assert.rejects(
+    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+    CompilerUnavailableError,
+  );
+  const child = children[0];
+  assert.ok(child);
+  Object.defineProperty(child, 'pid', { value: undefined });
+
+  const first = worker.terminate();
+  const second = worker.terminate();
+  processes.end(slot);
+  const completed = [false, false, false];
+  const ending = [first, second, processes.drain()].map((promise, index) =>
+    promise.then(() => {
+      completed[index] = true;
+    }),
+  );
+  await rejected;
+
+  child.emit('error', Object.assign(new Error('spawn failed'), { code: 'EAGAIN' }));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(completed, [false, false, false], 'spawn failure still awaits close');
+
+  child.emit('close', -11, null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual([...completed], [true, true, true], 'no child exists to emit an exit');
+  await Promise.all(ending);
+  t.mock.timers.tick(2_000);
+  assert.deepEqual(child.signals, [], 'failed-spawn close clears the shutdown grace timer');
+});
+
 test('the shutdown grace kills the compiler but waits for its exit', async (t) => {
   const children = mockCompilerProcesses(t);
   const worker = new CompilerWorker();
@@ -330,6 +367,7 @@ test('the shutdown grace kills the compiler but waits for its exit', async (t) =
   });
   const child = children[0];
   assert.ok(child);
+  Object.defineProperty(child, 'pid', { value: 1_234 });
   await rejected;
 
   t.mock.timers.tick(1_999);
@@ -342,6 +380,9 @@ test('the shutdown grace kills the compiler but waits for its exit', async (t) =
   child.emit('error', new Error('The IPC channel closed during shutdown.'));
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(completed, false, 'an IPC error is not a child exit');
+  child.emit('close', null, null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(completed, false, "a live child's close is not a child exit");
 
   child.exit();
   await ending;

@@ -155,10 +155,18 @@ export class CompilerWorker {
       // Give the compiler time to stop and reap esbuild before forcing its exit.
       const grace = setTimeout(() => compiler.kill('SIGKILL'), SHUTDOWN_GRACE_MS);
       grace.unref();
-      compiler.once('exit', () => {
+      const onExit = (): void => {
         clearTimeout(grace);
+        compiler.off('exit', onExit);
+        compiler.off('close', onClose);
         resolve();
-      });
+      };
+      const onClose = (): void => {
+        // A failed fork has no PID and emits close without ever emitting exit.
+        if (compiler.pid === undefined) onExit();
+      };
+      compiler.once('exit', onExit);
+      compiler.once('close', onClose);
     });
     this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (compiler !== null) {
