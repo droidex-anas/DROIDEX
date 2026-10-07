@@ -113,6 +113,7 @@ import {
   visibleSessionTarget,
   type VisibleSessionTarget,
 } from '../lib/childSessions';
+import { addLocalSteer, dropLocalSteers } from '../lib/localSteers';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
 import {
@@ -1728,8 +1729,15 @@ export default function PromptInput({
     const steerId =
       isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
-      // A steer shows from the sidecar's list of pending steers instead.
-      if (!steerId)
+      // A steer shows as pending at once, until the sidecar's own list of
+      // pending steers takes over.
+      if (steerId)
+        addLocalSteer(activeSession.appSessionId, {
+          id: steerId,
+          text: composed,
+          sentAt: Date.now(),
+        });
+      else
         dispatch({
           type: 'SESSION_TRANSCRIPT',
           event: {
@@ -1783,8 +1791,10 @@ export default function PromptInput({
     if (showTurnStarting) startTurnStarting();
 
     const committed = await commitPrimaryPromptAfterBaseline({
+      // A steer joins a turn whose baseline was taken when it started; a new
+      // one would only hold the steer back.
       waitForBaseline: () =>
-        workingDirectory
+        workingDirectory && !steerId
           ? markGitTurnStart(workingDirectory, activeSession.appSessionId)
           : Promise.resolve(),
       canCommit: () => !updateInterruptedSubmit(),
@@ -1792,6 +1802,7 @@ export default function PromptInput({
       resetComposer: clearAfterSubmit,
       sendCommand,
     });
+    if (!committed && steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
     if (!committed && showTurnStarting) stopTurnStarting();
   };
 

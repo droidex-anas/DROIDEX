@@ -1,7 +1,9 @@
-import { Suspense } from 'react';
+import { Suspense, useEffect, useSyncExternalStore } from 'react';
 import { threadReports } from '../../features/projects/threadNotices';
 import { useStoreSelector } from '../../hooks/useStore';
 import { sendSteerNow } from '../../lib/commands';
+import { dropLocalSteers, localSteersOf, subscribeLocalSteers } from '../../lib/localSteers';
+import { sessionIsLive } from '../../lib/sessions';
 import { ThreadReportNotice } from '../chat';
 import { PromptActions } from './ResponseActions';
 import { UserBubble } from './UserBubble';
@@ -10,13 +12,46 @@ import { UserBubble } from './UserBubble';
 // transcript in the order they were sent. Each can be sent now. The user's own
 // is their bubble; a message from another chat is the notice it becomes once
 // the model takes it in, by the same rule the transcript row uses.
+// A steer this window just sent shows at once, before the sidecar lists it.
 export function PendingSteers({ appSessionId }: { appSessionId: string }) {
-  const steers = useStoreSelector((state) =>
+  const listed = useStoreSelector((state) =>
     Object.hasOwn(state.sessions, appSessionId)
       ? state.sessions[appSessionId].pendingSteers
       : undefined,
   );
-  if (!steers) return null;
+  const local = useSyncExternalStore(subscribeLocalSteers, () => localSteersOf(appSessionId));
+  const live = useStoreSelector(
+    (state) =>
+      Object.hasOwn(state.sessions, appSessionId) && sessionIsLive(state.sessions[appSessionId]),
+  );
+  // Read only while a local steer waits, so streaming text does not re-render this.
+  const transcript = useStoreSelector((state) =>
+    local.length > 0 ? state.transcripts[appSessionId] : undefined,
+  );
+  useEffect(() => {
+    if (local.length === 0) return;
+    // A local steer is settled once the sidecar lists it, once the message it
+    // became lands in the transcript, or once the chat stops without either.
+    const listedIds = new Set(listed?.map((steer) => steer.id));
+    const settled = new Set<string>();
+    const earliest = Math.min(...local.map((steer) => steer.sentAt));
+    const delivered: string[] = [];
+    for (let i = (transcript?.length ?? 0) - 1; i >= 0; i -= 1) {
+      const event = transcript?.[i];
+      if (!event || event.ts < earliest) break;
+      if (event.author === 'user' && event.kind === 'text' && event.text)
+        delivered.push(event.text);
+    }
+    for (const steer of local) {
+      const match = delivered.indexOf(steer.text);
+      if (listedIds.has(steer.id) || !live || match >= 0) settled.add(steer.id);
+      if (match >= 0) delivered.splice(match, 1);
+    }
+    dropLocalSteers(appSessionId, settled);
+  }, [appSessionId, listed, live, local, transcript]);
+  const listedIds = new Set(listed?.map((steer) => steer.id));
+  const steers = [...(listed ?? []), ...local.filter((steer) => !listedIds.has(steer.id))];
+  if (steers.length === 0) return null;
   return steers.map((steer) => {
     const sendNow = () => {
       sendSteerNow(appSessionId, steer.id);
