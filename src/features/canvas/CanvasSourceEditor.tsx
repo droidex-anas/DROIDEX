@@ -18,7 +18,6 @@ interface CanvasSourceEditorProps {
   issues: Map<number, SourceIssue[]>;
   /** A line to reveal and put the caret on, bumped by the issue list. */
   reveal: { line: number; nonce: number } | null;
-  readOnly: boolean;
   onChange: (text: string) => void;
   /** Cmd/Ctrl+S from inside the editor. */
   onSave: () => void;
@@ -28,14 +27,15 @@ interface CanvasSourceEditorProps {
 // line height would round differently in the two and drift the overlay.
 const LINE_HEIGHT = 19;
 const TEXT_METRICS = 'font-mono text-[12px]';
+// Both layers take the same box; only the gutter's own left rail differs.
 const PADDING = 'py-2.5 pr-4';
+const GUTTER_PADDING = 'py-2.5 px-3';
 
 export function CanvasSourceEditor({
   path,
   text,
   issues,
   reveal,
-  readOnly,
   onChange,
   onSave,
 }: CanvasSourceEditorProps) {
@@ -60,7 +60,7 @@ export function CanvasSourceEditor({
       <div className="flex min-h-full w-max min-w-full">
         <div
           aria-hidden
-          className={`sticky left-0 z-10 shrink-0 select-none bg-droid-surface pl-3 pr-3 text-right text-droid-text-muted/60 ${TEXT_METRICS} ${PADDING}`}
+          className={`sticky left-0 z-10 shrink-0 select-none bg-droid-surface text-right text-droid-text-muted/60 ${TEXT_METRICS} ${GUTTER_PADDING}`}
         >
           {lines.map((_, index) => (
             <div
@@ -101,7 +101,6 @@ export function CanvasSourceEditor({
           <textarea
             ref={input}
             value={text}
-            readOnly={readOnly}
             wrap="off"
             spellCheck={false}
             aria-label={`${path} source`}
@@ -157,7 +156,7 @@ function CodeLayer({ children }: { children: ReactNode }) {
 /** One line, tinted when the build reported something on it. */
 function CodeLine({ faulted, children }: { faulted: boolean; children: ReactNode }) {
   return (
-    <div style={{ height: LINE_HEIGHT }} className={faulted ? 'bg-droid-red/[0.08]' : undefined}>
+    <div style={{ height: LINE_HEIGHT }} className={faulted ? 'bg-droid-red/10' : undefined}>
       {children}
     </div>
   );

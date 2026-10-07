@@ -148,7 +148,7 @@ export function CanvasSourcePanel({
             </span>
           </h2>
           {state.saveError ? (
-            <p role="alert" className="max-w-[55%] truncate text-[11px] text-droid-red">
+            <p role="alert" className="min-w-0 truncate text-[11px] text-droid-red">
               {state.saveError}
             </p>
           ) : null}
@@ -156,7 +156,10 @@ export function CanvasSourcePanel({
             onClick={save}
             disabled={write === null}
             title="Save and rebuild (⌘S)"
-            className="rounded-lg bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text transition-colors hover:bg-droid-active disabled:text-droid-text-muted/60 disabled:hover:bg-droid-elevated"
+            // A low-alpha accent tint, not `elevated`: on a dark theme `raised`
+            // resolves to the elevated rung, and the pane's primary action
+            // would read as plain text (05a's note).
+            className="rounded-lg bg-droid-accent/10 px-2.5 py-1 text-[11px] text-droid-text transition-colors enabled:hover:bg-droid-accent/20 disabled:bg-transparent disabled:text-droid-text-muted"
           >
             {state.saving ? 'Saving…' : 'Save and rebuild'}
           </button>
@@ -206,7 +209,6 @@ export function CanvasSourcePanel({
                   text={sourceText(source, activePath)}
                   issues={issuesByLine(issues, activePath)}
                   reveal={reveal}
-                  readOnly={state.saving}
                   onChange={(text) => {
                     dispatch({ type: 'edit', path: activePath, text });
                   }}
@@ -298,13 +300,13 @@ function ConflictBar({
       </span>
       <button
         onClick={onKeepMine}
-        className="rounded-lg bg-droid-active px-2 py-1 text-droid-text transition-colors hover:bg-droid-raised"
+        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
       >
         Keep mine
       </button>
       <button
         onClick={onTakeTheirs}
-        className="rounded-lg px-2 py-1 transition-colors hover:bg-droid-active hover:text-droid-text"
+        className="rounded-lg px-2 py-1 transition-colors hover:bg-droid-accent/10 hover:text-droid-text"
       >
         Take theirs
       </button>
@@ -334,13 +336,13 @@ function DiscardBar({
       </span>
       <button
         onClick={onCancel}
-        className="rounded-lg bg-droid-active px-2 py-1 text-droid-text transition-colors hover:bg-droid-raised"
+        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
       >
         Keep editing
       </button>
       <button
         onClick={onDiscard}
-        className="rounded-lg px-2 py-1 text-droid-red transition-colors hover:bg-droid-active"
+        className="rounded-lg px-2 py-1 text-droid-red transition-colors hover:bg-droid-accent/10"
       >
         Discard
       </button>
@@ -373,7 +375,7 @@ function IssueList({
               onReveal(issue);
             }}
             disabled={issue.path === null}
-            className="flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-[11px] leading-[17px] text-droid-text-secondary transition-colors enabled:hover:bg-droid-elevated disabled:cursor-default"
+            className="flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-[11px] leading-5 text-droid-text-secondary transition-colors enabled:hover:bg-droid-elevated disabled:cursor-default"
           >
             <span className="shrink-0 text-droid-red">
               {issue.path === null
