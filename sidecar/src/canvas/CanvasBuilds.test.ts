@@ -514,6 +514,37 @@ test('closing releases every slot and settles every waiter once', async (t) => {
   await canvas.builds.close();
 });
 
+test('close starts compiler termination before held artifact storage settles', async (t) => {
+  const storage = holdBuildOutput();
+  const canvas = await board(t, { fs: storage.fs });
+  const [designId] = await canvas.create('Hey');
+  assert.ok(designId);
+  await canvas.write(designId, null, 'v1');
+  const compile = await canvas.fleet.compile(1);
+  storage.arm();
+  compile.ready('artifact-one');
+  await storage.reached;
+  let closed = false;
+  const closing = canvas.builds.close().then(() => {
+    closed = true;
+  });
+  const repeated = canvas.builds.close();
+  try {
+    assert.equal(canvas.fleet.terminated, 1, 'termination starts while storage is still held');
+    await drained();
+    assert.equal(closed, false, 'close still owns the held run');
+  } finally {
+    storage.release();
+    await Promise.all([closing, repeated]);
+  }
+  assert.equal(canvas.fleet.ended.length, 1, 'concurrent closes terminate the compiler once');
+  assert.equal(
+    reportedStates(canvas, designId).some((build) => build.status === 'ready'),
+    false,
+  );
+  assert.equal((await savedManifest(canvas)).designs[0]?.lastWorkingRevisionId, null);
+});
+
 test('an artifact that lands after a newer attempt failed is not resurrected', async (t) => {
   const storage = holdBuildOutput();
   const canvas = await board(t, { fs: storage.fs });

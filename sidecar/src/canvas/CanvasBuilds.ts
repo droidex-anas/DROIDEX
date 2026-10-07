@@ -246,8 +246,8 @@ export class CanvasBuilds {
     this.closed = true;
     this.queued.clear();
     for (const slot of this.slots) this.abandon(slot);
-    while (this.settling.size > 0) await Promise.all([...this.settling]);
     for (const slot of this.slots) this.processes.end(slot);
+    while (this.settling.size > 0) await Promise.all([...this.settling]);
     await this.processes.drain();
     this.states.clear();
   }
