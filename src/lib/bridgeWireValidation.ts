@@ -216,6 +216,11 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
+    case 'session.steerWithdrawn':
+      return (
+        hasStrings(value, ['appSessionId', 'steerId', 'requestId']) &&
+        typeof value.withdrawn === 'boolean'
+      );
     case 'session.model_update_applied':
       return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
@@ -396,7 +401,10 @@ function isSessionSummary(value: unknown): boolean {
     (value.pendingSteers === undefined ||
       (Array.isArray(value.pendingSteers) &&
         value.pendingSteers.every(
-          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+          (steer) =>
+            isRecord(steer) &&
+            hasStrings(steer, ['id', 'text']) &&
+            typeof steer.canWithdraw === 'boolean',
         ))) &&
     (value.lineage === undefined || isSessionLineage(value.lineage)) &&
     (value.usageLimit === undefined || isUsageLimit(value.usageLimit))

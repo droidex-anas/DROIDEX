@@ -735,8 +735,8 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   await steered.lifecycle.send('steered', 'steer one', undefined, 'steer-1');
   await steered.lifecycle.send('steered', 'steer two', undefined, 'steer-2');
   assert.deepEqual(steered.registry.getCanonicalSummary('steered')?.pendingSteers, [
-    { id: 'steer-1', text: 'steer one' },
-    { id: 'steer-2', text: 'steer two' },
+    { id: 'steer-1', text: 'steer one', canWithdraw: true },
+    { id: 'steer-2', text: 'steer two', canWithdraw: true },
   ]);
   await steered.lifecycle.sendNow('steered', 'steer-2');
   await steered.lifecycle.sendNow('steered', 'steer-1');
@@ -747,6 +747,83 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   // reorders the queue instead of interrupting the turn that sends it; the
   // rest keeps the order it was sent in.
   assert.equal(interruptCount(steered), 1);
+});
+
+test('withdrawal requires harness confirmation, including during Send now, and never resends', async () => {
+  for (const provider of ['droid', 'codex', 'claude'] as const) {
+    const h = createHarness();
+    const backend = queueCreate(h, provider);
+    const turn = backend.deferNextStream();
+    await h.lifecycle.create(createCommand('first'));
+    await backend.waitForPrompts(1);
+    const live = requireLive(h, provider);
+    let settleDelivery: (outcome: boolean | 'withdrawn') => void = () => undefined;
+    const handedOver = turnGate();
+    live.session = {
+      provider,
+      providerSessionId: provider,
+      stream: live.session.stream.bind(live.session),
+      setModel: live.session.setModel.bind(live.session),
+      setAutonomy: live.session.setAutonomy.bind(live.session),
+      interrupt: live.session.interrupt.bind(live.session),
+      close: live.session.close.bind(live.session),
+      steer: (_text, _mentions, steerId) => {
+        assert.equal(steerId, 'held');
+        return new Promise((resolve) => {
+          settleDelivery = resolve;
+          handedOver.resolve();
+        });
+      },
+    };
+    let confirmed = false;
+    if (provider === 'claude')
+      live.session.withdrawSteer = (steerId) => {
+        assert.equal(steerId, 'held');
+        if (confirmed) settleDelivery('withdrawn');
+        return Promise.resolve(confirmed);
+      };
+    const pending = () => h.registry.getCanonicalSummary(provider)?.pendingSteers;
+
+    live.compacting = true;
+    await h.lifecycle.send(provider, 'queued', undefined, 'queued');
+    assert.deepEqual(pending(), [{ id: 'queued', text: 'queued', canWithdraw: true }]);
+    live.closeMode = 'preserve-pending';
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'queued'), true);
+    assert.deepEqual(pending(), []);
+    delete live.closeMode;
+    live.compacting = false;
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'unknown'), false);
+
+    const sending = h.lifecycle.send(provider, 'held', undefined, 'held');
+    await handedOver.promise;
+    assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: provider === 'claude' }]);
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), false);
+    assert.equal(pending()?.length, 1);
+    if (provider === 'claude') {
+      confirmed = true;
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), true);
+      await sending;
+    } else {
+      const interrupt = backend.deferNextInterrupt();
+      const stopping = h.lifecycle.sendNow(provider, 'held');
+      assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: false }]);
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), false);
+      settleDelivery(false);
+      await sending;
+      interrupt.resolve();
+      await stopping;
+      assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: true }]);
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), true);
+    }
+    assert.deepEqual(pending(), []);
+    turn.resolve();
+    await live.turnPromise;
+    assert.deepEqual(backend.prompts, ['first']);
+    assert.equal(
+      h.calls.some((call) => call.method === 'appendSteer'),
+      false,
+    );
+  }
 });
 
 test('a prompt from another chat steers the running turn without waiting for it', async () => {
@@ -882,7 +959,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
 
   const delivered = h.lifecycle.send('steer', 'delivered', undefined, 'steer-1');
   await harnessHas(1);
-  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered' }]);
+  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered', canWithdraw: false }]);
   deliveries[0](true);
   await delivered;
   assert.deepEqual(pendingSteers(), []);

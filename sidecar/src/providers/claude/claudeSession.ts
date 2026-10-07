@@ -15,6 +15,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import type {
   Autonomy,
   ContextWindowTokens,
+  ProviderMention,
   ReasoningEffort,
   SessionInteractionMode,
 } from '../../protocol.js';
@@ -101,7 +102,14 @@ export class ClaudeSession implements ProviderSession {
   // The running turn takes steers: set once its prompt is pushed, never for a slash command.
   private steerable = false;
   // Steers the CLI has not started yet, by uuid, with whoever waits on each.
-  private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
+  private readonly steerDeliveries = new Map<
+    string,
+    {
+      resolve: (outcome: boolean | 'withdrawn') => void;
+      outcome?: boolean | 'withdrawn';
+      withdrawalRequested?: true;
+    }
+  >();
   // The running turn's own result has arrived; it may still wait for steers.
   private turnAnswered = false;
   private turnQueue?: MessageQueue<TurnItem>;
@@ -274,7 +282,6 @@ export class ClaudeSession implements ProviderSession {
         yield* events;
         const lifecycle = commandLifecycle(message);
         if (lifecycle?.state === 'started') this.settleSteer(lifecycle.uuid, true);
-        if (lifecycle?.state === 'cancelled') this.settleSteer(lifecycle.uuid, false);
         // A local slash command bypasses the model loop and publishes this one
         // terminal frame instead of a result for the ordinary turn path.
         if (message.type === 'system' && message.subtype === 'local_command_output') {
@@ -334,7 +341,9 @@ export class ClaudeSession implements ProviderSession {
         this.discardUntilResult = result < 0;
         if (result >= 0) this.continueAfterTurn(unread.slice(result + 1));
       }
-      await Promise.all([...this.steerDeliveries.keys()].map((uuid) => this.withdrawSteer(uuid)));
+      await Promise.all(
+        [...this.steerDeliveries.keys()].map((uuid) => this.cancelUndeliveredSteer(uuid)),
+      );
     }
   }
 
@@ -342,35 +351,62 @@ export class ClaudeSession implements ProviderSession {
   // boundary, or runs it right after the turn's result. Resolves true once the
   // model has it. The CLI resolves a slash command itself, so that can only
   // run as a turn of its own.
-  steer(text: string): Promise<boolean> {
+  steer(
+    text: string,
+    _mentions: ProviderMention[] | undefined,
+    uuid: string,
+  ): Promise<boolean | 'withdrawn'> {
     if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
-    const uuid = randomUUID();
-    const delivered = new Promise<boolean>((resolve) => {
-      this.steerDeliveries.set(uuid, resolve);
+    const delivery = new Promise<boolean | 'withdrawn'>((resolve) => {
+      this.steerDeliveries.set(uuid, { resolve });
     });
     this.prompts.push({
       type: 'user',
-      uuid,
+      uuid: uuid as SDKUserMessage['uuid'],
       session_id: this.providerSessionId,
       parent_tool_use_id: null,
       message: { role: 'user', content: text },
       priority: 'next',
     });
-    return delivered;
+    return delivery;
   }
 
-  private settleSteer(uuid: string, delivered: boolean): void {
-    this.steerDeliveries.get(uuid)?.(delivered);
+  private settleSteer(uuid: string, outcome: boolean | 'withdrawn'): void {
+    const pending = this.steerDeliveries.get(uuid);
+    if (!pending) return;
     this.steerDeliveries.delete(uuid);
+    pending.outcome = outcome;
+    pending.resolve(outcome);
+  }
+
+  private settleCancelledSteer(uuid: string): void {
+    this.settleSteer(
+      uuid,
+      this.steerDeliveries.get(uuid)?.withdrawalRequested ? 'withdrawn' : false,
+    );
+  }
+
+  async withdrawSteer(uuid: string): Promise<boolean> {
+    const pending = this.steerDeliveries.get(uuid);
+    if (!pending || this.isClosed) return false;
+    pending.withdrawalRequested = true;
+    const cancelled = await this.query.cancelAsyncMessage(uuid).catch(() => false);
+    if (this.abort.signal.aborted) return false;
+    if (cancelled) this.settleCancelledSteer(uuid);
+    return pending.outcome === 'withdrawn';
   }
 
   // A steer the turn ended without is withdrawn so the session layer can send
   // it again. Unless the CLI says it cancelled it, the CLI may still run it,
   // and losing one steer on a failed turn beats showing it twice.
-  private async withdrawSteer(uuid: string): Promise<void> {
-    const cancelled =
-      this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => false));
-    this.settleSteer(uuid, !cancelled);
+  private async cancelUndeliveredSteer(uuid: string): Promise<void> {
+    if (this.isClosed) {
+      this.settleSteer(uuid, false);
+      return;
+    }
+    const cancelled = await this.query.cancelAsyncMessage(uuid).catch(() => false);
+    if (cancelled) this.settleCancelledSteer(uuid);
+    else this.settleSteer(uuid, true);
   }
 
   private requireTurnCanStart(): void {
@@ -407,6 +443,9 @@ export class ClaudeSession implements ProviderSession {
   private dispatch(message: SDKMessage): void {
     this.catalog.observe(message);
     this.usage.observe(message);
+    // Cancellation can confirm a withdrawal while the turn reader is busy.
+    const lifecycle = commandLifecycle(message);
+    if (lifecycle?.state === 'cancelled') this.settleCancelledSteer(lifecycle.uuid);
     if (
       !this.activeTurnId &&
       !this.delegatedTurnRunning &&
@@ -583,7 +622,7 @@ export class ClaudeSession implements ProviderSession {
     // its own result, so the next prompt does not pay for a restart. Steers not
     // yet delivered are cancelled with it rather than left to run unobserved.
     const receipt = await this.query.interrupt({ cancelQueued: true });
-    for (const uuid of receipt?.cancelled ?? []) this.settleSteer(uuid, false);
+    for (const uuid of receipt?.cancelled ?? []) this.settleCancelledSteer(uuid);
     // A turn that already has its answer may be waiting only on steers the CLI
     // had not started. An idle CLI says nothing more, so the turn ends here.
     if (this.turnAnswered && this.activeTurnId === turnId) {

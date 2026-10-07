@@ -729,8 +729,11 @@ export class SessionLifecycle {
   // True when that settles it: the model took it in, or a Stop or Send now
   // took it back first. False when the turn could not take it.
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
+    const appSessionId = liveSession.summary.appSessionId;
     const session = liveSession.session;
+    const steerId = prompt.steerId;
     if (
+      !steerId ||
       !liveSession.streaming ||
       liveSession.compacting ||
       liveSession.autoCompacting ||
@@ -740,19 +743,53 @@ export class SessionLifecycle {
       return false;
     liveSession.steers.push(prompt);
     this.updateQueuedSends(liveSession);
-    const delivered = await session.steer(prompt.text, prompt.mentions).catch(() => false);
+    const outcome = await session.steer(prompt.text, prompt.mentions, steerId).catch(() => false);
+    if (
+      this.dependencies.registry.getLive(appSessionId) !== liveSession ||
+      liveSession.session !== session
+    )
+      return true;
     const held = removePrompt(liveSession.steers, prompt);
-    if (!delivered) return !held;
+    if (!outcome) {
+      if (liveSession.pendingSends.includes(prompt)) {
+        this.updateQueuedSends(liveSession);
+        return true;
+      }
+      return !held;
+    }
     // Send now may have queued it again just as the harness delivered it. It
     // leaves the queue at once, so a turn settling while the row is written
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
-    const appSessionId = liveSession.summary.appSessionId;
-    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      await this.dependencies.appendSteer(appSessionId, prompt.text);
-    this.updateQueuedSends(liveSession);
+    if (outcome !== 'withdrawn') await this.dependencies.appendSteer(appSessionId, prompt.text);
+    if (
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session
+    )
+      this.updateQueuedSends(liveSession);
     return true;
+  }
+
+  async withdrawSteer(appSessionId: string, steerId: string): Promise<boolean> {
+    const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (!liveSession) return false;
+    const prompt = [...liveSession.steers, ...liveSession.pendingSends].find(
+      (pending) => pending.steerId === steerId,
+    );
+    if (!prompt) return false;
+    if (!liveSession.steers.includes(prompt)) {
+      removePrompt(liveSession.pendingSends, prompt);
+      this.updateQueuedSends(liveSession);
+      return true;
+    }
+    const session = liveSession.session;
+    if (!session.withdrawSteer) return false;
+    const withdrawn = await session.withdrawSteer(steerId).catch(() => false);
+    const current = this.dependencies.registry.getLive(appSessionId);
+    return (
+      current === liveSession && current.session === session && !current.closeMode && withdrawn
+    );
   }
 
   // Stops the running turn so this steer runs next. The interrupt drops every
@@ -766,7 +803,9 @@ export class SessionLifecycle {
       (pending) => pending.steerId === steerId,
     );
     if (!prompt) return;
-    const rest = [...liveSession.steers.splice(0), ...liveSession.pendingSends]
+    // Keep harness ownership until its delivery/cancellation settles, even
+    // while Send now also puts the prompt on the app's queue.
+    const rest = [...new Set([...liveSession.steers, ...liveSession.pendingSends])]
       .filter((pending) => pending !== prompt)
       .sort((a, b) => a.order - b.order);
     liveSession.pendingSends = [prompt, ...rest];
@@ -1754,12 +1793,21 @@ function isWithdrawn(prompt: SessionPrompt): boolean {
 // What the chat shows of its queue: how many sends wait, and the steers the
 // model has not taken in yet, whether the harness holds them or the queue does.
 function queueSummary(
-  liveSession: LiveTurnState,
+  liveSession: LiveSession,
 ): Pick<SessionSummary, 'queuedSends' | 'pendingSteers'> {
-  const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends]
+  const pendingSteers = [...new Set([...liveSession.steers, ...liveSession.pendingSends])]
     .sort((a, b) => a.order - b.order)
-    .flatMap(({ steerId, text }) =>
-      steerId ? [{ id: steerId, text: userPromptDisplay(text).text }] : [],
+    .flatMap((prompt) =>
+      prompt.steerId
+        ? [
+            {
+              id: prompt.steerId,
+              text: userPromptDisplay(prompt.text).text,
+              canWithdraw:
+                !liveSession.steers.includes(prompt) || !!liveSession.session.withdrawSteer,
+            },
+          ]
+        : [],
     );
   return { queuedSends: liveSession.pendingSends.length, pendingSteers };
 }

@@ -1042,6 +1042,17 @@ export class SessionManager {
       case 'session.sendNow':
         await this.lifecycle.sendNow(cmd.appSessionId, cmd.steerId);
         return;
+      case 'session.withdrawSteer': {
+        const withdrawn = await this.lifecycle.withdrawSteer(cmd.appSessionId, cmd.steerId);
+        this.emit({
+          type: 'session.steerWithdrawn',
+          appSessionId: cmd.appSessionId,
+          steerId: cmd.steerId,
+          requestId: cmd.requestId,
+          withdrawn,
+        });
+        return;
+      }
       case 'approval.respond':
         await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
         return;

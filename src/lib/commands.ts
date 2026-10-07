@@ -208,6 +208,38 @@ export const sendSteerNow = (appSessionId: string, steerId: string) => {
   bridge.send({ type: 'session.sendNow', appSessionId, steerId });
 };
 
+export const withdrawSteer = (
+  appSessionId: string,
+  steerId: string,
+): Promise<{ withdrawn: boolean }> => {
+  const requestId = newClientRef();
+  return new Promise((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      unsubscribe();
+      reject(new Error('Timed out while withdrawing the steer.'));
+    }, 10_000);
+    const unsubscribe = bridge.subscribe((event) => {
+      if (
+        event.type !== 'session.steerWithdrawn' ||
+        event.requestId !== requestId ||
+        event.appSessionId !== appSessionId ||
+        event.steerId !== steerId
+      )
+        return;
+      globalThis.clearTimeout(timeout);
+      unsubscribe();
+      resolve({ withdrawn: event.withdrawn });
+    });
+    if (
+      !bridge.sendIfConnected({ type: 'session.withdrawSteer', appSessionId, steerId, requestId })
+    ) {
+      globalThis.clearTimeout(timeout);
+      unsubscribe();
+      reject(new Error('Reconnect to DROIDEX before withdrawing a steer.'));
+    }
+  });
+};
+
 export const sendToChild = (
   parentAppSessionId: string,
   childSessionId: string,
