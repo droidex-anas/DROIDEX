@@ -64,6 +64,13 @@ export async function exportCanvasSource(
     path: 'canvas-export/tailwind-config.json',
     content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
   });
+  files.push({ path: 'canvas-export/guidance.md', content: kit.guidance });
+  files.push(
+    ...Object.entries(kit.examples).map(([path, content]) => ({
+      path: `canvas-export/examples/${path}`,
+      content,
+    })),
+  );
 
   const assetIds = new Set<string>();
   for (const content of saved.files.values())
@@ -337,14 +344,17 @@ async function answerExportRequest(
 const README = `# Canvas source export
 
 The selected revision starts at \`src/main.tsx\`. Its pinned design system is in
-\`design-system/\`: React primitives, token CSS and font licences. Font copies
-are in \`fonts/\`, selected light/dark values in \`canvas-export/modes.json\`,
-and referenced owned images in \`assets/\`.
+\`design-system/\`: React primitives, token CSS and font licences. The kit's
+guidance and examples are in \`canvas-export/\`. Font copies are in \`fonts/\`,
+selected light/dark values in \`canvas-export/modes.json\`, and referenced owned
+images in \`assets/\`.
 
 Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
 \`npm run preview\` to serve the result locally. The supported runtime imports
 are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, and
-\`@droidex/design-system\`. Versions are pinned in \`package.json\`.
+\`@droidex/design-system\`. Direct dependency versions are exact in
+\`package.json\`. No lockfile is generated during export: npm resolves transitive
+dependencies when you install, without the export needing registry access.
 `;
 
 const BUILD_SCRIPT = `import { createServer } from 'node:http';

@@ -1216,7 +1216,7 @@ Then write to one returned variant and assert the source and other variant remai
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/10a-source-export`: Export the selected source revision, owned assets, kit/fonts/licenses and minimal locked-runtime README to a chosen directory.
+- [ ] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
   Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
 - [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
   Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
@@ -1225,9 +1225,10 @@ Then write to one returned variant and assert the source and other variant remai
 
 Settled by 10a (`thread/canvas-10a-source-export`):
 
-- Source export reads the immutable revision and its pinned kit version from Canvas storage. It writes the source unchanged under `src/`, all kit files under `design-system/`, the selected mode values under `canvas-export/`, referenced owned images under `assets/`, and embedded kit fonts under `fonts/`. Guidance, conversation records and build artifacts are excluded.
+- Source export reads the immutable revision and its pinned kit version from Canvas storage. It writes the source unchanged under `src/`, all kit files under `design-system/`, guidance and examples under `canvas-export/`, selected mode values under `canvas-export/`, referenced owned images under `assets/`, and embedded kit fonts under `fonts/`. Conversation records and build artifacts are excluded.
 - Electron main alone chooses the destination through `showOpenDialog` and calls the sidecar's validated HTTP route with a separate per-sidecar secret. The renderer receives only the result; that secret is stripped from agent and terminal child environments. The ordinary Canvas WebSocket has no export command.
-- The export includes a local build/preview script, a README and exact installed dependency versions resolved from the owned Canvas runtime. `lucide-react` uses the exact version in the root lockfile until Task 7 stages it in the Canvas runtime. Existing files or linked paths in the destination are refused before any write; exclusive opens also prevent overwrites if the directory changes during export.
+- The export includes a local build/preview script, a README and exact direct dependency versions resolved from the owned Canvas runtime. Generating a complete lockfile would require package resolution at export time, so export does not invoke npm or the network; the README explains that transitive packages resolve during installation. `lucide-react` uses the exact version in the root lockfile until Task 7 stages it in the Canvas runtime. An export requires an empty chosen folder, stages beside it, and publishes the complete project by rename.
+- An in-flight export pins an immutable revision and completes as that snapshot even if the whole canvas is deleted; deletion must not cancel it.
 - The current integration branch has no Canvas board controls yet. Task 5's board context action must call `exportCanvasSource` from `src/lib/desktop.ts` for its selected revision when that branch lands. The 10a test builds and serves the Hey starter from a temporary directory with local installed packages; it does not exercise a browser render or a packaged runtime.
 
 **Files:** Create `sidecar/src/canvas/{canvasExport.ts,canvasExport.test.ts}`. Extend the existing Electron file-save/capture bridge at its actual owner and Canvas context actions; inspect `electron/main.cjs` and `electron/preload.cjs` before placing code. Extend runtime smoke and workspace/build teardown tests.

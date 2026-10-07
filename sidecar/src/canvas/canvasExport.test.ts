@@ -58,16 +58,16 @@ async function fileSet(root: string, prefix = ''): Promise<string[]> {
   return files.sort();
 }
 
-test('exports the exact revision, referenced image, pinned kit, and private-free build metadata', async (t) => {
+test('exports the exact revision, referenced image, and complete pinned kit', async (t) => {
   const { root, destination } = await profile(t);
-  const secret = 'INTERNAL_CANARY_FOR_EXPORT_TEST';
+  const guidance = 'Use the kit tokens and primitives.';
   const font = Buffer.from('wOF2test-font');
   const fontId = createHash('sha256').update(font).digest('hex');
   const kit = await saveDesignSystem({
     ...DROIDEX_DESIGN_SYSTEM,
     id: 'export-kit',
     name: 'Export kit',
-    guidance: secret,
+    guidance,
     files: {
       ...DROIDEX_DESIGN_SYSTEM.files,
       'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
@@ -90,8 +90,10 @@ test('exports the exact revision, referenced image, pinned kit, and private-free
     'README.md',
     `assets/${assetId}`,
     'build.mjs',
+    'canvas-export/guidance.md',
     'canvas-export/modes.json',
     'canvas-export/tailwind-config.json',
+    ...Object.keys(system.examples).map((path) => `canvas-export/examples/${path}`),
     ...Object.keys(system.files).map((path) => `design-system/${path}`),
     `fonts/${fontId}.woff2`,
     'package.json',
@@ -103,10 +105,16 @@ test('exports the exact revision, referenced image, pinned kit, and private-free
   assert.equal(await readFile(join(destination, 'src/main.tsx'), 'utf8'), source);
   assert.deepEqual(await readFile(join(destination, 'assets', assetId)), image);
   assert.deepEqual(await readFile(join(destination, 'fonts', `${fontId}.woff2`)), font);
+  assert.equal(await readFile(join(destination, 'canvas-export/guidance.md'), 'utf8'), guidance);
+  for (const [path, content] of Object.entries(system.examples)) {
+    assert.equal(
+      await readFile(join(destination, 'canvas-export/examples', path), 'utf8'),
+      content,
+    );
+  }
   for (const path of expected) {
     const content = await readFile(join(destination, path));
     assert.ok(!content.includes(Buffer.from(root)), `${path} exposed the profile path`);
-    assert.ok(!content.includes(Buffer.from(secret)), `${path} exposed kit guidance`);
   }
 });
 
