@@ -10,7 +10,7 @@ import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { CANVAS_MCP_SERVER_NAME, createCanvasMcpServer } from './canvasMcpServer.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 
 type Reply = {
@@ -131,9 +131,18 @@ test('theme listing is bounded and saving requires a client mutation ID', async 
   const listed = await h.call('canvas_theme', { operation: 'list', limit: 1 });
   assert.equal(listed.ok, true);
   assert.equal(listed.systems?.length, 1);
+  const system = {
+    ...(await readDesignSystem(DEFAULT_DESIGN_SYSTEM_REF)),
+    id: 'mutation-required-kit',
+  };
   assert.equal(
-    (await h.call('canvas_theme', { scopeId, operation: 'save', system: {} })).code,
+    (await h.call('canvas_theme', { scopeId, operation: 'save', system })).code,
     'invalid_input',
+  );
+  assert.equal(
+    (await h.call('canvas_theme', { scopeId, operation: 'save', system, mutationId: 'save-kit' }))
+      .ok,
+    true,
   );
 });
 
