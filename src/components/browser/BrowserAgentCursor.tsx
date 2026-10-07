@@ -16,8 +16,6 @@ const TIP_ORIGIN = `${String(TIP.x * 100)}% ${String(TIP.y * 100)}%`;
 // The room the step's chip takes beside the glyph, so it turns to the other
 // side near the page's right or bottom edge rather than being cut off.
 const CHIP_ROOM = { x: 190, y: 64 };
-// The working line's word for a click (lib/browserTools), which lands with a press.
-const CLICKING = 'Clicking';
 // Points along the arc; the glide is straight between them.
 const GLIDE_FRAMES = 8;
 const RING_EASING = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
@@ -67,7 +65,7 @@ export function BrowserAgentCursor({
   /** The glyph's size; smaller on a small picture of the page. */
   size?: number;
 }) {
-  const point = useAgentPoint(browserSessionId, shown || follow, step);
+  const point = useAgentPoint(browserSessionId, shown || follow);
   const target = point ?? rest ?? null;
   const visible = shown && target !== null;
   const { boxRef, ringRef } = useGlide(target, point, { scale, size, present, visible });
@@ -198,18 +196,14 @@ function useGlide(
 }
 
 // Each point the agent sends while `listening`, numbered so pointing twice at
-// one spot still lands twice, and whether it was for a click, read as the
-// point came.
-function useAgentPoint(browserSessionId: string, listening: boolean, step: string | null) {
+// one spot still lands twice, and whether main sent it for a click.
+function useAgentPoint(browserSessionId: string, listening: boolean) {
   const [point, setPoint] = useState<(Point & { n: number; click: boolean }) | null>(null);
-  const stepRef = useRef(step);
-  stepRef.current = step;
   useEffect(() => {
     if (!listening) return;
-    return onNativeBrowserAgentPoint(({ browserSessionId: id, x, y }) => {
+    return onNativeBrowserAgentPoint(({ browserSessionId: id, x, y, kind }) => {
       if (id !== browserSessionId) return;
-      const click = stepRef.current?.startsWith(CLICKING) ?? false;
-      setPoint((last) => ({ x, y, n: (last?.n ?? 0) + 1, click }));
+      setPoint((last) => ({ x, y, n: (last?.n ?? 0) + 1, click: kind === 'click' }));
     });
   }, [browserSessionId, listening]);
   return point;

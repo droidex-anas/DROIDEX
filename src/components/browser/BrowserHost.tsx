@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { BrowserAgentCursor } from './BrowserAgentCursor';
 import {
   closeBrowserPage,
   isBrowserPageAwake,
-  engageBrowserPage,
-  releaseBrowserPage,
   setBrowserPageCrashed,
   setBrowserPageWorking,
   useBrowserHost,
@@ -15,8 +13,7 @@ import {
 } from '../../lib/browserHost';
 import { browserStepLabel } from '../../lib/browserTools';
 import { addDesignReference } from '../../lib/commands';
-import { sessionIsLive } from '../../lib/sessions';
-import { currentTurn } from './browserTurn';
+import { browserAtWork, currentTurn } from './browserTurn';
 import {
   addDesignMark,
   attachDesignShot,
@@ -43,23 +40,6 @@ interface PageSize {
 }
 
 const DEFAULT_PAGE_SIZE: PageSize = { width: 1280, height: 800 };
-const NO_EVENTS: AppState['transcripts'][string] = [];
-
-// The turn each page's chat has running, named by the prompt that opened it,
-// as [page, turn] pairs. A chat with no turn running has none, so work from
-// a turn that has ended, or from an earlier one, never counts as current.
-function selectLiveTurns(state: AppState): string {
-  const pairs = Object.entries(state.browsers).flatMap(([appSessionId, browser]) => {
-    const session = Object.hasOwn(state.sessions, appSessionId)
-      ? state.sessions[appSessionId]
-      : undefined;
-    if (!session || !sessionIsLive(session)) return [];
-    const transcript = state.transcripts[appSessionId] ?? NO_EVENTS;
-    return [[browser.browserSessionId, currentTurn(transcript).start?.id ?? '']];
-  });
-  return JSON.stringify(pairs);
-}
-
 /**
  * The Browser host layer: every live chat browser page, mounted once at the
  * app root and never moved (see lib/browserHost.ts).
@@ -86,22 +66,6 @@ export function BrowserHost() {
       ),
     [browsers],
   );
-  const liveTurnsJson = useStoreSelector(selectLiveTurns);
-  const liveTurns = useMemo(
-    () => new Map(JSON.parse(liveTurnsJson) as [string, string][]),
-    [liveTurnsJson],
-  );
-  const liveTurnsRef = useRef(liveTurns);
-  liveTurnsRef.current = liveTurns;
-
-  // A request ties the page to the turn running in its chat, which holds on
-  // to it between steps. Once that turn is over or another has begun, and no
-  // request is left on the page, the agent is done with it.
-  useEffect(() => {
-    for (const [browserSessionId, turn] of Object.entries(host.engaged))
-      if (liveTurns.get(browserSessionId) !== turn) releaseBrowserPage(browserSessionId);
-  }, [liveTurns, host.engaged, host.working]);
-
   // Marks picked in a browser go when it closes. Marks a queued prompt brings
   // back to the composer after that stay: they are its own snapshots.
   const shownBrowsers = useRef(browsers);
@@ -123,8 +87,6 @@ export function BrowserHost() {
       const appSessionId = appSessionIdFor(browserSessionId);
       const saved = appSessionId ? browsersRef.current[appSessionId] : undefined;
       setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
-      if (working)
-        engageBrowserPage(browserSessionId, liveTurnsRef.current.get(browserSessionId) ?? '');
     };
     const heard = new Set<string>();
     // Picks waiting on their crop, by main's number for the pick.
@@ -196,7 +158,6 @@ export function BrowserHost() {
             page={page}
             placement={placementOf(host, page.browserSessionId)}
             appSessionId={chats.get(page.browserSessionId)}
-            present={page.browserSessionId in host.engaged}
             anchor={slot?.anchor}
             radius={slot?.radius ?? '0'}
             scale={slot?.scale}
@@ -212,7 +173,6 @@ function BrowserPageFrame({
   page,
   placement,
   appSessionId,
-  present,
   anchor,
   radius,
   scale,
@@ -222,8 +182,6 @@ function BrowserPageFrame({
   placement: Placement;
   /** The chat whose browser the page is. */
   appSessionId?: string;
-  /** An agent's turn is using the page. */
-  present: boolean;
   anchor?: string;
   radius: string;
   scale?: number;
@@ -231,6 +189,11 @@ function BrowserPageFrame({
 }) {
   const webviewRef = useRef<HTMLWebViewElement>(null);
   const shown = placement === 'shown';
+  const present = useStoreSelector(
+    (state) =>
+      appSessionId !== undefined &&
+      browserAtWork(state.sessions[appSessionId], state.transcripts[appSessionId]),
+  );
   // The step in flight in the chat's current turn.
   const step = useStoreSelector((state) =>
     present && shown && appSessionId && Object.hasOwn(state.transcripts, appSessionId)

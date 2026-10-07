@@ -1,5 +1,7 @@
+import { browserToolOf } from '../../lib/browserTools';
 import { transcriptEventIsVisible } from '../../lib/childSessions';
-import type { TranscriptEvent } from '../../types/bridge';
+import { sessionIsLive } from '../../lib/sessions';
+import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
 import { startsTurn } from '../chatFeed';
 
 export interface Turn {
@@ -32,3 +34,26 @@ export function currentTurn(transcript: TranscriptEvent[]): Turn {
   turns.set(transcript, turn);
   return turn;
 }
+
+/**
+ * An agent is at work in the chat's browser: its turn is running and has
+ * called a browser tool. The user's own browsing makes no call, and each turn
+ * counts only its own.
+ */
+export function browserAtWork(
+  session: SessionSummary | undefined,
+  transcript: TranscriptEvent[] | undefined,
+): boolean {
+  if (!session || !transcript || !sessionIsLive(session)) return false;
+  const turn = currentTurn(transcript);
+  let used = usesBrowser.get(turn);
+  if (used === undefined) {
+    used = turn.events.some(
+      (event) => event.kind === 'tool_call' && browserToolOf(event.toolName) !== null,
+    );
+    usesBrowser.set(turn, used);
+  }
+  return used;
+}
+
+const usesBrowser = new WeakMap<Turn, boolean>();

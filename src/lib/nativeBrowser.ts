@@ -73,11 +73,12 @@ export type NativeBrowserKeyPress = Required<
   Pick<KeyboardEventInit, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'repeat'>
 >;
 
-/** Where an agent's pointer action lands, in the page's own CSS pixels. */
+/** Where an agent's pointer action lands, in the page's own CSS pixels, and which action it is. */
 export interface NativeBrowserAgentPoint {
   browserSessionId: string;
   x: number;
   y: number;
+  kind: 'click' | 'hover' | 'scroll';
 }
 
 /** One frame of a page's small live picture, for the transcript's Browser card. */

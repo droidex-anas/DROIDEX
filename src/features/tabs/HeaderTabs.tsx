@@ -6,7 +6,8 @@ import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatChord } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
-import { ChatBrowserWorkingMark } from '../../components/browser/BrowserWorkingMark';
+import { TabBrowserWorkingMark } from '../../components/browser/BrowserWorkingMark';
+import { browserAtWork } from '../../components/browser/browserTurn';
 import { HoverTooltip } from '../../components/HoverTooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
@@ -19,8 +20,8 @@ interface TabItem {
   id: string;
   kind: FocusedPage['kind'];
   label: string;
-  // Chat tabs only: the chats' browser pages (every tile's in a split tab),
-  // the harness mark, and whether a turn is running.
+  // Chat tabs only: the browser pages an agent is at work in (any tile's in a
+  // split tab), the harness mark, and whether a turn is running.
   browserSessionIds: string[];
   provider: ProviderKind | null;
   live: boolean;
@@ -81,9 +82,11 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   return {
     ...item,
     kind: 'chat',
-    browserSessionIds: Object.hasOwn(state.browsers, page.appSessionId)
-      ? [state.browsers[page.appSessionId].browserSessionId]
-      : [],
+    browserSessionIds:
+      Object.hasOwn(state.browsers, page.appSessionId) &&
+      browserAtWork(session, state.transcripts[page.appSessionId])
+        ? [state.browsers[page.appSessionId].browserSessionId]
+        : [],
     label,
     title: label,
     provider: session.provider,
@@ -135,10 +138,9 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
 // that page is in front of the reader already.
 function TabGlyph({ item, active }: { item: TabItem; active: boolean }) {
   return (
-    <ChatBrowserWorkingMark
+    <TabBrowserWorkingMark
       browserSessionIds={item.browserSessionIds}
-      whenShown={!active}
-      className="h-[13px] w-[13px]"
+      active={active}
       fallback={<PageGlyph item={item} />}
     />
   );

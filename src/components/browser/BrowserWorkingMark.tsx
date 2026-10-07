@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useBrowserAgentPresence } from '../../lib/browserHost';
+import { useBrowserHost } from '../../lib/browserHost';
 import design from './browserAgentCursorDesign.json';
 
 // The agent's cursor, cropped to its outline, as the shape the working
@@ -27,22 +27,21 @@ export function BrowserWorkingMark({ className = '' }: { className?: string }) {
 }
 
 /**
- * The mark for chat browser pages while an agent's turn uses one: always when
- * that page is out of sight, and also while the pane shows it when
- * `whenShown` is set. Otherwise it is `fallback`.
+ * The mark for a tab whose chats have an agent at work in these browser
+ * pages, unless the only one is in front of the reader already (the pane
+ * shows it and the tab is the active one). Otherwise it is `fallback`.
  */
-export function ChatBrowserWorkingMark({
+export function TabBrowserWorkingMark({
   browserSessionIds,
-  whenShown,
-  className,
-  fallback = null,
+  active,
+  fallback,
 }: {
-  browserSessionIds: readonly (string | undefined)[];
-  whenShown: boolean;
-  className?: string;
-  fallback?: ReactNode;
+  browserSessionIds: readonly string[];
+  active: boolean;
+  fallback: ReactNode;
 }) {
-  const presence = useBrowserAgentPresence(browserSessionIds);
-  if (presence === 'none' || (presence === 'shown' && !whenShown)) return fallback;
-  return <BrowserWorkingMark className={className} />;
+  const shown = useBrowserHost().slot?.browserSessionId;
+  const inFront = active && browserSessionIds.every((id) => id === shown);
+  if (browserSessionIds.length === 0 || inFront) return fallback;
+  return <BrowserWorkingMark className="h-[13px] w-[13px]" />;
 }

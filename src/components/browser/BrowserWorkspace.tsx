@@ -33,14 +33,11 @@ import { DesignModePill } from './DesignModePill';
 import { DesignQuickPrompt, useDesignQuickPrompt } from './DesignQuickPrompt';
 import { useDesignMarks } from './designMarks';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
-import {
-  setBrowserPageCrashed,
-  useBrowserAgentPresence,
-  useBrowserPageCrashed,
-} from '../../lib/browserHost';
+import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
 import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
 import { useElementSize } from './useElementSize';
+import { browserAtWork } from './browserTurn';
 import { isEditTool } from '../../lib/diff';
 
 // In full screen the chat's composer floats over the bottom of the page, with
@@ -80,7 +77,11 @@ export default function BrowserWorkspace({
   const browserError = browserKey ? state.browserErrors[browserKey] : state.browserGlobalError;
   const designMode = isDesignModeOpen(state.designModes, browserKey);
   const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
-  const agentPresence = useBrowserAgentPresence([browser?.browserSessionId]);
+  const agentAtWork = useStoreSelector(
+    (state) =>
+      browserKey !== undefined &&
+      browserAtWork(state.sessions[browserKey], state.transcripts[browserKey]),
+  );
   const designMarks = useDesignMarks(browserKey);
   const nativeBrowser = isDesktop();
   const frameRef = useRef<HTMLDivElement>(null);
@@ -382,7 +383,7 @@ export default function BrowserWorkspace({
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         loading={loading}
-        agentWorking={agentPresence !== 'none'}
+        agentWorking={agentAtWork}
         designMode={designMode}
         designModeDisabled={!browserKey}
         pencilMode={pencilMode}

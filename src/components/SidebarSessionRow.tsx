@@ -12,7 +12,7 @@ import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
 import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
-import { ChatBrowserWorkingMark } from './browser/BrowserWorkingMark';
+import { BrowserWorkingMark } from './browser/BrowserWorkingMark';
 import { PrStateIcon } from './environment/GithubIcons';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
@@ -62,8 +62,8 @@ export interface SessionRowProps {
   agentsWorking: boolean;
   attention: SessionAttentionKind | null;
   activityStatus: SessionActivityStatus;
-  // The chat's browser page, if it has one.
-  browserSessionId?: string;
+  // An agent is at work in the chat's browser.
+  browserAtWork: boolean;
   // Activity view only: a second line saying why the chat is listed.
   detail?: string;
   // Linked pull request state, with its check rollup as the icon's dot. List
@@ -92,7 +92,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.agentsWorking === next.agentsWorking &&
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
-    prev.browserSessionId === next.browserSessionId &&
+    prev.browserAtWork === next.browserAtWork &&
     prev.detail === next.detail &&
     prev.session.reasoningEffort === next.session.reasoningEffort &&
     prev.pr?.kind === next.pr?.kind &&
@@ -118,7 +118,7 @@ export const SessionRow = memo(function SessionRow({
   agentsWorking,
   attention,
   activityStatus,
-  browserSessionId,
+  browserAtWork,
   detail,
   pr,
   renaming,
@@ -158,7 +158,7 @@ export const SessionRow = memo(function SessionRow({
   );
   const timeTone = unread ? 'text-droid-text font-medium' : 'text-droid-text-muted';
   // Beside the status: an agent at work in the chat's browser, seen from anywhere.
-  const browserMark = <ChatBrowserWorkingMark browserSessionIds={[browserSessionId]} whenShown />;
+  const browserMark = browserAtWork && <BrowserWorkingMark />;
 
   // Return focus to the row when the inline editor closes, unless the user
   // already moved focus elsewhere (e.g. clicked another row).
