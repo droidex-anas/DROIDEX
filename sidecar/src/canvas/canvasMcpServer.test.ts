@@ -135,6 +135,23 @@ test('theme listing is bounded and saving requires a client mutation ID', async 
     'invalid_input',
   );
   assert.equal(
+    (
+      await h.call('canvas_theme', {
+        scopeId,
+        operation: 'save',
+        mutationId: 'forged-provenance',
+        system: {
+          ...system,
+          provenance: {
+            sourceCanvasId: 'other-canvas',
+            revision: { designId: 'other-frame', revisionId: 'other-revision' },
+          },
+        },
+      })
+    ).code,
+    'invalid_input',
+  );
+  assert.equal(
     (await h.call('canvas_theme', { scopeId, operation: 'save', system, mutationId: 'save-kit' }))
       .ok,
     true,
@@ -408,7 +425,7 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_t
         mutationId: 'source',
         designId,
         expectedRevisionId: null,
-        files: { 'main.tsx': 'export default () => null' },
+        files: { 'main.tsx': 'export default () => <p>Theme</p>' },
         deletedPaths: [],
       });
       assert.ok(written.receipt);
@@ -509,4 +526,129 @@ test('a source read loses its captured lease while waiting and cannot borrow a r
   assert.equal(reply.code, 'scope_expired');
   assert.equal(reply.ok, false);
   assert.ok(!JSON.stringify(reply).includes('READ_SENTINEL'));
+});
+
+test('MCP theme apply validates token mapping before publication and preserves retry receipts', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'theme-frame',
+    frames: [frame],
+  });
+  assert.ok(created.created);
+  const { canvasId, frames } = created.created;
+  const designId = frames[0].designId;
+  const write = (mutationId: string, expectedRevisionId: string | null, text: string) =>
+    h.call('canvas_write', {
+      scopeId,
+      mutationId,
+      designId,
+      expectedRevisionId,
+      files: { 'main.tsx': text },
+      deletedPaths: [],
+    });
+  const source = await write(
+    'theme-source',
+    null,
+    'export default function App(){return <p style={{color:"var(--ds-missing)"}}>Hey</p>}',
+  );
+  assert.ok(source.receipt);
+  const input = {
+    scopeId,
+    operation: 'apply',
+    mutationId: 'apply-kit',
+    designId,
+    expectedRevisionId: source.receipt.revisionId,
+    ref: { id: 'openai-inspired', version: 1, mode: 'dark' },
+  };
+  const before = h.workspace.snapshot(canvasId);
+  assert.equal((await h.call('canvas_theme', input)).code, 'invalid_source');
+  assert.deepEqual(h.workspace.snapshot(canvasId), before);
+  const fixed = await write(
+    'theme-fix',
+    source.receipt.revisionId,
+    'export default function App(){return <p>Hey</p>}',
+  );
+  assert.ok(fixed.receipt);
+  input.expectedRevisionId = fixed.receipt.revisionId;
+  const applied = await h.call('canvas_theme', input);
+  assert.equal(applied.ok, true);
+  assert.ok(applied.receipt);
+  assert.deepEqual(h.workspace.snapshot(canvasId).frames[0].designSystem, input.ref);
+  assert.equal(
+    (
+      await write(
+        'theme-later',
+        applied.receipt.revisionId,
+        'export default function App(){return <p>Later</p>}',
+      )
+    ).ok,
+    true,
+  );
+  const after = h.workspace.snapshot(canvasId);
+  assert.deepEqual((await h.call('canvas_theme', input)).receipt, applied.receipt);
+  assert.deepEqual(h.workspace.snapshot(canvasId), after);
+});
+
+test('a delayed theme validation refusal cannot disclose source after its turn is replaced', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'validation-frame',
+    frames: [frame],
+  });
+  assert.ok(created.created);
+  const { canvasId, frames } = created.created;
+  const designId = frames[0].designId;
+  const source = await h.call('canvas_write', {
+    scopeId,
+    mutationId: 'validation-source',
+    designId,
+    expectedRevisionId: null,
+    files: {
+      'main.tsx': 'export default () => <p style={{color:"var(--SOURCE_SENTINEL)"}}>Hey</p>',
+    },
+    deletedPaths: [],
+  });
+  assert.ok(source.receipt);
+  const before = h.workspace.snapshot(canvasId);
+  const reached = deferred();
+  const release = deferred();
+  const write = h.workspace.write.bind(h.workspace);
+  t.mock.method(h.workspace, 'write', (...[scope, input, options]: Parameters<typeof write>) => {
+    assert.ok(options?.validateSource);
+    const validateSource = options.validateSource;
+    return write(scope, input, {
+      ...options,
+      validateSource: async (files) => {
+        try {
+          await validateSource(files);
+        } finally {
+          reached.resolve();
+          await release.promise;
+        }
+      },
+    });
+  });
+  const applying = h.call('canvas_theme', {
+    scopeId,
+    operation: 'apply',
+    mutationId: 'validation-apply',
+    designId,
+    expectedRevisionId: source.receipt.revisionId,
+    ref: { ...DEFAULT_DESIGN_SYSTEM_REF, mode: 'dark' },
+  });
+  await reached.promise;
+  h.turns.endSession('chat-one');
+  h.turns.beginTurn('chat-one', undefined);
+  release.resolve();
+  const reply = await applying;
+  assert.equal(reply.ok, false);
+  assert.equal(reply.code, 'scope_expired');
+  assert.ok(!JSON.stringify(reply).includes('SOURCE_SENTINEL'));
+  assert.deepEqual(h.workspace.snapshot(canvasId), before);
 });

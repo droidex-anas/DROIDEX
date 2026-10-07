@@ -976,9 +976,9 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 - [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
-- [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
+- [x] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
-- [ ] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
+- [x] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
   Done: All three provider canaries stay absent from app-owned surfaces while matching user text remains visible.
 - [ ] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
   Done: Each provider records live scope/routing results; unavailable account access remains explicitly unverified.
@@ -1294,6 +1294,50 @@ Settled by 07a (`canvas/07a-design-kits`):
   checks cover state, disabled controls, tabs, dialog focus cycling, Escape, restoration
   and font load.
 
+
+Settled by 07c (`thread/canvas-07c-canvas-theme`):
+
+- 04b wires `listDesignSystems()` and the existing `readDesignSystem(ref)` /
+  `saveDesignSystem(system)` from `sidecar/src/canvas/designSystems.ts` directly.
+  Listing returns presets followed by each user's latest immutable version, with
+  `{ id, version, name, kind: 'preset' | 'user', swatches: { light, dark } }`;
+  each mode has `{ surface, accent }`. Missing semantic swatches are transparent.
+  The bounded summary header publishes atomically with the kit in the same version
+  file. There is no second storage tree or metadata index. Preset saves throw
+  `preset_read_only`; unavailable pinned versions throw `version_mismatch`.
+- The existing MCP apply operation calls `applyDesignSystem(workspace, scope, input)` from
+  `sidecar/src/canvas/applyDesignSystem.ts`, where input is
+  `{ designId, expectedRevisionId: string | null, system: DesignSystemRef, mutationId }`.
+  It returns `{ status: 'applied', receipt: WriteReceipt }` or
+  `{ status: 'refused', diagnostics: CanvasDiagnostic[] }`. Authorization, CAS,
+  mutation replay and build admission remain in `workspace.write`; its async
+  source validator runs after replay/CAS and before any revision is published.
+  Missing tokens report `unmapped_token` once per token with a source file/line.
+  A missing kit version reports `version_mismatch`. Ordinary scope/CAS/storage
+  failures remain `CanvasCommandError` for 04b's shared error boundary. MCP keeps
+  its receipt success envelope and payload-free code/message refusal envelope;
+  token/CSS diagnostics use `invalid_source`, missing versions use `version_mismatch`.
+- The pure extraction helper is `extractDesignSystem(files, { name, sourceCanvasId, from })`
+  from `sidecar/src/canvas/extractDesignSystem.ts`, with `from: RevisionRef`.
+  `sourceCanvasId` is required because `RevisionRef` contains only design/revision
+  IDs. Extraction is not yet an MCP operation or pane action. Its future boundary
+  must supply the authorized canvas identity, never a model-selected canvas, and
+  read the revision under the original live scope; it must not remint authority.
+  MCP-authored saves exclude provenance rather than accepting model claims.
+  The result is `{ status: 'extracted', system, diagnostics }` or
+  `{ status: 'refused', diagnostics }`. Saving the extracted draft uses the same
+  `saveDesignSystem(system)` owner. Provenance is
+  `{ sourceCanvasId, revision: from }` on the immutable kit.
+- Extraction accepts explicit global CSS tokens (`:root`, `html`, and root
+  `data-mode` light/dark selectors), primitive `.ds-*` CSS overrides and dedicated
+  modules with explicit named Button/Input/Card/Badge/Tabs/Dialog exports plus
+  their owned relative dependencies. Imported kit implementations, inline/scoped
+  token interpretations and ambiguous exports are reported instead of inferred.
+  Missing primitives use the shared implementations and base styles; required
+  tokens use the shared DROIDEX defaults with owned values overlaid in each mode,
+  not values inherited from the source canvas's selected kit.
+  Missing mode counterparts, competing values and guidance over 16 KiB are refused;
+  source-owned `DESIGN.md` guidance is never truncated. No checklist items are ticked.
 
 ## Task 8: Element selection, direct edits and source/history UI
 

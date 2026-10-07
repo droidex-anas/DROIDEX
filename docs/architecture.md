@@ -360,6 +360,10 @@ turn's authority. Named leases expire when their turn or provider ends.
 Read replies revalidate that lease after awaited work. Mutation owners check it
 at publication; a mutation already published durably returns its receipt even
 if shutdown revokes the turn while the final flush finishes.
+Theme apply validates source token mappings after replay and revision checks.
+A validation refusal has no publication receipt, so its diagnostics revalidate
+the captured lease before delivery. Authored kit saves cannot claim extraction
+provenance; extracted kits retain their source-owned provenance.
 `canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
 `CanvasWorkspace` owns board
 mutations, including retry receipts and attachment bootstrap; the design-system
