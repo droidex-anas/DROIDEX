@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
+import { CompilerFleet, fakeDeadlines } from '../testing/canvasBuildSupport.js';
 import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
@@ -30,18 +31,22 @@ async function harness(
   t: TestContext,
   options: { root?: string; fs?: CanvasFileSystem; builds?: CanvasBuilds } = {},
 ): Promise<Harness> {
+  const builds = options.builds ?? quietBuilds();
+  let workspace: CanvasWorkspace | undefined = undefined;
+  t.after(async () => {
+    await builds.close();
+    await workspace?.close();
+  });
   const directory = options.root ?? (await canvasRoot(t));
   const scopes = new CanvasScopes();
   const events: ServerEvent[] = [];
-  const builds = options.builds ?? quietBuilds();
-  const workspace = await CanvasWorkspace.open(directory, builds, {
+  workspace = await CanvasWorkspace.open(directory, builds, {
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: (scopeId, canvasId) => {
       scopes.bindScopeCanvas(scopeId, canvasId);
     },
     ...(options.fs ? { fs: options.fs } : {}),
   });
-  t.after(() => workspace.close());
   const listeners = new Set<(pageId: string) => void>();
   const handle = createCanvasCommandHandler(
     Promise.resolve(workspace),
@@ -108,14 +113,15 @@ async function createFrame(
   harnessed: Harness,
   canvasId: string,
   requestId = 'req-create-frame',
+  appSessionId = APP,
 ): Promise<string> {
   await harnessed.handle({
     type: 'canvas.create',
     requestId,
-    appSessionId: APP,
+    appSessionId,
     canvasId,
     input: {
-      mutationId: 'm-create',
+      mutationId: requestId,
       frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
     },
   });
@@ -124,6 +130,29 @@ async function createFrame(
   const [frame] = reply.created.frames;
   assert.ok(frame);
   return frame.designId;
+}
+
+async function writeFrame(
+  canvas: Harness,
+  canvasId: string,
+  designId: string,
+  appSessionId = APP,
+): Promise<void> {
+  const requestId = `req-write-${designId}`;
+  await canvas.handle({
+    type: 'canvas.write',
+    requestId,
+    appSessionId,
+    canvasId,
+    input: {
+      mutationId: `write-${designId}`,
+      designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': HEY },
+      deletedPaths: [],
+    },
+  });
+  assert.equal(okReply(canvas, requestId).kind, 'written');
 }
 
 function turnScope(canvasId: string, scopeId: string): CanvasScope {
@@ -536,6 +565,68 @@ test('one page unsubscribing leaves another page watching the same canvas', asyn
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-3', canvasId }, null);
   assert.equal(errorOf(canvas, 'req-watch-3').code, 'invalid_input');
 });
+
+for (const leaving of ['unsubscribe', 'page-gone'] as const) {
+  test(`the last pane ${leaving} cancels running and queued builds without stopping another canvas`, async (t) => {
+    const fleet = new CompilerFleet();
+    const builds = new CanvasBuilds({ compiler: fleet.client, deadline: fakeDeadlines().deadline });
+    const canvas = await harness(t, { builds });
+    const canvasId = await createCanvas(canvas);
+    const ids = await Promise.all(
+      ['one', 'two', 'three'].map((name) => createFrame(canvas, canvasId, `req-frame-${name}`)),
+    );
+    await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
+    for (const designId of ids) await writeFrame(canvas, canvasId, designId);
+    const first = await fleet.compile(1);
+    const second = await fleet.compile(2);
+    const other = await canvas.workspace.createCanvas('app-2');
+    await canvas.handle(
+      { type: 'canvas.subscribe', requestId: 'req-watch-other', canvasId: other.canvasId },
+      'page-2',
+    );
+    const otherDesign = await createFrame(canvas, other.canvasId, 'req-other-frame', 'app-2');
+    await writeFrame(canvas, other.canvasId, otherDesign, 'app-2');
+    await canvas.handle(
+      { type: 'canvas.subscribe', requestId: 'req-watch-shared', canvasId },
+      'page-3',
+    );
+    if (leaving === 'unsubscribe')
+      await canvas.handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId });
+    else canvas.pageGone(PAGE);
+    assert.equal(first.signal.aborted, false, 'the other pane still wants this build');
+    assert.equal(second.signal.aborted, false);
+    if (leaving === 'unsubscribe')
+      await canvas.handle(
+        { type: 'canvas.unsubscribe', requestId: 'req-unwatch-last', canvasId },
+        'page-3',
+      );
+    else canvas.pageGone('page-3');
+
+    assert.equal(first.signal.aborted, true);
+    assert.equal(second.signal.aborted, true);
+    const continuing = await fleet.compile(3);
+    assert.equal(continuing.input.designId, otherDesign);
+    assert.equal(continuing.signal.aborted, false);
+    assert.deepEqual(
+      ids.map((id) => builds.stateOf(canvasId, id).status),
+      ['cancelled', 'cancelled', 'cancelled'],
+    );
+    first.ready('late-one');
+    second.ready('late-two');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(fleet.held.length, 3, 'only the other canvas entered compilation');
+    assert.equal(
+      canvas.events.some(
+        (event) =>
+          event.type === 'canvas.change' &&
+          event.change.frames.some((frame) => frame.build.status === 'ready'),
+      ),
+      false,
+    );
+    assert.ok(answer(canvas, 'req-watch-other').type === 'canvas.snapshot');
+    await builds.close();
+  });
+}
 
 test('a change listener that throws loses its change, not the commit', async (t) => {
   const canvas = await harness(t);

@@ -323,6 +323,11 @@ reclaims only an owner whose process is known to have exited. Malformed leases
 or uncertain process liveness are refused rather than guessed. Close waits for
 admitted storage work before releasing the lease; a failed open releases it too.
 
+The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
+remove watches synchronously. Removing the last pane watching a canvas cancels
+its queued and running builds through `cancelCanvas`, without stopping builds
+for another watched canvas or another pane on the same canvas.
+
 ### Canvas live previews
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it

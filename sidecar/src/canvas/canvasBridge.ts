@@ -100,6 +100,8 @@ interface PageWatches {
 class CanvasWatches {
   private readonly byPage = new Map<string, Set<string>>();
 
+  constructor(private readonly builds: CanvasBuilds) {}
+
   /** The page's live watch set, which only `forget` ever replaces. */
   live(pageId: string): PageWatches {
     const open = this.byPage.get(pageId) ?? new Set<string>();
@@ -116,12 +118,16 @@ class CanvasWatches {
 
   /** By page ID, because unsubscribing awaits nothing and needs no token. */
   unwatch(pageId: string, canvasId: string): void {
-    this.byPage.get(pageId)?.delete(canvasId);
+    if (this.byPage.get(pageId)?.delete(canvasId) && !this.isWatched(canvasId))
+      this.builds.cancelCanvas(canvasId);
   }
 
   /** A page that reloaded or closed holds nothing; its watches go with it. */
   forget(pageId: string): void {
+    const open = this.byPage.get(pageId);
     this.byPage.delete(pageId);
+    if (!open) return;
+    for (const canvasId of open) if (!this.isWatched(canvasId)) this.builds.cancelCanvas(canvasId);
   }
 
   isWatched(canvasId: string): boolean {
@@ -139,7 +145,7 @@ class CanvasWatches {
  * the scopes it mints, and which page is watching what.
  */
 class CanvasDispatch {
-  private readonly watches = new CanvasWatches();
+  private readonly watches: CanvasWatches;
   private readonly workspace: Promise<CanvasWorkspace>;
 
   constructor(
@@ -149,6 +155,7 @@ class CanvasDispatch {
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
+    this.watches = new CanvasWatches(builds);
     onPageGone((pageId) => {
       this.watches.forget(pageId);
     });
