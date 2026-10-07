@@ -36,6 +36,37 @@ flowchart LR
 
 ## Data and control boundaries
 
+Browser policy lives in the versioned `browser-settings.json` in the Electron
+profile directory (`electron/browserSettingsSchema.cjs`, `electron/browserSettings.cjs`).
+Unknown fields, malformed values and unsupported versions stop startup with a
+recovery message; no prior schema is migrated or silently reset. Writes are
+serialized and atomic. A change that reduces protection requires main-owned
+confirmation against the policy it replaces. `browserSettingsGet` and
+`browserSettingsUpdate` expose a secret-free snapshot through the desktop preload
+API; their contracts live in `src/lib/browserSettings.ts`.
+
+`electron/browserPrompt.cjs` owns browser approvals: one active prompt, at most 32
+waiting, a 120-second deadline from enqueue, and credentials ahead of queued
+permissions. Timeout, cancellation, renderer replacement and shutdown choose the
+declared cancel action. The prompt UI must subscribe to both prompt events before
+calling `browserPermissionPromptReady(true)`, then call it with `false` on unmount.
+Only the trusted main renderer can register or answer the active prompt. Until the
+prompt UI ships in the next agent-controls stack PR, an unregistered UI uses the
+existing native dialogs with the same buttons and defaults. Remove that temporary
+presentation when the UI is mounted for every desktop session. This foundation
+routes saved-login and developer-tools questions through the queue; it adds no
+visible settings or prompt components.
+
+Agent access is enforced at the private browser request boundary, including work
+waiting for its turn. Closing remains allowed for cleanup. Trusted renderer
+navigation and resizing are marked as user requests by `SessionBrowser`; async
+context keeps concurrent agent tools from inheriting that permission. Navigation,
+saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
+are retained for subsequent runtime ports; this foundation enforces only the agent
+access switch. The removed native cursor overlay's style and size fields are absent
+from schema version 4. Grants and cookie import receipts remain validated data,
+without restoring the old engine's services or claiming unsupported capabilities.
+
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
 - Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not. A page is laid out at its session's viewport: Fit follows the pane, and a standard size (desktop, laptop, tablet, mobile) keeps its own CSS size in the pane, drawn scaled down with a CSS transform, so the user sees what the agent reads. Agents read pages from Chromium's accessibility tree, cross-site frames included through their own debugger sessions (`electron/browserReading.cjs`, `electron/browserFrames.cjs`), and screenshots have sensitive fields painted over in main before the image leaves (`electron/browserScreenshot.cjs`, `electron/browserMasking.cjs`). Agent actions are trusted CDP input sent from main (`electron/browserActions.cjs`, `electron/browserKeys.cjs`), keys to the frame that holds the focus. Actions that move a page on, and waits, run one at a time per page, in the order they came, while reads run alongside; `browser_wait` is checked in main as the page changes (`electron/browserWait.cjs`). The page script is called only in the preload's isolated world (`electron/browserPageScript.cjs`), never through the page's own world.

@@ -30,6 +30,8 @@ const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs'
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
+const { createBrowserPromptController } = require('./browserPrompt.cjs');
+const { createBrowserSettingsController } = require('./browserSettings.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -131,14 +133,25 @@ let appIconMode = 'system';
 let pendingNotificationOpen = null;
 const PENDING_NOTIFICATION_OPEN_MS = 30_000;
 const nativeBrowserShortcuts = createNativeBrowserShortcuts({ getMainWindow: () => mainWindow });
+const browserPrompts = createBrowserPromptController({
+  isAvailable: () => isWindowUsable(mainWindow),
+  send: (prompt) => mainWindow.webContents.send('browser-permission-prompt', prompt),
+  dismiss: (requestId) =>
+    mainWindow?.webContents.send('browser-permission-prompt-dismiss', requestId),
+  showNative: ({ kind, ...prompt }, signal) =>
+    dialog.showMessageBox(mainWindow, {
+      ...prompt,
+      type: kind === 'warning' ? 'warning' : 'question',
+      signal,
+    }),
+});
 const nativeBrowserManager = createNativeBrowserManager({
   app,
   appName: APP_NAME,
   session,
   nativeImage,
-  dialog,
   safeStorage,
-  getMainWindow: () => mainWindow,
+  showPrompt: browserPrompts.request,
   onBrowserInput: nativeBrowserShortcuts.handleInput,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
   getHostAppUrl: () => process.env.ELECTRON_START_URL || mainWindow?.webContents.getURL(),
@@ -151,6 +164,7 @@ const nativeBrowserManager = createNativeBrowserManager({
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
+  assertAgentAccess: () => browserSettings.assertAgentAccess(),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
@@ -191,6 +205,11 @@ try {
   );
 }
 app.setPath('userData', userDataPath);
+const browserSettings = createBrowserSettingsController({
+  userDataPath,
+  downloadsPath: app.getPath('downloads'),
+  showPrompt: browserPrompts.request,
+});
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
 );
@@ -204,6 +223,16 @@ usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
 app.whenReady().then(async () => {
   await diagnosticsInitialization;
+  try {
+    await browserSettings.initialize();
+  } catch (error) {
+    dialog.showErrorBox(
+      'DROIDEX Browser settings are invalid',
+      `${error.message}\n\nCorrect the settings file, or move it aside to reset browser settings and start again:\n${browserSettings.settingsPath}`,
+    );
+    app.exit(1);
+    return;
+  }
   installApplicationMenu({
     Menu,
     app,
@@ -246,6 +275,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  browserPrompts.setRendererReady(false);
   sidecarSupervisor.stop();
   githubVcs.cancelSetup();
   closeAllDesktopNotifications();
@@ -330,6 +360,7 @@ function createMainWindow() {
   });
 
   mainWindow.on('closed', () => {
+    browserPrompts.setRendererReady(false);
     rendererOomRecovery.cancel();
     githubVcs.cancelSetup();
     nativeBrowserManager.closeAll();
@@ -924,6 +955,23 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
+  ipcMain.handle('browser-settings-get', (event) => {
+    assertMainRenderer(event);
+    return browserSettings.snapshot();
+  });
+  ipcMain.handle('browser-settings-update', (event, patch) => {
+    assertMainRenderer(event);
+    return browserSettings.update(patch);
+  });
+  ipcMain.handle('browser-permission-prompt-ready', (event, ready) => {
+    assertMainRenderer(event);
+    browserPrompts.setRendererReady(ready);
+  });
+  ipcMain.handle('browser-permission-prompt-resolve', (event, { requestId, response }) => {
+    assertMainRenderer(event);
+    return browserPrompts.resolve(requestId, response);
+  });
+
   ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl, savedMode }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.reserve(
@@ -1100,6 +1148,7 @@ function installMainRendererLifecycle(contents) {
   let cleanedForNavigation = false;
 
   const cleanupForRendererReplacement = () => {
+    browserPrompts.setRendererReady(false);
     if (!hasLoadedMainFrame || cleanedForNavigation) return;
     cleanedForNavigation = true;
     githubVcs.cancelSetup();

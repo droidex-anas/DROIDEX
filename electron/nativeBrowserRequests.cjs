@@ -57,7 +57,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 // The sidecar's longest timeout, 60 s, and the longest wait it adds to one.
 const MAX_SIDECAR_TIMEOUT_MS = 75_000;
 
-function createNativeBrowserRequests({ manager, notifyRenderer }) {
+function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
@@ -80,8 +80,23 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     reply({
       type: 'browser.result',
       id: request.requestId,
-      result: await perform({ ...request, receivedAt, startBy, runEnded }, timeoutMs),
+      result: await perform(
+        {
+          ...request,
+          receivedAt,
+          startBy,
+          runEnded: () => {
+            assertAccess(request);
+            return runEnded();
+          },
+        },
+        timeoutMs,
+      ),
     });
+  }
+
+  function assertAccess(request) {
+    if (request.initiator !== 'user') assertAgentAccess();
   }
 
   async function perform(request, timeoutMs) {
@@ -95,6 +110,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
         notifyRenderer('native-browser-closed', { browserSessionId: request.browserSessionId });
         return result(request, true);
       }
+      assertAccess(request);
       if (PAGELESS_ACTIONS.has(request.action)) return await performAction(request);
       return await withAwakePage(request.browserSessionId, timeoutMs, async (woke) => {
         if (woke) startPaintWait(request.browserSessionId);
@@ -195,6 +211,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   }
 
   async function performOnPage(request) {
+    assertAccess(request);
     const { browserSessionId } = request;
     // A navigation goes out only while its caller still waits for it.
     const stillWanted = () => {
@@ -226,6 +243,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   }
 
   async function performAction(request) {
+    assertAccess(request);
     const outcome = await manager.runAgentAction(agentAction(request));
     return result(request, outcome.ok, {
       snapshot: outcome.snapshot,

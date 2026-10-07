@@ -6,13 +6,7 @@
 const MAX_RESULT_CHARS = 4_000;
 const SCRIPT_MS = 5_000;
 
-function createBrowserDevTools({
-  appName,
-  dialog,
-  getMainWindow,
-  isHostAppUrl,
-  runWithWebContentsDebugger,
-}) {
+function createBrowserDevTools({ appName, showPrompt, isHostAppUrl, runWithWebContentsDebugger }) {
   const answers = new Map(); // origin -> whether the user allowed it, or the question in flight
 
   // Runs the script as the body of an async function in the page and gives
@@ -65,8 +59,8 @@ function createBrowserDevTools({
   }
 
   async function ask(origin) {
-    const { response } = await dialog.showMessageBox(getMainWindow(), {
-      type: 'question',
+    const { response } = await showPrompt({
+      kind: 'permission',
       buttons: ['Allow until I quit', "Don't allow"],
       defaultId: 1,
       cancelId: 1,
