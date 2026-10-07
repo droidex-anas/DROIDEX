@@ -644,81 +644,94 @@ test('a change listener that throws loses its change, not the commit', async (t)
   assert.equal(canvas.events.filter((event) => event.type === 'canvas.change').length, 1);
 });
 
-test('a page that goes away while the workspace opens installs no watch', async (t) => {
-  // A compiler that only answers an abort, so a started build stays started.
-  const builds = new CanvasBuilds({
-    compiler: () => ({
-      compile: (_input, signal) =>
-        new Promise<never>((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(new CompileCancelledError()), {
-            once: true,
-          });
+for (const leaving of ['page-gone', 'unsubscribe'] as const) {
+  test(
+    leaving === 'page-gone'
+      ? 'a page that goes away while the workspace opens installs no watch'
+      : 'a pending subscribe cancelled by unsubscribe installs no watch or rebuild',
+    async (t) => {
+      // A compiler that only answers an abort, so a started build stays started.
+      const builds = new CanvasBuilds({
+        compiler: () => ({
+          compile: (_input, signal) =>
+            new Promise<never>((_resolve, reject) => {
+              signal.addEventListener('abort', () => reject(new CompileCancelledError()), {
+                once: true,
+              });
+            }),
+          terminate: () => Promise.resolve(),
         }),
-      terminate: () => Promise.resolve(),
-    }),
-    deadline: () => () => undefined,
-  });
-  const canvas = await harness(t, { builds });
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
-  await canvas.handle({
-    type: 'canvas.write',
-    requestId: 'req-write-source',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-write-source',
-      designId,
-      expectedRevisionId: null,
-      files: { 'main.tsx': HEY },
-      deletedPaths: [],
-    },
-  });
-  // Cancelled leaves saved source with nothing built for it, which is what a
-  // subscription's rebuild sweep picks up.
-  builds.cancelCanvas(canvasId);
-  assert.equal(builds.stateOf(canvasId, designId).status, 'cancelled');
-  const opening = deferred();
-  const events: ServerEvent[] = [];
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    opening.promise.then(() => canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+        deadline: () => () => undefined,
+      });
+      const canvas = await harness(t, { builds });
+      const canvasId = await createCanvas(canvas);
+      const designId = await createFrame(canvas, canvasId);
+      await canvas.handle({
+        type: 'canvas.write',
+        requestId: 'req-write-source',
+        appSessionId: APP,
+        canvasId,
+        input: {
+          mutationId: 'm-write-source',
+          designId,
+          expectedRevisionId: null,
+          files: { 'main.tsx': HEY },
+          deletedPaths: [],
+        },
+      });
+      // Cancelled leaves saved source with nothing built for it, which is what a
+      // subscription's rebuild sweep picks up.
+      builds.cancelCanvas(canvasId);
+      assert.equal(builds.stateOf(canvasId, designId).status, 'cancelled');
+      const opening = deferred();
+      const events: ServerEvent[] = [];
+      const listeners = new Set<(pageId: string) => void>();
+      const handle = createCanvasCommandHandler(
+        opening.promise.then(() => canvas.workspace),
+        canvas.scopes,
+        canvas.builds,
+        (event) => {
+          events.push(event);
+        },
+        (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      );
+
+      const subscribing = handle(
+        { type: 'canvas.subscribe', requestId: 'req-late', canvasId },
+        PAGE,
+      );
+      // The pane leaves before Canvas storage finishes opening.
+      if (leaving === 'page-gone') for (const listener of listeners) listener(PAGE);
+      else await handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId }, PAGE);
+      opening.resolve();
+      await subscribing;
+
+      const answer = events.find(
+        (event) => event.type === 'canvas.result' && event.requestId === 'req-late',
+      );
+      assert.ok(answer?.type === 'canvas.result' && !answer.ok);
+      assert.equal(answer.error.code, 'scope_expired');
+      assert.equal(
+        builds.stateOf(canvasId, designId).status,
+        'cancelled',
+        'a refused subscription scheduled no build',
+      );
+
+      // Nothing is watching, so a later change is not broadcast to anyone.
+      const agent = turnScope(canvasId, 'turn-after-page-gone');
+      canvas.scopes.register(agent);
+      await canvas.workspace.create(agent, {
+        mutationId: 'm-after-page-gone',
+        frames: [{ name: 'Quiet', width: 720, height: 720, designSystem }],
+      });
+      canvas.scopes.revoke(agent.scopeId);
+      assert.deepEqual(
+        events.filter((event) => event.type === 'canvas.change'),
+        [],
+      );
     },
   );
-
-  const subscribing = handle({ type: 'canvas.subscribe', requestId: 'req-late', canvasId }, PAGE);
-  // The page closes its socket before Canvas storage finishes opening.
-  for (const listener of listeners) listener(PAGE);
-  opening.resolve();
-  await subscribing;
-
-  const [answer] = events;
-  assert.ok(answer?.type === 'canvas.result' && !answer.ok);
-  assert.equal(answer.error.code, 'scope_expired');
-  assert.equal(
-    builds.stateOf(canvasId, designId).status,
-    'cancelled',
-    'a refused subscription scheduled no build',
-  );
-
-  // Nothing is watching, so a later change is not broadcast to anyone.
-  const agent = turnScope(canvasId, 'turn-after-page-gone');
-  canvas.scopes.register(agent);
-  await canvas.workspace.create(agent, {
-    mutationId: 'm-after-page-gone',
-    frames: [{ name: 'Quiet', width: 720, height: 720, designSystem }],
-  });
-  canvas.scopes.revoke(agent.scopeId);
-  assert.deepEqual(
-    events.filter((event) => event.type === 'canvas.change'),
-    [],
-  );
-});
+}

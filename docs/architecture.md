@@ -327,6 +327,9 @@ The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
 remove watches synchronously. Removing the last pane watching a canvas cancels
 its queued and running builds through `cancelCanvas`, without stopping builds
 for another watched canvas or another pane on the same canvas.
+A subscribe captures its own subscription identity before awaiting storage.
+Unsubscribe, page loss or a replacement subscription invalidates that identity,
+so a late answer cannot reinstall a watch or schedule rebuilds for a closed pane.
 
 ### Canvas live previews
 

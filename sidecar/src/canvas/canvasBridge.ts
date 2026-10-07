@@ -23,7 +23,7 @@ const MAX_PENDING_REQUESTS = 128;
 
 const UNAVAILABLE = 'Canvas storage is unavailable. Reopen DROIDEX to try again.';
 const NO_PAGE = 'Canvas needs a renderer page ID. Reload DROIDEX.';
-const PAGE_GONE = 'That DROIDEX page is no longer connected.';
+const WATCH_ENDED = 'That Canvas pane is no longer subscribed.';
 
 // A requestId correlates one reply and nothing else, so it shares the canvas
 // identifier rule and the renderer validator can hold the same bound. An
@@ -82,14 +82,11 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
 
 type Mutation = Extract<CanvasCommand, { type: `canvas.${'create' | 'write' | 'arrange'}` }>;
 
-/**
- * One renderer page's watch set. The set's own identity is the page's lifetime:
- * a caller that awaits captures this before the await and hands it back after,
- * which is how a watch cannot be installed for a page that went away in between.
- */
-interface PageWatches {
+/** The identity of one subscription, including while storage is still opening. */
+interface CanvasWatch {
   pageId: string;
-  open: Set<string>;
+  canvasId: string;
+  state: 'pending' | 'watching';
 }
 
 /**
@@ -98,21 +95,26 @@ interface PageWatches {
  * another page that still has the same canvas open.
  */
 class CanvasWatches {
-  private readonly byPage = new Map<string, Set<string>>();
+  private readonly byPage = new Map<string, Map<string, CanvasWatch>>();
 
   constructor(private readonly builds: CanvasBuilds) {}
 
-  /** The page's live watch set, which only `forget` ever replaces. */
-  live(pageId: string): PageWatches {
-    const open = this.byPage.get(pageId) ?? new Set<string>();
+  begin(pageId: string, canvasId: string): CanvasWatch {
+    const open = this.byPage.get(pageId) ?? new Map<string, CanvasWatch>();
+    const watch: CanvasWatch = {
+      pageId,
+      canvasId,
+      state: open.get(canvasId)?.state ?? 'pending',
+    };
+    open.set(canvasId, watch);
     this.byPage.set(pageId, open);
-    return { pageId, open };
+    return watch;
   }
 
-  /** False when that page is already gone, so nothing was installed. */
-  watch(page: PageWatches, canvasId: string): boolean {
-    if (!this.isLive(page)) return false;
-    page.open.add(canvasId);
+  /** A cancelled or replaced subscription cannot install a watch after an await. */
+  watch(watch: CanvasWatch): boolean {
+    if (this.byPage.get(watch.pageId)?.get(watch.canvasId) !== watch) return false;
+    watch.state = 'watching';
     return true;
   }
 
@@ -127,16 +129,14 @@ class CanvasWatches {
     const open = this.byPage.get(pageId);
     this.byPage.delete(pageId);
     if (!open) return;
-    for (const canvasId of open) if (!this.isWatched(canvasId)) this.builds.cancelCanvas(canvasId);
+    for (const canvasId of open.keys())
+      if (!this.isWatched(canvasId)) this.builds.cancelCanvas(canvasId);
   }
 
   isWatched(canvasId: string): boolean {
-    for (const open of this.byPage.values()) if (open.has(canvasId)) return true;
+    for (const open of this.byPage.values())
+      if (open.get(canvasId)?.state === 'watching') return true;
     return false;
-  }
-
-  private isLive(page: PageWatches): boolean {
-    return this.byPage.get(page.pageId) === page.open;
   }
 }
 
@@ -193,10 +193,8 @@ class CanvasDispatch {
 
   /**
    * Starts or stops watching one canvas. A page identity is required, as
-   * `voice.start` already requires one. Subscribing captures the page before it
-   * awaits the workspace, because a watch installed for a page that went away
-   * during that await would never be released. Unsubscribing awaits nothing, so
-   * a client can still drop a watch while Canvas storage is unavailable.
+   * `voice.start` already requires one. Subscribing captures its own identity
+   * before awaiting storage; unsubscribe or page loss invalidates it immediately.
    */
   private async watch(
     command: Extract<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
@@ -212,11 +210,9 @@ class CanvasDispatch {
         reply: { kind: 'ok' },
       };
     }
-    const page = this.watches.live(pageId);
+    const watch = this.watches.begin(pageId, command.canvasId);
     const workspace = await this.workspace;
-    // The watch goes in first: a page that went away while Canvas storage
-    // opened is handed no projection and has no work scheduled for it.
-    if (!this.watches.watch(page, command.canvasId)) throw canvasError('scope_expired', PAGE_GONE);
+    if (!this.watches.watch(watch)) throw canvasError('scope_expired', WATCH_ENDED);
     // Opening a canvas is when its derived build cache is recovered, so the
     // projection below already reports the frames that are building again, and
     // the client that holds it is exactly the one watching for what extends it.
