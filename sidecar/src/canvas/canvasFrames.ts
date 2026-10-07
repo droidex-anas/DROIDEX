@@ -7,11 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { REVISION_METADATA_VERSION, type CanvasFiles, type NewRevision } from './canvasFiles.js';
 import type { PersistedDesign } from './canvasManifest.js';
+import { stageSeed } from './canvasSeeds.js';
+import { FRAME_GAP_PX, placeVariants } from './canvasVariantPlacement.js';
 import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
-import { mergedRevisionViolation } from './schema.js';
-
-/** Gap between a created frame and its neighbour, for deterministic placement. */
-const FRAME_GAP_PX = 80;
+import { mergedRevisionViolation, type FrameRect } from './schema.js';
 
 /** One frame's identity and seeded source, before its position is known. */
 export interface StagedFrame {
@@ -61,14 +60,31 @@ export async function stageRevision(
   return revision;
 }
 
-/** New frames land in a row to the right of everything already placed. */
+/** Placement is decided against the current board inside the commit queue. */
 export function placeFrames(
   staged: readonly StagedFrame[],
   placed: readonly PersistedDesign[],
+  placeBeside: CreateFramesInput['placeBeside'],
 ): PersistedDesign[] {
+  let positions: FrameRect[] | undefined;
+  if (placeBeside) {
+    const source = placed.find((design) => design.designId === placeBeside.designId);
+    if (!source) throw canvasError('invalid_input', 'The source frame is not on this canvas.');
+    // A batch may contain different dimensions; reserve slots large enough for all.
+    const size = {
+      width: Math.max(...staged.map(({ frame }) => frame.width)),
+      height: Math.max(...staged.map(({ frame }) => frame.height)),
+    };
+    positions = placeVariants(
+      source.rect,
+      placed.map((design) => design.rect),
+      staged.length,
+      size,
+    );
+  }
   let x = 0;
   let y = 0;
-  if (placed.length > 0) {
+  if (!positions && placed.length > 0) {
     let right = Number.NEGATIVE_INFINITY;
     let top = Number.POSITIVE_INFINITY;
     for (const design of placed) {
@@ -80,48 +96,20 @@ export function placeFrames(
   }
   const designs: PersistedDesign[] = [];
   for (const { designId, revisionId, frame } of staged) {
+    const position = positions ? positions[designs.length] : { x, y };
     designs.push({
       designId,
       name: frame.name,
-      rect: { x, y, width: frame.width, height: frame.height },
+      rect: { x: position.x, y: position.y, width: frame.width, height: frame.height },
       layoutVersion: 0,
       revisionId,
       lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
+      ...(frame.seed?.kind === 'revision' ? { seed: structuredClone(frame.seed) } : {}),
     });
     x += frame.width + FRAME_GAP_PX;
   }
   return designs;
-}
-
-/** A seeded frame owns an independent copy of the seed's source tree. */
-async function stageSeed(
-  files: CanvasFiles,
-  canvasId: string,
-  designId: string,
-  frame: CreateFramesInput['frames'][number],
-): Promise<string | null> {
-  const seed = frame.seed;
-  if (!seed) return null;
-  if (seed.kind === 'library')
-    throw canvasError('invalid_input', 'Seeding from the library is not available yet.');
-  if (seed.canvasId !== canvasId)
-    throw canvasError('invalid_input', 'A seed revision must come from this canvas.');
-  const source = await files.readRevision(canvasId, seed.revision);
-  const revisionId = randomUUID();
-  await files.publishRevision(
-    canvasId,
-    {
-      version: REVISION_METADATA_VERSION,
-      designId,
-      revisionId,
-      parentRevisionId: seed.revision.revisionId,
-      designSystem: frame.designSystem,
-      createdAt: Date.now(),
-    },
-    source,
-  );
-  return revisionId;
 }
 
 /** The manifest points at this revision, so a missing tree is storage damage. */

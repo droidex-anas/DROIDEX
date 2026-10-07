@@ -194,7 +194,7 @@ export class CanvasWorkspace {
             this.leases.requireCanvas(scope, canvasId);
           };
         }
-        const designs = placeFrames(staged, next.designs);
+        const designs = placeFrames(staged, next.designs, input.placeBeside);
         next.designs.push(...designs);
         next.sequence += 1;
         next.updatedAt = Date.now();

@@ -37,7 +37,7 @@ import type {
   CanvasScope,
   WriteReceipt,
 } from '../canvas/protocol.js';
-import { deferred, observedFileSystem } from './canvasStorageSupport.js';
+import { deferred, observedFileSystem, writeInput } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */
 export const COMPILE_FAILED = 'The design did not compile.';
@@ -273,25 +273,6 @@ export function holdBuildOutput() {
   };
 }
 
-/** Fails the next manifest rename once, after the test arms it. */
-export function failNextManifestWrite() {
-  let armed = false;
-  const failed = deferred();
-  const fs = observedFileSystem((operation, path) => {
-    if (!armed || operation !== 'rename' || !path.endsWith('manifest.json')) return;
-    armed = false;
-    failed.resolve();
-    throw new Error('disk full');
-  });
-  return {
-    fs,
-    arm: (): void => {
-      armed = true;
-    },
-    failed: failed.promise,
-  };
-}
-
 /**
  * Holds the next outcome file's rename open until the test releases it, and
  * optionally refuses the removal that would take that file back, the way a
@@ -453,13 +434,10 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     },
     write: (designId, expected, text) =>
       under((scope) =>
-        workspace.write(scope, {
-          mutationId: `write-${designId}-${text}`,
-          designId,
-          expectedRevisionId: expected,
-          files: { 'main.tsx': text },
-          deletedPaths: [],
-        }),
+        workspace.write(
+          scope,
+          writeInput(`write-${designId}-${text}`, designId, expected, { 'main.tsx': text }),
+        ),
       ),
     reported: (designId, status) => {
       // From here on: a design reaches the same state more than once.

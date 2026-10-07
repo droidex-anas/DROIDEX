@@ -86,6 +86,7 @@ const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' 
 const wire: SidecarWire = {
   create: {
     mutationId: 'create-hey',
+    placeBeside: { designId: 'dsg_hey' },
     frames: [
       { name: 'Hey', width: 720, height: 720, designSystem },
       {

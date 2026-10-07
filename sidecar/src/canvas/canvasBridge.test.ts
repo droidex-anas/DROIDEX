@@ -244,6 +244,33 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
   assert.equal(count.code, 'invalid_input');
   assert.match(count.message, /1 to 4 frames/);
 
+  for (const [field, value] of [
+    ['placeBeside', { designId: '../outside' }],
+    ['seed', { kind: 'revision', canvasId, revision: { designId, revisionId: '../outside' } }],
+  ] as const) {
+    await canvas.handle({
+      type: 'canvas.create',
+      requestId: `req-${field}`,
+      appSessionId: APP,
+      canvasId,
+      input: {
+        mutationId: `m-${field}`,
+        ...(field === 'placeBeside' ? { placeBeside: value } : {}),
+        frames: [
+          {
+            name: 'Variant',
+            width: 720,
+            height: 720,
+            designSystem,
+            ...(field === 'seed' ? { seed: value } : {}),
+          },
+        ],
+      },
+    });
+    assert.equal(errorOf(canvas, `req-${field}`).code, 'invalid_input');
+    assert.match(errorOf(canvas, `req-${field}`).message, /1 to 128 characters/);
+  }
+
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-unknown', canvasId: 'nope' });
   assert.equal(errorOf(canvas, 'req-unknown').code, 'invalid_input');
 
@@ -254,6 +281,68 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
   assert.equal(errorOf(canvas, tooLong).code, 'invalid_input');
   await canvas.handle({ type: 'canvas.list', requestId: 'r'.repeat(128) });
   assert.equal(okReply(canvas, 'r'.repeat(128)).kind, 'summaries');
+});
+
+test('the bridge creates a seeded adjacent frame and refuses a seed outside its canvas lease', async (t) => {
+  const canvas = await harness(t);
+  const sourceCanvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, sourceCanvasId);
+  await canvas.handle({
+    type: 'canvas.write',
+    requestId: 'req-seed-source',
+    appSessionId: APP,
+    canvasId: sourceCanvasId,
+    input: {
+      mutationId: 'seed-source',
+      designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': HEY },
+      deletedPaths: [],
+    },
+  });
+  const written = okReply(canvas, 'req-seed-source');
+  assert.ok(written.kind === 'written');
+  const input = {
+    mutationId: 'seeded-variant',
+    placeBeside: { designId },
+    frames: [
+      {
+        name: 'Variant',
+        width: 720,
+        height: 720,
+        designSystem,
+        seed: {
+          kind: 'revision',
+          canvasId: sourceCanvasId,
+          revision: { designId, revisionId: written.receipt.revisionId },
+        },
+      },
+    ],
+  };
+  await canvas.handle({
+    type: 'canvas.create',
+    requestId: 'req-seeded',
+    appSessionId: APP,
+    canvasId: sourceCanvasId,
+    input,
+  });
+  const created = okReply(canvas, 'req-seeded');
+  assert.ok(created.kind === 'created');
+  assert.deepEqual(created.created.frames[0]?.rect, { x: 0, y: 800, width: 720, height: 720 });
+  const canvasId = (await canvas.workspace.createCanvas(APP)).canvasId;
+  await canvas.handle({
+    type: 'canvas.create',
+    requestId: 'req-foreign-seed',
+    appSessionId: APP,
+    canvasId,
+    input: { mutationId: 'foreign-seed', frames: input.frames },
+  });
+  assert.deepEqual(errorOf(canvas, 'req-foreign-seed'), {
+    code: 'invalid_input',
+    message: 'A seed revision must come from this canvas.',
+  });
+  assert.equal(canvas.workspace.snapshot(canvasId).frames.length, 0);
+  assert.equal(canvas.workspace.snapshot(sourceCanvasId).frames.length, 2);
 });
 
 test('reading an artifact is a derived read with no cache miss to report', async (t) => {

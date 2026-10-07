@@ -8,11 +8,13 @@ import {
   ledgerAtCapacity,
   observedFileSystem,
   quietBuilds,
+  terminateAtManifestRename,
+  writeInput,
 } from '../testing/canvasStorageSupport.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { mutationFingerprint } from './canvasManifest.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from './CanvasWorkspace.js';
-import type { CanvasScope, CreateFramesInput, WriteFilesInput } from './protocol.js';
+import type { CanvasScope, CreateFramesInput } from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
@@ -36,48 +38,6 @@ function scopeFor(
 /** The one 720x720 frame named Hey that most create cases reserve. */
 function createInput(mutationId: string): CreateFramesInput {
   return { mutationId, frames: [{ name: 'Hey', width: 720, height: 720, designSystem }] };
-}
-
-function writeInput(
-  mutationId: string,
-  designId: string,
-  expectedRevisionId: string | null,
-  files: Record<string, string>,
-  deletedPaths: string[] = [],
-): WriteFilesInput {
-  return { mutationId, designId, expectedRevisionId, files, deletedPaths };
-}
-
-/**
- * A filesystem that fails once when armed, either just before the next manifest
- * rename or on the durability flush that follows it. It disarms as it fires, so
- * a test can keep using the workspace afterwards.
- */
-function terminateAtManifestRename(side: 'before' | 'after') {
-  let armed = false;
-  let renamed = false;
-  const fs = observedFileSystem((operation, path) => {
-    if (!armed) return;
-    if (operation === 'rename' && path.endsWith('manifest.json')) {
-      if (side === 'before') {
-        armed = false;
-        throw new Error('power lost');
-      }
-      renamed = true;
-      return;
-    }
-    if (side === 'after' && renamed && operation === 'open') {
-      armed = false;
-      renamed = false;
-      throw new Error('power lost');
-    }
-  });
-  return {
-    fs,
-    arm: () => {
-      armed = true;
-    },
-  };
 }
 
 /**
@@ -490,41 +450,74 @@ test('an attachment survives a reopen, and detaching keeps the canvas and its so
   assert.equal(again.attachedCanvasId('app-1'), other.canvasId);
 });
 
-test('a revision seed copies the source it names, once per mutation', async (t) => {
+test('two seeded variants own independent source and placement, once per mutation', async (t) => {
   const { root, workspace, scope, canvasId, designId } = await withFrame(t);
-  const receipt = await workspace.write(
+  const sourceRef = await workspace.write(
     scope,
-    writeInput('write-hey', designId, null, { 'main.tsx': HEY }),
+    writeInput('write-hey', designId, null, { 'main.tsx': HEY, 'style.css': '/* café */\r\n' }),
   );
-  const seeded = {
-    mutationId: 'create-variant',
-    frames: [
-      {
-        name: 'Hey variant',
-        width: 720,
-        height: 720,
-        designSystem,
-        seed: { kind: 'revision' as const, canvasId, revision: receipt },
-      },
-    ],
+  const original = await workspace.readFiles(canvasId, sourceRef);
+  const seed = {
+    kind: 'revision' as const,
+    canvasId,
+    revision: { designId, revisionId: sourceRef.revisionId },
+  };
+  const seeded: CreateFramesInput = {
+    mutationId: 'two-variants',
+    placeBeside: { designId },
+    frames: ['Hey · layout', 'Hey · color'].map((name) => ({
+      name,
+      width: 720,
+      height: 720,
+      designSystem,
+      seed,
+    })),
   };
   const copied = await workspace.create(scope, seeded);
-  const variant = copied.frames[0];
-  assert.ok(variant?.revisionId);
-  assert.notEqual(variant.revisionId, receipt.revisionId);
-  assert.deepEqual(variant.rect, { x: 800, y: 0, width: 720, height: 720 });
-  const source = await workspace.readFiles(canvasId, {
-    designId: variant.designId,
-    revisionId: variant.revisionId,
+  assert.equal(new Set(copied.frames.map((frame) => frame.designId)).size, 2);
+  const refs = copied.frames.map((frame) => {
+    assert.ok(frame.revisionId);
+    assert.notEqual(frame.revisionId, sourceRef.revisionId);
+    return { designId: frame.designId, revisionId: frame.revisionId };
   });
-  assert.equal(source['main.tsx'], HEY);
+  for (const ref of refs) assert.deepEqual(await workspace.readFiles(canvasId, ref), original);
+  assert.deepEqual(
+    copied.frames.map((frame) => frame.rect),
+    [
+      { x: 0, y: 800, width: 720, height: 720 },
+      { x: 800, y: 800, width: 720, height: 720 },
+    ],
+  );
+  const [first, second] = refs;
+  const changed = await workspace.write(
+    scope,
+    writeInput('change-layout', first.designId, first.revisionId, {
+      'main.tsx': 'export default () => null;',
+    }),
+  );
+  assert.equal(
+    (await workspace.readFiles(canvasId, changed))['main.tsx'],
+    'export default () => null;',
+  );
+  assert.deepEqual(await workspace.readFiles(canvasId, second), original);
+  assert.deepEqual(await workspace.readFiles(canvasId, sourceRef), original);
   // A retry answers the receipt without copying the seed a second time.
   const revisions = join(root, canvasId, 'revisions');
   const stored = await readdir(revisions);
-  assert.deepEqual(await workspace.create(scope, seeded), copied);
+  const retried = await workspace.create(scope, seeded);
+  assert.deepEqual(
+    retried.frames.map(({ designId, revisionId }) => ({ designId, revisionId })),
+    refs,
+  );
   assert.deepEqual(await readdir(revisions), stored);
 
-  assert.equal(workspace.snapshot(canvasId).frames.length, 2);
+  assert.equal(workspace.snapshot(canvasId).frames.length, 3);
+  const saved = await new CanvasFiles(root).loadManifest(canvasId);
+  assert.ok(saved.state === 'loaded');
+  assert.deepEqual(
+    saved.manifest.designs.slice(1).map((design) => design.seed),
+    [seed, seed],
+  );
 });
 
 test('a save that failed after its rename is reconciled, not treated as absent', async (t) => {

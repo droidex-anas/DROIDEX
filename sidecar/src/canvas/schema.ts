@@ -114,14 +114,16 @@ export const canvasTurnContextSchema = z
   })
   .strict();
 
+export const revisionSeedSchema = z
+  .object({
+    kind: z.literal('revision'),
+    canvasId: canvasIdentifierSchema,
+    revision: revisionRefSchema,
+  })
+  .strict();
+
 const canvasSeedSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('revision'),
-      canvasId: canvasIdentifierSchema,
-      revision: revisionRefSchema,
-    })
-    .strict(),
+  revisionSeedSchema,
   z.object({ kind: z.literal('library'), itemId: canvasIdentifierSchema }).strict(),
 ]);
 
@@ -176,6 +178,7 @@ const deletedPathsSchema = z
 export const createFramesInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
+    placeBeside: z.object({ designId: canvasIdentifierSchema }).strict().optional(),
     frames: z
       .array(
         z
