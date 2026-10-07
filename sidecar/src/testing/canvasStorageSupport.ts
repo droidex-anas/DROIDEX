@@ -2,11 +2,14 @@
 // filesystem seam wrapped with one hook so a test can pause or fail exactly the
 // call it cares about.
 
+import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
+import { CanvasWorkspace, type CanvasWorkspaceDeps } from '../canvas/CanvasWorkspace.js';
+import type { CanvasScope } from '../canvas/protocol.js';
 import { nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
 import {
@@ -17,6 +20,63 @@ import {
   type PersistedDesign,
   type PersistedMutation,
 } from '../canvas/canvasManifest.js';
+
+const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+
+export function scopeFor(
+  canvasId: string | null,
+  allowedDesignIds: string[] | 'canvas' = 'canvas',
+  scopeId = 'scope-1',
+): CanvasScope {
+  return {
+    origin: 'turn',
+    scopeId,
+    appSessionId: 'app-1',
+    generation: 1,
+    canvasId,
+    context: { designs: [], elements: [], designSystem },
+    allowedDesignIds,
+  };
+}
+
+interface WorkspaceOptions {
+  fs?: CanvasFileSystem;
+  isScopeActive?: (scopeId: string) => boolean;
+  bindScopeCanvas?: (scopeId: string, canvasId: string) => void;
+}
+
+export async function openWorkspace(t: TestContext, options: WorkspaceOptions = {}) {
+  const root = await canvasRoot(t);
+  const boundCanvasIds: string[] = [];
+  const deps: CanvasWorkspaceDeps = {
+    isScopeActive: options.isScopeActive ?? (() => true),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      if (options.bindScopeCanvas) options.bindScopeCanvas(scopeId, canvasId);
+      boundCanvasIds.push(canvasId);
+    },
+    fs: options.fs,
+  };
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), deps);
+  t.after(() => workspace.close());
+  return { root, deps, workspace, boundCanvasIds };
+}
+
+/** One canvas holding one reserved 720×720 frame named Hey. */
+export async function withFrame(t: TestContext, options: WorkspaceOptions = {}) {
+  const context = await openWorkspace(t, options);
+  const { canvasId } = await context.workspace.createCanvas('app-1');
+  const scope = scopeFor(canvasId);
+  const created = await context.workspace.create(scope, {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  });
+  const frame = created.frames[0];
+  assert.ok(frame);
+  assert.deepEqual(frame.rect, { x: 0, y: 0, width: 720, height: 720 });
+  assert.equal(frame.layoutVersion, 0);
+  assert.equal(frame.revisionId, null);
+  return { ...context, canvasId, scope, designId: frame.designId };
+}
 
 /** A real Canvas root directory, removed after the test. */
 export async function canvasRoot(t: TestContext): Promise<string> {
@@ -76,6 +136,86 @@ export function observedFileSystem(
     lstat: (path) => observe('lstat', path, () => nodeCanvasFileSystem.lstat(path)),
     rename: (from, to) => observe('rename', to, () => nodeCanvasFileSystem.rename(from, to)),
     rm: (path, options) => observe('rm', path, () => nodeCanvasFileSystem.rm(path, options)),
+  };
+}
+
+/** Fails once before a manifest rename or during the durability flush after it. */
+export function terminateAtManifestRename(side: 'before' | 'after') {
+  let armed = false;
+  let renamed = false;
+  const fs = observedFileSystem((operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      if (side === 'before') {
+        armed = false;
+        throw new Error('power lost');
+      }
+      renamed = true;
+      return;
+    }
+    if (side === 'after' && renamed && operation === 'open') {
+      armed = false;
+      renamed = false;
+      throw new Error('power lost');
+    }
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
+/** Holds a manifest write before publication or before its final directory flush. */
+export function holdManifestWrite(stage: 'prepared' | 'published') {
+  let armed = false;
+  let renamed = false;
+  const reached = deferred();
+  const released = deferred();
+  const hold = async (): Promise<void> => {
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  };
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      renamed = true;
+      return;
+    }
+    if (operation !== 'open') return;
+    if (stage === 'prepared' && path.endsWith('.tmp')) await hold();
+    if (stage === 'published' && renamed) await hold();
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+    reached: reached.promise,
+    release: released.resolve,
+  };
+}
+
+/** Makes the next manifest visible, but refuses every subsequent directory flush. */
+export function stopFlushingAfterManifestRename() {
+  let armed = false;
+  let renamed = false;
+  const fs = observedFileSystem((operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      renamed = true;
+      return;
+    }
+    if (renamed && operation === 'open' && !basename(path).includes('.'))
+      throw new Error('the volume stopped flushing');
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
   };
 }
 

@@ -13,6 +13,7 @@ import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
   canvasChange,
   canvasSnapshot,
@@ -58,22 +59,27 @@ export class CanvasWorkspace {
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
+    private readonly writerLease: CanvasWriterLease,
   ) {}
 
-  /**
-   * Opens the storage root and hands the build registry the canvases it serves,
-   * so every frame projected from here reports a real build state.
-   */
+  /** Claims the physical storage root before loading heads or cleaning staging. */
   static async open(
     directory: string,
     builds: CanvasBuilds,
     deps: CanvasWorkspaceDeps,
   ): Promise<CanvasWorkspace> {
-    const files = new CanvasFiles(directory, deps.fs);
-    const heads = await CanvasHeads.load(files);
-    const workspace = new CanvasWorkspace(files, heads, new CanvasLeases(deps, heads), builds);
-    await builds.load(workspace, files, heads.all());
-    return workspace;
+    const writerLease = await CanvasWriterLease.acquire(directory);
+    try {
+      const files = new CanvasFiles(writerLease.directory, deps.fs);
+      const heads = await CanvasHeads.load(files);
+      const leases = new CanvasLeases(deps, heads);
+      const workspace = new CanvasWorkspace(files, heads, leases, builds, writerLease);
+      await builds.load(workspace, files, heads.all());
+      return workspace;
+    } catch (error) {
+      writerLease.release();
+      throw error;
+    }
   }
 
   snapshot(canvasId: string): CanvasSnapshot {
@@ -402,6 +408,7 @@ export class CanvasWorkspace {
     await this.commits.drain();
     this.leases.forget();
     this.changes.clear();
+    this.writerLease.release();
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */

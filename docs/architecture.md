@@ -312,6 +312,17 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas storage and bridge
+
+`CanvasWorkspace` owns the durable manifests, source revisions, attachments and
+serialized commits. Opening canonicalizes the physical Canvas root and claims
+its SQLite writer lease before loading heads or sweeping temporaries. Linked
+roots therefore share one writer, even across separate profiles. A live owner
+refuses a second open with `storage_failed`; an atomic lease transaction
+reclaims only an owner whose process is known to have exited. Malformed leases
+or uncertain process liveness are refused rather than guessed. Close waits for
+admitted storage work before releasing the lease; a failed open releases it too.
+
 ### Canvas live previews
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
