@@ -115,7 +115,10 @@ import {
   LazyAutomationsRoute,
   LazyProjectsRoute,
   LazyBrowserFocusWorkspace,
+  LazyCanvasChatBootstrap,
+  LazyCanvasHeader,
   LazyCanvasWorkspace,
+  LazyDesignHome,
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
@@ -195,6 +198,9 @@ export default function App() {
         : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
+      productMode: current.productMode,
+      // A design draft's canvas lands only once its chat exists.
+      canvasChatRequest: current.canvasChatRequest,
       tabStripShown: showsTabStrip(current),
       theme: current.theme,
       utilityPanels: current.utilityPanels,
@@ -267,6 +273,10 @@ export default function App() {
       state.mainView === 'projects');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
+  // Design mode shows the Design home until one of its chats is open; from
+  // then on the chat and its board are the workspace (spec §4).
+  const designHomeShown =
+    !embedded && state.productMode === 'design' && !activeSession && !showWizard;
   // An expanded browser or agent covers the full content row; the utility pane
   // already stays out of the full-content routes, so the expansion follows it.
   const paneExpanded =
@@ -876,6 +886,15 @@ export default function App() {
                     workspaceScopesReady={workspaceScopesReady}
                   />
                 </Suspense>
+              ) : designHomeShown ? (
+                <>
+                  {!state.tabStripShown && (
+                    <div data-electron-drag-region className="h-9 shrink-0" />
+                  )}
+                  <Suspense fallback={null}>
+                    <LazyDesignHome />
+                  </Suspense>
+                </>
               ) : isMissionControlView ? (
                 <motion.div
                   key="mission-control"
@@ -920,6 +939,21 @@ export default function App() {
                   <UtilityPane
                     panel={utilityPanel}
                     expanded={paneExpanded}
+                    {...(paneExpanded && activeUtilityTab?.tool === 'canvas'
+                      ? {
+                          header: (
+                            <Suspense fallback={<div className="min-w-0 flex-1" />}>
+                              <LazyCanvasHeader
+                                appSessionId={activeSession.appSessionId}
+                                canvasId={activeUtilityTab.canvasId ?? canvasAttachment}
+                                onDock={() => {
+                                  setExpandedPaneAppSessionId(null);
+                                }}
+                              />
+                            </Suspense>
+                          ),
+                        }
+                      : {})}
                     width={utilityPaneWidth}
                     minWidth={UTILITY_PANE_MIN}
                     maxWidth={utilityPaneMax}
@@ -1176,6 +1210,16 @@ export default function App() {
       <Suspense fallback={null}>
         <LazySpecWikiModal />
       </Suspense>
+      {/* A design draft's chat now exists, so the canvas it was started for
+          can be committed and the board opened beside it (spec §4). */}
+      {!embedded && state.canvasChatRequest?.appSessionId != null && (
+        <Suspense fallback={null}>
+          <LazyCanvasChatBootstrap
+            appSessionId={state.canvasChatRequest.appSessionId}
+            canvasId={state.canvasChatRequest.canvasId}
+          />
+        </Suspense>
+      )}
       {/* Watches project threads for a block that needs the user. Nothing to
           watch until a project exists, so it loads with the first one. */}
       {hasProjects && !embedded && !showWizard && (

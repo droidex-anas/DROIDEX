@@ -114,8 +114,20 @@ import { join } from 'node:path';
 // tile chrome, drop zones) are ~3.9KB, too little to be worth a skeleton in the
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
+//
+// Raised from 1_434_000 to 1_442_000 for Canvas design mode (05e). Against this
+// branch's base at a441e551 (1_433_429) the entry measures 1_438_671, +5_242.
+// All of it is app frame: the Chat | Design switcher in the sidebar's brand row
+// (~1.5KB) paints at first frame, so it cannot be lazy without flashing the
+// wordmark; App's workspace branches and the store's design-mode state and
+// pending-canvas request are ~1.8KB; and ~0.6KB is the four new lazy-surface
+// registrations, which is what keeps the Design home, the canvases sidebar, the
+// board header and the chat bootstrap out of the entry. No
+// `src/features/canvas` module is in the entry chunk. The remaining ~3.3KB of
+// headroom is deliberately tight: 05b-05d are board work that belongs wholly in
+// the Canvas chunk, so the next entry-chunk growth has to be argued here.
 const BUDGETS = {
-  initialRendererJsBytes: 1_434_000,
+  initialRendererJsBytes: 1_442_000,
   initialCssBytes: 101_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
