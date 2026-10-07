@@ -228,6 +228,8 @@ export interface TranscriptEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
+  // Safe Canvas tool snapshot. Tool-call merges prefer the latest activity,
+  // but missing or untargeted snapshots cannot replace a targeted activity.
   canvasActivity?: CanvasActivity;
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already
