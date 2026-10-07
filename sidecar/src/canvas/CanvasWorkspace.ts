@@ -235,7 +235,11 @@ export class CanvasWorkspace {
     });
   }
 
-  write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
+  write(
+    scope: CanvasScope,
+    input: WriteFilesInput,
+    validateSource?: (files: ReadonlyMap<string, string>) => void | Promise<void>,
+  ): Promise<WriteReceipt> {
     return this.commits.admit(async () => {
       this.commits.requireOpen();
       const manifest = this.leases.requireDesigns(scope, [input.designId]);
@@ -246,7 +250,7 @@ export class CanvasWorkspace {
 
       const design = this.design(manifest, input.designId);
       requireExpectedRevision(design, input.expectedRevisionId);
-      const revision = await stageRevision(this.files, canvasId, design, input);
+      const revision = await stageRevision(this.files, canvasId, design, input, validateSource);
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);

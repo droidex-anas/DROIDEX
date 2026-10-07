@@ -1,0 +1,108 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { DESIGN_SYSTEM_LIMITS, readDesignSystem, saveDesignSystem } from './designSystems.js';
+import { extractDesignSystem } from './extractDesignSystem.js';
+import { CompilerWorker } from './compiler.js';
+
+const input = {
+  name: 'Owned studio',
+  sourceCanvasId: 'canvas-owned',
+  from: { designId: 'design-owned', revisionId: 'revision-owned' },
+};
+
+test('extraction keeps owned tokens and primitive modules, reports inherited values, and persists provenance', async (t) => {
+  const extracted = extractDesignSystem(
+    {
+      'tokens.css':
+        ':root { --ds-space: 8px; }\n[data-mode="light"] { --ds-accent: #123456; }\n[data-mode="dark"] { --ds-accent: #abcdef; }\n.ds-button { padding: var(--ds-space); }\n.scene { color: var(--ds-fg); }',
+      'button.tsx':
+        'import type { ButtonHTMLAttributes } from "react";\nimport { Label } from "./label";\nexport function Button(props: ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props}><Label /></button>; }',
+      'label.tsx': 'export function Label() { return <span>Owned</span>; }',
+      'main.tsx':
+        'import { Card } from "@droidex/design-system"; export default function App() { return <Card>Scene</Card>; }',
+      'DESIGN.md': 'Use the source-owned Button for actions.',
+    },
+    input,
+  );
+  assert.equal(extracted.status, 'extracted');
+  if (extracted.status !== 'extracted') return;
+  assert.deepEqual(extracted.system.modes, {
+    light: { '--ds-space': '8px', '--ds-accent': '#123456' },
+    dark: { '--ds-space': '8px', '--ds-accent': '#abcdef' },
+  });
+  assert.deepEqual(extracted.system.provenance, {
+    sourceCanvasId: input.sourceCanvasId,
+    revision: input.from,
+  });
+  assert.ok(extracted.system.files['source/button.tsx'].includes('export function Button'));
+  assert.ok(extracted.system.files['source/label.tsx'].includes('Owned'));
+  assert.ok(!Object.hasOwn(extracted.system.files, 'source/main.tsx'));
+  assert.match(extracted.system.files['source/tokens.css'], /\.ds-button/);
+  assert.doesNotMatch(extracted.system.files['source/tokens.css'], /\.scene/);
+  assert.ok(
+    extracted.diagnostics.some(
+      (entry) => entry.code === 'not_source_owned' && entry.message.includes('--ds-fg'),
+    ),
+  );
+  assert.ok(
+    extracted.diagnostics.some(
+      (entry) => entry.code === 'not_source_owned' && entry.file === 'main.tsx',
+    ),
+  );
+  const ref = await saveDesignSystem(extracted.system);
+  assert.deepEqual((await readDesignSystem(ref)).provenance, extracted.system.provenance);
+  const worker = new CompilerWorker();
+  t.after(() => worker.terminate());
+  const compiled = await worker.compile(
+    {
+      designId: input.from.designId,
+      revisionId: input.from.revisionId,
+      generation: 1,
+      designSystem: ref,
+      files: {
+        'main.tsx':
+          'import { Button } from "@droidex/design-system"; export default function App() { return <Button />; }',
+      },
+    },
+    new AbortController().signal,
+  );
+  assert.deepEqual(compiled.diagnostics, []);
+});
+
+test('a wrapper around an imported kit primitive is reported instead of copying its inherited implementation', () => {
+  const result = extractDesignSystem(
+    {
+      'button.tsx':
+        'import { Button as BaseButton } from "@droidex/design-system";\nexport function Button() { return <BaseButton>Owned label</BaseButton>; }',
+    },
+    input,
+  );
+  assert.equal(result.status, 'extracted');
+  if (result.status !== 'extracted') return;
+  assert.equal(result.system.files['index.tsx'], 'export {};\n');
+  assert.ok(!Object.hasOwn(result.system.files, 'source/button.tsx'));
+  assert.ok(result.diagnostics.some((entry) => entry.code === 'not_source_owned'));
+  assert.deepEqual(result.system.modes, { light: {}, dark: {} });
+});
+
+test('extraction refuses missing mode counterparts and ambiguous values rather than guessing', () => {
+  for (const css of [
+    '[data-mode="light"] { --ds-accent: #123456; }',
+    ':root { --ds-accent: #123456; }\n:root { --ds-accent: #abcdef; }',
+  ]) {
+    const result = extractDesignSystem({ 'tokens.css': css }, input);
+    assert.equal(result.status, 'refused');
+    assert.ok(result.diagnostics.length > 0);
+  }
+});
+
+test('extraction refuses guidance over 16 KiB in UTF-8 without truncating it', () => {
+  const guidance = 'é'.repeat(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes / 2);
+  const accepted = extractDesignSystem({ 'DESIGN.md': guidance }, input);
+  assert.equal(accepted.status, 'extracted');
+  if (accepted.status !== 'extracted') return;
+  assert.equal(accepted.system.guidance, guidance);
+  const refused = extractDesignSystem({ 'DESIGN.md': guidance + 'é' }, input);
+  assert.equal(refused.status, 'refused');
+  assert.match(refused.diagnostics[0]?.message ?? '', /16 KiB/);
+});

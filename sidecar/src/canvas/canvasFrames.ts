@@ -45,10 +45,12 @@ export async function stageRevision(
   canvasId: string,
   design: PersistedDesign,
   input: WriteFilesInput,
+  validateSource?: (files: ReadonlyMap<string, string>) => void | Promise<void>,
 ): Promise<NewRevision> {
   const merged = mergeSource(await currentSource(files, canvasId, design), input);
   const violation = mergedRevisionViolation(merged);
   if (violation) throw canvasError('invalid_input', violation);
+  if (validateSource) await validateSource(merged);
   const revision: NewRevision = {
     version: REVISION_METADATA_VERSION,
     designId: input.designId,
