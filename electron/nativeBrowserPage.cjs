@@ -38,8 +38,8 @@ function createNativeBrowserPage({
     credentials,
     unthrottled,
     redactUrl: redactBrowserPageUrl,
-    onPoint: ({ browserSessionId }, { x, y }) =>
-      sendToRenderer('native-browser-agent-point', { browserSessionId, x, y }),
+    onPoint: ({ browserSessionId }, { x, y, kind }) =>
+      sendToRenderer('native-browser-agent-point', { browserSessionId, x, y, kind }),
   });
   const waits = createBrowserWait({ reading });
 
