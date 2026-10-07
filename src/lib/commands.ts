@@ -511,6 +511,7 @@ export const sendDesignPrompt = (
   references: DesignReference[],
   responseFormat?: ResponseFormat,
   mentions?: ProviderMention[],
+  steerId?: string,
 ) => {
   requireAgentWorkAvailable();
   bridge.send({
@@ -518,6 +519,7 @@ export const sendDesignPrompt = (
     appSessionId,
     instruction,
     references,
+    ...(steerId ? { steerId } : {}),
     ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
   });

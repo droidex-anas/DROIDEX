@@ -228,7 +228,12 @@ export interface SessionSummary {
   queuedSends?: number;
   // The steers sent while a turn ran that the model has not taken in yet, in
   // the order they were sent, as the chat shows them.
-  pendingSteers?: { id: string; text: string }[];
+  pendingSteers?: {
+    id: string;
+    text: string;
+    browserRefs?: BrowserTranscriptReference[];
+    sideChatReplies?: string[];
+  }[];
   proposal?: string; // markdown plan from propose_mission
   features: BridgeFeature[];
   tokensIn: number;
@@ -953,6 +958,7 @@ export type ClientCommand =
       references: DesignReference[];
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
+      steerId?: string;
     }
   | { type: 'sidebar.result'; result: SidebarResult };
 

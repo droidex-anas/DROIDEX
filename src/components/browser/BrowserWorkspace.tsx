@@ -66,6 +66,7 @@ export default function BrowserWorkspace({
       browserGlobalError: current.browserGlobalError,
       browsers: current.browsers,
       designModes: current.designModes,
+      designSelectionBehavior: current.designSelectionBehavior,
     }),
     shallowEqual,
   );
@@ -235,7 +236,7 @@ export default function BrowserWorkspace({
   const quickPrompt = useDesignQuickPrompt({
     appSessionId: browserKey,
     browserSessionId: browser?.browserSessionId,
-    designMode,
+    enabled: designMode && state.designSelectionBehavior === 'prompt-box',
     drawing: designMode && pencilMode,
     marks: designMarks,
   });
