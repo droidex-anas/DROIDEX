@@ -74,12 +74,13 @@ test('six Canvas tools are discoverable and an inactive chat cannot read', async
 test('theme listing is bounded and saving requires a client mutation ID', async (t) => {
   const h = await harness(t);
   h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
   assert.equal((await h.call('canvas_read', { unknown: 'secret' })).code, 'invalid_input');
   const listed = await h.call('canvas_theme', { operation: 'list', limit: 1 });
   assert.equal(listed.ok, true);
   assert.equal(listed.systems?.length, 1);
   assert.equal(
-    (await h.call('canvas_theme', { operation: 'save', system: {} })).code,
+    (await h.call('canvas_theme', { scopeId, operation: 'save', system: {} })).code,
     'invalid_input',
   );
 });
@@ -114,10 +115,33 @@ test('read binds the newest steer, an earlier named lease stays pinned, and anot
   assert.equal((await h.call('canvas_read', { scopeId: oldId })).code, 'scope_expired');
 });
 
+for (const ending of ['settlement', 'provider replacement'] as const)
+  test(`a delayed lease-less mutation cannot borrow authority after ${ending}`, async (t) => {
+    const h = await harness(t);
+    const first = h.turns.beginTurn('chat-one', undefined);
+    const oldScopeId = h.turns.activeScope('chat-one')?.scopeId;
+    assert.ok(oldScopeId);
+    const delivery = deferred();
+    const input = { mutationId: 'delayed-create', frames: [frame] };
+    const pending = delivery.promise.then(() => h.call('canvas_create', input));
+    if (ending === 'settlement') first.revoke();
+    else h.turns.endSession('chat-one');
+    h.turns.beginTurn('chat-one', undefined);
+    delivery.resolve();
+    assert.equal((await pending).code, 'scope_expired');
+    assert.equal(
+      (await h.call('canvas_create', { ...input, scopeId: oldScopeId })).code,
+      'scope_expired',
+    );
+    assert.deepEqual(h.workspace.listCanvases(), []);
+    assert.equal(h.workspace.attachedCanvasId('chat-one'), null);
+  });
+
 test('a frame-scoped turn cannot inspect another frame on the same canvas', async (t) => {
   const h = await harness(t);
   const wholeCanvas = h.turns.beginTurn('chat-one', undefined);
   const created = await h.call('canvas_create', {
+    scopeId: (await h.call('canvas_read', {})).scopeId,
     mutationId: 'create-pair',
     frames: [frame, { ...frame, name: 'Other' }],
   });
@@ -155,7 +179,8 @@ test('a frame-scoped turn cannot inspect another frame on the same canvas', asyn
 test('lost create response retries to the same canvas and invalid source paths have a stable refusal code', async (t) => {
   const h = await harness(t);
   h.turns.beginTurn('chat-one', undefined);
-  const input = { mutationId: 'create-one', frames: [frame] };
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const input = { scopeId, mutationId: 'create-one', frames: [frame] };
   const first = await h.call('canvas_create', input);
   const retry = await h.call('canvas_create', input);
   assert.equal(first.ok, true);
@@ -164,6 +189,7 @@ test('lost create response retries to the same canvas and invalid source paths h
   const designId = first.created?.frames[0].designId;
   assert.ok(designId);
   const invalid = await h.call('canvas_write', {
+    scopeId,
     mutationId: 'bad-path',
     designId,
     expectedRevisionId: null,
@@ -172,6 +198,7 @@ test('lost create response retries to the same canvas and invalid source paths h
   });
   assert.equal(invalid.code, 'invalid_source_path');
   const written = await h.call('canvas_write', {
+    scopeId,
     mutationId: 'write-one',
     designId,
     expectedRevisionId: null,
@@ -188,6 +215,7 @@ test('lost create response retries to the same canvas and invalid source paths h
   assert.equal(
     (
       await h.call('canvas_write', {
+        scopeId,
         mutationId: 'conflict',
         designId,
         expectedRevisionId: null,
@@ -212,12 +240,18 @@ test('provider replacement while a write is staged refuses its old lease and lea
   });
   const h = await harness(t, fs);
   h.turns.beginTurn('chat-one', undefined);
-  const created = await h.call('canvas_create', { mutationId: 'create-one', frames: [frame] });
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'create-one',
+    frames: [frame],
+  });
   assert.ok(created.created);
   const designId = created.created?.frames[0].designId;
   assert.ok(designId);
   hold = true;
   const pending = h.call('canvas_write', {
+    scopeId,
     mutationId: 'write-stale',
     designId,
     expectedRevisionId: null,

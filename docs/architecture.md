@@ -316,8 +316,9 @@ Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
 Each chat gets one local `droidex-canvas` MCP server with six tools: read, create,
 write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
-the server binds an omitted scope to that chat's newest live lease and refuses a
-named lease after its turn or provider ends. `CanvasWorkspace` owns board
+`canvas_read` returns that chat's newest live lease. Every mutation requires its
+explicit `scopeId`; retries keep the original scope and cannot borrow a later
+turn's authority. Named leases expire when their turn or provider ends. `CanvasWorkspace` owns board
 mutations, including retry receipts and attachment bootstrap; the design-system
 store owns immutable kit versions. Droid and Claude use
 the per-chat loopback endpoint; Codex declares the same tools through dynamic

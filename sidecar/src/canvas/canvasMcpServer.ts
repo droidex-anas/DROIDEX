@@ -20,8 +20,9 @@ import {
 
 export const CANVAS_MCP_SERVER_NAME = 'droidex-canvas';
 
-const scopeIdSchema = z.string().min(1).max(200).optional();
-const scopeShape = { scopeId: scopeIdSchema };
+const scopeIdSchema = z.string().min(1).max(200);
+const scopeShape = { scopeId: scopeIdSchema.optional() };
+const mutationScopeShape = { scopeId: scopeIdSchema };
 const scopeArgumentSchema = z.object(scopeShape).passthrough();
 const pageSchema = z.number().int().min(0).max(100_000);
 const readSchema = z
@@ -35,11 +36,11 @@ const readSchema = z
     limit: z.number().int().min(1).max(32).default(32),
   })
   .strict();
-const createSchema = createFramesInputSchema.extend(scopeShape).strict();
+const createSchema = createFramesInputSchema.extend(mutationScopeShape).strict();
 const writeSchema = z
-  .object({ ...writeFilesInputSchema.innerType().shape, ...scopeShape })
+  .object({ ...writeFilesInputSchema.innerType().shape, ...mutationScopeShape })
   .strict();
-const arrangeSchema = arrangeFramesInputSchema.extend(scopeShape).strict();
+const arrangeSchema = arrangeFramesInputSchema.extend(mutationScopeShape).strict();
 const inspectSchema = z
   .object({
     ...scopeShape,
@@ -61,7 +62,7 @@ const themeSchema = z.discriminatedUnion('operation', [
   z.object({ ...scopeShape, operation: z.literal('read'), ref: designSystemRefSchema }).strict(),
   z
     .object({
-      ...scopeShape,
+      ...mutationScopeShape,
       operation: z.literal('save'),
       mutationId: canvasIdentifierSchema,
       system: designSystemSchema,
@@ -69,7 +70,7 @@ const themeSchema = z.discriminatedUnion('operation', [
     .strict(),
   z
     .object({
-      ...scopeShape,
+      ...mutationScopeShape,
       operation: z.literal('apply'),
       mutationId: canvasIdentifierSchema,
       designId: canvasIdentifierSchema,
@@ -133,7 +134,7 @@ export function createCanvasMcpServer(
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Use the attached canvas and pinned references returned by canvas_read. Read the selected design system before creating or restyling a design. Create named frames, submit complete working files, then inspect the result. Preserve unrelated frames and cite revision IDs when updating existing work. This tool returns a scopeId for later calls.',
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn with canvas_read to get its scopeId, attached canvas and pinned references. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, submit complete working files, then inspect the result. Preserve unrelated frames and cite revision IDs when updating existing work.',
       readSchema.shape,
       (raw) =>
         dispatch(raw, async (scope) => {
@@ -197,24 +198,30 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_create',
-      'Reserve one to four named frames on the attached canvas. Create a small working composition first; retry with the same mutationId after a lost response.',
+      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read. Create a small working composition first; retry with the same mutationId and scopeId after a lost response.',
       createSchema.shape,
       (raw) =>
         dispatch(raw, async (scope) => {
-          const input = createSchema.parse(raw);
-          delete input.scopeId;
-          return { created: await (await workspace()).create(scope, input) };
+          const { mutationId, frames } = createSchema.parse(raw);
+          return { created: await (await workspace()).create(scope, { mutationId, frames }) };
         }),
     ),
     tool(
       'canvas_write',
-      'Submit complete changed files for a named frame and cite its current revisionId. Preserve unrelated frames and reuse mutationId on retry.',
+      'Submit complete changed files for a named frame using the scopeId from this turn’s canvas_read and its current revisionId. Preserve unrelated frames and reuse mutationId and scopeId on retry.',
       writeSchema.shape,
       (raw) =>
         dispatch(raw, async (scope) => {
-          const fields = writeSchema.parse(raw);
-          delete fields.scopeId;
-          const input = writeFilesInputSchema.parse(fields);
+          const { mutationId, designId, expectedRevisionId, files, deletedPaths, designSystem } =
+            writeSchema.parse(raw);
+          const input = writeFilesInputSchema.parse({
+            mutationId,
+            designId,
+            expectedRevisionId,
+            files,
+            deletedPaths,
+            designSystem,
+          });
           return { receipt: await (await workspace()).write(scope, input) };
         }),
     ),
@@ -255,18 +262,17 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_arrange',
-      'Move or resize existing frames using their current layout versions. This changes board layout only.',
+      'Move or resize existing frames using the scopeId from this turn’s canvas_read and their current layout versions. This changes board layout only.',
       arrangeSchema.shape,
       (raw) =>
         dispatch(raw, async (scope) => {
-          const input = arrangeSchema.parse(raw);
-          delete input.scopeId;
-          return { change: await (await workspace()).arrange(scope, input) };
+          const { mutationId, frames } = arrangeSchema.parse(raw);
+          return { change: await (await workspace()).arrange(scope, { mutationId, frames }) };
         }),
     ),
     tool(
       'canvas_theme',
-      'List or read versioned design systems on demand; save a new version or apply one to a named design at its current revision.',
+      'List or read versioned design systems on demand. Save and apply require the scopeId from this turn’s canvas_read; reuse that scopeId and mutationId on retry. Apply to a named design at its current revision.',
       {
         ...scopeShape,
         operation: z.enum(['list', 'read', 'save', 'apply']),
@@ -323,6 +329,12 @@ export function createCanvasMcpServer(
 
 export function invalidCanvasArguments(error: z.ZodError): CanvasCommandError {
   const issue = error.issues[0];
+  if (
+    issue.path[0] === 'scopeId' &&
+    issue.code === 'invalid_type' &&
+    issue.received === 'undefined'
+  )
+    return canvasError('scope_expired', EXPIRED_TURN);
   const sourcePath = issue.path.includes('files') || issue.path.includes('deletedPaths');
   const safeMessage = ['custom', 'too_small', 'too_big'].includes(issue.code)
     ? issue.message
