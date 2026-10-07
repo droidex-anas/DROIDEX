@@ -1,6 +1,6 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { ProjectPort } from './ProjectService.js';
-import type { Project, ThreadMessage } from './types.js';
+import type { Project, ProjectThread, ThreadMessage } from './types.js';
 
 const MAX_ACTIVE = 2;
 
@@ -13,11 +13,26 @@ const MAX_ACTIVE = 2;
 const LOOP_WINDOW_MS = 5 * 60_000;
 const LOOP_LIMIT = 60;
 
+export type ThreadWait =
+  | { kind: 'slot'; position: number }
+  | { kind: 'turn' }
+  | { kind: 'start'; position: number };
+
 export class ProjectWakeQueue {
+  private readonly projects = new Set<Project>();
+  private starting?: { project: Project; work: Promise<void> };
+  private startCapacityBlocked = false;
   private readonly recent = new Map<string, number[]>();
   private readonly generations = new Map<string, number>();
   private readonly queued = new Set<Project>();
-  private readonly pumping = new Map<string, Promise<void>>();
+  private readonly pumping = new Map<
+    string,
+    {
+      work: Promise<void>;
+      steering: boolean;
+      resuming: boolean;
+    }
+  >();
   private readonly active = new Map<string, { project: Project; settled: Promise<void> }>();
   /** Recipients a delivery found busy, skipped until they settle. */
   private readonly busyTargets = new Set<string>();
@@ -29,12 +44,53 @@ export class ProjectWakeQueue {
   private closed = false;
 
   constructor(
-    private readonly sessions: Pick<ProjectPort, 'deliver' | 'awaitingApproval'>,
+    private readonly sessions: Pick<
+      ProjectPort,
+      'deliver' | 'deliverReport' | 'get' | 'isLive' | 'awaitingApproval'
+    >,
     private readonly save: () => Promise<void>,
     private readonly fail: (project: Project, error: unknown) => void,
     /** Room opened in a project's inbox, so reports that found it full can queue. */
     private readonly refill: (project: Project) => void,
+    private readonly launch?: (project: Project, thread: ProjectThread) => Promise<boolean>,
   ) {}
+
+  waitReason(appSessionId: string): ThreadWait | undefined {
+    const starts = this.waitingStarts();
+    const start = starts.findIndex(({ thread }) => thread.appSessionId === appSessionId);
+    if (start >= 0) return { kind: 'start', position: start + 1 };
+    const waiting = [...this.capacityWaiting];
+    const slot = waiting.indexOf(appSessionId);
+    if (slot >= 0) return { kind: 'slot', position: slot + 1 };
+    if (this.busyTargets.has(appSessionId)) return { kind: 'turn' };
+    return undefined;
+  }
+
+  hasWaitingStarts(): boolean {
+    return this.waitingStarts().length > 0 || this.hasWaitingResume();
+  }
+
+  private waitingStarts(): { project: Project; thread: ProjectThread }[] {
+    return [...this.projects]
+      .flatMap((project) =>
+        project.threads
+          .filter((thread) => thread.queuedSpawn)
+          .map((thread) => ({ project, thread })),
+      )
+      .sort((a, b) => (a.thread.queuedSpawn?.order ?? 0) - (b.thread.queuedSpawn?.order ?? 0));
+  }
+
+  private hasWaitingResume(): boolean {
+    return [...this.projects].some(
+      (project) =>
+        !project.paused &&
+        project.pending.some(
+          (message) =>
+            !this.sessions.isLive(message.to) &&
+            !project.threads.find((thread) => thread.appSessionId === message.to)?.queuedSpawn,
+        ),
+    );
+  }
 
   guard(project: Project): () => boolean {
     const generation = this.generations.get(project.id);
@@ -62,9 +118,10 @@ export class ProjectWakeQueue {
 
   kick(project: Project): void {
     if (this.closed) return;
+    this.projects.add(project);
     this.refill(project);
-    if (project.paused || project.delivery || !project.pending.length) return;
-    this.queued.add(project);
+    if (project.paused) return;
+    if (!project.delivery && project.pending.length) this.queued.add(project);
     this.schedule();
   }
 
@@ -79,6 +136,7 @@ export class ProjectWakeQueue {
   capacityChanged(projects: Iterable<Project>): void {
     if (this.closed) return;
     this.capacityRevision += 1;
+    this.startCapacityBlocked = false;
     this.capacityWaiting.clear();
     for (const project of projects) this.kick(project);
   }
@@ -91,7 +149,7 @@ export class ProjectWakeQueue {
   sessionIdle(projects: Iterable<Project>): void {
     if (this.closed) return;
     this.capacityRevision += 1;
-    if (this.capacityWaiting.size) this.capacityChanged(projects);
+    if (this.capacityWaiting.size || this.waitingStarts().length) this.capacityChanged(projects);
   }
 
   /** A delivered turn stopped on, or resumed from, a request only the user can answer. */
@@ -101,7 +159,10 @@ export class ProjectWakeQueue {
 
   async settle(project: Project): Promise<void> {
     // Stop waits for admission, not for the turn it is about to interrupt.
-    await this.pumping.get(project.id);
+    await Promise.all([
+      this.pumping.get(project.id)?.work,
+      this.starting?.project === project ? this.starting.work : undefined,
+    ]);
   }
 
   close(): void {
@@ -110,23 +171,27 @@ export class ProjectWakeQueue {
     if (this.scheduled) clearImmediate(this.scheduled);
     this.scheduled = undefined;
     this.queued.clear();
+    this.projects.clear();
     this.busyTargets.clear();
     this.capacityWaiting.clear();
   }
 
   async flush(): Promise<void> {
-    while (this.pumping.size || this.active.size) {
+    while (this.pumping.size || this.active.size || this.starting) {
       const turns = [...this.active.values()].map((turn) => turn.settled);
-      await Promise.allSettled([...this.pumping.values(), ...turns]);
+      await Promise.allSettled([
+        ...[...this.pumping.values()].map((admission) => admission.work),
+        ...turns,
+        ...(this.starting ? [this.starting.work] : []),
+      ]);
     }
   }
 
   private schedule(): void {
-    if (this.closed || !this.started || this.scheduled || this.running() >= MAX_ACTIVE) return;
+    if (this.closed || !this.started || this.scheduled) return;
     this.scheduled = setImmediate(() => {
       this.scheduled = undefined;
       for (const project of this.queued) {
-        if (this.running() >= MAX_ACTIVE) break;
         if (project.paused || project.delivery || !project.pending.length) {
           this.queued.delete(project);
           continue;
@@ -134,13 +199,18 @@ export class ProjectWakeQueue {
         if (this.pumping.has(project.id)) continue;
         const first = project.pending.find(
           (message) =>
-            !this.busyTargets.has(message.to) &&
-            !this.capacityWaiting.has(message.to) &&
-            !this.active.has(message.to),
+            !project.threads.find((thread) => thread.appSessionId === message.to)?.queuedSpawn &&
+            (this.canSteer(project, message.to) ||
+              (this.running() < MAX_ACTIVE &&
+                !this.busyTargets.has(message.to) &&
+                !this.capacityWaiting.has(message.to) &&
+                !this.active.has(message.to))),
         );
         if (!first) continue;
         this.queued.delete(project);
-        const work = this.deliver(project, first.to)
+        const steering = this.canSteer(project, first.to);
+        const resuming = !this.sessions.isLive(first.to);
+        const work = this.deliver(project, first.to, steering)
           .catch((error: unknown) => {
             this.fail(project, error);
           })
@@ -149,13 +219,59 @@ export class ProjectWakeQueue {
             this.kick(project);
             this.schedule();
           });
-        this.pumping.set(project.id, work);
+        this.pumping.set(project.id, { work, steering, resuming });
       }
+      this.startNext();
     });
   }
 
+  private canSteer(project: Project, target: string): boolean {
+    return (
+      this.sessions.get(target)?.streaming === true &&
+      project.pending.some(
+        (message) =>
+          message.to === target &&
+          message.kind !== 'message' &&
+          project.threads.some(
+            (thread) => thread.appSessionId === message.from && thread.ownerAppSessionId === target,
+          ),
+      )
+    );
+  }
+
+  private startNext(): void {
+    if (
+      !this.launch ||
+      this.starting ||
+      this.startCapacityBlocked ||
+      [...this.pumping.values()].some((admission) => admission.resuming) ||
+      this.hasWaitingResume()
+    )
+      return;
+    const next = this.waitingStarts().find(({ project }) => !project.paused);
+    if (!next) return;
+    const isCurrent = this.guard(next.project);
+    const capacityRevision = this.capacityRevision;
+    const work = this.launch(next.project, next.thread)
+      .then(
+        (started) => {
+          this.startCapacityBlocked =
+            !started && isCurrent() && this.capacityRevision === capacityRevision;
+        },
+        (error: unknown) => {
+          if (isCurrent()) this.fail(next.project, error);
+        },
+      )
+      .finally(() => {
+        this.starting = undefined;
+        this.schedule();
+      });
+    this.starting = { project: next.project, work };
+  }
+
   private running(): number {
-    let count = this.pumping.size;
+    let count = 0;
+    for (const admission of this.pumping.values()) if (!admission.steering) count += 1;
     // A turn stopped on a question for its owner, or on a permission only the
     // user can give, runs nothing until answered, so it frees its slot. Once
     // answered it carries on, and the count can briefly pass the limit.
@@ -174,7 +290,7 @@ export class ProjectWakeQueue {
     return marks.length <= LOOP_LIMIT;
   }
 
-  private async deliver(project: Project, target: string): Promise<void> {
+  private async deliver(project: Project, target: string, steering: boolean): Promise<void> {
     const isCurrent = this.guard(project);
     if (!isCurrent()) return;
     if (!this.admit(project)) {
@@ -189,7 +305,7 @@ export class ProjectWakeQueue {
     }
     const targetRevision = this.revisions.get(target);
     const capacityRevision = this.capacityRevision;
-    const messages = batch(project.pending, target);
+    const messages = batch(project.pending, target, steering);
     const ids = new Set(messages.map((message) => message.id));
     project.pending = project.pending.filter((message) => !ids.has(message.id));
     const claim = { state: 'sending' as const, messages };
@@ -201,7 +317,10 @@ export class ProjectWakeQueue {
     const stillAsked = () => messages.every((message) => isAsked(project, message));
     let receipt: AutomationDeliveryReceipt;
     try {
-      receipt = await this.sessions.deliver(
+      const deliver = steering
+        ? this.sessions.deliverReport.bind(this.sessions)
+        : this.sessions.deliver.bind(this.sessions);
+      receipt = await deliver(
         target,
         wakePrompt(project, target, messages),
         () => isCurrent() && stillAsked(),
@@ -233,6 +352,10 @@ export class ProjectWakeQueue {
       return;
     }
 
+    if (steering) {
+      await this.save();
+      return;
+    }
     const release = () => {
       this.active.delete(target);
       this.available(project, target);
@@ -271,11 +394,15 @@ function isAskingOwner(project: Project, appSessionId: string): boolean {
   return project.threads.some((thread) => thread.appSessionId === appSessionId && thread.ask);
 }
 
-function batch(pending: readonly ThreadMessage[], to: string): ThreadMessage[] {
+function batch(
+  pending: readonly ThreadMessage[],
+  to: string,
+  reportsOnly = false,
+): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
   let characters = 0;
   for (const message of pending) {
-    if (message.to !== to) continue;
+    if (message.to !== to || (reportsOnly && message.kind === 'message')) continue;
     if (messages.length && characters + message.text.length > 12_000) break;
     messages.push(message);
     characters += message.text.length;

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { sessionSummary } from '../testing/sessionSummaryFixture.js';
+import type { ProjectPort } from './ProjectService.js';
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import type { Project, ThreadMessage } from './types.js';
@@ -40,16 +42,29 @@ function project(id = 'project'): Project {
 function wakeQueue(
   t: TestContext,
   deliver: (target: string, prompt: string) => Promise<AutomationDeliveryReceipt>,
-  options: { save?: () => Promise<void>; fail?: (error: unknown) => void } = {},
+  options: {
+    save?: () => Promise<void>;
+    fail?: (error: unknown) => void;
+    sessions?: Partial<Pick<ProjectPort, 'get' | 'isLive' | 'deliverReport'>>;
+    launch?: (project: Project, thread: Project['threads'][number]) => Promise<boolean>;
+  } = {},
 ): ProjectWakeQueue {
   const queue = new ProjectWakeQueue(
-    { deliver, awaitingApproval: () => false },
+    {
+      deliver,
+      deliverReport: deliver,
+      awaitingApproval: () => false,
+      get: () => undefined,
+      isLive: () => true,
+      ...options.sessions,
+    },
     options.save ?? (() => Promise.resolve()),
     (_project, error) => {
       if (!options.fail) throw error;
       options.fail(error);
     },
     () => undefined,
+    options.launch,
   );
   queue.start([]);
   t.after(async () => {
@@ -235,4 +250,95 @@ test('a cancelled admission cannot restore a busy marker after resume', async (t
   await tick();
   assert.equal(calls, 2);
   assert.equal(state.pending.length, 0);
+});
+
+test('reports steer through a full delivery gate and keep their claim until acknowledgement', async (t) => {
+  const first = project('first');
+  const second = project('second');
+  second.pending[0].to = 'other';
+  const report = project('report');
+  report.threads[0].appSessionId = 'running';
+  report.threads[1].ownerAppSessionId = 'running';
+  report.pending[0].to = 'running';
+  const finished = deferred<void>();
+  const acknowledged = deferred<AutomationDeliveryReceipt>();
+  const wakes: string[] = [];
+  const steers: string[] = [];
+  let running = true;
+  const queue = wakeQueue(
+    t,
+    async (target) => {
+      wakes.push(target);
+      return { status: 'accepted', settled: finished.promise };
+    },
+    {
+      sessions: {
+        get: (id) =>
+          id === 'running' ? sessionSummary({ appSessionId: id, streaming: running }) : undefined,
+        deliverReport: async (_target, prompt) => {
+          steers.push(prompt);
+          return acknowledged.promise;
+        },
+      },
+    },
+  );
+  queue.start([first, second, report]);
+  await tick();
+  await tick();
+  assert.equal(wakes.length, 2);
+  assert.equal(steers.length, 1);
+  assert.equal(report.delivery?.messages[0]?.id, 'first');
+  assert.match(steers[0], /Worker reported back \(thread worker\)/);
+  acknowledged.resolve({ status: 'accepted', settled: Promise.resolve() });
+  await tick();
+  assert.equal(report.delivery, undefined);
+  assert.equal(report.pending.length, 0);
+  running = false;
+  queue.available(report, 'running');
+  finished.resolve();
+  await tick();
+  assert.equal(wakes.length, 2, 'an acknowledged steer cannot wake the owner again');
+});
+
+test('existing resume admissions precede queued starts, which launch in FIFO order', async (t) => {
+  const state = project();
+  state.pending[0].to = 'stopped';
+  const input = {
+    title: 'Work',
+    prompt: 'Do it',
+    provider: 'droid' as const,
+    autonomy: 'low' as const,
+  };
+  for (const [index, id] of ['new-first', 'new-second'].entries())
+    state.threads.push({
+      appSessionId: id,
+      ownerAppSessionId: 'main',
+      title: id,
+      reply: '',
+      waiting: false,
+      queuedSpawn: { input, order: index + 1 },
+    });
+  const admitted = deferred<AutomationDeliveryReceipt>();
+  const finished = deferred<void>();
+  const starts: string[] = [];
+  const queue = wakeQueue(t, async () => admitted.promise, {
+    sessions: { isLive: (id) => id !== 'stopped' },
+    launch: async (_project, thread) => {
+      starts.push(thread.appSessionId);
+      delete thread.queuedSpawn;
+      return true;
+    },
+  });
+  queue.kick(state);
+  await tick();
+  assert.deepEqual(queue.waitReason('new-first'), { kind: 'start', position: 1 });
+  assert.deepEqual(queue.waitReason('new-second'), { kind: 'start', position: 2 });
+  assert.deepEqual(starts, []);
+  admitted.resolve({ status: 'accepted', settled: finished.promise });
+  await tick();
+  await tick();
+  await tick();
+  assert.deepEqual(starts, ['new-first', 'new-second']);
+  assert.equal(queue.waitReason('new-first'), undefined);
+  finished.resolve();
 });

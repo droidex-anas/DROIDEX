@@ -1,3 +1,4 @@
+import type { ScheduledTurnDelivery } from './sessionAutomationDelivery.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
@@ -792,7 +793,7 @@ export class SessionManager {
     this.adoption = new SessionAdoption({
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
       registry: this.registry,
-      lifecycle: this.lifecycle,
+      lifecycle: { resume: (id) => this.lifecycle.resume(id, true) },
       liveChildren: () =>
         this.childSessions.liveChildSummaries().map((child) => ({
           parentAppSessionId: child.parentAppSessionId,
@@ -859,8 +860,9 @@ export class SessionManager {
    * Resolves once session history knows every stored conversation. Call it
    * after startSessionFileServing, since it starts that work itself otherwise.
    */
-  whenSessionHistoryReady(): Promise<void> {
-    return this.sessionFiles.whenBootReconciled();
+  async whenSessionHistoryReady(): Promise<void> {
+    await this.sessionFiles.whenBootReconciled();
+    await this.adoption.adopt();
   }
 
   connect(apiKey?: string): void {
@@ -1238,6 +1240,21 @@ export class SessionManager {
     }
   }
 
+  automaticRuntimeLoad(): { live: number; limit: number } {
+    return this.lifecycle.runtimeLoad();
+  }
+
+  makeAutomaticRuntimeRoom(appSessionId: string): Promise<boolean> {
+    return this.lifecycle.makeAutomaticRuntimeRoom(appSessionId);
+  }
+
+  createAutomaticSession(
+    command: Extract<ClientCommand, { type: 'session.create' }>,
+    appSessionId?: string,
+  ): Promise<boolean> {
+    return this.lifecycle.createAutomatic(command, appSessionId);
+  }
+
   deliverScheduledMessage(
     appSessionId: string,
     prompt: string,
@@ -1251,8 +1268,9 @@ export class SessionManager {
     prompt: string,
     isCurrent: () => boolean,
     now = false,
+    delivery?: ScheduledTurnDelivery,
   ): Promise<boolean> {
-    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now);
+    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now, delivery);
   }
 
   async automationSessionContext(appSessionId: string): Promise<{

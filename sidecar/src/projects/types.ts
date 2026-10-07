@@ -78,6 +78,8 @@ export interface ProjectThread {
   /** Its newest report, kept here while the project's inbox is full. */
   owedReport?: string;
   waiting: boolean;
+  /** The complete launch request while this thread waits for a runtime slot. */
+  queuedSpawn?: { input: ThreadInput; order: number };
 }
 
 /** How a lead's message reaches a thread: into its running turn at the

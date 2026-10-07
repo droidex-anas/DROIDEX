@@ -49,7 +49,7 @@ import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
 
-const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+const MAX_SCHEDULED_SESSION_RUNTIMES = 12;
 // How long a settled turn waits for Send now's interrupt. A harness that never
 // answers it must not leave the chat busy for good.
 const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
@@ -108,6 +108,7 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
+  delivery?: ScheduledTurnDelivery;
 }
 
 interface LiveTurnState {
@@ -224,6 +225,7 @@ export interface SessionLifecycleDependencies {
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
+  private readonly automaticCreates = new Set<string>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
   // How often each chat was stopped or discarded. A prompt that was accepted
@@ -239,9 +241,46 @@ export class SessionLifecycle {
   >();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
-  // A branch is a session opened from another session's transcript: its goal
-  // stays the user's request while the model's first prompt carries the source.
-  async create(command: SessionCreateCommand, branch?: SessionBranch): Promise<void> {
+  // Provisional opens stop counting once registration turns them into live runtimes.
+  runtimeLoad(): { live: number; limit: number } {
+    const registry = this.dependencies.registry;
+    const opening = [...this.automaticCreates, ...this.resumeOperations.keys()].filter(
+      (id) => !registry.getLive(id),
+    ).length;
+    return { live: registry.liveCount + opening, limit: MAX_SCHEDULED_SESSION_RUNTIMES };
+  }
+
+  private canStartAutomaticRuntime(): boolean {
+    return this.runtimeLoad().live < MAX_SCHEDULED_SESSION_RUNTIMES;
+  }
+
+  async createAutomatic(
+    command: SessionCreateCommand,
+    appSessionId: string = randomUUID(),
+  ): Promise<boolean> {
+    if (!this.canStartAutomaticRuntime()) return false;
+    this.automaticCreates.add(appSessionId);
+    try {
+      await this.create(command, undefined, appSessionId);
+      return true;
+    } finally {
+      this.automaticCreates.delete(appSessionId);
+      this.dependencies.onScheduledCapacityChanged?.();
+    }
+  }
+
+  async makeAutomaticRuntimeRoom(appSessionId: string): Promise<boolean> {
+    if (!this.canStartAutomaticRuntime())
+      await this.dependencies.releaseRuntimeForCapacity(appSessionId);
+    return this.canStartAutomaticRuntime();
+  }
+
+  // A branch keeps the user's goal while its first prompt carries the source transcript.
+  async create(
+    command: SessionCreateCommand,
+    branch?: SessionBranch,
+    requestedAppSessionId?: string,
+  ): Promise<void> {
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
@@ -326,7 +365,7 @@ export class SessionLifecycle {
         ));
       this.requireOpenAdmission();
 
-      const appSessionId = providerSession.providerSessionId;
+      const appSessionId = requestedAppSessionId ?? providerSession.providerSessionId;
       const maxContextTokens =
         kind === 'droid' ? d.maxContextTokensForModel(primary.modelId) : undefined;
       const created = buildCreatedSessionSummary({
@@ -343,6 +382,7 @@ export class SessionLifecycle {
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),
       });
+      created.providerSessionId = providerSession.providerSessionId;
       const summary = branch ? { ...created, lineage: branch.lineage } : created;
       if (branch) d.recordLineage(appSessionId, branch.lineage);
       ref.id = appSessionId;
@@ -393,7 +433,7 @@ export class SessionLifecycle {
     }
   }
 
-  async resume(requestedAppSessionId: string): Promise<boolean> {
+  async resume(requestedAppSessionId: string, automatic = false): Promise<boolean> {
     const d = this.dependencies;
     const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
@@ -405,6 +445,8 @@ export class SessionLifecycle {
     }
     const pending = this.resumeOperations.get(appSessionId);
     if (pending) return pending;
+    if (automatic && !d.registry.getLive(appSessionId) && !this.canStartAutomaticRuntime())
+      return false;
 
     const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
       if (this.resumeOperations.get(appSessionId) !== operation) return;
@@ -617,11 +659,9 @@ export class SessionLifecycle {
     return deliverScheduledMessage(
       {
         dependencies: this.dependencies,
-        canResume: () =>
-          this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
-          MAX_SCHEDULED_SESSION_RUNTIMES,
+        canResume: () => this.canStartAutomaticRuntime(),
         makeRoom: (id) => this.dependencies.releaseRuntimeForCapacity(id),
-        resume: (id) => this.resume(id),
+        resume: (id) => this.resume(id, true),
         start: (id, text, delivery) =>
           this.driveInBackground(id, { ...sessionPrompt(text), announce: true }, delivery),
       },
@@ -646,13 +686,14 @@ export class SessionLifecycle {
     text: string,
     isCurrent: () => boolean,
     now = false,
+    delivery?: ScheduledTurnDelivery,
   ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
     const steerId = randomUUID();
-    const prompt = { ...sessionPrompt(text, undefined, steerId), isCurrent };
+    const prompt = { ...sessionPrompt(text, undefined, steerId), isCurrent, delivery };
     const admitted = await this.admitPrompt(appSessionId, prompt);
     if (admitted === 'held') return true;
     if (!admitted) return false;
@@ -671,6 +712,7 @@ export class SessionLifecycle {
       return true;
     }
     void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
+      delivery?.declined('failed');
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
     });
@@ -712,8 +754,10 @@ export class SessionLifecycle {
         this.stopCount(requestedAppSessionId) !== admitted.stops ||
         this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession ||
         isWithdrawn(prompt)
-      )
+      ) {
+        prompt.delivery?.declined('stale');
         return;
+      }
     }
     // A steer the turn could not take goes on as an ordinary message: behind
     // the turn, or as the next turn if this one settled meanwhile.
@@ -748,6 +792,7 @@ export class SessionLifecycle {
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
+    prompt.delivery?.accepted();
     const appSessionId = liveSession.summary.appSessionId;
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       await this.dependencies.appendSteer(appSessionId, prompt.text);
@@ -850,6 +895,7 @@ export class SessionLifecycle {
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
     // The harness drops the steers it holds when the turn stops.
+    this.declinePendingDeliveries(liveSession);
     liveSession.pendingSends = [];
     liveSession.steers = [];
     if (liveSession.compacting) {
@@ -939,10 +985,12 @@ export class SessionLifecycle {
   private beginClose(liveSession: LiveSession, mode: SessionCloseMode): CloseOperation {
     if (mode === 'discard-pending') {
       liveSession.closeMode = mode;
+      this.declinePendingDeliveries(liveSession);
       liveSession.pendingSends = [];
       liveSession.steers = [];
     } else {
       liveSession.closeMode ??= mode;
+      if (this.dependencies.isShutdownStarted()) this.declinePendingDeliveries(liveSession);
     }
     const existing = this.deferredCloses.get(liveSession);
     if (existing) return { deferred: existing, created: false };
@@ -1466,7 +1514,7 @@ export class SessionLifecycle {
   private async drive(
     appSessionId: string,
     prompt: SessionPrompt,
-    delivery?: ScheduledTurnDelivery,
+    delivery: ScheduledTurnDelivery | undefined = prompt.delivery,
   ): Promise<void> {
     const d = this.dependencies;
     const stops = this.stopCount(appSessionId);
@@ -1502,6 +1550,7 @@ export class SessionLifecycle {
     }
     // Its sender withdrew it while it waited, so what was queued behind it runs instead.
     if (isWithdrawn(prompt)) {
+      delivery?.declined('stale');
       const next = liveSession.pendingSends.shift();
       if (next === undefined) return;
       this.updateQueuedSends(liveSession);
@@ -1535,6 +1584,7 @@ export class SessionLifecycle {
       d.registry.updateSummary(stableAppSessionId, {
         phase: liveSession.summary.sessionPurpose === 'mission-control' ? 'planning' : 'running',
         streaming: true,
+        interruptReason: undefined,
         ...queueSummary(liveSession),
       });
       turn = liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
@@ -1547,6 +1597,7 @@ export class SessionLifecycle {
       });
       await turn;
     } finally {
+      delivery?.declined('unknown');
       // This turn's rows are all in. One the provider started meanwhile, and
       // still running, keeps the source open; one that ended left it to us,
       // unless the next typed turn it started already owns the source.
@@ -1631,6 +1682,12 @@ export class SessionLifecycle {
       { streaming: liveSession.streaming, ...queueSummary(liveSession) },
       { touchActivity: turnSettled },
     );
+  }
+
+  private declinePendingDeliveries(liveSession: LiveSession): void {
+    for (const prompt of liveSession.steers)
+      prompt.delivery?.declined(this.dependencies.isShutdownStarted() ? 'unknown' : 'stale');
+    for (const prompt of liveSession.pendingSends) prompt.delivery?.declined('stale');
   }
 
   private shouldDiscardPendingSends(liveSession: LiveSession): boolean {

@@ -1,3 +1,4 @@
+import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { randomUUID } from 'node:crypto';
 import type { SessionManager } from '../SessionManager.js';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
@@ -13,6 +14,9 @@ interface Launch {
 type Host = Pick<
   SessionManager,
   | 'handle'
+  | 'createAutomaticSession'
+  | 'automaticRuntimeLoad'
+  | 'makeAutomaticRuntimeRoom'
   | 'sessionSummary'
   | 'isSessionLive'
   | 'isQuestionPending'
@@ -33,6 +37,47 @@ export class ProjectSessions implements ProjectPort {
     return this.host.sessionSummary(appSessionId);
   }
 
+  runtimeLoad(): { live: number; limit: number } {
+    return this.host.automaticRuntimeLoad();
+  }
+
+  makeRoom(appSessionId: string): Promise<boolean> {
+    return this.host.makeAutomaticRuntimeRoom(appSessionId);
+  }
+
+  async deliverReport(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+  ): Promise<AutomationDeliveryReceipt> {
+    let acknowledge: (receipt: AutomationDeliveryReceipt) => void = () => undefined;
+    const receipt = new Promise<AutomationDeliveryReceipt>((resolve) => {
+      acknowledge = resolve;
+    });
+    const admitted = await this.host.steerRunningTurn(appSessionId, prompt, isCurrent, false, {
+      isCurrent,
+      accepted: () => {
+        acknowledge({ status: 'accepted', settled: Promise.resolve() });
+      },
+      declined: (reason) => {
+        if (reason === 'failed' || reason === 'unknown') {
+          acknowledge({
+            status: 'unavailable',
+            error:
+              reason === 'unknown'
+                ? 'Report delivery was not acknowledged; inspect the conversation before resuming.'
+                : 'The report could not be delivered to the running turn.',
+          });
+          return;
+        }
+        acknowledge(isCurrent() ? { status: 'busy', retryOn: 'target' } : { status: 'cancelled' });
+      },
+    });
+    if (!admitted)
+      return isCurrent() ? { status: 'busy', retryOn: 'target' } : { status: 'cancelled' };
+    return receipt;
+  }
+
   catalog(): Promise<ProviderStatus[]> {
     return this.host.providerCatalog();
   }
@@ -41,7 +86,9 @@ export class ProjectSessions implements ProjectPort {
     input: ThreadInput,
     bind: Launch['bind'],
     clientRef = `project:${randomUUID()}`,
-  ): Promise<SessionSummary | undefined> {
+    appSessionId?: string,
+    start: 'user' | 'automatic' = 'automatic',
+  ): Promise<SessionSummary | null | undefined> {
     // A launch is found again by its clientRef, so two in flight must not share one.
     if (this.launching.has(clientRef))
       throw new Error('A project with this request is already starting.');
@@ -49,14 +96,16 @@ export class ProjectSessions implements ProjectPort {
     this.launching.set(clientRef, launch);
     try {
       const { prompt, ...settings } = input;
-      await this.host.handle({
+      const command = {
         ...settings,
-        type: 'session.create',
+        type: 'session.create' as const,
         clientRef,
         goal: prompt,
-        sessionPurpose: 'chat',
-        interactionMode: 'auto',
-      });
+        sessionPurpose: 'chat' as const,
+        interactionMode: 'auto' as const,
+      };
+      if (start === 'user') await this.host.handle(command);
+      else if (!(await this.host.createAutomaticSession(command, appSessionId))) return null;
       if (launch.error) throw new Error(launch.error);
       // Admission can close after the bind (a shutdown, a cancelled resume),
       // and that path reports no error at all. Its cleanup can leave a
