@@ -17,11 +17,14 @@ const PADDING = 'py-2.5 pr-4';
 const GUTTER_PADDING = 'py-2.5 px-3';
 
 /** The one element a file's layers scroll inside, so they scroll together. */
-export function SourceScroller({ children }: { children: ReactNode }) {
+export function SourceScroller({ children, label }: { children: ReactNode; label?: string }) {
   return (
     <div
       data-source-scroller
-      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-droid-surface"
+      tabIndex={label ? 0 : undefined}
+      role={label ? 'region' : undefined}
+      aria-label={label}
+      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-droid-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/15"
     >
       <div className="flex min-h-full w-max min-w-full">{children}</div>
     </div>
@@ -66,7 +69,7 @@ export function SourceCode({
         {language && text.length <= HIGHLIGHT_CHAR_LIMIT ? (
           <Highlight theme={CODE_THEME} code={text} language={language}>
             {({ tokens, getLineProps, getTokenProps }) => (
-              <CodeLayer>
+              <CodeLayer hidden={children !== undefined}>
                 {tokens.map((line, index) => (
                   <CodeLine key={index} faulted={issues.has(index + 1)}>
                     <span {...getLineProps({ line })}>
@@ -80,7 +83,7 @@ export function SourceCode({
             )}
           </Highlight>
         ) : (
-          <CodeLayer>
+          <CodeLayer hidden={children !== undefined}>
             {lines.map((line, index) => (
               <CodeLine key={index} faulted={issues.has(index + 1)}>
                 {line}
@@ -94,11 +97,11 @@ export function SourceCode({
   );
 }
 
-/** The coloured text under the caret: it measures the editor and never takes input. */
-function CodeLayer({ children }: { children: ReactNode }) {
+/** Hide decorative editor backing; standalone comparison text stays accessible. */
+function CodeLayer({ children, hidden }: { children: ReactNode; hidden: boolean }) {
   return (
     <pre
-      aria-hidden
+      aria-hidden={hidden}
       style={{ lineHeight: `${String(LINE_HEIGHT)}px`, tabSize: 2 }}
       className={`m-0 whitespace-pre text-droid-text-secondary ${TEXT_METRICS} ${PADDING}`}
     >

@@ -38,7 +38,7 @@ export interface CanvasTransport {
 }
 
 /** A failure the sidecar reported, with the stable code from spec §8. */
-class CanvasRequestError extends Error {
+export class CanvasRequestError extends Error {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,

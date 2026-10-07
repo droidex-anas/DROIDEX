@@ -380,6 +380,18 @@ references require reselection. `canvas.editElement` validates the request and p
 tokens before committing through the workspace's revision compare-and-swap. Image edits
 remain unavailable until the asset store can verify ownership.
 
+The source drawer keeps drafts and save operations in the feature-local
+`canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the
+pane retains them. Deliberate Close discards the entire canvas source lifetime;
+a late save callback can settle only its captured lifetime and operation.
+
+A transport failure keeps the exact write and mutation ID for **Try that save
+again**, even after typing, a frame switch or a head update. A server refusal
+uses the client's typed error contract and releases that request for a new
+save. New typing remains unsaved after replay. A historical receipt proves its
+write committed; it never replaces a newer head already read by the drawer.
+Compare exposes the competing source as read-only text in a focusable scroller.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and

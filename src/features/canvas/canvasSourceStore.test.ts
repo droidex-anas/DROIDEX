@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dirtyPaths, openFrameSource, sourceText } from './canvasSourceState';
 import {
-  beginCanvasSave,
+  dirtyPaths,
+  emptyCanvasSourceState,
+  isSaving,
+  openFrameSource,
+  sourceText,
+  saveFailure,
+} from './canvasSourceState';
+import {
+  saveCanvasSource,
   dispatchCanvasSource,
   forgetCanvasSource,
   readCanvasSource,
@@ -10,6 +17,16 @@ import {
 } from './canvasSourceStore';
 
 const ENTRY = 'App.tsx';
+
+function heldWrite() {
+  let reject: (error: Error) => void = () => {
+    throw new Error('Write not started');
+  };
+  const promise = new Promise<never>((_, fail) => {
+    reject = fail;
+  });
+  return { promise, reject };
+}
 
 /** What a mounting panel does: open the frame, then answer its read. */
 function mount(canvasId: string, revisionId = 'rev_1'): void {
@@ -40,27 +57,40 @@ test('a draft outlives the panel that typed it, and only a deliberate close drop
   assert.deepEqual(dirtyPaths(openFrameSource(readCanvasSource('cv_other'))), []);
 
   forgetCanvasSource(canvasId);
-  assert.deepEqual(dirtyPaths(openFrameSource(readCanvasSource(canvasId))), []);
+  assert.deepEqual(readCanvasSource(canvasId), emptyCanvasSourceState);
 });
 
-test('one keystroke is one write', () => {
+test('one keystroke is one write', async () => {
   const canvasId = 'cv_one_write';
   mount(canvasId);
   dispatchCanvasSource(canvasId, { type: 'edit', path: ENTRY, text: 'mine\n' });
-
-  // Cmd+S in the editor and Cmd+S on the drawer are the same keystroke reaching
-  // two handlers. The second must find the first already in flight.
-  const first = beginCanvasSave(canvasId, 'mut_1');
-  const second = beginCanvasSave(canvasId, 'mut_2');
-  assert.equal(first?.mutationId, 'mut_1');
-  assert.equal(second, null);
-  assert.deepEqual(first?.files, { [ENTRY]: 'mine\n' });
+  const gate = heldWrite();
+  const requests: unknown[] = [];
+  const send: Parameters<typeof saveCanvasSource>[2] = (_, write) => {
+    requests.push(write);
+    return gate.promise;
+  };
+  const first = saveCanvasSource(canvasId, 'mut_1', send);
+  await saveCanvasSource(canvasId, 'mut_2', send);
+  assert.deepEqual(requests, [
+    {
+      mutationId: 'mut_1',
+      designId: 'hey',
+      expectedRevisionId: 'rev_1',
+      files: { [ENTRY]: 'mine\n' },
+      deletedPaths: [],
+    },
+  ]);
+  gate.reject(new Error('Connection lost'));
+  await first;
 });
 
-test('a save with nothing to write is not submitted', () => {
+test('a save with nothing to write is not submitted', async () => {
   const canvasId = 'cv_clean';
   mount(canvasId);
-  assert.equal(beginCanvasSave(canvasId, 'mut_1'), null);
+  await saveCanvasSource(canvasId, 'mut_1', () => {
+    assert.fail('A clean frame must not submit a write');
+  });
 });
 
 test('a subscriber hears its own canvas until it unsubscribes', () => {
@@ -79,4 +109,30 @@ test('a subscriber hears its own canvas until it unsubscribes', () => {
   stop();
   dispatchCanvasSource(canvasId, { type: 'edit', path: ENTRY, text: 'mine\n' });
   assert.equal(heard, seen);
+});
+
+test('deliberate close clears all state and a late failure cannot settle the replacement save', async () => {
+  const canvasId = 'cv_replacement';
+  mount(canvasId);
+  dispatchCanvasSource(canvasId, { type: 'edit', path: ENTRY, text: 'old draft' });
+  const old = heldWrite();
+  const first = saveCanvasSource(canvasId, 'mut_old', () => old.promise);
+  forgetCanvasSource(canvasId);
+  assert.deepEqual(readCanvasSource(canvasId), emptyCanvasSourceState);
+  mount(canvasId);
+  dispatchCanvasSource(canvasId, { type: 'edit', path: ENTRY, text: 'replacement draft' });
+  const replacement = heldWrite();
+  const second = saveCanvasSource(canvasId, 'mut_replacement', () => replacement.promise);
+  old.reject(new Error('Old failure'));
+  await first;
+  const current = readCanvasSource(canvasId);
+  assert.equal(isSaving(current), true);
+  assert.equal(saveFailure(current), null);
+  assert.equal(sourceText(openFrameSource(current), ENTRY), 'replacement draft');
+  assert.deepEqual(dirtyPaths(openFrameSource(current)), [ENTRY]);
+  replacement.reject(new Error('Replacement failure'));
+  await second;
+  assert.equal(saveFailure(readCanvasSource(canvasId)), 'Replacement failure');
+  forgetCanvasSource(canvasId);
+  assert.deepEqual(readCanvasSource(canvasId), emptyCanvasSourceState);
 });

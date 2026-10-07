@@ -13,25 +13,27 @@ import {
   canvasSourceReducer,
   emptyCanvasSourceState,
   isSaving,
-  submittedWrite,
   type CanvasSourceAction,
   type CanvasSourceState,
 } from './canvasSourceState';
-import type { WriteFilesInput } from './protocol';
+import { CanvasRequestError } from './client';
+import type { WriteFilesInput, WriteReceipt } from './protocol';
 
-const states = new Map<string, CanvasSourceState>();
+const states = new Map<string, { state: CanvasSourceState }>();
 const listeners = new Map<string, Set<() => void>>();
 
 /** The drawer's state for one canvas, empty until it has been opened on it. */
 export function readCanvasSource(canvasId: string): CanvasSourceState {
-  return states.get(canvasId) ?? emptyCanvasSourceState;
+  return states.get(canvasId)?.state ?? emptyCanvasSourceState;
 }
 
 export function dispatchCanvasSource(canvasId: string, action: CanvasSourceAction): void {
   const held = readCanvasSource(canvasId);
   const next = canvasSourceReducer(held, action);
   if (next === held) return;
-  states.set(canvasId, next);
+  const lifetime = states.get(canvasId);
+  if (lifetime) lifetime.state = next;
+  else states.set(canvasId, { state: next });
   for (const listener of listeners.get(canvasId) ?? []) listener();
 }
 
@@ -46,16 +48,37 @@ export function subscribeCanvasSource(canvasId: string, listener: () => void): (
 }
 
 /**
- * Submits the open frame's dirty buffers, or returns null when there is nothing
- * to write or a Save is already waiting for its outcome. The caller sends the
- * request it gets back verbatim: retrying an uncertain Save returns the same
- * `mutationId` and files, which is what lets the sidecar's ledger answer with
- * that write's own receipt rather than committing a second revision.
+ * Owns execution independently of panel mounts. Both the canvas lifetime and the
+ * submitted operation must still match before a callback can settle anything.
  */
-export function beginCanvasSave(canvasId: string, mutationId: string): WriteFilesInput | null {
-  if (isSaving(readCanvasSource(canvasId))) return null;
-  dispatchCanvasSource(canvasId, { type: 'saving', mutationId });
-  return submittedWrite(readCanvasSource(canvasId));
+export async function saveCanvasSource(
+  canvasId: string,
+  mutationId: string,
+  writeSource: (canvasId: string, write: WriteFilesInput) => Promise<WriteReceipt>,
+): Promise<void> {
+  const lifetime = states.get(canvasId);
+  if (!lifetime || isSaving(lifetime.state)) return;
+  const next = canvasSourceReducer(lifetime.state, { type: 'saving', mutationId });
+  const operation = next.save;
+  if (operation?.status !== 'saving') return;
+  lifetime.state = next;
+  const isCurrent = () => states.get(canvasId) === lifetime && lifetime.state.save === operation;
+  for (const listener of listeners.get(canvasId) ?? []) listener();
+  if (!isCurrent()) return;
+  try {
+    const receipt = await writeSource(canvasId, operation.write);
+    if (isCurrent())
+      dispatchCanvasSource(canvasId, { type: 'saved', revisionId: receipt.revisionId });
+  } catch (error: unknown) {
+    if (!isCurrent()) return;
+    dispatchCanvasSource(canvasId, {
+      type: error instanceof CanvasRequestError ? 'saveRefused' : 'saveFailed',
+      message:
+        error instanceof Error && error.message.length > 0
+          ? error.message
+          : 'That save’s outcome is unknown. Try that save again.',
+    });
+  }
 }
 
 /**

@@ -18,7 +18,7 @@ import {
   isDirty,
   isSaving,
   openFrameSource,
-  pendingWrite,
+  canSave,
   saveFailure,
   sourcePaths,
   sourceText,
@@ -28,7 +28,7 @@ import {
   type FrameSource,
 } from './canvasSourceState';
 import {
-  beginCanvasSave,
+  saveCanvasSource,
   dispatchCanvasSource,
   forgetCanvasSource,
   readCanvasSource,
@@ -115,25 +115,14 @@ export function CanvasSourcePanel({
 
   const paths = sourcePaths(source);
   const activePath = source.activePath;
-  const write = pendingWrite(state);
+  const canSubmit = canSave(state);
   const unsaved = unsavedFrameIds(state);
   const issues = useMemo(() => placeIssues(diagnostics, paths), [diagnostics, paths]);
   const conflict = activePath === null ? undefined : source.buffers.get(activePath)?.conflict;
   const failure = saveFailure(state);
 
-  // A write outlives this panel, so its outcome goes straight to the store: a
-  // Save must settle even if the user looked at another tab while it was away.
   const save = useCallback(() => {
-    const submitted = beginCanvasSave(canvasId, crypto.randomUUID());
-    if (!submitted) return;
-    writeSource(canvasId, submitted).then(
-      (receipt) => {
-        dispatchCanvasSource(canvasId, { type: 'saved', revisionId: receipt.revisionId });
-      },
-      (error: unknown) => {
-        dispatchCanvasSource(canvasId, { type: 'saveFailed', message: saveMessage(error) });
-      },
-    );
+    void saveCanvasSource(canvasId, crypto.randomUUID(), writeSource);
   }, [canvasId, writeSource]);
 
   const close = useCallback(() => {
@@ -180,7 +169,7 @@ export function CanvasSourcePanel({
           )}
           <button
             onClick={save}
-            disabled={write === null}
+            disabled={!canSubmit}
             title="Save and rebuild (⌘S)"
             // A low-alpha accent tint, not `elevated`: on a dark theme `raised`
             // resolves to the elevated rung, and the pane's primary action
@@ -223,7 +212,7 @@ export function CanvasSourcePanel({
             />
           ) : null}
           {activePath === null ? (
-            <EmptyEditor reading={read?.status === 'loading'} />
+            <EmptyEditor readStatus={read?.status ?? null} />
           ) : (
             <>
               {conflict ? (
@@ -293,13 +282,15 @@ export function CanvasSourcePanel({
  * source, or a read that has not answered yet. A failed read says so on its own
  * row, with Retry, rather than claiming the frame is empty.
  */
-function EmptyEditor({ reading }: { reading: boolean }) {
+function EmptyEditor({ readStatus }: { readStatus: 'loading' | 'failed' | null }) {
   return (
     <p
-      role={reading ? 'status' : undefined}
+      role={readStatus === 'loading' ? 'status' : undefined}
       className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-surface text-[12px] text-droid-text-secondary"
     >
-      {reading ? 'Reading this revision’s source…' : 'This frame has no source yet.'}
+      {readStatus === 'loading' ? 'Reading this revision’s source…' : null}
+      {readStatus === 'failed' ? 'Source could not be read.' : null}
+      {readStatus === null ? 'This frame has no source yet.' : null}
     </p>
   );
 }
@@ -464,21 +455,10 @@ function IssueList({
   );
 }
 
-/**
- * What the Save button says. A failed Save offers the same write again rather
- * than a fresh one: the store still holds its mutation identity, so the runtime
- * can answer the retry from its own ledger instead of committing twice.
- */
+/** Unknown outcomes offer exact replay; refused writes allow a new Save. */
 function saveLabel(state: CanvasSourceState): string {
   if (isSaving(state)) return 'Saving…';
-  return saveFailure(state) === null ? 'Save and rebuild' : 'Try that save again';
-}
-
-/** The sidecar's own recovery wording, or a neutral line for a lost request. */
-function saveMessage(error: unknown): string {
-  return error instanceof Error && error.message.length > 0
-    ? error.message
-    : 'That save did not reach the runtime. Try again.';
+  return state.save?.status === 'uncertain' ? 'Try that save again' : 'Save and rebuild';
 }
 
 /** Why a read failed, in the runtime's wording where it gave one. */

@@ -82,7 +82,7 @@ export function ConflictCompare({
           Their revision deleted this file. Keep mine writes it back.
         </p>
       ) : (
-        <SourceScroller>
+        <SourceScroller label={`${path} competing source`}>
           <SourceCode path={path} text={text} issues={issues} />
         </SourceScroller>
       )}

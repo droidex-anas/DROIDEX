@@ -35,6 +35,8 @@ test('the comparison shows the agent’s own text, named by its revision', () =>
   assert.match(markup, /rev_2/);
   // Read-only: the competing version is for inspecting, never for typing into.
   assert.equal(markup.includes('<textarea'), false);
+  assert.match(markup, /tabindex="0"/);
+  assert.doesNotMatch(markup, /<pre[^>]*aria-hidden="true"/);
 });
 
 test('a revision that deleted the file says so instead of showing nothing', () => {

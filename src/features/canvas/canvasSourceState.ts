@@ -57,26 +57,24 @@ export type SourceRead =
   | { status: 'loading'; revisionId: string }
   | { status: 'failed'; revisionId: string; message: string };
 
-/**
- * One Save, from submission until its outcome is known. The request is kept
- * verbatim: a reply that is lost or times out leaves the write's outcome
- * unknown, and only the same `mutationId` and the same files let the sidecar's
- * ledger answer the retry with that write's own receipt instead of committing a
- * second revision for one intended save.
- */
-export interface PendingSave {
-  write: WriteFilesInput;
-  /** null while in flight; the runtime's own recovery wording once it failed. */
-  failure: string | null;
-}
+/** Transport uncertainty retains the exact request; a server refusal releases it. */
+export type SourceSave =
+  | { status: 'saving'; write: WriteFilesInput; sourceRevisionId: string | null }
+  | {
+      status: 'uncertain';
+      write: WriteFilesInput;
+      sourceRevisionId: string | null;
+      message: string;
+    }
+  | { status: 'refused'; designId: string; message: string };
 
 export interface CanvasSourceState {
   /** The frame whose source is open, or null while the panel is closed. */
   openDesignId: string | null;
   /** Keyed by design ID. A frame the user leaves keeps its unsaved buffers. */
   frames: ReadonlyMap<string, FrameSource>;
-  /** The Save whose outcome is not known yet, or null when none is. */
-  save: PendingSave | null;
+  /** The active save or its actionable refusal, until another save begins. */
+  save: SourceSave | null;
 }
 
 const EMPTY_FRAME: FrameSource = {
@@ -125,13 +123,13 @@ export type CanvasSourceAction =
   /** Drops the draft for the revision's own text. */
   | { type: 'takeTheirs'; path: string }
   /**
-   * Submits the open frame's dirty buffers. `mutationId` names this attempt; a
-   * retry of the same request keeps the identity it was first submitted with.
+   * Submits dirty buffers, or replays an unresolved request verbatim.
    */
   | { type: 'saving'; mutationId: string }
   /** The receipt for the submitted write, which is the one record of what it carried. */
   | { type: 'saved'; revisionId: string }
-  | { type: 'saveFailed'; message: string };
+  | { type: 'saveFailed'; message: string }
+  | { type: 'saveRefused'; message: string };
 
 export function canvasSourceReducer(
   state: CanvasSourceState,
@@ -186,53 +184,52 @@ export function canvasSourceReducer(
     case 'saved':
       return settle(state, action.revisionId);
     case 'saveFailed':
-      // The request is kept: its outcome is unknown until a retry carrying the
-      // same mutation ID gets an answer.
-      return state.save === null
-        ? state
-        : { ...state, save: { ...state.save, failure: action.message } };
+    case 'saveRefused': {
+      const save = state.save;
+      if (save?.status !== 'saving') return state;
+      return {
+        ...state,
+        save:
+          action.type === 'saveRefused'
+            ? { status: 'refused', designId: save.write.designId, message: action.message }
+            : { ...save, status: 'uncertain', message: action.message },
+      };
+    }
   }
 }
 
-/**
- * Submits the open frame's dirty buffers. One Save is in flight at a time: a
- * second submission against the same base would race its own write, and one of
- * the two would be refused. A retry of a write whose outcome is still unknown
- * keeps the mutation ID it was first submitted with, so the sidecar answers it
- * from its ledger; a write the user has since changed is a different save.
- */
+/** An unknown outcome owns its request until an authoritative reply settles it. */
 function submit(state: CanvasSourceState, mutationId: string): CanvasSourceState {
   if (isSaving(state)) return state;
+  if (state.save?.status === 'uncertain')
+    return {
+      ...state,
+      save: {
+        status: 'saving',
+        write: state.save.write,
+        sourceRevisionId: state.save.sourceRevisionId,
+      },
+    };
   const next = pendingWrite(state);
   const designId = state.openDesignId;
   if (next === null || designId === null) return state;
-  const held = state.save?.write;
-  const write =
-    held !== undefined && isSameRequest(held, designId, next)
-      ? held
-      : { mutationId, designId, ...next, deletedPaths: [] };
-  return { ...state, save: { write, failure: null } };
-}
-
-function isSameRequest(
-  held: WriteFilesInput,
-  designId: string,
-  next: { expectedRevisionId: string | null; files: SourceFiles },
-): boolean {
-  if (held.designId !== designId || held.expectedRevisionId !== next.expectedRevisionId)
-    return false;
-  const paths = Object.keys(next.files);
-  if (paths.length !== Object.keys(held.files).length) return false;
-  return paths.every((path) => held.files[path] === next.files[path]);
+  return {
+    ...state,
+    save: {
+      status: 'saving',
+      sourceRevisionId: openFrameSource(state).revisionId,
+      write: { mutationId, designId, ...next, deletedPaths: [] },
+    },
+  };
 }
 
 /** Applies the receipt for the submitted write, which is the record of what it carried. */
 function settle(state: CanvasSourceState, revisionId: string): CanvasSourceState {
   const submitted = state.save;
-  if (submitted === null) return state;
+  if (submitted === null || submitted.status === 'refused') return state;
   return {
     ...withFrame(state, submitted.write.designId, (frame) =>
-      save(frame, revisionId, toMap(submitted.write.files)),
+      save(frame, revisionId, submitted.sourceRevisionId, toMap(submitted.write.files)),
     ),
     save: null,
   };
@@ -350,37 +347,42 @@ function resolve(frame: FrameSource, path: string, choice: 'mine' | 'theirs'): F
   return { ...frame, buffers: new Map(frame.buffers).set(path, rebased) };
 }
 
-/**
- * Settles the write this panel just made. The buffers it carried are saved and
- * drop out; anything typed while it was in flight stays dirty on top of the new
- * revision, so a save can never swallow the keystrokes that raced it.
- */
+/** A receipt proves a commit, but cannot supersede a head read after submission. */
 function save(
   frame: FrameSource,
   revisionId: string,
+  sourceRevisionId: string | null,
   written: ReadonlyMap<string, string>,
 ): FrameSource {
+  const hasNewerHead = frame.revisionId !== sourceRevisionId && frame.revisionId !== revisionId;
+  const files = new Map(frame.files);
+  if (!hasNewerHead) {
+    for (const [path, text] of written) files.set(path, text);
+  }
+  const headRevisionId = hasNewerHead ? frame.revisionId : revisionId;
   const buffers = new Map<string, SourceBuffer>();
   for (const [path, buffer] of frame.buffers) {
     const text = written.get(path);
-    // A path the write never carried was edited after it was submitted. The new
-    // revision leaves that file as it was, so the draft stands and only its base
-    // moves; settling someone else's write is never what drops it.
     if (text === undefined) {
-      if (isLive(buffer)) buffers.set(path, { ...buffer, baseRevisionId: revisionId });
+      // Omitted paths were never submitted; retain their current conflicts too.
+      if (isLive(buffer))
+        buffers.set(path, hasNewerHead ? buffer : { ...buffer, baseRevisionId: revisionId });
       continue;
     }
-    if (text === buffer.draft) continue;
+    const canonical = files.get(path) ?? null;
+    const conflict =
+      hasNewerHead && headRevisionId !== null && canonical !== text
+        ? { revisionId: headRevisionId, text: canonical }
+        : null;
+    if (buffer.draft === text && conflict === null) continue;
     buffers.set(path, {
       draft: buffer.draft,
-      baseRevisionId: revisionId,
+      baseRevisionId: conflict === null ? headRevisionId : revisionId,
       baseText: text,
-      conflict: null,
+      conflict,
     });
   }
-  const files = new Map(frame.files);
-  for (const [path, text] of written) files.set(path, text);
-  return { ...frame, revisionId, files, buffers };
+  return { ...frame, revisionId: headRevisionId, files, buffers };
 }
 
 function toMap(files: SourceFiles): Map<string, string> {
@@ -427,7 +429,7 @@ export function conflictPaths(frame: FrameSource): readonly string[] {
 
 /** The write a Save submitted and has no answer for yet, or null when none is. */
 export function submittedWrite(state: CanvasSourceState): WriteFilesInput | null {
-  return state.save !== null && state.save.failure === null ? state.save.write : null;
+  return state.save?.status === 'saving' ? state.save.write : null;
 }
 
 /** True from a Save's submission until the sidecar answers it one way or another. */
@@ -436,14 +438,19 @@ export function isSaving(state: CanvasSourceState): boolean {
 }
 
 /**
- * Why the open frame's last Save did not land, or null when none has failed. The
- * submitted request is still held, so Save offers that same write again. A
- * failure is reported on the frame it was for and nowhere else.
+ * The last save's failure. An uncertain write must remain actionable even after
+ * the user selects another frame; it still owns the next Save.
  */
 export function saveFailure(state: CanvasSourceState): string | null {
   const save = state.save;
-  if (save === null) return null;
-  return save.write.designId === state.openDesignId ? save.failure : null;
+  if (save === null || save.status === 'saving') return null;
+  if (save.status === 'refused' && save.designId !== state.openDesignId) return null;
+  return save.message;
+}
+
+/** Held retries are available even when the selected frame cannot submit a new write. */
+export function canSave(state: CanvasSourceState): boolean {
+  return state.save?.status === 'uncertain' || pendingWrite(state) !== null;
 }
 
 /** Every frame holding unsaved work, so closing the panel can say what it drops. */

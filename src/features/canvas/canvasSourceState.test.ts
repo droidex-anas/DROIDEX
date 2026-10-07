@@ -261,10 +261,11 @@ test('a refused save keeps the buffer and reports the runtime’s own wording', 
     opened(),
     { type: 'edit', path: ENTRY, text: 'mine\n' },
     { type: 'saving', mutationId: MUTATION },
-    { type: 'saveFailed', message: 'Another change landed first. Compare and save again.' },
+    { type: 'saveRefused', message: 'Another change landed first. Compare and save again.' },
   );
   assert.equal(isSaving(state), false);
   assert.equal(saveFailure(state), 'Another change landed first. Compare and save again.');
+  assert.equal(saveFailure(run(state, { type: 'openSourcePanel', designId: 'other' })), null);
   assert.equal(sourceText(openFrameSource(state), ENTRY), 'mine\n');
 });
 
@@ -298,7 +299,7 @@ test('Revert shows the file as the revision has it', () => {
   assert.deepEqual(dirtyPaths(openFrameSource(state)), []);
 });
 
-test('an uncertain save keeps its identity, and a changed one gets its own', () => {
+test('an uncertain save keeps its identity until resolved, then newer typing is the next save', () => {
   const editing = run(opened(), { type: 'edit', path: ENTRY, text: 'mine\n' });
   const lost = run(
     editing,
@@ -316,7 +317,7 @@ test('an uncertain save keeps its identity, and a changed one gets its own', () 
     deletedPaths: [],
   });
 
-  // Typing again makes it a different save, which must not claim that receipt.
+  // New typing cannot replace a write whose outcome is still unknown.
   const changed = run(
     lost,
     { type: 'edit', path: ENTRY, text: 'mine again\n' },
@@ -325,7 +326,14 @@ test('an uncertain save keeps its identity, and a changed one gets its own', () 
       mutationId: 'mut_3',
     },
   );
-  assert.equal(submittedWrite(changed)?.mutationId, 'mut_3');
+  assert.deepEqual(submittedWrite(changed), submittedWrite(retried));
+  const next = run(
+    changed,
+    { type: 'saved', revisionId: 'rev_2' },
+    { type: 'saving', mutationId: 'mut_4' },
+  );
+  assert.equal(submittedWrite(next)?.mutationId, 'mut_4');
+  assert.deepEqual(submittedWrite(next)?.files, { [ENTRY]: 'mine again\n' });
 });
 
 test('a conflict offers both texts and reapplying is still a CAS save', () => {
@@ -414,4 +422,66 @@ test('a stale read answer cannot report a failure for the revision now shown', (
     { type: 'readFailed', designId: 'hey', revisionId: 'rev_1', message: 'Too late.' },
   );
   assert.equal(openFrameSource(state).read, null);
+});
+
+test('a historical receipt preserves the observed head and edits omitted from its write', () => {
+  const state = run(
+    opened({ [ENTRY]: 'const a = 1;\n', [STYLES]: 'body {}' }),
+    { type: 'edit', path: ENTRY, text: 'mine\n' },
+    { type: 'saving', mutationId: MUTATION },
+    { type: 'edit', path: ENTRY, text: 'mine and more\n' },
+    { type: 'edit', path: STYLES, text: 'body { color: red }' },
+    {
+      type: 'loaded',
+      designId: 'hey',
+      revisionId: 'latest',
+      files: { [ENTRY]: 'theirs\n', [STYLES]: 'body { color: blue }' },
+      diagnostics: [],
+    },
+    { type: 'saved', revisionId: 'historical' },
+  );
+  const frame = openFrameSource(state);
+  assert.equal(frame.revisionId, 'latest');
+  assert.deepEqual(
+    [...frame.files],
+    [
+      [ENTRY, 'theirs\n'],
+      [STYLES, 'body { color: blue }'],
+    ],
+  );
+  assert.equal(sourceText(frame, ENTRY), 'mine and more\n');
+  assert.equal(sourceText(frame, STYLES), 'body { color: red }');
+  assert.deepEqual(conflictPaths(frame), [ENTRY, STYLES]);
+  assert.equal(frame.buffers.get(ENTRY)?.conflict?.revisionId, 'latest');
+  assert.equal(frame.buffers.get(STYLES)?.conflict?.revisionId, 'latest');
+  const next = run(state, { type: 'keepMine', path: ENTRY }, { type: 'keepMine', path: STYLES });
+  assert.deepEqual(pendingWrite(next), {
+    expectedRevisionId: 'latest',
+    files: { [ENTRY]: 'mine and more\n', [STYLES]: 'body { color: red }' },
+  });
+});
+
+test('head catch-up and frame selection cannot block an unresolved retry', () => {
+  const lost = run(
+    opened(),
+    { type: 'edit', path: ENTRY, text: 'mine\n' },
+    { type: 'saving', mutationId: MUTATION },
+    { type: 'saveFailed', message: 'No reply' },
+    {
+      type: 'loaded',
+      designId: 'hey',
+      revisionId: 'rev_2',
+      files: { [ENTRY]: 'mine\n' },
+      diagnostics: [],
+    },
+    { type: 'openSourcePanel', designId: 'other' },
+  );
+  const retried = run(lost, { type: 'saving', mutationId: 'replacement-id' });
+  assert.deepEqual(submittedWrite(retried), {
+    mutationId: MUTATION,
+    designId: 'hey',
+    expectedRevisionId: 'rev_1',
+    files: { [ENTRY]: 'mine\n' },
+    deletedPaths: [],
+  });
 });
