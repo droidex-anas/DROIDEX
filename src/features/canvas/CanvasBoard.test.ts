@@ -1,7 +1,5 @@
-// What the board renders. There is no DOM test runner for `src/`, so the
-// gestures themselves are covered by canvasGeometry.test.ts, which owns
-// `reduceFrameDrag`; this suite reads the frame geometry a cancelled drag falls
-// back to, and the board's own controls, off the real render.
+// Initial markup only. The Playwright Canvas board smoke suite owns live
+// pointer capture, arrange acknowledgements and gesture timers.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';

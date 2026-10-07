@@ -52,10 +52,10 @@ async function openBoard(
 ) {
   await page.setViewportSize({ width: 1300, height: 1100 });
   await page.emulateMedia({ reducedMotion });
-  await page.clock.install();
+  await page.clock.install({ time: new Date('2026-10-07T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
   await page.goto(`${url}?font=${font}`);
   await expect(page.getByTestId('canvas-board')).toBeVisible();
-  await page.clock.pauseAt(new Date());
   await page.clock.runFor(32);
 }
 
@@ -144,6 +144,26 @@ test('Fit suppresses trailing wheel input until quiet, independently of reduced 
     await wheel(page, 400, 300, 20);
     expect(await transform(page)).not.toBe(fitted);
   }
+});
+
+test('a real Fit click never starts background pan or steals the button capture', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const fitted = await transform(page);
+  await wheel(page, 400, 300, -30);
+  await page.clock.runFor(140);
+  expect(await transform(page)).not.toBe(fitted);
+  const button = await box(page.getByRole('button', { name: 'Fit', exact: true }));
+  await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
+  await page.mouse.down();
+  expect(await page.getByTestId('canvas-board').evaluate((root) => root.hasPointerCapture(1))).toBe(
+    false,
+  );
+  await page.mouse.up();
+  await page.clock.runFor(240);
+  expect(await transform(page)).toBe(fitted);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
 
 test('two deferred releases retain separate holds until each frame receives newer layout', async ({
