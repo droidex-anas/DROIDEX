@@ -370,6 +370,7 @@ function createMainWindow() {
     terminalManager.closeAll();
     terminalSubscriptions.clear();
     filesRootAccess.clear();
+    canvasPreviewHosts.clear();
     mainWindow = null;
   });
   powerTier.attachWindow(mainWindow);

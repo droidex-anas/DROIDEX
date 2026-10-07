@@ -565,3 +565,32 @@ test('a locked display refuses capture before and after the compositor answers',
   assert.equal((await pending).error.code, 'capture_unavailable');
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
 });
+
+test('forgotten guests release only their thumbnails, and window close releases the rest', async () => {
+  const { hosts, clock } = createHosts();
+  const first = createGuest(41);
+  const second = createGuest(42);
+  for (const guest of [first, second]) {
+    hosts.attach(guest);
+    const capturing = hosts.capture({
+      ...captureRequest,
+      guestId: guest.id,
+      canvasId: `cv_${guest.id}`,
+      requestId: `capture_${guest.id}`,
+    });
+    await new Promise(setImmediate);
+    guest.captures[0].resolve(capturedImage());
+    assert.equal((await capturing).ok, true);
+  }
+  assert.ok(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'));
+  assert.ok(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'));
+
+  first.emit('destroyed');
+  assert.equal(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'), null);
+  assert.ok(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'));
+  hosts.clear();
+  hosts.clear();
+  assert.equal(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'), null);
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+  assert.equal(hosts.terminate(42), false);
+});

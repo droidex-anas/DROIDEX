@@ -95,6 +95,9 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
       capture.settle(captureFailure());
       capture.finish();
     }
+    for (const [key, thumbnail] of thumbnails) {
+      if (thumbnail.guestId === guestId) releaseThumbnail(key);
+    }
   }
 
   function end(guestId, reason) {
@@ -134,17 +137,20 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     };
   }
 
-  function cache(key, bytes) {
-    const previous = thumbnails.get(key);
-    if (previous) cachedBytes -= previous.length;
+  function releaseThumbnail(key) {
+    const thumbnail = thumbnails.get(key);
+    if (!thumbnail) return;
+    cachedBytes -= thumbnail.bytes.length;
     thumbnails.delete(key);
-    thumbnails.set(key, bytes);
+  }
+
+  function cache(key, bytes, guestId) {
+    releaseThumbnail(key);
+    thumbnails.set(key, { bytes, guestId });
     cachedBytes += bytes.length;
     while (cachedBytes > MAX_CACHED_BYTES) {
       const oldest = thumbnails.keys().next().value;
-      const removed = thumbnails.get(oldest);
-      cachedBytes -= removed.length;
-      thumbnails.delete(oldest);
+      releaseThumbnail(oldest);
     }
   }
 
@@ -167,6 +173,10 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
 
     terminate(guestId) {
       return end(guestId, 'the renderer asked for it');
+    },
+
+    clear() {
+      for (const guestId of guests.keys()) forget(guestId);
     },
 
     /** Caller settlement cannot release the deadline of unfinished native work. */
@@ -267,7 +277,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
                 complete(captureFailure());
                 return;
               }
-              cache(key, bytes);
+              cache(key, bytes, guestId);
               complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })
@@ -279,11 +289,11 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     readThumbnail(canvasId, designId, revisionId) {
       const key = captureKey(canvasId, designId, revisionId);
       if (!key) return null;
-      const bytes = thumbnails.get(key);
-      if (!bytes) return null;
+      const thumbnail = thumbnails.get(key);
+      if (!thumbnail) return null;
       thumbnails.delete(key);
-      thumbnails.set(key, bytes);
-      return bytes;
+      thumbnails.set(key, thumbnail);
+      return thumbnail.bytes;
     },
   };
 }
