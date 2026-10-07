@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import postcss from 'postcss';
+import ts from 'typescript';
 import { designSystemSchema, type DesignSystem } from './designSystems.js';
 import { lineAt, sourceTokens } from './designSystemTokens.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -98,7 +99,7 @@ function extractPrimitives(source: SourceFiles): {
       continue;
     }
     if (!/\.[jt]sx?$/.test(file)) continue;
-    const code = codeOnly(text);
+    const code = codeOnly(file, text);
     for (const imported of imports(text, code)) {
       if (imported.specifier !== '@droidex/design-system') continue;
       diagnostics.push({
@@ -174,12 +175,43 @@ interface SourceImport {
   offset: number;
 }
 
-// Strings/comments are masked at their original positions: text inside a comment or template is never an export.
-function codeOnly(text: string): string {
-  return text.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*"|`(?:\\[\s\S]|[^`\\])*`/g,
-    (part) => part.replace(/[^\n]/g, ' '),
-  );
+function codeOnly(file: string, text: string): string {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+  const parts: string[] = [];
+  let offset = 0;
+  const maskLiterals = (node: ts.Node): void => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isTemplateLiteral(node) ||
+      ts.isJsxText(node) ||
+      node.kind === ts.SyntaxKind.RegularExpressionLiteral
+    ) {
+      const start = node.getStart(source);
+      parts.push(text.slice(offset, start), text.slice(start, node.end).replace(/[^\n]/g, ' '));
+      offset = node.end;
+      return;
+    }
+    ts.forEachChild(node, maskLiterals);
+  };
+  maskLiterals(source);
+  parts.push(text.slice(offset));
+  const code = parts.join('');
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.JSX, code);
+  parts.length = 0;
+  offset = 0;
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    if (
+      token !== ts.SyntaxKind.SingleLineCommentTrivia &&
+      token !== ts.SyntaxKind.MultiLineCommentTrivia
+    )
+      continue;
+    const start = scanner.getTokenStart();
+    const end = scanner.getTokenEnd();
+    parts.push(code.slice(offset, start), code.slice(start, end).replace(/[^\n]/g, ' '));
+    offset = end;
+  }
+  parts.push(code.slice(offset));
+  return parts.join('');
 }
 
 function imports(text: string, code: string): SourceImport[] {
@@ -204,7 +236,7 @@ function ownedModules(entry: string, source: SourceFiles): OwnedModulesResult {
     if (Object.hasOwn(files, `source/${file}`)) return;
     const text = source[file];
     files[`source/${file}`] = text;
-    const code = codeOnly(text);
+    const code = codeOnly(file, text);
     if (/\b(?:require|import)\s*\(/.test(code)) {
       diagnostics.push({
         code: 'manual_interpretation_required',

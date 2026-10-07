@@ -103,6 +103,38 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
   assert.deepEqual(compiled.diagnostics, []);
 });
 
+test('extraction preserves owned Badge exports and imports after an apostrophe in JSX prose', async (t) => {
+  const result = extractDesignSystem(
+    {
+      'primitives.tsx': `export function Button() { return <button>Don't</button>; }
+import { Label } from './label';
+export function Badge() { return <span className='b'><Label /></span>; }`,
+      'label.tsx': 'export function Label() { return <span>Owned badge</span>; }',
+    },
+    input,
+  );
+  assert.equal(result.status, 'extracted');
+  if (result.status !== 'extracted') return;
+  const ref = await saveDesignSystem(result.system);
+  const worker = new CompilerWorker();
+  t.after(() => worker.terminate());
+  const compiled = await worker.compile(
+    {
+      designId: input.from.designId,
+      revisionId: input.from.revisionId,
+      generation: 1,
+      designSystem: ref,
+      files: {
+        'main.tsx':
+          'import { Badge } from "@droidex/design-system"; export default function App() { return <Badge />; }',
+      },
+    },
+    new AbortController().signal,
+  );
+  assert.deepEqual(compiled.diagnostics, []);
+  assert.ok(compiled.html.includes('Owned badge'));
+});
+
 test('a wrapper around an imported kit primitive is reported instead of copying its inherited implementation', () => {
   const result = extractDesignSystem(
     {
