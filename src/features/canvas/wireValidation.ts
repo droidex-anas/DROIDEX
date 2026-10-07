@@ -29,6 +29,7 @@ const REPLY_KINDS = new Set([
   'written',
   'arranged',
   'artifact',
+  'source',
 ]);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
@@ -36,6 +37,10 @@ const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_ELEMENTS = 8192;
 const MAX_BUILD_DIAGNOSTICS = 64;
 const MAX_SOURCE_FILE_BYTES = 256 * 1024;
+// What one revision's tree may hold, matching `CANVAS_LIMITS` in the sidecar's
+// schema: 64 files, each path at most 256 characters.
+const MAX_SOURCE_PATHS = 64;
+const MAX_SOURCE_PATH_LENGTH = 256;
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
   switch (value.type) {
@@ -71,9 +76,27 @@ function isReply(value: unknown): boolean {
       return isChange(value.change);
     case 'artifact':
       return value.artifact === null || isArtifact(value.artifact);
+    case 'source':
+      return isSourceTree(value.files);
     default:
       return true;
   }
+}
+
+function isSourceTree(value: unknown): boolean {
+  if (!record(value)) return false;
+  const paths = Object.keys(value);
+  return (
+    paths.length <= MAX_SOURCE_PATHS &&
+    paths.every((path) => {
+      const content = value[path];
+      return (
+        boundedText(path, MAX_SOURCE_PATH_LENGTH) &&
+        typeof content === 'string' &&
+        content.length <= MAX_SOURCE_FILE_BYTES
+      );
+    })
+  );
 }
 
 function isArtifact(value: unknown): boolean {

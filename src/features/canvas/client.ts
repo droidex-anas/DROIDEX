@@ -16,6 +16,7 @@ import type {
   CreateFramesInput,
   CreateFramesResult,
   PreviewArtifact,
+  SourceFiles,
   WriteFilesInput,
   WriteReceipt,
 } from './protocol';
@@ -192,6 +193,21 @@ export class CanvasClient {
       revisionId,
     });
     return reply(event, 'artifact').artifact;
+  }
+
+  /**
+   * One revision's complete source tree, for the source drawer. Reading an older
+   * revision does not move the design's head (spec §4).
+   */
+  async readSource(canvasId: string, designId: string, revisionId: string): Promise<SourceFiles> {
+    const event = await this.request({
+      type: 'canvas.readSource',
+      requestId: requestId(),
+      canvasId,
+      designId,
+      revisionId,
+    });
+    return reply(event, 'source').files;
   }
 
   /** This client's projection of a canvas, once its snapshot has landed. */

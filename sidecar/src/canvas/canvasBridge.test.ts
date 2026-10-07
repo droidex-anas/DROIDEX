@@ -414,6 +414,74 @@ test('reading an artifact is a derived read with no cache miss to report', async
   assert.equal(errorOf(canvas, 'req-bad').code, 'invalid_input');
 });
 
+test('reading source answers one revision’s tree and refuses another design’s', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+  await canvas.handle({
+    type: 'canvas.create',
+    requestId: 'req-other-frame',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-create-other',
+      frames: [{ name: 'Cards', width: 720, height: 720, designSystem }],
+    },
+  });
+  const created = okReply(canvas, 'req-other-frame');
+  assert.ok(created.kind === 'created');
+  const other = created.created.frames[0]?.designId ?? '';
+
+  await canvas.handle({
+    type: 'canvas.write',
+    requestId: 'req-write-source',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-write-source',
+      designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': HEY },
+      deletedPaths: [],
+    },
+  });
+  const written = okReply(canvas, 'req-write-source');
+  assert.ok(written.kind === 'written');
+  const { revisionId } = written.receipt;
+
+  // The source drawer's read: the complete tree, with the head left alone.
+  await canvas.handle({
+    type: 'canvas.readSource',
+    requestId: 'req-source',
+    canvasId,
+    designId,
+    revisionId,
+  });
+  const read = okReply(canvas, 'req-source');
+  assert.ok(read.kind === 'source');
+  // A null-prototype tree, so a source path can never reach an inherited member.
+  assert.deepEqual(Object.entries(read.files), [['main.tsx', HEY]]);
+
+  // A revision named with another design cannot be read through it.
+  await canvas.handle({
+    type: 'canvas.readSource',
+    requestId: 'req-source-wrong',
+    canvasId,
+    designId: other,
+    revisionId,
+  });
+  assert.equal(errorOf(canvas, 'req-source-wrong').code, 'invalid_input');
+
+  await canvas.handle({
+    type: 'canvas.readSource',
+    requestId: 'req-source-missing',
+    canvasId,
+    designId,
+    revisionId: 'rev_missing',
+  });
+  assert.equal(errorOf(canvas, 'req-source-missing').code, 'invalid_input');
+});
+
 test('one request identity cannot carry two different requests', async (t) => {
   const canvas = await harness(t);
   await createCanvas(canvas);

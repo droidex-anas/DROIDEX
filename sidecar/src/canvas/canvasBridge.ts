@@ -53,6 +53,15 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
       revisionId: canvasIdentifierSchema,
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readSource'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+    })
+    .strict(),
   z.object({ type: z.literal('canvas.createCanvas'), ...request, ...session }).strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
   z.object({ type: z.literal('canvas.detach'), ...request, ...session }).strict(),
@@ -262,6 +271,15 @@ class CanvasDispatch {
           command.revisionId,
         );
         return { kind: 'artifact', artifact };
+      }
+      case 'canvas.readSource': {
+        // The source drawer's read. It is bounded by the revision the asking
+        // page already holds, and it never moves the design's head.
+        const files = await workspace.readFiles(command.canvasId, {
+          designId: command.designId,
+          revisionId: command.revisionId,
+        });
+        return { kind: 'source', files };
       }
       default:
         return this.mutate(workspace, command);

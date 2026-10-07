@@ -228,6 +228,15 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
+  // A source read, authorized like `canvas.subscribe` by the page asking: the
+  // source drawer is the explicit place to read a revision's files (spec §9).
+  | {
+      type: 'canvas.readSource';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    }
   | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
@@ -268,7 +277,8 @@ export type CanvasReply =
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
-  | { kind: 'artifact'; artifact: PreviewArtifact | null };
+  | { kind: 'artifact'; artifact: PreviewArtifact | null }
+  | { kind: 'source'; files: SourceFiles };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }
