@@ -94,6 +94,41 @@ test('a message that streamed nothing is reported from its snapshot', () => {
   );
 });
 
+test('a Canvas assistant error body is a correlated tool result, not assistant prose', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const events = mapper.map(
+    message({
+      type: 'assistant',
+      parent_tool_use_id: 'spawn-1',
+      error: 'unknown',
+      message: {
+        content: [
+          { type: 'text', text: 'Tool failed: CANVAS_INTERNAL_GUIDANCE_7E4B' },
+          {
+            type: 'tool_use',
+            id: 'canvas-error',
+            name: 'mcp__droidex-canvas__canvas_write',
+            input: { designId: 'design-1' },
+          },
+        ],
+      },
+    }),
+  );
+  assert.deepEqual(
+    events.map(({ transcript, childOwner }) => [
+      transcript?.kind,
+      transcript?.toolUseId,
+      childOwner?.id,
+    ]),
+    [
+      ['tool_call', 'canvas-error', 'spawn-1'],
+      ['tool_result', 'canvas-error', 'spawn-1'],
+    ],
+  );
+  assert.equal(events[1].transcript?.isError, true);
+  assert.equal(events[1].transcript?.text, 'Tool failed: CANVAS_INTERNAL_GUIDANCE_7E4B');
+});
+
 test('a tool call carries its streamed input and pairs with its result by id', () => {
   const events = transcripts([
     streamEvent({

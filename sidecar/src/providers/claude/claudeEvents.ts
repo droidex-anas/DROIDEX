@@ -208,6 +208,13 @@ export class ClaudeEventMapper {
     const reported = new Set(
       [...blocks.values()].flatMap((block) => (block.tool ? [block.tool.id] : [])),
     );
+    const canvasTools = message.message.content
+      .map(toolBlock)
+      .filter((tool) => tool && canvasToolProvenance(tool.name, tool.id));
+    const canvasTool =
+      message.error && message.error !== 'rate_limit' && canvasTools.length === 1
+        ? canvasTools[0]
+        : undefined;
     const events: NormalizedEvent[] = [];
     for (const block of message.message.content) {
       const tool = toolBlock(block);
@@ -223,7 +230,7 @@ export class ClaudeEventMapper {
           );
         continue;
       }
-      if (streamed) continue;
+      if (streamed || canvasTool) continue;
       const owner = this.childOwner(message.parent_tool_use_id);
       if (block.type === 'text' && block.text)
         events.push({
@@ -237,18 +244,15 @@ export class ClaudeEventMapper {
         });
     }
     if (message.error) {
-      const canvasTools = message.message.content
-        .map(toolBlock)
-        .filter((tool) => tool && canvasToolProvenance(tool.name, tool.id));
-      const canvasTool =
-        message.error === 'rate_limit'
-          ? undefined
-          : canvasTools.length === 1
-            ? canvasTools[0]
-            : undefined;
+      const errorBody = canvasTool
+        ? message.message.content
+            .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+            .join('\n')
+        : undefined;
       events.push({
+        ...this.childOwner(message.parent_tool_use_id),
         transcript: this.transcript(canvasTool ? 'tool_result' : 'error', {
-          text: message.error,
+          text: errorBody ?? message.error,
           isError: true,
           ...(canvasTool ? { toolUseId: canvasTool.id } : {}),
           ...(message.error === 'rate_limit' ? { errorKind: 'usage_limit' } : {}),
