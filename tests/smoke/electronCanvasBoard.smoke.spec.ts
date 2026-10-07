@@ -41,6 +41,29 @@ test('window blur and focus leaving the board cancel without arranging and relea
   }
 });
 
+test('window blur ends a held Space, so the next ordinary header drag still arranges', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  // Space is released in whichever app took the keyboard, so the board never
+  // receives a keyup and never loses DOM focus.
+  await page.keyboard.down(' ');
+  expect(await board.evaluate((root) => getComputedStyle(root).cursor)).toBe('grab');
+  const acknowledged = await renderedRect(page, 'A');
+  await drag(page, 'A', 60, 40, false);
+  expect(await renderedRect(page, 'A')).toEqual(acknowledged);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  await drag(page, 'A');
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  expect((await renderedRect(page, 'A')).x).toBeGreaterThan(acknowledged.x);
+  expect(await board.evaluate((root) => getComputedStyle(root).cursor)).toBe('default');
+  await page.keyboard.up(' ');
+});
+
 test.afterAll(async () => {
   await server?.close();
 });

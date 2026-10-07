@@ -65,7 +65,6 @@ export function CanvasBoard({
   const board = useRef<HTMLDivElement>(null);
 
   const [viewport, setViewport] = useState<Viewport>(IDENTITY);
-  const [spaceHeld, setSpaceHeld] = useState(false);
   const [overlayCapture, setOverlayCapture] = useState(capturePointer);
   const [scrollActive, setScrollActive] = useState(false);
 
@@ -88,7 +87,6 @@ export function CanvasBoard({
     board,
     frames: snapshot.frames,
     scale: viewport.scale,
-    spaceHeld,
     onStart: () => {
       view.current.navigated = true;
       stopAnimation();
@@ -246,7 +244,7 @@ export function CanvasBoard({
       tabIndex={0}
       aria-label="Design board"
       className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/10"
-      style={{ cursor: boardCursor(gestures.panning, spaceHeld), touchAction: 'none' }}
+      style={{ cursor: boardCursor(gestures.panning, gestures.spaceHeld), touchAction: 'none' }}
       onPointerDown={gestures.onBackgroundPointerDown}
       onPointerMove={gestures.onPointerMove}
       onPointerUp={(event) => {
@@ -263,7 +261,7 @@ export function CanvasBoard({
         if (event.target !== event.currentTarget) return;
         if (event.key === ' ') {
           event.preventDefault();
-          setSpaceHeld(true);
+          gestures.holdSpace(true);
           return;
         }
         const delta = arrowDelta(event.key);
@@ -282,12 +280,9 @@ export function CanvasBoard({
         }));
       }}
       onKeyUp={(event) => {
-        if (event.key === ' ') setSpaceHeld(false);
+        if (event.key === ' ') gestures.holdSpace(false);
       }}
-      onBlur={(event) => {
-        setSpaceHeld(false);
-        gestures.onBlur(event);
-      }}
+      onBlur={gestures.onBlur}
     >
       <div
         className="absolute left-0 top-0"

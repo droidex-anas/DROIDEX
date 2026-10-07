@@ -7,7 +7,6 @@ interface GestureInputs {
   board: RefObject<HTMLDivElement | null>;
   frames: CanvasFrame[];
   scale: number;
-  spaceHeld: boolean;
   onStart: () => void;
   onPan: (delta: Point) => void;
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
@@ -18,11 +17,11 @@ export function useBoardGestures({
   board,
   frames,
   scale,
-  spaceHeld,
   onStart,
   onPan,
   onArrangeFrames,
 }: GestureInputs) {
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const [drag, setDrag] = useState<DraggedFrame | null>(null);
   const [pending, setPending] = useState<Map<string, PendingLayout>>(() => new Map());
   const [panning, setPanning] = useState(false);
@@ -59,20 +58,29 @@ export function useBoardGestures({
     }
   }, [board, stopCoalescing]);
 
+  /**
+   * Space is released in whichever app holds the keyboard, which sends the board
+   * no keyup, so losing focus is the only honest end of that hold.
+   */
+  const loseFocus = useCallback(() => {
+    setSpaceHeld(false);
+    cancelGesture();
+  }, [cancelGesture]);
+
   useEffect(() => {
     mounted.current = true;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') cancelGesture();
     };
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('blur', cancelGesture);
+    window.addEventListener('blur', loseFocus);
     return () => {
       mounted.current = false;
       window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('blur', cancelGesture);
+      window.removeEventListener('blur', loseFocus);
       cancelGesture();
     };
-  }, [cancelGesture]);
+  }, [cancelGesture, loseFocus]);
 
   useEffect(() => {
     // Prune retired holds; applicability is derived below before this runs.
@@ -228,11 +236,13 @@ export function useBoardGestures({
   const onBlur = (event: React.FocusEvent<HTMLDivElement>) => {
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
       return;
-    cancelGesture();
+    loseFocus();
   };
 
   return {
     panning,
+    spaceHeld,
+    holdSpace: setSpaceHeld,
     layoutError,
     rectFor,
     onBackgroundPointerDown,
