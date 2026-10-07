@@ -120,8 +120,8 @@ export async function exportCanvasImage(
   suggestedName: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  const image = await captureCanvasImage(canvasId, ref, signal);
-  const saved = await saveCanvasImage(suggestedName, image.bytes);
+  await captureCanvasImage(canvasId, ref, signal);
+  const saved = await saveCanvasImage(canvasId, ref.designId, ref.revisionId, suggestedName);
   if (saved.ok) return true;
   if ('cancelled' in saved) return false;
   throw new CanvasImageError(saved.message, saved.code);

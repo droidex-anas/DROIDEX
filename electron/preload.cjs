@@ -155,8 +155,8 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('canvas-preview-cancel-capture', { requestId }),
   canvasThumbnailRead: (canvasId, designId, revisionId) =>
     ipcRenderer.invoke('canvas-thumbnail-read', { canvasId, designId, revisionId }),
-  canvasImageSave: (suggestedName, bytes) =>
-    ipcRenderer.invoke('canvas-image-save', { suggestedName, bytes }),
+  canvasImageSave: (canvasId, designId, revisionId, suggestedName) =>
+    ipcRenderer.invoke('canvas-image-save', { canvasId, designId, revisionId, suggestedName }),
   systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),
   powerTier: () => ipcRenderer.invoke('power-tier'),
   onPowerTier: (handler) => on('power-tier', handler),

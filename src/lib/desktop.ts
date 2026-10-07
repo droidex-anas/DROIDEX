@@ -238,7 +238,12 @@ interface DroidControlApi {
     designId: string,
     revisionId: string,
   ) => Promise<Uint8Array | null>;
-  canvasImageSave: (suggestedName: string, bytes: Uint8Array) => Promise<CanvasImageSaveResult>;
+  canvasImageSave: (
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+    suggestedName: string,
+  ) => Promise<CanvasImageSaveResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -754,11 +759,13 @@ export async function readCanvasThumbnail(
 }
 
 export async function saveCanvasImage(
+  canvasId: string,
+  designId: string,
+  revisionId: string,
   suggestedName: string,
-  bytes: Uint8Array,
 ): Promise<CanvasImageSaveResult> {
   const api = desktopApi();
   if (!api)
     return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
-  return api.canvasImageSave(suggestedName, bytes);
+  return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
 }

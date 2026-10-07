@@ -127,7 +127,8 @@ const canvasPreviewHosts = createCanvasPreviewHosts({
 });
 const saveCanvasImage = createCanvasImageSave({
   dialog,
-  writeFile: (filePath, bytes) => fsp.writeFile(filePath, bytes),
+  fs: fsp,
+  readThumbnail: canvasPreviewHosts.readThumbnail,
   getWindow: () => mainWindow,
 });
 

@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CanvasPreviewCaptureResult, CanvasPreviewCaptureRequest } from '../../lib/desktop';
-import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
+import type {
+  CanvasImageSaveResult,
+  CanvasPreviewCaptureResult,
+  CanvasPreviewCaptureRequest,
+} from '../../lib/desktop';
+import {
+  CanvasImageError,
+  captureCanvasImage,
+  exportCanvasImage,
+  registerCanvasPreview,
+} from './captureCanvasImage';
 
 const ref = { designId: 'dsg_01', revisionId: 'rev_01' };
 
@@ -11,6 +20,7 @@ function desktopCapture() {
     answer: (result: CanvasPreviewCaptureResult) => void;
   }[] = [];
   const cancelled: string[] = [];
+  const saves: [string, string, string, string][] = [];
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -21,10 +31,14 @@ function desktopCapture() {
           cancelled.push(requestId);
           return Promise.resolve(true);
         },
+        canvasImageSave: (...args: [string, string, string, string]) => {
+          saves.push(args);
+          return Promise.resolve<CanvasImageSaveResult>({ ok: true });
+        },
       },
     },
   });
-  return { pending, cancelled, close: () => Reflect.deleteProperty(globalThis, 'window') };
+  return { pending, cancelled, saves, close: () => Reflect.deleteProperty(globalThis, 'window') };
 }
 
 function mount(guestId: number) {
@@ -88,6 +102,30 @@ test('releasing the preview slot cancels a pending capture', async () => {
     await assert.rejects(capture, (error: unknown) => error instanceof CanvasImageError);
     assert.deepEqual(desktop.cancelled, [desktop.pending[0].request.requestId]);
   } finally {
+    desktop.close();
+  }
+});
+
+test('export saves the captured revision identifiers without forwarding renderer bytes', async () => {
+  const desktop = desktopCapture();
+  const release = mount(41);
+  try {
+    const exported = exportCanvasImage('cv_01', ref, 'design', new AbortController().signal);
+    assert.deepEqual(desktop.saves, []);
+    const request = desktop.pending[0].request;
+    assert.equal(request.canvasId, 'cv_01');
+    assert.equal(request.designId, 'dsg_01');
+    assert.equal(request.revisionId, 'rev_01');
+    desktop.pending[0].answer({
+      ok: true,
+      mediaType: 'image/png',
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+
+    assert.equal(await exported, true);
+    assert.deepEqual(desktop.saves, [['cv_01', 'dsg_01', 'rev_01', 'design']]);
+  } finally {
+    release();
     desktop.close();
   }
 });
