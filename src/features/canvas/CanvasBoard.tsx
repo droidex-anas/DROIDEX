@@ -60,7 +60,7 @@ export function CanvasBoard({
   const [scrollActive, setScrollActive] = useState(false);
 
   const animation = useRef<number | null>(null);
-  const scroll = useRef<ScrollGesture>({ active: false, idle: null });
+  const scroll = useRef<ScrollGesture>({ active: false, suppressed: false, idle: null });
   const size = useRef<Point>({ x: 0, y: 0 });
   const view = useRef({ fitted: false, navigated: false });
   // What the event handlers below need from the current render; they are
@@ -94,6 +94,7 @@ export function CanvasBoard({
     (rects: FrameRect[]) => {
       if (rects.length === 0) return;
       const target = fitFrames(rects, size.current);
+      if (scroll.current.active) scroll.current.suppressed = true;
       stopAnimation();
       view.current.navigated = true;
       if (reducedMotion) {
@@ -155,7 +156,7 @@ export function CanvasBoard({
       setScrollActive(true);
     }
     scroll.current.idle = setTimeout(() => {
-      scroll.current = { active: false, idle: null };
+      scroll.current = { active: false, suppressed: false, idle: null };
       setScrollActive(false);
     }, SCROLL_IDLE_MS);
   }, []);
@@ -167,14 +168,10 @@ export function CanvasBoard({
     if (!root) return undefined;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const fresh = !scroll.current.active;
       markScrolling();
-      // Momentum from a gesture that was already running when a fit started is
-      // not a new request; only a gesture begun after it takes the viewport.
-      if (animation.current !== null) {
-        if (!fresh) return;
-        stopAnimation();
-      }
+      // Fit owns the rest of this wheel gesture, even after its animation ends.
+      if (scroll.current.suppressed) return;
+      stopAnimation();
       const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
       view.current.navigated = true;
       setViewport((current) =>
@@ -352,6 +349,7 @@ function BoardFrame({
 
 interface ScrollGesture {
   active: boolean;
+  suppressed: boolean;
   idle: ReturnType<typeof setTimeout> | null;
 }
 

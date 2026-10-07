@@ -45,9 +45,13 @@ test.afterAll(async () => {
   await server?.close();
 });
 
-async function openBoard(page: Page, font = 14) {
+async function openBoard(
+  page: Page,
+  font = 14,
+  reducedMotion: 'reduce' | 'no-preference' = 'reduce',
+) {
   await page.setViewportSize({ width: 1300, height: 1100 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.emulateMedia({ reducedMotion });
   await page.clock.install();
   await page.goto(`${url}?font=${font}`);
   await expect(page.getByTestId('canvas-board')).toBeVisible();
@@ -105,6 +109,42 @@ async function renderedRect(page: Page, name: string): Promise<FrameRect> {
     };
   });
 }
+
+async function clickFit(page: Page) {
+  const button = await box(page.getByRole('button', { name: 'Fit', exact: true }));
+  await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
+}
+
+async function transform(page: Page) {
+  return page
+    .getByTestId('canvas-board')
+    .locator(':scope > div')
+    .first()
+    .evaluate((root) => {
+      if (!(root instanceof HTMLElement)) throw new Error('Missing world layer');
+      return root.style.transform;
+    });
+}
+
+test('Fit suppresses trailing wheel input until quiet, independently of reduced motion or animation', async ({
+  page,
+}) => {
+  for (const motion of ['reduce', 'no-preference'] as const) {
+    await openBoard(page, 14, motion);
+    const fitted = await transform(page);
+    await wheel(page, 400, 300, 20);
+    expect(await transform(page)).not.toBe(fitted);
+    await clickFit(page);
+    for (let trailing = 0; trailing < 5; trailing += 1) {
+      await page.clock.runFor(48);
+      await wheel(page, 400, 300, 20);
+    }
+    expect(await transform(page)).toBe(fitted);
+    await page.clock.runFor(140);
+    await wheel(page, 400, 300, 20);
+    expect(await transform(page)).not.toBe(fitted);
+  }
+});
 
 test('two deferred releases retain separate holds until each frame receives newer layout', async ({
   page,
