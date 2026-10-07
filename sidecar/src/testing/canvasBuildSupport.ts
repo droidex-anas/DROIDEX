@@ -355,6 +355,7 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
   const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
   const scopes = new CanvasScopes();
   const workspace = await CanvasWorkspace.open(root, builds, {
+    isChatKnown: (appSessionId) => appSessionId === APP,
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: () => undefined,
     ...(options.fs ? { fs: options.fs } : {}),
@@ -369,7 +370,9 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     changes.push(change);
     for (const waiter of [...waiters]) waiter();
   });
-  const canvasId = workspace.attachedCanvasId(APP) ?? (await workspace.createCanvas(APP)).canvasId;
+  const canvasId =
+    workspace.attachedCanvasId(APP) ??
+    (await workspace.createCanvas(APP, 'build-support')).canvasId;
   let scopeCount = 0;
   const under = async <T>(work: (scope: CanvasScope) => Promise<T>): Promise<T> => {
     scopeCount += 1;

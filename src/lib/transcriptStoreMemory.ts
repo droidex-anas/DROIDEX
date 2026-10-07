@@ -368,6 +368,7 @@ export function pruneRemovedSessionState(
     promptQueue: pruneSessionRecord(state.promptQueue, retainedSessionIds),
     sessionNotes: pruneSessionRecord(state.sessionNotes, retainedSessionIds),
     utilityPanels: pruneSessionRecord(state.utilityPanels, retainedSessionIds),
+    canvasAttachments: pruneSessionRecord(state.canvasAttachments, retainedSessionIds),
     reviewOpenAppSessionId,
     pendingAutonomy: pruneSessionRecord(state.pendingAutonomy, retainedSessionIds),
     pendingModelUpdates: pruneSessionRecord(state.pendingModelUpdates, retainedSessionIds),

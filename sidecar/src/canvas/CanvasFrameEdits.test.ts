@@ -20,6 +20,7 @@ const SOURCE = 'export default function Hey(){return <h1>Hey</h1>}';
 async function opened(t: TestContext, builds = quietBuilds(), fs?: CanvasFileSystem) {
   const root = await canvasRoot(t);
   const deps: CanvasWorkspaceDeps = {
+    isChatKnown: (appSessionId) => appSessionId === 'app-1',
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
     fs,
@@ -29,7 +30,7 @@ async function opened(t: TestContext, builds = quietBuilds(), fs?: CanvasFileSys
     await builds.close();
     await workspace.close();
   });
-  const canvasId = (await workspace.createCanvas('app-1')).canvasId;
+  const canvasId = (await workspace.createCanvas('app-1', 'explicit-app-1')).canvasId;
   const scope: CanvasScope = {
     origin: 'user',
     scopeId: 'user-1',

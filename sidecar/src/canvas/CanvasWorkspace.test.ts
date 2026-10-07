@@ -109,6 +109,7 @@ async function openWorkspace(t: TestContext, options: Options = {}) {
   const root = await canvasRoot(t);
   const boundCanvasIds: string[] = [];
   const deps: CanvasWorkspaceDeps = {
+    isChatKnown: () => true,
     isScopeActive: options.isScopeActive ?? (() => true),
     bindScopeCanvas: (scopeId, canvasId) => {
       if (options.bindScopeCanvas) options.bindScopeCanvas(scopeId, canvasId);
@@ -124,7 +125,7 @@ async function openWorkspace(t: TestContext, options: Options = {}) {
 /** One canvas holding one reserved 720×720 frame named Hey. */
 async function withFrame(t: TestContext, options: Options = {}) {
   const context = await openWorkspace(t, options);
-  const { canvasId } = await context.workspace.createCanvas('app-1');
+  const { canvasId } = await context.workspace.createCanvas('app-1', 'explicit-app-1');
   const scope = scopeFor(canvasId);
   const created = await context.workspace.create(scope, createInput('create-hey'));
   const frame = created.frames[0];
@@ -441,7 +442,7 @@ test('an attachment survives a reopen, and detaching keeps the canvas and its so
   assert.equal((await reopened.readFiles(canvasId, receipt))['main.tsx'], HEY);
 
   // Attaching the chat elsewhere moves it; one chat is never on two canvases.
-  const other = await reopened.createCanvas('app-2');
+  const other = await reopened.createCanvas('app-2', 'explicit-app-2');
   await reopened.attach('app-1', canvasId);
   await reopened.attach('app-1', other.canvasId);
   assert.equal(reopened.attachedCanvasId('app-1'), other.canvasId);
@@ -712,6 +713,7 @@ test('a chat on a damaged canvas waits for recovery instead of getting another',
 
   // Reopening finds one manifest, attaching this chat exactly once.
   const reopened = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: () => true,
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });
@@ -750,6 +752,7 @@ test('a canvas full of unsettled receipts refuses a mutation and keeps the old o
     () => undefined,
   );
   const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: () => true,
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });
@@ -788,7 +791,7 @@ test('a lease pinned by its own commit never follows its chat, however the save 
   await assert.rejects(refused.workspace.create(scope, input), /lease registry/);
   const mine = attempts[0];
   assert.ok(mine);
-  const elsewhere = await refused.workspace.createCanvas('app-2');
+  const elsewhere = await refused.workspace.createCanvas('app-2', 'explicit-app-2');
   await refused.workspace.attach('app-1', elsewhere.canvasId);
   await assert.rejects(refused.workspace.create(scope, input), { code: 'scope_expired' });
 
@@ -806,7 +809,7 @@ test('a lease pinned by its own commit never follows its chat, however the save 
   const landed = await openWorkspace(t, { fs: fault.fs });
   fault.arm();
   await assert.rejects(landed.workspace.create(scope, input), { code: 'storage_failed' });
-  const other = await landed.workspace.createCanvas('app-2');
+  const other = await landed.workspace.createCanvas('app-2', 'explicit-app-2');
   await landed.workspace.attach('app-1', other.canvasId);
   await assert.rejects(landed.workspace.create(scope, input), { code: 'scope_expired' });
   assert.equal(landed.workspace.snapshot(other.canvasId).frames.length, 0);
@@ -843,7 +846,7 @@ test('a lease acts only where its chat still is, and keeps one canvas', async (t
     scopeFor(mine.canvasId),
     writeInput('write-hey', mine.frames[0]?.designId ?? '', null, { 'main.tsx': HEY }),
   );
-  const other = await workspace.createCanvas('app-2');
+  const other = await workspace.createCanvas('app-2', 'explicit-app-2');
 
   // The chat moves while a seeded create is copying its source, so the commit
   // has nowhere to land: the lease is pinned to the canvas it made.
