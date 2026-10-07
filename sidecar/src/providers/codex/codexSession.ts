@@ -36,6 +36,7 @@ export interface CodexSessionInput {
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
   // which the session carries separately as its resume handle.
   appSessionId: string;
+  providerSessionId?: string;
   client: AppServerClient;
   cwd: string;
   autonomy: Autonomy;
@@ -99,7 +100,7 @@ export class CodexSession implements ProviderSession {
   readonly usage: CodexRateLimits;
 
   constructor(input: CodexSessionInput) {
-    this.providerSessionId = input.appSessionId;
+    this.providerSessionId = input.providerSessionId ?? input.appSessionId;
     this.closed = new Promise((resolve) => {
       this.resolveClosed = (error) => {
         this.hasClosed = true;

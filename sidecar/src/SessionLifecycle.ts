@@ -284,12 +284,16 @@ export class SessionLifecycle {
     command: SessionCreateCommand,
     branch?: SessionBranch,
     requestedAppSessionId?: string,
-    onRegistered?: () => void,
+    releaseCreateReservation?: () => void,
   ): Promise<void> {
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
-    const ref = { id: '', clientRef: command.clientRef, purpose: command.sessionPurpose };
+    const ref = {
+      id: requestedAppSessionId ?? '',
+      clientRef: command.clientRef,
+      purpose: command.sessionPurpose,
+    };
     let pendingMcpServers: LocalMcpResource[] = [];
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
@@ -331,6 +335,7 @@ export class SessionLifecycle {
       const mcp = await d.startLocalMcpServers(ref, kind, appCwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.create({
+        appSessionId: requestedAppSessionId,
         cwd: runtimeCwd,
         interactionMode,
         autonomy,
@@ -397,8 +402,8 @@ export class SessionLifecycle {
       this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, () => {
         this.requireOpenAdmission();
+        releaseCreateReservation?.();
       });
-      onRegistered?.();
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.

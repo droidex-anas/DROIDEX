@@ -4,12 +4,8 @@ import type { Project, ProjectThread, ThreadMessage, ThreadWait } from './types.
 
 const MAX_ACTIVE = 2;
 
-/* A project's threads and its lead wake each other as work settles, which is the
-   point; two of them answering each other forever is not. There is no allowance
-   to spend, since a project runs as long as it is making progress, but a burst
-   this far above the pace of real turns is a loop, and DROIDEX holds the project
-   so a person can look. The marks live in memory; a restart starts the count
-   again. */
+// Hold delivery bursts that suggest threads are looping instead of making progress.
+// These marks are transient; a restart resets them.
 const LOOP_WINDOW_MS = 5 * 60_000;
 const LOOP_LIMIT = 60;
 
@@ -19,7 +15,6 @@ export class ProjectWakeQueue {
   private startCapacityBlocked = false;
   private readonly recent = new Map<string, number[]>();
   private readonly generations = new Map<string, number>();
-  private readonly queued = new Set<Project>();
   private readonly pumping = new Map<
     string,
     {
@@ -69,28 +64,40 @@ export class ProjectWakeQueue {
     return [...this.projects]
       .flatMap((project) =>
         project.threads
-          .filter((thread) => thread.queuedSpawn)
+          .filter((thread) => thread.queuedSpawn?.phase === 'queued')
           .map((thread) => ({ project, thread })),
       )
       .sort((a, b) => (a.thread.queuedSpawn?.order ?? 0) - (b.thread.queuedSpawn?.order ?? 0));
   }
 
   private hasWaitingResume(): boolean {
-    if (this.running() >= MAX_ACTIVE) return false;
-    return [...this.projects].some(
-      (project) =>
-        !project.paused &&
-        !project.delivery &&
-        !this.pumping.has(project.id) &&
-        project.pending.some(
-          (message) =>
-            !this.sessions.isLive(message.to) &&
-            !this.busyTargets.has(message.to) &&
-            !this.capacityWaiting.has(message.to) &&
-            !this.active.has(message.to) &&
-            !project.threads.find((thread) => thread.appSessionId === message.to)?.queuedSpawn,
-        ),
-    );
+    return [...this.projects].some((project) => this.nextDelivery(project)?.mode === 'resume');
+  }
+
+  private nextDelivery(project: Project) {
+    if (project.paused || project.delivery || this.pumping.has(project.id)) return;
+    const hasSlot = this.running() < MAX_ACTIVE;
+    let waiting: { target: string; mode: 'steer' | 'resume' | 'live' } | undefined;
+    for (const message of project.pending) {
+      const target = message.to;
+      if (
+        project.threads.find((thread) => thread.appSessionId === target)?.queuedSpawn ||
+        this.busyTargets.has(target) ||
+        this.capacityWaiting.has(target)
+      )
+        continue;
+      const live = this.sessions.isLive(target);
+      const steering =
+        live &&
+        this.sessions.get(target)?.streaming === true &&
+        project.pending.some((item) => item.to === target && isOwnerUpdate(project, item));
+      if (steering) return { target, mode: 'steer' as const };
+      if (this.active.has(target)) continue;
+      const next = { target, mode: live ? ('live' as const) : ('resume' as const) };
+      if (hasSlot) return next;
+      if (!waiting || next.mode === 'resume') waiting = next;
+    }
+    return waiting;
   }
 
   guard(project: Project): () => boolean {
@@ -101,17 +108,13 @@ export class ProjectWakeQueue {
   invalidate(project: Project): void {
     this.recent.delete(project.id);
     this.generations.set(project.id, (this.generations.get(project.id) ?? 0) + 1);
-    this.queued.delete(project);
     for (const thread of project.threads) {
       this.busyTargets.delete(thread.appSessionId);
       this.capacityWaiting.delete(thread.appSessionId);
     }
   }
 
-  /**
-   * Deliveries begin once session history is ready. Before it the registry
-   * cannot resolve a recipient, and a delivery would fail and hold its project.
-   */
+  /** History must be ready to resolve recipients before deliveries start. */
   start(projects: Iterable<Project>): void {
     this.started = true;
     for (const project of projects) this.kick(project);
@@ -122,7 +125,6 @@ export class ProjectWakeQueue {
     this.projects.add(project);
     this.refill(project);
     if (project.paused) return;
-    if (!project.delivery && project.pending.length) this.queued.add(project);
     this.schedule();
   }
 
@@ -142,11 +144,7 @@ export class ProjectWakeQueue {
     for (const project of projects) this.kick(project);
   }
 
-  /**
-   * A session went idle, so a runtime may be releasable now. It also counts for
-   * a capacity refusal still being recorded, which then retries instead of
-   * parking; the retry itself only runs while something is parked.
-   */
+  // An idle session may free capacity, including for a refusal still being recorded.
   sessionIdle(projects: Iterable<Project>): void {
     if (this.closed) return;
     this.capacityRevision += 1;
@@ -171,7 +169,6 @@ export class ProjectWakeQueue {
     this.recent.clear();
     if (this.scheduled) clearImmediate(this.scheduled);
     this.scheduled = undefined;
-    this.queued.clear();
     this.projects.clear();
     this.busyTargets.clear();
     this.capacityWaiting.clear();
@@ -193,25 +190,11 @@ export class ProjectWakeQueue {
     if (this.closed || !this.started || this.scheduled) return;
     this.scheduled = setImmediate(() => {
       this.scheduled = undefined;
-      for (const project of this.queued) {
-        if (project.paused || project.delivery || !project.pending.length) {
-          this.queued.delete(project);
-          continue;
-        }
-        if (this.pumping.has(project.id)) continue;
-        const first = project.pending.find(
-          (message) =>
-            !project.threads.find((thread) => thread.appSessionId === message.to)?.queuedSpawn &&
-            !this.busyTargets.has(message.to) &&
-            !this.capacityWaiting.has(message.to) &&
-            (this.canSteer(project, message.to) ||
-              (this.running() < MAX_ACTIVE && !this.active.has(message.to))),
-        );
-        if (!first) continue;
-        this.queued.delete(project);
-        const steering = this.canSteer(project, first.to);
-        const resuming = !this.sessions.isLive(first.to);
-        const work = this.deliver(project, first.to, steering)
+      for (const project of this.projects) {
+        const next = this.nextDelivery(project);
+        if (!next || (next.mode !== 'steer' && this.running() >= MAX_ACTIVE)) continue;
+        const steering = next.mode === 'steer';
+        const work = this.deliver(project, next.target, steering)
           .catch((error: unknown) => {
             this.fail(project, error);
           })
@@ -224,18 +207,10 @@ export class ProjectWakeQueue {
         // Consumption may wait for the recipient's own thread_stop call.
         // Only admissions occupy pumping, which Stop waits for.
         if (steering) this.reports.add(work);
-        else this.pumping.set(project.id, { work, resuming });
+        else this.pumping.set(project.id, { work, resuming: next.mode === 'resume' });
       }
       this.startNext();
     });
-  }
-
-  private canSteer(project: Project, target: string): boolean {
-    return (
-      this.sessions.isLive(target) &&
-      this.sessions.get(target)?.streaming === true &&
-      project.pending.some((message) => message.to === target && isOwnerUpdate(project, message))
-    );
   }
 
   private startNext(): void {
@@ -270,9 +245,8 @@ export class ProjectWakeQueue {
 
   private running(): number {
     let count = this.pumping.size;
-    // A turn stopped on a question for its owner, or on a permission only the
-    // user can give, runs nothing until answered, so it frees its slot. Once
-    // answered it carries on, and the count can briefly pass the limit.
+    // Questions and approvals release delivery slots until answered.
+    // Continuing those turns can briefly exceed the limit.
     for (const [target, turn] of this.active)
       if (!isAskingOwner(turn.project, target) && !this.sessions.awaitingApproval(target))
         count += 1;
@@ -310,8 +284,7 @@ export class ProjectWakeQueue {
     project.delivery = claim;
     await this.save();
 
-    // A question its thread stops asking before the owner wakes would have the
-    // owner answer nothing, so it turns the delivery back and is dropped.
+    // Withdraw questions their threads stopped asking before the owner woke.
     const stillAsked = () => messages.every((message) => isAsked(project, message));
     let receipt: AutomationDeliveryReceipt;
     try {
@@ -331,8 +304,7 @@ export class ProjectWakeQueue {
     }
     // A claim acknowledged and cleared elsewhere cannot settle again.
     if (project.delivery !== claim) return;
-    // Only a delivery that may have reached the runtime is uncertain; one
-    // withdrawn before dispatch gives its messages back like a busy recipient.
+    // An unacknowledged dispatch is uncertain; a refusal returns its messages.
     if (receipt.status === 'unavailable') {
       this.fail(project, new Error(receipt.error));
       await this.save();
@@ -344,11 +316,10 @@ export class ProjectWakeQueue {
       project.pending.unshift(...messages.filter((message) => isAsked(project, message)));
       // A recipient that never woke does not count as a lap.
       this.recent.get(project.id)?.pop();
+      // A cancelled generation or a dropped question cannot park its recipient.
+      if (receipt.status === 'busy' && isCurrent() && stillAsked())
+        this.park(target, receipt.retryOn, capacityRevision, targetRevision);
       await this.save();
-      // A cancelled generation cannot put a resumed recipient back to sleep, and
-      // a dropped question says nothing about whether the recipient is busy.
-      if (receipt.status === 'cancelled' || !isCurrent() || !stillAsked()) return;
-      this.park(target, receipt.retryOn, capacityRevision, targetRevision);
       return;
     }
 
@@ -421,12 +392,8 @@ const VERB: Record<ThreadMessage['kind'], string> = {
   message: 'sent a message',
 };
 
-/* What a conversation reads when its threads report back or the chat that
-   started it sends it a message. It is written as a message from DROIDEX
-   rather than a payload, because the user sees this turn in their chat: a JSON
-   blob addressed to a model reads as a leak. The first line is what the window
-   recognises such a turn by. A thread cannot thread_send the chat that started
-   it and does not talk to the user, so it is told to answer with its report. */
+// Wake turns are visible in the chat; write readable messages with a header the
+// renderer recognizes. Threads reply with a report because they cannot message their owner.
 export function wakePrompt(
   project: Project,
   to: string,

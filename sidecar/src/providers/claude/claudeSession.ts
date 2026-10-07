@@ -44,8 +44,6 @@ import { ClaudePermissionModes } from './claudePermissionModes.js';
 import { ClaudeUsage } from './claudeRateLimits.js';
 
 export interface ClaudeSessionInput {
-  // Claude pins the session id it is given, so DROIDEX's own identity is also
-  // the provider's: there is no separate resume handle.
   appSessionId: string;
   executable: string;
   cwd: string;
@@ -62,7 +60,7 @@ export interface ClaudeSessionInput {
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
-  resume?: boolean;
+  resumeId?: string;
   onUsage?: UsageMetersListener;
 }
 
@@ -113,7 +111,7 @@ export class ClaudeSession implements ProviderSession {
   >();
 
   constructor(private readonly input: ClaudeSessionInput) {
-    this.providerSessionId = input.appSessionId;
+    this.providerSessionId = input.resumeId ?? input.appSessionId;
     this.fastMode = input.fastMode ?? false;
     this.permissions = new ClaudePermissionModes(
       input.autonomy,

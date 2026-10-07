@@ -16,6 +16,9 @@ import { SessionModelSettings } from './SessionModelSettings.js';
 import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
+import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
+import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { providerIdentityCli } from './testing/providerIdentityCli.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
@@ -27,6 +30,7 @@ import {
 } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import {
+  assistantTextDelta,
   FakeFactoryRuntime,
   FakeFactorySession,
   type RecordedCall,
@@ -92,6 +96,7 @@ function createHarness(
   const calls: RecordedCall[] = [];
   const events: ServerEvent[] = [];
   const publicationRegistration: boolean[] = [];
+  const runtimeLoads: number[] = [];
   const forgettingAfterUnregister: boolean[] = [];
   const eventFlowForgettingAfterUnregister: boolean[] = [];
   const missionForgettingAfterUnregister: boolean[] = [];
@@ -134,6 +139,7 @@ function createHarness(
     loadMissionControlSessions: () => [],
     projectSummary: (item) => ({ ...item, ...projection }),
     onSummaryUpdated: (session) => recordEvent({ type: 'session.updated', session }),
+    onLiveSetChanged: () => runtimeLoads.push(lifecycle.runtimeLoad().live),
     now: () => {
       now += 1;
       return now;
@@ -284,6 +290,7 @@ function createHarness(
     registry,
     lifecycle,
     publicationRegistration,
+    runtimeLoads,
     forgettingAfterUnregister,
     eventFlowForgettingAfterUnregister,
     missionForgettingAfterUnregister,
@@ -2178,6 +2185,20 @@ test('automatic creates and resumes reserve the same twelve slots while user sta
   await h.lifecycle.closeAll();
 });
 
+test('registration publishes each runtime without double-counting its create reservation', async () => {
+  const h = createHarness();
+  for (let index = 0; index < 12; index += 1) {
+    queueCreate(h, `provider-${index}`);
+    assert.equal(await h.lifecycle.createAutomatic(createCommand(''), `queued-${index}`), true);
+  }
+  assert.deepEqual(
+    h.runtimeLoads,
+    Array.from({ length: 12 }, (_, index) => index + 1),
+  );
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 12, limit: 12 });
+  await h.lifecycle.closeAll();
+});
+
 test('report steering acknowledges consumption separately from admission', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'owner');
@@ -2269,45 +2290,66 @@ test('failed compaction recovery settles the receipt of a queued report', async 
   assert.deepEqual(provider.prompts, ['first']);
 });
 
-test('automatic Claude and Codex threads cold-resume under their original identity', async () => {
-  for (const kind of ['claude', 'codex'] as const) {
+test('queued identities reach real Droid, Claude and Codex mappers on creation and resume', async (t) => {
+  const { cwd, executable } = await providerIdentityCli(t);
+  const paths = { CLAUDE_PATH: process.env.CLAUDE_PATH, CODEX_PATH: process.env.CODEX_PATH };
+  process.env.CLAUDE_PATH = executable;
+  process.env.CODEX_PATH = executable;
+  t.after(() => {
+    for (const [key, value] of Object.entries(paths)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  for (const kind of ['droid', 'claude', 'codex'] as const) {
     const stored: SessionSummary[] = [];
-    const h = createHarness(stored);
-    const original = new FakeFactorySession(`${kind}-thread`, {}, h.calls);
-    const resumed = new FakeFactorySession(original.sessionId, {}, h.calls);
-    const base = claudeResumeProvider(h, resumed);
-    const creating = claudeResumeProvider(h, original);
-    h.setProvider({
-      ...base,
-      kind,
-      create: async (input) => ({
-        ...(await creating.resume(original.sessionId, {
-          ...input,
-          appSessionId: original.sessionId,
-        })),
-        provider: kind,
-      }),
-      resume: async (id, input) => ({ ...(await base.resume(id, input)), provider: kind }),
+    const replies: TranscriptEvent[] = [];
+    const h = createHarness(stored, undefined, {
+      runPrimaryTurn: async (live, { prompt, delivery }) => {
+        for await (const event of live.session.stream(prompt)) {
+          delivery?.accepted();
+          if (event.transcript) replies.push(event.transcript);
+        }
+      },
     });
-    await h.lifecycle.createAutomatic({ ...createCommand(), provider: kind });
-    await original.waitForPrompts(1);
-    await requireLive(h, original.sessionId).turnPromise;
-    const [created] = h.registry.listSummaries().sessions;
-    assert.ok(created);
-    stored.push({ ...created });
-    await h.lifecycle.close(created.appSessionId, 'preserve-pending');
-    const receipt = await h.lifecycle.deliverScheduled(
-      created.appSessionId,
-      'follow-up',
-      () => true,
+    t.after(() => h.lifecycle.closeAll());
+    h.setProvider(
+      kind === 'droid'
+        ? new DroidProvider(h.runtime, () => undefined)
+        : kind === 'claude'
+          ? new ClaudeProvider()
+          : new CodexProvider(),
     );
+    const original = queueCreate(h, 'provider-id');
+    original.queueStreamEvents([assistantTextDelta('Mapped reply.')]);
+    const appSessionId = `queued-${kind}`;
+    await h.lifecycle.createAutomatic({ ...createCommand(''), provider: kind, cwd }, appSessionId);
+    await h.lifecycle.send(appSessionId, 'First reply');
+    const created = requireLive(h, appSessionId).summary;
+    // Resume with a distinct backend identity even on providers that pin the requested id at creation.
+    const providerSessionId =
+      kind === 'droid' ? created.providerSessionId : 'different-provider-id';
+    assert.ok(providerSessionId);
+    stored.push({ ...created, providerSessionId });
+    await h.lifecycle.close(appSessionId);
+    queueLoad(h, providerSessionId).queueStreamEvents([assistantTextDelta('Mapped reply.')]);
+    const receipt = await h.lifecycle.deliverScheduled(appSessionId, 'Follow-up', () => true);
     assert.equal(receipt.status, 'accepted');
-    assert.deepEqual(resumed.prompts, ['follow-up']);
-    assert.equal(created.appSessionId, original.sessionId);
-    assert.equal(created.providerSessionId, original.sessionId);
-    assert.equal(
-      h.registry.getCanonicalSummary(original.sessionId)?.providerSessionId,
-      original.sessionId,
+    if (receipt.status === 'accepted') await receipt.settled;
+    assert.equal(h.registry.getLive(appSessionId)?.summary.providerSessionId, providerSessionId);
+    assert.deepEqual(
+      replies
+        .filter((event) => event.kind === 'text')
+        .map((event) => [event.appSessionId, event.text]),
+      [
+        [appSessionId, 'Mapped reply.'],
+        [appSessionId, 'Mapped reply.'],
+      ],
+    );
+    assert.ok(
+      h.events
+        .filter((event) => event.type === 'session.created')
+        .every((event) => event.session.appSessionId === appSessionId),
     );
     await h.lifecycle.closeAll();
   }

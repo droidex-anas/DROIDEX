@@ -32,7 +32,7 @@ export function sessionOptions(
       ...(effort ? { ultracode: effort.ultracode } : {}),
       fastMode: input.fastMode ?? false,
     },
-    ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
+    ...(input.resumeId ? { resume: input.resumeId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
     settingSources: ['user', 'project', 'local'],

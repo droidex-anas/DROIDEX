@@ -151,6 +151,7 @@ const project = z
           waiting: z.boolean(),
           queuedSpawn: z
             .object({
+              phase: z.enum(['queued', 'opening']),
               input: threadInputSchema,
               order: z.number().int().min(0),
               workspace: z

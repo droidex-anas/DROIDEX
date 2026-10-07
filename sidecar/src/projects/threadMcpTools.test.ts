@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  deferred,
   drain,
   git,
   gitRepository,
@@ -304,4 +305,36 @@ test('thread_configure persists queued settings and uses them when capacity open
   assert.equal(h.launched.at(-1)?.modelId, 'droid-core');
   assert.equal(h.launched.at(-1)?.reasoningEffort, 'high');
   assert.equal(h.launched.at(-1)?.autonomy, 'off');
+});
+
+test('thread_configure refuses changes during opening and accepts them after binding', async (t) => {
+  const h = await harness(t, [], false);
+  const { main } = await h.root();
+  h.state.capacity = 'busy';
+  const queued = await h.projects.spawn(main, input);
+  registerProjectService(Promise.resolve(h.projects));
+  const binding = deferred();
+  h.state.bindGate = binding.promise;
+  h.state.capacity = 'free';
+  h.projects.historyReady();
+  await drain();
+  const refused = await call(main, 'thread_configure', {
+    threadId: queued.appSessionId,
+    autonomy: 'off',
+  });
+  binding.resolve();
+  await drain();
+  assert.equal(refused.ok, false);
+  assert.match(String(refused.error), /opening.*once it has started/);
+  assert.equal(h.launched.at(-1)?.autonomy, 'low');
+  assert.equal(h.projects.read(main, queued.appSessionId).autonomy, 'low');
+  assert.equal(
+    (
+      await call(main, 'thread_configure', {
+        threadId: queued.appSessionId,
+        autonomy: 'off',
+      })
+    ).autonomy,
+    'off',
+  );
 });

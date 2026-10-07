@@ -64,6 +64,7 @@ export class CodexProvider implements Provider {
   constructor(private readonly onUsage?: UsageMetersListener) {}
 
   create({
+    appSessionId,
     interactions,
     cwd,
     modelId,
@@ -72,10 +73,9 @@ export class CodexProvider implements Provider {
     autonomy,
     inAppMcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // Codex mints the thread id, so DROIDEX's own identity is minted here and
-    // the thread becomes the session's separate resume handle.
+    // Codex's thread id is the separate resume handle, never the application identity.
     return this.openSession({
-      appSessionId: randomUUID(),
+      appSessionId: appSessionId ?? randomUUID(),
       cwd,
       autonomy,
       model: {
@@ -91,6 +91,7 @@ export class CodexProvider implements Provider {
   resume(
     providerSessionId: string,
     {
+      appSessionId,
       interactions,
       cwd,
       modelId,
@@ -105,7 +106,8 @@ export class CodexProvider implements Provider {
       throw new Error('This Codex session has no stored thread and cannot be reopened.');
     return this.openSession(
       {
-        appSessionId: providerSessionId,
+        appSessionId,
+        providerSessionId,
         cwd: cwd ?? tmpdir(),
         autonomy: autonomy ?? 'off',
         model: {

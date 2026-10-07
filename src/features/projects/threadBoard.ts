@@ -161,11 +161,11 @@ function threadDetail(
   live: boolean,
   digest: ActivityDigest | undefined,
 ): string {
-  const position = thread.waitReason?.match(/· (\d+(?:st|nd|rd|th))/)?.[1];
+  const position =
+    thread.wait && thread.wait.kind !== 'turn' ? ordinal(thread.wait.position) : undefined;
   if (status === 'queued') return join('Queued', position);
   if (status === 'waiting') {
-    if (thread.waitReason?.startsWith('waiting for a free slot'))
-      return join('Waiting for a slot', position);
+    if (thread.wait?.kind === 'slot') return join('Waiting for a slot', position);
     return thread.waiting ? 'Waiting for an answer' : 'Waiting';
   }
   // What it wants from the user comes first, even mid-turn: a thread can be
@@ -188,4 +188,11 @@ const BLOCKED: readonly ThreadRow['status'][] = [
 
 function join(lead: string, snippet: string | undefined): string {
   return snippet === undefined || snippet === '' ? lead : `${lead} · ${snippet}`;
+}
+
+function ordinal(position: number): string {
+  const lastTwo = position % 100;
+  const suffix =
+    lastTwo >= 11 && lastTwo <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][position % 10] ?? 'th');
+  return `${String(position)}${suffix}`;
 }

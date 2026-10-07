@@ -17,6 +17,8 @@ import type { ProviderKind } from './providerKind.js';
 import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
+  // A queued thread already owns its application identity before the provider opens.
+  appSessionId?: string;
   cwd: string;
   interactionMode: SessionInteractionMode;
   autonomy: Autonomy;

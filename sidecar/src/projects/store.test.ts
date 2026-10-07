@@ -186,6 +186,7 @@ test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do lin
     reply: '',
     waiting: false,
     queuedSpawn: {
+      phase: 'queued',
       input: { title: 'Worker', prompt: 'Build the parser', provider: 'droid', autonomy: 'low' },
       order: 1,
     },

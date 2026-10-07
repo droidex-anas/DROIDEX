@@ -164,13 +164,10 @@ export class ProjectService {
   // Sessions last seen mid-turn, so a settle is told from any other update.
   private readonly streamingSessions = new Set<string>();
   private readonly membership = new Map<string, Project>();
-  /* The project a chat builds with its first spawn or plan, keyed by that chat.
-     It joins the ledger when a thread binds to it or the chat writes a plan,
-     and leaves this map once no spawn for it is still starting: kept when it
-     holds a thread or a plan, forgotten when it holds nothing, so a spawn that
-     fails leaves no project behind. */
+  // First spawns share a provisional project until a thread or plan binds.
+  // Once all launches settle, empty adoptions are forgotten.
   private readonly adopting = new Map<string, Project>();
-  private readonly launches = new Set<Promise<string>>();
+  private readonly launches = new Set<Promise<unknown>>();
   /** Starting checkouts transfer their reservation to the queued ledger or live session. */
   private readonly checkoutClaims = new Set<CheckoutClaim>();
   private readonly spawnsUnderWay = new Set<SpawnUnderWay>();
@@ -201,7 +198,6 @@ export class ProjectService {
       async (project, thread) => {
         const queued = thread.queuedSpawn;
         if (!queued) return true;
-        if (!thread.ownerAppSessionId) throw new Error('A queued thread must have an owner.');
         const isCurrent = this.wakes.guard(project);
         const load = this.sessions.runtimeLoad();
         if (load.live >= load.limit && !(await this.sessions.makeRoom(thread.appSessionId)))
@@ -210,14 +206,7 @@ export class ProjectService {
         const claim: CheckoutClaim = { project, cwd: queued.input.cwd };
         this.checkoutClaims.add(claim);
         try {
-          await this.launch(
-            project,
-            queued.input,
-            { source: thread.ownerAppSessionId, stopped: false },
-            undefined,
-            thread,
-          );
-          return !thread.queuedSpawn;
+          return await this.openThread(project, thread, isCurrent);
         } finally {
           this.checkoutClaims.delete(claim);
         }
@@ -268,6 +257,7 @@ export class ProjectService {
       owner.projects.set(project.id, project);
       for (const thread of project.threads) {
         owner.membership.set(thread.appSessionId, project);
+        if (thread.queuedSpawn) thread.queuedSpawn.phase = 'queued';
         owner.spawnOrder = Math.max(owner.spawnOrder, thread.queuedSpawn?.order ?? 0);
       }
       owner.wakes.kick(project);
@@ -310,7 +300,7 @@ export class ProjectService {
           title: thread.title || 'Untitled thread',
           waiting: thread.waiting,
           state: status.state,
-          ...(status.waitReason ? { waitReason: status.waitReason } : {}),
+          ...(status.wait ? { wait: status.wait } : {}),
           ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
         };
       }),
@@ -320,9 +310,7 @@ export class ProjectService {
     };
   }
 
-  /** Starts a project and its lead; the caller opens that conversation. A
-      window that started it from its composer passes its own clientRef, so the
-      lead arrives the way any chat it started does. */
+  /** Starts a project and its lead, using the composer's clientRef when supplied. */
   async create(
     input: ThreadInput,
     requestId?: string,
@@ -331,24 +319,56 @@ export class ProjectService {
     this.requireOpen();
     const existing = requestId ? this.projects.get(requestId) : undefined;
     if (existing) {
-      // A repeat of a request whose lead is still starting waits for it, so the
-      // caller is told which conversation to open rather than a bare id.
+      // A repeated request waits for its lead before returning the conversation's identity.
       if (existing.launching > 0) await Promise.allSettled([...this.launches]);
       const main = existing.threads.find((thread) => !thread.ownerAppSessionId);
       return { projectId: existing.id, ...(main ? { appSessionId: main.appSessionId } : {}) };
     }
     const project = this.blankProject(input.title, requestId);
     this.projects.set(project.id, project);
+    const isCurrent = this.wakes.guard(project);
+    let bound: string | undefined;
+    project.launching += 1;
+    const work = this.save().then(() => {
+      if (!isCurrent()) throw new Error('Project launch was cancelled.');
+      return this.sessions.create(
+        { ...input, prompt: `${LEAD_BRIEF}\n\nTask:\n${input.prompt}` },
+        async (session) => {
+          if (this.membership.has(session.appSessionId))
+            throw new Error('The harness reused an existing thread identity.');
+          bound = session.appSessionId;
+          await this.bindThread(
+            project,
+            {
+              appSessionId: bound,
+              title: input.title,
+              reply: '',
+              waiting: false,
+            },
+            isCurrent,
+          );
+        },
+        clientRef,
+        undefined,
+        'user',
+      );
+    });
+    this.launches.add(work);
     try {
-      const appSessionId = await this.launch(project, input, undefined, clientRef);
-      return { projectId: project.id, appSessionId };
+      const session = await work;
+      if (!session || !bound)
+        throw new Error('The selected harness did not start this thread and reported no reason.');
+      return { projectId: project.id, appSessionId: bound };
     } catch (error) {
+      if (bound) this.membership.delete(bound);
+      project.threads = [];
       this.fail(project, error);
-      if (!project.threads.length) {
-        this.projects.delete(project.id);
-        await this.save();
-      }
+      this.projects.delete(project.id);
       throw error;
+    } finally {
+      this.launches.delete(work);
+      project.launching -= 1;
+      await this.save();
     }
   }
 
@@ -372,11 +392,12 @@ export class ProjectService {
       if (!joined && requested.workspaceOf)
         throw new Error('This chat has started no threads to share a checkout with.');
       const project = joined ?? this.adoption(source, owner);
+      const work = this.startThread(project, spawn, owner, input, requested);
+      this.launches.add(work);
       try {
-        // Its first turn reopens a finished project (reopenOnWork); a refused
-        // spawn starts none, so it reopens nothing.
-        return await this.startThread(project, spawn, owner, input, requested);
+        return await work;
       } finally {
+        this.launches.delete(work);
         if (this.settleAdoption(project)) await this.save();
       }
     } finally {
@@ -414,10 +435,7 @@ export class ProjectService {
       ancestor = requireThread(project, ancestor).ownerAppSessionId;
     }
     if (depth >= 4) throw new Error('Project thread nesting is limited to three levels.');
-    // Everything a spawn can be refused for is checked before its checkout is
-    // cut, because a worktree for a thread that never starts is left on disk
-    // with nothing to say it was ours: a bad step name or a held project would
-    // each strand one.
+    // Check admission before cutting a checkout so a refused spawn cannot strand a worktree.
     this.checkAdmission(project);
     if (requested.workspaceOf)
       requested = {
@@ -425,8 +443,7 @@ export class ProjectService {
         workspaceOf: this.resolveThreadId(spawn.source, requested.workspaceOf),
       };
     const named = requested.step ? findPlanStep(project.plan, requested.step) : undefined;
-    // The thread counts as starting while its checkout is cut, and the count is
-    // handed to the launch without a gap.
+    // Checkout preparation counts as starting until the launch takes ownership.
     project.launching += 1;
     const claim: CheckoutClaim = { project };
     let workspace: ThreadCheckout | undefined;
@@ -445,20 +462,28 @@ export class ProjectService {
     const title = uniqueTitle(project, input.title);
     let appSessionId: string;
     try {
-      appSessionId = await this.launch(
+      this.requireOpen();
+      this.checkAdmission(project);
+      const guard = this.wakes.guard(project);
+      const isCurrent = () => guard() && !spawn.stopped;
+      const thread = await this.enqueueThread(
         project,
-        { ...input, title, ...(cwd ? { cwd } : {}), ...(workspace ? { workspace } : {}) },
-        spawn,
+        { ...input, title, cwd, workspace },
+        spawn.source,
+        isCurrent,
       );
+      if (thread.queuedSpawn?.phase === 'opening')
+        await this.openThread(project, thread, isCurrent);
+      this.wakes.kick(project);
+      appSessionId = thread.appSessionId;
     } catch (error) {
       if (workspace) await discardThreadCheckout(owner.cwd, workspace);
       throw error;
     } finally {
-      // A queued launch keeps its checkout in the ledger; a running one owns it through its session.
+      // Checkout ownership has transferred to the queued thread or runtime.
       this.checkoutClaims.delete(claim);
     }
-    // The step resolved before the launch, unless plan_set replaced the plan
-    // while the thread started; then the new step with its title.
+    // Follow the named step if plan_set replaced its object during opening.
     const step =
       named && !project.plan.includes(named)
         ? project.plan.find((candidate) => candidate.title === named.title)
@@ -949,6 +974,8 @@ export class ProjectService {
     const caller = this.requireSession(source);
     const thread = requireThread(project, target);
     const queued = thread.queuedSpawn;
+    if (queued?.phase === 'opening')
+      throw new Error('The thread is opening. Configure it once it has started.');
     const selection = queued?.input ?? this.requireSession(target);
     const modelId = settings.modelId
       ? resolveModelId(await this.sessions.catalog(), caller, selection.provider, settings.modelId)
@@ -963,6 +990,8 @@ export class ProjectService {
     };
     if (queued) {
       this.requireOpen();
+      if (thread.queuedSpawn?.phase === 'opening')
+        throw new Error('The thread is opening. Configure it once it has started.');
       if (thread.queuedSpawn !== queued)
         throw new Error('The queued thread changed while configuring it. Try again.');
       Object.assign(queued.input, model);
@@ -1237,128 +1266,98 @@ export class ProjectService {
     return queued ? 'cancelled' : 'stopped';
   }
 
-  /** Starts a lead, or with `spawn` a thread of the chat that asked for it. */
-  private launch(
+  private async enqueueThread(
     project: Project,
-    input: ThreadLaunchInput,
-    spawn?: SpawnUnderWay,
-    clientRef?: string,
-    queuedThread?: ProjectThread,
-  ): Promise<string> {
-    const work = this.launchOnce(project, input, spawn, clientRef, queuedThread);
-    this.launches.add(work);
-    const release = () => {
-      this.launches.delete(work);
+    { workspace, ...input }: ThreadLaunchInput,
+    ownerAppSessionId: string,
+    isCurrent: () => boolean,
+  ): Promise<ProjectThread> {
+    if (!isCurrent()) throw new Error('Project launch was cancelled.');
+    const load = this.sessions.runtimeLoad();
+    const phase = load.live >= load.limit || this.wakes.hasWaitingStarts() ? 'queued' : 'opening';
+    const thread: ProjectThread = {
+      appSessionId: randomUUID(),
+      ownerAppSessionId,
+      title: input.title,
+      reply: '',
+      waiting: false,
+      queuedSpawn: { phase, input, order: ++this.spawnOrder, workspace },
     };
-    void work.then(release, release);
-    return work;
+    if (phase === 'queued') this.commitAdoption(ownerAppSessionId, project);
+    project.threads.push(thread);
+    this.membership.set(thread.appSessionId, project);
+    try {
+      await this.save();
+      if (!isCurrent()) throw new Error('Project launch was cancelled.');
+      return thread;
+    } catch (error) {
+      project.threads = project.threads.filter((candidate) => candidate !== thread);
+      this.membership.delete(thread.appSessionId);
+      await this.save();
+      throw error;
+    }
   }
 
-  private async launchOnce(
+  private async openThread(
     project: Project,
-    requested: ThreadLaunchInput,
-    spawn?: SpawnUnderWay,
-    clientRef?: string,
-    queuedThread?: ProjectThread,
-  ): Promise<string> {
-    this.requireOpen();
-    this.checkAdmission(project);
-    const ownerAppSessionId = spawn?.source;
-    const queuedSpawn = queuedThread?.queuedSpawn;
-    const { workspace = queuedSpawn?.workspace, ...input } = requested;
-    // The guard is taken here, after the checkout was cut, so a Stop on the
-    // spawning chat meanwhile is known only from its spawn's own record.
-    const guard = this.wakes.guard(project);
-    const isCurrent = () => guard() && !spawn?.stopped;
-    let bound: string | undefined;
+    thread: ProjectThread,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
+    const queued = thread.queuedSpawn;
+    const owner = thread.ownerAppSessionId;
+    if (!queued || !owner) throw new Error('Only an identified, unstarted thread can open.');
+    const wasQueued = queued.phase === 'queued';
+    queued.phase = 'opening';
+    const { input, workspace } = queued;
     project.launching += 1;
     try {
       await this.save();
       if (!isCurrent()) throw new Error('Project launch was cancelled.');
-      const queueSpawn = async (): Promise<string> => {
-        if (!isCurrent()) throw new Error('Project launch was cancelled.');
-        if (!ownerAppSessionId)
-          throw new Error(
-            'All automatic runtime slots are occupied. Try starting the project again when a slot is free.',
-          );
-        const thread = queuedThread ?? {
-          appSessionId: randomUUID(),
-          ownerAppSessionId,
-          title: input.title,
-          reply: '',
-          waiting: false,
-          queuedSpawn: { input, order: ++this.spawnOrder, ...(workspace ? { workspace } : {}) },
-        };
-        if (!queuedThread) {
-          this.commitAdoption(ownerAppSessionId, project);
-          project.threads.push(thread);
-          this.membership.set(thread.appSessionId, project);
-          bound = thread.appSessionId;
-        }
-        await this.save();
-        if (!isCurrent()) throw new Error('Project launch was cancelled.');
-        this.wakes.kick(project);
-        return thread.appSessionId;
-      };
-      const load = this.sessions.runtimeLoad();
-      if (
-        !queuedThread &&
-        ownerAppSessionId &&
-        (load.live >= load.limit || this.wakes.hasWaitingStarts())
-      )
-        return await queueSpawn();
-      const brief = ownerAppSessionId ? THREAD_BRIEF : LEAD_BRIEF;
       const session = await this.sessions.create(
-        { ...input, prompt: `${brief}\n\nTask:\n${threadPrompt(input.prompt, workspace)}` },
+        { ...input, prompt: `${THREAD_BRIEF}\n\nTask:\n${threadPrompt(input.prompt, workspace)}` },
         async (created) => {
-          if (!isCurrent()) throw new Error('Project launch was cancelled.');
-          if (ownerAppSessionId)
-            checkWithinAutonomy(this.requireSession(ownerAppSessionId), input.autonomy);
-          if (
-            this.membership.has(created.appSessionId) &&
-            queuedThread?.appSessionId !== created.appSessionId
-          )
-            throw new Error('The harness reused an existing thread identity.');
-          if (ownerAppSessionId) this.commitAdoption(ownerAppSessionId, project);
-          bound = created.appSessionId;
-          if (queuedThread) delete queuedThread.queuedSpawn;
-          else
-            project.threads.push({
-              appSessionId: bound,
-              ownerAppSessionId,
-              title: input.title,
-              reply: '',
-              waiting: false,
-            });
-          this.membership.set(bound, project);
-          await this.save();
-          if (!isCurrent()) throw new Error('Project launch was cancelled.');
-          // A new chat is named after its first prompt, which here is DROIDEX's
-          // brief. Named before the first turn, so its own plan_set title wins.
-          await this.sessions.rename(bound, input.title).catch((error: unknown) => {
-            console.warn(`Could not name project thread ${bound ?? ''}:`, error);
-          });
+          checkWithinAutonomy(this.requireSession(owner), input.autonomy);
+          if (created.appSessionId !== thread.appSessionId)
+            throw new Error('The harness changed the thread identity.');
+          await this.bindThread(project, thread, isCurrent);
         },
-        clientRef,
-        queuedThread?.appSessionId,
-        ownerAppSessionId ? 'automatic' : 'user',
+        undefined,
+        thread.appSessionId,
       );
-      if (session === null) return await queueSpawn();
-      if (!session || !bound)
+      if (session === null) {
+        this.commitAdoption(owner, project);
+        return false;
+      }
+      if (!session)
         throw new Error('The selected harness did not start this thread and reported no reason.');
-      return session.appSessionId;
+      return true;
     } catch (error) {
-      if (queuedThread && queuedSpawn) queuedThread.queuedSpawn = queuedSpawn;
-      else if (bound) {
-        project.threads = project.threads.filter((thread) => thread.appSessionId !== bound);
-        this.membership.delete(bound);
+      if (wasQueued) thread.queuedSpawn = queued;
+      else {
+        project.threads = project.threads.filter((candidate) => candidate !== thread);
+        this.membership.delete(thread.appSessionId);
       }
       throw error;
     } finally {
+      if (thread.queuedSpawn) thread.queuedSpawn.phase = 'queued';
       project.launching -= 1;
-      this.settleAdoption(project);
       await this.save();
     }
+  }
+
+  private async bindThread(project: Project, thread: ProjectThread, isCurrent: () => boolean) {
+    if (!isCurrent()) throw new Error('Project launch was cancelled.');
+    if (!project.threads.includes(thread)) project.threads.push(thread);
+    this.membership.set(thread.appSessionId, project);
+    if (thread.ownerAppSessionId) this.commitAdoption(thread.ownerAppSessionId, project);
+    // Name it before its first turn, so its own plan_set title wins.
+    await this.sessions.rename(thread.appSessionId, thread.title).catch((error: unknown) => {
+      console.warn(`Could not name project thread ${thread.appSessionId}:`, error);
+    });
+    if (!isCurrent()) throw new Error('Project launch was cancelled.');
+    delete thread.queuedSpawn;
+    await this.save();
+    if (!isCurrent()) throw new Error('Project launch was cancelled.');
   }
 
   /* A report that finds the inbox full waits on its thread and queues as soon as
@@ -1451,12 +1450,8 @@ export class ProjectService {
     this.membership.set(source, project);
   }
 
-  /**
-   * Once no spawn is still starting a thread for it, an adoption is settled:
-   * kept as an ordinary project when it holds a thread or a plan, forgotten
-   * when it holds nothing. True when the forgotten one was in the ledger, which
-   * the caller then saves without it.
-   */
+  // Forget an empty adoption only after all its launches settle.
+  // True means the ledger changed and the caller must save it.
   private settleAdoption(project: Project): boolean {
     const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
     if (!lead || project.launching > 0 || this.adopting.get(lead.appSessionId) !== project)
@@ -1501,8 +1496,7 @@ export class ProjectService {
      and the hold on threads talking in circles, not a count. */
   private checkAdmission(project: Project): void {
     if (!project.paused) return;
-    // Only the user's Stop holds a project still being adopted, and Projects
-    // does not list it yet, so there is nothing there to resume.
+    // A provisional project has no Resume control yet.
     if (!this.projects.has(project.id)) throw new Error('Project launch was cancelled.');
     throw new Error('This project is held. Ask the user to resume it in Projects first.');
   }

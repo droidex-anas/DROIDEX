@@ -75,9 +75,19 @@ function isThreadList(value: unknown): value is ProjectThread[] {
         typeof thread.waiting === 'boolean' &&
         typeof thread.state === 'string' &&
         ['working', 'queued', 'waiting', 'stopped', 'failed', 'idle'].includes(thread.state) &&
-        (thread.waitReason === undefined || text(thread.waitReason, 400)) &&
+        (thread.wait === undefined || isThreadWait(thread.wait)) &&
         (thread.ownerAppSessionId === undefined || text(thread.ownerAppSessionId, 200)),
     )
+  );
+}
+
+function isThreadWait(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.kind === 'turn') return true;
+  return (
+    (value.kind === 'start' || value.kind === 'slot') &&
+    count(value.position) &&
+    value.position !== 0
   );
 }
 

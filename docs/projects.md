@@ -157,7 +157,8 @@ The project snapshot exposes open to-dos, runtime load, thread state (including
 `queued`) and wait reasons for the Threads panel. Queued starts show their
 position (for example, **Queued · 2nd**); runtime-slot waits show **Waiting for a
 slot · 1st**. Cancelling a queued spawn removes its thread and releases its
-reserved checkout. `thread_configure` updates its settings before it starts.
+reserved checkout. `thread_configure` updates its settings while queued. During opening it refuses
+changes with a retry message; configure it again once it has started.
 
 ## The plan
 

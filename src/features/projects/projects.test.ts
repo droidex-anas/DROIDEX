@@ -68,7 +68,15 @@ test('validated project graphs and explicitly acknowledged results cross the bri
 test('queued threads, wait reasons, load and due to-dos cross the bridge together', () => {
   const snapshot = structuredClone(project);
   snapshot.threads[1].state = 'queued';
-  snapshot.threads[1].waitReason = 'queued to start · 3rd';
+  snapshot.threads[1].wait = { kind: 'start', position: 3 };
+  for (const wait of [
+    { kind: 'slot', position: 0 },
+    { kind: 'start', position: 1.5 },
+    { kind: 'unknown' },
+  ]) {
+    const malformed = { ...snapshot, threads: [{ ...snapshot.threads[0], wait }] };
+    assert.equal(wire({ type: 'projects.snapshot', projects: [malformed] }), null);
+  }
   snapshot.runtimeLoad = { live: 14, limit: 12 };
   snapshot.todos = [{ id: 'todo', text: 'Review', after: 'worker', dueAt: 123, due: true }];
   assert.ok(wire({ type: 'projects.snapshot', projects: [snapshot] }));
@@ -218,14 +226,14 @@ test('a project reads its lead: working before any thread, and idle threads are 
 test('queued spawns and slot waits show their published positions rather than Recent or idle', () => {
   const snapshot = structuredClone(project);
   snapshot.threads[1].state = 'queued';
-  snapshot.threads[1].waitReason = 'queued to start · 2nd';
+  snapshot.threads[1].wait = { kind: 'start', position: 2 };
   snapshot.threads.push({
     appSessionId: 'slot',
     ownerAppSessionId: 'main',
     title: 'Slot',
     waiting: false,
     state: 'waiting',
-    waitReason: 'waiting for a free slot · 1st in line (12 running, limit 12)',
+    wait: { kind: 'slot', position: 1 },
   });
   const rows = threadRows(snapshot, {
     sessions: { slot: { ...session('slot'), streaming: false, phase: 'failed' } },

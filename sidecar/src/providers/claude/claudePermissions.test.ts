@@ -94,7 +94,7 @@ test('reopening Spec keeps plan mode even when Full access is selected', () => {
       cwd: '/workspace',
       autonomy: 'high',
       interactionMode: 'spec',
-      resume: true,
+      resumeId: 'provider-spec',
       models: [],
       mcpServers: {},
       interactions: {
@@ -109,7 +109,7 @@ test('reopening Spec keeps plan mode even when Full access is selected', () => {
     () => undefined,
   );
   assert.equal(options.permissionMode, 'plan');
-  assert.equal(options.resume, 'app-spec');
+  assert.equal(options.resume, 'provider-spec');
 });
 
 test("an Always allow narrower than its tool never becomes the CLI's rule for the whole tool", async () => {

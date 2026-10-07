@@ -101,7 +101,12 @@ export interface ProjectThread {
   owedReport?: string;
   waiting: boolean;
   /** Original task and selected checkout while this thread waits for a runtime slot. */
-  queuedSpawn?: { input: ThreadInput; order: number; workspace?: ThreadCheckout };
+  queuedSpawn?: {
+    phase: 'queued' | 'opening';
+    input: ThreadInput;
+    order: number;
+    workspace?: ThreadCheckout;
+  };
 }
 
 /** How a lead's message reaches a thread: into its running turn at the
@@ -165,7 +170,7 @@ export interface ProjectView {
   runtimeLoad: RuntimeLoad;
   threads: (Pick<ProjectThread, 'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId'> & {
     state: ThreadState;
-    waitReason?: string;
+    wait?: ThreadWait;
   })[];
   queued: number;
   uncertain: number;

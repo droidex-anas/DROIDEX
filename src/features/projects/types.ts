@@ -26,13 +26,18 @@ export interface ProjectStep {
   note?: string;
 }
 
+export type ThreadWait =
+  | { kind: 'slot'; position: number }
+  | { kind: 'turn' }
+  | { kind: 'start'; position: number };
+
 export interface ProjectThread {
   appSessionId: string;
   ownerAppSessionId?: string;
   title: string;
   waiting: boolean;
   state: 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
-  waitReason?: string;
+  wait?: ThreadWait;
 }
 
 export interface ProjectTodo {

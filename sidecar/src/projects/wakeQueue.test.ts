@@ -327,7 +327,7 @@ test('existing resume admissions precede queued starts, which launch in FIFO ord
       title: id,
       reply: '',
       waiting: false,
-      queuedSpawn: { input, order: index + 1 },
+      queuedSpawn: { phase: 'queued', input, order: index + 1 },
     });
   const admitted = deferred<AutomationDeliveryReceipt>();
   const finished = deferred<void>();
@@ -568,7 +568,7 @@ test('a resume behind its own report claim does not block another project from s
   reports.pending.push({ id: 'resume', from: 'main', to: 'dormant', kind: 'message', text: 'Go' });
   const waiting = project('waiting');
   waiting.pending = [];
-  waiting.threads[1].queuedSpawn = { input, order: 1 };
+  waiting.threads[1].queuedSpawn = { phase: 'queued', input, order: 1 };
   queue.capacityChanged([reports, waiting]);
   await drain();
   const startedBeforeConsumption = [...starts];
@@ -623,4 +623,53 @@ test('wake to-dos are separate from the last worker report rendered in the chat'
       from: { threadId: 'worker', name: 'Worker', action: 'reported back' },
     },
   ]);
+});
+
+test('a capacity refusal publishes its wait in the last renderer snapshot', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  h.state.capacity = 'busy';
+  await h.finish(child.appSessionId);
+  await drain();
+  const snapshot = h.events.findLast((event) => event.type === 'projects.snapshot');
+  assert.ok(snapshot?.type === 'projects.snapshot');
+  const published = snapshot.projects[0]?.threads.find((thread) => thread.appSessionId === main);
+  assert.equal(published?.state, 'waiting');
+  assert.deepEqual(published?.wait, { kind: 'slot', position: 1 });
+});
+
+test('waiting resumes block queued spawns while both delivery slots are occupied', async (t) => {
+  const states = [project('first'), project('second'), project('resume'), project('spawn')];
+  states[1].pending[0].to = 'other-live';
+  states[2].pending[0].to = 'sleeping';
+  states[3].pending = [];
+  states[3].threads[1].queuedSpawn = { phase: 'queued', input, order: 1 };
+  const finished = deferred<void>();
+  const order: string[] = [];
+  const queue = wakeQueue(
+    t,
+    async (target) => {
+      order.push(target);
+      return {
+        status: 'accepted',
+        settled: target === 'sleeping' ? Promise.resolve() : finished.promise,
+      };
+    },
+    {
+      sessions: { isLive: (id) => id !== 'sleeping' },
+      launch: async (_project, thread) => {
+        order.push('spawn');
+        delete thread.queuedSpawn;
+        return true;
+      },
+    },
+  );
+  queue.start(states);
+  await drain();
+  const beforeSettlement = [...order];
+  finished.resolve();
+  await drain();
+  assert.deepEqual(beforeSettlement, ['main', 'other-live']);
+  assert.deepEqual(order, ['main', 'other-live', 'sleeping', 'spawn']);
 });
