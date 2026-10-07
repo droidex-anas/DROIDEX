@@ -1,4 +1,10 @@
 import assert from 'node:assert/strict';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import type { CanvasTurnContext } from './canvas/protocol.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { DEFAULT_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
+import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -143,10 +149,15 @@ function createHarness(
   const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
     calls.push({ target, method, args });
   };
+  // The production lease owner, with no Canvas workspace open behind it, so
+  // every chat reads as unattached.
+  const canvasScopes = new CanvasScopes();
+  const canvasTurns = new CanvasTurns(canvasScopes, () => null);
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => provider,
+    canvasTurns,
     registry,
     ensureConnected: () => record('runtime', 'ensureConnected'),
     getFactoryDefaults: () => Promise.resolve(defaults),
@@ -273,6 +284,8 @@ function createHarness(
     runtime,
     registry,
     lifecycle,
+    canvasTurns,
+    canvasScopes,
     publicationRegistration,
     forgettingAfterUnregister,
     eventFlowForgettingAfterUnregister,
@@ -384,6 +397,22 @@ function requireLive(harness: Harness, id: string): LiveSession {
   const live = harness.registry.getLive(id);
   assert.ok(live);
   return live;
+}
+
+/** A composed prompt's pinned references, as the Canvas pane would supply them. */
+function pinned(designId: string): CanvasTurnContext {
+  return {
+    designs: [{ designId, revisionId: null }],
+    elements: [],
+    designSystem: { id: 'droidex', version: 1, mode: 'light' },
+  };
+}
+
+/** The lease the chat's running turn holds, which these cases always expect. */
+function turnLease(harness: Harness, appSessionId: string) {
+  const scope = harness.canvasTurns.activeScope(appSessionId);
+  assert.ok(scope?.origin === 'turn');
+  return scope;
 }
 
 function interruptCount(harness: Harness): number {
@@ -1193,6 +1222,44 @@ test('closeAll kills every session in one pass before the serialized closes', as
   );
 });
 
+test('closeAll expires Canvas leases before process cleanup, even when a kill fails', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'shutdown-lease');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('shutdown-lease', 'pinned', undefined, undefined, pinned('dsg_one'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const scope = turnLease(h, 'shutdown-lease');
+
+  let started = (): void => undefined;
+  const killing = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let releaseKill = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    releaseKill = resolve;
+  });
+  h.setProcessKiller(async () => {
+    started();
+    await held;
+    throw new Error('kill failed');
+  });
+  h.setShutdownStarted(true);
+  const closing = h.lifecycle.closeAll();
+  await killing;
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+
+  releaseKill();
+  await assert.rejects(closing, /kill failed/);
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+  h.setProcessKiller(() => Promise.resolve());
+  second.resolve();
+  await h.lifecycle.close('shutdown-lease');
+});
+
 test('close waits for the authoritative post-close session list', async () => {
   const harness = createHarness();
   const provider = queueCreate(harness, 'await-list');
@@ -1909,4 +1976,310 @@ test('dependent ownership is committed before the first provider turn, and a fai
       (event) => event.type === 'error' && event.message.includes('Project ledger is full'),
     ),
   );
+});
+
+test('an ordinary chat can create its first canvas during its initial turn', async (t) => {
+  const h = createHarness();
+  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
+    isChatKnown: (appSessionId) => h.registry.getLive(appSessionId) !== undefined,
+    isScopeActive: (scopeId) => h.canvasScopes.isScopeActive(scopeId),
+    bindScopeCanvas: (scopeId, canvasId) => h.canvasScopes.bindScopeCanvas(scopeId, canvasId),
+  });
+  t.after(() => workspace.close());
+  const provider = queueCreate(h, 'ordinary');
+  const gate = provider.deferNextStream();
+
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  const scope = turnLease(h, 'ordinary');
+  assert.equal(scope.canvasId, null);
+  assert.deepEqual(scope.context.designSystem, DEFAULT_DESIGN_SYSTEM_REF);
+
+  const created = await workspace.create(scope, {
+    mutationId: 'ordinary-create',
+    frames: [
+      { name: 'Ordinary', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
+    ],
+  });
+  assert.equal(workspace.attachedCanvasId('ordinary'), created.canvasId);
+  assert.equal(h.canvasTurns.requireScope(scope.scopeId).canvasId, created.canvasId);
+  gate.resolve();
+  await requireLive(h, 'ordinary').turnPromise;
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+});
+
+test('a queued or reordered prompt runs under the references it was sent with', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'pinned');
+  const gates = [
+    provider.deferNextStream(),
+    provider.deferNextStream(),
+    provider.deferNextStream(),
+  ];
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  // Composed against one selection, then the pane moved on before the next.
+  await h.lifecycle.send('pinned', 'queued', undefined, undefined, pinned('dsg_queued'));
+  await h.lifecycle.send('pinned', 'steered', undefined, 'steer-1', pinned('dsg_steered'));
+  await h.lifecycle.sendNow('pinned', 'steer-1');
+  // Send now stops the create's turn and revokes its lease.
+  assert.equal(h.canvasTurns.activeScope('pinned'), undefined);
+
+  gates[0].resolve();
+  await provider.waitForPrompts(2);
+  assert.deepEqual(turnLease(h, 'pinned').allowedDesignIds, ['dsg_steered']);
+
+  gates[1].resolve();
+  await provider.waitForPrompts(3);
+  assert.deepEqual(provider.prompts, ['first', 'steered', 'queued']);
+  // Reordering moved the prompts, not their references.
+  assert.deepEqual(turnLease(h, 'pinned').allowedDesignIds, ['dsg_queued']);
+
+  gates[2].resolve();
+  await requireLive(h, 'pinned').turnPromise;
+  assert.equal(h.canvasTurns.activeScope('pinned'), undefined);
+});
+
+test('Stop and provider replacement end a turn’s Canvas authority before they await', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'authority');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('authority', 'pinned', undefined, undefined, pinned('dsg_hey'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const stopped = turnLease(h, 'authority');
+
+  // Stop: the lease is gone before the provider has been asked to unwind.
+  const interruptGate = provider.deferNextInterrupt();
+  const stopping = h.lifecycle.interrupt('authority');
+  assert.equal(h.canvasTurns.activeScope('authority'), undefined);
+  assert.throws(() => h.canvasTurns.requireScope(stopped.scopeId), { code: 'scope_expired' });
+  interruptGate.resolve();
+  await stopping;
+  second.resolve();
+  await requireLive(h, 'authority').turnPromise;
+
+  // A turn whose provider session is replaced under it: the lease ends with the
+  // old provider, and the prompt redelivered to the replacement leases again.
+  const third = provider.deferNextStream();
+  const running = h.lifecycle.send(
+    'authority',
+    'running',
+    undefined,
+    undefined,
+    pinned('dsg_running'),
+  );
+  await provider.waitForPrompts(3);
+  const replaced = turnLease(h, 'authority');
+  await h.lifecycle.send('authority', 'queued', undefined, undefined, pinned('dsg_queued'));
+  const replacement = queueLoad(h, 'authority');
+  const closing = h.lifecycle.close('authority', 'preserve-pending');
+  assert.throws(() => h.canvasTurns.requireScope(replaced.scopeId), { code: 'scope_expired' });
+  third.resolve();
+  await Promise.all([closing, running]);
+  await replacement.waitForPrompts(1);
+  assert.deepEqual(replacement.prompts, ['queued']);
+  const redelivered = turnLease(h, 'authority');
+  assert.deepEqual(redelivered.allowedDesignIds, ['dsg_queued']);
+  assert.equal(redelivered.generation, replaced.generation + 1);
+});
+
+test('a steer the model takes in leases its own references beside the running turn', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'steering');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('steering', 'running', undefined, undefined, pinned('dsg_running'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const live = requireLive(h, 'steering');
+  const turn = turnLease(h, 'steering');
+
+  const deliveries: ((delivered: boolean) => void)[] = [];
+  live.session.steer = () =>
+    new Promise<boolean>((settle) => {
+      deliveries.push(settle);
+    });
+  const steering = h.lifecycle.send(
+    'steering',
+    'steered',
+    undefined,
+    'steer-1',
+    pinned('dsg_steered'),
+  );
+  while (deliveries.length < 1) await new Promise((resolve) => setImmediate(resolve));
+  // Nothing is leased until the model has it.
+  assert.equal(h.canvasTurns.activeScope('steering')?.scopeId, turn.scopeId);
+  deliveries[0](true);
+  await steering;
+
+  const steer = turnLease(h, 'steering');
+  assert.deepEqual(steer.allowedDesignIds, ['dsg_steered']);
+  // The running turn's lease is untouched and still answers by name.
+  assert.equal(h.canvasTurns.requireScope(turn.scopeId), turn);
+  assert.deepEqual(turn.allowedDesignIds, ['dsg_running']);
+
+  second.resolve();
+  await live.turnPromise;
+  assert.equal(h.canvasTurns.activeScope('steering'), undefined);
+  assert.throws(() => h.canvasTurns.requireScope(steer.scopeId), { code: 'scope_expired' });
+});
+
+test('a late steer cannot lease the next turn', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'late-steer');
+  const first = provider.deferNextStream();
+  const second = provider.deferNextStream();
+  const third = provider.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('late-steer', 'running', undefined, undefined, pinned('dsg_running'));
+  first.resolve();
+  await provider.waitForPrompts(2);
+  const live = requireLive(h, 'late-steer');
+  let deliver: (accepted: boolean) => void = () => undefined;
+  let entered = (): void => undefined;
+  const delivering = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  live.session.steer = () => {
+    entered();
+    return new Promise<boolean>((resolve) => {
+      deliver = resolve;
+    });
+  };
+
+  const steering = h.lifecycle.send(
+    'late-steer',
+    'old steer',
+    undefined,
+    'old-steer',
+    pinned('dsg_old'),
+  );
+  await delivering;
+  await h.lifecycle.send('late-steer', 'next turn', undefined, undefined, pinned('dsg_next'));
+  second.resolve();
+  await provider.waitForPrompts(3);
+  const next = turnLease(h, 'late-steer');
+  assert.deepEqual(next.allowedDesignIds, ['dsg_next']);
+  deliver(true);
+  await steering;
+  assert.equal(h.canvasTurns.activeScope('late-steer')?.scopeId, next.scopeId);
+  third.resolve();
+  await live.turnPromise;
+});
+
+test('a steer pending across provider adoption cannot lease the replacement turn', async () => {
+  const h = createHarness();
+  const original = queueCreate(h, 'adopted-steer');
+  const first = original.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await original.waitForPrompts(1);
+  const live = requireLive(h, 'adopted-steer');
+  let deliver: (accepted: boolean) => void = () => undefined;
+  let entered = (): void => undefined;
+  const delivering = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  live.session.steer = () => {
+    entered();
+    return new Promise<boolean>((resolve) => {
+      deliver = resolve;
+    });
+  };
+  const steering = h.lifecycle.send(
+    'adopted-steer',
+    'old steer',
+    undefined,
+    'old-steer',
+    pinned('dsg_old'),
+  );
+  await delivering;
+
+  // Compaction keeps LiveSession and replaces its provider after invalidating
+  // the old era. The old steer must not bind through the new turn's handle.
+  h.canvasTurns.endSession('adopted-steer');
+  const replacement = new FakeFactorySession('replacement', {}, h.calls);
+  const nextGate = replacement.deferNextStream();
+  live.session = new DroidProviderSession('replacement', replacement, h.runtime);
+  first.resolve();
+  await live.turnPromise;
+  const sending = h.lifecycle.send(
+    'adopted-steer',
+    'new turn',
+    undefined,
+    undefined,
+    pinned('dsg_new'),
+  );
+  await replacement.waitForPrompts(1);
+  const next = turnLease(h, 'adopted-steer');
+  deliver(true);
+  await steering;
+  assert.equal(h.canvasTurns.activeScope('adopted-steer')?.scopeId, next.scopeId);
+  nextGate.resolve();
+  await sending;
+});
+
+/** A provider that starts turns of its own beside a typed one, as Codex does. */
+function delegatingProvider(
+  harness: Harness,
+  session: FakeFactorySession,
+  onDelegated: (notify: (running: boolean) => void) => void,
+): Provider {
+  const created = new DroidProviderSession(session.sessionId, session, harness.runtime);
+  return {
+    kind: 'codex',
+    fork: () => Promise.reject(new Error('unexpected fork')),
+    resume: () => Promise.reject(new Error('unexpected resume')),
+    create: () =>
+      Promise.resolve({
+        provider: 'codex',
+        providerSessionId: session.sessionId,
+        onDelegatedTurn: (notify: (running: boolean) => void) => {
+          onDelegated(notify);
+          return () => undefined;
+        },
+        stream: created.stream.bind(created),
+        setModel: created.setModel.bind(created),
+        setAutonomy: created.setAutonomy.bind(created),
+        interrupt: created.interrupt.bind(created),
+        close: created.close.bind(created),
+      }),
+  };
+}
+
+test('a turn the provider starts beside a typed one never takes its Canvas leases', async () => {
+  const h = createHarness();
+  const session = new FakeFactorySession('delegated', {}, h.calls);
+  let notify: (running: boolean) => void = () => undefined;
+  h.setProvider(
+    delegatingProvider(h, session, (listener) => {
+      notify = listener;
+    }),
+  );
+  const first = session.deferNextStream();
+  const second = session.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await session.waitForPrompts(1);
+  await h.lifecycle.send('delegated', 'pinned', undefined, undefined, pinned('dsg_hey'));
+  first.resolve();
+  await session.waitForPrompts(2);
+  const typed = turnLease(h, 'delegated');
+
+  // Codex starts a turn of its own behind the typed one; the typed turn's lease
+  // stays the chat's, and that turn settling does not revoke it.
+  notify(true);
+  assert.equal(h.canvasTurns.requireScope(typed.scopeId), typed);
+  notify(false);
+  assert.equal(h.canvasTurns.requireScope(typed.scopeId), typed);
+
+  second.resolve();
+  await requireLive(h, 'delegated').turnPromise;
+  assert.equal(h.canvasTurns.activeScope('delegated'), undefined);
+  assert.throws(() => h.canvasTurns.requireScope(typed.scopeId), { code: 'scope_expired' });
 });

@@ -1,18 +1,10 @@
-// Compiles the design kit's own example with the runtime the app owns, forked
-// the way `CompilerWorker` forks it: no loader, `ELECTRON_RUN_AS_NODE`, and the
-// owned `ESBUILD_BINARY_PATH`. The child refuses every outbound network call
-// and reports every module it resolves outside that runtime, for the whole of
-// its life including a graceful shutdown.
+// Compiles the kit example and chart with the owned runtime, through the real
+// compiler worker and its packaged environment. The child refuses outbound
+// network calls and reports outside module resolutions through shutdown.
 //
-// It then damages copies of the runtime one way at a time, with the checkout's
-// own node_modules above them, and requires each copy to compile nothing, to
-// say so in the one curated sentence, and to load nothing from outside: node
-// resolution would otherwise borrow the missing module from the ancestor and
-// answer with a normal-looking artifact. Every damaged tree is put to the
-// release verifier as well, which must refuse exactly what the worker refuses:
-// that rule has two implementations, because the sidecar bundle may not import
-// a build tool, and a green release gate may not bless a runtime that will not
-// launch.
+// Damaged copies have checkout modules above them to expose accidental
+// fallthrough. The release verifier must refuse each tree the worker refuses;
+// the isolated chart copy proves its dependency closure without that ancestor.
 //
 //   npm run canvas:probe                     # the staged runtime, built dist
 //   npm run canvas:probe -- <path-to-.app>   # a packaged app's own resources
@@ -38,15 +30,19 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from '../sidecar/src/canvas/designSystems.js';
+import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
+import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
+import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
+const VENDORED_SHAPE_LICENSE = 'node_modules/victory-vendor/lib-vendor/d3-shape/LICENSE';
 
 /** Each way a shipped runtime can be short of, or lying about, what it needs. */
-const DAMAGE: [string, (runtime: string) => void][] = [
+const DAMAGE: [string, (runtime: string) => void, string?][] = [
   ['a transitive package', (runtime) => drop(runtime, 'node_modules/picocolors')],
+  ['a chart dependency', (runtime) => drop(runtime, 'node_modules/victory-vendor')],
   ['the esbuild binary', (runtime) => drop(runtime, `node_modules/${PLATFORM_PACKAGE}/bin/esbuild`)],
   [
     "Tailwind's preflight",
@@ -61,7 +57,7 @@ const DAMAGE: [string, (runtime: string) => void][] = [
     (runtime) => linkOutside(runtime, 'node_modules/picocolors/picocolors.js'),
   ],
   [
-    // The tree agrees with its manifest and all seven specifiers resolve, so
+    // The tree agrees with its manifest and all supported specifiers resolve, so
     // only loading the packages finds it.
     'one file of a package PostCSS loads, with a manifest that agrees',
     (runtime) => {
@@ -80,6 +76,20 @@ const DAMAGE: [string, (runtime: string) => void][] = [
         delete manifest.files['node_modules/react/jsx-runtime.js'];
       });
     },
+  ],
+  [
+    // Removing it from both inventories leaves a consistent tree; the reviewed
+    // VictoryVendor license inventory is the rule that refuses it.
+    'a vendored chart license, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, VENDORED_SHAPE_LICENSE);
+      drop(runtime, 'node_modules/victory-vendor/lib-vendor/d3-shape');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files[VENDORED_SHAPE_LICENSE];
+        manifest.notices = manifest.notices.filter((notice) => notice !== VENDORED_SHAPE_LICENSE);
+      });
+    },
+    `Canvas runtime: ${VENDORED_SHAPE_LICENSE} is missing`,
   ],
   [
     // A FIFO blocks a plain read for as long as nobody writes to it, so the
@@ -232,14 +242,14 @@ function probeTarget(appPath: string | undefined): ProbeTarget {
   };
 }
 
-function compileInput(): CompileInput {
+function compileInput(files?: CompileInput['files']): CompileInput {
   const example = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
-  if (example === undefined) fail('the design kit ships no starter example');
+  if (files === undefined && example === undefined) fail('the design kit ships no starter example');
   return {
     designId: 'canvas-compiler-probe',
     revisionId: 'canvas-compiler-probe',
     generation: 1,
-    files: { 'main.tsx': example },
+    files: files ?? { 'main.tsx': example },
     designSystem: DEFAULT_DESIGN_SYSTEM_REF,
   };
 }
@@ -249,7 +259,11 @@ function compileInput(): CompileInput {
  * `runtimeDir` is what the Electron host would pass as
  * DROIDEX_CANVAS_RUNTIME_DIR; omitting it is a host that lost the variable.
  */
-async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promise<WorkerRun> {
+async function runWorker(
+  target: ProbeTarget,
+  runtimeDir: string | null,
+  input = compileInput(),
+): Promise<WorkerRun> {
   // A design compile reads nothing from the profile, so the child gets an empty
   // one rather than the machine's.
   const home = mkdtempSync(join(tmpdir(), 'canvas-compiler-probe-'));
@@ -318,7 +332,7 @@ async function runWorker(target: ProbeTarget, runtimeDir: string | null): Promis
   }
 
   try {
-    const compiled = await answer(1, { type: 'compile', requestId: 1, input: compileInput() });
+    const compiled = await answer(1, { type: 'compile', requestId: 1, input });
     const stopped = await answer(2, { type: 'shutdown', requestId: 2 });
     return {
       compiled,
@@ -366,6 +380,7 @@ function drop(runtime: string, relative: string): void {
 interface StagedManifest {
   binary: string;
   files: Record<string, number | null>;
+  notices: string[];
 }
 
 function rewriteManifest(runtime: string, change: (manifest: StagedManifest) => void): void {
@@ -382,14 +397,18 @@ function linkOutside(runtime: string, relative: string): void {
   symlinkSync(outside, join(runtime, relative));
 }
 
-/** The artifact a preview host could load: self-contained, and the kit's own. */
-function artifactOf(response: CompilerResponse): string {
+/** The self-contained artifact a preview host could load. */
+function artifactOf(
+  response: CompilerResponse,
+  content = "You're all set",
+): { label: string; bytes: number } {
   if (response.status !== 'ready') fail(`the compiler answered ${response.status}`);
   const { artifactId, html } = response.design;
   const required: [string, boolean][] = [
     ['a sha256 artifact id', /^[0-9a-f]{64}$/.test(artifactId)],
     ['the preview root', html.includes('id="canvas-root"')],
-    ['the example content', html.includes("You're all set")],
+    ['the example content', html.includes(content)],
+    ['the offline font', html.includes('data:font/woff2;base64,')],
     ['the kit tokens', html.includes('--ds-accent')],
     ['Tailwind preflight', html.includes('box-sizing: border-box')],
     ['the bundled React', html.includes('useState')],
@@ -397,7 +416,8 @@ function artifactOf(response: CompilerResponse): string {
   ];
   const missing = required.filter(([, ok]) => !ok).map(([what]) => what);
   if (missing.length > 0) fail(`the artifact is missing ${missing.join(', ')}`);
-  return `${artifactId} (${String(Buffer.byteLength(html, 'utf8'))} bytes)`;
+  const bytes = Buffer.byteLength(html, 'utf8');
+  return { label: `${artifactId} (${String(bytes)} bytes)`, bytes };
 }
 
 function assertClean(run: WorkerRun, what: string): void {
@@ -416,13 +436,13 @@ function assertRefused(run: WorkerRun, what: string): void {
   assertClean(run, what);
 }
 
-/** Whether the release verifier would let this tree ship. */
-function releaseVerifierAccepts(runtimeDir: string): boolean {
+/** The release verifier's reason for refusing this tree, if any. */
+function releaseVerifierFailure(runtimeDir: string): string | null {
   try {
     verifyCanvasRuntime(runtimeDir, process.arch);
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
 }
 
@@ -436,25 +456,72 @@ try {
   fail(error instanceof Error ? error.message : String(error));
 }
 
-const shipped = await runWorker(target, target.runtimeDir);
-assertClean(shipped, target.label);
+if (existsSync(join(target.runtimeDir, 'node_modules/lucide-react/dist/cjs')))
+  fail('the runtime still carries unused Lucide CJS');
+const notices: string[] = JSON.parse(
+  readFileSync(join(target.runtimeDir, 'manifest.json'), 'utf8'),
+).notices;
+if (!notices.includes('node_modules/lucide-react/LICENSE'))
+  fail('the runtime is missing the Lucide license notice');
+
+const kitArtifacts: { label: string; bytes: number }[] = [];
+for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
+  for (const mode of ['light', 'dark'] as const) {
+    const ref: DesignSystemRef = { id, version: 1, mode };
+    const kit = await readDesignSystem(ref);
+    const example = kit.examples['Hey.tsx'];
+    if (example === undefined) fail(`${id} ships no starter example`);
+    for (const family of id === 'claude-inspired' ? ['Inter', 'Lora'] : ['Inter']) {
+      if (!kit.files[`fonts/${family}-OFL.txt`]?.includes('SIL OPEN FONT LICENSE'))
+        fail(`${id} ships no ${family} font notice`);
+    }
+    const input = { ...compileInput(), files: { 'main.tsx': example }, designSystem: ref };
+    const shipped = await runWorker(target, target.runtimeDir, input);
+    assertClean(shipped, target.label);
+    if (shipped.compiled.status !== 'ready' || !shipped.compiled.design.html.includes('"ArrowRight"'))
+      fail(`${id}/${mode} did not bundle its named Lucide icon`);
+    const artifact = artifactOf(shipped.compiled);
+    kitArtifacts.push(artifact);
+    process.stdout.write(
+      `Compiled ${id}/${mode} offline from ${target.label}: ${artifact.label}\n`,
+    );
+  }
+}
+const kitBytes = kitArtifacts[0]?.bytes;
+if (kitBytes === undefined) fail('no kit example compiled');
+
+const chart = await runWorker(target, target.runtimeDir, compileInput(CHART_DESIGN));
+assertClean(chart, `${target.label} chart`);
+const chartArtifact = artifactOf(chart.compiled, 'Weekly visits');
 process.stdout.write(
-  `Compiled the design kit's example offline from the ${target.label}: ${artifactOf(shipped.compiled)}\n`,
+  `Compiled the chart offline from the ${target.label}: ${chartArtifact.label}; ` +
+    `artifact delta ${String(chartArtifact.bytes - kitBytes)} bytes versus the kit example.\n`,
 );
+
+const isolated = copiedLayout(target, null);
+drop(isolated.layout, 'node_modules');
+const isolatedChart = await runWorker(isolated.target, isolated.target.runtimeDir, compileInput(CHART_DESIGN));
+rmSync(isolated.layout, { recursive: true, force: true });
+assertClean(isolatedChart, 'an isolated chart runtime');
+if (artifactOf(isolatedChart.compiled, 'Weekly visits').label !== chartArtifact.label)
+  fail('the isolated chart compiled a different artifact');
+process.stdout.write(`An isolated runtime compiled the same chart: ${chartArtifact.label}\n`);
 
 const copied = copiedLayout(target, null);
 const intact = await runWorker(copied.target, copied.target.runtimeDir);
 rmSync(copied.layout, { recursive: true, force: true });
 assertClean(intact, 'an intact copy');
-process.stdout.write(`An intact copy under a linked path compiled: ${artifactOf(intact.compiled)}\n`);
+process.stdout.write(`An intact copy under a linked path compiled: ${artifactOf(intact.compiled).label}\n`);
 
-for (const [what, damage] of DAMAGE) {
+for (const [what, damage, expectedFailure] of DAMAGE) {
   const { layout, target: damaged } = copiedLayout(target, damage);
-  const accepted = releaseVerifierAccepts(damaged.runtimeDir);
+  const verifierFailure = releaseVerifierFailure(damaged.runtimeDir);
   const run = await runWorker(damaged, damaged.runtimeDir);
   rmSync(layout, { recursive: true, force: true });
   assertRefused(run, `a runtime missing ${what}`);
-  if (accepted) fail(`the release verifier would ship a runtime missing ${what}`);
+  if (verifierFailure === null) fail(`the release verifier would ship a runtime missing ${what}`);
+  if (expectedFailure !== undefined && verifierFailure !== expectedFailure)
+    fail(`the release verifier refused ${what} for ${verifierFailure}, not ${expectedFailure}`);
   process.stdout.write(`A runtime missing ${what} is refused by both, and loaded nothing.\n`);
 }
 
@@ -463,15 +530,15 @@ for (const [how, configure] of AWKWARD) {
   const run = await runWorker(sound, configure(layout, sound.runtimeDir));
   rmSync(layout, { recursive: true, force: true });
   assertClean(run, `a runtime ${how}`);
-  process.stdout.write(`A runtime ${how} compiled: ${artifactOf(run.compiled)}\n`);
+  process.stdout.write(`A runtime ${how} compiled: ${artifactOf(run.compiled).label}\n`);
 }
 
 for (const [how, configure] of MISCONFIGURED) {
   const { layout, target: sound } = copiedLayout(target, null);
   const run = await runWorker(sound, configure(layout, sound.runtimeDir));
-  const accepted = releaseVerifierAccepts(sound.runtimeDir);
+  const verifierFailure = releaseVerifierFailure(sound.runtimeDir);
   rmSync(layout, { recursive: true, force: true });
   assertRefused(run, `a runtime that ${how}`);
-  if (!accepted) fail(`the release verifier refused a sound runtime that ${how}`);
+  if (verifierFailure !== null) fail(`the release verifier refused a sound runtime that ${how}`);
   process.stdout.write(`A runtime that ${how} compiled nothing and loaded nothing.\n`);
 }

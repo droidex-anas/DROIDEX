@@ -11,7 +11,8 @@ import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
-import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
+import { CanvasFrameEdits } from './CanvasFrameEdits.js';
+import { placeFrames, requireSeedFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
 import {
@@ -20,12 +21,10 @@ import {
   canvasSummary,
   emptyCanvasManifest,
   mutationFingerprint,
-  recordedArrange,
   recordedCreate,
-  recordedWrite,
+  recordedRevision,
   recordMutation,
   toFrame,
-  toPlacements,
   type CanvasManifest,
   type PersistedDesign,
 } from './canvasManifest.js';
@@ -37,6 +36,7 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  EditElementInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -55,6 +55,7 @@ export class CanvasWorkspace {
   readonly changes = new CanvasChangeFeed();
   private readonly commits = new CanvasCommits(this.changes);
   private readonly attachments: CanvasAttachments;
+  private readonly frameEdits: CanvasFrameEdits;
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -64,6 +65,7 @@ export class CanvasWorkspace {
     isChatKnown: (appSessionId: string) => boolean,
   ) {
     this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
+    this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
   }
 
   /**
@@ -143,7 +145,7 @@ export class CanvasWorkspace {
       const canvasId = target ?? randomUUID();
       if (!bootstrapping) {
         this.leases.requireAttachment(scope, canvasId);
-        this.leases.requireCanvas(scope, canvasId);
+        requireSeedFrames(this.leases.requireCanvas(scope, canvasId), input);
       }
       const staged = await stageFrames(this.files, canvasId, input);
 
@@ -182,6 +184,7 @@ export class CanvasWorkspace {
           const live = this.leases.requireCanvas(scope, canvasId);
           const recorded = recordedCreate(live, input.mutationId, fingerprint, this.builds);
           if (recorded) return { value: recorded };
+          requireSeedFrames(live, input);
           next = structuredClone(live);
           beforeRename = () => {
             this.commits.requireOpen();
@@ -189,8 +192,9 @@ export class CanvasWorkspace {
             this.leases.requireCanvas(scope, canvasId);
           };
         }
-        const designs = placeFrames(staged, next.designs);
+        const designs = placeFrames(staged, next.designs, input.placeBeside);
         next.designs.push(...designs);
+        next.layoutSequence += 1;
         next.sequence += 1;
         next.updatedAt = Date.now();
         recordMutation(
@@ -230,13 +234,25 @@ export class CanvasWorkspace {
     });
   }
 
-  write(scope: CanvasScope, input: WriteFilesInput): Promise<WriteReceipt> {
+  recordedEdit(scope: CanvasScope, input: EditElementInput): WriteReceipt | null {
+    this.commits.requireOpen();
+    const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
+    return recordedRevision(manifest, input.mutationId, 'edit', mutationFingerprint(input));
+  }
+
+  // Direct edits retain their original request fingerprint, not the derived file write.
+  write(
+    scope: CanvasScope,
+    input: WriteFilesInput,
+    edit?: EditElementInput,
+  ): Promise<WriteReceipt> {
     return this.commits.admit(async () => {
       this.commits.requireOpen();
       const manifest = this.leases.requireDesigns(scope, [input.designId]);
       const canvasId = manifest.canvasId;
-      const fingerprint = mutationFingerprint(input);
-      const recorded = recordedWrite(manifest, input.mutationId, fingerprint);
+      const kind = edit ? 'edit' : 'write';
+      const fingerprint = mutationFingerprint(edit ?? input);
+      const recorded = recordedRevision(manifest, input.mutationId, kind, fingerprint);
       if (recorded) return recorded;
 
       const design = this.design(manifest, input.designId);
@@ -245,13 +261,14 @@ export class CanvasWorkspace {
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);
-        const again = recordedWrite(live, input.mutationId, fingerprint);
+        const again = recordedRevision(live, input.mutationId, kind, fingerprint);
         if (again) return { value: again };
         const next = structuredClone(live);
         const target = this.design(next, input.designId);
         requireExpectedRevision(target, input.expectedRevisionId);
         target.revisionId = revision.revisionId;
         target.designSystem = revision.designSystem;
+        target.manifestVersion += 1;
         next.sequence += 1;
         next.updatedAt = Date.now();
         const receipt: WriteReceipt = {
@@ -262,7 +279,7 @@ export class CanvasWorkspace {
         recordMutation(
           next,
           {
-            kind: 'write',
+            kind,
             mutationId: input.mutationId,
             scopeId: scope.scopeId,
             fingerprint,
@@ -281,58 +298,35 @@ export class CanvasWorkspace {
   }
 
   arrange(scope: CanvasScope, input: ArrangeFramesInput): Promise<CanvasChange> {
-    return this.commits.admit(async () => {
-      this.commits.requireOpen();
-      const designIds = input.frames.map((frame) => frame.designId);
-      const fingerprint = mutationFingerprint(input);
-      const manifest = this.leases.requireDesigns(scope, designIds);
-      const recorded = recordedArrange(manifest, input.mutationId, fingerprint, this.builds);
-      if (recorded) return recorded;
+    return this.frameEdits.arrange(scope, input);
+  }
 
-      return this.commits.publish(async () => {
-        const live = this.leases.requireDesigns(scope, designIds);
-        const again = recordedArrange(live, input.mutationId, fingerprint, this.builds);
-        if (again) return { value: again };
-        const next = structuredClone(live);
-        const moved: PersistedDesign[] = [];
-        for (const frame of input.frames) {
-          const design = this.design(next, frame.designId);
-          if (design.layoutVersion !== frame.expectedLayoutVersion)
-            throw canvasError(
-              'revision_conflict',
-              'That frame moved. Read its current layout version and place it again.',
-            );
-          design.rect = { ...frame.rect };
-          design.layoutVersion += 1;
-          moved.push(design);
-        }
-        next.sequence += 1;
-        next.updatedAt = Date.now();
-        recordMutation(
-          next,
-          {
-            kind: 'arrange',
-            mutationId: input.mutationId,
-            scopeId: scope.scopeId,
-            fingerprint,
-            sequence: next.sequence,
-            // A retry answers this sequence and this layout; a frame's other
-            // fields follow the current head, which the renderer discards as old.
-            placements: toPlacements(moved),
-          },
-          this.leases.isActive,
-        );
-        await this.heads.install(next, this.scopedGate(scope, designIds));
-        const change = canvasChange(next, moved, this.builds);
-        return { value: change, change };
-      });
-    });
+  removeFrames(
+    scope: CanvasScope,
+    mutationId: string,
+    designIds: string[],
+  ): Promise<{ undoId: string }> {
+    return this.frameEdits.removeFrames(scope, mutationId, designIds);
+  }
+
+  undoRemoval(scope: CanvasScope, mutationId: string, undoId: string): Promise<CanvasChange> {
+    return this.frameEdits.undoRemoval(scope, mutationId, undoId);
+  }
+
+  renameFrame(
+    scope: CanvasScope,
+    mutationId: string,
+    designId: string,
+    name: string,
+    expectedManifestVersion: number,
+  ): Promise<CanvasChange> {
+    return this.frameEdits.renameFrame(scope, mutationId, designId, name, expectedManifestVersion);
   }
 
   async readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles> {
-    // An unreferenced revision still reads, but only from a canvas we hold.
-    this.canvas(canvasId);
+    this.design(this.canvas(canvasId), ref.designId);
     const tree = await this.files.readRevision(canvasId, ref);
+    this.design(this.canvas(canvasId), ref.designId);
     // A null-prototype tree, so a source path can never reach an inherited
     // member even if the path rules change.
     const files = Object.create(null) as SourceFiles;
@@ -378,6 +372,7 @@ export class CanvasWorkspace {
           const target = this.design(next, designId);
           if (committed.workingRevisionId !== null)
             target.lastWorkingRevisionId = committed.workingRevisionId;
+          target.manifestVersion += 1;
           next.sequence += 1;
           await this.heads.install(next, this.openGate());
           return { value: undefined, change: canvasChange(next, [target], this.builds) };
@@ -448,7 +443,11 @@ export class CanvasWorkspace {
 
   private design(manifest: CanvasManifest, designId: string): PersistedDesign {
     const design = manifest.designs.find((entry) => entry.designId === designId);
-    if (!design) throw canvasError('invalid_input', 'That frame is not on this canvas.');
+    if (!design)
+      throw canvasError(
+        'not_found',
+        'That frame is not on this canvas. Use Undo if it was removed.',
+      );
     return design;
   }
 }

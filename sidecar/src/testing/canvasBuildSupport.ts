@@ -7,6 +7,7 @@
 // workspace and build registry over it, and the compiler under the test's hand.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,11 +34,13 @@ import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import type {
   CanvasBuildState,
   CanvasChange,
+  CanvasDiagnostic,
   CanvasFrame,
   CanvasScope,
+  SourceElement,
   WriteReceipt,
 } from '../canvas/protocol.js';
-import { deferred, observedFileSystem } from './canvasStorageSupport.js';
+import { deferred, observedFileSystem, writeInput } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */
 export const COMPILE_FAILED = 'The design did not compile.';
@@ -52,7 +55,7 @@ export interface HeldCompile {
   signal: AbortSignal;
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
-  ready(artifactId: string): void;
+  ready(artifactId: string, elements?: SourceElement[], diagnostics?: CanvasDiagnostic[]): void;
   failed(code: string): void;
   unavailable(): void;
   /** The compiler refused the runtime the app staged, which no restart fixes. */
@@ -139,12 +142,12 @@ class FakeCompiler implements DesignCompiler {
         input,
         signal,
         client: this,
-        ready: (artifactId) => {
+        ready: (artifactId, elements = [], diagnostics = []) => {
           resolve({
             artifactId,
             html: `<html>${input.revisionId}</html>`,
-            diagnostics: [],
-            elements: [],
+            diagnostics,
+            elements,
           });
         },
         failed: (code) => {
@@ -206,6 +209,7 @@ export function standIn(builds: CanvasBuilds) {
         name: designId,
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 0,
+        manifestVersion: 0,
         revisionId,
         designSystem,
         build: builds.stateOf(canvasId, designId),
@@ -270,25 +274,6 @@ export function holdBuildOutput() {
     },
     reached: reached.promise,
     release: released.resolve,
-  };
-}
-
-/** Fails the next manifest rename once, after the test arms it. */
-export function failNextManifestWrite() {
-  let armed = false;
-  const failed = deferred();
-  const fs = observedFileSystem((operation, path) => {
-    if (!armed || operation !== 'rename' || !path.endsWith('manifest.json')) return;
-    armed = false;
-    failed.resolve();
-    throw new Error('disk full');
-  });
-  return {
-    fs,
-    arm: (): void => {
-      armed = true;
-    },
-    failed: failed.promise,
   };
 }
 
@@ -456,13 +441,15 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     },
     write: (designId, expected, text) =>
       under((scope) =>
-        workspace.write(scope, {
-          mutationId: `write-${designId}-${text}`,
-          designId,
-          expectedRevisionId: expected,
-          files: { 'main.tsx': text },
-          deletedPaths: [],
-        }),
+        workspace.write(
+          scope,
+          writeInput(
+            `write-${designId}-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`,
+            designId,
+            expected,
+            { 'main.tsx': text },
+          ),
+        ),
       ),
     reported: (designId, status) => {
       // From here on: a design reaches the same state more than once.

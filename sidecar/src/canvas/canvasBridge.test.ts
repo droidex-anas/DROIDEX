@@ -2,19 +2,34 @@ import assert from 'node:assert/strict';
 import { readdir } from 'node:fs/promises';
 import test, { type TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
-import { canvasRoot, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
+import {
+  canvasRoot,
+  deferred,
+  observedFileSystem,
+  quietBuilds,
+  writeInput,
+} from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CompileCancelledError } from './compiler.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
-import type { CanvasEvent, CanvasReply, CanvasScope } from './protocol.js';
+import type {
+  CanvasCommand,
+  CanvasError,
+  CanvasEvent,
+  CanvasReply,
+  CanvasScope,
+  ElementRef,
+} from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const APP = 'app-1';
 const PAGE = 'page-1';
 const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
+const EDITABLE =
+  'export default function Hey(){return <h1 style={{color:"var(--ds-fg)"}}>Hey</h1>}';
 
 interface Harness {
   root: string;
@@ -23,6 +38,7 @@ interface Harness {
   builds: CanvasBuilds;
   events: ServerEvent[];
   handle: (command: unknown, pageId?: string | null) => Promise<boolean>;
+  newHandler: (ready?: Promise<CanvasWorkspace>) => Harness['handle'];
   /** Reports a renderer page's socket closing, the way the bridge server does. */
   pageGone: (pageId: string) => void;
 }
@@ -45,25 +61,27 @@ async function harness(
   });
   t.after(() => workspace.close());
   const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    Promise.resolve(workspace),
-    scopes,
-    builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
+  const newHandler = (ready = Promise.resolve(workspace)): Harness['handle'] => {
+    const handle = createCanvasCommandHandler(
+      ready,
+      scopes,
+      builds,
+      (event) => events.push(event),
+      (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    );
+    return (command, pageId = PAGE) => handle(command, pageId);
+  };
   return {
     root: directory,
     workspace,
     scopes,
     builds,
     events,
-    handle: (command, pageId = PAGE) => handle(command, pageId),
+    handle: newHandler(),
+    newHandler,
     pageGone: (pageId) => {
       for (const listener of listeners) listener(pageId);
     },
@@ -89,20 +107,24 @@ function okReply(harnessed: Harness, requestId: string): CanvasReply {
   return event.reply;
 }
 
-function errorOf(harnessed: Harness, requestId: string): { code: string; message: string } {
+function errorOf(harnessed: Harness, requestId: string): CanvasError {
   const event = answer(harnessed, requestId);
   assert.ok(event.type === 'canvas.result' && !event.ok, `expected ${requestId} to fail`);
   return event.error;
 }
 
 /** Creates the chat's canvas the way the pane's Create button does. */
-async function createCanvas(harnessed: Harness, requestId = 'req-create-canvas'): Promise<string> {
+async function createCanvas(
+  harnessed: Harness,
+  requestId = 'req-create-canvas',
+  mutationId = requestId,
+): Promise<string> {
   assert.equal(
     await harnessed.handle({
       type: 'canvas.createCanvas',
       requestId,
       appSessionId: APP,
-      mutationId: requestId,
+      mutationId,
     }),
     true,
   );
@@ -122,19 +144,9 @@ test('a lost Create reply replays its durable canvas while the first commit is i
     await release.promise;
   });
   const canvas = await harness(t, { fs });
-  const first = canvas.handle({
-    type: 'canvas.createCanvas',
-    requestId: 'first',
-    appSessionId: APP,
-    mutationId: 'same-create',
-  });
+  const first = createCanvas(canvas, 'first', 'same-create');
   await reached.promise;
-  const retry = canvas.handle({
-    type: 'canvas.createCanvas',
-    requestId: 'retry',
-    appSessionId: APP,
-    mutationId: 'same-create',
-  });
+  const retry = createCanvas(canvas, 'retry', 'same-create');
   release.resolve();
   await Promise.all([first, retry]);
 
@@ -154,12 +166,7 @@ test('a replayed Create reports its canvas and the chat’s current attachment s
   const canvas = await harness(t);
   const ids: string[] = [];
   for (const mutationId of ['create-A', 'create-B']) {
-    await canvas.handle({
-      type: 'canvas.createCanvas',
-      requestId: mutationId,
-      appSessionId: APP,
-      mutationId,
-    });
+    await createCanvas(canvas, mutationId, mutationId);
     const created = okReply(canvas, mutationId);
     assert.ok('canvasId' in created && created.canvasId !== null);
     ids.push(created.canvasId);
@@ -167,12 +174,7 @@ test('a replayed Create reports its canvas and the chat’s current attachment s
   const [firstCanvasId, currentCanvasId] = ids;
   assert.ok(firstCanvasId && currentCanvasId);
 
-  await canvas.handle({
-    type: 'canvas.createCanvas',
-    requestId: 'replay-A',
-    appSessionId: APP,
-    mutationId: 'create-A',
-  });
+  await createCanvas(canvas, 'replay-A', 'create-A');
 
   assert.deepEqual(okReply(canvas, 'replay-A'), {
     kind: 'canvasCreated',
@@ -185,12 +187,7 @@ test('a replayed Create reports its canvas and the chat’s current attachment s
 
 test('a replayed Create reports a detached chat without creating or reattaching a canvas', async (t) => {
   const canvas = await harness(t);
-  await canvas.handle({
-    type: 'canvas.createCanvas',
-    requestId: 'first-create',
-    appSessionId: APP,
-    mutationId: 'detached-create',
-  });
+  await createCanvas(canvas, 'first-create', 'detached-create');
   const created = okReply(canvas, 'first-create');
   assert.ok('canvasId' in created && created.canvasId !== null);
   await canvas.handle({ type: 'canvas.detach', requestId: 'detach', appSessionId: APP });
@@ -198,12 +195,7 @@ test('a replayed Create reports a detached chat without creating or reattaching 
 
   for (const requestId of ['retry-create', 'first-create']) {
     canvas.events.length = 0;
-    await canvas.handle({
-      type: 'canvas.createCanvas',
-      requestId,
-      appSessionId: APP,
-      mutationId: 'detached-create',
-    });
+    await createCanvas(canvas, requestId, 'detached-create');
     const replay = okReply(canvas, requestId);
     assert.ok('canvasId' in replay);
     const attachedCanvasId =
@@ -240,26 +232,37 @@ test('attachment mutations refuse a chat the sidecar does not know', async (t) =
   assert.equal(canvas.workspace.listCanvases().length, 1);
 });
 
+function sendMutation(
+  harnessed: Harness,
+  canvasId: string,
+  type: Extract<CanvasCommand, { input: unknown }>['type'],
+  requestId: string,
+  input: unknown,
+): Promise<boolean> {
+  return harnessed.handle({ type, requestId, appSessionId: APP, canvasId, input });
+}
+
 async function createFrame(
   harnessed: Harness,
   canvasId: string,
   requestId = 'req-create-frame',
 ): Promise<string> {
-  await harnessed.handle({
-    type: 'canvas.create',
-    requestId,
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-create',
-      frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-    },
+  await sendMutation(harnessed, canvasId, 'canvas.create', requestId, {
+    mutationId: 'm-create',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
   });
   const reply = okReply(harnessed, requestId);
   assert.ok(reply.kind === 'created');
   const [frame] = reply.created.frames;
   assert.ok(frame);
   return frame.designId;
+}
+
+async function withFrame(t: TestContext, options: Parameters<typeof harness>[1] = {}) {
+  const canvas = await harness(t, options);
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+  return { canvas, canvasId, designId };
 }
 
 function turnScope(canvasId: string, scopeId: string): CanvasScope {
@@ -275,38 +278,19 @@ function turnScope(canvasId: string, scopeId: string): CanvasScope {
 }
 
 test('a correlated create, write and arrange answer their own requests', async (t) => {
-  const canvas = await harness(t);
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
+  const { canvas, canvasId, designId } = await withFrame(t);
 
-  await canvas.handle({
-    type: 'canvas.write',
-    requestId: 'req-write',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-write',
-      designId,
-      expectedRevisionId: null,
-      files: { 'main.tsx': HEY },
-      deletedPaths: [],
-    },
-  });
+  const source = writeInput('m-write', designId, null, { 'main.tsx': HEY });
+  await sendMutation(canvas, canvasId, 'canvas.write', 'req-write', source);
   const written = okReply(canvas, 'req-write');
   assert.ok(written.kind === 'written');
   assert.equal(written.receipt.designId, designId);
 
-  await canvas.handle({
-    type: 'canvas.arrange',
-    requestId: 'req-arrange',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-arrange',
-      frames: [
-        { designId, expectedLayoutVersion: 0, rect: { x: 40, y: 40, width: 720, height: 720 } },
-      ],
-    },
+  await sendMutation(canvas, canvasId, 'canvas.arrange', 'req-arrange', {
+    mutationId: 'm-arrange',
+    frames: [
+      { designId, expectedLayoutVersion: 0, rect: { x: 40, y: 40, width: 720, height: 720 } },
+    ],
   });
   const arranged = okReply(canvas, 'req-arrange');
   assert.ok(arranged.kind === 'arranged');
@@ -321,6 +305,176 @@ test('a correlated create, write and arrange answer their own requests', async (
   );
   // The pane learns about another window's work from the broadcast, not a reply.
   assert.ok(canvas.events.some((event) => event.type === 'canvas.summaries'));
+});
+
+async function editableElement(
+  t: TestContext,
+): Promise<{ canvas: Harness; canvasId: string; element: ElementRef }> {
+  const builds = new CanvasBuilds();
+  t.after(() => builds.close());
+  const { canvas, canvasId, designId } = await withFrame(t, { builds });
+  const ready = new Promise<void>((resolve, reject) => {
+    const unsubscribe = canvas.workspace.changes.subscribe((change) => {
+      const build = change.frames.find((frame) => frame.designId === designId)?.build;
+      if (!build || build.status === 'pending' || build.status === 'building') return;
+      unsubscribe();
+      if (build.status === 'ready') resolve();
+      else reject(new Error(`initial build ended as ${build.status}`));
+    });
+  });
+  const source = writeInput('m-edit-source', designId, null, { 'main.tsx': EDITABLE });
+  await sendMutation(canvas, canvasId, 'canvas.write', 'req-edit-source', source);
+  const written = okReply(canvas, 'req-edit-source');
+  assert.ok(written.kind === 'written');
+  await ready;
+  const build = builds.stateOf(canvasId, designId);
+  assert.ok(build.status === 'ready');
+  const [site] = build.elements;
+  assert.ok(site);
+  const element: ElementRef = {
+    designId,
+    revisionId: written.receipt.revisionId,
+    elementId: site.elementId,
+    instancePath: '0',
+  };
+  return { canvas, canvasId, element };
+}
+
+test('a direct element edit commits a new revision and rejects untrusted targets', async (t) => {
+  const { canvas, canvasId, element } = await editableElement(t);
+  const edit = async (requestId: string, change: object, selected = element) => {
+    await sendMutation(canvas, canvasId, 'canvas.editElement', requestId, {
+      mutationId: requestId,
+      edit: { element: selected, change },
+    });
+  };
+
+  await edit('req-bad-token', { kind: 'token', property: 'color', token: '--not-a-kit-token' });
+  assert.equal(errorOf(canvas, 'req-bad-token').code, 'invalid_edit');
+  await edit('req-image', { kind: 'image', assetId: 'not_owned' });
+  assert.equal(errorOf(canvas, 'req-image').code, 'unsupported_edit');
+  await edit(
+    'req-unknown',
+    { kind: 'text', value: 'Changed' },
+    { ...element, elementId: 'unknown' },
+  );
+  assert.equal(errorOf(canvas, 'req-unknown').code, 'stale_reference');
+  await edit(
+    'req-malformed',
+    { kind: 'text', value: 'Changed' },
+    { ...element, elementId: '../bad' },
+  );
+  assert.equal(errorOf(canvas, 'req-malformed').code, 'invalid_input');
+  assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], EDITABLE);
+
+  await edit('req-edit-valid', { kind: 'token', property: 'color', token: '--ds-accent' });
+  const changed = okReply(canvas, 'req-edit-valid');
+  assert.ok(changed.kind === 'written');
+  assert.notEqual(changed.receipt.revisionId, element.revisionId);
+  assert.match(
+    (await canvas.workspace.readFiles(canvasId, changed.receipt))['main.tsx'] ?? '',
+    /var\(--ds-accent\)/,
+  );
+  await edit('req-old-revision', { kind: 'text', value: 'Again' });
+  assert.equal(errorOf(canvas, 'req-old-revision').code, 'stale_revision');
+});
+
+test('a retried element edit returns its original receipt through a new handler', async (t) => {
+  const { canvas, canvasId, element } = await editableElement(t);
+
+  const command = {
+    type: 'canvas.editElement',
+    requestId: 'req-edit-first',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-edit-retry',
+      edit: { element, change: { kind: 'text', value: 'Welcome' } },
+    },
+  };
+  await canvas.handle(command);
+  const first = okReply(canvas, 'req-edit-first');
+  assert.ok(first.kind === 'written');
+
+  const replay = canvas.newHandler();
+  await replay({ ...command, requestId: 'req-edit-retry' }, PAGE);
+  const retried = okReply(canvas, 'req-edit-retry');
+  assert.deepEqual(retried, first);
+  await replay(
+    {
+      ...command,
+      requestId: 'req-edit-reused',
+      input: {
+        ...command.input,
+        edit: { ...command.input.edit, change: { kind: 'text', value: 'Other' } },
+      },
+    },
+    PAGE,
+  );
+  assert.equal(errorOf(canvas, 'req-edit-reused').code, 'invalid_input');
+  assert.equal(canvas.workspace.snapshot(canvasId).sequence, first.receipt.sequence);
+});
+
+test('pane rename, remove and Undo route through one attached canvas', async (t) => {
+  const { canvas, canvasId, designId } = await withFrame(t);
+  const version = canvas.workspace.snapshot(canvasId).frames[0]?.manifestVersion;
+  assert.equal(version, 0);
+  await sendMutation(canvas, canvasId, 'canvas.renameFrame', 'req-rename', {
+    mutationId: 'm-rename',
+    designId,
+    name: 'Better',
+    expectedManifestVersion: version,
+  });
+  const renamed = okReply(canvas, 'req-rename');
+  assert.ok(renamed.kind === 'renamed');
+  assert.equal(renamed.change.frames[0]?.name, 'Better');
+
+  await sendMutation(canvas, canvasId, 'canvas.remove', 'req-remove', {
+    mutationId: 'm-remove',
+    designIds: [designId],
+  });
+  const removed = okReply(canvas, 'req-remove');
+  assert.ok(removed.kind === 'removed');
+  assert.equal(canvas.workspace.snapshot(canvasId).frames.length, 0);
+  await sendMutation(canvas, canvasId, 'canvas.undoRemoval', 'req-undo', {
+    mutationId: 'm-undo',
+    undoId: removed.undoId,
+  });
+  const undone = okReply(canvas, 'req-undo');
+  assert.ok(undone.kind === 'undone');
+  assert.equal(undone.change.frames[0]?.name, 'Better');
+});
+
+test('an Undo layout conflict carries the current occupant rect through the bridge', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const originalId = await createFrame(canvas, canvasId);
+  await sendMutation(canvas, canvasId, 'canvas.create', 'req-other', {
+    mutationId: 'm-other',
+    frames: [{ name: 'Other', width: 720, height: 720, designSystem }],
+  });
+  const other = okReply(canvas, 'req-other');
+  assert.ok(other.kind === 'created');
+  const otherId = other.created.frames[0]?.designId;
+  assert.ok(otherId);
+  const occupied = canvas.workspace.snapshot(canvasId).frames[0]?.rect;
+  assert.ok(occupied);
+  await sendMutation(canvas, canvasId, 'canvas.remove', 'req-remove', {
+    mutationId: 'm-remove',
+    designIds: [originalId],
+  });
+  const removed = okReply(canvas, 'req-remove');
+  assert.ok(removed.kind === 'removed');
+  await sendMutation(canvas, canvasId, 'canvas.arrange', 'req-occupy', {
+    mutationId: 'm-occupy',
+    frames: [{ designId: otherId, expectedLayoutVersion: 0, rect: occupied }],
+  });
+  await sendMutation(canvas, canvasId, 'canvas.undoRemoval', 'req-undo', {
+    mutationId: 'm-undo',
+    undoId: removed.undoId,
+  });
+  assert.deepEqual(errorOf(canvas, 'req-undo').currentRect, occupied);
+  assert.equal(errorOf(canvas, 'req-undo').code, 'layout_conflict');
 });
 
 test('an attachment made through the bridge survives a workspace reopen', async (t) => {
@@ -345,40 +499,42 @@ test('an attachment made through the bridge survives a workspace reopen', async 
 });
 
 test('a rejected argument maps to invalid_source_path under files and invalid_input elsewhere', async (t) => {
-  const canvas = await harness(t);
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
+  const { canvas, canvasId, designId } = await withFrame(t);
 
-  await canvas.handle({
-    type: 'canvas.write',
-    requestId: 'req-path',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-path',
-      designId,
-      expectedRevisionId: null,
-      files: { '../escape.tsx': HEY },
-      deletedPaths: [],
-    },
-  });
+  const source = writeInput('m-path', designId, null, { '../escape.tsx': HEY });
+  await sendMutation(canvas, canvasId, 'canvas.write', 'req-path', source);
   const path = errorOf(canvas, 'req-path');
   assert.equal(path.code, 'invalid_source_path');
   assert.match(path.message, /relative/);
 
-  await canvas.handle({
-    type: 'canvas.create',
-    requestId: 'req-count',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-count',
-      frames: new Array(5).fill({ name: 'Hey', width: 720, height: 720, designSystem }),
-    },
+  await sendMutation(canvas, canvasId, 'canvas.create', 'req-count', {
+    mutationId: 'm-count',
+    frames: new Array(5).fill({ name: 'Hey', width: 720, height: 720, designSystem }),
   });
   const count = errorOf(canvas, 'req-count');
   assert.equal(count.code, 'invalid_input');
   assert.match(count.message, /1 to 4 frames/);
+
+  for (const [field, value] of [
+    ['placeBeside', { designId: '../outside' }],
+    ['seed', { kind: 'revision', canvasId, revision: { designId, revisionId: '../outside' } }],
+  ] as const) {
+    await sendMutation(canvas, canvasId, 'canvas.create', `req-${field}`, {
+      mutationId: `m-${field}`,
+      ...(field === 'placeBeside' ? { placeBeside: value } : {}),
+      frames: [
+        {
+          name: 'Variant',
+          width: 720,
+          height: 720,
+          designSystem,
+          ...(field === 'seed' ? { seed: value } : {}),
+        },
+      ],
+    });
+    assert.equal(errorOf(canvas, `req-${field}`).code, 'invalid_input');
+    assert.match(errorOf(canvas, `req-${field}`).message, /1 to 128 characters/);
+  }
 
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-unknown', canvasId: 'nope' });
   assert.equal(errorOf(canvas, 'req-unknown').code, 'invalid_input');
@@ -392,10 +548,50 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
   assert.equal(okReply(canvas, 'r'.repeat(128)).kind, 'summaries');
 });
 
-test('reading an artifact is a derived read with no cache miss to report', async (t) => {
+test('the bridge creates a seeded adjacent frame and refuses a seed outside its canvas lease', async (t) => {
   const canvas = await harness(t);
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
+  const sourceCanvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, sourceCanvasId);
+  const source = writeInput('seed-source', designId, null, { 'main.tsx': HEY });
+  await sendMutation(canvas, sourceCanvasId, 'canvas.write', 'req-seed-source', source);
+  const written = okReply(canvas, 'req-seed-source');
+  assert.ok(written.kind === 'written');
+  const input = {
+    mutationId: 'seeded-variant',
+    placeBeside: { designId },
+    frames: [
+      {
+        name: 'Variant',
+        width: 720,
+        height: 720,
+        designSystem,
+        seed: {
+          kind: 'revision',
+          canvasId: sourceCanvasId,
+          revision: { designId, revisionId: written.receipt.revisionId },
+        },
+      },
+    ],
+  };
+  await sendMutation(canvas, sourceCanvasId, 'canvas.create', 'req-seeded', input);
+  const created = okReply(canvas, 'req-seeded');
+  assert.ok(created.kind === 'created');
+  assert.deepEqual(created.created.frames[0]?.rect, { x: 0, y: 800, width: 720, height: 720 });
+  const canvasId = (await canvas.workspace.createCanvas(APP, 'foreign-seed-canvas')).canvasId;
+  await sendMutation(canvas, canvasId, 'canvas.create', 'req-foreign-seed', {
+    mutationId: 'foreign-seed',
+    frames: input.frames,
+  });
+  assert.deepEqual(errorOf(canvas, 'req-foreign-seed'), {
+    code: 'invalid_input',
+    message: 'A seed revision must come from this canvas.',
+  });
+  assert.equal(canvas.workspace.snapshot(canvasId).frames.length, 0);
+  assert.equal(canvas.workspace.snapshot(sourceCanvasId).frames.length, 2);
+});
+
+test('reading an artifact is a derived read with no cache miss to report', async (t) => {
+  const { canvas, canvasId, designId } = await withFrame(t);
 
   // Nothing has built this frame, so the derived cache has nothing to serve and
   // the pane is told so rather than being handed an error.
@@ -444,15 +640,9 @@ test('a chat that is not attached to the named canvas cannot mutate it', async (
   const canvasId = await createCanvas(canvas);
   await canvas.handle({ type: 'canvas.detach', requestId: 'req-detach', appSessionId: APP });
 
-  await canvas.handle({
-    type: 'canvas.create',
-    requestId: 'req-unattached',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-unattached',
-      frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-    },
+  await sendMutation(canvas, canvasId, 'canvas.create', 'req-unattached', {
+    mutationId: 'm-unattached',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
   });
   assert.equal(errorOf(canvas, 'req-unattached').code, 'scope_expired');
 });
@@ -516,15 +706,6 @@ test('a command that is not Canvas is left to the next handler', async (t) => {
   assert.equal(reported.code, 'canvas.invalid_input');
 });
 
-/** A promise a test resolves itself, to hold an awaited filesystem call open. */
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve = (): void => undefined;
-  const promise = new Promise<void>((settle) => {
-    resolve = settle;
-  });
-  return { promise, resolve };
-}
-
 /** A filesystem that holds the next write of one source file open until released. */
 function pauseAtSource(path: string) {
   const reached = deferred();
@@ -544,23 +725,10 @@ function pauseAtSource(path: string) {
 
 test('a chat that detaches while its write is staging does not commit it', async (t) => {
   const paused = pauseAtSource('main.tsx');
-  const canvas = await harness(t, { fs: paused.fs });
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
+  const { canvas, canvasId, designId } = await withFrame(t, { fs: paused.fs });
 
-  const writing = canvas.handle({
-    type: 'canvas.write',
-    requestId: 'req-paused-write',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-paused',
-      designId,
-      expectedRevisionId: null,
-      files: { 'main.tsx': HEY },
-      deletedPaths: [],
-    },
-  });
+  const source = writeInput('m-paused', designId, null, { 'main.tsx': HEY });
+  const writing = sendMutation(canvas, canvasId, 'canvas.write', 'req-paused-write', source);
   await paused.reached;
   // The pane's authority is the attachment, and this chat has just given it up.
   await canvas.workspace.detach(APP);
@@ -579,9 +747,7 @@ test('a request identity cannot revive a revoked turn lease', async (t) => {
   const fs = observedFileSystem((operation, target) => {
     if (operation === 'rename' && target.endsWith('manifest.json')) insideCommit?.();
   });
-  const canvas = await harness(t, { fs });
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
+  const { canvas, canvasId, designId } = await withFrame(t, { fs });
 
   const agent = turnScope(canvasId, stolen);
   canvas.scopes.register(agent);
@@ -592,17 +758,11 @@ test('a request identity cannot revive a revoked turn lease', async (t) => {
   };
 
   // The renderer names the revoked lease as its own request ID.
-  await canvas.handle({
-    type: 'canvas.arrange',
-    requestId: stolen,
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-pane-arrange',
-      frames: [
-        { designId, expectedLayoutVersion: 0, rect: { x: 10, y: 10, width: 720, height: 720 } },
-      ],
-    },
+  await sendMutation(canvas, canvasId, 'canvas.arrange', stolen, {
+    mutationId: 'm-pane-arrange',
+    frames: [
+      { designId, expectedLayoutVersion: 0, rect: { x: 10, y: 10, width: 720, height: 720 } },
+    ],
   });
   insideCommit = null;
   assert.equal(okReply(canvas, stolen).kind, 'arranged');
@@ -703,45 +863,21 @@ test('a page that goes away while the workspace opens installs no watch', async 
     }),
     deadline: () => () => undefined,
   });
-  const canvas = await harness(t, { builds });
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
-  await canvas.handle({
-    type: 'canvas.write',
-    requestId: 'req-write-source',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-write-source',
-      designId,
-      expectedRevisionId: null,
-      files: { 'main.tsx': HEY },
-      deletedPaths: [],
-    },
-  });
+  const { canvas, canvasId, designId } = await withFrame(t, { builds });
+  const source = writeInput('m-write-source', designId, null, { 'main.tsx': HEY });
+  await sendMutation(canvas, canvasId, 'canvas.write', 'req-write-source', source);
   // Cancelled leaves saved source with nothing built for it, which is what a
   // subscription's rebuild sweep picks up.
   builds.cancelCanvas(canvasId);
   assert.equal(builds.stateOf(canvasId, designId).status, 'cancelled');
   const opening = deferred();
-  const events: ServerEvent[] = [];
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    opening.promise.then(() => canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
+  canvas.events.length = 0;
+  const events = canvas.events;
+  const handle = canvas.newHandler(opening.promise.then(() => canvas.workspace));
 
   const subscribing = handle({ type: 'canvas.subscribe', requestId: 'req-late', canvasId }, PAGE);
   // The page closes its socket before Canvas storage finishes opening.
-  for (const listener of listeners) listener(PAGE);
+  canvas.pageGone(PAGE);
   opening.resolve();
   await subscribing;
 

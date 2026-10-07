@@ -9,6 +9,7 @@ import type {
   CanvasChange,
   CanvasCommand,
   CanvasErrorCode,
+  FrameRect,
   CanvasEvent,
   CanvasReply,
   CanvasSnapshot,
@@ -17,6 +18,9 @@ import type {
   CreateFramesInput,
   CreateFramesResult,
   PreviewArtifact,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   WriteFilesInput,
   WriteReceipt,
 } from './protocol';
@@ -41,6 +45,7 @@ class CanvasRequestError extends Error {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
+    readonly currentRect?: FrameRect,
   ) {
     super(message);
     this.name = 'CanvasRequestError';
@@ -172,6 +177,51 @@ export class CanvasClient {
       input,
     });
     return reply(event, 'arranged').change;
+  }
+
+  async removeFrames(
+    appSessionId: string,
+    canvasId: string,
+    input: RemoveFramesInput,
+  ): Promise<string> {
+    const event = await this.request({
+      type: 'canvas.remove',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'removed').undoId;
+  }
+
+  async undoRemoval(
+    appSessionId: string,
+    canvasId: string,
+    input: UndoRemovalInput,
+  ): Promise<CanvasChange> {
+    const event = await this.request({
+      type: 'canvas.undoRemoval',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'undone').change;
+  }
+
+  async renameFrame(
+    appSessionId: string,
+    canvasId: string,
+    input: RenameFrameInput,
+  ): Promise<CanvasChange> {
+    const event = await this.request({
+      type: 'canvas.renameFrame',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'renamed').change;
   }
 
   /**
@@ -340,7 +390,10 @@ export class CanvasClient {
     const waiter = this.answer(event.requestId);
     if (!waiter) return;
     if (event.ok) waiter.settle(event);
-    else waiter.fail(new CanvasRequestError(event.error.code, event.error.message));
+    else
+      waiter.fail(
+        new CanvasRequestError(event.error.code, event.error.message, event.error.currentRect),
+      );
   }
 
   private answer(id: string): Waiter | null {
