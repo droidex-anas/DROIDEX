@@ -68,17 +68,15 @@ function isReply(value: unknown): boolean {
     case 'summaries':
       return list(value.summaries, isSummary);
     case 'attachment':
-      return value.canvasId === null || id(value.canvasId);
+      return isAttachmentReply(value);
     case 'created':
-      return (
-        record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame)
-      );
+      return isCreatedReply(value);
     case 'written':
       return isReceipt(value.receipt);
     case 'arranged':
       return isChange(value.change);
     case 'artifact':
-      return value.artifact === null || isArtifact(value.artifact);
+      return isArtifactReply(value);
     case 'revisions':
       return boundedList(value.revisions, MAX_REVISION_PAGE_SIZE, isRevisionSummary);
     case 'revisionDiff':
@@ -88,6 +86,18 @@ function isReply(value: unknown): boolean {
     default:
       return true;
   }
+}
+
+function isAttachmentReply(value: Record<string, unknown>): boolean {
+  return value.canvasId === null || id(value.canvasId);
+}
+
+function isCreatedReply(value: Record<string, unknown>): boolean {
+  return record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame);
+}
+
+function isArtifactReply(value: Record<string, unknown>): boolean {
+  return value.artifact === null || isArtifact(value.artifact);
 }
 
 function isRevisionSummary(value: unknown): boolean {
