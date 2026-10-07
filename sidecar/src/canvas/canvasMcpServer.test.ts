@@ -71,6 +71,58 @@ test('six Canvas tools are discoverable and an inactive chat cannot read', async
   assert.equal((await h.call('canvas_read', {})).code, 'scope_expired');
 });
 
+test('HTTP Canvas calls strictly validate raw arguments and return payload-free refusal envelopes', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const config = await h.server.start();
+  t.after(() => h.server.close());
+  assert.ok('url' in config);
+  for (const [name, args, code] of [
+    ['canvas_read', { unexpected: 'HTTP_SENTINEL' }, 'invalid_input'],
+    [
+      'canvas_write',
+      {
+        scopeId,
+        mutationId: 'invalid-path',
+        designId: 'one',
+        expectedRevisionId: null,
+        files: { '../HTTP_SENTINEL.tsx': 'HTTP_SENTINEL' },
+        deletedPaths: [],
+      },
+      'invalid_source_path',
+    ],
+  ] as const) {
+    await t.test(code, async () => {
+      const response = await fetch(config.url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name, arguments: args },
+        }),
+      });
+      const text = await response.text();
+      assert.ok(!text.includes('HTTP_SENTINEL'));
+      const data =
+        text
+          .split('\n')
+          .find((line) => line.startsWith('data: '))
+          ?.slice(6) ?? text;
+      const result = JSON.parse(data).result;
+      assert.ok(result);
+      assert.equal(result.isError, true);
+      assert.equal(JSON.parse(result.content[0].text).code, code);
+    });
+  }
+  assert.deepEqual(h.workspace.listCanvases(), []);
+});
+
 test('theme listing is bounded and saving requires a client mutation ID', async (t) => {
   const h = await harness(t);
   h.turns.beginTurn('chat-one', undefined);
