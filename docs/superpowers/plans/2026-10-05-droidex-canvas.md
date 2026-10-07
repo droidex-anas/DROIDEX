@@ -1392,6 +1392,76 @@ Direct pointer input bypasses easing. First ready content crossfades without a m
 - [ ] Run `rtk proxy npm run perf:replay -- --scenario idle`, then `streaming`, `multi-agent` and `session-switch`; compare with `origin/main` using existing `perf:compare`, `perf:report` and `perf:gates`. Run `quality:bundle-budgets` and compare startup/lazy chunk size. Canvas closed must not load the compiler, kit source or preview bundle into the renderer's startup path.
 - [ ] Watch both supplied videos alongside the local app. Check pending bloom, ready reveal, toolbar positioning, variant placement, cursor-anchored zoom and pane expansion. Record the app in light and dark plus reduced motion. Visual acceptance is actual observed behavior, not a passing build or an animation screenshot.
 
+
+**Settled by 11a** (landed in `src/features/canvas/{canvasMotion.ts,useCanvasMotion.ts,PendingBloom.tsx}`
+and the `canvas-bloom` keyframes in `src/index.css`). The exported surface, in full:
+
+```ts
+// canvasMotion.ts — no React, no DOM.
+canvasMotion: CanvasMotion;
+motionFor(reducedMotion: boolean): CanvasMotion;
+canvasActivity: Readonly<Record<CanvasActivityStage, { label: string; bloom: boolean }>>;
+activityStageOf(status: CanvasBuildState['status']): CanvasActivityStage;
+type CanvasActivityStage = 'queued' | 'writing' | 'building' | 'ready' | 'failed' | 'cancelled';
+interface CanvasMotion {
+  focusMs; paneMs; popoverMs; frameArrivalMs; readyMs; presenceMs; busyLoopMs;
+  popoverTravelPx; frameArrivalTravelPx;
+  ease: readonly [number, number, number, number];
+  easeCss: string;
+}
+
+// useCanvasMotion.ts
+useCanvasMotion(): CanvasMotion;
+
+// PendingBloom.tsx
+PendingBloom(props: { stage: CanvasActivityStage; visible: boolean; motion: CanvasMotion }): JSX;
+```
+
+- **One token object, one preference read.** `canvasMotion` holds the §11 timings plus the two
+  travel distances the table caps (`popoverTravelPx` 4, `frameArrivalTravelPx` 8) and the easing
+  twice, as `ease` for a framer-motion `transition` and `easeCss` for a CSS shorthand.
+  `motionFor(reducedMotion)` returns the reduced variant, which is the same object shape with
+  every `*Ms` and `*Px` token at zero, so a component writes `duration: motion.focusMs / 1000`
+  and gets immediate behavior without a conditional. `useCanvasMotion()` is the renderer entry
+  point and reads framer-motion's `useReducedMotion`, the app's existing reader; an unread
+  preference means full motion. Pan, drag and resize have no token on purpose: direct pointer
+  input stays 1:1 and never consults this module.
+- **Stages are the event vocabulary.** `CanvasActivityStage` is exactly `queued | writing |
+  building | ready | failed | cancelled`, and `canvasActivity` maps each to its label and
+  whether the bloom runs (`writing` and `building` only). There is no `verifying`.
+  `activityStageOf` is the whole bridge from the wire to that vocabulary: a build's `pending`
+  is `queued`, every other status keeps its name, and `writing` is unreachable from a build
+  state on purpose — see the presence note below.
+- **The bloom owns no timer.** `PendingBloom` is a CSS animation whose duration, per-dot delay
+  and `animation-play-state` come from the tokens and a `visible` prop, so an offscreen frame
+  pauses and a settled or reduced-motion frame drops the animation class and renders the stage
+  label over static dots. A `prefers-reduced-motion` rule beside the keyframes repeats that
+  under CSS, so a caller that passes the wrong tokens still cannot make the dots move. The
+  existing `html[data-window-hidden='true']` rule covers a hidden window. The component takes
+  resolved tokens as a prop rather than calling the hook, which keeps it pure and lets the
+  static reduced-motion render be asserted directly.
+- **Presence has no event source yet, so 11a ships no presence UI.** `presenceMs` (140 ms, zero
+  under reduced motion) is the token the spec's agent-presence row asks for, but nothing on the
+  Canvas wire names an actor or a tool target: `CanvasChange` and `CanvasFrame` carry build
+  state only. Inventing a cursor or a `writing` badge from build state would be exactly the
+  fake progress §11 forbids, so the actor label, the 140 ms interpolation and the reduced-motion
+  static badge land with whichever task first carries a real actor event (agent tool target,
+  user source edit) to the renderer. `activityStageOf` is written so that task adds `writing`
+  by passing an actor fact, not by reinterpreting a build.
+
+**Consumers that still need to adopt these tokens** (each owned by its own subtask, none ticked
+here):
+
+- `canvas/5b` board fit and focus: `focusMs`/`ease` for programmatic fit and zoom-to-frame, and
+  the first-use-only fit.
+- `canvas/5c` new frame and ready reveal: `frameArrivalMs`/`frameArrivalTravelPx` for arrival and
+  reserved variant siblings, `readyMs` for the first working-preview crossfade, `paneMs` for pane
+  expand/collapse, `popoverMs`/`popoverTravelPx` for the board toolbar and popovers, and
+  `activityStageOf` plus `PendingBloom` inside the pending frame with a real `visible` flag from
+  the board's own viewport.
+- `canvas/6a` artifact card: `readyMs` for the inline thumbnail reveal and `popoverMs` for the
+  card's own controls.
+
 ## Task 12: Full acceptance, documentation and implementation handoff
 
 **Subtasks (one branch and PR each, merged in order):**
