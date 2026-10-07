@@ -49,10 +49,14 @@ export const canvasIdentifierSchema = z
 
 export const frameNameSchema = z
   .string()
-  .trim()
-  .min(1, FRAME_NAME_MESSAGE)
-  .max(CANVAS_LIMITS.maxFrameNameLength, FRAME_NAME_MESSAGE)
-  .refine((name) => !hasControlCharacter(name), { message: FRAME_NAME_MESSAGE });
+  .refine((name) => !hasControlCharacter(name), { message: FRAME_NAME_MESSAGE })
+  .pipe(
+    z
+      .string()
+      .trim()
+      .min(1, FRAME_NAME_MESSAGE)
+      .max(CANVAS_LIMITS.maxFrameNameLength, FRAME_NAME_MESSAGE),
+  );
 
 const versionSchema = z.number().int().nonnegative();
 

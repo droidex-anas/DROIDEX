@@ -180,12 +180,11 @@ test('Undo refuses a changed occupant and returns its current rect', async (t) =
 test('rename validates names and compares the design manifest version', async (t) => {
   const { workspace, canvasId, scope } = await opened(t);
   const original = await frame(workspace, scope, 'create-hey');
-  await assert.rejects(
-    workspace.renameFrame(scope, 'bad-name', original.designId, 'bad\u0000name', 0),
-    {
+  for (const name of ['bad\u0000name', 'Hey\n']) {
+    await assert.rejects(workspace.renameFrame(scope, 'bad-name', original.designId, name, 0), {
       code: 'invalid_input',
-    },
-  );
+    });
+  }
   const renamed = await workspace.renameFrame(
     scope,
     'rename-hey',
