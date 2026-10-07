@@ -187,6 +187,50 @@ test('threads started together each get a checkout of their own', async (t) => {
   assert.notEqual(lexer.cwd, printer.cwd);
 });
 
+test('queued spawns reserve their checkouts until they launch or are cancelled', async (t) => {
+  const repository = await gitRepository(t);
+  const h = await harness(t, [], false);
+  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  h.state.capacity = 'busy';
+  const first = await h.projects.spawn('ordinary', { ...input, title: 'Parser' });
+  const second = await h.projects.spawn('ordinary', { ...input, title: 'Lexer' });
+  assert.equal(first.delivery, 'queued');
+  assert.equal(second.delivery, 'queued');
+  const secondCheckout = h.state.saved[0]?.threads.find(
+    (thread) => thread.appSessionId === second.appSessionId,
+  )?.queuedSpawn?.input.cwd;
+  assert.notEqual(secondCheckout, repository);
+  h.state.capacity = 'free';
+  const firstTurn = deferred();
+  h.state.firstTurnGate = firstTurn.promise;
+  h.projects.historyReady();
+  await drain();
+  const third = await h.projects.spawn('ordinary', { ...input, title: 'Printer' });
+  const thirdCheckout = h.state.saved[0]?.threads.find(
+    (thread) => thread.appSessionId === third.appSessionId,
+  )?.queuedSpawn?.input.cwd;
+  assert.notEqual(thirdCheckout, repository, 'binding does not release a starting checkout');
+  firstTurn.resolve();
+  await drain();
+  assert.equal(h.sessions.get(first.appSessionId)?.cwd, repository);
+  assert.equal(h.sessions.get(second.appSessionId)?.cwd, secondCheckout);
+  assert.equal(
+    h.state.saved[0]?.threads.some((thread) => thread.queuedSpawn),
+    false,
+  );
+  await h.projects.stop('ordinary', first.appSessionId);
+  await h.projects.stop('ordinary', second.appSessionId);
+  await h.projects.stop('ordinary', third.appSessionId);
+  h.state.capacity = 'busy';
+  const cancelled = await h.projects.spawn('ordinary', { ...input, title: 'Cancelled' });
+  await h.projects.stop('ordinary', cancelled.appSessionId);
+  const replacement = await h.projects.spawn('ordinary', { ...input, title: 'Replacement' });
+  const checkout = h.state.saved[0]?.threads.find(
+    (thread) => thread.appSessionId === replacement.appSessionId,
+  )?.queuedSpawn?.input.cwd;
+  assert.equal(checkout, repository);
+});
+
 test('stopping a chat while its first spawn starts cancels that spawn, and only that one', async (t) => {
   const h = await harness(t);
   h.sessions.set('ordinary', summary('ordinary'));

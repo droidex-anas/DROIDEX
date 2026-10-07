@@ -2207,3 +2207,60 @@ test('report steering acknowledges consumption separately from admission', async
   turn.resolve();
   await h.lifecycle.closeAll();
 });
+
+test('Stop leaves an in-flight report unsettled until the provider acknowledges consumption', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'owner');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  let consume: (accepted: boolean) => void = () => undefined;
+  requireLive(h, 'owner').session.steer = () =>
+    new Promise<boolean>((resolve) => {
+      consume = resolve;
+    });
+  const settlements: string[] = [];
+  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
+    isCurrent: () => true,
+    accepted: () => settlements.push('accepted'),
+    declined: (reason) => settlements.push(reason),
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const interruption = provider.deferNextInterrupt();
+  const stopping = h.lifecycle.interrupt('owner');
+  assert.deepEqual(settlements, []);
+  consume(true);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  interruption.resolve();
+  await stopping;
+  turn.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await h.lifecycle.send('owner', 'resume work');
+  assert.deepEqual(settlements, ['accepted']);
+  assert.deepEqual(provider.prompts, ['working', 'resume work']);
+  await h.lifecycle.closeAll();
+});
+
+test('failed compaction recovery settles the receipt of a queued report', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'owner');
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const live = requireLive(h, 'owner');
+  live.compacting = true;
+  const settlements: string[] = [];
+  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
+    isCurrent: () => true,
+    accepted: () => settlements.push('accepted'),
+    declined: (reason) => settlements.push(reason),
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(live.pendingSends.length, 1);
+  await h.lifecycle.close('owner', 'preserve-pending');
+  h.runtime.loadQueue.set('owner', [new Error('Provider recovery failed')]);
+  await h.lifecycle.settleAfterCompaction('owner', live);
+  assert.equal(live.pendingSends.length, 0);
+  assert.deepEqual(settlements, ['failed']);
+  assert.deepEqual(provider.prompts, ['first']);
+});

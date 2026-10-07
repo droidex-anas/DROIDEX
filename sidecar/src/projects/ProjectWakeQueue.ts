@@ -24,10 +24,10 @@ export class ProjectWakeQueue {
     string,
     {
       work: Promise<void>;
-      steering: boolean;
       resuming: boolean;
     }
   >();
+  private readonly reports = new Set<Promise<void>>();
   private readonly active = new Map<string, { project: Project; settled: Promise<void> }>();
   /** Recipients a delivery found busy, skipped until they settle. */
   private readonly busyTargets = new Set<string>();
@@ -76,12 +76,18 @@ export class ProjectWakeQueue {
   }
 
   private hasWaitingResume(): boolean {
+    if (this.running() >= MAX_ACTIVE) return false;
     return [...this.projects].some(
       (project) =>
         !project.paused &&
+        !project.delivery &&
+        !this.pumping.has(project.id) &&
         project.pending.some(
           (message) =>
             !this.sessions.isLive(message.to) &&
+            !this.busyTargets.has(message.to) &&
+            !this.capacityWaiting.has(message.to) &&
+            !this.active.has(message.to) &&
             !project.threads.find((thread) => thread.appSessionId === message.to)?.queuedSpawn,
         ),
     );
@@ -172,10 +178,11 @@ export class ProjectWakeQueue {
   }
 
   async flush(): Promise<void> {
-    while (this.pumping.size || this.active.size || this.starting) {
+    while (this.pumping.size || this.reports.size || this.active.size || this.starting) {
       const turns = [...this.active.values()].map((turn) => turn.settled);
       await Promise.allSettled([
         ...[...this.pumping.values()].map((admission) => admission.work),
+        ...this.reports,
         ...turns,
         ...(this.starting ? [this.starting.work] : []),
       ]);
@@ -210,11 +217,15 @@ export class ProjectWakeQueue {
             this.fail(project, error);
           })
           .finally(() => {
-            this.pumping.delete(project.id);
+            if (steering) this.reports.delete(work);
+            else this.pumping.delete(project.id);
             this.kick(project);
             this.schedule();
           });
-        this.pumping.set(project.id, { work, steering, resuming });
+        // Consumption may wait for the recipient's own thread_stop call.
+        // Only admissions occupy pumping, which Stop waits for.
+        if (steering) this.reports.add(work);
+        else this.pumping.set(project.id, { work, resuming });
       }
       this.startNext();
     });
@@ -258,8 +269,7 @@ export class ProjectWakeQueue {
   }
 
   private running(): number {
-    let count = 0;
-    for (const admission of this.pumping.values()) if (!admission.steering) count += 1;
+    let count = this.pumping.size;
     // A turn stopped on a question for its owner, or on a permission only the
     // user can give, runs nothing until answered, so it frees its slot. Once
     // answered it carries on, and the count can briefly pass the limit.
@@ -319,6 +329,8 @@ export class ProjectWakeQueue {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+    // A claim acknowledged and cleared elsewhere cannot settle again.
+    if (project.delivery !== claim) return;
     // Only a delivery that may have reached the runtime is uncertain; one
     // withdrawn before dispatch gives its messages back like a busy recipient.
     if (receipt.status === 'unavailable') {
@@ -327,7 +339,7 @@ export class ProjectWakeQueue {
       return;
     }
     // Only this claim is settled. Messages that arrived during admission remain queued.
-    if (project.delivery === claim) delete project.delivery;
+    delete project.delivery;
     if (receipt.status !== 'accepted') {
       project.pending.unshift(...messages.filter((message) => isAsked(project, message)));
       // A recipient that never woke does not count as a lap.

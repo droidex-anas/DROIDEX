@@ -106,6 +106,10 @@ interface SpawnUnderWay {
   stopped: boolean;
 }
 
+interface ThreadLaunchInput extends ThreadInput {
+  workspace?: ThreadCheckout;
+}
+
 /** What a spawn reports back to the chat that made it. */
 interface StartedThread {
   appSessionId: string;
@@ -167,7 +171,7 @@ export class ProjectService {
      fails leaves no project behind. */
   private readonly adopting = new Map<string, Project>();
   private readonly launches = new Set<Promise<string>>();
-  /** Checkout claims last until a spawn is queued or running. */
+  /** Starting checkouts transfer their reservation to the queued ledger or live session. */
   private readonly checkoutClaims = new Set<CheckoutClaim>();
   private readonly spawnsUnderWay = new Set<SpawnUnderWay>();
   private readonly wakes: ProjectWakeQueue;
@@ -203,14 +207,20 @@ export class ProjectService {
         if (load.live >= load.limit && !(await this.sessions.makeRoom(thread.appSessionId)))
           return false;
         if (!isCurrent() || thread.queuedSpawn !== queued) return false;
-        await this.launch(
-          project,
-          queued.input,
-          { source: thread.ownerAppSessionId, stopped: false },
-          undefined,
-          thread,
-        );
-        return !thread.queuedSpawn;
+        const claim: CheckoutClaim = { project, cwd: queued.input.cwd };
+        this.checkoutClaims.add(claim);
+        try {
+          await this.launch(
+            project,
+            queued.input,
+            { source: thread.ownerAppSessionId, stopped: false },
+            undefined,
+            thread,
+          );
+          return !thread.queuedSpawn;
+        } finally {
+          this.checkoutClaims.delete(claim);
+        }
       },
     );
     this.turns = new ProjectTurns({
@@ -432,13 +442,12 @@ export class ProjectService {
       project.launching -= 1;
     }
     const cwd = workspace?.cwd ?? owner.cwd;
-    const prompt = threadPrompt(input.prompt, workspace);
     const title = uniqueTitle(project, input.title);
     let appSessionId: string;
     try {
       appSessionId = await this.launch(
         project,
-        { ...input, title, prompt, ...(cwd ? { cwd } : {}) },
+        { ...input, title, ...(cwd ? { cwd } : {}), ...(workspace ? { workspace } : {}) },
         spawn,
       );
     } catch (error) {
@@ -672,6 +681,7 @@ export class ProjectService {
         this.sending.set(project, (this.sending.get(project) ?? 1) - 1);
       }
       if (steered) {
+        this.restartRecovery.delete(target);
         if (reopened) await this.save();
         return delivery === 'now' ? 'sent-now' : 'steered';
       }
@@ -1054,6 +1064,7 @@ export class ProjectService {
   /** True when this update ends a turn the session was last seen running. */
   private noteStreaming(session: SessionSummary): boolean {
     if (session.streaming) {
+      this.restartRecovery.delete(session.appSessionId);
       this.streamingSessions.add(session.appSessionId);
       return false;
     }
@@ -1096,21 +1107,21 @@ export class ProjectService {
   private refillRestartRecovery(project: Project): void {
     for (const thread of project.threads) {
       if (!this.restartRecovery.has(thread.appSessionId) || !thread.ownerAppSessionId) continue;
-      // Interrupted projects can exceed the inbox bound; the rest queue as claims settle.
-      if (inboxFull(project)) return;
-      const text =
-        'DROIDEX restarted while you were working. Continue from where you stopped; your worktree and history are intact.';
       const alreadyQueued = [...project.pending, ...(project.delivery?.messages ?? [])].some(
         (message) => message.to === thread.appSessionId && message.kind === 'message',
       );
-      if (!alreadyQueued)
-        this.enqueue(project, {
-          from: thread.ownerAppSessionId,
-          to: thread.appSessionId,
-          kind: 'message',
-          text,
-        });
-      this.restartRecovery.delete(thread.appSessionId);
+      if (alreadyQueued) {
+        this.restartRecovery.delete(thread.appSessionId);
+        continue;
+      }
+      // Check every thread even when full: an existing instruction replaces recovery.
+      if (inboxFull(project)) continue;
+      this.enqueue(project, {
+        from: thread.ownerAppSessionId,
+        to: thread.appSessionId,
+        kind: 'message',
+        text: 'DROIDEX restarted while you were working. Continue from where you stopped; your worktree and history are intact.',
+      });
     }
   }
 
@@ -1186,7 +1197,7 @@ export class ProjectService {
   /** Starts a lead, or with `spawn` a thread of the chat that asked for it. */
   private launch(
     project: Project,
-    input: ThreadInput,
+    input: ThreadLaunchInput,
     spawn?: SpawnUnderWay,
     clientRef?: string,
     queuedThread?: ProjectThread,
@@ -1202,7 +1213,7 @@ export class ProjectService {
 
   private async launchOnce(
     project: Project,
-    input: ThreadInput,
+    requested: ThreadLaunchInput,
     spawn?: SpawnUnderWay,
     clientRef?: string,
     queuedThread?: ProjectThread,
@@ -1211,6 +1222,7 @@ export class ProjectService {
     this.checkAdmission(project);
     const ownerAppSessionId = spawn?.source;
     const queuedSpawn = queuedThread?.queuedSpawn;
+    const { workspace = queuedSpawn?.workspace, ...input } = requested;
     // The guard is taken here, after the checkout was cut, so a Stop on the
     // spawning chat meanwhile is known only from its spawn's own record.
     const guard = this.wakes.guard(project);
@@ -1232,7 +1244,7 @@ export class ProjectService {
           title: input.title,
           reply: '',
           waiting: false,
-          queuedSpawn: { input, order: ++this.spawnOrder },
+          queuedSpawn: { input, order: ++this.spawnOrder, ...(workspace ? { workspace } : {}) },
         };
         if (!queuedThread) {
           this.commitAdoption(ownerAppSessionId, project);
@@ -1254,7 +1266,7 @@ export class ProjectService {
         return await queueSpawn();
       const brief = ownerAppSessionId ? THREAD_BRIEF : LEAD_BRIEF;
       const session = await this.sessions.create(
-        { ...input, prompt: `${brief}\n\nTask:\n${input.prompt}` },
+        { ...input, prompt: `${brief}\n\nTask:\n${threadPrompt(input.prompt, workspace)}` },
         async (created) => {
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
           if (ownerAppSessionId)
@@ -1357,6 +1369,7 @@ export class ProjectService {
         `The project inbox is full: ${String(LEDGER_LIMITS.inbox)} messages are waiting for their threads, and nothing more can queue until they are delivered.`,
       );
     project.pending.push({ id: randomUUID(), ...message });
+    if (message.kind === 'message') this.restartRecovery.delete(message.to);
   }
 
   private blankProject(title: string, id: string = randomUUID()): Project {

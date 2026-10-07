@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { fitLedger, LEDGER_LIMITS, ProjectStore, threadInputSchema } from './store.js';
 import type { Project } from './types.js';
+import { drain, harness, input, summary } from '../testing/projectServiceHarness.js';
 
 /** The ledger path in a scratch directory removed after the test. */
 async function ledgerPath(t: TestContext): Promise<string> {
@@ -196,4 +197,32 @@ test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do lin
     JSON.stringify([{ ...saved, todos: [{ id: 'todo', text: 'Review', after: 'gone' }] }]),
   );
   assert.deepEqual((await store.load())[0]?.todos, [{ id: 'todo', text: 'Review' }]);
+});
+
+test('a maximal queued task with checkout instructions survives a ledger reload intact', async (t) => {
+  const path = await ledgerPath(t);
+  const h = await harness(t, [], false);
+  h.sessions.set('ordinary', summary('ordinary'));
+  const original = await h.projects.spawn('ordinary', { ...input, title: 'Original' });
+  await h.finish(original.appSessionId);
+  h.state.capacity = 'busy';
+  const prompt = 'x'.repeat(LEDGER_LIMITS.text);
+  const queued = await h.projects.spawn('ordinary', {
+    ...input,
+    title: 'Review',
+    prompt,
+    workspaceOf: original.appSessionId,
+  });
+  await new ProjectStore(path).save(h.state.saved);
+  const loaded = await new ProjectStore(path).load();
+  const recovered = await harness(t, loaded, false);
+  recovered.sessions.set('ordinary', summary('ordinary'));
+  recovered.sessions.set(original.appSessionId, summary(original.appSessionId));
+  recovered.projects.historyReady();
+  await drain();
+  const launched = recovered.launched.find((selection) => selection.title === 'Review');
+  assert.ok(launched);
+  assert.ok(launched.prompt.includes(prompt));
+  assert.match(launched.prompt, /Work in \/workspace, where that work was done\./);
+  assert.equal(recovered.sessions.get(queued.appSessionId)?.cwd, '/workspace');
 });

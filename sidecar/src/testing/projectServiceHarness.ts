@@ -193,7 +193,8 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     },
     interrupt: async (id) => {
       const session = sessions.get(id);
-      if (session) session.phase = 'paused';
+      if (!session) return;
+      session.phase = 'paused';
       await streaming(id, false);
     },
   };

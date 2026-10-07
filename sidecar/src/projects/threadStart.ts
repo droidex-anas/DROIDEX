@@ -161,11 +161,12 @@ export async function threadCheckout(
   // Isolation is not left to a lead remembering to ask: a checkout with work
   // already running in it gets the next thread its own, because two threads
   // editing one tree see each other's half-finished files. A thread still
-  // starting is not streaming yet, so its claim is what says it works there.
+  // starting or queued is not streaming yet, so its reservation says it works there.
   const shared =
     [...claims].some((other) => other.project === project && other.cwd === cwd) ||
     project.threads.some((thread) => {
       if (!thread.ownerAppSessionId) return false;
+      if (thread.queuedSpawn?.input.cwd === cwd) return true;
       const open = session(thread.appSessionId);
       return open?.cwd === cwd && (open.streaming === true || thread.waiting);
     });

@@ -1,6 +1,7 @@
 import type { Autonomy, ContextWindowTokens, ReasoningEffort } from '../protocol.js';
 import type { ProviderKind } from '../providers/providerKind.js';
 import type { ThreadState } from './projectTurns.js';
+import type { ThreadCheckout } from './threadStart.js';
 
 export interface RuntimeLoad {
   live: number;
@@ -99,8 +100,8 @@ export interface ProjectThread {
   /** Its newest report, kept here while the project's inbox is full. */
   owedReport?: string;
   waiting: boolean;
-  /** The complete launch request while this thread waits for a runtime slot. */
-  queuedSpawn?: { input: ThreadInput; order: number };
+  /** Original task and selected checkout while this thread waits for a runtime slot. */
+  queuedSpawn?: { input: ThreadInput; order: number; workspace?: ThreadCheckout };
 }
 
 /** How a lead's message reaches a thread: into its running turn at the

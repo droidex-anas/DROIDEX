@@ -494,3 +494,84 @@ test('timed to-dos survive restart and a full held inbox, then steer into a busy
   await restored.projects.doneTodo(main, todo.id);
   assert.deepEqual(restored.state.saved[0]?.todos, []);
 });
+
+test('thread_stop returns while a report steered into its caller awaits consumption', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  await h.streaming(main, true);
+  const consumed = deferred<AutomationDeliveryReceipt>();
+  h.port.deliverReport = () => consumed.promise;
+  await h.finish(child.appSessionId);
+  await drain();
+  assert.equal(h.state.saved[0]?.delivery?.state, 'sending');
+  let stopped = false;
+  const stopping = h.projects.stop(main, child.appSessionId).then(() => {
+    stopped = true;
+  });
+  await drain();
+  const returnedBeforeConsumption = stopped;
+  consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
+  await stopping;
+  await h.projects.flush();
+  assert.equal(returnedBeforeConsumption, true);
+  assert.equal(h.state.saved[0]?.delivery, undefined);
+});
+
+test('a full restart inbox consumes its existing instruction without a second continuation', async (t) => {
+  const saved = project();
+  saved.pending = Array.from({ length: LEDGER_LIMITS.inbox }, (_, index) =>
+    index === 0
+      ? { id: 'instruction', from: 'main', to: 'worker', kind: 'message', text: 'Finish tests' }
+      : message(`report-${String(index)}`),
+  );
+  const h = await harness(t, [saved], false);
+  h.sessions.set('main', summary('main'));
+  h.sessions.set('worker', interruptedSummary('worker'));
+  await h.streaming('main', true);
+  h.projects.historyReady();
+  await drain();
+  assert.equal(h.sent.filter(({ id }) => id === 'worker').length, 1);
+  await h.finish('worker');
+  await drain();
+  const instructions = h.sent.filter(({ id }) => id === 'worker');
+  assert.equal(instructions.length, 1);
+  assert.match(instructions[0].prompt, /Finish tests/);
+  assert.equal(
+    h.state.saved[0]?.pending.some((note) => note.to === 'worker'),
+    false,
+  );
+});
+
+test('a resume behind its own report claim does not block another project from starting', async (t) => {
+  const reports = project('reports');
+  reports.threads[1].appSessionId = 'dormant';
+  reports.pending[0].from = 'dormant';
+  const consumed = deferred<AutomationDeliveryReceipt>();
+  const starts: string[] = [];
+  const queue = wakeQueue(t, async () => ({ status: 'busy', retryOn: 'target' }), {
+    sessions: {
+      get: (id) => (id === 'main' ? sessionSummary({ streaming: true }) : undefined),
+      isLive: (id) => id !== 'dormant',
+      deliverReport: () => consumed.promise,
+    },
+    launch: async (_project, thread) => {
+      starts.push(thread.appSessionId);
+      delete thread.queuedSpawn;
+      return true;
+    },
+  });
+  queue.kick(reports);
+  await drain();
+  assert.ok(reports.delivery);
+  reports.pending.push({ id: 'resume', from: 'main', to: 'dormant', kind: 'message', text: 'Go' });
+  const waiting = project('waiting');
+  waiting.pending = [];
+  waiting.threads[1].queuedSpawn = { input, order: 1 };
+  queue.capacityChanged([reports, waiting]);
+  await drain();
+  const startedBeforeConsumption = [...starts];
+  consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
+  await drain();
+  assert.deepEqual(startedBeforeConsumption, ['worker']);
+});

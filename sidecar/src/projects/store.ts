@@ -150,7 +150,24 @@ const project = z
           owedReport: text.optional(),
           waiting: z.boolean(),
           queuedSpawn: z
-            .object({ input: threadInputSchema, order: z.number().int().min(0) })
+            .object({
+              input: threadInputSchema,
+              order: z.number().int().min(0),
+              workspace: z
+                .union([
+                  z
+                    .object({ cwd: threadInputSchema.shape.cwd.unwrap(), joined: z.literal(true) })
+                    .strict(),
+                  z
+                    .object({
+                      cwd: threadInputSchema.shape.cwd.unwrap(),
+                      branch: z.string(),
+                      base: z.string(),
+                    })
+                    .strict(),
+                ])
+                .optional(),
+            })
             .strict()
             .optional(),
         })
@@ -230,10 +247,10 @@ export class ProjectStore implements ProjectPersistence {
     return projects;
   }
 
-  save(projects: Project[]): Promise<void> {
+  async save(projects: Project[]): Promise<void> {
     const json = JSON.stringify(projects);
-    if (Buffer.byteLength(json) > MAX_BYTES)
-      return Promise.reject(new Error('Project ledger exceeds 8 MiB.'));
+    if (Buffer.byteLength(json) > MAX_BYTES) throw new Error('Project ledger exceeds 8 MiB.');
+    validateLedger(ledger.parse(projects).map((entry) => ({ ...entry, plan: entry.plan ?? [] })));
     // The failing caller sees the rejection; the next write can repair the ledger.
     const next = this.writing.catch(() => undefined).then(() => this.write(json));
     this.writing = next;

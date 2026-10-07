@@ -52,8 +52,8 @@ name that fits several others is refused with their ids rather than guessed. A
 harness whose catalog DROIDEX has not read yet takes the name as given.
 
 DROIDEX isolates threads on its own. When another thread of the project is
-working in the same checkout, still starting there, or waiting on a question it
-asked there, the next one gets its own worktree at
+working in the same checkout, starting or queued there, or waiting on a question
+it asked there, the next one gets its own worktree at
 `<repo>/.worktrees/thread-<name>/<repo>` on a `thread/<name>` branch. When
 nobody asked for that worktree and the checkout cannot carry one, such as a
 folder that is not a Git repository with a commit, the thread shares the
@@ -308,10 +308,15 @@ retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
 Automatic runtime opens and resumes share a limit of 12, including opens still
-in flight. Queued spawns keep their task and position in the ledger; they start
-when capacity opens, after pending resumes. Reports and due reminders can steer
-into a busy owner's turn without starting a competing turn. Interrupted threads
-receive a restart continuation only when they have no instruction already queued.
+in flight. Queued spawns keep their original task, checkout reservation and
+position in the ledger; checkout instructions are added only when launching.
+They start when capacity opens, after resumes that can be admitted. A resume
+blocked by its own project's delivery does not hold up other projects' spawns.
+Reports and due reminders can steer into a busy owner's turn without starting a
+competing turn. Stop waits for admissions, independently of report consumption;
+the provider's acknowledgement settles an in-flight report even if Stop races
+it. Interrupted threads receive one restart continuation only when they have no
+instruction already queued, including when the inbox is full.
 
 A delivery the runtime could not take holds the project with its claim retained
 as uncertain. One withdrawn before any turn was dispatched, by a Stop, a hold or
