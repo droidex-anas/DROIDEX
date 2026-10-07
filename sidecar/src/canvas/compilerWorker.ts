@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
+import { boundDiagnostics } from './canvasDiagnostics.js';
 import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
 import {
   CompileCancelledError,
@@ -73,7 +74,7 @@ export async function compileDesign(
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
-    diagnostics: [...selectionDiagnostics, ...bundle.warnings],
+    diagnostics: boundDiagnostics([...selectionDiagnostics, ...bundle.warnings]),
     elements: instrumented.elements,
   };
 }
@@ -250,7 +251,7 @@ function outcomeOf(
   | { status: 'unavailable'; reason: 'lost-compiler'; message: string } {
   if (error instanceof CompileCancelledError) return { status: 'cancelled' };
   if (error instanceof CompileFailedError)
-    return { status: 'failed', diagnostics: error.diagnostics };
+    return { status: 'failed', diagnostics: boundDiagnostics(error.diagnostics) };
   // A revision pinning a kit version that is not there is the revision's
   // problem; a storage failure is the machine's.
   if (error instanceof CanvasCommandError) {

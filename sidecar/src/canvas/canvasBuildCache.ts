@@ -11,16 +11,14 @@ import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
 import type { CanvasBuildOutcome, PreviewArtifact, SourceElement } from './protocol.js';
 import { CANVAS_LIMITS, canvasIdentifierSchema, sourceElementSchema } from './schema.js';
+import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
 
 const BUILD_OUTCOME_VERSION = 2;
-
-/** How many diagnostics one failed build keeps. The rest add no new advice. */
-export const MAX_BUILD_DIAGNOSTICS = 64;
 
 const diagnosticSchema = z
   .object({
     code: z.string().min(1).max(64),
-    message: z.string().min(1).max(2048),
+    message: z.string().min(1).max(MAX_DIAGNOSTIC_MESSAGE_LENGTH),
     // A design path, or one under `@droidex/design-system/`.
     file: z
       .string()

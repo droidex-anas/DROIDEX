@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
+import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import {
   board,
   COMPILE_FAILED,
@@ -52,6 +53,10 @@ function reportedStates(canvas: Board, designId: string): CanvasBuildState[] {
   );
 }
 
+function readyState(revisionId: string, artifactId: string, generation: number): CanvasBuildState {
+  return { status: 'ready', revisionId, artifactId, elements: [], diagnostics: [], generation };
+}
+
 async function readyElementMap(t: TestContext) {
   const canvas = await board(t);
   const [designId] = await canvas.create('Hey');
@@ -85,14 +90,7 @@ test('an older build that finishes under a newer one publishes nothing', async (
   newer.ready('artifact-newer');
   await canvas.reported(designId, 'ready');
 
-  const ready = {
-    status: 'ready',
-    revisionId: second.revisionId,
-    artifactId: 'artifact-newer',
-    elements: [],
-    diagnostics: [],
-    generation: 2,
-  };
+  const ready = readyState(second.revisionId, 'artifact-newer', 2);
   assert.deepEqual(canvas.frame(designId).build, ready);
   // One settlement for this design, and never the revision that was replaced.
   assert.deepEqual(
@@ -222,14 +220,7 @@ test('an overdue build takes down only its own slot', async (t) => {
   await canvas.reported(two, 'ready');
 
   assert.deepEqual(diagnosticCodes(canvas, one), ['build_timeout']);
-  assert.deepEqual(canvas.frame(two).build, {
-    status: 'ready',
-    revisionId: healthy.revisionId,
-    artifactId: 'artifact-two',
-    elements: [],
-    diagnostics: [],
-    generation: 1,
-  });
+  assert.deepEqual(canvas.frame(two).build, readyState(healthy.revisionId, 'artifact-two', 1));
   assert.equal(second.signal.aborted, false, 'the healthy build was never cancelled');
   assert.equal(canvas.fleet.terminated, 1, "only the overdue slot's process was ended");
   assert.equal(canvas.deadlines.live(), 0, 'both slots were released once');
@@ -294,18 +285,9 @@ test('a lost artifact for the current revision is rebuilt, not just reported', a
   });
   (await canvas.fleet.compile(2)).ready('artifact-two');
   await canvas.reported(designId, 'ready');
-  assert.deepEqual(canvas.frame(designId).build, {
-    status: 'ready',
-    revisionId: head.revisionId,
-    // This compiler is under the test's hand and was told to answer with a second
-    // ID; the real one is content-addressed and would repeat the first for the
-    // same source. Either way the attempt is what moved, and that is what a
-    // mounted preview reads.
-    artifactId: 'artifact-two',
-    elements: [],
-    diagnostics: [],
-    generation: 2,
-  });
+  // The fake compiler chooses a second artifact ID; the real compiler would
+  // repeat the first. The new generation is what makes the preview read again.
+  assert.deepEqual(canvas.frame(designId).build, readyState(head.revisionId, 'artifact-two', 2));
   // The document the frame now names is on disk, which is what the read that
   // queued this rebuild could not find.
   const rebuilt = await canvas.builds.readArtifact(canvas.canvasId, designId, head.revisionId);
@@ -500,6 +482,38 @@ test('ready frames keep a bounded compiler diagnostic list', async (t) => {
   assert.ok(build.status === 'ready');
   assert.deepEqual(build.elements, []);
   assert.deepEqual(build.diagnostics, diagnostics.slice(0, 64));
+});
+
+test('an oversized compiler diagnostic publishes a valid failed event and survives reopening', async (t) => {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Broken');
+  assert.ok(designId);
+  await canvas.write(designId, null, 'export default () => null');
+  (await canvas.fleet.compile(1)).failed('missing_module', {
+    message: 'x'.repeat(2049),
+    file: 'main.tsx',
+    line: 3,
+    column: 7,
+  });
+  await canvas.reported(designId, 'failed');
+
+  const change = canvas.changes.at(-1);
+  assert.ok(change);
+  assert.equal(isCanvasEvent(JSON.parse(JSON.stringify({ type: 'canvas.change', change }))), true);
+  const build = canvas.frame(designId).build;
+  assert.ok(build.status === 'failed');
+  const [diagnostic] = build.diagnostics;
+  assert.ok(diagnostic);
+  assert.deepEqual(diagnostic, {
+    code: 'missing_module',
+    message: `${'x'.repeat(2047)}…`,
+    file: 'main.tsx',
+    line: 3,
+    column: 7,
+  });
+
+  const reopened = await board(t, { store: canvas.store });
+  assert.deepEqual(reopened.frame(designId).build, { ...build, generation: 0 });
 });
 
 test('cancelling a canvas releases its slots and reports its frames', async (t) => {
@@ -833,14 +847,10 @@ test('a frame seeded from a saved revision is built like a write', async (t) => 
   assert.notEqual(copy.input.revisionId, receipt.revisionId, 'the copy owns its own revision');
   copy.ready('artifact-copy');
   await canvas.reported(seeded, 'ready');
-  assert.deepEqual(canvas.frame(seeded).build, {
-    status: 'ready',
-    revisionId: copy.input.revisionId,
-    artifactId: 'artifact-copy',
-    elements: [],
-    diagnostics: [],
-    generation: 1,
-  });
+  assert.deepEqual(
+    canvas.frame(seeded).build,
+    readyState(copy.input.revisionId, 'artifact-copy', 1),
+  );
 });
 
 test('a rebuild sweep from an old projection leaves the current state alone', async (t) => {
@@ -866,14 +876,10 @@ test('a rebuild sweep from an old projection leaves the current state alone', as
   await drained();
 
   canvas.builds.requestRebuilds(stale);
-  assert.deepEqual(canvas.frame(three).build, {
-    status: 'ready',
-    revisionId: current.revisionId,
-    artifactId: 'artifact-current',
-    elements: [],
-    diagnostics: [],
-    generation: 2,
-  });
+  assert.deepEqual(
+    canvas.frame(three).build,
+    readyState(current.revisionId, 'artifact-current', 2),
+  );
   assert.equal(canvas.fleet.held.length, 4, 'nothing was rebuilt for a revision that is gone');
 });
 
@@ -947,14 +953,7 @@ test('one design ID on two canvases keeps two build states', async (t) => {
   await canvas.settled('cv_02/dsg_hey:failed');
 
   // Each canvas kept its own state and its own outcome.
-  assert.deepEqual(builds.stateOf('cv_01', 'dsg_hey'), {
-    status: 'ready',
-    revisionId: 'rev_01',
-    artifactId: 'artifact-one',
-    elements: [],
-    diagnostics: [],
-    generation: 1,
-  });
+  assert.deepEqual(builds.stateOf('cv_01', 'dsg_hey'), readyState('rev_01', 'artifact-one', 1));
   assert.equal(builds.stateOf('cv_02', 'dsg_hey').status, 'failed');
   assert.deepEqual([...(await files.listBuildOutputs('cv_01'))].sort(), [
     'artifact-one.html',

@@ -56,7 +56,7 @@ export interface HeldCompile {
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
   ready(artifactId: string, elements?: SourceElement[], diagnostics?: CanvasDiagnostic[]): void;
-  failed(code: string): void;
+  failed(code: string, details?: Omit<CanvasDiagnostic, 'code'>): void;
   unavailable(): void;
   /** The compiler refused the runtime the app staged, which no restart fixes. */
   damagedRuntime(): void;
@@ -150,8 +150,8 @@ class FakeCompiler implements DesignCompiler {
             elements,
           });
         },
-        failed: (code) => {
-          reject(new CompileFailedError([{ code, message: COMPILE_FAILED }]));
+        failed: (code, details = { message: COMPILE_FAILED }) => {
+          reject(new CompileFailedError([{ code, ...details }]));
         },
         unavailable: () => {
           reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
