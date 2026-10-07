@@ -1217,7 +1217,7 @@ Settled by 06b (`canvas/06b-chart-runtime`):
   Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
 - [ ] `canvas/07b-design-system-picker`: Add the composer picker popover (search, light/dark preview toggle, presets then user kits with two swatches each, “Manage design systems” footer) and removable system/reference chips with persisted future-request selection; wire the image drop/picker path to 07d's `importCanvasImage`.
   Done: A queued request retains its pinned kit version after the user changes selection; the picker matches spec §10 and V3 in light and dark.
-- [ ] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
+- [x] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
   Done: Apply uses normal revision/CAS, preserves behavior and reports incompatible mappings without mutating the global kit.
 - [ ] `canvas/07d-image-references`: Sidecar and Electron owner for validated image import into owned content-addressed storage, offline `canvas-asset:` serving in the preview host, and kit fonts served once by the host.
   Done: Invalid image/path inputs fail; owned images/fonts render offline without exposing private paths.
@@ -1494,9 +1494,9 @@ Then write to one returned variant and assert the source and other variant remai
 
 - [x] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
   Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
-- [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
+- [x] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
   Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
-- [ ] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
+- [x] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
   Done: Repeated close is harmless and reused provider handles reject old writes/events; committed source survives failures.
 
 Settled by 10a (`thread/canvas-10a-source-export`):
