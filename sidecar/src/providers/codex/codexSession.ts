@@ -89,9 +89,10 @@ export class CodexSession implements ProviderSession {
   private readonly delegatedListeners = new Set<
     (running: boolean, end?: DelegatedTurnEnd) => void
   >();
-  // Steers the running turn holds, by the client id each was sent with, until
-  // Codex reports the message delivered or the turn ends without it.
+  // Steers waiting to send or held by the running turn, until Codex reports
+  // delivery or the turn ends without them.
   private readonly steers = new Map<string, (delivered: boolean) => void>();
+  private steerTail: Promise<void> = Promise.resolve();
   // A thread's MCP servers start before its first turn, so a notice about one
   // has no transcript to land in yet and waits for the turn that follows.
   private readonly heldNotices: NormalizedEvent[] = [];
@@ -261,6 +262,7 @@ export class CodexSession implements ProviderSession {
       // these; only the turn that set them takes them away.
       if (this.turn === turn) {
         this.prompts.cancel();
+        this.dropSteers();
         this.turn = undefined;
         this.turnAutonomy = undefined;
         this.turnId = undefined;
@@ -360,23 +362,40 @@ export class CodexSession implements ProviderSession {
     const threadId = this.threadId;
     // A turn started for a spoken request takes a typed prompt the same way.
     const turnId = this.turn ? this.turnId : this.delegatedTurnId;
-    if (!threadId || !turnId) return Promise.resolve(false);
+    if (
+      !threadId ||
+      !turnId ||
+      this.hasClosed ||
+      this.pendingInterrupt ||
+      turnId === this.interruptedTurnId
+    )
+      return Promise.resolve(false);
     const clientUserMessageId = randomUUID();
     const delivered = new Promise<boolean>((resolve) => {
       this.steers.set(clientUserMessageId, resolve);
     });
-    // Not awaited: the echo can arrive before the reply, and the caller must
-    // hear of delivery the moment it happens.
-    void this.client
-      .request('turn/steer', {
-        threadId,
-        expectedTurnId: turnId,
-        clientUserMessageId,
-        input: turnInput(text, mentions),
-      })
-      .catch(() => {
+    this.steerTail = this.steerTail.then(async () => {
+      if (!this.steers.has(clientUserMessageId)) return;
+      // A Stop can arrive while this steer waits. A sent steer can still be
+      // delivered before the turn ends, but an unsent one stays withdrawn.
+      if (turnId === this.interruptedTurnId) {
         this.settleSteer(clientUserMessageId, false);
-      });
+        return;
+      }
+      try {
+        // Delivery can beat the reply. Report it at once, but wait for both
+        // before sending the next steer, even if the turn ends meanwhile.
+        await this.client.request('turn/steer', {
+          threadId,
+          expectedTurnId: turnId,
+          clientUserMessageId,
+          input: turnInput(text, mentions),
+        });
+        await delivered;
+      } catch {
+        this.settleSteer(clientUserMessageId, false);
+      }
+    });
     return delivered;
   }
 
@@ -415,6 +434,7 @@ export class CodexSession implements ProviderSession {
 
   close(): Promise<void> {
     this.resolveClosed();
+    this.dropSteers();
     this.prompts.cancel();
     this.catalog?.close();
     return (this.closePromise ??= this.client.close());

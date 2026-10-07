@@ -110,6 +110,68 @@ test('a server that failed before the first turn is still reported in it', async
   await events.return(undefined);
 });
 
+test('Codex steers wait for delivery and RPC settlement across turn completion', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  let finishFirstRequest: () => void = () => undefined;
+  const firstRequest = new Promise<void>((resolve) => {
+    finishFirstRequest = resolve;
+  });
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method !== 'turn/steer') return undefined;
+    steers.push(params);
+    return steers.length === 1 ? firstRequest : undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
+
+  const first = session.steer('first');
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'the second request must wait for the first steer');
+  assert.equal(steers[0].expectedTurnId, 'turn-1');
+
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'an early delivery must still wait for the RPC reply');
+
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'completed' },
+  });
+  assert.equal(await second, false, 'a queued steer must not follow a replacement turn');
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-2' } });
+  const third = session.steer('third');
+  const fourth = session.steer('fourth');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'a new turn must still wait for the previous RPC reply');
+
+  finishFirstRequest();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2, 'an early RPC reply must still wait for delivery');
+  assert.equal(steers[1].expectedTurnId, 'turn-2');
+  assert.deepEqual(steers[1].input, [{ type: 'text', text: 'third' }]);
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await third, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 3);
+  assert.equal(steers[2].expectedTurnId, 'turn-2');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[2].clientUserMessageId },
+  });
+  assert.equal(await fourth, true);
+});
+
 test('Codex approvals retain file diffs and questions retain answer arrays', async () => {
   const mapper = new CodexEventMapper('app');
   const changes = [{ path: '/workspace/a.ts', kind: { type: 'update' }, diff: '-old\n+new' }];
