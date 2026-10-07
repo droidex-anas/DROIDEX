@@ -64,6 +64,7 @@ function createBrowserDevTools({ appName, showPrompt, isHostAppUrl, runWithWebCo
       defaultId: 1,
       cancelId: 1,
       title: 'Developer tools',
+      origin,
       message: `Let agents run JavaScript on ${origin}?`,
       detail: `A script can read and change anything this site's pages can, including what ${appName} otherwise keeps from agents, such as passwords in fields. It applies to this site only, until you quit ${appName}.`,
     });

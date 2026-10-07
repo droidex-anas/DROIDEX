@@ -54,6 +54,7 @@ class BrowserCredentialVault {
           defaultId: 1,
           cancelId: 1,
           title: `Save login in ${this.options.appName}?`,
+          origin,
           message: `Save this login for ${origin}?`,
           detail:
             'The login is encrypted with the operating system credential store. The agent can request a consent-gated fill but never receives the username or password.',
@@ -82,6 +83,7 @@ class BrowserCredentialVault {
         defaultId: 1,
         cancelId: 1,
         title: 'Use saved login?',
+        origin,
         message: `Allow DROIDEX to fill your saved login for ${origin}?`,
         detail:
           'The login is injected directly into this page. Its username and password are never returned to the agent.',

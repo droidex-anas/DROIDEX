@@ -204,6 +204,14 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'opt out',
   ]),
 
+  // ── Browser ──────────────────────────────────────────────────────────────
+  e('Browser', 'Agent browser access', ['native browser', 'web browser', 'browser pane', 'agents']),
+  e('Browser', 'Website opening approval', ['navigation', 'sites', 'approval', 'autonomy']),
+  e('Browser', 'Agent login fill', ['saved logins', 'passwords', 'credentials', 'sign in']),
+  e('Browser', 'Show DROIDEX agent cursor', ['pointer', 'cursor']),
+  e('Browser', 'Ask where to save downloads', ['downloads', 'save dialog']),
+  e('Browser', 'Agent diagnostics', ['developer tools', 'devtools', 'console', 'network']),
+
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   ...SHORTCUT_DEFINITIONS.map((definition) =>
     e('Keyboard shortcuts', definition.label, SHORTCUT_KEYWORDS),
@@ -221,7 +229,6 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Usage & billing', 'Usage & billing', ['billing', 'usage', 'quota', 'invoice', 'plan', 'cost']),
   e('Snapshots', 'Snapshots', ['snapshot', 'checkpoint', 'restore']),
   e('MCP servers', 'MCP servers', ['mcp', 'tools server', 'model context protocol']),
-  e('Browser', 'Browser', ['native browser', 'web browser', 'browser pane']),
   e('DroidProxy', 'DroidProxy', ['droidproxy', 'proxy', 'localhost:8317']),
   e('DroidProxy', 'Subscriptions', [
     'oauth',

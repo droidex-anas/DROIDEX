@@ -35,6 +35,7 @@ async function approveAuthentication(showPrompt, contents, entry, request, inten
           intent.kind === 'payment'
             ? 'Approve DROIDEX payment action?'
             : 'Approve DROIDEX authentication action?',
+        origin: intent.origin,
         message: `Allow DROIDEX to ${ACTIONS[intent.kind]} on ${destination}?`,
         detail:
           'This approval is single-use. Passwords and payment details remain protected, and any supported OS passkey or provider consent sheet stays under your control.',

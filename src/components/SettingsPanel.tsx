@@ -35,6 +35,7 @@ import { HardwareAccelerationSetting } from './HardwareAccelerationSetting';
 import { HarnessCliSettings } from './HarnessCliSettings';
 import { HarnessModelSettings } from './HarnessModelSettings';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
+import { BrowserSettings } from './browserSettings/BrowserSettings';
 import {
   bestTabForQuery,
   searchSettings,
@@ -924,6 +925,9 @@ export default function SettingsPanel() {
       break;
     case 'MCP servers':
       content = <McpServersSettings cwd={mcpCwd} />;
+      break;
+    case 'Browser':
+      content = <BrowserSettings />;
       break;
     case 'DroidProxy':
       content = <DroidProxySettings />;
