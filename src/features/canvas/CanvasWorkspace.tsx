@@ -10,8 +10,8 @@ import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } 
 import { LayoutTemplate, Spinner } from '@droidex/icons';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useStoreDispatch } from '../../hooks/useStore';
-import { bridge } from '../../lib/bridge';
-import { CanvasClient } from './client';
+import { canvasClient as canvas, canvasMessage } from './canvasClient';
+import { CanvasMenu } from './CanvasMenu';
 import {
   CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
@@ -21,7 +21,6 @@ import {
 } from './canvasState';
 import type { CanvasSummary } from './protocol';
 
-const canvas = new CanvasClient(bridge);
 // A Create may finish after its tab unmounts. Keep its key until a mounted pane
 // confirms the reply, so reopening cannot offer a second Create.
 const pendingCreateMutationIds = new Map<string, string>();
@@ -86,7 +85,7 @@ export function CanvasWorkspace({
         if (active) attach(attached);
       })
       .catch((error: unknown) => {
-        if (active) dispatch({ type: 'failed', message: recoveryMessage(error) });
+        if (active) dispatch({ type: 'failed', message: canvasMessage(error) });
       });
     return () => {
       active = false;
@@ -122,7 +121,7 @@ export function CanvasWorkspace({
           currentTarget.current.appSessionId === appSessionId &&
           currentTarget.current.namedCanvasId === undefined
         )
-          dispatch({ type: 'create-failed', message: recoveryMessage(error) });
+          dispatch({ type: 'create-failed', message: canvasMessage(error) });
       })
       .finally(() => {
         if (createInFlight.current === appSessionId) createInFlight.current = null;
@@ -134,9 +133,14 @@ export function CanvasWorkspace({
       data-testid="canvas-workspace"
       className="relative flex h-full min-h-0 flex-col bg-droid-bg"
     >
-      <div className="absolute right-2 top-2 z-10 rounded-lg bg-droid-raised shadow-droid-sm">
-        <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
-      </div>
+      {/* Expanded, the window's top row carries the canvas name and the
+          Chat | Canvas control instead (`CanvasHeader`). */}
+      {!isExpanded && (
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-droid-raised px-1 shadow-droid-sm">
+          {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
+          <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
+        </div>
+      )}
       <CanvasBody
         state={state}
         appSessionId={appSessionId}
@@ -302,7 +306,7 @@ function CanvasEmptyState({
                 setSaved({ status: 'listed', summaries });
               })
               .catch((failure: unknown) => {
-                setSaved({ status: 'failed', message: recoveryMessage(failure) });
+                setSaved({ status: 'failed', message: canvasMessage(failure) });
               });
           }}
         />
@@ -354,7 +358,7 @@ function SavedCanvasList({
                       })
                       .catch((failure: unknown) => {
                         setAttaching(false);
-                        setError(recoveryMessage(failure));
+                        setError(canvasMessage(failure));
                       });
                   }}
                   className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-droid-accent/15 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
@@ -438,11 +442,4 @@ function CanvasStatusLine({ label }: { label: string }) {
 
 function designCountLabel(count: number): string {
   return count === 1 ? '1 design' : `${String(count)} designs`;
-}
-
-/** The short recovery line a Canvas failure carries; never a stack trace. */
-function recoveryMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : 'Canvas could not finish that request.';
 }

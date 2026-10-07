@@ -23,6 +23,7 @@ export function UtilityPane({
   onClosePane,
   renderTab,
   expanded = false,
+  header,
 }: {
   panel: UtilityPanelState;
   width: number;
@@ -36,6 +37,12 @@ export function UtilityPane({
   onClosePane: () => void;
   renderTab: (tab: UtilityTab, context: { overlayOpen: boolean }) => ReactNode;
   expanded?: boolean;
+  /**
+   * A tool that owns the window's top row itself, in place of the tab strip:
+   * the expanded Canvas board names the canvas there (spec §4). Hiding the pane
+   * stays beside it.
+   */
+  header?: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
@@ -76,71 +83,75 @@ export function UtilityPane({
         className="flex h-9 shrink-0 items-center gap-1 border-b border-droid-border pl-2 pr-1.5"
         style={leadPx === undefined ? undefined : { paddingLeft: leadPx }}
       >
-        <div
-          role="tablist"
-          aria-label="Open utility tools"
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {panel.tabs.map((tab) => {
-            const Icon = utilityToolOption(tab.tool).icon;
-            const active = tab.id === panel.activeTabId;
-            return (
-              <div
-                key={tab.id}
-                className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors ${
-                  active
-                    ? 'bg-droid-active text-droid-text'
-                    : 'text-droid-text-muted hover:bg-droid-elevated/45 hover:text-droid-text'
+        {header ?? (
+          <>
+            <div
+              role="tablist"
+              aria-label="Open utility tools"
+              className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {panel.tabs.map((tab) => {
+                const Icon = utilityToolOption(tab.tool).icon;
+                const active = tab.id === panel.activeTabId;
+                return (
+                  <div
+                    key={tab.id}
+                    className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors ${
+                      active
+                        ? 'bg-droid-active text-droid-text'
+                        : 'text-droid-text-muted hover:bg-droid-elevated/45 hover:text-droid-text'
+                    }`}
+                  >
+                    <button
+                      role="tab"
+                      aria-selected={active}
+                      title={tab.label}
+                      onClick={() => {
+                        onActivateTab(tab.id);
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{tab.label}</span>
+                    </button>
+                    <HoverTooltip label={`Close ${tab.label}`} placement="bottom">
+                      <button
+                        type="button"
+                        aria-label={`Close ${tab.label}`}
+                        className="ml-0.5 rounded-md p-1 text-droid-text-muted opacity-50 transition hover:bg-droid-elevated hover:text-droid-text group-hover:opacity-100"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onCloseTab(tab);
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </HoverTooltip>
+                  </div>
+                );
+              })}
+            </div>
+
+            <HoverTooltip label="Open another tool" placement="bottom">
+              <button
+                ref={addRef}
+                type="button"
+                aria-label="Open another tool"
+                aria-expanded={menuOpen}
+                onClick={() => {
+                  setMenuOpen((open) => !open);
+                }}
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+                  menuOpen
+                    ? 'bg-droid-elevated text-droid-text'
+                    : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
                 }`}
               >
-                <button
-                  role="tab"
-                  aria-selected={active}
-                  title={tab.label}
-                  onClick={() => {
-                    onActivateTab(tab.id);
-                  }}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-                <HoverTooltip label={`Close ${tab.label}`} placement="bottom">
-                  <button
-                    type="button"
-                    aria-label={`Close ${tab.label}`}
-                    className="ml-0.5 rounded-md p-1 text-droid-text-muted opacity-50 transition hover:bg-droid-elevated hover:text-droid-text group-hover:opacity-100"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onCloseTab(tab);
-                    }}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </HoverTooltip>
-              </div>
-            );
-          })}
-        </div>
-
-        <HoverTooltip label="Open another tool" placement="bottom">
-          <button
-            ref={addRef}
-            type="button"
-            aria-label="Open another tool"
-            aria-expanded={menuOpen}
-            onClick={() => {
-              setMenuOpen((open) => !open);
-            }}
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
-              menuOpen
-                ? 'bg-droid-elevated text-droid-text'
-                : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
-            }`}
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </HoverTooltip>
+                <Plus className="h-4 w-4" />
+              </button>
+            </HoverTooltip>
+          </>
+        )}
         <HoverTooltip label="Hide utility pane" placement="bottom">
           <button
             type="button"
