@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { constants } from 'node:fs';
-import fs, { mkdir, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import fs, { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -10,6 +10,7 @@ import { deferred } from '../testing/canvasStorageSupport.js';
 import { CanvasCommandError } from './canvasError.js';
 import {
   DESIGN_SYSTEM_LIMITS,
+  listDesignSystems,
   readDesignSystem,
   saveDesignSystem,
   type DesignSystem,
@@ -116,7 +117,7 @@ function contrast(foreground: string, background: string): number {
 test('a version that was never written is not available', async () => {
   await assert.rejects(readDesignSystem({ id: 'droidex', version: 2, mode: 'light' }), (error) => {
     assert.ok(error instanceof CanvasCommandError);
-    assert.equal(error.code, 'invalid_input');
+    assert.equal(error.code, 'version_mismatch');
     return true;
   });
 });
@@ -256,7 +257,42 @@ test(
 );
 
 test('a built-in id cannot be shadowed by a user kit', async () => {
-  await assert.rejects(saveDesignSystem(userKit('droidex')), CanvasCommandError);
+  await assert.rejects(saveDesignSystem(userKit('droidex')), { code: 'preset_read_only' });
+});
+
+test('listing returns preset swatches and the latest user version without reading kit content', async () => {
+  const kit = userKit('listed-kit');
+  await saveDesignSystem(kit);
+  await saveDesignSystem({ ...kit, version: 2, name: 'Studio two' });
+  const path = join(canvasDir(), 'design-systems', kit.id, '2.json');
+  const saved = await readFile(path, 'utf8');
+  // Metadata is independently readable even when the executable body is damaged.
+  await writeFile(path, saved.slice(0, saved.indexOf('\n') + 1) + '"system": broken}\n');
+  const summaries = await listDesignSystems();
+  assert.deepEqual(
+    summaries.filter((entry) => entry.id === kit.id),
+    [
+      {
+        id: kit.id,
+        version: 2,
+        name: 'Studio two',
+        kind: 'user',
+        swatches: {
+          light: { surface: '#ffffff', accent: '#1d4ed8' },
+          dark: { surface: '#0b0b0c', accent: '#93c5fd' },
+        },
+      },
+    ],
+  );
+  assert.deepEqual(
+    summaries.filter((entry) => entry.kind === 'preset').map((entry) => entry.id),
+    ['droidex', 'openai-inspired', 'claude-inspired'],
+  );
+  assert.ok(summaries.every((entry) => !('files' in entry) && !('guidance' in entry)));
+  await assert.rejects(
+    readDesignSystem({ id: kit.id, version: 2, mode: 'light' }),
+    CanvasCommandError,
+  );
 });
 
 test('oversized guidance is refused', async () => {
@@ -284,6 +320,37 @@ test('an unusable kit is refused before anything is written', async () => {
     ],
     ['an escaping path', withFiles('escape-kit', { '../outside.tsx': 'export const a = 1;\n' })],
     ['a missing entry', withFiles('entryless-kit', { 'button.tsx': 'export const a = 1;\n' })],
+    [
+      'too many files',
+      withFiles('crowded-kit', {
+        'index.tsx': '',
+        ...Object.fromEntries(
+          Array.from({ length: CANVAS_LIMITS.maxSourceFilesPerDesign }, (_, index) => [
+            `file-${index}.tsx`,
+            '',
+          ]),
+        ),
+      }),
+    ],
+    [
+      'too much total source',
+      withFiles(
+        'heavy-kit',
+        Object.fromEntries(
+          ['index.tsx', 'a.tsx', 'b.tsx', 'c.tsx', 'd.tsx'].map((path) => [
+            path,
+            'x'.repeat(CANVAS_LIMITS.maxFileBytes),
+          ]),
+        ),
+      ),
+    ],
+    [
+      'an invalid custom property name',
+      {
+        ...userKit('malformed-token-kit'),
+        modes: { light: { '--ds_Accent': '#000' }, dark: { '--ds_Accent': '#fff' } },
+      },
+    ],
     [
       'a token value that closes its rule',
       {

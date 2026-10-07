@@ -211,6 +211,8 @@ export interface RenameFrameInput {
 export type CanvasErrorCode =
   | 'invalid_input'
   | 'revision_conflict'
+  | 'preset_read_only'
+  | 'version_mismatch'
   | 'invalid_source_path'
   | 'unsupported_import'
   | 'build_timeout'
