@@ -142,6 +142,24 @@ test('shared and computed sites report their scope and refuse direct edits', () 
   }
 });
 
+test('JSX props passed to self-closing components refuse instance-local edits', () => {
+  const source = `function List({item}) { return <>{item}{item}</>; }
+export default () => <List item={<span>Row</span>} />;`;
+  const files = { 'main.tsx': source };
+  const mapped = onlyElement(files);
+
+  assert.throws(
+    () =>
+      applyElementEdit(files, mapped.elements, {
+        element: reference(mapped.element),
+        change: { kind: 'text', value: 'Only this row' },
+      }),
+    (error: unknown) => error instanceof SourceElementError && error.code === 'ambiguous_element',
+  );
+  assert.equal(mapped.element.editability, 'shared');
+  assert.equal(files['main.tsx'], source, 'refusing an ambiguous edit leaves source unchanged');
+});
+
 test('an entry imported by another source module is shared too', () => {
   const files = {
     'main.tsx': 'export default function App(){return <h1>Hello</h1>}',
