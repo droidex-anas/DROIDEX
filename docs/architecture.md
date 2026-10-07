@@ -36,7 +36,7 @@ flowchart LR
 
 ## Data and control boundaries
 
-Browser policy lives in the versioned `browser-settings.json` in the Electron
+Browser policy lives in schema version 6 of `browser-settings.json` in the Electron
 profile directory (`electron/browserSettingsSchema.cjs`, `electron/browserSettings.cjs`).
 Unknown fields, malformed values and unsupported versions stop startup with a
 recovery message; no prior schema is migrated or silently reset. Writes are
@@ -50,7 +50,7 @@ API; their contracts live in `src/lib/browserSettings.ts`.
 waiting, a 120-second deadline from enqueue, and credentials ahead of queued
 permissions. Timeout, cancellation, renderer replacement and shutdown choose the
 declared cancel action with `cancelled: true`; only explicit user decisions are
-remembered for developer-tools access. The prompt UI must subscribe to both prompt
+remembered for developer-tools and site permissions. The prompt UI must subscribe to both prompt
 events before calling `browserPermissionPromptReady(true)`, then call it with
 `false` on unmount. Only the trusted main renderer can register or answer the
 active prompt. A request with no usable window is declined at once; otherwise it
@@ -66,12 +66,52 @@ waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
-diagnostics, site permissions, downloads, homepage and cursor policies
-are retained for subsequent runtime ports. Saved-login use enforces the existing
-`loginFillApproval` policy; `never` disables saving and filling. The removed native
-cursor overlay's style and size fields are absent
-from schema version 4. Grants and cookie import receipts remain validated data,
-without restoring the old engine's services or claiming unsupported capabilities.
+diagnostics, downloads, homepage and cursor policies are retained for subsequent
+runtime ports. The agent access switch and site permission policy are enforced.
+Saved-login use enforces the existing `loginFillApproval` policy; `never` disables
+saving and filling. Removed cursor overlay settings and cookie import receipts are
+absent.
+
+`electron/browserPermissions.cjs` handles both permission requests and checks on
+`persist:droidex-browser`. Camera, microphone, location, notifications, clipboard
+read, MIDI and MIDI system exclusive access default to **Ask me**, with exact-origin
+approvals (**Block** in Settings > Browser denies them all): **Allow** remembers the
+requested permissions, **Allow once** lasts until a document navigates, **Don't allow**
+denies this request, and **Always block this site** remembers a denial. Requests
+resolve Electron's frame URL to a unique live frame and validate its actual security
+origin; checks also require the handler's requesting origin to match. Missing,
+opaque or conflicting origins and ambiguous frame matches are denied. Same-origin
+frames share saved site policy; cross-origin frames and unsupported permissions,
+including HID, USB, serial and screen capture, remain denied. Notification checks
+without a WebContents use only existing exact-origin approvals and require a
+matching, nonempty embedding origin.
+
+A saved origin decision applies whoever is driving the page. Without a saved
+or current document approval, the prompt queue asks the user; agents have no tool
+that answers prompts. A prompt notes when an agent request is in flight on that
+tab, using the existing working state only as context, never as permission authority.
+Allow-once grants capture the requesting frame and its process/routing identity.
+Navigation start and document commit (including same-origin reloads and subframes),
+guest replacement, crash, release, renderer teardown and shutdown invalidate
+pending prompts and temporary grants. Detached or replaced frames cannot reuse them.
+
+Each permission request has a 120-second deadline, including OS consent; automatic
+cancellation never records a denial. A save can be cancelled before its atomic file
+replacement is submitted. Once that replacement succeeds, the decision is committed
+in memory and on disk and the permission callback reports the saved result, even if
+teardown occurred during the write. Camera and microphone additionally require
+macOS media consent. OS denial explains how to enable DROIDEX in System Settings
+and restart it. Packaged builds declare camera, audio-input and location entitlements
+plus camera, microphone and location usage descriptions.
+
+The renderer lists saved decisions through `browserSettingsGet().sitePermissionRules`
+and revokes one with `browserSitePermissionRevoke(origin, permission)`. Revocation
+returns the updated snapshot, cancels affected pending approvals, clears temporary
+grants and prevents a queued approval from restoring the revoked permission. It
+affects subsequent access; reload or close a page to stop an already active capture.
+The renderer contract exposes data and commands without implementing settings UI.
+Older settings versions stop startup with the existing explicit recovery
+message; no grants or settings are silently migrated or reset.
 
 Saved logins use `electron/browserCredentialVault.cjs`: OS encryption with queued,
 atomic writes to `browser-credentials.enc`, at most 500 exact origins. Electron 39
