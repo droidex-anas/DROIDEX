@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
-import { useBrowserHost } from '../../lib/browserHost';
+import { useBrowserAgentPresence } from '../../lib/browserHost';
 import { watchNativeBrowser, type NativeBrowserFrame } from '../../lib/nativeBrowser';
 import { BrowserAgentCursor } from './BrowserAgentCursor';
 import design from './browserAgentCursorDesign.json';
@@ -28,20 +28,22 @@ export function BrowserPreview({
   cardKey,
   browserSessionId,
   live,
+  step,
 }: {
   cardKey: string;
   /** The chat's open browser, if it has one. */
   browserSessionId?: string;
   /** The card's turn is still running. */
   live: boolean;
+  /** The step in flight, as the card names it. */
+  step: string | null;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [frame, setFrame] = useState(() => lastFrames.get(cardKey) ?? null);
   const [onScreen, setOnScreen] = useState(false);
   const [width, setWidth] = useState(0);
   const visible = useDocumentVisible();
-  const busy = useBrowserHost().working;
-  const working = browserSessionId !== undefined && browserSessionId in busy;
+  const present = useBrowserAgentPresence(browserSessionId) !== 'none';
 
   useEffect(() => {
     const box = boxRef.current;
@@ -100,7 +102,9 @@ export function BrowserPreview({
             browserSessionId={browserSessionId}
             scale={fit}
             shown={live && frame !== null}
-            working={working}
+            present={present}
+            step={step}
+            rest={frame ? { x: frame.width / 2, y: frame.height / 2 } : undefined}
             size={design.size.min}
           />
         )}

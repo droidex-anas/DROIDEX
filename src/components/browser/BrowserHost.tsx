@@ -5,13 +5,16 @@ import { BrowserAgentCursor } from './BrowserAgentCursor';
 import {
   closeBrowserPage,
   isBrowserPageAwake,
+  releaseBrowserPageAgent,
   setBrowserPageCrashed,
   setBrowserPageWorking,
   useBrowserHost,
   type BrowserHostState,
   type BrowserPage,
 } from '../../lib/browserHost';
+import { browserStepLabel } from '../../lib/browserTools';
 import { addDesignReference } from '../../lib/commands';
+import { sessionIsLive } from '../../lib/sessions';
 import {
   addDesignMark,
   attachDesignShot,
@@ -38,6 +41,8 @@ interface PageSize {
 }
 
 const DEFAULT_PAGE_SIZE: PageSize = { width: 1280, height: 800 };
+// Enough of a chat's newest events to find the browser step in flight.
+const STEP_EVENTS = 40;
 
 /**
  * The Browser host layer: every live chat browser page, mounted once at the
@@ -55,6 +60,36 @@ export function BrowserHost() {
       bySession.set(browser.browserSessionId, browser.viewport);
     return bySession;
   }, [browsers]);
+  const chats = useMemo(
+    () =>
+      new Map(
+        Object.entries(browsers).map(([appSessionId, browser]) => [
+          browser.browserSessionId,
+          appSessionId,
+        ]),
+      ),
+    [browsers],
+  );
+  // The pages whose chat has a turn running, one id after another.
+  const livePages = useStoreSelector((state) =>
+    Object.entries(state.browsers)
+      .filter(([appSessionId]) => {
+        const session = Object.hasOwn(state.sessions, appSessionId)
+          ? state.sessions[appSessionId]
+          : undefined;
+        return session !== undefined && sessionIsLive(session);
+      })
+      .map(([, browser]) => browser.browserSessionId)
+      .join(' '),
+  );
+
+  // An agent's turn holds on to its page between steps; once the chat's turn
+  // is over and no request is left on the page, the agent is done with it.
+  useEffect(() => {
+    const live = new Set(livePages.split(' '));
+    for (const browserSessionId of Object.keys(host.engaged))
+      if (!live.has(browserSessionId)) releaseBrowserPageAgent(browserSessionId);
+  }, [livePages, host.engaged, host.working]);
 
   // Marks picked in a browser go when it closes. Marks a queued prompt brings
   // back to the composer after that stay: they are its own snapshots.
@@ -147,7 +182,8 @@ export function BrowserHost() {
             key={page.key}
             page={page}
             placement={placementOf(host, page.browserSessionId)}
-            working={page.browserSessionId in host.working}
+            appSessionId={chats.get(page.browserSessionId)}
+            present={page.browserSessionId in host.engaged}
             anchor={slot?.anchor}
             radius={slot?.radius ?? '0'}
             scale={slot?.scale}
@@ -162,7 +198,8 @@ export function BrowserHost() {
 function BrowserPageFrame({
   page,
   placement,
-  working,
+  appSessionId,
+  present,
   anchor,
   radius,
   scale,
@@ -170,8 +207,10 @@ function BrowserPageFrame({
 }: {
   page: BrowserPage;
   placement: Placement;
-  /** An agent has work in flight on the page. */
-  working: boolean;
+  /** The chat whose browser the page is. */
+  appSessionId?: string;
+  /** An agent's turn is using the page. */
+  present: boolean;
   anchor?: string;
   radius: string;
   scale?: number;
@@ -179,6 +218,11 @@ function BrowserPageFrame({
 }) {
   const webviewRef = useRef<HTMLWebViewElement>(null);
   const shown = placement === 'shown';
+  const step = useStoreSelector((state) =>
+    present && shown && appSessionId && Object.hasOwn(state.transcripts, appSessionId)
+      ? browserStepLabel(state.transcripts[appSessionId].slice(-STEP_EVENTS))
+      : null,
+  );
 
   useEffect(() => {
     // A page leaving the pane must not keep the keyboard.
@@ -198,7 +242,10 @@ function BrowserPageFrame({
         browserSessionId={page.browserSessionId}
         scale={scale ?? 1}
         shown={shown}
-        working={working}
+        present={present}
+        step={step}
+        named
+        rest={{ x: size.width / 2, y: size.height / 2 }}
       />
     </div>
   );

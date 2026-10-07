@@ -394,42 +394,143 @@
     }
   }
 
-  /* The agent's cursor over a Browser page: it glides to where the agent
-     points (--glide is set from the distance) and, while the agent works,
-     tilts about its tip, which the element sets as its transform origin. */
+  /* The agent's cursor over a Browser page. It is placed and glided from
+     script; here it comes in quickly while an agent's turn uses the page,
+     and once the turn ends it lingers a moment before fading out. */
   .agent-cursor {
-    transition:
-      transform var(--glide, 0ms) cubic-bezier(0.22, 0.8, 0.2, 1),
-      opacity 200ms ease-out;
+    transition: opacity 160ms ease-out;
     will-change: transform;
   }
 
-  /* A working hand rocks about its tip and rests a moment at each end. */
-  @keyframes agent-cursor-tilt {
+  .agent-cursor[data-present='false'] {
+    transition: opacity 520ms ease-in 900ms;
+  }
+
+  /* Between steps the hand hovers: a slow drift about its tip. */
+  @keyframes agent-cursor-drift {
     0%,
-    19% {
-      transform: rotate(-10deg);
-    }
-    50%,
-    69% {
-      transform: rotate(10deg);
-    }
     100% {
-      transform: rotate(-10deg);
+      transform: translate(0, 0) rotate(0deg);
+    }
+    50% {
+      transform: translate(1px, -2px) rotate(-4deg);
     }
   }
 
-  .agent-cursor-tilt {
-    animation: agent-cursor-tilt 1400ms ease-in-out infinite;
+  .agent-cursor-drift {
+    animation: agent-cursor-drift 2800ms ease-in-out infinite;
+  }
+
+  /* The ring a click sends out from the tip; script plays it. */
+  .agent-cursor-ring {
+    position: absolute;
+    border: 2px solid rgba(80, 139, 255, 0.85);
+    border-radius: 9999px;
+    background: rgba(80, 139, 255, 0.12);
+    opacity: 0;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 10px rgba(80, 139, 255, 0.45);
+  }
+
+  /* The step's name tag, below and to the right of the glyph, its corner
+     nearest the tip squared off like a pointer's label. Near the page's right
+     or bottom edge it turns to the other side. */
+  .agent-cursor-chip {
+    position: absolute;
+    left: var(--chip-at);
+    top: var(--chip-at);
+    max-width: 180px;
+    padding: 3px 9px 4px;
+    border-radius: 4px 11px 11px 11px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    box-shadow:
+      0 0 12px rgba(80, 139, 255, 0.35),
+      0 1px 2px rgba(0, 0, 0, 0.18);
+    transform-origin: 0 0;
+    transition:
+      opacity 160ms ease-out,
+      scale 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .agent-cursor-chip[data-on='false'] {
+    opacity: 0;
+    scale: 0.92;
+    /* A moment's grace, so the tag does not blink between two quick steps. */
+    transition-delay: 350ms;
+  }
+
+  .agent-cursor[data-flip-x='true'] .agent-cursor-chip {
+    left: auto;
+    right: calc(100% - var(--chip-at) * 0.28);
+    border-top-left-radius: 11px;
+    border-top-right-radius: 4px;
+    transform-origin: 100% 0;
+  }
+
+  .agent-cursor[data-flip-y='true'] .agent-cursor-chip {
+    top: auto;
+    bottom: calc(100% - var(--chip-at) * 0.12);
+  }
+
+  .agent-cursor[data-flip-y='true']:not([data-flip-x='true']) .agent-cursor-chip {
+    border-radius: 11px 11px 11px 4px;
+    transform-origin: 0 100%;
+  }
+
+  .agent-cursor[data-flip-x='true'][data-flip-y='true'] .agent-cursor-chip {
+    border-radius: 11px 11px 4px 11px;
+    transform-origin: 100% 100%;
+  }
+
+  @starting-style {
+    .agent-cursor-chip[data-on='true'] {
+      opacity: 0;
+      scale: 0.85;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .agent-cursor {
-      transition: opacity 200ms ease-out;
+    .agent-cursor-drift {
+      animation: none;
     }
 
-    .agent-cursor-tilt {
+    .agent-cursor-chip {
+      scale: 1 !important;
+      transition: opacity 160ms ease-out;
+    }
+  }
+
+  /* An agent at work in a browser page, seen from a tab, a sidebar row or
+     the address bar: the cursor's outline with the working line's shimmer
+     passing through it. */
+  .browser-working-mark {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    mask-position: center;
+    mask-size: 82%;
+    mask-repeat: no-repeat;
+    /* Tipped up a little, so at this size it reads as a pointer, not a play button. */
+    rotate: -16deg;
+    background: linear-gradient(
+      90deg,
+      var(--droid-text-muted) 0%,
+      var(--droid-text) 50%,
+      var(--droid-text-muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .browser-working-mark {
       animation: none;
+      background: var(--droid-text-secondary);
     }
   }
 

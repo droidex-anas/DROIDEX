@@ -39,11 +39,17 @@ export interface BrowserHostState {
   slot: BrowserSlot | null;
   /** Sessions main has agent work in flight on, as main last reported. */
   working: Readonly<Record<string, true>>;
+  /**
+   * Sessions an agent's turn is using: from its first request on the page
+   * until the chat's turn ends, so the pause while the model thinks between
+   * two steps still counts.
+   */
+  engaged: Readonly<Record<string, true>>;
   /** Sessions whose page crashed and has not loaded since, even with the pane closed. */
   crashed: Readonly<Record<string, true>>;
 }
 
-let state: BrowserHostState = { pages: [], slot: null, working: {}, crashed: {} };
+let state: BrowserHostState = { pages: [], slot: null, working: {}, engaged: {}, crashed: {} };
 const listeners = new Set<() => void>();
 const reserving = new Map<string, Promise<void>>();
 const lastUsed = new Map<string, number>();
@@ -122,11 +128,8 @@ export function setBrowserPageWorking(
 ): void {
   if (browserSessionId in state.working !== working) {
     update({
-      working: working
-        ? { ...state.working, [browserSessionId]: true }
-        : Object.fromEntries(
-            Object.entries(state.working).filter(([id]) => id !== browserSessionId),
-          ),
+      working: withFlag(state.working, browserSessionId, working),
+      engaged: working ? withFlag(state.engaged, browserSessionId, true) : state.engaged,
     });
   }
   if (working) void ensureBrowserPage(browserSessionId, savedUrl, savedMode).catch(() => undefined);
@@ -137,6 +140,8 @@ export function closeBrowserPage(browserSessionId: string): void {
   reserving.delete(browserSessionId);
   lastUsed.delete(browserSessionId);
   setBrowserPageCrashed(browserSessionId, false);
+  if (browserSessionId in state.engaged)
+    update({ engaged: withFlag(state.engaged, browserSessionId, false) });
   if (state.slot?.browserSessionId === browserSessionId) setSlot(null);
   if (!state.pages.some((page) => page.browserSessionId === browserSessionId)) return;
   update({ pages: state.pages.filter((page) => page.browserSessionId !== browserSessionId) });
@@ -144,11 +149,38 @@ export function closeBrowserPage(browserSessionId: string): void {
 
 export function setBrowserPageCrashed(browserSessionId: string, crashed: boolean): void {
   if (browserSessionId in state.crashed === crashed) return;
-  update({
-    crashed: crashed
-      ? { ...state.crashed, [browserSessionId]: true }
-      : Object.fromEntries(Object.entries(state.crashed).filter(([id]) => id !== browserSessionId)),
-  });
+  update({ crashed: withFlag(state.crashed, browserSessionId, crashed) });
+}
+
+/** The chat's turn ended: its agent is done with the page once no request is left on it. */
+export function releaseBrowserPageAgent(browserSessionId: string): void {
+  if (browserSessionId in state.engaged && !(browserSessionId in state.working))
+    update({ engaged: withFlag(state.engaged, browserSessionId, false) });
+}
+
+function withFlag(
+  flags: Readonly<Record<string, true>>,
+  browserSessionId: string,
+  on: boolean,
+): Readonly<Record<string, true>> {
+  if (on) return { ...flags, [browserSessionId]: true };
+  return Object.fromEntries(Object.entries(flags).filter(([id]) => id !== browserSessionId));
+}
+
+/**
+ * Where an agent's turn is using the session's page: nowhere, in the page the
+ * pane shows, or in a page out of sight (another chat's pane, or none open).
+ */
+export type BrowserAgentPresence = 'none' | 'shown' | 'background';
+
+export function useBrowserAgentPresence(
+  browserSessionId: string | undefined,
+): BrowserAgentPresence {
+  const presence = (): BrowserAgentPresence => {
+    if (browserSessionId === undefined || !(browserSessionId in state.engaged)) return 'none';
+    return state.slot?.browserSessionId === browserSessionId ? 'shown' : 'background';
+  };
+  return useSyncExternalStore(subscribe, presence, presence);
 }
 
 export function useBrowserPageCrashed(browserSessionId: string | undefined): boolean {

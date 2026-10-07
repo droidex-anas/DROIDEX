@@ -141,9 +141,17 @@ import { join } from 'node:path';
 // emits them into the one stylesheet even though both viewers load lazily, so
 // main at 1b21548c (102_602) measures 103_872 with them, leaving ~1.1KB. The
 // entry JS stays ~1.3KB under main's.
+//
+// Raised from 1_459_000 to 1_464_000, and the CSS from 105_000 to 107_500, for
+// the agent's presence in the Browser: the cursor's arcs, press and step chip,
+// the page's agent held between steps, and the working mark on tabs, sidebar
+// rows and the address bar. All of it draws at first frame (the Browser host
+// and the sidebar are on the entry). Measured against browser/agent-controls
+// at 09486d55: entry JS 1_456_966 -> 1_461_870 (+4.9KB), CSS 103_971 ->
+// 106_621 (+2.6KB). Headroom is back to ~2.1KB and ~0.9KB, as it was.
 const BUDGETS = {
-  initialRendererJsBytes: 1_459_000,
-  initialCssBytes: 105_000,
+  initialRendererJsBytes: 1_464_000,
+  initialCssBytes: 107_500,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

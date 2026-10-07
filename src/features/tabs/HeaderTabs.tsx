@@ -6,6 +6,7 @@ import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatChord } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { ChatBrowserWorkingMark } from '../../components/browser/BrowserWorkingMark';
 import { HoverTooltip } from '../../components/HoverTooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
@@ -18,7 +19,9 @@ interface TabItem {
   id: string;
   kind: FocusedPage['kind'];
   label: string;
-  // Chat tabs only: the harness mark, and whether a turn is running.
+  // Chat tabs only: the chat's browser page (a split tab's focused chat's), its
+  // harness mark, and whether a turn is running.
+  browserSessionId?: string;
   provider: ProviderKind | null;
   live: boolean;
   // A split tab names every tile in its tooltip and shows its tile count.
@@ -78,6 +81,9 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   return {
     ...item,
     kind: 'chat',
+    browserSessionId: Object.hasOwn(state.browsers, page.appSessionId)
+      ? state.browsers[page.appSessionId].browserSessionId
+      : undefined,
     label,
     title: label,
     provider: session.provider,
@@ -112,6 +118,7 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
       return (
         item.id === other.id &&
         item.kind === other.kind &&
+        item.browserSessionId === other.browserSessionId &&
         item.label === other.label &&
         item.provider === other.provider &&
         item.live === other.live &&
@@ -122,13 +129,25 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
   );
 }
 
-function TabGlyph({ item }: { item: TabItem }) {
+function TabGlyph({ item, active }: { item: TabItem; active: boolean }) {
   switch (item.kind) {
-    case 'chat':
-      if (item.live) return <Spinner size={13} className="motion-safe:animate-spin-slow" />;
-      return item.provider ? (
-        <ModelIcon provider={PROVIDER_MARKS[item.provider]} size={13} />
-      ) : null;
+    case 'chat': {
+      const glyph = item.live ? (
+        <Spinner size={13} className="motion-safe:animate-spin-slow" />
+      ) : (
+        item.provider && <ModelIcon provider={PROVIDER_MARKS[item.provider]} size={13} />
+      );
+      // An agent at work in the chat's browser shows on the tab unless the
+      // page is in front of the reader already.
+      return (
+        <ChatBrowserWorkingMark
+          browserSessionId={item.browserSessionId}
+          whenShown={!active}
+          className="h-[13px] w-[13px]"
+          fallback={glyph}
+        />
+      );
+    }
     case 'new-chat':
       return <SquarePen className="h-3.5 w-3.5" />;
     case 'projects':
@@ -283,7 +302,7 @@ const TabList = memo(function TabList() {
                   }`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                    <TabGlyph item={item} />
+                    <TabGlyph item={item} active={active} />
                   </span>
                   <span className={`truncate text-[13px] ${active ? 'font-medium' : ''}`}>
                     {item.label}

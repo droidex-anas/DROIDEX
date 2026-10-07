@@ -55,6 +55,8 @@ export default function Sidebar({
       // A chat's own map of running agents, not the child sessions themselves:
       // this one is rewritten only when an agent starts or stops.
       agentsWorkingByParent: current.agentsWorkingByParent,
+      // For each row's browser page, which shows an agent at work there.
+      browsers: current.browsers,
       chatMetadata: current.chatMetadata,
       draftChat: current.draftChat,
       earlierSessionsByCwd: current.earlierSessionsByCwd,
@@ -274,6 +276,11 @@ export default function Sidebar({
         running={sessionIsLive(m)}
         agentsWorking={Boolean(state.agentsWorkingByParent[m.appSessionId])}
         activityStatus={status}
+        browserSessionId={
+          Object.hasOwn(state.browsers, m.appSessionId)
+            ? state.browsers[m.appSessionId].browserSessionId
+            : undefined
+        }
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
         pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}

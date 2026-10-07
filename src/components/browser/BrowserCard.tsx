@@ -50,7 +50,12 @@ export function BrowserCard({
 
   return (
     <div className="my-1.5 w-[360px] max-w-full overflow-hidden rounded-2xl border border-droid-border bg-droid-surface">
-      <BrowserPreview cardKey={cardKey} browserSessionId={browserSessionId} live={working} />
+      <BrowserPreview
+        cardKey={cardKey}
+        browserSessionId={browserSessionId}
+        live={working}
+        step={doing}
+      />
       <div className="flex items-center gap-1 py-2.5 pl-3.5 pr-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium text-droid-text">{title}</div>
