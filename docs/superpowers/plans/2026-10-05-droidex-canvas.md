@@ -1402,7 +1402,7 @@ Also cover escaping `<`, `&`, quotes and Unicode without changing surrounding so
   Done: Idempotent creation leaves the original and siblings independent, including a failed sibling build.
 - [ ] `canvas/09b-duplicate-rename-library`: Implement duplicate/rename and searchable immutable local library copies with independent insertion.
   Done: Reuse still works after original-canvas deletion and empty-library guidance explains Add to library.
-- [ ] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
+- [x] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
   Done: Undo restores source/location and surfaces remote-layout conflicts without replaying stale moves.
 - [ ] `canvas/09d-saved-canvases-and-deletion`: Add Open saved canvas and explicit whole-canvas deletion with affected attachment disclosure.
   Done: Deletion unlinks attachments and cancels work while preserving independent library items; chat deletion retains canvas source.
@@ -1446,7 +1446,7 @@ Then write to one returned variant and assert the source and other variant remai
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
+- [x] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
   Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
 - [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
   Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
