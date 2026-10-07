@@ -385,7 +385,7 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
   assert.equal(h.workspace.snapshot(canvasId).frames.length, 2);
 });
 
-for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange'] as const) {
+for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_theme'] as const) {
   test(`a published ${name} keeps its MCP success after turn revocation`, async (t) => {
     const held = holdManifestWrite('published');
     const h = await harness(t, held.fs);
@@ -401,6 +401,19 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange'] as const)
     assert.ok(first);
     const { canvasId } = created.created;
     const designId = first.designId;
+    let revisionId: string | null = null;
+    if (name === 'canvas_theme') {
+      const written = await h.call('canvas_write', {
+        scopeId,
+        mutationId: 'source',
+        designId,
+        expectedRevisionId: null,
+        files: { 'main.tsx': 'export default () => null' },
+        deletedPaths: [],
+      });
+      assert.ok(written.receipt);
+      revisionId = written.receipt.revisionId;
+    }
     const inputs = {
       canvas_create: {
         scopeId,
@@ -422,6 +435,14 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange'] as const)
           { designId, expectedLayoutVersion: 0, rect: { x: 800, y: 0, width: 720, height: 520 } },
         ],
       },
+      canvas_theme: {
+        scopeId,
+        operation: 'apply',
+        mutationId: 'published-theme',
+        designId,
+        expectedRevisionId: revisionId,
+        ref: { ...DEFAULT_DESIGN_SYSTEM_REF, mode: 'dark' },
+      },
     };
     held.arm();
     const pending = h.call(name, inputs[name]);
@@ -435,11 +456,12 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange'] as const)
     assert.equal((await h.call(name, inputs[name])).code, 'scope_expired');
     const snapshot = h.workspace.snapshot(canvasId);
     if (name === 'canvas_create') assert.equal(snapshot.frames.length, 2);
-    if (name === 'canvas_write') {
+    if (name === 'canvas_write' || name === 'canvas_theme') {
       assert.ok(result.receipt);
       assert.equal(snapshot.frames[0]?.revisionId, result.receipt.revisionId);
     }
     if (name === 'canvas_arrange') assert.equal(snapshot.frames[0]?.rect.x, 800);
+    if (name === 'canvas_theme') assert.equal(snapshot.frames[0]?.designSystem.mode, 'dark');
   });
 }
 
