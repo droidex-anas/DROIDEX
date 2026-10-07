@@ -30,6 +30,7 @@ import {
   type ChildSessionSignal,
 } from './subagentSignals.js';
 import { parseSkillActivation, type SkillActivation } from './skillSignals.js';
+import { canvasToolProvenance, type ToolProvenance } from './canvas/canvasToolPresentation.js';
 
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
@@ -74,6 +75,7 @@ function transcript(
 
 export interface NormalizedEvent {
   transcript?: TranscriptEvent;
+  toolProvenance?: ToolProvenance;
   features?: BridgeFeature[];
   progress?: NormalizedProgressEntry[];
   missionState?: string;
@@ -197,6 +199,8 @@ export function normalizeStreamEvent(
         (ev as { toolUse?: { id?: string; name?: string; input?: Record<string, unknown> } })
           .toolUse ?? {};
       const toolUseId = toolUseIdFrom(toolUse.id, eventToolUseId);
+      if (!toolUseId && !toolUse.name) return null;
+      const toolProvenance = canvasToolProvenance(toolUse.name, toolUseId);
       const childSession = detectChildSession(
         toolUse.name,
         toolUse.input ?? {},
@@ -212,12 +216,14 @@ export function normalizeStreamEvent(
           // (matching the replay path, which derives one block per tool-use).
           ...(toolUseId ? { toolUseId } : {}),
         }),
+        ...(toolProvenance ? { toolProvenance } : {}),
         ...(childSession ? { childSession } : {}),
       };
     }
     case 'tool_result': {
       const isTask = isTaskToolName(ev.toolName);
       const toolUseId = toolUseIdFrom((ev as { toolUseId?: string }).toolUseId, eventToolUseId);
+      const toolProvenance = canvasToolProvenance(ev.toolName, toolUseId);
       const taskUpdate = ev.isError ? undefined : taskResultChildUpdate(ev.toolName, ev.content);
       const resultProviderSessionId = subagentSessionId ?? taskUpdate?.providerSessionId;
       const resultTranscript = () =>
@@ -246,12 +252,18 @@ export function normalizeStreamEvent(
         // the feed, not the bridge, decides whether the body is worth showing.
         return isTask && !ev.isError ? signal : { ...signal, transcript: resultTranscript() };
       }
-      return { transcript: resultTranscript() };
+      return {
+        transcript: resultTranscript(),
+        ...(toolProvenance ? { toolProvenance } : {}),
+      };
     }
     case 'error': {
       const details = droidErrorDetails(ev.message);
       return {
-        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', details),
+        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', {
+          ...details,
+          ...(eventToolUseId ? { toolUseId: eventToolUseId } : {}),
+        }),
       };
     }
     case 'mission_features_changed':

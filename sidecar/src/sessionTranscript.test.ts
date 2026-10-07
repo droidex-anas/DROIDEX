@@ -11,6 +11,15 @@ import {
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import type { TranscriptEvent } from './protocol.js';
+import { SessionEventFlow } from './SessionEventFlow.js';
+import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
+import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { ClaudeEventMapper } from './providers/claude/claudeEvents.js';
+import { CodexEventMapper } from './providers/codex/codexEvents.js';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { NormalizedEvent } from './normalize.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
+import { transcriptToMarkdown } from './sessionMarkdown.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'droid-transcript-'));
 let fileCount = 0;
@@ -152,6 +161,233 @@ test('corrupt lines are skipped without losing their neighbors', () => {
     ['a1', 'a2'],
   );
 });
+
+test('Canvas results with reused tool IDs project by occurrence regardless of page traversal', () => {
+  const appSessionId = 'canvas-reused-occurrence';
+  const flow = new SessionEventFlow({
+    appendTranscript: () => undefined,
+    flushTranscript: () => undefined,
+    applySideEffects: () => undefined,
+    resolveChildScope: () => undefined,
+    recordUsage: () => undefined,
+  });
+  const tool = 'droidex-canvas___canvas_write';
+  const call = (name: string, designId = 'design-1') => ({
+    type: 'tool_use' as const,
+    id: 'same',
+    name,
+    input: { designId },
+  });
+  const result = (content: string) => ({ type: 'tool_result', tool_use_id: 'same', content });
+  const line = (id: string, role: string, content: unknown[], visibility?: 'llm_only') =>
+    JSON.stringify({
+      type: 'message',
+      id,
+      timestamp: new Date(1000).toISOString(),
+      message: { role, content, ...(visibility ? { visibility } : {}) },
+    });
+  flow.beginTurn(appSessionId, appSessionId);
+  flow.applyStreamEvent(appSessionId, appSessionId, 'primary', {
+    type: 'tool_call',
+    toolUse: call(tool),
+  });
+  flow.applyStreamEvent(appSessionId, appSessionId, 'primary', {
+    type: 'tool_result',
+    toolName: tool,
+    toolUseId: 'same',
+    content: 'CANVAS_INTERNAL_GUIDANCE_7E4B',
+    isError: false,
+  });
+  flow.beginTurn(appSessionId, appSessionId);
+  flow.applyStreamEvent(appSessionId, appSessionId, 'primary', {
+    type: 'tool_call',
+    toolUse: call(tool, 'design-2'),
+  });
+  const bindings = readCanvasToolBindings(appSessionId);
+  assert.equal(new Set(bindings.map((binding) => binding.occurrenceId)).size, 2);
+  const path = writeSession([
+    line('call-1', 'assistant', [call(tool)]),
+    line('result-1', 'user', [result('CANVAS_INTERNAL_GUIDANCE_7E4B')]),
+    userMessage('Next turn'),
+    line('call-2', 'assistant', [call('Bash')]),
+    line('result-2', 'user', [result('ordinary output')]),
+    userMessage('Another Canvas turn'),
+    line('call-3', 'assistant', [call(tool, 'design-2')]),
+    line('result-3', 'user', [result('CANVAS_INTERNAL_GUIDANCE_7E4B')]),
+  ]);
+  const r = new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary');
+  const newest = r.windowBackward(4, 0);
+  assert.equal(newest.events[0]?.text, 'ordinary output');
+  assert.equal(newest.events[0]?.canvasActivity, undefined);
+  const older = r.windowBackward(20, 0, newest.older);
+  assert.equal(older.events.find((entry) => entry.kind === 'tool_result')?.text, 'Updated design');
+  for (const events of [
+    r.windowBackward(20, 0).events,
+    new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary').windowBackward(20, 0)
+      .events,
+    parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary'),
+  ]) {
+    assert.deepEqual(
+      events.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
+      ['Updated design', 'ordinary output', 'Updated design'],
+    );
+    assert.deepEqual(
+      events
+        .filter((entry) => entry.kind === 'tool_result')
+        .map((entry) => entry.canvasActivity?.designIds),
+      [['design-1'], undefined, ['design-2']],
+    );
+  }
+  for (const name of [tool, 'Bash']) {
+    const output = name === tool ? 'CANVAS_INTERNAL_GUIDANCE_7E4B' : 'ordinary output';
+    const oversized = writeSession([
+      line('call-1', 'assistant', [call(tool)]),
+      line('result-1', 'user', [result('CANVAS_INTERNAL_GUIDANCE_7E4B')]),
+      line('call-2', 'assistant', [call(name, 'design-2')]),
+      ...Array.from({ length: 6 }, (_, index) =>
+        line(
+          `filler-${index}`,
+          'user',
+          [{ type: 'text', text: 'x'.repeat(1_000_000) }],
+          'llm_only',
+        ),
+      ),
+      line('result-2', 'user', [result(output)]),
+    ]);
+    const eager = parseFullSessionTranscript(appSessionId, appSessionId, oversized, 'primary');
+    assert.equal(eager[0]?.kind, 'status');
+    assert.equal(eager.filter((entry) => entry.kind === 'tool_call').length, 0);
+    for (const tail of [
+      eager,
+      new SessionTranscriptReader(appSessionId, appSessionId, oversized, 'primary').windowBackward(
+        1,
+        0,
+      ).events,
+    ]) {
+      assert.equal(tail.at(-1)?.text, name === tool ? 'Updated design' : output);
+      assert.deepEqual(
+        tail.at(-1)?.canvasActivity?.designIds,
+        name === tool ? ['design-2'] : undefined,
+      );
+    }
+  }
+});
+
+for (const provider of ['claude', 'codex'] as const) {
+  test(`${provider} Canvas reload retains named and revision summaries for reused call IDs`, async () => {
+    const appSessionId = `canvas-summary-${provider}`;
+    const summary = sessionSummary({ appSessionId, provider });
+    const file = new ProviderTranscriptFile(appSessionId, () => summary);
+    const live: TranscriptEvent[] = [];
+    const flow = new SessionEventFlow({
+      appendTranscript: (entry) => {
+        live.push(entry);
+        void file.append(entry);
+      },
+      flushTranscript: () => undefined,
+      applySideEffects: () => undefined,
+      resolveChildScope: () => undefined,
+      recordUsage: () => undefined,
+    });
+    const claude = new ClaudeEventMapper(appSessionId);
+    const codex = new CodexEventMapper(appSessionId);
+    const outcomes = [
+      { tool: 'canvas_create', body: { frames: [{ designId: 'design-1', name: 'Welcome' }] } },
+      { tool: 'canvas_write', body: { designId: 'design-1', revisionId: 'rev-1' } },
+      { tool: 'canvas_create', body: { frames: [{ designId: 'design-2', name: 'Dashboard' }] } },
+      { tool: 'canvas_write', body: { designId: 'design-2', revisionId: 'rev-2' } },
+    ];
+    for (const [index, outcome] of outcomes.entries()) {
+      flow.beginTurn(appSessionId, appSessionId);
+      await file.append({
+        id: `intro-${index}`,
+        appSessionId,
+        sourceSessionId: 'primary',
+        role: 'primary',
+        ts: 1000 + index,
+        kind: 'text',
+        text: 'Working on the design.',
+      });
+      const content = JSON.stringify(outcome.body);
+      let events: NormalizedEvent[];
+      if (provider === 'claude') {
+        events = [
+          ...claude.map({
+            type: 'assistant',
+            parent_tool_use_id: null,
+            message: {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'same',
+                  name: `mcp__droidex-canvas__${outcome.tool}`,
+                  input: {},
+                },
+              ],
+            },
+          } as SDKMessage),
+          ...claude.map({
+            type: 'user',
+            parent_tool_use_id: null,
+            message: { content: [{ type: 'tool_result', tool_use_id: 'same', content }] },
+          } as SDKMessage),
+        ];
+      } else {
+        const item = {
+          type: 'dynamicToolCall',
+          id: 'same',
+          namespace: 'droidex_canvas',
+          tool: outcome.tool,
+          arguments: {},
+          contentItems: [{ type: 'inputText', text: content }],
+          success: true,
+        };
+        events = [
+          ...codex.map('item/started', { item: { ...item, status: 'inProgress' } }),
+          ...codex.map('item/completed', { item: { ...item, status: 'completed' } }),
+        ];
+      }
+      for (const entry of events) flow.apply(appSessionId, appSessionId, 'primary', entry);
+    }
+    await file.flush();
+    const expected = [
+      'Created Welcome',
+      'Updated design · rev-1',
+      'Created Dashboard',
+      'Updated design · rev-2',
+    ];
+    assert.deepEqual(
+      live.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
+      expected,
+    );
+    const lazy = new SessionTranscriptReader(appSessionId, appSessionId, file.path, 'primary');
+    const paged: TranscriptEvent[] = [];
+    let cursor: TranscriptWindowCursor | undefined;
+    do {
+      const page = lazy.windowBackward(1, 0, cursor);
+      paged.unshift(...page.events);
+      cursor = page.older;
+    } while (cursor);
+    for (const reloaded of [
+      parseFullSessionTranscript(appSessionId, appSessionId, file.path, 'primary'),
+      paged,
+    ]) {
+      assert.deepEqual(
+        reloaded.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
+        expected,
+      );
+      assert.deepEqual(
+        reloaded.filter((entry) => entry.kind === 'tool_call').map((entry) => entry.id),
+        live.filter((entry) => entry.kind === 'tool_call').map((entry) => entry.id),
+      );
+      const markdown = transcriptToMarkdown(reloaded, {
+        title: 'Canvas',
+        providerSessionId: appSessionId,
+      });
+      for (const message of expected) assert.ok(markdown.includes(`**Canvas:** ${message}`));
+    }
+  });
+}
 
 test('eager and paged replay hide internal user messages and restore skill activations', () => {
   // Internal skill bodies arrive as ordinary user text, after leading whitespace.
