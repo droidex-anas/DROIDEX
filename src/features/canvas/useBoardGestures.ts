@@ -24,7 +24,7 @@ export function useBoardGestures({
   onArrangeFrames,
 }: GestureInputs) {
   const [drag, setDrag] = useState<DraggedFrame | null>(null);
-  const [pending, setPending] = useState<PendingLayout | null>(null);
+  const [pending, setPending] = useState<Map<string, PendingLayout>>(() => new Map());
   const [panning, setPanning] = useState(false);
   const [layoutError, setLayoutError] = useState('');
   const gesture = useRef<Gesture | null>(null);
@@ -32,8 +32,10 @@ export function useBoardGestures({
     pointer: null,
     frame: null,
   });
-  const latest = useRef({ scale, onPan });
-  latest.current = { scale, onPan };
+  const latest = useRef({ scale, onPan, frames });
+  latest.current = { scale, onPan, frames };
+  const work = useRef(0);
+  const mounted = useRef(false);
 
   const stopCoalescing = useCallback(() => {
     if (move.current.frame !== null) cancelAnimationFrame(move.current.frame);
@@ -44,21 +46,28 @@ export function useBoardGestures({
     const active = gesture.current;
     if (active === null) return;
     gesture.current = null;
+    work.current += 1;
     stopCoalescing();
     const root = board.current;
     const pointerId = pointerIdOf(active);
     if (root?.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
     setPanning(false);
     setDrag(null);
+    if (active.kind === 'frame') {
+      // A cancelled re-drag restores acknowledged geometry, not its old hold.
+      setPending((held) => withoutHold(held, active.drag.designId));
+    }
   }, [board, stopCoalescing]);
 
   useEffect(() => {
+    mounted.current = true;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') cancelGesture();
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('blur', cancelGesture);
     return () => {
+      mounted.current = false;
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('blur', cancelGesture);
       cancelGesture();
@@ -66,14 +75,21 @@ export function useBoardGestures({
   }, [cancelGesture]);
 
   useEffect(() => {
-    if (pending === null) return;
-    const frame = frames.find((candidate) => candidate.designId === pending.designId);
-    if (!frame || frame.layoutVersion > pending.afterLayoutVersion) setPending(null);
-  }, [pending, frames]);
+    // Prune retired holds; applicability is derived below before this runs.
+    setPending((held) => {
+      const remaining = new Map(held);
+      for (const [designId, hold] of held) {
+        const frame = frames.find((candidate) => candidate.designId === designId);
+        if (!frame || frame.layoutVersion > hold.afterLayoutVersion) remaining.delete(designId);
+      }
+      return remaining.size === held.size ? held : remaining;
+    });
+  }, [frames]);
 
   const rectFor = (frame: CanvasFrame): FrameRect => {
     if (drag?.designId === frame.designId) return drag.rect;
-    if (pending?.designId === frame.designId) return pending.rect;
+    const hold = pending.get(frame.designId);
+    if (hold && frame.layoutVersion <= hold.afterLayoutVersion) return hold.rect;
     return frame.rect;
   };
 
@@ -101,6 +117,8 @@ export function useBoardGestures({
     if (!root) return;
     root.focus({ preventScroll: true });
     root.setPointerCapture(pointerId);
+    work.current += 1;
+    setLayoutError('');
     gesture.current = { kind: 'pan', pointerId, last: pointer };
     onStart();
     setPanning(true);
@@ -126,6 +144,8 @@ export function useBoardGestures({
     }
     root.focus({ preventScroll: true });
     root.setPointerCapture(event.pointerId);
+    work.current += 1;
+    setLayoutError('');
     onStart();
     const rect = rectFor(frame);
     gesture.current = {
@@ -174,16 +194,34 @@ export function useBoardGestures({
     });
     if (commit === null) return;
     const { designId, expectedLayoutVersion } = active.drag;
-    setPending({ designId, rect: commit, afterLayoutVersion: expectedLayoutVersion });
+    const mutationId = crypto.randomUUID();
+    const operation = work.current;
+    setPending((held) =>
+      new Map(held).set(designId, {
+        mutationId,
+        rect: commit,
+        afterLayoutVersion: expectedLayoutVersion,
+      }),
+    );
     setLayoutError('');
     onArrangeFrames({
-      mutationId: crypto.randomUUID(),
+      mutationId,
       frames: [{ designId, expectedLayoutVersion, rect: commit }],
     }).catch((error: unknown) => {
-      setPending((held) => (held?.rect === commit ? null : held));
-      setLayoutError(
-        error instanceof Error && error.message ? error.message : 'That frame could not be moved.',
-      );
+      if (!mounted.current) return;
+      const frame = latest.current.frames.find((candidate) => candidate.designId === designId);
+      if (!frame || frame.layoutVersion > expectedLayoutVersion) return;
+      setPending((held) => {
+        if (held.get(designId)?.mutationId !== mutationId) return held;
+        return withoutHold(held, designId);
+      });
+      if (work.current === operation) {
+        setLayoutError(
+          error instanceof Error && error.message
+            ? error.message
+            : 'That frame could not be moved.',
+        );
+      }
     });
   };
 
@@ -211,9 +249,19 @@ interface DraggedFrame {
 }
 
 interface PendingLayout {
-  designId: string;
+  mutationId: string;
   rect: FrameRect;
   afterLayoutVersion: number;
+}
+
+function withoutHold(
+  held: Map<string, PendingLayout>,
+  designId: string,
+): Map<string, PendingLayout> {
+  if (!held.has(designId)) return held;
+  const remaining = new Map(held);
+  remaining.delete(designId);
+  return remaining;
 }
 
 type Gesture = { kind: 'pan'; pointerId: number; last: Point } | { kind: 'frame'; drag: FrameDrag };

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
+import type { FrameRect } from '../../src/features/canvas/protocol';
 import type {} from './board/CanvasBoardHarness';
 
 let server: ViteDevServer;
@@ -92,6 +93,88 @@ async function wheel(page: Page, x: number, y: number, deltaY: number) {
   );
   await page.clock.runFor(32);
 }
+
+async function renderedRect(page: Page, name: string): Promise<FrameRect> {
+  return frame(page, name).evaluate((element) => {
+    if (!(element instanceof HTMLElement)) throw new Error('Missing frame');
+    return {
+      x: parseFloat(element.style.left),
+      y: parseFloat(element.style.top),
+      width: parseFloat(element.style.width),
+      height: 300,
+    };
+  });
+}
+
+test('two deferred releases retain separate holds until each frame receives newer layout', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  const heldA = await renderedRect(page, 'A');
+  await drag(page, 'B', -40, 30);
+  const heldB = await renderedRect(page, 'B');
+  expect(await renderedRect(page, 'A')).toEqual(heldA);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
+  await page.evaluate(() => {
+    window.boardHarness.resolve(0);
+    window.boardHarness.publish('b', { x: 700, y: 340, width: 400, height: 300 }, 3);
+  });
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual(heldA);
+  expect(await renderedRect(page, 'B')).toEqual(heldB);
+  await page.evaluate(() =>
+    window.boardHarness.publish('a', { x: 170, y: 95, width: 400, height: 300 }, 4),
+  );
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual({ x: 170, y: 95, width: 400, height: 300 });
+  expect(await renderedRect(page, 'B')).toEqual(heldB);
+  await page.evaluate(() =>
+    window.boardHarness.publish('b', { x: 610, y: 330, width: 400, height: 300 }, 4),
+  );
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'B')).toEqual({ x: 610, y: 330, width: 400, height: 300 });
+});
+
+test('Escape during a re-drag restores acknowledged geometry, not its earlier hold', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const acknowledged = await renderedRect(page, 'A');
+  await drag(page, 'A');
+  await drag(page, 'A', 25, 20, false);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual(acknowledged);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+});
+
+test('obsolete arrange rejections cannot replace newer work or report stale errors', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  await drag(page, 'A', 30, 20);
+  const newest = await renderedRect(page, 'A');
+  await page.evaluate(() => window.boardHarness.reject(0));
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual(newest);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.evaluate(() => {
+    window.boardHarness.publish('a', { x: 200, y: 120, width: 400, height: 300 }, 4);
+  });
+  await page.clock.runFor(32);
+  await page.evaluate(() => window.boardHarness.reject(1));
+  await page.clock.runFor(32);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(await renderedRect(page, 'A')).toEqual({ x: 200, y: 120, width: 400, height: 300 });
+  await drag(page, 'B');
+  await page.evaluate(() => window.boardHarness.reject(2));
+  await page.clock.runFor(32);
+  await expect(page.getByRole('alert')).toHaveText('Arrange rejected');
+  expect(await renderedRect(page, 'B')).toEqual({ x: 650, y: 300, width: 400, height: 300 });
+});
 
 test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13/14/16', async ({
   page,
