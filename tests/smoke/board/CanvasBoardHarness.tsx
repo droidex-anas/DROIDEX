@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CanvasBoard } from '../../../src/features/canvas/CanvasBoard';
+import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
+import type { Point } from '../../../src/features/canvas/canvasGeometry';
 import type {
   ArrangeFramesInput,
   CanvasSnapshot,
@@ -14,6 +15,9 @@ interface BoardHarness {
   publish: (designId: string, rect: FrameRect, layoutVersion: number) => void;
   reject: (index: number) => void;
   resolve: (index: number) => void;
+  nudges: Point[];
+  focusFrame: (frameId: string) => void;
+  setSelection: (selected: boolean) => void;
 }
 
 declare global {
@@ -50,9 +54,12 @@ const initial: CanvasSnapshot = {
 };
 const replies: { resolve: () => void; reject: (error: Error) => void }[] = [];
 const calls: ArrangeFramesInput[] = [];
+const nudges: Point[] = [];
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
+  const [selected, setSelection] = useState(false);
+  const board = useRef<CanvasBoardHandle>(null);
   window.boardHarness = {
     calls,
     publish: (designId, rect, layoutVersion) => {
@@ -66,15 +73,23 @@ function Harness() {
     },
     reject: (index) => replies[index].reject(new Error('Arrange rejected')),
     resolve: (index) => replies[index].resolve(),
+    nudges,
+    focusFrame: (frameId) => {
+      if (!board.current) throw new Error('Missing board focus handle');
+      board.current.focusFrame(frameId);
+    },
+    setSelection,
   };
   return (
     <div style={{ padding: 24 }}>
-      <button type="button" id="outside">
+      <button type="button" id="outside" aria-pressed={selected}>
         Outside board
       </button>
       <div style={{ width: 1000, height: 800, marginTop: 12 }}>
         <CanvasBoard
+          ref={board}
           snapshot={snapshot}
+          onNudgeSelection={selected ? (delta) => nudges.push(delta) : undefined}
           onArrangeFrames={(input) => {
             calls.push(input);
             return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));

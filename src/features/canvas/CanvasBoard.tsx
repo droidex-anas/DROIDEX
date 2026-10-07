@@ -5,7 +5,7 @@
 // slot and toggles `capturePointer` for Select and Interact; the header stays
 // the drag handle in both modes (spec §4).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { boardPoint, boardWheelDelta } from './boardCoordinates';
 import {
@@ -31,7 +31,13 @@ const SCROLL_IDLE_MS = 140;
 
 const IDENTITY: Viewport = { x: 0, y: 0, scale: 1 };
 
+export interface CanvasBoardHandle {
+  /** Centers the acknowledged frame and gives keyboard focus to the board. */
+  focusFrame: (frameId: string) => void;
+}
+
 export interface CanvasBoardProps {
+  ref?: Ref<CanvasBoardHandle>;
   snapshot: CanvasSnapshot;
   /**
    * The one layout write a frame drag makes, sent on pointer release. 5a's
@@ -44,12 +50,16 @@ export interface CanvasBoardProps {
    * flipping hit-testing is safe to do.
    */
   capturePointer?: boolean;
+  /** 5c supplies this only with a selection; arrow deltas are one world unit. */
+  onNudgeSelection?: (delta: Point) => void;
 }
 
 export function CanvasBoard({
+  ref,
   snapshot,
   onArrangeFrames,
   capturePointer = true,
+  onNudgeSelection,
 }: CanvasBoardProps) {
   const reducedMotion = useReducedMotion() === true;
   const board = useRef<HTMLDivElement>(null);
@@ -126,6 +136,19 @@ export function CanvasBoard({
       ),
     );
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusFrame: (frameId) => {
+        const frame = latest.current.frames.find((candidate) => candidate.designId === frameId);
+        if (!frame) return;
+        board.current?.focus({ preventScroll: true });
+        fitTo([frame.rect]);
+      },
+    }),
+    [fitTo],
+  );
 
   useEffect(() => {
     fitOnce();
@@ -222,7 +245,7 @@ export function CanvasBoard({
       data-testid="canvas-board"
       tabIndex={0}
       aria-label="Design board"
-      className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg outline-none"
+      className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/10"
       style={{ cursor: boardCursor(gestures.panning, spaceHeld), touchAction: 'none' }}
       onPointerDown={gestures.onBackgroundPointerDown}
       onPointerMove={gestures.onPointerMove}
@@ -236,11 +259,27 @@ export function CanvasBoard({
         gestures.endGesture(event, false);
       }}
       onKeyDown={(event) => {
-        // Space-pan belongs to the board itself. Spec §4: a control or an editor
-        // inside it keeps its own Space, so a key from a descendant is left be.
-        if (event.key !== ' ' || event.target !== event.currentTarget) return;
+        // Descendant controls and editors retain their own keyboard input.
+        if (event.target !== event.currentTarget) return;
+        if (event.key === ' ') {
+          event.preventDefault();
+          setSpaceHeld(true);
+          return;
+        }
+        const delta = arrowDelta(event.key);
+        if (!delta) return;
         event.preventDefault();
-        setSpaceHeld(true);
+        if (onNudgeSelection) {
+          onNudgeSelection(delta);
+          return;
+        }
+        stopAnimation();
+        view.current.navigated = true;
+        setViewport((current) => ({
+          ...current,
+          x: current.x - delta.x * 32,
+          y: current.y - delta.y * 32,
+        }));
       }}
       onKeyUp={(event) => {
         if (event.key === ' ') setSpaceHeld(false);
@@ -255,7 +294,6 @@ export function CanvasBoard({
         style={{
           transform: `translate(${String(viewport.x)}px, ${String(viewport.y)}px) scale(${String(viewport.scale)})`,
           transformOrigin: '0 0',
-          willChange: 'transform',
         }}
       >
         {frames.map((frame) => (
@@ -364,6 +402,21 @@ interface ScrollGesture {
 function boardCursor(panning: boolean, spaceHeld: boolean): string {
   if (panning) return 'grabbing';
   return spaceHeld ? 'grab' : 'default';
+}
+
+function arrowDelta(key: string): Point | null {
+  switch (key) {
+    case 'ArrowLeft':
+      return { x: -1, y: 0 };
+    case 'ArrowRight':
+      return { x: 1, y: 0 };
+    case 'ArrowUp':
+      return { x: 0, y: -1 };
+    case 'ArrowDown':
+      return { x: 0, y: 1 };
+    default:
+      return null;
+  }
 }
 
 // cubic-bezier(0.22, 1, 0.36, 1) from spec §11, solved for y at a given x.

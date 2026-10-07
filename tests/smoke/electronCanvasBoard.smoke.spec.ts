@@ -37,7 +37,7 @@ test('window blur and focus leaving the board cancel without arranging and relea
     expect(restored.y).toBeCloseTo(acknowledged.y, 1);
     expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(false);
     await drag(page, 'A');
-    expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
   }
 });
 
@@ -56,6 +56,7 @@ async function openBoard(
   await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
   await page.goto(`${url}?font=${font}`);
   await expect(page.getByTestId('canvas-board')).toBeVisible();
+  await expect(page.getByTestId('canvas-board').getByText('95%', { exact: true })).toBeVisible();
   await page.clock.runFor(32);
 }
 
@@ -73,6 +74,7 @@ async function drag(page: Page, name: string, x = 60, y = 40, release = true) {
   const header = await box(frame(page, name).locator(':scope > div').first());
   const origin = { x: Math.round(header.x + 30), y: Math.round(header.y + 8) };
   await page.mouse.move(origin.x, origin.y);
+  await page.clock.runFor(32);
   await page.mouse.down();
   await page.mouse.move(origin.x + x, origin.y + y);
   await page.clock.runFor(32);
@@ -86,9 +88,9 @@ async function wheel(
   deltaY: number,
   options: WheelEventInit = { ctrlKey: true },
 ) {
-  await page.getByTestId('canvas-board').evaluate(
+  const prevented = await page.getByTestId('canvas-board').evaluate(
     (root, point) => {
-      root.dispatchEvent(
+      return !root.dispatchEvent(
         new WheelEvent('wheel', {
           clientX: point.x,
           clientY: point.y,
@@ -101,6 +103,7 @@ async function wheel(
     },
     { x, y, deltaY, options },
   );
+  expect(prevented).toBe(true);
   await page.clock.runFor(32);
 }
 
@@ -251,6 +254,7 @@ test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13
     const anchor = { x: Math.round(beforeZoom.x), y: Math.round(beforeZoom.y) };
     await wheel(page, anchor.x, anchor.y, 20);
     const afterZoom = await box(frame(page, 'B'));
+    expect(afterZoom.width).toBeLessThan(beforeZoom.width);
     const ratio = afterZoom.width / beforeZoom.width;
     expect(afterZoom.x).toBeCloseTo(anchor.x + (beforeZoom.x - anchor.x) * ratio, 1);
     expect(afterZoom.y).toBeCloseTo(anchor.y + (beforeZoom.y - anchor.y) * ratio, 1);
@@ -270,9 +274,8 @@ test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13
     expect(afterPan.x - afterDrag.x).toBeCloseTo(60, 1);
     expect(afterPan.y - afterDrag.y).toBeCloseTo(40, 1);
     await wheel(page, 400, 300, 40, { deltaX: 60 });
-    const afterWheelPan = await box(frame(page, 'A'));
-    expect(afterWheelPan.x - afterPan.x).toBeCloseTo(-60, 1);
-    expect(afterWheelPan.y - afterPan.y).toBeCloseTo(-40, 1);
+    await expect.poll(async () => (await box(frame(page, 'A'))).x - afterPan.x).toBeCloseTo(-60, 1);
+    await expect.poll(async () => (await box(frame(page, 'A'))).y - afterPan.y).toBeCloseTo(-40, 1);
   }
 });
 
@@ -306,5 +309,51 @@ test('plain wheel pans in pixel, line and page units; cmd-wheel zoom stays point
   expect(ratio).toBeLessThan(1);
   expect(after.x).toBeCloseTo(400 + (before.x - 400) * ratio, 1);
   expect(after.y).toBeCloseTo(300 + (before.y - 300) * ratio, 1);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('keyboard arrows pan only without a selection, with a visible soft board focus cue', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.locator('#outside').focus();
+  await page.keyboard.press('Tab');
+  const board = page.getByTestId('canvas-board');
+  await expect(board).toBeFocused();
+  const before = await box(frame(page, 'A'));
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await page.clock.runFor(32);
+  const after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-32, 1);
+  expect(after.y - before.y).toBeCloseTo(-32, 1);
+  expect(await board.evaluate((root) => getComputedStyle(root).boxShadow)).not.toBe('none');
+  await page.evaluate(() => window.boardHarness.setSelection(true));
+  await expect(page.locator('#outside')).toHaveAttribute('aria-pressed', 'true');
+  await page.clock.runFor(32);
+  const selectedView = await transform(page);
+  await page.keyboard.press('ArrowRight');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.nudges))
+    .toEqual([{ x: 1, y: 0 }]);
+  expect(await transform(page)).toBe(selectedView);
+  await page.getByRole('button', { name: 'Fit', exact: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  expect(await transform(page)).toBe(selectedView);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('the public focusFrame entry point centers acknowledged geometry and takes board focus', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.focusFrame('b'));
+  await page.clock.runFor(32);
+  await expect(page.getByTestId('canvas-board')).toBeFocused();
+  const board = await box(page.getByTestId('canvas-board'));
+  const focused = await box(frame(page, 'B'));
+  expect(focused.width).toBeCloseTo(400, 1);
+  expect(focused.x + 200).toBeCloseTo(board.x + board.width / 2, 1);
+  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2, 1);
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
