@@ -23,7 +23,7 @@ const INSPECT = `function (activation, requireFocus) {
   };
 }`;
 
-function createBrowserAgentSafety({ reading, showPrompt }) {
+function createBrowserAgentSafety({ showPrompt }) {
   async function inspectNode(dbg, target, activation, dispatch, requireFocus = false) {
     const { backendNodeId, sessionId, document } = target;
     if (!backendNodeId || target.closedShadow)
@@ -68,24 +68,25 @@ function createBrowserAgentSafety({ reading, showPrompt }) {
     }
   }
 
-  async function inspectPointer(dbg, entry, request, point, dispatch) {
-    if (request.ref) {
-      const target = await reading.lookupRef(dbg, entry, request.ref);
-      return inspectNode(dbg, { ...target, sessionId: target.frame.sessionId }, 'click', dispatch);
-    }
-    const { cssLayoutViewport } = await dbg.sendCommand('Page.getLayoutMetrics');
-    const hit = await dbg.sendCommand('DOM.getNodeForLocation', {
-      x: Math.round(point.x + cssLayoutViewport.pageX),
-      y: Math.round(point.y + cssLayoutViewport.pageY),
+  async function inspectPointer(dbg, point, dispatch) {
+    const { sessionId } = point;
+    const local = point.local || point;
+    const { cssLayoutViewport } = await send(dbg, sessionId, 'Page.getLayoutMetrics');
+    const hit = await send(dbg, sessionId, 'DOM.getNodeForLocation', {
+      x: Math.round(local.x + cssLayoutViewport.pageX),
+      y: Math.round(local.y + cssLayoutViewport.pageY),
+      includeUserAgentShadowDOM: false,
     });
-    const frame = (await documentFrames(dbg)).find((frame) => frame.id === hit.frameId);
-    if (!frame || frame.sessionId)
+    const frame = (await documentFrames(dbg)).find(
+      (frame) => frame.id === hit.frameId && frame.sessionId === sessionId,
+    );
+    if (!frame)
       throw new Error(
         'Use a ref to click inside this frame so DROIDEX can inspect the action first.',
       );
     return inspectNode(
       dbg,
-      { backendNodeId: hit.backendNodeId, document: frame.loaderId },
+      { backendNodeId: hit.backendNodeId, document: frame.loaderId, sessionId },
       'click',
       dispatch,
     );

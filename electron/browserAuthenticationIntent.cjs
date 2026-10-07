@@ -10,11 +10,14 @@ const ACTIONS = {
 
 function validateAgentAuthenticationIntent(intent, currentUrl) {
   if (!ACTIONS[intent?.kind]) throw new Error('Unknown browser authentication action.');
+  if (intent.method !== null && !['get', 'post', 'dialog'].includes(intent.method))
+    throw new Error('Authentication submission method is invalid.');
   const origin = httpUrl(currentUrl).origin;
   return {
     kind: intent.kind,
     origin,
     targetUrl: intent.targetUrl ? httpUrl(intent.targetUrl).href : null,
+    method: intent.method,
   };
 }
 

@@ -45,9 +45,22 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
   const selector =
     'button,a,input[type="submit"],input[type="button"],input[type="image"],[role="button"],[role="link"]';
   const candidate = target.closest(selector) || target.closest('label') || target;
-  const control = candidate.localName === 'label' ? candidate.control || candidate : candidate;
+  let control = candidate.localName === 'label' ? candidate.control || candidate : candidate;
   const form = control.form || control.closest('form');
   if (activation !== 'enter' && !control.matches(selector)) return null;
+  if (
+    activation === 'enter' &&
+    form &&
+    control.localName === 'input' &&
+    !control.matches(selector)
+  ) {
+    // Native implicit submission clicks the first submit button owned by this form,
+    // including external controls and image inputs omitted from form.elements.
+    const submitter = [...control.getRootNode().querySelectorAll('button,input')].find(
+      (field) => field.form === form && ['submit', 'image'].includes(field.type),
+    );
+    if (submitter) control = submitter;
+  }
   const label = [
     control.getAttribute('aria-label'),
     control.getAttribute('title'),
@@ -83,9 +96,15 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
   else if (kinds.some(Boolean) || /sign[ -]?in|log[ -]?in/.test(context)) kind = 'signin';
   if (!kind) return null;
   let targetUrl = form?.action;
-  if (control.localName === 'a') targetUrl = control.href;
-  else if (control.getAttribute('formaction')) targetUrl = control.formAction;
-  return { kind, targetUrl: targetUrl || null };
+  let method = form?.method || null;
+  if (control.localName === 'a') {
+    targetUrl = control.href;
+    method = null;
+  } else {
+    if (control.getAttribute('formaction') !== null) targetUrl = control.formAction;
+    if (control.getAttribute('formmethod') !== null) method = control.formMethod;
+  }
+  return { kind, targetUrl: targetUrl || null, method };
 }
 
 module.exports = {

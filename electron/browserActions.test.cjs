@@ -8,7 +8,11 @@ const { refFor } = require('./browserRefs.cjs');
 
 function fixture() {
   const fields = new Map();
-  const document = { defaultView: {}, activeElement: null };
+  const document = {
+    defaultView: {},
+    activeElement: null,
+    querySelectorAll: (selector) => [...fields.values()].filter((node) => node.matches(selector)),
+  };
   const mainDocument = { defaultView: {}, activeElement: null };
   let afterCommand = () => {};
   let onInput = () => {};
@@ -17,7 +21,7 @@ function fixture() {
       this.localName = tag;
       this.ownerDocument = document;
       this.attributes = attributes;
-      this.type = attributes.type || 'text';
+      this.type = attributes.type || (tag === 'button' ? 'submit' : 'text');
       this.textContent = '';
       this.value = '';
       this.isConnected = true;
@@ -43,7 +47,7 @@ function fixture() {
     closest(selector) {
       if (this.matches(selector)) return this;
       if (selector === 'form') return this.form || null;
-      return null;
+      return this.parentElement?.closest(selector) || null;
     }
     focus() {
       document.activeElement = this;
@@ -79,6 +83,8 @@ function fixture() {
   const dbg = new EventEmitter();
   dbg.sendCommand = async (method, params = {}) => {
     if (['Target.setAutoAttach', 'Runtime.releaseObject'].includes(method)) return {};
+    if (method === 'DOM.scrollIntoViewIfNeeded') return {};
+    if (method === 'DOM.getContentQuads') return { quads: [[0, 0, 20, 0, 20, 20, 0, 20]] };
     if (method === 'Page.getFrameTree') return { frameTree: { frame } };
     if (method === 'Page.createIsolatedWorld') return { executionContextId: 2 };
     if (method === 'Page.getLayoutMetrics') return { cssLayoutViewport: { pageX: 0, pageY: 0 } };
@@ -105,7 +111,9 @@ function fixture() {
         const fn = vm.runInNewContext(`(${params.functionDeclaration})`, context);
         const value = fn.apply(
           target,
-          (params.arguments || []).map((arg) => arg.value),
+          (params.arguments || []).map((arg) =>
+            arg.objectId ? fields.get(Number(arg.objectId)) : arg.value,
+          ),
         );
         return {
           result:
@@ -176,7 +184,12 @@ function fixture() {
   function button(label, formFields = []) {
     hit = new Element('button');
     hit.textContent = label;
-    hit.form = { elements: formFields, action: 'https://example.test/submit', textContent: label };
+    hit.form = {
+      elements: [...formFields, hit],
+      action: 'https://example.test/submit',
+      method: 'get',
+      textContent: label,
+    };
     return hit;
   }
   return {
@@ -199,6 +212,13 @@ function fixture() {
     label: (control) => {
       hit = new Element('label');
       hit.control = control;
+    },
+    groupAround: (control) => {
+      const group = new Element('div', { role: 'group', 'aria-label': 'Account' });
+      control.parentNode = control.parentElement = group;
+      hit = new Element('span');
+      hit.parentNode = hit.parentElement = control;
+      return refFor(entry, frame.loaderId, group.id);
     },
     answer: (fn) => {
       answer = fn;
@@ -278,6 +298,58 @@ test('Enter can submit a saved password only after approval', async () => {
   await f.act({ action: 'press', key: 'Enter' });
   assert.equal(f.input.filter((event) => event.type === 'keyDown').length, 1);
   assert.equal(f.prompts.length, 2);
+});
+
+test('clicking a group ref requires approval for the sign-in button under its click point', async () => {
+  const f = fixture();
+  const password = f.field({ type: 'password' }).node;
+  const ref = f.groupAround(f.button('Continue', [password]));
+  await assert.rejects(f.act({ action: 'click', ref }), /denied/);
+  assert.equal(f.prompts.length, 1);
+  assert.match(f.prompts[0].message, /submit a sign-in/);
+  assert.equal(
+    f.input.some((event) => event.type === 'mousePressed'),
+    false,
+  );
+
+  f.answer(async () => ({ response: 0 }));
+  await f.act({ action: 'click', ref });
+  assert.equal(f.prompts.length, 2);
+  assert.equal(f.input.filter((event) => event.type === 'mousePressed').length, 1);
+});
+
+test('implicit Enter approves the default submit button destination and binds its method', async () => {
+  for (const action of [
+    { action: 'press', key: 'Enter' },
+    { action: 'type', text: 'account', submit: true },
+  ]) {
+    const f = fixture();
+    const { node } = f.field({});
+    const password = f.field({ type: 'password' }).node;
+    f.button('Unrelated form');
+    const submit = f.button('Sign in', [node, password]);
+    const later = f.button('Other destination');
+    node.form = later.form = submit.form;
+    submit.attributes.formaction = submit.formAction = 'https://identity.test/login';
+    submit.attributes.formmethod = submit.formMethod = 'post';
+    node.focus();
+
+    await assert.rejects(f.act(action), /denied/);
+    assert.match(f.prompts[0].message, /opening https:\/\/identity\.test/);
+    assert.deepEqual(f.input, []);
+
+    f.answer(async () => {
+      submit.attributes.formmethod = submit.formMethod = 'get';
+      return { response: 0 };
+    });
+    await assert.rejects(f.act(action), /target changed/);
+    assert.deepEqual(f.input, []);
+
+    f.answer(async () => ({ response: 0 }));
+    await f.act(action);
+    assert.equal(f.prompts.length, 3);
+    assert.equal(f.input.filter((event) => event.type === 'keyDown').length, 1);
+  }
 });
 
 test('type with submit cannot send its Enter without approving the sign-in form', async () => {

@@ -29,7 +29,7 @@ function createBrowserActions({
   redactUrl,
   onPoint,
 }) {
-  const safety = createBrowserAgentSafety({ reading, showPrompt });
+  const safety = createBrowserAgentSafety({ showPrompt });
   const { refuseCovered } = createBrowserCover({ reading });
 
   async function act(contents, entry, request) {
@@ -126,13 +126,13 @@ function createBrowserActions({
         await refuseCovered(contents, entry, request.ref, now);
       }
       const inspected = await runWithWebContentsDebugger(contents, (dbg) =>
-        safety.inspectPointer(dbg, entry, request, target),
+        safety.inspectPointer(dbg, target),
       );
       await safety.authorize(contents, entry, request, inspected);
       notLate(step);
       if (request.ref) await refuseCovered(contents, entry, request.ref, target);
       const dispatch = (dbg, event, holding) =>
-        safety.inspectPointer(dbg, entry, request, target, (current) => {
+        safety.inspectPointer(dbg, target, (current) => {
           safety.verify(inspected, current);
           if (!holding()) throw new Error(LATE);
           startInput(step);
