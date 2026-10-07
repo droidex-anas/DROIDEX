@@ -524,6 +524,31 @@
     animation: prompt-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   }
 
+  /* A thread's message pops in the way a group chat's does: it grows out of
+     the sender's avatar with a touch of overshoot, and several arriving
+     together follow one another. Only rows that just arrived carry the class,
+     so history never animates. */
+  @keyframes bubble-pop {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.94);
+    }
+    60% {
+      opacity: 1;
+      transform: translateY(0) scale(1.01);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .bubble-enter .thread-bubble {
+    transform-origin: top left;
+    animation: bubble-pop 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+    animation-delay: calc(var(--bubble-index, 0) * 90ms);
+  }
+
   /* The Working line fades in rather than popping, and lives in a fixed line
      box so the row rhythm below the feed never jitters. */
   @keyframes cue-enter {
@@ -563,6 +588,7 @@
     .feed-row-enter,
     .tool-rows-live > *,
     .prompt-enter,
+    .bubble-enter .thread-bubble,
     .cue-enter,
     .md-typing .md-shell::after,
     .md-typing .md-shell *::after {

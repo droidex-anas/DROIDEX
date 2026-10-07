@@ -910,6 +910,11 @@ export class ProjectService {
           this.membership.set(bound, project);
           await this.save();
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
+          // A new chat is named after its first prompt, which here is DROIDEX's
+          // brief. Named before the first turn, so its own plan_set title wins.
+          await this.sessions.rename(bound, input.title).catch((error: unknown) => {
+            console.warn(`Could not name project thread ${bound ?? ''}:`, error);
+          });
         },
         clientRef,
       );

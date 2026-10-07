@@ -5,6 +5,7 @@ import {
   feedRowReachClassName,
   useTranscriptReachChrome,
 } from '../features/transcript-reach/transcriptReachContext';
+import { isThreadReport } from '../features/projects/threadNotices';
 import { hasAppBlock } from './appBlockRuntime';
 import { FeedItemView, feedItemPropsEqual, type FeedItemViewProps } from './chat';
 
@@ -28,7 +29,9 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
   const isMessage = item.type === 'message';
   const isWideAppResponse =
     item.type === 'message' && item.event.author !== 'user' && hasAppBlock(item.event.text ?? '');
-  const entranceClass = isPrompt ? 'prompt-enter' : 'feed-row-enter';
+  let entranceClass = isPrompt ? 'prompt-enter' : 'feed-row-enter';
+  // A thread's report arrives from the side, not out of the composer.
+  if (isPrompt && isThreadReport(item.event.text)) entranceClass = 'bubble-enter';
   const rowId = feedRowId(item);
   const reach = useTranscriptReachChrome();
   const reachClass = feedRowReachClassName({
