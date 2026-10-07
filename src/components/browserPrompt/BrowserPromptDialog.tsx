@@ -8,9 +8,13 @@ import { pushEscapeLayer } from '../environment/usePopover';
 import { BrowserPromptActions, BrowserPromptDeadline } from './BrowserPromptActions';
 
 // App shortcuts are window keydown listeners; a modal keeps them from acting
-// on the app behind it. Plain keys still reach the dialog's own buttons.
+// on the app behind it. Only the keys the dialog itself uses get through:
+// Tab moves between its buttons, Enter and Space press them, Escape cancels.
+const DIALOG_KEYS = new Set(['Tab', 'Enter', ' ', 'Escape']);
+
 function stopAppShortcut(event: KeyboardEvent) {
-  if (event.metaKey || event.ctrlKey || event.altKey) event.stopImmediatePropagation();
+  const dialogKey = DIALOG_KEYS.has(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey;
+  if (!dialogKey) event.stopImmediatePropagation();
 }
 
 // Main's detail for a protection change lists one "Setting: from → to" per
