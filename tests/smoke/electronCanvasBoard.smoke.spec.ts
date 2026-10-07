@@ -1,0 +1,99 @@
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { createServer, type ViteDevServer } from 'vite';
+import type {} from './board/CanvasBoardHarness';
+
+let server: ViteDevServer;
+let url: string;
+
+test.beforeAll(async () => {
+  server = await createServer({
+    server: { host: '127.0.0.1', port: 0, strictPort: false },
+  });
+  await server.listen();
+  const address = server.httpServer?.address();
+  if (!address || typeof address === 'string') throw new Error('Missing board server');
+  url = `http://127.0.0.1:${address.port}/tests/smoke/board/index.html`;
+});
+
+test.afterAll(async () => {
+  await server?.close();
+});
+
+async function openBoard(page: Page, font = 14) {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install();
+  await page.goto(`${url}?font=${font}`);
+  await expect(page.getByTestId('canvas-board')).toBeVisible();
+  await page.clock.pauseAt(new Date());
+  await page.clock.runFor(32);
+}
+
+function frame(page: Page, name: string): Locator {
+  return page.getByText(`Design ${name}`, { exact: true }).locator('..').locator('..');
+}
+
+async function box(locator: Locator) {
+  const rect = await locator.boundingBox();
+  if (!rect) throw new Error('Missing frame box');
+  return rect;
+}
+
+async function drag(page: Page, name: string, x = 60, y = 40, release = true) {
+  const header = await box(frame(page, name).locator(':scope > div').first());
+  const origin = { x: Math.round(header.x + 30), y: Math.round(header.y + 8) };
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
+  await page.mouse.move(origin.x + x, origin.y + y);
+  await page.clock.runFor(32);
+  if (release) await page.mouse.up();
+}
+
+async function wheel(page: Page, x: number, y: number, deltaY: number) {
+  await page.getByTestId('canvas-board').evaluate(
+    (root, point) => {
+      root.dispatchEvent(
+        new WheelEvent('wheel', {
+          clientX: point.x,
+          clientY: point.y,
+          deltaY: point.deltaY,
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { x, y, deltaY },
+  );
+  await page.clock.runFor(32);
+}
+
+test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13/14/16', async ({
+  page,
+}) => {
+  for (const font of [13, 14, 16]) {
+    await openBoard(page, font);
+    const beforeZoom = await box(frame(page, 'B'));
+    const anchor = { x: Math.round(beforeZoom.x), y: Math.round(beforeZoom.y) };
+    await wheel(page, anchor.x, anchor.y, 20);
+    const afterZoom = await box(frame(page, 'B'));
+    const ratio = afterZoom.width / beforeZoom.width;
+    expect(afterZoom.x).toBeCloseTo(anchor.x + (beforeZoom.x - anchor.x) * ratio, 1);
+    expect(afterZoom.y).toBeCloseTo(anchor.y + (beforeZoom.y - anchor.y) * ratio, 1);
+    const beforeDrag = await box(frame(page, 'A'));
+    await drag(page, 'A');
+    const afterDrag = await box(frame(page, 'A'));
+    expect(afterDrag.x - beforeDrag.x).toBeCloseTo(60, 1);
+    expect(afterDrag.y - beforeDrag.y).toBeCloseTo(40, 1);
+    expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+    const board = await box(page.getByTestId('canvas-board'));
+    await page.mouse.move(Math.round(board.x + 10), Math.round(board.y + 10));
+    await page.mouse.down();
+    await page.mouse.move(Math.round(board.x + 70), Math.round(board.y + 50));
+    await page.mouse.up();
+    await page.clock.runFor(32);
+    const afterPan = await box(frame(page, 'A'));
+    expect(afterPan.x - afterDrag.x).toBeCloseTo(60, 1);
+    expect(afterPan.y - afterDrag.y).toBeCloseTo(40, 1);
+  }
+});

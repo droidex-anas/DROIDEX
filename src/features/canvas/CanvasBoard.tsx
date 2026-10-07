@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
+import { boardPoint } from './boardCoordinates';
 import {
   fitFrames,
   interpolateViewport,
@@ -166,8 +167,7 @@ export function CanvasBoard({
         if (!fresh) return;
         stopAnimation();
       }
-      const box = root.getBoundingClientRect();
-      const pointer = { x: event.clientX - box.left, y: event.clientY - box.top };
+      const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
       view.current.navigated = true;
       setViewport((current) =>
         zoomAtPoint(current, pointer, wheelZoomScale(current.scale, event.deltaY, event.ctrlKey)),
@@ -247,19 +247,22 @@ export function CanvasBoard({
 
   const onBackgroundPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || gesture.current !== null) return;
-    startPan(event.pointerId, { x: event.clientX, y: event.clientY });
+    startPan(
+      event.pointerId,
+      boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }),
+    );
   };
 
   const onFramePointerDown = (frame: CanvasFrame, event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || gesture.current !== null) return;
     event.stopPropagation();
-    const client = { x: event.clientX, y: event.clientY };
+    const root = board.current;
+    if (!root) return;
+    const client = boardPoint(root, { x: event.clientX, y: event.clientY });
     if (spaceHeld) {
       startPan(event.pointerId, client);
       return;
     }
-    const root = board.current;
-    if (!root) return;
     root.setPointerCapture(event.pointerId);
     stopAnimation();
     // The gesture starts from where the user sees the frame, which is not the
@@ -282,7 +285,7 @@ export function CanvasBoard({
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const active = gesture.current;
     if (active === null || event.pointerId !== pointerIdOf(active)) return;
-    move.current.pointer = { x: event.clientX, y: event.clientY };
+    move.current.pointer = boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY });
     // Spec §11: the transform updates once per animation frame, and the pointer
     // is followed 1:1 with no easing behind the hand.
     move.current.frame ??= requestAnimationFrame(flushMove);
@@ -294,7 +297,9 @@ export function CanvasBoard({
     stopCoalescing();
     // The release carries the hand's last position, and the frame coalescing it
     // may never have run; this settles `active.drag` on its final rect.
-    if (released) applyPointer({ x: event.clientX, y: event.clientY });
+    if (released) {
+      applyPointer(boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }));
+    }
     gesture.current = null;
     if (active.kind === 'pan') {
       setPanning(false);

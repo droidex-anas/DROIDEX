@@ -112,7 +112,7 @@ export interface FrameDrag {
   pointerId: number;
   /** The layout the gesture started from; a remote move since then rejects it. */
   expectedLayoutVersion: number;
-  /** Where the pointer went down, in client pixels. */
+  /** Where the pointer went down, in board-local pixels. */
   origin: Point;
   startRect: FrameRect;
   rect: FrameRect;
