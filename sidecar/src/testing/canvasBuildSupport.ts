@@ -56,7 +56,7 @@ export interface HeldCompile {
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
   ready(artifactId: string, elements?: SourceElement[], diagnostics?: CanvasDiagnostic[]): void;
-  failed(code: string): void;
+  failed(code: string, details?: Omit<CanvasDiagnostic, 'code'>): void;
   unavailable(): void;
   /** The compiler refused the runtime the app staged, which no restart fixes. */
   damagedRuntime(): void;
@@ -150,8 +150,8 @@ class FakeCompiler implements DesignCompiler {
             elements,
           });
         },
-        failed: (code) => {
-          reject(new CompileFailedError([{ code, message: COMPILE_FAILED }]));
+        failed: (code, details = { message: COMPILE_FAILED }) => {
+          reject(new CompileFailedError([{ code, ...details }]));
         },
         unavailable: () => {
           reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
@@ -494,4 +494,16 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
       });
     },
   };
+}
+
+/** A loaded stand-in host with its compiler fleet and deadlines under test control. */
+export async function controlledBuildHost(
+  t: TestContext,
+  revisions: Parameters<typeof buildHost>[2] = [],
+) {
+  const fleet = new CompilerFleet();
+  const deadlines = fakeDeadlines();
+  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
+  const canvas = await buildHost(t, builds, revisions);
+  return { canvas, builds, fleet, deadlines };
 }

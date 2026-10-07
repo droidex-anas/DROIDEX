@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { CanvasFiles } from '../canvas/canvasFiles.js';
 import type { CanvasManifest } from '../canvas/canvasManifest.js';
-import type { CanvasBuildState } from '../canvas/protocol.js';
+import type { CanvasBuildState, CanvasDiagnostic } from '../canvas/protocol.js';
 import { instrumentSource } from '../canvas/sourceElements.js';
 import { board, type Board, type BoardOptions } from './canvasBuildSupport.js';
 
@@ -37,11 +37,13 @@ export function reportedStates(canvas: Board, designId: string): CanvasBuildStat
   );
 }
 
-export async function readyElementMap(t: TestContext) {
+export async function readyElementMap(
+  t: TestContext,
+  source = 'export default function App(){ return <h1>v1</h1> }',
+) {
   const canvas = await board(t);
   const [designId] = await canvas.create('Hey');
   assert.ok(designId);
-  const source = 'export default function App(){ return <h1>v1</h1> }';
   const receipt = await canvas.write(designId, null, source);
   const elements = instrumentSource({ 'main.tsx': source }, receipt.revisionId).elements;
   (await canvas.fleet.compile(1)).ready('artifact-one', elements);
@@ -69,4 +71,36 @@ export function readyState(
 /** The fixture owns recovery of its accepted revision independently of renderer watches. */
 export function recoverArtifact(canvas: Board, designId: string, revisionId: string) {
   return canvas.builds.readArtifact(canvas.canvasId, designId, revisionId, () => true);
+}
+
+/** Two distinct designs share one workspace and its two physical build slots. */
+export async function twoDesigns(t: TestContext) {
+  const canvas = await board(t);
+  const [one, two] = await canvas.create('One', 'Two');
+  assert.ok(one && two);
+  return { canvas, one, two };
+}
+
+/** A missing saved outcome restores pending and admits only its exact revision on demand. */
+export async function rebuildAfterCacheMiss(
+  t: TestContext,
+  canvas: Board,
+  designId: string,
+  revisionId: string,
+  options: BoardOptions = {},
+) {
+  const reopened = await board(t, { store: canvas.store, ...options });
+  assert.deepEqual(reopened.frame(designId).build, { status: 'pending', generation: 0 });
+  reopened.builds.requestRebuilds(reopened.workspace.snapshot(reopened.canvasId));
+  assert.equal((await reopened.fleet.compile(1)).input.revisionId, revisionId);
+}
+
+export async function diagnosticFailure(t: TestContext, details: Omit<CanvasDiagnostic, 'code'>) {
+  const canvas = await board(t);
+  const [designId] = await canvas.create('Broken');
+  assert.ok(designId);
+  await canvas.write(designId, null, 'export default () => null');
+  (await canvas.fleet.compile(1)).failed('missing_module', details);
+  await canvas.reported(designId, 'failed');
+  return { canvas, designId };
 }

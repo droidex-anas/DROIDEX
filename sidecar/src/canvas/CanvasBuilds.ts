@@ -9,7 +9,8 @@
 // its gate runs again after every await there, so nothing lands once a newer
 // attempt, a cancellation or shutdown has taken the frame.
 
-import { builtState, CanvasBuildCache, MAX_BUILD_DIAGNOSTICS } from './canvasBuildCache.js';
+import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
+import { boundDiagnostics } from './canvasDiagnostics.js';
 import { buildFailure, unsavedBuild, type BuildOutcome } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { BuildCommit, BuildTarget, CanvasBuildHost } from './canvasBuildHost.js';
@@ -379,7 +380,7 @@ export class CanvasBuilds {
           status: 'ready',
           artifactId: compiled.artifactId,
           elements: compiled.elements,
-          diagnostics: compiled.diagnostics.slice(0, MAX_BUILD_DIAGNOSTICS),
+          diagnostics: compiled.diagnostics,
         },
         persists: true,
       };
@@ -398,7 +399,8 @@ export class CanvasBuilds {
    * result that lost its frame takes any file back and settles silently.
    */
   private publish(slot: BuildSlot, job: RunningBuild, outcome: BuildOutcome): Promise<void> {
-    const { result, persists } = outcome;
+    const { persists } = outcome;
+    const result = { ...outcome.result, diagnostics: boundDiagnostics(outcome.result.diagnostics) };
     return this.owner.host.commitBuild(job.canvasId, job.designId, async () => {
       if (!this.wanted(slot, job)) return null;
       if (persists) await this.saveOutcome(job, result);

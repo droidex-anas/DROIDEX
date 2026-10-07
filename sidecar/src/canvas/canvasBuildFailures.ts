@@ -4,7 +4,7 @@
 // outcome that is a function of the source, because only that one would be
 // reached again by a rebuild. An attempt's own failure is this attempt's alone.
 
-import { MAX_BUILD_DIAGNOSTICS, type BuildResult } from './canvasBuildCache.js';
+import type { BuildResult } from './canvasBuildCache.js';
 import {
   COMPILER_UNAVAILABLE,
   CompileCancelledError,
@@ -41,7 +41,7 @@ export function buildFailure(error: unknown, overdue: boolean): BuildOutcome | n
   // worth keeping: a rebuild of this revision would reach them again.
   if (error instanceof CompileFailedError)
     return {
-      result: { status: 'failed', diagnostics: error.diagnostics.slice(0, MAX_BUILD_DIAGNOSTICS) },
+      result: { status: 'failed', diagnostics: error.diagnostics },
       persists: true,
     };
   // The client forks a fresh process on its next build, so a crash costs this

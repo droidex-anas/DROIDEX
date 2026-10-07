@@ -314,3 +314,24 @@ export async function workspaceAtReceiptCapacity(t: TestContext) {
 
   return { workspace, canvasId, design, input, scope };
 }
+
+/** Holds only manifest staging, after artifact and outcome storage have completed. */
+export function holdBuildManifest() {
+  const reached = deferred();
+  const released = deferred();
+  let armed = false;
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed || operation !== 'open' || !path.includes('/manifest.json.')) return;
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  });
+  return {
+    fs,
+    reached: reached.promise,
+    release: released.resolve,
+    arm: () => {
+      armed = true;
+    },
+  };
+}
