@@ -578,6 +578,38 @@ function emptySnapshot(): BridgeRuntimeSnapshot {
   };
 }
 
+test('a malformed pinned Canvas context is refused with its stable code and nothing else', async (t) => {
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(t, async (command) => {
+    commands.push(command);
+  });
+  const { socket, received } = await connect(t, harness);
+  const send = (canvasContext: unknown) => {
+    socket.send(
+      JSON.stringify({ type: 'session.send', appSessionId: 'chat-one', text: 'hi', canvasContext }),
+    );
+  };
+
+  send({ designs: [{ designId: '../etc', revisionId: null }], elements: [], designSystem: null });
+  await waitFor(() => received.length > 0);
+  const refusal = JSON.parse(received[0]) as { type: string; code?: string; message: string };
+  assert.equal(refusal.type, 'error');
+  assert.equal(refusal.code, 'canvas.invalid_input');
+  // The first refinement message, never the payload (spec §8).
+  assert.match(refusal.message, /^A Canvas identifier is 1 to \d+ characters/);
+  assert.equal(refusal.message.includes('../etc'), false);
+  assert.equal(commands.length, 0);
+
+  // A well-formed context reaches the session layer beside the prompt text.
+  const designSystem = { id: 'droidex', version: 1, mode: 'light' };
+  send({ designs: [{ designId: 'dsg_hey', revisionId: null }], elements: [], designSystem });
+  await waitFor(() => commands.length > 0);
+  const [command] = commands;
+  assert.ok(command.type === 'session.send');
+  assert.deepEqual(command.canvasContext?.designs, [{ designId: 'dsg_hey', revisionId: null }]);
+  assert.equal(command.text, 'hi');
+});
+
 function socketOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     socket.once('open', () => resolve());

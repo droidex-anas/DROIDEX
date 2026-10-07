@@ -124,6 +124,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
   const root = document.getElementById('canvas-root') || document.body;
   let lastWidth = -1;
   let lastHeight = -1;
+  let ready = false;
+  let reportedError = false;
   const measure = () => {
     const width = Math.ceil(root.scrollWidth);
     const height = Math.ceil(root.scrollHeight);
@@ -132,11 +134,24 @@ const GENERATED_FRAME_REPORTER = `(() => {
     lastHeight = height;
     post('resize', { width: width, height: height });
   };
-  new ResizeObserver(measure).observe(root);
-  requestAnimationFrame(() => {
-    measure();
-    post('ready', {});
-  });
+  const renderState = () => {
+    const result = globalThis.__droidexCanvasRenderState;
+    if (result?.state === 'failed') {
+      if (!reportedError) report(result.message || 'The preview stopped with an error.');
+      reportedError = true;
+      return;
+    }
+    if (result?.state !== 'committed' || ready) return;
+    ready = true;
+    requestAnimationFrame(() => {
+      if (globalThis.__droidexCanvasRenderState?.state !== 'committed') return;
+      new ResizeObserver(measure).observe(root);
+      measure();
+      post('ready', {});
+    });
+  };
+  addEventListener('droidex-canvas-render-state', renderState);
+  renderState();
 })();`;
 
 /**

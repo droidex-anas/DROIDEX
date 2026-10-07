@@ -1,3 +1,4 @@
+import type { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { runCompaction } from './compaction.js';
 import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
 import type { ServerEvent } from './protocol.js';
@@ -33,6 +34,7 @@ export interface SessionCompactionExecutionDependencies {
   timeline: Pick<SessionTimeline, 'appendCompaction' | 'appendStatus'>;
   runtime: Pick<FactoryRuntime, 'loadSession' | 'processIdOf' | 'isProcessAlive'>;
   agentProcesses: Pick<AgentProcessMonitor, 'track' | 'untrack' | 'adoptDescendantsAsRoots'>;
+  canvasTurns: Pick<CanvasTurns, 'endSession'>;
   interactionsFor(ref: { id: string }): ProviderInteractions;
   emitError(error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>): void;
 }
@@ -175,6 +177,9 @@ export class SessionCompactionExecution {
         if (!adopted)
           throw new Error('Could not preserve processes before replacing the provider.');
       }
+      // The replacement speaks for this chat from here on, so the leases the
+      // old provider session could still have served end before it closes.
+      this.dependencies.canvasTurns.endSession(appSessionId);
       await oldSession.close();
       if (!target.isCurrent()) return;
       if (liveSession.summary.autonomy !== autonomy)

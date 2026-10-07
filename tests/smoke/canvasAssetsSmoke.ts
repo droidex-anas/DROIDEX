@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
+import { readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import {
@@ -23,24 +23,6 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
       assert.ok(encodedFont);
       const font = Buffer.from(encodedFont, 'base64');
       const fontId = createHash('sha256').update(font).digest('hex');
-      const kitRoot = path.join(profile, 'canvases', 'design-systems', 'asset-smoke-kit');
-      await mkdir(kitRoot, { recursive: true });
-      await writeFile(
-        path.join(kitRoot, '1.json'),
-        JSON.stringify({
-          id: 'asset-smoke-kit',
-          version: 1,
-          name: 'Offline asset smoke',
-          modes: { light: {}, dark: {} },
-          files: {
-            'index.tsx': 'export const assetSmokeKit = true;',
-            'font.css': inter.css,
-          },
-          guidance: '',
-          examples: {},
-        }),
-      );
-
       await withCanvasBridge(page, async (send) => {
         const created = await send({
           type: 'canvas.createCanvas',
@@ -188,7 +170,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                 name: 'Owned assets',
                 width: 320,
                 height: 240,
-                designSystem: { id: 'asset-smoke-kit', version: 1, mode: 'light' },
+                designSystem: { id: 'claude-inspired', version: 1, mode: 'light' },
               },
             ],
           },
@@ -288,7 +270,12 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                   if (!image) return { image: false, font: false };
                   try {
                     const fonts = await document.fonts.load('16px "Inter"');
-                    return { image: image.complete && image.naturalWidth === 1, font: fonts.length === 1 && fonts[0].status === 'loaded' };
+                    const headings = await document.fonts.load('16px "Lora"');
+                    return {
+                      image: image.complete && image.naturalWidth === 1,
+                      font: fonts.length === 1 && fonts[0].status === 'loaded',
+                      headingFont: headings.length === 1 && headings[0].status === 'loaded',
+                    };
                   } catch (error) {
                     return { image: image.complete && image.naturalWidth === 1, font: String(error) };
                   }
@@ -296,7 +283,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
               }, guestId),
             { timeout: 20_000, intervals: [200] },
           )
-          .toEqual({ image: true, font: true });
+          .toEqual({ image: true, font: true, headingFont: true });
 
         await page.evaluate(() => document.getElementById('canvas-preview-guest')?.remove());
         const missingFontUrl = `droidex-canvas-preview://preview/font/${'f'.repeat(64)}`;

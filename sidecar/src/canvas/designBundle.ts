@@ -1,6 +1,6 @@
 // Bundles one design's virtual source tree into a single browser script. The
 // tree is text and stays text: esbuild parses and concatenates it, so nothing
-// here executes generated source (spec §6). Only the four supported packages
+// here executes generated source (spec §6). Only the supported packages
 // resolve, and esbuild itself comes from the Canvas runtime rather than from an
 // import, so the bundled worker takes it from the directory a packaged app owns
 // (see canvasRuntime.ts).
@@ -22,11 +22,13 @@ export const KIT_SPECIFIER = '@droidex/design-system';
 /** The element `main.tsx`'s default export is mounted into. */
 export const ROOT_ELEMENT_ID = 'canvas-root';
 
-// Task 6 adds recharts and Task 7 adds lucide-react; nothing else resolves.
+// Only explicitly supported packages resolve.
 const SUPPORTED_IMPORTS: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react',
+  'recharts',
   KIT_SPECIFIER,
 ];
 
@@ -59,11 +61,28 @@ const DESIGN_SPECIFIER = 'canvas:design';
  */
 const VIRTUAL_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), '.canvas-virtual-tree');
 
-const BOOT_SOURCE = `import { createRoot } from 'react-dom/client';
+const BOOT_SOURCE = `import { useLayoutEffect } from 'react';
+import { createRoot } from 'react-dom/client';
 import Design from '${DESIGN_SPECIFIER}';
 
+const renderState = (state, message) => {
+  globalThis.__droidexCanvasRenderState = { state, message };
+  dispatchEvent(new Event('droidex-canvas-render-state'));
+};
+
+function MountedDesign() {
+  useLayoutEffect(() => renderState('committed'), []);
+  return <Design />;
+}
+
 const root = document.getElementById('${ROOT_ELEMENT_ID}');
-if (root) createRoot(root).render(<Design />);
+if (root) createRoot(root, {
+  onUncaughtError(error) {
+    let message = 'The preview stopped with an error.';
+    try { message = error instanceof Error ? error.message : String(error); } catch {}
+    renderState('failed', message);
+  },
+}).render(<MountedDesign />);
 `;
 
 const SUPPORTED_LIST = SUPPORTED_IMPORTS.join(', ');
@@ -180,6 +199,9 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
             return refuse('missing_module', `No file in this design matches "${args.path}".`);
           return { path: resolved.path, namespace: args.namespace };
         }
+        // Node's package entry is CommonJS. Its ESM entry lets esbuild omit
+        // chart exports the design never uses.
+        if (args.path === 'recharts') return { path: runtimePath('recharts/es6/index.js') };
         if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
         return refuse(
           'unsupported_import',
@@ -206,7 +228,11 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
  * package from a real directory, which is its own business.
  */
 function runtimePath(specifier: string): string {
-  return canvasRuntime().resolve(specifier);
+  // Node's resolver selects Lucide's CommonJS barrel, which retains every icon.
+  // Its pinned ESM entry lets esbuild remove all unused icons.
+  return canvasRuntime().resolve(
+    specifier === 'lucide-react' ? 'lucide-react/dist/esm/lucide-react.js' : specifier,
+  );
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {
