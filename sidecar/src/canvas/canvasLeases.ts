@@ -1,8 +1,8 @@
 // What one turn's lease authorizes, and the canvas an unattached lease
-// bootstrapped. Task 4 owns the registry behind these two callbacks; this
+// bootstrapped. `CanvasTurns` owns the leases behind these two callbacks; this
 // module owns what the workspace is allowed to conclude from them.
 
-import { canvasError } from './canvasError.js';
+import { canvasError, EXPIRED_TURN } from './canvasError.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import type { CanvasScope } from './protocol.js';
@@ -13,8 +13,6 @@ export interface CanvasLeaseRegistry {
   /** Fills an unattached chat's lease with the canvas its first create minted. */
   bindScopeCanvas(scopeId: string, canvasId: string): void;
 }
-
-const EXPIRED_TURN = 'That request belongs to a turn that already ended.';
 
 export class CanvasLeases {
   // The canvas each unattached lease bootstrapped, recorded as soon as the

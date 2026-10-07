@@ -44,7 +44,7 @@ const FINDER_METADATA = '.DS_Store';
 
 /**
  * Every specifier a compile resolves: the three packages the compiler itself
- * calls into, the value parser Tailwind shares with it, and the three a design
+ * calls into, the value parser Tailwind shares with it, and the packages a design
  * may import. `designBundle.ts` owns the design-facing allowlist, which also
  * carries the virtual design-system specifier and so cannot be this list.
  */
@@ -56,6 +56,24 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'recharts/es6/index.js',
+];
+
+// victory-vendor embeds these distributions without their package manifests.
+const VICTORY_VENDOR_LICENSES = [
+  'd3-array',
+  'd3-color',
+  'd3-ease',
+  'd3-format',
+  'd3-interpolate',
+  'd3-path',
+  'd3-scale',
+  'd3-shape',
+  'd3-time',
+  'd3-time-format',
+  'd3-timer',
+  'd3-voronoi',
+  'internmap',
 ];
 
 /** The packages the compiler calls into, and the resolver a design gets. */
@@ -96,7 +114,10 @@ export function startCanvasRuntime(runtimeDir: string | null): string | null {
 
   const manifest = readManifest(root);
   if (typeof manifest === 'string') return manifest;
-  const fault = unstagedEntry(root, manifest) ?? unexecutableBinary(root, manifest.binary);
+  const fault =
+    unstagedEntry(root, manifest) ??
+    missingNotice(manifest) ??
+    unexecutableBinary(root, manifest.binary);
   if (fault !== null) return fault;
 
   return load(createRequire(join(root, ANCHOR_FILE)), join(root, RUNTIME_MODULES));
@@ -227,9 +248,67 @@ function unexecutableBinary(root: string, binary: string): string | null {
   return (statSync(join(root, binary)).mode & 0o111) === 0 ? `${binary} is not executable` : null;
 }
 
+function isNotice(path: string): boolean {
+  return /^(?:LICEN[CS]E|NOTICE)(?:$|[.-])/i.test(path.slice(path.lastIndexOf('/') + 1));
+}
+
+function isLicense(path: string): boolean {
+  return /^LICEN[CS]E(?:$|[.-])/i.test(path.slice(path.lastIndexOf('/') + 1));
+}
+
+function missingNotice(manifest: RuntimeManifest): string | null {
+  const files = new Set(Object.keys(manifest.files));
+  const expected = [...files]
+    .filter(
+      (path) =>
+        isNotice(path) ||
+        path === 'node_modules/victory-vendor/README.md' ||
+        path === 'node_modules/dlv/README.md',
+    )
+    .sort();
+  if (JSON.stringify(manifest.notices) !== JSON.stringify(expected))
+    return 'manifest.json has an incomplete license and notice inventory';
+
+  const packages = [...files].filter((path) => path.endsWith('/package.json'));
+  const packageSet = new Set(packages);
+  const licenses = expected.filter(isLicense);
+  for (const packagePath of packages) {
+    let directory = packagePath.slice(0, -'/package.json'.length);
+    if (directory.startsWith('node_modules/@esbuild/darwin-')) {
+      if (!files.has('node_modules/esbuild/LICENSE.md'))
+        return `${directory} has no esbuild license`;
+      continue;
+    }
+    if (directory === 'node_modules/victory-vendor' || directory === 'node_modules/dlv') {
+      if (!files.has(`${directory}/README.md`)) return `${directory} has no license statement`;
+      continue;
+    }
+    const ownPackage = directory;
+    while (directory.startsWith('node_modules/')) {
+      if (
+        packageSet.has(`${directory}/package.json`) &&
+        licenses.some(
+          (path) =>
+            path.startsWith(`${directory}/`) && !path.slice(directory.length + 1).includes('/'),
+        )
+      )
+        break;
+      directory = directory.slice(0, directory.lastIndexOf('/'));
+    }
+    if (!directory.startsWith('node_modules/')) return `${ownPackage} has no staged license`;
+  }
+  for (const name of VICTORY_VENDOR_LICENSES) {
+    const path = `node_modules/victory-vendor/lib-vendor/${name}/LICENSE`;
+    if (files.has('node_modules/victory-vendor/package.json') && !files.has(path))
+      return `${path} is missing`;
+  }
+  return null;
+}
+
 interface RuntimeManifest {
   binary: string;
   files: Record<string, unknown>;
+  notices: string[];
 }
 
 function readManifest(root: string): RuntimeManifest | string {
@@ -246,10 +325,16 @@ function readManifest(root: string): RuntimeManifest | string {
     return `${MANIFEST_FILE} could not be read`;
   }
   if (typeof parsed !== 'object' || parsed === null) return `${MANIFEST_FILE} is not a runtime`;
-  const { binary, files } = parsed as Record<string, unknown>;
-  if (typeof binary !== 'string' || typeof files !== 'object' || files === null)
+  const { binary, files, notices } = parsed as Record<string, unknown>;
+  if (
+    typeof binary !== 'string' ||
+    typeof files !== 'object' ||
+    files === null ||
+    !Array.isArray(notices) ||
+    !notices.every((notice: unknown): notice is string => typeof notice === 'string')
+  )
     return `${MANIFEST_FILE} is not a runtime`;
-  return { binary, files: files as Record<string, unknown> };
+  return { binary, files: files as Record<string, unknown>, notices };
 }
 
 /**

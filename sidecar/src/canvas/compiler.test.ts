@@ -16,6 +16,7 @@ import {
   type CompiledDesign,
 } from './compiler.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { CHART_DESIGN } from './fixtures/chart.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
 import { applyElementEdit } from './sourceElements.js';
@@ -172,6 +173,14 @@ test("the kit's own example compiles", async () => {
   assert.ok(design.html.includes("You're all set"), 'the example renders its own states');
 });
 
+test('an allowed chart import compiles into a self-contained document', async () => {
+  const design = await compile(CHART_DESIGN);
+
+  assert.deepEqual(design.diagnostics, []);
+  assert.match(design.html, /Weekly visits/);
+  assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
+});
+
 test('identical input names one artifact and a change names another', async () => {
   const first = await compile(STATEFUL_DESIGN);
   const again = await compile(STATEFUL_DESIGN);
@@ -213,7 +222,7 @@ export default function Hey() {
   assert.equal(diagnostic?.code, 'unsupported_import');
   assert.equal(diagnostic?.file, 'main.tsx');
   assert.equal(diagnostic?.line, 1);
-  for (const supported of ['react', 'react-dom/client', '@droidex/design-system']) {
+  for (const supported of ['react', 'react-dom/client', 'recharts', '@droidex/design-system']) {
     assert.ok(diagnostic?.message.includes(supported), `names ${supported}`);
   }
 });
@@ -225,6 +234,7 @@ test('an import that leaves the design is refused', async () => {
     ['https://cdn.example.com/widget.js', 'unsupported_import'],
     ['node:fs', 'unsupported_import'],
     ['fs', 'unsupported_import'],
+    ['recharts/es6/index.js', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
 
@@ -314,7 +324,7 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     mkdirSync(runtime);
     writeFileSync(
       join(runtime, 'manifest.json'),
-      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files })}\n`,
+      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files, notices: [] })}\n`,
     );
 
     const worker = new CompilerWorker();
