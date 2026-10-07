@@ -334,6 +334,11 @@ another watched canvas and another pane on the same canvas alone.
 A subscribe captures its own subscription identity before awaiting storage.
 Unsubscribe, page loss or a replacement subscription invalidates that identity,
 so a late answer cannot reinstall a watch or schedule rebuilds for a closed pane.
+Artifact reads capture the current subscribers and turn leases before awaiting
+storage. A cache miss admits a rebuild only if a captured subscription or a
+captured turn lease covering the design is still current after the read.
+Replacement panes and turns cannot revive an abandoned read. Reads without a
+live owner can still serve cached artifacts but admit no recovery work.
 
 ### Canvas live previews
 

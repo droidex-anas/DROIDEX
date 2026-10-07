@@ -226,7 +226,8 @@ export class CanvasBuilds {
    *
    * A miss for the revision the frame holds as `ready` means a document the
    * manifest still vouches for is gone, and nothing else would ever ask for it
-   * again, so the read itself queues the design. The rebuild is content-addressed
+   * again, so the read queues the design if its captured owner is still live
+   * after the cache read. The rebuild is content-addressed
    * from the same source, so it lands on the same `artifactId`: what tells a
    * preview to read again is the build transition, not a new name. A miss for a
    * fallback the frame has moved past queues nothing (Task 5's follow-up).
@@ -235,9 +236,11 @@ export class CanvasBuilds {
     canvasId: string,
     designId: string,
     revisionId: string,
+    canRebuild: () => boolean,
   ): Promise<PreviewArtifact | null> {
     const artifact = await this.owner.cache.readRevisionArtifact(canvasId, designId, revisionId);
-    if (artifact === null) this.queueFromHead(canvasId, designId, revisionId, LOST_ARTIFACT);
+    if (artifact === null && canRebuild())
+      this.queueFromHead(canvasId, designId, revisionId, LOST_ARTIFACT);
     return artifact;
   }
 

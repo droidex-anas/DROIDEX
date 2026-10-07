@@ -116,7 +116,7 @@ class CanvasWatches {
 
   /** A cancelled or replaced subscription cannot install a watch after an await. */
   watch(watch: CanvasWatch): boolean {
-    if (this.byPage.get(watch.pageId)?.get(watch.canvasId) !== watch) return false;
+    if (!this.isCurrent(watch)) return false;
     watch.state = 'watching';
     return true;
   }
@@ -138,6 +138,27 @@ class CanvasWatches {
     for (const open of this.byPage.values())
       if (open.get(canvasId)?.state === 'watching') return true;
     return false;
+  }
+
+  /** Captures owners now; a replacement pane or turn cannot revive this read. */
+  rebuildAuthority(canvasId: string, designId: string): () => boolean {
+    const watching: CanvasWatch[] = [];
+    for (const open of this.byPage.values()) {
+      const watch = open.get(canvasId);
+      if (watch?.state === 'watching') watching.push(watch);
+    }
+    const turns = this.scopes
+      .activeTurns(canvasId)
+      .filter(
+        (scope) => scope.allowedDesignIds === 'canvas' || scope.allowedDesignIds.includes(designId),
+      );
+    return () =>
+      watching.some((watch) => this.isCurrent(watch)) ||
+      turns.some((scope) => this.scopes.get(scope.scopeId) === scope);
+  }
+
+  private isCurrent(watch: CanvasWatch): boolean {
+    return this.byPage.get(watch.pageId)?.get(watch.canvasId) === watch;
   }
 
   private cancelUnowned(canvasId: string): void {
@@ -187,6 +208,7 @@ class CanvasDispatch {
     try {
       if (command.type === 'canvas.subscribe' || command.type === 'canvas.unsubscribe')
         return await this.watch(command, pageId);
+      if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
       const workspace = await this.workspace;
       const reply = await this.answer(workspace, command);
       if (CHANGES_SUMMARIES.has(command.type))
@@ -229,7 +251,10 @@ class CanvasDispatch {
 
   private async answer(
     workspace: CanvasWorkspace,
-    command: Exclude<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
+    command: Exclude<
+      CanvasCommand,
+      { type: `canvas.${'subscribe' | 'unsubscribe' | 'readArtifact'}` }
+    >,
   ): Promise<CanvasReply> {
     switch (command.type) {
       case 'canvas.list':
@@ -248,20 +273,28 @@ class CanvasDispatch {
       case 'canvas.detach':
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
-      case 'canvas.readArtifact': {
-        // A derived read: the frame the renderer holds already names the revision
-        // the manifest vouches for, and a cache that has lost it answers null so
-        // the pane can ask for a rebuild.
-        const artifact = await this.builds.readArtifact(
-          command.canvasId,
-          command.designId,
-          command.revisionId,
-        );
-        return { kind: 'artifact', artifact };
-      }
       default:
         return this.mutate(workspace, command);
     }
+  }
+
+  private async readArtifact(
+    command: Extract<CanvasCommand, { type: 'canvas.readArtifact' }>,
+  ): Promise<CanvasEvent> {
+    const canRebuild = this.watches.rebuildAuthority(command.canvasId, command.designId);
+    await this.workspace;
+    const artifact = await this.builds.readArtifact(
+      command.canvasId,
+      command.designId,
+      command.revisionId,
+      canRebuild,
+    );
+    return {
+      type: 'canvas.result',
+      requestId: command.requestId,
+      ok: true,
+      reply: { kind: 'artifact', artifact },
+    };
   }
 
   /**

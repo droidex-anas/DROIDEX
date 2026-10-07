@@ -1,183 +1,27 @@
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import type { ServerEvent } from '../protocol.js';
-import { CompilerFleet, fakeDeadlines } from '../testing/canvasBuildSupport.js';
 import {
-  canvasRoot,
-  deferred,
-  observedFileSystem,
-  quietBuilds,
-} from '../testing/canvasStorageSupport.js';
+  APP,
+  PAGE,
+  HEY,
+  designSystem,
+  harness,
+  buildingCanvas,
+  readyFrames,
+  answer,
+  okReply,
+  errorOf,
+  createCanvas,
+  createFrame,
+  writeFrame,
+} from '../testing/canvasBridgeSupport.js';
+import { deferred, observedFileSystem, quietBuilds } from '../testing/canvasStorageSupport.js';
 import { CanvasBuilds } from './CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvasBridge.js';
-import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
-import { CanvasTurns } from './canvasTurnContext.js';
 import { CompileCancelledError } from './compiler.js';
-import { CanvasWorkspace } from './CanvasWorkspace.js';
-import type { CanvasEvent, CanvasReply, CanvasScope } from './protocol.js';
-
-const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
-const APP = 'app-1';
-const PAGE = 'page-1';
-const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
-
-interface Harness {
-  root: string;
-  workspace: CanvasWorkspace;
-  scopes: CanvasScopes;
-  builds: CanvasBuilds;
-  events: ServerEvent[];
-  handle: (command: unknown, pageId?: string | null) => Promise<boolean>;
-  /** Reports a renderer page's socket closing, the way the bridge server does. */
-  pageGone: (pageId: string) => void;
-}
-
-async function harness(
-  t: TestContext,
-  options: { root?: string; fs?: CanvasFileSystem; builds?: CanvasBuilds } = {},
-): Promise<Harness> {
-  const builds = options.builds ?? quietBuilds();
-  let workspace: CanvasWorkspace | undefined = undefined;
-  t.after(async () => {
-    await builds.close();
-    await workspace?.close();
-  });
-  const directory = options.root ?? (await canvasRoot(t));
-  const scopes = new CanvasScopes();
-  const events: ServerEvent[] = [];
-  workspace = await CanvasWorkspace.open(directory, builds, {
-    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
-    bindScopeCanvas: (scopeId, canvasId) => {
-      scopes.bindScopeCanvas(scopeId, canvasId);
-    },
-    ...(options.fs ? { fs: options.fs } : {}),
-  });
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    Promise.resolve(workspace),
-    scopes,
-    builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
-  return {
-    root: directory,
-    workspace,
-    scopes,
-    builds,
-    events,
-    handle: (command, pageId = PAGE) => handle(command, pageId),
-    pageGone: (pageId) => {
-      for (const listener of listeners) listener(pageId);
-    },
-  };
-}
-
-async function buildingCanvas(t: TestContext, fs?: CanvasFileSystem) {
-  const fleet = new CompilerFleet();
-  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: fakeDeadlines().deadline });
-  const canvas = await harness(t, { builds, fs });
-  const turns = new CanvasTurns(canvas.scopes, (id) => canvas.workspace.attachedCanvasId(id));
-  return { ...canvas, fleet, turns };
-}
-
-function readyFrames(canvas: Harness, canvasId: string, designIds: string[]): Promise<void> {
-  return new Promise((resolve) => {
-    const stop = canvas.workspace.changes.subscribe(() => {
-      if (!designIds.every((id) => canvas.builds.stateOf(canvasId, id).status === 'ready')) return;
-      stop();
-      resolve();
-    });
-  });
-}
-
-/** The event answering one request, which every command produces exactly one of. */
-function answer(harnessed: Harness, requestId: string): CanvasEvent {
-  const matched = harnessed.events.filter(
-    (event): event is CanvasEvent =>
-      (event.type === 'canvas.result' || event.type === 'canvas.snapshot') &&
-      event.requestId === requestId,
-  );
-  assert.equal(matched.length, 1, `expected one answer for ${requestId}`);
-  const [only] = matched;
-  assert.ok(only);
-  return only;
-}
-
-function okReply(harnessed: Harness, requestId: string): CanvasReply {
-  const event = answer(harnessed, requestId);
-  assert.ok(event.type === 'canvas.result' && event.ok, `expected ${requestId} to succeed`);
-  return event.reply;
-}
-
-function errorOf(harnessed: Harness, requestId: string): { code: string; message: string } {
-  const event = answer(harnessed, requestId);
-  assert.ok(event.type === 'canvas.result' && !event.ok, `expected ${requestId} to fail`);
-  return event.error;
-}
-
-/** Creates the chat's canvas the way the pane's Create button does. */
-async function createCanvas(harnessed: Harness, requestId = 'req-create-canvas'): Promise<string> {
-  assert.equal(
-    await harnessed.handle({ type: 'canvas.createCanvas', requestId, appSessionId: APP }),
-    true,
-  );
-  const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
-  return reply.canvasId;
-}
-
-async function createFrame(
-  harnessed: Harness,
-  canvasId: string,
-  requestId = 'req-create-frame',
-  appSessionId = APP,
-): Promise<string> {
-  await harnessed.handle({
-    type: 'canvas.create',
-    requestId,
-    appSessionId,
-    canvasId,
-    input: {
-      mutationId: requestId,
-      frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
-    },
-  });
-  const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'created');
-  const [frame] = reply.created.frames;
-  assert.ok(frame);
-  return frame.designId;
-}
-
-async function writeFrame(
-  canvas: Harness,
-  canvasId: string,
-  designId: string,
-  appSessionId = APP,
-): Promise<void> {
-  const requestId = `req-write-${designId}`;
-  await canvas.handle({
-    type: 'canvas.write',
-    requestId,
-    appSessionId,
-    canvasId,
-    input: {
-      mutationId: `write-${designId}`,
-      designId,
-      expectedRevisionId: null,
-      files: { 'main.tsx': HEY },
-      deletedPaths: [],
-    },
-  });
-  assert.equal(okReply(canvas, requestId).kind, 'written');
-}
+import type { CanvasScope } from './protocol.js';
 
 function turnScope(canvasId: string, scopeId: string): CanvasScope {
   return {
@@ -450,6 +294,26 @@ function pauseAtSource(path: string) {
   };
 }
 
+function holdArtifactRead() {
+  const reached = deferred();
+  const released = deferred();
+  let armed = false;
+  return {
+    arm: () => {
+      armed = true;
+    },
+    reached: reached.promise,
+    release: released.resolve,
+    fs: observedFileSystem(async (operation, path) => {
+      if (!armed || operation !== 'open' || !path.endsWith('/artifact-one.html')) return;
+      armed = false;
+      reached.resolve();
+      await released.promise;
+      throw Object.assign(new Error('derived artifact disappeared'), { code: 'ENOENT' });
+    }),
+  };
+}
+
 test('a chat that detaches while its write is staging does not commit it', async (t) => {
   const paused = pauseAtSource('main.tsx');
   const canvas = await harness(t, { fs: paused.fs });
@@ -700,6 +564,101 @@ for (const leaving of ['unsubscribe', 'page-gone'] as const) {
       canvas.events.filter((event) => event.type === 'canvas.change'),
       [],
     );
+  });
+}
+
+for (const owner of [
+  'live pane',
+  'unsubscribe',
+  'page-gone',
+  'other pane',
+  'active turn',
+  'revoked turn',
+  'replacement turn',
+  'replacement pane',
+  'turn for another design',
+] as const) {
+  test(`artifact cache recovery rechecks ${owner} authority after reading`, async (t) => {
+    const held = holdArtifactRead();
+    const canvas = await buildingCanvas(t, held.fs);
+    const canvasId = await createCanvas(canvas);
+    const designId = await createFrame(canvas, canvasId);
+    await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
+    await writeFrame(canvas, canvasId, designId);
+    const ready = readyFrames(canvas, canvasId, [designId]);
+    (await canvas.fleet.compile(1)).ready('artifact-one');
+    await ready;
+    const before = canvas.builds.stateOf(canvasId, designId);
+    assert.ok(before.status === 'ready');
+    if (owner === 'other pane')
+      await canvas.handle(
+        { type: 'canvas.subscribe', requestId: 'req-other-watch', canvasId },
+        'other-page',
+      );
+    const context =
+      owner === 'turn for another design'
+        ? {
+            designs: [
+              {
+                designId: await createFrame(canvas, canvasId, 'req-other-frame'),
+                revisionId: null,
+              },
+            ],
+            elements: [],
+            designSystem,
+          }
+        : undefined;
+    const turn = owner.includes('turn') ? canvas.turns.beginTurn(APP, context) : undefined;
+    t.after(() => turn?.revoke());
+    held.arm();
+    const reading = canvas.handle({
+      type: 'canvas.readArtifact',
+      requestId: 'req-artifact',
+      canvasId,
+      designId,
+      revisionId: before.revisionId,
+    });
+    await held.reached;
+    try {
+      if (owner === 'page-gone') canvas.pageGone(PAGE);
+      else if (owner !== 'live pane')
+        await canvas.handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId });
+      if (owner === 'revoked turn') turn?.revoke();
+      if (owner === 'replacement turn') {
+        canvas.turns.endSession(APP);
+        const replacement = canvas.turns.beginTurn(APP, undefined);
+        t.after(() => replacement.revoke());
+      }
+      if (owner === 'replacement pane')
+        await canvas.handle({
+          type: 'canvas.subscribe',
+          requestId: 'req-replacement-watch',
+          canvasId,
+        });
+    } finally {
+      held.release();
+      await reading;
+    }
+
+    assert.deepEqual(okReply(canvas, 'req-artifact'), { kind: 'artifact', artifact: null });
+    if (!['live pane', 'other pane', 'active turn'].includes(owner)) {
+      assert.deepEqual(canvas.builds.stateOf(canvasId, designId), before);
+      assert.equal(canvas.fleet.held.length, 1, 'the abandoned read admitted no rebuild');
+      return;
+    }
+    assert.equal(canvas.builds.stateOf(canvasId, designId).status, 'building');
+    const rebuilding = await canvas.fleet.compile(2);
+    assert.equal(rebuilding.signal.aborted, false);
+    assert.equal(rebuilding.input.generation, before.generation + 1);
+    const recovered = readyFrames(canvas, canvasId, [designId]);
+    rebuilding.ready('artifact-rebuilt');
+    await recovered;
+    assert.deepEqual(canvas.builds.stateOf(canvasId, designId), {
+      status: 'ready',
+      revisionId: before.revisionId,
+      artifactId: 'artifact-rebuilt',
+      generation: before.generation + 1,
+    });
   });
 }
 
