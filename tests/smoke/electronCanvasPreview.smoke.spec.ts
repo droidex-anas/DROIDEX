@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
+import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
@@ -212,6 +213,69 @@ test('[C4] the production host runs a compiled design and refuses every spoof', 
         }),
       );
     });
+  });
+});
+
+test('the production preview host renders a compiled chart offline', async () => {
+  const design = await compileDesign(CHART_DESIGN);
+  await withCanvasHost(async (app, page) => {
+    const guestId = await mountPreviewGuest(page);
+    const instance = newInstance('chart');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () =>
+          (await drainGuest(page, instance)).events.some((event) => event.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          app.evaluate(({ webContents }, id) => {
+            const frame = webContents.fromId(id)?.mainFrame.frames[0];
+            return frame?.executeJavaScript(
+              `({ title: document.querySelector('h1')?.textContent,
+                  bars: document.querySelectorAll('.recharts-bar-rectangle').length })`,
+            );
+          }, guestId),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toEqual({ title: 'Weekly visits', bars: 3 });
+  });
+});
+
+test('a chart that throws during render reports a preview error without becoming ready', async () => {
+  const design = await compileDesign({
+    'main.tsx': `import { Bar, BarChart } from 'recharts';
+
+export default function BrokenChart() {
+  return <BarChart width={480} height={260} data={[{ visits: 12 }]}>
+    <Bar dataKey="visits" isAnimationActive={false}
+      shape={() => { throw new Error('Chart shape failed'); }} />
+  </BarChart>;
+}
+`,
+  });
+  await withCanvasHost(async (_app, page) => {
+    await mountPreviewGuest(page);
+    const instance = newInstance('broken-chart');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    const seen: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          for (const event of (await drainGuest(page, instance)).events) {
+            seen.push(event.event);
+            if (event.event === 'diagnostics')
+              for (const diagnostic of event.diagnostics) seen.push(diagnostic.message);
+          }
+          return seen.some((entry) => entry.includes('Chart shape failed'));
+        },
+        { timeout: 10_000, intervals: [100] },
+      )
+      .toBe(true);
+    assert.equal(seen.includes('ready'), false, 'a failed first render cannot become ready');
   });
 });
 
