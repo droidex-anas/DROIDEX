@@ -225,8 +225,11 @@ lifecycle boundaries, history responses, and turn settlement flush immediately.
 Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
 Renderers must advertise bridge protocol 9, apply one wire batch as one
-ordered store transition, and reconnect with the last fully applied generation
-and sequence. Same-generation reconnects replay the retained buffer. A new
+ordered store transition, and reconnect with the last processed generation
+and sequence. Invalid batch envelopes or ordering require a fresh cursor;
+invalid events are dropped with payload-free warnings while valid events apply
+in order and the cursor advances through the entire batch. Same-generation
+reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
 live sessions, runtime state, and the authoritative agent-process map instead
 of a hard resync; `bridge.reset` is reserved for an invalid resume cursor.
