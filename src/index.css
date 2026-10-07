@@ -592,6 +592,33 @@
     }
   }
 
+  /* Canvas pending bloom: a quiet dither of dots inside a frame the agent is
+     still building. Duration, per-dot delay and play state come from the
+     component, which decides from the resolved motion tokens and the frame's
+     visibility whether the loop runs at all; the media query below makes the
+     reduced-motion half of that true even if a caller gets it wrong. */
+  @keyframes canvas-bloom {
+    0%,
+    100% {
+      opacity: 0.16;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  .canvas-bloom-dot {
+    animation-name: canvas-bloom;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-bloom-dot {
+      animation: none;
+    }
+  }
+
   /* Stop hidden-window animation work. */
   html[data-window-hidden='true'] *,
   html[data-window-hidden='true'] *::before,
