@@ -906,13 +906,16 @@ export class ProjectService {
           this.membership.set(bound, project);
           await this.save();
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
+          // A new chat is named after its first prompt, which here is DROIDEX's
+          // brief. Named before the first turn, so its own plan_set title wins.
+          await this.sessions.rename(bound, input.title).catch((error: unknown) => {
+            console.warn(`Could not name project thread ${bound ?? ''}:`, error);
+          });
         },
         clientRef,
       );
       if (!session || !bound)
         throw new Error('The selected harness did not start this thread and reported no reason.');
-      // A new chat is named after its first prompt, which here is DROIDEX's brief.
-      await this.sessions.rename(bound, input.title).catch(() => undefined);
       return session.appSessionId;
     } catch (error) {
       if (bound) {

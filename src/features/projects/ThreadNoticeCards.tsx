@@ -47,8 +47,8 @@ export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport
   );
 }
 
-// 13px text at 24px leading, as the bubble sets it.
-const BUBBLE_LINE_PX = 24;
+// MessageBody's markdown sets 14px text at 1.6 leading.
+const BUBBLE_LINE_PX = 22.4;
 
 function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string; index: number }) {
   const provider = useStoreSelector((state) =>
@@ -82,11 +82,7 @@ function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string
             {from.action}
           </span>
         </p>
-        <div
-          className={`rounded-2xl rounded-tl-md border bg-droid-bg px-3.5 py-2.5 text-[13px] leading-6 text-droid-text-secondary ${
-            asks ? 'border-droid-orange/40' : 'border-droid-border'
-          }`}
-        >
+        <div className="rounded-2xl rounded-tl-md border border-droid-border bg-droid-bg px-3.5 py-2.5 text-[13px] leading-6 text-droid-text-secondary">
           <ClampedBlock
             lines={8}
             lineHeightPx={BUBBLE_LINE_PX}
