@@ -225,7 +225,8 @@ contextBridge.exposeInMainWorld('droidControl', {
 
   browserHistory: {
     suggest: (input, limit) => ipcRenderer.invoke('browser-history-suggest', { input, limit }),
-    recordTyped: (url) => ipcRenderer.invoke('browser-history-record-typed', { url }),
+    recordTyped: (appSessionId, url) =>
+      ipcRenderer.invoke('browser-history-record-typed', { appSessionId, url }),
     remove: (url) => ipcRenderer.invoke('browser-history-remove', { url }),
     clear: () => ipcRenderer.invoke('browser-history-clear'),
   },

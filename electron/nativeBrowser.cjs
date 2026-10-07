@@ -210,7 +210,7 @@ function createNativeBrowserManager(options) {
   }
 
   // `before` runs right before the page moves, and throws when it should not.
-  async function openNativeBrowser(browserSessionId, url, before, source = 'user') {
+  async function openNativeBrowser(browserSessionId, url, before) {
     const entry = await requireNativeBrowserGuest(browserSessionId);
     urls.rejectHostAppUrl(url);
     url = urls.normalizeNativeBrowserUrl(entry, url);
@@ -223,8 +223,11 @@ function createNativeBrowserManager(options) {
     if (nativeBrowsers.get(entry.browserSessionId) !== entry)
       throw new Error(`${options.appName} browser is not open.`);
     before?.();
-    entry.historyInput.source = source;
-    await loadNativeBrowserUrl(entry, url, { force: true });
+    const contents = liveContents(entry);
+    const typedUrl = entry.typedUrl;
+    const loaded = await loadNativeBrowserUrl(entry, url, { force: true });
+    if (!loaded.ok && entry.contents === contents && entry.typedUrl === typedUrl)
+      entry.typedUrl = null;
   }
 
   // Only an open browser is shown or hidden: the renderer hides a page it
@@ -251,7 +254,7 @@ function createNativeBrowserManager(options) {
   // Reload never waits for a load: it is how a stalled, failed or crashed page
   // recovers. A load still in flight or a failed restore starts over. `before`
   // runs right before the page moves, and throws when it should not.
-  async function reloadNativeBrowser(browserSessionId, before, source = 'user') {
+  async function reloadNativeBrowser(browserSessionId, before) {
     const entry = await waitForGuest(browserSessionId);
     // A guest still taking its device finishes that first, so the page is asked
     // for as that device. The browser may have been closed meanwhile.
@@ -259,7 +262,6 @@ function createNativeBrowserManager(options) {
     const contents = nativeBrowsers.get(entry.browserSessionId) === entry && liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
     before?.();
-    entry.historyInput.source = source;
     entry.crashed = false;
     const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
     const retryUrl = entry.failedRestoreUrl ?? pendingUrl;
@@ -273,7 +275,7 @@ function createNativeBrowserManager(options) {
   }
 
   // `before` runs right before the page moves.
-  async function navigateNativeBrowserHistory(browserSessionId, direction, before, source) {
+  async function navigateNativeBrowserHistory(browserSessionId, direction, before) {
     const entry = await requireLoadedGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
@@ -282,12 +284,10 @@ function createNativeBrowserManager(options) {
     if (direction === 'back') {
       if (!history.canGoBack()) return false;
       before?.();
-      entry.historyInput.source = source;
       history.goBack();
     } else {
       if (!history.canGoForward()) return false;
       before?.();
-      entry.historyInput.source = source;
       history.goForward();
     }
     return true;
@@ -414,10 +414,14 @@ function createNativeBrowserManager(options) {
     reloadFocused: reloadFocusedNativeBrowser,
     waitForPage: waitForGuest,
     nextLoad: nextNativeBrowserLoad,
-    goBack: (browserSessionId, before, source = 'user') =>
-      navigateNativeBrowserHistory(browserSessionId, 'back', before, source),
-    goForward: (browserSessionId, before, source = 'user') =>
-      navigateNativeBrowserHistory(browserSessionId, 'forward', before, source),
+    goBack: (browserSessionId, before) =>
+      navigateNativeBrowserHistory(browserSessionId, 'back', before),
+    goForward: (browserSessionId, before) =>
+      navigateNativeBrowserHistory(browserSessionId, 'forward', before),
+    recordTyped(browserSessionId, url) {
+      urls.validateUrl(url);
+      ensureNativeBrowserEntry(browserSessionId).typedUrl = new URL(url).href;
+    },
     setDesignState: page.setDesignState,
     runAgentAction: page.runAgentAction,
     waitForPaint: page.waitForPaint,

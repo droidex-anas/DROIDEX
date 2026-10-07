@@ -275,7 +275,7 @@ export default function BrowserWorkspace({
       });
   };
 
-  const openCurrentUrl = () => {
+  const openCurrentUrl = async () => {
     const normalizedUrl = normalizeUrl(urlInput);
     if (browserKey && isSelfBrowserUrl(normalizedUrl, appOrigin)) {
       setUrlInput(normalizedUrl);
@@ -294,11 +294,11 @@ export default function BrowserWorkspace({
     setActiveUrl(url);
     if (browserKey) {
       if (isDesktop()) {
-        void getBrowserHistory()
-          .recordTyped(url)
-          .catch((error: unknown) => {
-            console.error('Could not record the browser address in history:', error);
-          });
+        try {
+          await getBrowserHistory().recordTyped(browserKey, url);
+        } catch (error) {
+          console.error('Could not record the browser address in history:', error);
+        }
       }
       openBrowser({
         appSessionId: browserKey,
@@ -390,13 +390,13 @@ export default function BrowserWorkspace({
         pencilMode={pencilMode}
         expanded={expanded}
         onUrlInputChange={setUrlInput}
-        onOpen={openCurrentUrl}
+        onOpen={() => void openCurrentUrl()}
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
         onReload={() => {
           startLoading();
           if (browserKey && browser) reloadBrowser(browserKey);
-          else openCurrentUrl();
+          else void openCurrentUrl();
         }}
         onToggleDesignMode={() => {
           if (browserKey) dispatch({ type: 'TOGGLE_DESIGN_MODE', appSessionId: browserKey });
@@ -432,7 +432,7 @@ export default function BrowserWorkspace({
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
               startLoading();
               if (browserKey && browser) reloadBrowser(browserKey);
-              else openCurrentUrl();
+              else void openCurrentUrl();
             }}
           >
             Retry

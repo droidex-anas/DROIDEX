@@ -695,8 +695,6 @@ export interface BrowserNativeRequest {
   appSessionId: string;
   browserSessionId: string;
   action: BrowserNativeAction;
-  /** Navigation origin, set by the app command or agent runtime. */
-  source?: 'user' | 'agent';
   url?: string;
   viewport?: BrowserViewport;
   viewportMode?: BrowserViewportMode;

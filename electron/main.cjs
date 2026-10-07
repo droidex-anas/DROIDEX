@@ -261,10 +261,17 @@ let historyFlushedForQuit = false;
 app.on('will-quit', (event) => {
   if (historyFlushedForQuit) return;
   event.preventDefault();
-  void browserHistory.flush().finally(() => {
-    historyFlushedForQuit = true;
-    app.quit();
-  });
+  void browserHistory
+    .flush()
+    .catch(() => {
+      console.error(
+        'Could not flush browser history before quitting. Check the app profile directory permissions.',
+      );
+    })
+    .finally(() => {
+      historyFlushedForQuit = true;
+      app.quit();
+    });
 });
 
 app.on('activate', () => {
@@ -831,7 +838,7 @@ function registerIpc() {
   });
   ipcMain.handle('app-relaunch', (event) => {
     assertMainRenderer(event);
-    relaunchApp();
+    return relaunchApp();
   });
   ipcMain.handle('app-set-icon', (event, payload) => {
     assertMainRenderer(event);
@@ -941,9 +948,9 @@ function registerIpc() {
     assertMainRenderer(event);
     return browserHistory.suggest(input, limit);
   });
-  ipcMain.handle('browser-history-record-typed', (event, { url }) => {
+  ipcMain.handle('browser-history-record-typed', (event, { appSessionId, url }) => {
     assertMainRenderer(event);
-    return browserHistory.recordTyped(url);
+    return nativeBrowserRequests.recordTyped(appSessionId, url);
   });
   ipcMain.handle('browser-history-remove', (event, { url }) => {
     assertMainRenderer(event);
@@ -1291,7 +1298,8 @@ function setOnboarding(patch) {
   return run;
 }
 
-function relaunchApp() {
+async function relaunchApp() {
+  await browserHistory.flush();
   app.relaunch();
   app.exit(0);
 }

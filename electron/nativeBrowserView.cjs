@@ -85,7 +85,7 @@ function createNativeBrowserViewFactory({
       // Documents the page has loaded, so a design crop is never taken of a
       // later one, a reload of the same URL included.
       documents: 0,
-      historyInput: { source: 'user', agentActions: 0 },
+      typedUrl: null,
       loadingUrl: null,
       loadingPromise: null,
       networkEvents: [],
@@ -98,11 +98,8 @@ function createNativeBrowserViewFactory({
     configureSession();
     entry.contents = contents;
     entry.crashed = false;
-    // Input attribution belongs to the guest, including operations still finishing on an old one.
-    const historyInput = { source: entry.historyInput.source, agentActions: 0 };
-    entry.historyInput = historyInput;
-    let visitedUrl = null;
-    let navigationSource = historyInput.source;
+    let committedUrl = null;
+    let navigation = null;
     const current = () => entry.contents === contents && !contents.isDestroyed();
     contents.setWindowOpenHandler(({ url: nextUrl }) => {
       if (current()) void loadUrl(entry, nextUrl);
@@ -111,17 +108,15 @@ function createNativeBrowserViewFactory({
     // Only the page the browser shows forwards app shortcuts, not one let go.
     contents.on('before-input-event', (event, input) => {
       if (!current()) return;
-      if (historyInput.agentActions === 0 && input.type === 'keyDown') historyInput.source = 'user';
       onInput(event, input);
-    });
-    contents.on('before-mouse-event', (_event, input) => {
-      if (current() && historyInput.agentActions === 0 && input.type === 'mouseDown')
-        historyInput.source = 'user';
     });
     contents.on('did-start-navigation', (details) => {
       if (!current() || !details.isMainFrame) return;
-      navigationSource = historyInput.source;
-      if (!details.isSameDocument) visitedUrl = null;
+      navigation = { url: details.url, typed: entry.typedUrl === details.url };
+      entry.typedUrl = null;
+    });
+    contents.on('did-redirect-navigation', (details) => {
+      if (current() && details.isMainFrame && navigation) navigation.url = details.url;
     });
     const saveHistory = (operation) => {
       void operation.catch(() =>
@@ -131,8 +126,8 @@ function createNativeBrowserViewFactory({
       );
     };
     const updateTitle = (title) => {
-      if (current() && visitedUrl === contents.getURL())
-        saveHistory(history.updateTitle(visitedUrl, title));
+      if (current() && committedUrl !== null && committedUrl === contents.getURL())
+        saveHistory(history.updateTitle(committedUrl, title));
     };
     contents.on('page-title-updated', (_event, title) => updateTitle(title));
     contents.on('console-message', (details) => {
@@ -159,7 +154,12 @@ function createNativeBrowserViewFactory({
       if (current()) entry.documents += 1;
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;
-      if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
+      if (!current()) return;
+      if (urls.isChromeErrorUrl(loadedUrl)) {
+        committedUrl = null;
+        navigation = null;
+        return;
+      }
       // Nor is it part of the browser's history: it goes once a page follows it.
       const navigationHistory = contents.navigationHistory;
       if (
@@ -170,10 +170,9 @@ function createNativeBrowserViewFactory({
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);
-      if (httpResponseCode < 400) {
-        visitedUrl = loadedUrl;
-        saveHistory(history.recordVisit(loadedUrl, navigationSource));
-      }
+      committedUrl = httpResponseCode < 400 ? loadedUrl : null;
+      if (committedUrl) saveHistory(history.recordVisit(committedUrl, navigation?.typed ?? false));
+      navigation = null;
     });
     contents.on('did-finish-load', () => {
       if (!current()) return;
@@ -187,8 +186,20 @@ function createNativeBrowserViewFactory({
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
       void autofill(contents);
     });
+    function discardTypedNavigation(failedUrl) {
+      if (navigation?.url === failedUrl) navigation = null;
+      if (entry.typedUrl === failedUrl) entry.typedUrl = null;
+    }
+    contents.on(
+      'did-fail-provisional-load',
+      (_event, _code, _description, failedUrl, isMainFrame) => {
+        if (current() && isMainFrame) discardTypedNavigation(failedUrl);
+      },
+    );
     contents.on('did-fail-load', (_event, errorCode, errorDescription, failedUrl, isMainFrame) => {
-      if (!current() || !isMainFrame || errorCode === -3) return;
+      if (!current() || !isMainFrame) return;
+      discardTypedNavigation(failedUrl);
+      if (errorCode === -3) return;
       const fallback = urls.httpFallbackUrl(failedUrl, errorCode);
       if (fallback) {
         urls.rememberFailedRestoreUrl(entry, entry.targetUrl || failedUrl);
@@ -204,11 +215,12 @@ function createNativeBrowserViewFactory({
     // A frame's hash change or pushState is not the page moving.
     contents.on('did-navigate-in-page', (_event, nextUrl, isMainFrame) => {
       if (!current() || !isMainFrame) return;
-      if (visitedUrl !== null) {
-        visitedUrl = nextUrl;
-        saveHistory(history.recordVisit(nextUrl, navigationSource));
+      if (committedUrl !== null) {
+        committedUrl = nextUrl;
+        saveHistory(history.recordVisit(nextUrl, navigation?.typed ?? false));
         updateTitle(contents.getTitle());
       }
+      navigation = null;
       entry.targetUrl = nextUrl;
       emitLoaded(entry, nextUrl);
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
@@ -216,12 +228,17 @@ function createNativeBrowserViewFactory({
     contents.on('render-process-gone', (_event, details) => {
       if (entry.contents !== contents || details?.reason === 'clean-exit') return;
       entry.crashed = true;
+      entry.typedUrl = null;
+      navigation = null;
       entry.loadingUrl = null;
       entry.loadingPromise = null;
       onCrashed(entry, details);
     });
     contents.once('destroyed', () => {
-      if (entry.contents === contents) entry.contents = null;
+      if (entry.contents === contents) {
+        entry.contents = null;
+        entry.typedUrl = null;
+      }
     });
   }
 

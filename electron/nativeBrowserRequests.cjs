@@ -58,6 +58,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 const MAX_SIDECAR_TIMEOUT_MS = 75_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer }) {
+  const typedUrls = new Map(); // appSessionId -> submitted omnibox URL
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
@@ -68,7 +69,11 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
   // for a later run is left alone.
   async function handle(message, reply, runEnded) {
     const request = browserRequestFrom(message);
-    if (!request || runEnded()) return;
+    if (!request) return;
+    const typed = request.action === 'open' && typedUrls.get(request.appSessionId) === request.url;
+    if (request.action === 'open' || request.action === 'close')
+      typedUrls.delete(request.appSessionId);
+    if (runEnded()) return;
     const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
     const receivedAt = Date.now();
     // Nothing starts once the caller has given up, by its own expiry when it
@@ -80,7 +85,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
     reply({
       type: 'browser.result',
       id: request.requestId,
-      result: await perform({ ...request, receivedAt, startBy, runEnded }, timeoutMs),
+      result: await perform({ ...request, typed, receivedAt, startBy, runEnded }, timeoutMs),
     });
   }
 
@@ -204,30 +209,24 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(
-        browserSessionId,
-        url,
-        stillWanted,
-        request.source === 'user' ? 'user' : 'agent',
-      );
+      await manager.open(browserSessionId, url, () => {
+        stillWanted();
+        if (request.typed) manager.recordTyped(browserSessionId, url);
+      });
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
-      await manager.reload(
-        browserSessionId,
-        stillWanted,
-        request.source === 'user' ? 'user' : 'agent',
-      );
+      await manager.reload(browserSessionId, stillWanted);
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
-          ? await manager.goBack(browserSessionId, stillWanted, 'agent')
-          : await manager.goForward(browserSessionId, stillWanted, 'agent');
+          ? await manager.goBack(browserSessionId, stillWanted)
+          : await manager.goForward(browserSessionId, stillWanted);
       const url = moved ? (await loaded)?.url : undefined;
       return result(request, true, await snapshotAfter(request, url));
     }
@@ -265,7 +264,21 @@ function createNativeBrowserRequests({ manager, notifyRenderer }) {
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
-  return { handle, workingSessions: () => [...waiting.keys()] };
+  return {
+    handle,
+    recordTyped(appSessionId, url) {
+      if (
+        typeof appSessionId !== 'string' ||
+        !appSessionId ||
+        typeof url !== 'string' ||
+        url.length > 16_384 ||
+        !URL.canParse(url)
+      )
+        throw new Error('Invalid typed browser address.');
+      typedUrls.set(appSessionId, url);
+    },
+    workingSessions: () => [...waiting.keys()],
+  };
 }
 
 function sidecarTimeoutMs(value) {
