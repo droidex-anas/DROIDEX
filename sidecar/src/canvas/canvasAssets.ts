@@ -123,26 +123,28 @@ async function saveOwnedAsset(root: string, canvasId: string, asset: OwnedAsset,
       } finally {
         await existing.close();
       }
-      await saveAssetMetadata(assets, asset);
-      return;
     } catch (error) {
       if (!isCode(error, 'ENOENT')) throw error;
+      const file = await open(
+        temporary,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600,
+      );
+      try {
+        await file.writeFile(bytes);
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await rename(temporary, target);
     }
 
-    const file = await open(
-      temporary,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      await file.writeFile(bytes);
-      await file.sync();
-    } finally {
-      await file.close();
-    }
-    await rename(temporary, target);
+    // The image must be linked durably before the record that publishes it, and
+    // every path repeats both flushes: an earlier import may have failed either
+    // one after its rename, so existing files are not evidence of durability.
     await syncDirectory(assets);
     await saveAssetMetadata(assets, asset);
+    await syncDirectory(assets);
     await syncDirectory(canvas);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
@@ -226,7 +228,6 @@ async function saveAssetMetadata(directory: string, asset: OwnedAsset): Promise<
       await file.close();
     }
     await rename(temporary, target);
-    await syncDirectory(directory);
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);
   }

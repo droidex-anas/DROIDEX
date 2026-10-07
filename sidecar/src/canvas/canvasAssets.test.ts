@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, rm, truncate, unlink, writeFile } from 'node:fs/promises';
+import { existsSync, promises as fs } from 'node:fs';
+import { mkdir, mkdtemp, readdir, rm, truncate, unlink, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -73,3 +75,68 @@ test('main-attested image imports reject invalid inputs and dedupe owned bytes',
   assert.equal(canvasImageImportSchema.safeParse({ ...request, width: 8193 }).success, false);
   assert.equal(canvasImageImportSchema.safeParse({ ...request, height: 0 }).success, false);
 });
+
+for (const boundary of [
+  { name: 'metadata directory', directory: 'assets' },
+  { name: 'canvas directory', directory: '' },
+]) {
+  test(
+    `image import retries the failed ${boundary.name} flush before acknowledging`,
+    {
+      skip: process.platform === 'win32',
+    },
+    async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'canvas-assets-retry-'));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const canvasId = 'canvas-1';
+      const canvas = join(root, canvasId);
+      await mkdir(canvas);
+      const filePath = join(root, 'chosen.png');
+      await writeFile(filePath, PNG);
+      const request = {
+        canvasId,
+        filePath,
+        digest: createHash('sha256').update(PNG).digest('hex'),
+        width: 1,
+        height: 1,
+      };
+      const metadata = join(canvas, 'assets', `${request.digest}.json`);
+      const realOpen = fs.open;
+      let failFlush = true;
+      const fault = t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+        const handle = await realOpen(...args);
+        if (args[0] !== join(canvas, boundary.directory)) return handle;
+        return new Proxy(handle, {
+          get(target, property) {
+            if (property === 'sync') {
+              return async () => {
+                if (failFlush && existsSync(metadata))
+                  throw new Error('Injected directory flush failure');
+                await target.sync();
+              };
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      });
+      syncBuiltinESMExports();
+      try {
+        await assert.rejects(importCanvasImage(root, request), { code: 'storage_failed' });
+        await assert.rejects(importCanvasImage(root, request), { code: 'storage_failed' });
+        failFlush = false;
+        const receipt = await importCanvasImage(root, request);
+        assert.equal(receipt.assetId, request.digest);
+        assert.deepEqual(await importCanvasImage(root, request), receipt);
+        assert.deepEqual(await listCanvasAssets(root, canvasId), [receipt]);
+        assert.deepEqual((await readdir(join(canvas, 'assets'))).sort(), [
+          request.digest,
+          `${request.digest}.json`,
+        ]);
+      } finally {
+        fault.mock.restore();
+        syncBuiltinESMExports();
+      }
+    },
+  );
+}
