@@ -697,6 +697,7 @@ export interface BrowserNativeRequest {
   action: BrowserNativeAction;
   /** Only trusted renderer commands are marked user. Tool calls are agent requests by default. */
   initiator?: 'user' | 'agent';
+  autonomy?: Autonomy;
   url?: string;
   viewport?: BrowserViewport;
   viewportMode?: BrowserViewportMode;

@@ -10,6 +10,8 @@ const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { createBrowserCover } = require('./browserCover.cjs');
+const { refuseAgentScheme } = require('./browserNavigationIntent.cjs');
+const { createBrowserActionResult } = require('./browserActionResult.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const LATE = 'The browser page did not finish in time.';
@@ -22,11 +24,13 @@ function createBrowserActions({
   reading,
   runWithWebContentsDebugger,
   credentials,
+  navigationApproval,
   unthrottled,
   redactUrl,
   onPoint,
 }) {
   const { refuseCovered } = createBrowserCover({ reading });
+  const result = createBrowserActionResult({ runWithWebContentsDebugger, redactUrl });
 
   async function act(contents, entry, request) {
     // After a navigation or a wait, errors count from when the request came.
@@ -39,6 +43,8 @@ function createBrowserActions({
     try {
       return await unthrottled(contents, async () => {
         const step = {
+          entry,
+          request,
           navigation,
           sent: false,
           startBy: request.startBy,
@@ -61,7 +67,9 @@ function createBrowserActions({
           (request.action === 'type' && request.submit);
         if (mayNavigate && step.sent && !navigation.started())
           await navigation.startsWithin(NAVIGATION_GRACE_MS);
+        await navigationApproval.waitForApprovals(contents, request.requestId);
         if (navigation.started()) await navigation.wait();
+        navigationApproval.takeFailure(contents, request.requestId);
         return result(request, contents, entry, since, urlBefore);
       });
     } finally {
@@ -88,7 +96,10 @@ function createBrowserActions({
           request.ref,
           [request.value, step.startBy],
           FILL,
-          () => startInput(step),
+          () => {
+            startInput(step);
+            navigationApproval.recordAction(entry, contents, request);
+          },
         );
       case 'fillCredentials':
         startInput(step);
@@ -223,15 +234,21 @@ function createBrowserActions({
       const stillOn = onSamePage(dbg, holding, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, holding, sessionId, document);
-      if (text) await send(dbg, sessionId, 'Input.insertText', { text });
+      if (text)
+        await dispatchInput(contents, step, { type: 'insertText' }, () =>
+          send(dbg, sessionId, 'Input.insertText', { text }),
+        );
       if (request.submit) {
         await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
         if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
         // The page check comes last, right before the key.
+        await refuseAgentScheme(dbg, sessionId);
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
+        await pressOn(dbg, sessionId, keyOf('Enter'), stillOn, (input, send) =>
+          dispatchInput(contents, step, input, send),
+        );
       }
     });
   }
@@ -247,8 +264,11 @@ function createBrowserActions({
         if (i > 0 && step.navigation.started()) return;
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
+        if (['Enter', ' '].includes(key.key)) await refuseAgentScheme(dbg, sessionId);
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, key, stillOn);
+        await pressOn(dbg, sessionId, key, stillOn, (input, send) =>
+          dispatchInput(contents, step, input, send),
+        );
       }
     });
   }
@@ -281,13 +301,26 @@ function createBrowserActions({
       for (const event of events) {
         // A press that went out is always released, on the page that took it.
         if (event.type === 'mouseReleased') {
-          if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
+          if (!(await stillOn())) continue;
+          await refuseAgentScheme(dbg, target.sessionId, target.local ?? target);
+          if (await stillOn())
+            await dispatchInput(contents, step, event, () =>
+              dbg.sendCommand('Input.dispatchMouseEvent', event),
+            );
           continue;
         }
+        if (event.type === 'mousePressed')
+          await refuseAgentScheme(dbg, target.sessionId, target.local ?? target);
         await inputReady(dbg, step, holding, target.sessionId, target.document);
-        await dbg.sendCommand('Input.dispatchMouseEvent', event);
+        await dispatchInput(contents, step, event, () =>
+          dbg.sendCommand('Input.dispatchMouseEvent', event),
+        );
       }
     });
+  }
+
+  function dispatchInput(contents, step, input, send) {
+    return navigationApproval.dispatch(step.entry, contents, step.request, input, send);
   }
 
   // Whether the page that took a press is still there, so the press can be
@@ -362,39 +395,7 @@ function createBrowserActions({
     });
   }
 
-  // The page after an action, with what the agent reads about it: what
-  // changed besides the action itself, then the [Title · url] footer.
-  async function result(request, contents, entry, since, urlBefore = contents.getURL()) {
-    const snapshot = await pageSnapshot(contents);
-    const notes = [];
-    if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
-    const errors = entry.errorTimes.filter((at) => at >= since).length;
-    if (errors)
-      notes.push(
-        `${errors} new console error${errors === 1 ? '' : 's'}; browser_console has them.`,
-      );
-    notes.push(`[${snapshot.title || 'Untitled'} · ${redactUrl(snapshot.url)}]`);
-    return { requestId: request.requestId, ok: true, snapshot, text: notes.join('\n') };
-  }
-
-  // Where the page is, read by main rather than asked of the page.
-  async function pageSnapshot(contents) {
-    if (contents.isDestroyed()) throw new Error('The browser page closed.');
-    const metrics = await runWithWebContentsDebugger(contents, (dbg) =>
-      dbg.sendCommand('Page.getLayoutMetrics'),
-    ).catch(() => undefined);
-    const view = metrics?.cssVisualViewport;
-    const history = contents.navigationHistory;
-    return {
-      url: contents.getURL(),
-      title: contents.getTitle(),
-      scroll: { x: Math.round(view?.pageX ?? 0), y: Math.round(view?.pageY ?? 0) },
-      canGoBack: history.canGoBack(),
-      canGoForward: history.canGoForward(),
-    };
-  }
-
-  return { act, pageSnapshot };
+  return { act };
 }
 
 // Called right before an action changes the page. No input goes out once

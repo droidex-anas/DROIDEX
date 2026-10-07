@@ -9,7 +9,7 @@ function createNativeBrowserViewFactory({
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticUrl,
   urls,
-  loadUrl,
+  navigation,
   emitLoaded,
   emitLoadFailed,
   applyDesignState,
@@ -33,18 +33,27 @@ function createNativeBrowserViewFactory({
     ses.setPermissionCheckHandler(() => false);
     ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     const pages = { urls: ['http://*/*', 'https://*/*'] };
+    const navigations = { urls: ['<all_urls>'] };
+    ses.webRequest.onBeforeRequest(navigations, (details, callback) => {
+      const entry = [...listEntries()].find(
+        (candidate) => candidate.contents?.id === details.webContentsId,
+      );
+      navigation.beforeRequest(details, callback, entry);
+    });
     // When each request went out, for how long it took. One that never ends
     // would stay here, so the lot is dropped once it grows past any real page.
     ses.webRequest.onSendHeaders(pages, (details) => {
       if (requestStarts.size >= 500) requestStarts.clear();
       requestStarts.set(details.id, details.timestamp);
     });
-    ses.webRequest.onCompleted(pages, recordNetworkEvent);
-    ses.webRequest.onErrorOccurred(pages, recordNetworkEvent);
+    ses.webRequest.onCompleted(navigations, recordNetworkEvent);
+    ses.webRequest.onErrorOccurred(navigations, recordNetworkEvent);
     browserSessionConfigured = true;
   }
 
   function recordNetworkEvent(details) {
+    navigation.complete(details.id);
+    if (!/^https?:/i.test(details.url)) return;
     const startedAt = requestStarts.get(details.id);
     requestStarts.delete(details.id);
     const entry = [...listEntries()].find(
@@ -97,10 +106,6 @@ function createNativeBrowserViewFactory({
     entry.contents = contents;
     entry.crashed = false;
     const current = () => entry.contents === contents && !contents.isDestroyed();
-    contents.setWindowOpenHandler(({ url: nextUrl }) => {
-      if (current()) void loadUrl(entry, nextUrl);
-      return { action: 'deny' };
-    });
     // Only the page the browser shows forwards app shortcuts, not one let go.
     contents.on('before-input-event', (event, input) => {
       if (current()) onInput(event, input);
@@ -154,7 +159,9 @@ function createNativeBrowserViewFactory({
       const fallback = urls.httpFallbackUrl(failedUrl, errorCode);
       if (fallback) {
         urls.rememberFailedRestoreUrl(entry, entry.targetUrl || failedUrl);
-        void loadUrl(entry, fallback, { force: true });
+        void navigation
+          .retry(entry, fallback, failedUrl)
+          .catch((error) => emitLoadFailed(entry, fallback, error.message));
         return;
       }
       urls.rememberFailedRestoreUrl(entry, entry.targetUrl || failedUrl);

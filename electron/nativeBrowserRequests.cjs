@@ -54,8 +54,8 @@ const LOAD_WAIT_MS = 8_000;
 // page, and whatever it does afterwards is dropped.
 const DEADLINE_MARGIN_MS = 3_000;
 const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
-// The sidecar's longest timeout, 60 s, and the longest wait it adds to one.
-const MAX_SIDECAR_TIMEOUT_MS = 75_000;
+// The longest request includes 120 seconds for a queued approval.
+const MAX_SIDECAR_TIMEOUT_MS = 195_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
   const waiting = new Map(); // browserSessionId -> requests in flight
@@ -221,21 +221,21 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url, stillWanted);
+      await manager.open(browserSessionId, url, stillWanted, request);
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
-      await manager.reload(browserSessionId, stillWanted);
+      await manager.reload(browserSessionId, stillWanted, request);
       return result(request, true, await snapshotAfter(request, (await loaded)?.url));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
       const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       const moved =
         request.action === 'goBack'
-          ? await manager.goBack(browserSessionId, stillWanted)
-          : await manager.goForward(browserSessionId, stillWanted);
+          ? await manager.goBack(browserSessionId, stillWanted, request)
+          : await manager.goForward(browserSessionId, stillWanted, request);
       const url = moved ? (await loaded)?.url : undefined;
       return result(request, true, await snapshotAfter(request, url));
     }
@@ -304,6 +304,8 @@ function agentAction(request) {
     requestId: request.requestId,
     browserSessionId: request.browserSessionId,
     action: request.action,
+    initiator: request.initiator,
+    autonomy: request.autonomy,
     ref: request.ref,
     filter: request.filter,
     maxChars: request.maxChars,

@@ -146,6 +146,7 @@ const browserPrompts = createBrowserPromptController({
     }),
 });
 const nativeBrowserManager = createNativeBrowserManager({
+  authorizeAgentOrigin: (...args) => browserSettings.authorizeAgentOrigin(...args),
   app,
   appName: APP_NAME,
   session,

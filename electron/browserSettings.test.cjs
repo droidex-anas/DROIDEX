@@ -197,3 +197,47 @@ test('protection confirmation names every reduced setting and its previous and r
   ]);
   assert.equal(prompts.length, 1);
 });
+
+test('website approval follows autonomy and remembers only exact origins for this app run', async (t) => {
+  const { controller, options, responses, prompts } = await fixture(t);
+  const signal = new AbortController().signal;
+  const origin = 'https://example.test';
+  await controller.authorizeAgentOrigin(`${origin}/`, 'high', signal);
+  assert.equal(prompts.length, 0);
+  responses.push(1);
+  await controller.authorizeAgentOrigin(`${origin}/first`, 'medium', signal);
+  await controller.authorizeAgentOrigin(`${origin}/second`, 'medium', signal);
+  assert.equal(prompts.length, 1);
+  assert.deepEqual(prompts[0].buttons, ['Allow once', 'Always allow this site', 'Cancel']);
+  assert.deepEqual(controller.snapshot().approvedAgentOrigins, [origin]);
+  for (const url of [
+    'http://example.test/',
+    'https://example.test:8443/',
+    'https://sub.example.test/',
+  ])
+    await assert.rejects(controller.authorizeAgentOrigin(url, 'medium', signal), /denied/);
+  for (const autonomy of ['off', 'low'])
+    await assert.rejects(controller.authorizeAgentOrigin(`${origin}/`, autonomy, signal), /denied/);
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  await assert.rejects(restarted.authorizeAgentOrigin(`${origin}/`, 'medium', signal), /denied/);
+  for (const navigationApproval of ['always_ask', 'new_sites', 'never_ask']) {
+    responses.push(0);
+    await controller.update({ navigationApproval });
+    responses.length = 0;
+    if (navigationApproval === 'never_ask') {
+      await controller.authorizeAgentOrigin('https://new.test/', 'off', signal);
+    } else {
+      await assert.rejects(
+        controller.authorizeAgentOrigin('https://new.test/', 'high', signal),
+        /denied/,
+      );
+    }
+  }
+  for (const url of [
+    'file:///tmp/page',
+    'javascript:alert(1)',
+    'https://user:secret@example.test/',
+  ])
+    await assert.rejects(controller.authorizeAgentOrigin(url, 'high', signal), /http\(s\)/);
+});
