@@ -540,7 +540,8 @@ function registerCanvasPreviewProtocol() {
       return new Response(asset.data, {
         headers: {
           'content-type': asset.mime,
-          'cache-control': 'no-store',
+          'cache-control':
+            asset.mime === 'font/woff2' ? 'public, max-age=31536000, immutable' : 'no-store',
           'x-content-type-options': 'nosniff',
           ...(asset.mime === 'font/woff2' ? { 'access-control-allow-origin': '*' } : {}),
         },

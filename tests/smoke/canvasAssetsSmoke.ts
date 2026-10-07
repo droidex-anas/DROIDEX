@@ -231,7 +231,12 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         );
 
         await app.evaluate(({ session }) => {
-          const statuses: { guestId: number | undefined; url: string; status: number }[] = [];
+          const statuses: {
+            guestId: number | undefined;
+            url: string;
+            status: number;
+            cacheControl: string | null;
+          }[] = [];
           Reflect.set(globalThis, 'canvasAssetStatuses', statuses);
           session
             .fromPartition('droidex-canvas-preview')
@@ -240,6 +245,10 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                 guestId: details.webContentsId,
                 url: details.url,
                 status: details.statusCode,
+                cacheControl:
+                  Object.entries(details.responseHeaders ?? {})
+                    .find(([name]) => name.toLowerCase() === 'cache-control')?.[1]
+                    .join(', ') ?? null,
               });
             });
         });
@@ -284,6 +293,27 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
             { timeout: 20_000, intervals: [200] },
           )
           .toEqual({ image: true, font: true, headingFont: true });
+        await expect
+          .poll(() =>
+            app.evaluate(
+              (_, { id, image, font }) => {
+                const statuses = Reflect.get(globalThis, 'canvasAssetStatuses') as Array<{
+                  guestId: number;
+                  url: string;
+                  status: number;
+                  cacheControl: string | null;
+                }>;
+                return [image, font].map(
+                  (url) =>
+                    statuses.find(
+                      (entry) => entry.guestId === id && entry.url === url && entry.status === 200,
+                    )?.cacheControl,
+                );
+              },
+              { id: guestId, image: imageUrl, font: fontUrl },
+            ),
+          )
+          .toEqual(['no-store', 'public, max-age=31536000, immutable']);
 
         await page.evaluate(() => document.getElementById('canvas-preview-guest')?.remove());
         const missingFontUrl = `droidex-canvas-preview://preview/font/${'f'.repeat(64)}`;
