@@ -1524,6 +1524,20 @@ Settled by 10b (`thread/canvas-10b-image-capture`):
 - `captureCanvasImage(canvasId, ref, signal)` is the renderer operation over that Electron boundary. A ready preview populates a 32 MiB bounded thumbnail cache keyed by canvas, design and revision; `canvasThumbnailRead` exposes its exact-revision read through the preload bridge. `exportCanvasImage` sends captured PNG bytes to the OS save dialog and writes only its selected path. Unavailable capture returns `capture_unavailable`; a save failure returns `storage_failed`. The kit starter and a transparent design captured in the real Electron host; the starter's 720×720 CSS capture at 2× produced a 1,440×1,440 PNG in 56.02 ms in the final full arm64 smoke.
 - This base (`84480d9a`) has no Canvas board/context actions, artifact card or `canvas_inspect` MCP tool yet. Their controls and model screenshot delivery remain with Tasks 05, 06a and 04 respectively; the capture API and cache read are available for those owners. Task 10's checkbox stays open, as source export and lifecycle recovery are separate subtasks.
 
+Settled by 10c (builds/shutdown):
+
+- Shutdown refuses new Canvas commands, revokes turn scopes before session-file reconciliation settles, and starts Canvas cleanup without waiting for sessions or automation persistence.
+- Abandoning a compile cancels cooperatively, then uses bounded compiler termination; replacement work never reuses the abandoned child.
+- Build close starts compiler termination before draining storage, still waits for its runs, and publishes no late ready outcome.
+- Concurrent compiler termination joins one promise that settles on child exit, including the controlled grace-kill path. The worker flushes `stopped` before exiting.
+- Failing-first regressions cover held reconciliation/session cleanup, abandoned child ownership, held artifact storage, and acknowledgement versus exit. Storage exclusion, watches, and commit-queue recovery belong to the parallel 10c thread; no Task 10 checkbox is completed here.
+
+Settled by 10c (storage/bridge):
+
+- Physical Canvas roots have one atomic writer lease, including linked roots across profiles; live writers are refused before loading or cleanup, and close, failed open and confirmed process death release ownership.
+- Last-pane unsubscribe/page loss cancels pane-only queued and running builds; a live turn on that canvas retains its accepted work, and other panes or canvases keep theirs. Pending subscriptions revalidate their own identity after storage opens, so unsubscribe cannot resurrect a watch or rebuild.
+- Closing the commit queue rejects queued and new callers without waiting for active I/O, while still awaiting admitted staging and durable writes. Single commit ownership, flush-before-publish and publication-time CAS remain unchanged.
+
 ## Task 11: Motion, accessibility and measured performance
 
 **Subtasks (one branch and PR each, merged in order):**

@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
+import { boundDiagnostics } from './canvasDiagnostics.js';
 import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
 import {
   CompileCancelledError,
@@ -73,7 +74,7 @@ export async function compileDesign(
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
-    diagnostics: [...selectionDiagnostics, ...bundle.warnings],
+    diagnostics: boundDiagnostics([...selectionDiagnostics, ...bundle.warnings]),
     elements: instrumented.elements,
   };
 }
@@ -218,7 +219,7 @@ function hasKitToken(kit: DesignSystem, mode: DesignSystemRef['mode'], token: st
   return false;
 }
 
-/** Releases the compiler's service process before the parent ends it. */
+/** Releases the service process, flushes the acknowledgement, and exits. */
 async function shutdown(requestId: number): Promise<void> {
   for (const controller of running.values()) controller.abort();
   try {
@@ -226,7 +227,9 @@ async function shutdown(requestId: number): Promise<void> {
   } catch (error) {
     console.error('Canvas compiler shutdown failed:', error);
   }
-  send({ requestId, status: 'stopped' } satisfies CompilerResponse);
+  send({ requestId, status: 'stopped' } satisfies CompilerResponse, () => {
+    process.exit(0);
+  });
 }
 
 async function runCompile(
@@ -250,7 +253,7 @@ function outcomeOf(
   | { status: 'unavailable'; reason: 'lost-compiler'; message: string } {
   if (error instanceof CompileCancelledError) return { status: 'cancelled' };
   if (error instanceof CompileFailedError)
-    return { status: 'failed', diagnostics: error.diagnostics };
+    return { status: 'failed', diagnostics: boundDiagnostics(error.diagnostics) };
   // A revision pinning a kit version that is not there is the revision's
   // problem; a storage failure is the machine's.
   if (error instanceof CanvasCommandError) {

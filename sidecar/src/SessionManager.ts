@@ -2124,7 +2124,19 @@ export class SessionManager {
   }
 
   shutdown(): Promise<void> {
-    this.shutdownPromise ??= Promise.resolve().then(() => this.performShutdown());
+    if (this.shutdownPromise) return this.shutdownPromise;
+    let settlement: { resolve(): void; reject(error: unknown): void };
+    this.shutdownPromise = new Promise<void>((resolve, reject) => {
+      settlement = { resolve, reject };
+    });
+    void this.performShutdown().then(
+      () => {
+        settlement.resolve();
+      },
+      (error: unknown) => {
+        settlement.reject(error);
+      },
+    );
     return this.shutdownPromise;
   }
 
@@ -2144,8 +2156,9 @@ export class SessionManager {
       }
     };
 
+    const closingSessions = run(() => this.lifecycle.closeAll());
     await run(() => this.sessionFiles.close());
-    await run(() => this.lifecycle.closeAll());
+    await closingSessions;
     await run(() => this.childSessions.shutdown());
     // After closeAll: every session's close is what kills its processes.
     await run(() => {

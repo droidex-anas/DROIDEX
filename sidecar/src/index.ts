@@ -16,7 +16,8 @@ import {
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
-import { shutdownSidecar } from './shutdown.js';
+import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
+import type { ClientCommand } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
@@ -135,7 +136,8 @@ void canvasReady.catch((error: unknown) => {
     message: `Canvas storage did not open, so no board is available until DROIDEX restarts: ${error instanceof Error ? error.message : String(error)}`,
   });
 });
-const handleCanvasCommand = createCanvasCommandHandler(
+const canvasAdmission = new AbortController();
+const dispatchCanvasCommand = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
@@ -144,6 +146,17 @@ const handleCanvasCommand = createCanvasCommandHandler(
   },
   (listener) => server.onPageGone(listener),
 );
+async function handleCanvasCommand(
+  command: ClientCommand,
+  pageId: string | null,
+): Promise<boolean> {
+  const rejection = canvasShutdownReply(command, canvasAdmission.signal);
+  if (rejection) {
+    server.broadcast(rejection);
+    return true;
+  }
+  return dispatchCanvasCommand(command, pageId);
+}
 
 automationManager = configureAutomationManager({
   dataDir: droidexUserDataDir(),
@@ -204,10 +217,12 @@ async function shutdown(): Promise<void> {
   const forceExit = setTimeout(() => process.exit(1), 5_000);
   forceExit.unref();
   try {
-    // Sessions close first so the automation store records their final run state
-    // before it flushes. Bridge close is bounded and flushes its ordered queue
-    // after shutdown.
+    // Sessions and Canvas invalidate before either cleanup is awaited.
+    // Automation persistence still follows the sessions' final run state.
     await shutdownSidecar({
+      closeCanvasAdmission: () => {
+        canvasAdmission.abort();
+      },
       shutdownSessions: () => manager.shutdown(),
       shutdownAutomations: async () => {
         try {
@@ -217,14 +232,8 @@ async function shutdown(): Promise<void> {
           await service?.flush();
         }
       },
-      // After the sessions, because an agent's Canvas mutation runs under one.
-      shutdownCanvas: async () => {
-        // Builds first: a settling build still reports its outcome through the
-        // workspace, which then waits for that commit before it closes.
-        await canvasBuilds.close();
-        const workspace = await canvasReady.catch(() => undefined);
-        await workspace?.close();
-      },
+      shutdownCanvas: () =>
+        shutdownCanvas(canvasBuilds, canvasScopes, canvasReady, canvasWorkspace),
       disableMetrics: () => {
         hotPathMetrics.disable();
       },

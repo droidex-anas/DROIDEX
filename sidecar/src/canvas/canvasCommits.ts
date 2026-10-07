@@ -19,12 +19,14 @@ export interface Committed<T> {
 export class CanvasCommits {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly admitted = new Set<Promise<void>>();
+  private readonly queued = new Set<(error: unknown) => void>();
   private closing = false;
 
   constructor(private readonly changes: CanvasChangeFeed) {}
 
   /** Admits one mutation, so `drain` knows what it still has to wait for. */
   admit<T>(work: () => Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(canvasError('storage_failed', CLOSING));
     const running = (async () => work())();
     const settled = running.then(ignoreOutcome, ignoreOutcome);
     this.admitted.add(settled);
@@ -34,12 +36,17 @@ export class CanvasCommits {
 
   /** One commit at a time; a failed commit never poisons the queue. */
   run<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.queue.catch(ignoreOutcome).then(() => {
-      this.requireOpen();
-      return work();
+    if (this.closing) return Promise.reject(canvasError('storage_failed', CLOSING));
+    return new Promise<T>((resolve, reject) => {
+      this.queued.add(reject);
+      const next = this.queue.then(() => {
+        this.queued.delete(reject);
+        this.requireOpen();
+        return work();
+      });
+      this.queue = next.then(ignoreOutcome, ignoreOutcome);
+      void next.then(resolve, reject);
     });
-    this.queue = next.catch(ignoreOutcome);
-    return next;
   }
 
   /**
@@ -61,6 +68,8 @@ export class CanvasCommits {
   /** Resolves once every admitted mutation has settled, staging included. */
   async drain(): Promise<void> {
     this.closing = true;
+    for (const reject of this.queued) reject(canvasError('storage_failed', CLOSING));
+    this.queued.clear();
     while (this.admitted.size > 0) await Promise.all([...this.admitted]);
   }
 }
