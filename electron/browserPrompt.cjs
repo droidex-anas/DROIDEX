@@ -201,7 +201,7 @@ function validatePrompt(input) {
     title: boundedText(input.title, 120),
     message: boundedText(input.message, 320),
     detail: boundedText(input.detail, 800),
-    origin: boundedText(input.origin, 200) || null,
+    origin: boundedText(input.origin, 300) || null,
     buttons,
     cancelId,
     defaultId,
