@@ -258,7 +258,7 @@ async function createFrame(
   return frame.designId;
 }
 
-async function withFrame(t: TestContext, options: Parameters<typeof harness>[1] = {}) {
+async function frameHarness(t: TestContext, options: Parameters<typeof harness>[1] = {}) {
   const canvas = await harness(t, options);
   const canvasId = await createCanvas(canvas);
   const designId = await createFrame(canvas, canvasId);
@@ -278,7 +278,7 @@ function turnScope(canvasId: string, scopeId: string): CanvasScope {
 }
 
 test('a correlated create, write and arrange answer their own requests', async (t) => {
-  const { canvas, canvasId, designId } = await withFrame(t);
+  const { canvas, canvasId, designId } = await frameHarness(t);
 
   const source = writeInput('m-write', designId, null, { 'main.tsx': HEY });
   await sendMutation(canvas, canvasId, 'canvas.write', 'req-write', source);
@@ -312,7 +312,7 @@ async function editableElement(
 ): Promise<{ canvas: Harness; canvasId: string; element: ElementRef }> {
   const builds = new CanvasBuilds();
   t.after(() => builds.close());
-  const { canvas, canvasId, designId } = await withFrame(t, { builds });
+  const { canvas, canvasId, designId } = await frameHarness(t, { builds });
   const ready = new Promise<void>((resolve, reject) => {
     const unsubscribe = canvas.workspace.changes.subscribe((change) => {
       const build = change.frames.find((frame) => frame.designId === designId)?.build;
@@ -416,7 +416,7 @@ test('a retried element edit returns its original receipt through a new handler'
 });
 
 test('pane rename, remove and Undo route through one attached canvas', async (t) => {
-  const { canvas, canvasId, designId } = await withFrame(t);
+  const { canvas, canvasId, designId } = await frameHarness(t);
   const version = canvas.workspace.snapshot(canvasId).frames[0]?.manifestVersion;
   assert.equal(version, 0);
   await sendMutation(canvas, canvasId, 'canvas.renameFrame', 'req-rename', {
@@ -499,7 +499,7 @@ test('an attachment made through the bridge survives a workspace reopen', async 
 });
 
 test('a rejected argument maps to invalid_source_path under files and invalid_input elsewhere', async (t) => {
-  const { canvas, canvasId, designId } = await withFrame(t);
+  const { canvas, canvasId, designId } = await frameHarness(t);
 
   const source = writeInput('m-path', designId, null, { '../escape.tsx': HEY });
   await sendMutation(canvas, canvasId, 'canvas.write', 'req-path', source);
@@ -591,7 +591,7 @@ test('the bridge creates a seeded adjacent frame and refuses a seed outside its 
 });
 
 test('reading an artifact is a derived read with no cache miss to report', async (t) => {
-  const { canvas, canvasId, designId } = await withFrame(t);
+  const { canvas, canvasId, designId } = await frameHarness(t);
 
   // Nothing has built this frame, so the derived cache has nothing to serve and
   // the pane is told so rather than being handed an error.
@@ -725,7 +725,7 @@ function pauseAtSource(path: string) {
 
 test('a chat that detaches while its write is staging does not commit it', async (t) => {
   const paused = pauseAtSource('main.tsx');
-  const { canvas, canvasId, designId } = await withFrame(t, { fs: paused.fs });
+  const { canvas, canvasId, designId } = await frameHarness(t, { fs: paused.fs });
 
   const source = writeInput('m-paused', designId, null, { 'main.tsx': HEY });
   const writing = sendMutation(canvas, canvasId, 'canvas.write', 'req-paused-write', source);
@@ -747,7 +747,7 @@ test('a request identity cannot revive a revoked turn lease', async (t) => {
   const fs = observedFileSystem((operation, target) => {
     if (operation === 'rename' && target.endsWith('manifest.json')) insideCommit?.();
   });
-  const { canvas, canvasId, designId } = await withFrame(t, { fs });
+  const { canvas, canvasId, designId } = await frameHarness(t, { fs });
 
   const agent = turnScope(canvasId, stolen);
   canvas.scopes.register(agent);
@@ -863,7 +863,7 @@ test('a page that goes away while the workspace opens installs no watch', async 
     }),
     deadline: () => () => undefined,
   });
-  const { canvas, canvasId, designId } = await withFrame(t, { builds });
+  const { canvas, canvasId, designId } = await frameHarness(t, { builds });
   const source = writeInput('m-write-source', designId, null, { 'main.tsx': HEY });
   await sendMutation(canvas, canvasId, 'canvas.write', 'req-write-source', source);
   // Cancelled leaves saved source with nothing built for it, which is what a
