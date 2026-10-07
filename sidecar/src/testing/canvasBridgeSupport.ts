@@ -213,7 +213,7 @@ export function turnScope(canvasId: string, scopeId: string): CanvasScope {
 export async function editableElement(
   t: TestContext,
 ): Promise<{ canvas: Harness; canvasId: string; element: ElementRef }> {
-  const builds = new CanvasBuilds();
+  const builds = new CanvasBuilds({ deadline: fakeDeadlines().deadline });
   t.after(() => builds.close());
   const { canvas, canvasId, designId } = await frameHarness(t, { builds });
   const ready = new Promise<void>((resolve, reject) => {
