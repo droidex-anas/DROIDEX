@@ -18,6 +18,7 @@ import {
   type AppState,
   type QueuedPrompt,
 } from '../hooks/useStore';
+import { isDesignModeOpen } from '../hooks/designModeState';
 import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
@@ -91,7 +92,12 @@ import {
   offersContextWindow,
 } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
-import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
+import {
+  composerTextAfterSeed,
+  resetComposerAfterSubmit,
+  submitModeForEnter,
+  type SubmitMode,
+} from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
   chipNamedBy,
@@ -220,7 +226,6 @@ const DROID_ONLY_COMMANDS = new Set(['/compact']);
 const USAGE_COMMAND = '/usage';
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
-type SubmitMode = 'queue' | 'steer';
 
 export function shouldStopTurnStarting({
   isLive,
@@ -303,6 +308,11 @@ export default function PromptInput({
             effectiveProvider(current.draftProvider, current.providerStatuses)
         ],
       childSessions: appSessionId ? current.childSessions[appSessionId] : undefined,
+      // With the prompt box on, design mode's picks are asked about beside
+      // them on the page, not here.
+      designPicksInPromptBox:
+        current.designSelectionBehavior === 'prompt-box' &&
+        isDesignModeOpen(current.designModes, appSessionId ?? undefined),
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
@@ -435,8 +445,11 @@ export default function PromptInput({
     imageAttachments.images.length > 0 ||
     fileAttachments.files.length > 0;
   // Marks picked in this chat's browser, which go out with the next prompt.
-  // Their chips lead the row, so Backspace takes them last.
-  const designMarks = useDesignMarks(state.activeSession?.appSessionId);
+  // Their chips lead the row, so Backspace takes them last. Picks made into the
+  // prompt box show as chips once design mode ends.
+  const designMarks = useDesignMarks(
+    state.designPicksInPromptBox ? undefined : state.activeSession?.appSessionId,
+  );
   const hasChips = hasSelection || hasAttachmentChips || designMarks.length > 0;
 
   const removeLastChip = () => {
@@ -489,8 +502,8 @@ export default function PromptInput({
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
-  // The draft a seed that goes out at once makes, sent once it is the draft.
-  const seedToSend = useRef<string | null>(null);
+  // The draft a seed that goes out at once makes, sent in its mode once it is the draft.
+  const seedToSend = useRef<{ text: string; mode: SubmitMode } | null>(null);
   // A seed that came while a submit was going out, or a seed was about to be
   // sent, waits for it to settle, so it is not added to that prompt's text.
   // The count moves as it settles.
@@ -1007,7 +1020,7 @@ export default function PromptInput({
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
     setInput(text);
     if (composerSeed.focus) pendingCaret.current = text.length;
-    seedToSend.current = composerSeed.send ? text : null;
+    seedToSend.current = composerSeed.send ? { text, mode: composerSeed.send } : null;
     setVisualizeSelected(false);
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
@@ -1211,9 +1224,10 @@ export default function PromptInput({
   // Consuming its seed left any child of this chat, so it waits for the render
   // that shows the chat itself as the target.
   useEffect(() => {
-    if (seedToSend.current !== input || targetChildSessionId) return;
+    const seed = seedToSend.current;
+    if (seed?.text !== input || targetChildSessionId) return;
     seedToSend.current = null;
-    void handleSubmit();
+    void handleSubmit(seed.mode);
   });
 
   // The chat a send creates opens in the place it was sent from, even if the
@@ -1967,9 +1981,7 @@ export default function PromptInput({
     if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
-      const enterMode: SubmitMode = state.liveEnterBehavior;
-      const otherMode: SubmitMode = enterMode === 'steer' ? 'queue' : 'steer';
-      void handleSubmit(e.metaKey || e.ctrlKey ? otherMode : enterMode);
+      void handleSubmit(submitModeForEnter(state.liveEnterBehavior, e.metaKey || e.ctrlKey));
     }
   };
 

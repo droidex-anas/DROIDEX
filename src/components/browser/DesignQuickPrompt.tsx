@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useStoreDispatch } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { submitModeForEnter } from '../../lib/composerReset';
 import { onNativeBrowserDesignEvent } from '../../lib/nativeBrowser';
 import type { BrowserBox, DesignReference } from '../../types/bridge';
 import { CompactComposer } from '../composer/CompactComposer';
@@ -9,7 +10,8 @@ import { useElementSize } from './useElementSize';
 
 // A small prompt box by the mark just picked, so the change can be asked for
 // right there. It sends through the composer, as the composer's own prompt
-// with every mark; closed unsent, what it holds goes on in the composer's draft.
+// with every mark, steered or queued as the composer's Enter would; closed
+// unsent, what it holds goes on in the composer's draft.
 
 interface QuickPrompt {
   /** The chat that owns the browser and its marks, which the text goes to. */
@@ -31,23 +33,25 @@ interface DesignQuickPromptState {
   number?: number;
   setText: (text: string) => void;
   close: () => void;
-  send: () => void;
+  send: (withCommand: boolean) => void;
 }
 
 export function useDesignQuickPrompt({
   appSessionId,
   browserSessionId,
-  designMode,
+  enabled,
   drawing,
   marks,
 }: {
   appSessionId?: string;
   browserSessionId?: string;
-  designMode: boolean;
+  /** Design mode is on and its picks open the box. */
+  enabled: boolean;
   drawing: boolean;
   marks: readonly DesignReference[];
 }): DesignQuickPromptState {
   const dispatch = useStoreDispatch();
+  const liveEnterBehavior = useStoreSelector((state) => state.liveEnterBehavior);
   const [prompt, setPrompt] = useState<QuickPrompt | null>(null);
   const promptRef = useRef(prompt);
   promptRef.current = prompt;
@@ -84,27 +88,30 @@ export function useDesignQuickPrompt({
   // However the box goes, even with the browser itself, its text stays in the draft.
   useEffect(() => close, [close]);
 
-  const send = useCallback(() => {
-    const current = promptRef.current;
-    const text = current?.text.trim();
-    if (!current || !text) return;
-    promptRef.current = null;
-    setPrompt(null);
-    dispatch({
-      type: 'SEED_COMPOSER',
-      appSessionId: current.appSessionId,
-      text,
-      send: true,
-      focus: false,
-    });
-  }, [dispatch]);
+  const send = useCallback(
+    (withCommand: boolean) => {
+      const current = promptRef.current;
+      const text = current?.text.trim();
+      if (!current || !text) return;
+      promptRef.current = null;
+      setPrompt(null);
+      dispatch({
+        type: 'SEED_COMPOSER',
+        appSessionId: current.appSessionId,
+        text,
+        send: submitModeForEnter(liveEnterBehavior, withCommand),
+        focus: false,
+      });
+    },
+    [dispatch, liveEnterBehavior],
+  );
 
   const setText = useCallback((text: string) => {
     setPrompt((current) => current && { ...current, text });
   }, []);
 
   useEffect(() => {
-    if (!browserSessionId || !designMode) return;
+    if (!browserSessionId || !enabled) return;
     return onNativeBrowserDesignEvent((event) => {
       if (event.browserSessionId !== browserSessionId) return;
       if (event.type === 'select') {
@@ -128,24 +135,21 @@ export function useDesignQuickPrompt({
         );
       }
     });
-  }, [browserSessionId, designMode, show]);
+  }, [browserSessionId, enabled, show]);
 
   useEffect(() => {
     const drawn = sketch.current;
     if (drawing || !drawn) return;
     sketch.current = null;
-    if (designMode) show(drawn);
-  }, [designMode, drawing, show]);
+    if (enabled) show(drawn);
+  }, [enabled, drawing, show]);
 
   const number = marks.find((mark) => mark.anchor.id === prompt?.anchorId)?.anchor.mark;
   // It closes as design mode ends or drawing starts, and with its mark: sent
   // from the composer, or taken away.
   const stale =
     prompt !== null &&
-    (!designMode ||
-      drawing ||
-      number === undefined ||
-      prompt.browserSessionId !== browserSessionId);
+    (!enabled || drawing || number === undefined || prompt.browserSessionId !== browserSessionId);
   useEffect(() => {
     if (stale) close();
   }, [close, stale]);

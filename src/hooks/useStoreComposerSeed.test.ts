@@ -29,14 +29,15 @@ test('a composer seed records its intent and clears once consumed', () => {
   });
   assert.equal(replacing.composerSeeds[0]?.replace, true);
 
-  // The browser's prompt box sends its seed at once and leaves the focus alone.
+  // The browser's prompt box sends its seed at once, in the mode it chose, and
+  // leaves the focus alone.
   const sending = reducer(initialState, {
     type: 'SEED_COMPOSER',
     text: 'make this bolder',
-    send: true,
+    send: 'steer',
     focus: false,
   });
-  assert.equal(sending.composerSeeds[0]?.send, true);
+  assert.equal(sending.composerSeeds[0]?.send, 'steer');
   assert.equal(sending.composerSeeds[0]?.focus, false);
 });
 
@@ -60,7 +61,7 @@ test('a sent seed goes to its chat, leaving a child picked while it waited', () 
     type: 'SEED_COMPOSER',
     appSessionId: 'owner',
     text: 'make this bolder',
-    send: true,
+    send: 'queue',
   });
   state = { ...state, selectedChild: { parentAppSessionId: 'owner', childSessionId: 'child' } };
   const sent = reducer(state, {

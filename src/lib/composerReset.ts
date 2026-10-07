@@ -5,21 +5,32 @@ let seedSequence = 0;
 
 export type ComposerSeed = ReturnType<typeof createComposerSeed>;
 
+// While the agent works, a steered prompt reaches it at its next step and a
+// queued one goes out after the turn. With no turn running, both just send.
+export type SubmitMode = 'queue' | 'steer';
+
+// Enter submits in the mode the user chose; Cmd/Ctrl+Enter in the other.
+export function submitModeForEnter(enterMode: SubmitMode, withCommand: boolean): SubmitMode {
+  if (!withCommand) return enterMode;
+  return enterMode === 'steer' ? 'queue' : 'steer';
+}
+
 // A seed goes to the composer of its chat, or with a null chat to the new-chat
 // draft in the tile `draftTileId`. One from the browser's prompt box leaves the
-// focus where it is, and one it sends goes out as that composer's own prompt.
+// focus where it is, and one it sends goes out as that composer's own prompt,
+// in the mode it was sent with.
 export function createComposerSeed(
   text: string,
   replace = false,
   {
     appSessionId = null,
     draftTileId = null,
-    send = false,
+    send = null,
     focus = true,
   }: {
     appSessionId?: string | null;
     draftTileId?: string | null;
-    send?: boolean;
+    send?: SubmitMode | null;
     focus?: boolean;
   } = {},
 ) {
