@@ -1,6 +1,7 @@
 import { getBridgeInfo } from './desktop';
 import { noteBridgeEventReceived } from './rendererPerf';
 import { setTransportHealth } from './runtimeHealth';
+import type * as bridgeWireValidation from './bridgeWireValidation';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeResetMessage,
@@ -8,7 +9,6 @@ import {
   type ClientCommand,
   type ServerEvent,
   type ServerEventBatch,
-  type ServerWireMessage,
 } from '../types/bridge';
 
 type Listener = (event: ServerEvent) => void;
@@ -21,7 +21,7 @@ type RuntimeReplacedListener = (
   resentRequestIds: ReadonlySet<string>,
 ) => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
-type WireMessageValidator = (value: unknown) => ServerWireMessage | null;
+type WireValidation = typeof bridgeWireValidation;
 
 interface TurnBaselineAdopter {
   gitAdoptTurnBaseline: (dir: string, clientRef: string, appSessionId: string) => Promise<unknown>;
@@ -46,7 +46,7 @@ export class Bridge {
   private started = false;
   private lastGeneration: string | null = null;
   private lastSeq = 0;
-  private validateWireMessage: WireMessageValidator | null = null;
+  private wireValidation: WireValidation | null = null;
   private firstCommand: () => ClientCommand | null = () => null;
 
   constructor(
@@ -54,10 +54,7 @@ export class Bridge {
     private readonly schedule: ReconnectScheduler = (callback, delayMs) => {
       setTimeout(callback, delayMs);
     },
-    private readonly loadWireMessageValidator = async (): Promise<WireMessageValidator> => {
-      const module = await import('./bridgeWireValidation');
-      return module.serverWireMessage;
-    },
+    private readonly loadWireValidation = () => import('./bridgeWireValidation'),
   ) {}
 
   async start(): Promise<void> {
@@ -70,13 +67,13 @@ export class Bridge {
     let port: number;
     let token: string;
     try {
-      if (this.validateWireMessage === null) {
-        const [bridgeInfo, validateWireMessage] = await Promise.all([
+      if (this.wireValidation === null) {
+        const [bridgeInfo, wireValidation] = await Promise.all([
           this.loadBridgeInfo(),
-          this.loadWireMessageValidator(),
+          this.loadWireValidation(),
         ]);
         ({ port, token } = bridgeInfo);
-        this.validateWireMessage = validateWireMessage;
+        this.wireValidation = wireValidation;
       } else {
         ({ port, token } = await this.loadBridgeInfo());
       }
@@ -85,10 +82,10 @@ export class Bridge {
       return;
     }
     this.url = `ws://127.0.0.1:${String(port)}${token ? `?token=${token}` : ''}`;
-    this.open(this.validateWireMessage);
+    this.open(this.wireValidation);
   }
 
-  private open(validateWireMessage: WireMessageValidator): void {
+  private open(wireValidation: WireValidation): void {
     let ws: WebSocket;
     try {
       ws = new WebSocket(this.connectionUrl());
@@ -117,14 +114,14 @@ export class Bridge {
       } catch {
         return;
       }
-      const wireMessage = validateWireMessage(parsed);
+      const wireMessage = wireValidation.serverWireMessage(parsed);
       if (wireMessage === null) {
         if (isRecord(parsed) && parsed.type === 'events.batch') {
           this.handleMalformedBatch(ws);
         }
         return;
       }
-      if (wireMessage.type === 'events.batch') this.receiveBatch(wireMessage);
+      if (wireMessage.type === 'events.batch') this.receiveBatch(wireMessage, wireValidation);
       else if (wireMessage.type === 'bridge.reset') this.receiveReset(wireMessage);
       else if (wireMessage.type === 'bridge.snapshot') this.receiveSnapshot(wireMessage);
       else this.publishEvents([wireMessage]);
@@ -143,7 +140,7 @@ export class Bridge {
     };
   }
 
-  private receiveBatch(batch: ServerEventBatch): void {
+  private receiveBatch(batch: ServerEventBatch, wireValidation: WireValidation): void {
     if (this.lastGeneration !== null && this.lastGeneration !== batch.generation) {
       this.lastGeneration = batch.generation;
       this.lastSeq = 0;
@@ -155,14 +152,22 @@ export class Bridge {
       return;
     }
 
-    const events = batch.events
-      .filter((entry) => entry.seq > this.lastSeq)
-      .map((entry) => entry.event);
-    if (events.length === 0) {
-      this.lastSeq = batch.lastSeq;
-      return;
+    const events: ServerEvent[] = [];
+    for (const { seq, event } of batch.events) {
+      if (seq <= this.lastSeq) continue;
+      // The envelope was checked as a whole; each event is checked on its own,
+      // so one bad event no longer costs the rest of the batch.
+      const wire: unknown = event;
+      if (!wireValidation.isServerEvent(wire)) {
+        console.warn('Dropped bridge event: isServerEvent check failed', {
+          type: isRecord(wire) && typeof wire.type === 'string' ? wire.type : '<unknown>',
+          seq,
+        });
+        continue;
+      }
+      events.push(wire);
     }
-    this.publishEvents(events);
+    if (events.length > 0) this.publishEvents(events);
     this.lastGeneration = batch.generation;
     this.lastSeq = batch.lastSeq;
   }
