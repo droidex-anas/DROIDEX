@@ -19,7 +19,12 @@ function createBrowser() {
         setDevicePermissionHandler: (handler) => (ses.device = handler),
         setPermissionCheckHandler: (handler) => (ses.check = handler),
         setPermissionRequestHandler: (handler) => (ses.request = handler),
-        webRequest: { onSendHeaders() {}, onCompleted() {}, onErrorOccurred() {} },
+        webRequest: {
+          onBeforeRequest() {},
+          onSendHeaders() {},
+          onCompleted() {},
+          onErrorOccurred() {},
+        },
       };
       sessions.set(partition, ses);
       return ses;
@@ -54,6 +59,7 @@ function createBrowser() {
       getURL: () => guest.url,
       navigationHistory: {
         getActiveIndex: () => 0,
+        getEntryAtIndex: () => ({ url: 'https://app.test/' }),
         canGoBack: () => false,
         canGoForward: () => false,
       },

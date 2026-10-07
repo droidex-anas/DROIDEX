@@ -64,11 +64,27 @@ Agent access is enforced at the private browser request boundary, including work
 waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
-context keeps concurrent agent tools from inheriting that permission. Navigation,
-saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
-are retained for subsequent runtime ports; this foundation enforces only the agent
-access switch. The removed native cursor overlay's style and size fields are absent
-from schema version 4. Grants and cookie import receipts remain validated data,
+context keeps concurrent agent tools from inheriting that permission. Website
+opening approval is enforced by `electron/browserNavigationApproval.cjs` before an
+agent opens a page and before top-level requests leave Chromium, including links,
+form submissions and redirects. Pausing the original request preserves POST bodies;
+window.open keeps the rewritten engine's same-pane behavior after approval.
+Dispatch-scoped, single-use input provenance in `browserNavigationProvenance.cjs`
+expires after one second and belongs to its guest and document. Physical user input
+and trusted renderer commands bypass the gate; unclaimed page transitions use low
+autonomy, never a previous agent's level. Follow autonomy maps off/low to Always ask,
+medium to Ask for new sites, and high to Full site access. Always allow this site
+remembers only the exact HTTP(S) origin until app exit. These questions require the
+in-app prompt UI and fail closed while it is unregistered. Agents cannot open
+non-HTTP(S) destinations, even with Full site access. Approval-bearing agent tools
+include the queue's 120-second deadline in their request budget. Closing, replacing,
+crashing or navigating away from the owning guest cancels pending approval.
+
+These guarantees cover honest pages and a possibly prompt-injected agent. A hostile
+page racing its own navigation handlers or forms is outside this threat model.
+Saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
+are retained for subsequent runtime ports. The removed native cursor overlay's style
+and size fields are absent from the current settings schema. Grants and cookie import receipts remain validated data,
 without restoring the old engine's services or claiming unsupported capabilities.
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.

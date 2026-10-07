@@ -836,6 +836,11 @@ export class SessionManager {
       },
     });
     this.sessionBrowser = new SessionBrowser({
+      autonomyFor: (id) => {
+        const summary = this.registry.resolveSummary(id);
+        if (!summary) throw new Error('The browser chat no longer exists.');
+        return summary.autonomy;
+      },
       browsers: this.browsers,
       emit: (event) => {
         this.emit(event);

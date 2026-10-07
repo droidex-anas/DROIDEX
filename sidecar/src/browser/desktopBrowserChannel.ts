@@ -14,6 +14,19 @@ const BROWSER_REQUEST_TIMEOUT_MS = boundedInt(
   60_000,
 );
 
+const APPROVAL_ACTIONS = new Set([
+  'open',
+  'reload',
+  'goBack',
+  'goForward',
+  'click',
+  'type',
+  'press',
+  'fill',
+  'evaluate',
+]);
+const APPROVAL_WAIT_MS = 120_000;
+
 export type RequestBrowser = (request: BrowserNativeRequest) => Promise<BrowserNativeResult>;
 
 export type BrowserChannelProcess = Pick<NodeJS.Process, 'on' | 'send' | 'connected'>;
@@ -55,7 +68,9 @@ export function createDesktopBrowserChannel(
     }
     // A wait is given its own length on top. Main gets the expiry too, so the
     // time a request spends on the way counts against it.
-    const limitMs = timeoutMs + (request.waitMs ?? 0);
+    const approvalMs =
+      request.initiator !== 'user' && APPROVAL_ACTIONS.has(request.action) ? APPROVAL_WAIT_MS : 0;
+    const limitMs = timeoutMs + (request.waitMs ?? 0) + approvalMs;
     const expiresAt = Date.now() + limitMs;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

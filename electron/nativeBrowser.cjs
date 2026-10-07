@@ -11,6 +11,7 @@ const { createBrowserDevTools } = require('./browserDevTools.cjs');
 const { createBrowserPreview } = require('./browserPreview.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 const { createNativeBrowserViewFactory } = require('./nativeBrowserView.cjs');
+const { createBrowserNavigationApproval } = require('./browserNavigationApproval.cjs');
 
 // A single persistent partition keeps cookies, localStorage, and registered
 // passkeys alive across reloads, dev-server restarts, and app restarts so the
@@ -41,13 +42,18 @@ function createNativeBrowserManager(options) {
     preloadPath: options.preloadPath,
     onBound: bindNativeBrowserGuest,
   });
+  const navigation = createBrowserNavigationApproval({
+    authorizeAgentOrigin: options.authorizeAgentOrigin,
+    loadUrl: loadNativeBrowserUrl,
+    reportFailure: emitNativeBrowserLoadFailed,
+  });
   const views = createNativeBrowserViewFactory({
+    navigation,
     session: options.session,
     partition: BROWSER_PARTITION,
     normalizeBrowserConsoleMessage,
     redactBrowserDiagnosticUrl,
     urls,
-    loadUrl: loadNativeBrowserUrl,
     emitLoaded: emitNativeBrowserLoaded,
     emitLoadFailed: emitNativeBrowserLoadFailed,
     applyDesignState: (entry) => page.applyDesignState(entry),
@@ -73,6 +79,7 @@ function createNativeBrowserManager(options) {
     sendToRenderer: options.sendToRenderer,
     findEntryForContents: findNativeBrowserEntryForWebContents,
     nativeImage: options.nativeImage,
+    navigation,
   });
 
   const preview = createBrowserPreview({
@@ -121,6 +128,7 @@ function createNativeBrowserManager(options) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
     guests.release(entry.browserSessionId);
+    if (entry.contents) navigation.invalidate(entry.contents);
     entry.contents = null;
     preview.sync(entry.browserSessionId);
     entry.shown = false;
@@ -133,7 +141,9 @@ function createNativeBrowserManager(options) {
     forgetLoad(entry);
     forgetLoadWaiters(entry);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
+    if (entry.contents) navigation.invalidate(entry.contents);
     views.bindGuest(entry, contents);
+    navigation.bind(entry, contents);
     preview.sync(entry.browserSessionId);
     // The device first, so a site sees it from its first request and script.
     // Until the guest has it the entry counts as loading, an open waits for it
@@ -207,7 +217,7 @@ function createNativeBrowserManager(options) {
   }
 
   // `before` runs right before the page moves, and throws when it should not.
-  async function openNativeBrowser(browserSessionId, url, before) {
+  async function openNativeBrowser(browserSessionId, url, before, request) {
     const entry = await requireNativeBrowserGuest(browserSessionId);
     urls.rejectHostAppUrl(url);
     url = urls.normalizeNativeBrowserUrl(entry, url);
@@ -219,8 +229,12 @@ function createNativeBrowserManager(options) {
     await deviceReady(entry, true);
     if (nativeBrowsers.get(entry.browserSessionId) !== entry)
       throw new Error(`${options.appName} browser is not open.`);
+    const contents = liveContents(entry);
+    if (!contents) throw new Error(`${options.appName} browser is not open.`);
+    if (request) await navigation.open(entry, contents, url, request);
     before?.();
     await loadNativeBrowserUrl(entry, url, { force: true });
+    navigation.takeFailure(contents, request?.requestId);
   }
 
   // Only an open browser is shown or hidden: the renderer hides a page it
@@ -240,6 +254,7 @@ function createNativeBrowserManager(options) {
     forgetLoad(entry);
     preview.watch(entry.browserSessionId, false);
     guests.release(entry.browserSessionId);
+    if (entry.contents) navigation.invalidate(entry.contents);
     entry.contents = null;
     nativeBrowsers.delete(entry.browserSessionId);
   }
@@ -247,13 +262,15 @@ function createNativeBrowserManager(options) {
   // Reload never waits for a load: it is how a stalled, failed or crashed page
   // recovers. A load still in flight or a failed restore starts over. `before`
   // runs right before the page moves, and throws when it should not.
-  async function reloadNativeBrowser(browserSessionId, before) {
+  async function reloadNativeBrowser(browserSessionId, before, request) {
     const entry = await waitForGuest(browserSessionId);
     // A guest still taking its device finishes that first, so the page is asked
     // for as that device. The browser may have been closed meanwhile.
     await deviceReady(entry);
     const contents = nativeBrowsers.get(entry.browserSessionId) === entry && liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
+    if (request)
+      await navigation.open(entry, contents, entry.targetUrl || contents.getURL(), request);
     before?.();
     entry.crashed = false;
     const pendingUrl = entry.loadingUrl === entry.targetUrl ? entry.loadingUrl : null;
@@ -264,25 +281,25 @@ function createNativeBrowserManager(options) {
       return loadNativeBrowserUrl(entry, retryUrl, { force: true });
     }
     if (contents.getURL()) entry.targetUrl = contents.getURL();
+    navigation.recordLoad(entry, contents, contents.getURL());
     contents.reload();
   }
 
   // `before` runs right before the page moves.
-  async function navigateNativeBrowserHistory(browserSessionId, direction, before) {
+  async function navigateNativeBrowserHistory(browserSessionId, direction, before, request) {
     const entry = await requireLoadedGuest(browserSessionId);
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${options.appName} browser is not open.`);
     const history = contents.navigationHistory;
     if (!history) return false;
-    if (direction === 'back') {
-      if (!history.canGoBack()) return false;
-      before?.();
-      history.goBack();
-    } else {
-      if (!history.canGoForward()) return false;
-      before?.();
-      history.goForward();
-    }
+    const back = direction === 'back';
+    if (back ? !history.canGoBack() : !history.canGoForward()) return false;
+    const target = history.getEntryAtIndex(history.getActiveIndex() + (back ? -1 : 1)).url;
+    if (request) await navigation.open(entry, contents, target, request);
+    before?.();
+    navigation.recordLoad(entry, contents, target);
+    if (back) history.goBack();
+    else history.goForward();
     return true;
   }
 
@@ -360,8 +377,13 @@ function createNativeBrowserManager(options) {
     if (!loadOptions.force && contents.getURL() === url) return { ok: true };
     if (entry.loadingUrl === url && entry.loadingPromise) return entry.loadingPromise;
     entry.targetUrl = url;
+    navigation.recordLoad(entry, contents, url);
     const load = contents
-      .loadURL(url)
+      .loadURL(url, {
+        httpReferrer: loadOptions.httpReferrer,
+        postData: loadOptions.postData,
+        extraHeaders: loadOptions.extraHeaders,
+      })
       .then(() => {
         if (liveContents(entry) !== contents || urls.isChromeErrorUrl(contents.getURL()))
           return { ok: false };
@@ -389,6 +411,7 @@ function createNativeBrowserManager(options) {
     preview.forget();
     for (const entry of nativeBrowsers.values()) {
       forgetLoad(entry);
+      if (entry.contents) navigation.invalidate(entry.contents);
       guests.release(entry.browserSessionId);
     }
     nativeBrowsers.clear();
@@ -407,17 +430,20 @@ function createNativeBrowserManager(options) {
     reloadFocused: reloadFocusedNativeBrowser,
     waitForPage: waitForGuest,
     nextLoad: nextNativeBrowserLoad,
-    goBack: (browserSessionId, before) =>
-      navigateNativeBrowserHistory(browserSessionId, 'back', before),
-    goForward: (browserSessionId, before) =>
-      navigateNativeBrowserHistory(browserSessionId, 'forward', before),
+    goBack: (browserSessionId, before, request) =>
+      navigateNativeBrowserHistory(browserSessionId, 'back', before, request),
+    goForward: (browserSessionId, before, request) =>
+      navigateNativeBrowserHistory(browserSessionId, 'forward', before, request),
     setDesignState: page.setDesignState,
     runAgentAction: page.runAgentAction,
     waitForPaint: page.waitForPaint,
     abandonWork: (browserSessionId) => {
       const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
       const contents = liveContents(entry);
-      if (contents) page.abandonOperations(contents);
+      if (contents) {
+        navigation.cancelPending(contents);
+        page.abandonOperations(contents);
+      }
     },
     watch: (browserSessionId, watching) =>
       preview.watch(urls.normalizeNativeBrowserSessionId(browserSessionId), Boolean(watching)),

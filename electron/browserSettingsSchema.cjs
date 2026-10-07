@@ -237,4 +237,6 @@ module.exports = {
   validateSettingsPatch,
   browserProtectionReductions,
   writeSettings,
+  exactHttpOrigin,
+  effectiveNavigationApproval,
 };
