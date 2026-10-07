@@ -1,18 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  MAX_FRAME_PX,
   MAX_SCALE,
+  MIN_FRAME_PX,
   MIN_SCALE,
+  alignRects,
+  applyFrameHandle,
   canvasToScreen,
+  distributeRects,
   fitFrames,
+  framesInBand,
   interpolateViewport,
-  moveRect,
+  nudgeStep,
+  panBy,
   reduceFrameDrag,
   screenToCanvas,
+  visibleDesignIds,
   wheelZoomScale,
   zoomAtPoint,
   type FrameDrag,
   type FrameDragEvent,
+  type FrameHandle,
   type Viewport,
 } from './canvasGeometry';
 import type { FrameRect } from './protocol';
@@ -65,12 +74,29 @@ test('zoom clamps to 0.1-4 and still anchors at the clamped scale', () => {
   }
 });
 
-test('wheel and pinch zoom are reversible, and pinch is the finer of the two', () => {
-  const out = wheelZoomScale(1, 120, false);
+test('zoom is reversible, and one event never jumps further than its clamp', () => {
+  const out = wheelZoomScale(1, 120);
   assert.ok(out < 1);
-  assert.ok(Math.abs(wheelZoomScale(out, -120, false) - 1) < 1e-12);
-  // The same delta from a trackpad pinch moves further than a wheel notch.
-  assert.ok(wheelZoomScale(1, 120, true) < out);
+  assert.ok(Math.abs(wheelZoomScale(out, -120) - 1) < 1e-12);
+
+  // A trackpad pinch arrives as small deltas and moves a little; a mouse notch
+  // arrives as a large one and is read no further than the clamp, so a single
+  // event cannot throw the board across the zoom range.
+  assert.ok(wheelZoomScale(1, -4) > 1);
+  assert.ok(wheelZoomScale(1, -4) < wheelZoomScale(1, -48));
+  assert.equal(wheelZoomScale(1, -100), wheelZoomScale(1, -4000));
+  assert.ok(wheelZoomScale(1, -100) < 1.25);
+});
+
+test('panning moves the board without touching the scale', () => {
+  const panned = panBy({ x: 10, y: -20, scale: 0.6 }, { x: 30, y: 45 });
+  assert.deepEqual(panned, { x: 40, y: 25, scale: 0.6 });
+
+  // A plain wheel pans, so the world under the cursor slides by the delta.
+  const before = screenToCanvas({ x: 10, y: -20, scale: 0.6 }, { x: 100, y: 100 });
+  const after = screenToCanvas(panned, { x: 100, y: 100 });
+  assert.ok(Math.abs(after.x - before.x + 30 / 0.6) < 1e-9);
+  assert.ok(Math.abs(after.y - before.y + 45 / 0.6) < 1e-9);
 });
 
 test('fit centres every frame with padding and never magnifies past 100%', () => {
@@ -101,14 +127,14 @@ test('a dragged frame follows the hand 1:1 at any zoom', () => {
   const start = rect(100, 50);
 
   // Half zoom: 60 screen pixels is 120 world units.
-  assert.deepEqual(moveRect(start, { x: 60, y: -30 }, 0.5), {
+  assert.deepEqual(applyFrameHandle(start, 'move', { x: 60, y: -30 }, 0.5), {
     x: 220,
     y: -10,
     width: 400,
     height: 300,
   });
   // Double zoom: the same 60 screen pixels is 30 world units.
-  assert.deepEqual(moveRect(start, { x: 60, y: -30 }, 2), {
+  assert.deepEqual(applyFrameHandle(start, 'move', { x: 60, y: -30 }, 2), {
     x: 130,
     y: 35,
     width: 400,
@@ -117,7 +143,7 @@ test('a dragged frame follows the hand 1:1 at any zoom', () => {
   // Either way the frame's screen position moves exactly with the pointer.
   for (const scale of [0.5, 2]) {
     const viewport: Viewport = { x: 10, y: 20, scale };
-    const moved = moveRect(start, { x: 60, y: -30 }, scale);
+    const moved = applyFrameHandle(start, 'move', { x: 60, y: -30 }, scale);
     const before = canvasToScreen(viewport, start);
     const after = canvasToScreen(viewport, moved);
     assert.ok(Math.abs(after.x - before.x - 60) < 1e-9, `x at ${String(scale)}`);
@@ -141,10 +167,12 @@ function runDrag(
   pointers: { x: number; y: number }[],
   scale: number,
   ending: 'release' | 'cancel',
+  handle: FrameHandle = 'move',
 ): { commits: FrameRect[]; drag: FrameDrag | null } {
   let drag: FrameDrag | null = {
     designId: 'dsg_hey',
     pointerId: 1,
+    handle,
     expectedLayoutVersion: 3,
     origin: { x: 200, y: 200 },
     startRect: DRAGGED,
@@ -224,6 +252,7 @@ test('a second pointer cannot move or finish the drag in progress', () => {
   const held: FrameDrag = {
     designId: 'dsg_hey',
     pointerId: 1,
+    handle: 'move',
     expectedLayoutVersion: 3,
     origin: { x: 200, y: 200 },
     startRect: DRAGGED,
@@ -242,4 +271,191 @@ test('a second pointer cannot move or finish the drag in progress', () => {
   const released = reduceFrameDrag(held, { type: 'release', pointerId: 9 });
   assert.equal(released.drag, held);
   assert.equal(released.commit, null);
+});
+
+test('a resize changes the frame viewport by the edge it was taken by', () => {
+  const start = rect(100, 50, 400, 300);
+
+  // The east edge is width only, the south edge height only, the corner both.
+  assert.deepEqual(applyFrameHandle(start, 'east', { x: 100, y: 999 }, 1), rect(100, 50, 500, 300));
+  assert.deepEqual(applyFrameHandle(start, 'south', { x: 999, y: 60 }, 1), rect(100, 50, 400, 360));
+  assert.deepEqual(
+    applyFrameHandle(start, 'southeast', { x: 100, y: 60 }, 1),
+    rect(100, 50, 500, 360),
+  );
+  // The frame's own position never moves, whatever edge is pulled.
+  for (const handle of ['east', 'south', 'southeast'] as const) {
+    const resized = applyFrameHandle(start, handle, { x: -40, y: -40 }, 1);
+    assert.equal(resized.x, start.x);
+    assert.equal(resized.y, start.y);
+  }
+  // At half zoom 100 screen pixels is 200 world units of width.
+  assert.equal(applyFrameHandle(start, 'east', { x: 100, y: 0 }, 0.5).width, 600);
+});
+
+test('a resize stays inside the dimensions the sidecar will accept', () => {
+  const start = rect(0, 0, 400, 300);
+
+  assert.deepEqual(
+    applyFrameHandle(start, 'southeast', { x: -9999, y: -9999 }, 1),
+    rect(0, 0, MIN_FRAME_PX, MIN_FRAME_PX),
+  );
+  assert.deepEqual(
+    applyFrameHandle(start, 'southeast', { x: 99_999, y: 99_999 }, 1),
+    rect(0, 0, MAX_FRAME_PX, MAX_FRAME_PX),
+  );
+});
+
+test('a resize commits once on release and a cancelled one commits nothing', () => {
+  const widened = runDrag([{ x: 260, y: 200 }], 1, 'release', 'east');
+  assert.deepEqual(widened.commits, [rect(100, 50, 460, 300)]);
+
+  // A resize that ends at the width it started from is not a change.
+  assert.deepEqual(
+    runDrag(
+      [
+        { x: 260, y: 200 },
+        { x: 200, y: 200 },
+      ],
+      1,
+      'release',
+      'east',
+    ).commits,
+    [],
+  );
+  assert.deepEqual(runDrag([{ x: 320, y: 300 }], 1, 'cancel', 'southeast').commits, []);
+});
+
+/** Three frames of different sizes, which is what makes align worth testing. */
+const SPREAD = [rect(0, 0, 100, 40), rect(200, 100, 300, 80), rect(600, 300, 60, 200)];
+
+test('align brings a selection onto the edge of its own bounds', () => {
+  assert.deepEqual(
+    alignRects(SPREAD, 'left').map(({ x }) => x),
+    [0, 0, 0],
+  );
+  assert.deepEqual(
+    alignRects(SPREAD, 'right').map(({ x }) => x),
+    [560, 360, 600],
+  );
+  // The bounds run 0–660, so each frame centres on 330.
+  assert.deepEqual(
+    alignRects(SPREAD, 'centerX').map(({ x, width }) => x + width / 2),
+    [330, 330, 330],
+  );
+  assert.deepEqual(
+    alignRects(SPREAD, 'top').map(({ y }) => y),
+    [0, 0, 0],
+  );
+  assert.deepEqual(
+    alignRects(SPREAD, 'bottom').map(({ y, height }) => y + height),
+    [500, 500, 500],
+  );
+  assert.deepEqual(
+    alignRects(SPREAD, 'centerY').map(({ y, height }) => y + height / 2),
+    [250, 250, 250],
+  );
+
+  // Align moves frames and never resizes them, and leaves the other axis be.
+  for (const edge of ['left', 'centerX', 'right'] as const)
+    assert.deepEqual(
+      alignRects(SPREAD, edge).map(({ y, width, height }) => [y, width, height]),
+      SPREAD.map(({ y, width, height }) => [y, width, height]),
+    );
+  assert.deepEqual(alignRects([], 'left'), []);
+});
+
+test('distribute leaves the outermost frames and makes every gap equal', () => {
+  // Widths 100 + 300 + 60 cover 460 of the 660 span, so three frames leave
+  // 200 of space in two gaps of 100.
+  const spread = distributeRects(SPREAD, 'horizontal');
+  assert.deepEqual(
+    spread.map(({ x }) => x),
+    [0, 200, 600],
+  );
+  const gaps = [
+    spread[1].x - (spread[0].x + spread[0].width),
+    spread[2].x - (spread[1].x + spread[1].width),
+  ];
+  assert.deepEqual(gaps, [100, 100]);
+
+  // The order given is the order returned, whatever order the frames sit in.
+  const scrambled = [SPREAD[2], SPREAD[0], SPREAD[1]];
+  const sorted = distributeRects(scrambled, 'horizontal');
+  assert.deepEqual(
+    sorted.map(({ width }) => width),
+    scrambled.map(({ width }) => width),
+  );
+  assert.deepEqual(
+    sorted.map(({ x }) => x),
+    [600, 0, 200],
+  );
+
+  // Vertical uses heights the same way: 40 + 80 + 200 of a 500 span.
+  const down = distributeRects(SPREAD, 'vertical');
+  assert.deepEqual(
+    down.map(({ y }) => y),
+    [0, 130, 300],
+  );
+
+  // Fewer than three frames, and frames that already overlap their own bounds,
+  // have nothing to spread.
+  assert.deepEqual(distributeRects(SPREAD.slice(0, 2), 'horizontal'), SPREAD.slice(0, 2));
+  const crowded = [rect(0, 0, 400, 40), rect(10, 0, 400, 40), rect(20, 0, 400, 40)];
+  assert.deepEqual(distributeRects(crowded, 'horizontal'), crowded);
+});
+
+/** A board of frames at known world positions, for the two screen queries. */
+const PLACED = [
+  { designId: 'near', rect: rect(0, 0, 100, 100) },
+  { designId: 'right', rect: rect(400, 0, 100, 100) },
+  { designId: 'far', rect: rect(5000, 5000, 100, 100) },
+];
+
+test('a rubber band picks up the frames it touches, in either direction', () => {
+  const viewport: Viewport = { x: 0, y: 0, scale: 1 };
+
+  assert.deepEqual(framesInBand(PLACED, viewport, { x: -10, y: -10 }, { x: 450, y: 50 }), [
+    'near',
+    'right',
+  ]);
+  // Drawn the other way the band covers the same frames.
+  assert.deepEqual(framesInBand(PLACED, viewport, { x: 450, y: 50 }, { x: -10, y: -10 }), [
+    'near',
+    'right',
+  ]);
+  // Touching one pixel of a frame is touching it; missing it entirely is not.
+  assert.deepEqual(framesInBand(PLACED, viewport, { x: 99, y: 99 }, { x: 150, y: 150 }), ['near']);
+  assert.deepEqual(framesInBand(PLACED, viewport, { x: 200, y: 200 }, { x: 300, y: 300 }), []);
+
+  // The band is in screen pixels, so a zoomed-out board catches more world.
+  assert.deepEqual(
+    framesInBand(PLACED, { x: 0, y: 0, scale: 0.1 }, { x: 0, y: 0 }, { x: 60, y: 60 }),
+    ['near', 'right'],
+  );
+});
+
+test('only the frames in the board box compete for a live slot, nearest first', () => {
+  const box = { x: 600, y: 400 };
+
+  // Both of the two are inside the box and the far one is nowhere near it. The
+  // board's centre is world (300, 200), which 'right' sits closer to.
+  assert.deepEqual(visibleDesignIds(PLACED, { x: 0, y: 0, scale: 1 }, box), ['right', 'near']);
+  // Panning the board right brings 'near' under the centre and 'right' away
+  // from it, which reverses who claims a slot first.
+  assert.deepEqual(visibleDesignIds(PLACED, { x: 150, y: 0, scale: 1 }, box), ['near', 'right']);
+  // A board with nothing measured yet has nothing visible.
+  assert.deepEqual(visibleDesignIds(PLACED, { x: 0, y: 0, scale: 1 }, { x: 0, y: 0 }), []);
+});
+
+test('an arrow key nudges by one world unit, and by ten with Shift', () => {
+  assert.deepEqual(nudgeStep('ArrowLeft', false), { x: -1, y: 0 });
+  assert.deepEqual(nudgeStep('ArrowRight', false), { x: 1, y: 0 });
+  assert.deepEqual(nudgeStep('ArrowUp', false), { x: 0, y: -1 });
+  assert.deepEqual(nudgeStep('ArrowDown', true), { x: 0, y: 10 });
+  assert.deepEqual(nudgeStep('ArrowLeft', true), { x: -10, y: 0 });
+
+  // Every other key belongs to whatever else is listening for it.
+  assert.equal(nudgeStep('Enter', false), null);
+  assert.equal(nudgeStep('a', true), null);
 });

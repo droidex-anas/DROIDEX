@@ -4,8 +4,12 @@ import test from 'node:test';
 import {
   CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
+  reduceBoardInteraction,
   reduceCanvasPane,
+  SELECT_MODE,
   watchedCanvasId,
+  type BoardInteraction,
+  type BoardInteractionEvent,
   type CanvasPaneState,
 } from './canvasState';
 import type { CanvasFrame, CanvasSnapshot } from './protocol';
@@ -163,4 +167,120 @@ test('a failed read offers a retry that starts the pane over', () => {
     message: 'The runtime did not answer that Canvas request.',
   });
   assert.deepEqual(reduceCanvasPane(failed, { type: 'reopened' }), { status: 'opening' });
+});
+
+// ── The board's mode and selection ───────────────────────────────────
+
+function pick(state: BoardInteraction, ...events: BoardInteractionEvent[]): BoardInteraction {
+  return events.reduce(reduceBoardInteraction, state);
+}
+
+test('clicking picks one frame and shift-clicking builds and unpicks a selection', () => {
+  const one = reduceBoardInteraction(SELECT_MODE, { type: 'pick', designId: 'a', additive: false });
+  assert.deepEqual(one.selectedFrameIds, ['a']);
+  assert.equal(one.mode, 'select');
+
+  // A plain click replaces the selection; shift-click toggles membership, in
+  // the order the user picked.
+  assert.deepEqual(pick(one, { type: 'pick', designId: 'b', additive: false }).selectedFrameIds, [
+    'b',
+  ]);
+  const several = pick(
+    one,
+    { type: 'pick', designId: 'c', additive: true },
+    { type: 'pick', designId: 'b', additive: true },
+  );
+  assert.deepEqual(several.selectedFrameIds, ['a', 'c', 'b']);
+  assert.deepEqual(
+    reduceBoardInteraction(several, { type: 'pick', designId: 'c', additive: true })
+      .selectedFrameIds,
+    ['a', 'b'],
+  );
+
+  // Re-picking the frame already selected alone is not a change, so nothing
+  // downstream of this state has to re-render for it.
+  assert.equal(reduceBoardInteraction(one, { type: 'pick', designId: 'a', additive: false }), one);
+  assert.equal(reduceBoardInteraction(SELECT_MODE, { type: 'clear' }), SELECT_MODE);
+});
+
+test('a rubber band selects what it covered, and adds to the selection with Shift', () => {
+  const band = reduceBoardInteraction(SELECT_MODE, {
+    type: 'pick-band',
+    designIds: ['b', 'c'],
+    additive: false,
+  });
+  assert.deepEqual(band.selectedFrameIds, ['b', 'c']);
+
+  // An additive band adds only what was not already picked.
+  assert.deepEqual(
+    reduceBoardInteraction(band, { type: 'pick-band', designIds: ['c', 'd'], additive: true })
+      .selectedFrameIds,
+    ['b', 'c', 'd'],
+  );
+  assert.deepEqual(
+    reduceBoardInteraction(band, { type: 'pick-band', designIds: [], additive: false })
+      .selectedFrameIds,
+    [],
+  );
+});
+
+test('Enter interacts with one frame and Escape leaves Interact before it clears', () => {
+  const interacting = pick(
+    SELECT_MODE,
+    { type: 'pick', designId: 'a', additive: false },
+    { type: 'interact', designId: 'a' },
+  );
+  assert.deepEqual(interacting, {
+    mode: 'interact',
+    selectedFrameIds: ['a'],
+    interactedFrameId: 'a',
+  });
+
+  // Spec §4: Escape returns to selection, and Escape again clears it. The two
+  // steps out of Interact are never one.
+  const selected = reduceBoardInteraction(interacting, { type: 'escape' });
+  assert.deepEqual(selected, { mode: 'select', selectedFrameIds: ['a'], interactedFrameId: null });
+  assert.deepEqual(reduceBoardInteraction(selected, { type: 'escape' }), SELECT_MODE);
+  assert.equal(reduceBoardInteraction(SELECT_MODE, { type: 'escape' }), SELECT_MODE);
+});
+
+test('Interact follows a frame picked while it runs, and lets go of a multiple selection', () => {
+  const interacting = reduceBoardInteraction(SELECT_MODE, { type: 'interact', designId: 'a' });
+
+  // Picking another frame keeps the live slot under the hand.
+  const moved = reduceBoardInteraction(interacting, {
+    type: 'pick',
+    designId: 'b',
+    additive: false,
+  });
+  assert.deepEqual(moved, { mode: 'interact', selectedFrameIds: ['b'], interactedFrameId: 'b' });
+
+  // Interact drives one frame, so picking several leaves it.
+  const many = reduceBoardInteraction(moved, { type: 'pick', designId: 'c', additive: true });
+  assert.deepEqual(many, {
+    mode: 'select',
+    selectedFrameIds: ['b', 'c'],
+    interactedFrameId: null,
+  });
+  assert.deepEqual(reduceBoardInteraction(interacting, { type: 'clear' }), SELECT_MODE);
+});
+
+test('nothing points at a frame the canvas has lost', () => {
+  const interacting = pick(
+    SELECT_MODE,
+    { type: 'pick', designId: 'a', additive: false },
+    { type: 'pick', designId: 'b', additive: true },
+    { type: 'interact', designId: 'b' },
+  );
+
+  const deleted = reduceBoardInteraction(interacting, { type: 'frames', designIds: ['a'] });
+  assert.deepEqual(deleted, { mode: 'select', selectedFrameIds: [], interactedFrameId: null });
+
+  // A snapshot that still holds every selected frame changes nothing at all.
+  const two = pick(
+    SELECT_MODE,
+    { type: 'pick', designId: 'a', additive: false },
+    { type: 'pick', designId: 'b', additive: true },
+  );
+  assert.equal(reduceBoardInteraction(two, { type: 'frames', designIds: ['a', 'b', 'c'] }), two);
 });

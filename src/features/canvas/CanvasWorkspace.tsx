@@ -3,25 +3,43 @@
 // Opening it only ever reads: no canvas is minted and no build is started until
 // the user presses Create (spec §4, §6).
 //
-// The board, frames, gestures, navigator and toolbar mount in the body below
-// (Tasks 5b–5e); this file owns the pane's lifecycle and its empty state.
+// This file owns the pane's lifecycle, its empty state, and the seam between the
+// board and the bridge: the board asks for a layout write and a preview artifact,
+// and the pane is what knows which chat and which canvas those belong to. The
+// navigator and toolbar (5d) and the canvas header (5e) mount beside the board.
 
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { LayoutTemplate, Spinner } from '@droidex/icons';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
+import { CanvasBoard } from './CanvasBoard';
 import { CanvasClient } from './client';
 import {
   CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
   reduceCanvasPane,
+  SELECT_MODE,
   watchedCanvasId,
+  type BoardHandle,
+  type BoardInteraction,
   type CanvasPaneState,
 } from './canvasState';
-import type { CanvasSummary } from './protocol';
+import { DesignPreview } from './DesignPreview';
+import type { ArrangeFramesInput, CanvasSnapshot, CanvasSummary } from './protocol';
 
 const canvas = new CanvasClient(bridge);
+// A bound method, so every preview's artifact read keeps one identity: a fresh
+// function each render would tear down and remount every mounted guest.
+const readArtifact = canvas.readArtifact.bind(canvas);
 // A Create may finish after its tab unmounts. Keep its key until a mounted pane
 // confirms the reply, so reopening cannot offer a second Create.
 const pendingCreateMutationIds = new Map<string, string>();
@@ -30,6 +48,7 @@ export function CanvasWorkspace({
   appSessionId,
   canvasId,
   namedCanvasId,
+  frameId,
   isExpanded,
   onToggleExpanded,
   onAttachmentChange,
@@ -39,6 +58,8 @@ export function CanvasWorkspace({
   canvasId: string | null;
   /** An explicit Open target, viewed without moving the chat's attachment. */
   namedCanvasId?: string;
+  /** The frame the opener meant, focused once the board has it. */
+  frameId?: string;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onAttachmentChange: (appSessionId: string, canvasId: string | null) => void;
@@ -101,6 +122,26 @@ export function CanvasWorkspace({
     });
   }, [watched]);
 
+  // Mode and selection belong to the canvas on screen, so showing another one
+  // starts from Select with nothing picked.
+  const [interaction, setInteraction] = useState(SELECT_MODE);
+  useEffect(() => {
+    setInteraction(SELECT_MODE);
+  }, [watched]);
+
+  // The opener's frame is focused once the board is up, and only once per
+  // target: re-running it on every snapshot would drag the viewport back while
+  // the user was reading somewhere else.
+  const boardRef = useRef<BoardHandle | null>(null);
+  const focused = useRef<string | null>(null);
+  useEffect(() => {
+    if (frameId === undefined || watched === null) return;
+    const target = `${watched}:${frameId}`;
+    if (focused.current === target || !boardRef.current) return;
+    focused.current = target;
+    boardRef.current.focusFrame(frameId);
+  }, [frameId, watched, state]);
+
   const create = () => {
     if (createInFlight.current === appSessionId) return;
     createInFlight.current = appSessionId;
@@ -140,6 +181,9 @@ export function CanvasWorkspace({
       <CanvasBody
         state={state}
         appSessionId={appSessionId}
+        interaction={interaction}
+        onInteractionChange={setInteraction}
+        boardRef={boardRef}
         onAttached={attach}
         onCreate={create}
         onRetry={() => {
@@ -154,12 +198,18 @@ export function CanvasWorkspace({
 function CanvasBody({
   state,
   appSessionId,
+  interaction,
+  onInteractionChange,
+  boardRef,
   onAttached,
   onCreate,
   onRetry,
 }: {
   state: CanvasPaneState;
   appSessionId: string;
+  interaction: BoardInteraction;
+  onInteractionChange: (next: BoardInteraction) => void;
+  boardRef: RefObject<BoardHandle | null>;
   onAttached: (canvasId: string) => void;
   onCreate: () => void;
   onRetry: () => void;
@@ -195,25 +245,57 @@ function CanvasBody({
         />
       );
     case 'ready':
-      return <CanvasBoardMount frameCount={state.snapshot.frames.length} />;
+      return (
+        <CanvasBoardMount
+          appSessionId={appSessionId}
+          snapshot={state.snapshot}
+          interaction={interaction}
+          onInteractionChange={onInteractionChange}
+          boardRef={boardRef}
+        />
+      );
   }
 }
 
 /**
- * Where `CanvasBoard` mounts in 5b. Until then the pane states what the
- * snapshot subscription is holding rather than drawing a board that is not here.
+ * The board, bound to the canvas it is showing. A canvas whose frames were all
+ * deleted presents the invitation instead (spec §4), because an empty board is
+ * not an answer to "what do I do here".
  */
-function CanvasBoardMount({ frameCount }: { frameCount: number }) {
+function CanvasBoardMount({
+  appSessionId,
+  snapshot,
+  interaction,
+  onInteractionChange,
+  boardRef,
+}: {
+  appSessionId: string;
+  snapshot: CanvasSnapshot;
+  interaction: BoardInteraction;
+  onInteractionChange: (next: BoardInteraction) => void;
+  boardRef: RefObject<BoardHandle | null>;
+}) {
+  const { canvasId } = snapshot;
+  const arrangeFrames = useCallback(
+    (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
+    [appSessionId, canvasId],
+  );
+
   return (
     <div data-canvas-board className="min-h-0 flex-1">
-      {frameCount === 0 ? (
+      {snapshot.frames.length === 0 ? (
         <CanvasInvitation />
       ) : (
-        <CanvasPlate title={`${designCountLabel(frameCount)} on this canvas`}>
-          <CanvasNote>
-            Ask your agent in the composer to change one of them, or to design something new.
-          </CanvasNote>
-        </CanvasPlate>
+        <CanvasBoard
+          snapshot={snapshot}
+          onArrangeFrames={arrangeFrames}
+          interaction={interaction}
+          onInteractionChange={onInteractionChange}
+          boardRef={boardRef}
+          renderPreview={(frame) => (
+            <DesignPreview canvasId={canvasId} frame={frame} readArtifact={readArtifact} />
+          )}
+        />
       )}
     </div>
   );
