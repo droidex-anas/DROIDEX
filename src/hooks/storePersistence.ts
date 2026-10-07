@@ -33,6 +33,7 @@ const UI_STATE_FIELDS = [
   'rightPanelOpen',
   'utilityPanels',
   'sidebarCollapsed',
+  'productMode',
   'specMode',
   'missionControlMode',
   'browsers',
