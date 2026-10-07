@@ -93,8 +93,14 @@ function isSummary(value: unknown): boolean {
     id(value.canvasId) &&
     text(value.name) &&
     count(value.updatedAt) &&
-    count(value.designCount)
+    count(value.designCount) &&
+    list(value.attachedAppSessionIds, isAppSessionId)
   );
+}
+
+/** A chat identifier, bounded the way the sidecar schema bounds it. */
+function isAppSessionId(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200;
 }
 
 function isReceipt(value: unknown): boolean {

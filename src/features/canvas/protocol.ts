@@ -130,6 +130,9 @@ export interface CanvasSummary {
   name: string;
   updatedAt: number;
   designCount: number;
+  // The chats working on this canvas. Design mode counts them on a canvas card
+  // and opens a card through the most recent one (spec §4).
+  attachedAppSessionIds: string[];
 }
 
 // `create` answers with the canvas as well as the frames because an unattached
