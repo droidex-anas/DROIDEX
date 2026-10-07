@@ -409,7 +409,7 @@ test('main captures only the attached guest at CSS size and device scale, and ke
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
 });
 
-test('capture timeout settles without waiting for a compositor answer', async () => {
+test('capture timeout ends overdue native work once and releases every guest timer', async () => {
   const { hosts, clock } = createHosts();
   const guest = createGuest(41);
   hosts.attach(guest);
@@ -425,10 +425,34 @@ test('capture timeout settles without waiting for a compositor answer', async ()
       message: 'Capturing this design took too long. Keep its preview open and try again.',
     },
   });
+  assert.equal(guest.crashes, 1);
+  assert.equal(hosts.terminate(41), false);
   guest.captures[0].resolve(capturedImage());
   await Promise.resolve();
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
-  assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+});
+
+test('caller cancellation leaves the native deadline armed until main ends the guest', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const capture = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+
+  assert.equal(hosts.cancelCapture('capture_01'), true);
+  assert.equal((await capture).error.code, 'capture_unavailable');
+  assert.equal(hosts.cancelCapture('capture_01'), false);
+  assert.deepEqual(clock.deadlineMs(), [6_000]);
+  clock.expire();
+
+  assert.equal(guest.crashes, 1);
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+  guest.captures[0].resolve(capturedImage());
+  await new Promise(setImmediate);
+  clock.expire();
+  assert.equal(guest.crashes, 1);
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
 });
 
 test('a generation change while capture is in flight discards the old pixels', async () => {

@@ -1,6 +1,6 @@
 // Main owns the attached preview guests, their watchdogs and compositor capture.
 // A capture never waits for generated code: the same guest the board displays
-// supplies the pixels, and main settles a hung compositor after six seconds.
+// supplies the pixels, and main ends a hung compositor after six seconds.
 
 const { CANVAS_PREVIEW_URL } = require('./canvasPreview.cjs');
 
@@ -91,7 +91,9 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     guests.delete(guestId);
     guest.stopProbing();
     for (const capture of captures.values()) {
-      if (capture.guestId === guestId) capture.settle(captureFailure());
+      if (capture.guestId !== guestId) continue;
+      capture.settle(captureFailure());
+      capture.finish();
     }
   }
 
@@ -167,12 +169,11 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
       return end(guestId, 'the renderer asked for it');
     },
 
-    /** A cancelled request releases its deadline even if capturePage never answers. */
+    /** Caller settlement cannot release the deadline of unfinished native work. */
     cancelCapture(requestId) {
       const capture = captures.get(requestId);
       if (!capture) return false;
-      capture.settle(captureFailure());
-      return true;
+      return capture.settle(captureFailure());
     },
 
     capture(request) {
@@ -206,56 +207,68 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
 
       return new Promise((resolve) => {
         let releaseDeadline = null;
+        let settled = false;
         const settle = (result) => {
+          if (settled) return false;
+          settled = true;
+          resolve(result);
+          return true;
+        };
+        const finish = () => {
           if (captures.get(requestId)?.settle !== settle) return;
           captures.delete(requestId);
           releaseDeadline?.();
-          resolve(result);
         };
-        captures.set(requestId, { guestId, settle });
-        releaseDeadline = clock.schedule(
-          () => settle(captureFailure(TIMED_OUT)),
-          CAPTURE_DEADLINE_MS,
-        );
+        const complete = (result) => {
+          finish();
+          settle(result);
+        };
+        const isCurrent = () =>
+          !settled && captures.get(requestId)?.settle === settle && guests.get(guestId) === guest;
+        captures.set(requestId, { guestId, settle, finish });
+        releaseDeadline = clock.schedule(() => {
+          settle(captureFailure(TIMED_OUT));
+          end(guestId, 'its capture took too long');
+        }, CAPTURE_DEADLINE_MS);
         void Promise.resolve()
           .then(() => guest.contents.executeJavaScript(PREVIEW_IDENTITY_SCRIPT))
           .then((identity) => {
-            if (captures.get(requestId)?.settle !== settle || guests.get(guestId) !== guest) return;
+            if (!isCurrent()) return;
             if (
               !identity ||
               identity.designId !== designId ||
               identity.revisionId !== revisionId ||
               identity.generation !== generation
             ) {
-              settle(captureFailure());
+              complete(captureFailure());
               return;
             }
             return guest.contents.capturePage({ x: 0, y: 0, width, height }, { stayHidden: true });
           })
           .then((image) => {
-            if (captures.get(requestId)?.settle !== settle || guests.get(guestId) !== guest) return;
+            if (!isCurrent()) return;
             if (!image) return;
-            if (image.isEmpty()) return settle(captureFailure());
+            if (image.isEmpty()) return complete(captureFailure());
             const bytes = image.toPNG({ scaleFactor });
             if (!captureAvailable() || !validPng(bytes, width, height, scaleFactor))
-              return settle(captureFailure());
+              return complete(captureFailure());
             return guest.contents.executeJavaScript(PREVIEW_IDENTITY_SCRIPT).then((identity) => {
-              if (captures.get(requestId)?.settle !== settle || guests.get(guestId) !== guest)
-                return;
+              if (!isCurrent()) return;
               if (
                 !identity ||
                 identity.designId !== designId ||
                 identity.revisionId !== revisionId ||
                 identity.generation !== generation
               ) {
-                settle(captureFailure());
+                complete(captureFailure());
                 return;
               }
               cache(key, bytes);
-              settle({ ok: true, mediaType: 'image/png', bytes });
+              complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })
-          .catch(() => settle(captureFailure()));
+          .catch(() => complete(captureFailure()))
+          .finally(finish);
       });
     },
 
