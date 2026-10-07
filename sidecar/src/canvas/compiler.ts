@@ -463,6 +463,7 @@ function compilerEnv(): NodeJS.ProcessEnv {
   // own loader through `execArgv`.
   delete env.NODE_PATH;
   delete env.NODE_OPTIONS;
+  delete env.CANVAS_EXPORT_TOKEN;
   return env;
 }
 
