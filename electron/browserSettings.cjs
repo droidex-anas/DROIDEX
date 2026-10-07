@@ -97,7 +97,20 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     }
   }
 
-  return { settingsPath, initialize, snapshot, update, cancelPendingUpdates, assertAgentAccess };
+  function downloadSettings() {
+    const { askDownloadLocation, downloadDirectory } = requireSettings();
+    return { askDownloadLocation, downloadDirectory };
+  }
+
+  return {
+    settingsPath,
+    initialize,
+    snapshot,
+    update,
+    cancelPendingUpdates,
+    assertAgentAccess,
+    downloadSettings,
+  };
 }
 
 module.exports = { createBrowserSettingsController };

@@ -119,3 +119,27 @@ test('disabling agent access during guest restoration prevents reading the resto
   assert.equal(reads, 0);
   assert.deepEqual(requests.workingSessions(), []);
 });
+
+test('download attribution tracks executing agent actions and excludes user navigation', async () => {
+  const { manager, requests, send } = fixture();
+  const running = Promise.withResolvers();
+  const started = Promise.withResolvers();
+  manager.runAgentAction = async () => {
+    started.resolve();
+    await running.promise;
+    return { ok: true };
+  };
+  const clicking = send('click');
+  await started.promise;
+  assert.equal(requests.isAgentActive('browser'), true);
+  assert.equal(requests.isAgentActive('other-browser'), false);
+  running.resolve();
+  await clicking;
+  assert.equal(requests.isAgentActive('browser'), false);
+
+  manager.open = async () => {
+    assert.equal(requests.isAgentActive('browser'), false);
+  };
+  await send('open', 'user');
+  assert.equal(requests.isAgentActive('browser'), false);
+});

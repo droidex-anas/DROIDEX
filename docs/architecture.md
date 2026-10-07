@@ -71,6 +71,30 @@ access switch. The removed native cursor overlay's style and size fields are abs
 from schema version 4. Grants and cookie import receipts remain validated data,
 without restoring the old engine's services or claiming unsupported capabilities.
 
+`electron/browserDownloads.cjs` handles `will-download` only on
+`persist:droidex-browser`. It ports #215's filename sanitization and unique names,
+using the existing `askDownloadLocation` and `downloadDirectory` settings. Files
+are paused in a private temporary folder while an agent download awaits the
+in-app prompt queue (filename, size when known, and download origin). Without a
+registered prompt UI, approval fails closed. Agent attribution comes from
+executing private browser requests, never Chromium's user-gesture flag. Agent
+executable downloads are blocked by extension (including redirect URLs) and MIME
+type. These safeguards assume honest pages and a possibly prompt-injected agent;
+hostile pages mislabeling payloads or racing their own forms are out of scope.
+
+After approval, the save-location setting opens a file picker or reserves a
+unique name in the configured directory. Automatic destination creation is
+exclusive and retries a colliding name without overwriting. The file picker owns
+confirmation of a selected overwrite; its file is published atomically after
+copying succeeds. Closing or replacing a guest cancels pending approvals and choices;
+accepted transfers continue independently. Shutdown cancels all transfers.
+Staging files, reservations and listeners are released on settlement. Main sends
+plain `native-browser-download` data with a stable download ID, browser session
+ID, filename, origin, byte counts and state; successful completion adds `filePath`
+and failures add an actionable `error`. The desktop preload exposes
+`onNativeBrowserDownload` for the separately built renderer UI. No download data
+or local paths go to the agent or the page.
+
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
 - Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not. A page is laid out at its session's viewport: Fit follows the pane, and a standard size (desktop, laptop, tablet, mobile) keeps its own CSS size in the pane, drawn scaled down with a CSS transform, so the user sees what the agent reads. Agents read pages from Chromium's accessibility tree, cross-site frames included through their own debugger sessions (`electron/browserReading.cjs`, `electron/browserFrames.cjs`), and screenshots have sensitive fields painted over in main before the image leaves (`electron/browserScreenshot.cjs`, `electron/browserMasking.cjs`). Agent actions are trusted CDP input sent from main (`electron/browserActions.cjs`, `electron/browserKeys.cjs`), keys to the frame that holds the focus. Actions that move a page on, and waits, run one at a time per page, in the order they came, while reads run alongside; `browser_wait` is checked in main as the page changes (`electron/browserWait.cjs`). The page script is called only in the preload's isolated world (`electron/browserPageScript.cjs`), never through the page's own world.

@@ -4,6 +4,7 @@ import type {
   NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
+  NativeBrowserDownload,
   NativeBrowserAgentPoint,
   NativeBrowserFrame,
   NativeBrowserWorking,
@@ -322,6 +323,7 @@ interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands
   onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
   onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
+  onNativeBrowserDownload: (handler: (event: NativeBrowserDownload) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
   onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;

@@ -251,6 +251,7 @@ contextBridge.exposeInMainWorld('droidControl', {
 
   onNativeBrowserDesignEvent: (handler) => on('native-browser-design-event', handler),
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
+  onNativeBrowserDownload: (handler) => on('native-browser-download', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
   onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),

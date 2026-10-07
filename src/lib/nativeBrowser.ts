@@ -34,6 +34,28 @@ export interface NativeBrowserLoadFailed {
   crashed?: boolean;
 }
 
+/** Download data for the trusted renderer, never the page or agent. */
+export type NativeBrowserDownload = {
+  downloadId: string;
+  browserSessionId: string;
+  filename: string;
+  origin: string;
+  receivedBytes: number;
+  /** Zero means the server did not provide a size. */
+  totalBytes: number;
+} & (
+  | { state: 'completed'; filePath: string }
+  | { state: 'failed' | 'blocked'; error: string }
+  | {
+      state:
+        | 'awaiting-approval'
+        | 'awaiting-location'
+        | 'progressing'
+        | 'cancelled'
+        | 'interrupted';
+    }
+);
+
 /**
  * What a page in design mode reports: a pick, its crop once taken (none when
  * it could not be taken safely), a mark taken away, where its marks are after
