@@ -283,7 +283,7 @@ Changed by 02b (landed in `sidecar/src/canvas/{CanvasWorkspace.ts,canvasFiles.ts
 - `attachedCanvasId(appSessionId): string | null` reads the persisted attachment, which `beginCanvasTurn` needs when a turn starts. Attachments live in the owning canvas's manifest, as spec §7 states, so an unattached create commits the canvas and the attachment in one write; moving a chat between canvases writes two manifests, and a crash between them leaves the chat unattached rather than attached twice.
 - `invalid_input` was missing from `CanvasErrorCode` and is now part of it on both sides of the mirror. The workspace reports an unknown canvas, design or revision, a merged revision over its limits, a reused mutation ID and an unsupported seed with that code; a lease that is settled, names a canvas the workspace does not hold, or does not cover a frame reports `scope_expired`; a layout compare-and-swap failure reports `revision_conflict`. Storage failures report `storage_failed` with a recovery sentence and never a path.
 - A lease restricted to named designs may change those frames and may not add new ones.
-- Retries are retained per lease, not per count. Each record carries the `scopeId` that issued it and a sha256 digest of its command's canonical arguments; the same ID with the same digest answers the original result and the same ID with a different digest or a different command is `invalid_input`. A record whose scope is still active is never retired, so a retry under a live lease always finds its receipt; records whose scope has settled give way oldest first past 256. There is no list of retired IDs: once a lease is gone nothing can retry under it, so an ID that is no longer found is executed as the new request it now is. Nothing retires an unsettled record: past 4096 of them on one canvas the ledger refuses the new mutation with `storage_failed` ("too many unsettled mutations") instead, because retiring one would let its retry run a second time. Settled records still give way, so the refusal clears as turns finish or are interrupted.
+- Mutation receipts track scope liveness and bounded history. Each record carries the `scopeId` that issued it and a sha256 digest of its command's canonical arguments; the same ID with the same digest answers the original result and the same ID with a different digest or a different command is `invalid_input`. A record whose turn scope is still active is never retired, so its retry always finds the receipt. A pane retry can use a retained receipt under a fresh scope while its chat remains attached. Records with inactive scopes give way oldest first past 256; an ID no longer found is treated as a new request. Nothing retires an unsettled record: past 4096 of them on one canvas the ledger refuses the new mutation with `storage_failed` ("too many unsettled mutations") instead, because retiring one would let its retry run a second time. Settled records still give way, so the refusal clears as turns finish or are interrupted.
 - A retained arrange keeps only what it acknowledged, `{ sequence, placements: [{ designId, layoutVersion, rect }] }`, which bounds the manifest at a measured 8.37 MiB for the worst legal history (256 records of 256 frames; 18.17 MiB for full frame records). A retried arrange answers the original sequence and the original layout, while a frame's other fields show the current head; the renderer's sequence handling (02c) discards a change older than its projection.
 
 - A manifest write that fails anywhere past its rename may still have landed, so the head on disk is reread before any further commit on that canvas, and the flushes that save still owed are redone: reading a head back proves it is visible, not that it is durable. A canvas whose head cannot be reread, or whose directory entry cannot be flushed, is held damaged until the workspace is reopened, and the original failure is still reported as a failure. A damaged canvas keeps the attachments it has on disk: `attachedCanvasId` still answers with it, so the chat waits for recovery with `storage_failed` on every mutation, including `detach`, rather than being handed a second canvas and ending up attached twice. A commit whose canvas was never created in the first place is the one case that holds nothing back, because there is nothing on disk to recover. `damagedCanvasIds()` lists what the workspace holds but will not serve, both from a damaged load at open and from a failed reread.
@@ -1311,6 +1311,65 @@ Settled by 07a (`canvas/07a-design-kits`):
 **Files:** Create `sidecar/src/canvas/{sourceElements.ts,sourceElements.test.ts}` and `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx}`. Extend `compiler.ts`, preview runtime/event schemas, `CanvasWorkspace.ts`, `canvasMcpServer.ts` and Canvas integration tests.
 
 **Interfaces:** Uses Task 2 `SourceElement`. `instrumentSource(files: SourceFiles, revisionId: string): { files: SourceFiles; elements: SourceElement[] }` produces derived instrumented source without modifying canonical files. `ElementEdit = { element: ElementRef; change: { kind: 'text'; value: string } | { kind: 'token'; property: string; token: string } | { kind: 'image'; assetId: string } }`. `applyElementEdit(files: SourceFiles, elements: SourceElement[], edit: ElementEdit): SourceFiles` returns complete changed files or a typed ambiguity/stale-reference error; the caller commits through `write` with the reference's revision.
+
+Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache path):
+
+- `instrumentSource` uses TypeScript 5.9.3 from the existing lockfile, bundled into the
+  existing owned compiler entry. It derives instrumented files before esbuild; Tailwind still
+  scans canonical source. The parser adds about 9.6 MiB to that worker bundle. It is compiled
+  application code, with no external parser require/package or extra staging/resolution path.
+  TypeScript initializes its Node system using `__filename`; the compiler build binds that to
+  Node 22's `import.meta.filename`, so it names the owned worker rather than a checkout module.
+  The existing runtime manifest/verifier still owns every external package. The sidecar placement
+  was measured first and rejected after dense JSX blocked it for two seconds: the existing
+  compiler process and deadline must contain parsing too. Sonatype was unavailable; no dependency
+  security verdict is implied.
+- Every owned native JSX site carries `data-droidex-element`. IDs hash the revision, complete
+  canonical source tree, file and offset; offsets are UTF-16 positions in canonical source.
+  The inline insertion map carries canonical content into esbuild's composed artifact map.
+  Artifact maps omit source content and replace host runtime paths with opaque runtime names.
+  IDs are selection hints, never authorization; callers must still commit edits with the selected
+  revision as `expectedRevisionId`.
+- `applyElementEdit` returns complete contents of changed paths only. It reparses canonical
+  source and checks the selection map before replacing one AST range. `SourceElementError.code`
+  distinguishes `stale_reference` (reselect), `ambiguous_element` (ask the agent with the original
+  reference), `invalid_source`, and `invalid_edit`. There is one edit per call, no batch API.
+- Direct scope is a literal site in the entry's default function/arrow. Other component
+  definitions, callbacks/maps, JSX stored in variables/arrays, loops, and children passed through
+  custom components are shared. Reused/imported entry components are shared too. JSX spreads,
+  spread children, computed or split text, computed class names/styles, duplicate attributes or
+  style properties, and `children`/`dangerouslySetInnerHTML`/`srcset` overrides are not directly
+  editable. An image inside `picture` is computed because a source alternative can override it. Fragments have no DOM marker; native children in conditional branches keep distinct
+  sites. A literal site still requires the requested property to have a supported literal range.
+- Text editing supports a single JSX text node or string/no-substitution-template expression,
+  plus empty paired tags. Token editing replaces an existing literal `var(--token)` in an
+  allowlisted React style property; it does not rewrite utility classes or invent style objects.
+  Image editing replaces a literal `img src="canvas-asset:<assetId>"`; the bridge refuses image
+  edits until 07d's asset store can verify ownership. The edit boundary checks token membership
+  against the pinned kit's mode and CSS declarations before committing.
+- Ready build frames and restored snapshots carry the exact element map and up to 64 compiler
+  diagnostics. Older outcomes without these fields are cache misses and rebuild; cached ranges
+  must fit their canonical file. No historical reader or migration was added. `canvas.editElement`
+  resolves the current built map, rejects malformed/stale/computed references with curated codes,
+  applies the AST edit in the owned compiler worker, and commits changed source through the
+  workspace's normal scope and revision CAS. The edit's original request fingerprint and receipt
+  live in the mutation ledger, so a retry returns that receipt before checking the now-stale
+  selection; ordinary mutation-history pruning applies. A direct edit forks a compiler worker
+  for its request so parsing cannot block the sidecar's main loop; the worker is ended after
+  settlement.
+  The renderer protocol mirror and inbound validator share this contract; preview selection
+  events and inspector behavior remain in 08b.
+- Measurements on this arm64 checkout, Node 22: kit example (928 bytes, four sites) first
+  instrumentation 8.65 ms, warm median 0.43 ms across 29 runs; 1 MiB of source across four
+  maximum-sized files 33.91 ms. These exclude parser module loading and worker startup and
+  vary with host load. Exact-column inline maps expand that 1 MiB input to 9,438,320 bytes
+  inside the worker; esbuild composes them down to the output locations it emits. A deliberately
+  dense 256 KiB file with 65,529 JSX sites took 2.02 seconds in the initial probe. Parsing now
+  runs in the deadline-owned compiler process. Above `maxSourceElements: 8192`, the worker
+  compiles canonical source, returns an empty map, and reports `selection_unavailable` rather
+  than publishing a partial map or failing the preview.
+  This independent bound also applies at the worker reply and cache boundaries. These are
+  probes, not timing assertions in unit tests.
 
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.

@@ -7,7 +7,7 @@ import {
   mutationFingerprint,
   recordedArrange,
   recordedCreate,
-  recordedWrite,
+  recordedRevision,
   recordMutation,
   type PersistedDesign,
   type PersistedMutation,
@@ -116,7 +116,7 @@ test('a receipt answers only the request and the command it was issued for', () 
       ),
     { code: 'invalid_input' },
   );
-  assert.throws(() => recordedWrite(manifest, createInput.mutationId, fingerprint), {
+  assert.throws(() => recordedRevision(manifest, createInput.mutationId, 'write', fingerprint), {
     code: 'invalid_input',
   });
   assert.equal(recordedArrange(manifest, 'never-issued', fingerprint, unbuilt), null);

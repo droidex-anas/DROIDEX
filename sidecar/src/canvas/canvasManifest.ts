@@ -24,13 +24,11 @@ import {
 const CANVAS_MANIFEST_VERSION = 1;
 
 /**
- * How many retries one canvas answers. A retry can only be authorized while the
- * lease that issued it lives, so an unsettled receipt is never retired and
- * settled leases give way oldest first past `retained`. Once a lease is gone,
- * nothing can retry under it, so a receipt that is no longer found is executed
- * as the new request it now is. `unsettled` is the ceiling on receipts no lease
- * has released yet: past it the ledger refuses the new mutation, because
- * retiring one would let its retry run twice.
+ * How many retries one canvas answers. A live turn lease keeps its receipts;
+ * a pane retry can use a retained receipt under a new scope while its chat
+ * remains attached. Inactive-scope receipts give way oldest first past
+ * `retained`. `unsettled` caps live-scope receipts: retiring one would let its
+ * retry run twice, so the ledger refuses the new mutation instead.
  */
 export const CANVAS_MUTATION_RETENTION = { retained: 256, unsettled: 4096 } as const;
 
@@ -82,6 +80,17 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('write'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+      sequence: versionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('edit'),
       mutationId: canvasIdentifierSchema,
       scopeId: scopeIdSchema,
       fingerprint: fingerprintSchema,
@@ -208,13 +217,15 @@ export function recordedCreate(
   };
 }
 
-export function recordedWrite(
+/** The original receipt for a source write or direct edit. */
+export function recordedRevision(
   manifest: CanvasManifest,
   mutationId: string,
+  kind: 'write' | 'edit',
   fingerprint: string,
 ): WriteReceipt | null {
-  const record = findMutation(manifest, mutationId, 'write', fingerprint);
-  if (record?.kind !== 'write') return null;
+  const record = findMutation(manifest, mutationId, kind, fingerprint);
+  if (record?.kind !== 'write' && record?.kind !== 'edit') return null;
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
 }
 
@@ -254,7 +265,7 @@ export function mutationFingerprint(input: unknown): string {
 }
 
 /**
- * Appends a committed mutation and retires receipts no live lease can retry.
+ * Appends a committed mutation and retires oldest inactive-scope receipts.
  * Nothing is appended when the unsettled receipts alone fill the ledger: a
  * retry of one of those would execute a second time, so refusing the new
  * mutation is the only answer that keeps every accepted change replayable.

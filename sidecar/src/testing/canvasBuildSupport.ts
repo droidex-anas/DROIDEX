@@ -7,6 +7,7 @@
 // workspace and build registry over it, and the compiler under the test's hand.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,8 +34,10 @@ import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import type {
   CanvasBuildState,
   CanvasChange,
+  CanvasDiagnostic,
   CanvasFrame,
   CanvasScope,
+  SourceElement,
   WriteReceipt,
 } from '../canvas/protocol.js';
 import { deferred, observedFileSystem } from './canvasStorageSupport.js';
@@ -52,7 +55,7 @@ export interface HeldCompile {
   signal: AbortSignal;
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
-  ready(artifactId: string): void;
+  ready(artifactId: string, elements?: SourceElement[], diagnostics?: CanvasDiagnostic[]): void;
   failed(code: string): void;
   unavailable(): void;
   /** The compiler refused the runtime the app staged, which no restart fixes. */
@@ -139,12 +142,12 @@ class FakeCompiler implements DesignCompiler {
         input,
         signal,
         client: this,
-        ready: (artifactId) => {
+        ready: (artifactId, elements = [], diagnostics = []) => {
           resolve({
             artifactId,
             html: `<html>${input.revisionId}</html>`,
-            diagnostics: [],
-            elements: [],
+            diagnostics,
+            elements,
           });
         },
         failed: (code) => {
@@ -454,7 +457,7 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     write: (designId, expected, text) =>
       under((scope) =>
         workspace.write(scope, {
-          mutationId: `write-${designId}-${text}`,
+          mutationId: `write-${designId}-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`,
           designId,
           expectedRevisionId: expected,
           files: { 'main.tsx': text },

@@ -8,6 +8,8 @@ export const CANVAS_LIMITS = {
   maxSourceFilesPerDesign: 64,
   maxDesignSourceBytes: 1024 * 1024,
   maxFileBytes: 256 * 1024,
+  /** Bounds instrumented markup and element-map transfer independently of source bytes. */
+  maxSourceElements: 8192,
   maxFrameDimensionPx: 8192,
   maxIdentifierLength: 128,
   maxFrameNameLength: 120,
@@ -152,6 +154,18 @@ export const sourcePathSchema = z
   .refine(isSafeSourcePath, { message: SOURCE_PATH_MESSAGE })
   .refine(hasNoReservedSegment, { message: RESERVED_PATH_MESSAGE });
 
+export const sourceElementSchema = z
+  .object({
+    elementId: canvasIdentifierSchema,
+    file: sourcePathSchema,
+    start: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
+    end: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
+    tagName: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes),
+    editability: z.enum(['literal', 'computed', 'shared']),
+  })
+  .strict()
+  .refine((element) => element.end > element.start);
+
 const sourceFileSchema = z
   .string()
   .refine((content) => Buffer.byteLength(content, 'utf8') <= CANVAS_LIMITS.maxFileBytes, {
@@ -215,6 +229,35 @@ export const writeFilesInputSchema = z
     });
   });
 
+export const editElementInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    edit: z
+      .object({
+        element: z
+          .object({
+            designId: canvasIdentifierSchema,
+            revisionId: canvasIdentifierSchema,
+            elementId: canvasIdentifierSchema,
+            instancePath: z.string().max(512),
+          })
+          .strict(),
+        change: z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
+          z
+            .object({
+              kind: z.literal('token'),
+              property: z.string().min(1).max(64),
+              token: z.string().min(1).max(128),
+            })
+            .strict(),
+          z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
+        ]),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const arrangeFramesInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
@@ -256,6 +299,7 @@ export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
+export type EditElementInput = z.infer<typeof editElementInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
