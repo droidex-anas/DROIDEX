@@ -74,23 +74,32 @@ enforced. Removed cursor overlay settings and cookie import receipts are absent.
 read, MIDI and MIDI system exclusive access default to **Ask me**, with exact-origin
 approvals (**Block** in Settings > Browser denies them all): **Allow** remembers the
 requested permissions, **Allow once** lasts until a document navigates, **Don't allow**
-denies this request, and **Always block this site** remembers a denial. Only Electron's
-requesting frame URL determines the origin. Same-origin frames share the site's
-policy; cross-origin frames and unsupported permissions, including HID, USB, serial
-and screen capture, remain denied. Notification checks without a WebContents use
-only existing exact-origin approvals and reject cross-origin embedding.
+denies this request, and **Always block this site** remembers a denial. Requests
+resolve Electron's frame URL to a unique live frame and validate its actual security
+origin; checks also require the handler's requesting origin to match. Missing,
+opaque or conflicting origins and ambiguous frame matches are denied. Same-origin
+frames share saved site policy; cross-origin frames and unsupported permissions,
+including HID, USB, serial and screen capture, remain denied. Notification checks
+without a WebContents use only existing exact-origin approvals and require a
+matching, nonempty embedding origin.
 
-Each agent execution requires a fresh user decision, even for a remembered grant.
-Follow-up checks may reuse that answer only for the executions present when the
-question was asked; new executions must ask again.
-Execution remains marked as agent work until it settles, including after a tool
-timeout. Pending approvals are invalidated on document navigation, guest replacement,
-crash, release, renderer teardown and shutdown. Each permission request has a
-120-second deadline, including OS consent; automatic cancellation never records a
-denial. Camera and microphone additionally require macOS media consent. OS denial
-explains how to enable DROIDEX in System Settings and restart it. Packaged builds
-declare camera and audio-input entitlements plus camera, microphone and location
-usage descriptions.
+A saved origin decision applies whoever is driving the page. Without a saved
+or current document approval, the prompt queue asks the user; agents have no tool
+that answers prompts. A prompt notes when an agent request is in flight on that
+tab, using the existing working state only as context, never as permission authority.
+Allow-once grants capture the requesting frame and its process/routing identity.
+Navigation start and document commit (including same-origin reloads and subframes),
+guest replacement, crash, release, renderer teardown and shutdown invalidate
+pending prompts and temporary grants. Detached or replaced frames cannot reuse them.
+
+Each permission request has a 120-second deadline, including OS consent; automatic
+cancellation never records a denial. A save can be cancelled before its atomic file
+replacement is submitted. Once that replacement succeeds, the decision is committed
+in memory and on disk and the permission callback reports the saved result, even if
+teardown occurred during the write. Camera and microphone additionally require
+macOS media consent. OS denial explains how to enable DROIDEX in System Settings
+and restart it. Packaged builds declare camera, audio-input and location entitlements
+plus camera, microphone and location usage descriptions.
 
 The renderer lists saved decisions through `browserSettingsGet().sitePermissionRules`
 and revokes one with `browserSitePermissionRevoke(origin, permission)`. Revocation

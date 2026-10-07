@@ -27,56 +27,47 @@ function createBrowserPermissionController(options) {
     return options.getSiteDecision(origin, permission);
   }
 
-  function hasGrant(contents, origin, permission) {
+  function hasGrant(contents, origin, permission, frame) {
     const decision = siteDecision(origin, permission);
     if (decision === 'deny') return false;
-    return decision === 'allow' || states.get(contents)?.grants.has(grantKey(origin, permission));
-  }
-
-  function hasAgentApproval(contents, origin, permission) {
-    const actions = options.agentActionsFor(contents);
-    if (!actions) return true;
-    const approved = states.get(contents)?.agentApprovals.get(grantKey(origin, permission));
-    for (const action of actions) {
-      if (!approved?.has(action)) return false;
-    }
-    return true;
+    if (decision === 'allow') return true;
+    const document = states.get(contents)?.grants.get(grantKey(origin, permission));
+    return Boolean(
+      document && (!frame || document.frame === frame) && isLiveDocument(contents, document),
+    );
   }
 
   function canAccess(contents, permission, requestingOrigin, details = {}) {
     const permissions = requestedPermissions(permission, details.mediaType && [details.mediaType]);
     if (permissions.length === 0) return false;
-    const origin = httpOrigin(details.requestingUrl ?? requestingOrigin);
+    const origin = httpOrigin(requestingOrigin);
     if (!origin || !matchesSecurityOrigin(origin, details)) return false;
 
     // Electron checks notifications without a WebContents, including service workers.
     // Only a previous, explicit exact-origin approval can authorize those checks.
     if (!contents && permission === 'notifications') {
-      if (details.embeddingOrigin && httpOrigin(details.embeddingOrigin) !== origin) return false;
+      if (httpOrigin(details.embeddingOrigin) !== origin) return false;
       const pages = options
         .listContents()
-        .filter((page) => isOwned(page) && httpOrigin(page.getURL()) === origin);
-      if (pages.some((page) => !hasAgentApproval(page, origin, permission))) return false;
+        .filter((page) => isOwned(page) && httpOrigin(page.mainFrame.origin) === origin);
       if (siteDecision(origin, permission) === 'allow') return true;
       return pages.some((page) => hasGrant(page, origin, permission));
     }
-    if (!isOwned(contents) || httpOrigin(contents.getURL()) !== origin) return false;
+    if (!isOwned(contents)) return false;
+    const frame = requestingFrame(contents, details);
+    if (!frame || httpOrigin(frame.origin) !== origin) return false;
     return permissions.every(
-      (name) =>
-        hasGrant(contents, origin, name) &&
-        hasAgentApproval(contents, origin, name) &&
-        hasSystemMediaAccess(name),
+      (name) => hasGrant(contents, origin, name, frame) && hasSystemMediaAccess(name),
     );
   }
 
   function handleRequest(contents, permission, callback, details = {}) {
     const permissions = requestedPermissions(permission, details.mediaTypes);
-    // requestingUrl is supplied by Electron from the requesting frame, never by page IPC.
-    const origin = httpOrigin(details.requestingUrl);
+    const frame = isOwned(contents) ? requestingFrame(contents, details) : undefined;
+    const origin = frame && httpOrigin(frame.origin);
     if (
       !isOwned(contents) ||
       !origin ||
-      httpOrigin(contents.getURL()) !== origin ||
       !matchesSecurityOrigin(origin, details) ||
       permissions.length === 0 ||
       permissions.some((name) => siteDecision(origin, name) === 'deny')
@@ -87,16 +78,17 @@ function createBrowserPermissionController(options) {
 
     let state = states.get(contents);
     if (!state) {
-      state = { grants: new Set(), agentApprovals: new Map(), pending: null };
+      state = { grants: new Map(), pending: null };
       states.set(contents, state);
     }
     if (state.pending) {
       callback(false);
       return;
     }
-    const pending = { origin, permissions, abort: new AbortController() };
+    const document = { frame, processId: frame.processId, routingId: frame.routingId };
+    const pending = { origin, permissions, document, abort: new AbortController(), saving: false };
     state.pending = pending;
-    // The queue bounds its prompt; this also bounds macOS consent and disk writes.
+    // The deadline cancels prompts and OS consent. A submitted save must report its result.
     const timeout = setTimeout(() => pending.abort.abort(), 120_000);
     let settled = false;
     const finish = (allowed) => {
@@ -107,7 +99,9 @@ function createBrowserPermissionController(options) {
       if (state.pending === pending) state.pending = null;
       callback(allowed);
     };
-    const cancelled = () => finish(false);
+    const cancelled = () => {
+      if (!pending.saving) finish(false);
+    };
     pending.abort.signal.addEventListener('abort', cancelled, { once: true });
     void approve(contents, state, pending).then(finish, (error) => {
       if (!pending.abort.signal.aborted)
@@ -122,21 +116,19 @@ function createBrowserPermissionController(options) {
       states.get(contents) === state &&
       state.pending === pending &&
       isOwned(contents) &&
-      httpOrigin(contents.getURL()) === pending.origin &&
+      isLiveDocument(contents, pending.document) &&
+      httpOrigin(pending.document.frame.origin) === pending.origin &&
       pending.permissions.every((name) => siteDecision(pending.origin, name) !== 'deny')
     );
   }
 
   async function approve(contents, state, pending) {
     const { origin, permissions, abort } = pending;
-    const agentActions = new Set(options.agentActionsFor(contents));
-    const needsApproval =
-      agentActions.size > 0
-        ? permissions
-        : permissions.filter((name) => !hasGrant(contents, origin, name));
+    const needsApproval = permissions.filter(
+      (name) => !hasGrant(contents, origin, name, pending.document.frame),
+    );
     let response;
     if (needsApproval.length > 0) {
-      for (const name of needsApproval) state.agentApprovals.delete(grantKey(origin, name));
       const label = needsApproval.map((name) => PERMISSION_LABELS[name]).join(' and ');
       const answer = await options.showPrompt(
         {
@@ -147,13 +139,15 @@ function createBrowserPermissionController(options) {
           title: `Allow ${label}?`,
           message: `${origin} wants to use your ${label}.`,
           detail:
-            'This applies only to this exact website. Allow remembers your choice; Allow once lasts until this page navigates. macOS may also show its required first-use privacy confirmation.',
+            'This applies only to this exact website. Allow remembers your choice; Allow once lasts until this page navigates. macOS may also show its required first-use privacy confirmation.' +
+            (options.isWorking(contents) ? '\nAn agent is working on this page.' : ''),
         },
         { signal: abort.signal },
       );
       if (!isCurrent(contents, state, pending) || answer.cancelled) return false;
       response = answer.response;
       if (response === 3) {
+        pending.saving = true;
         await options.persistSiteDecision(
           { origin, permissions: needsApproval, decision: 'deny' },
           abort.signal,
@@ -169,19 +163,16 @@ function createBrowserPermissionController(options) {
       if (!isCurrent(contents, state, pending)) return false;
     }
     if (response === 0) {
+      pending.saving = true;
       await options.persistSiteDecision(
         { origin, permissions: needsApproval, decision: 'allow' },
         abort.signal,
       );
-      if (!isCurrent(contents, state, pending)) return false;
+      return true;
     }
     if (response === 1) {
-      for (const name of needsApproval) state.grants.add(grantKey(origin, name));
+      for (const name of needsApproval) state.grants.set(grantKey(origin, name), pending.document);
     }
-    // Chromium may check again after the user answers. Only the approved executions
-    // can reuse that answer; an overlapping or subsequent agent action asks afresh.
-    for (const name of needsApproval)
-      state.agentApprovals.set(grantKey(origin, name), agentActions);
     return true;
   }
 
@@ -227,7 +218,6 @@ function createBrowserPermissionController(options) {
     pendingRevocations.add(write);
     for (const state of states.values()) {
       state.grants.delete(grantKey(origin, permission));
-      state.agentApprovals.delete(grantKey(origin, permission));
       if (state.pending?.origin === origin && state.pending.permissions.includes(permission))
         state.pending.abort.abort();
     }
@@ -275,7 +265,36 @@ function httpOrigin(value) {
 }
 
 function matchesSecurityOrigin(origin, details) {
-  return details.securityOrigin === undefined || httpOrigin(details.securityOrigin) === origin;
+  return ['securityOrigin', 'requestingOrigin'].every(
+    (key) => !Object.hasOwn(details, key) || httpOrigin(details[key]) === origin,
+  );
+}
+
+function requestingFrame(contents, details) {
+  const mainFrame = contents.mainFrame;
+  const origin = httpOrigin(mainFrame.origin);
+  if (!origin || httpOrigin(details.requestingUrl) !== origin) return undefined;
+  if (typeof details.isMainFrame !== 'boolean') return undefined;
+  // Electron gives permission requests a URL but no frame ID. Ambiguous matches deny.
+  const frames = mainFrame.framesInSubtree.filter(
+    (frame) =>
+      !frame.isDestroyed() &&
+      !frame.detached &&
+      (frame === mainFrame) === details.isMainFrame &&
+      frame.url === details.requestingUrl,
+  );
+  if (frames.length !== 1 || httpOrigin(frames[0].origin) !== origin) return undefined;
+  return frames[0];
+}
+
+function isLiveDocument(contents, { frame, processId, routingId }) {
+  return (
+    !frame.isDestroyed() &&
+    !frame.detached &&
+    frame.processId === processId &&
+    frame.routingId === routingId &&
+    contents.mainFrame.framesInSubtree.includes(frame)
+  );
 }
 
 function grantKey(origin, permission) {

@@ -129,7 +129,9 @@ function createNativeBrowserViewFactory({
       entry.failedRestoreUrl = null;
       entry.targetUrl = requestedUrl;
     });
+    contents.on('did-frame-navigate', () => permissions.revokeForContents(contents));
     contents.on('did-navigate', (_event, loadedUrl) => {
+      permissions.revokeForContents(contents);
       if (current()) entry.documents += 1;
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;

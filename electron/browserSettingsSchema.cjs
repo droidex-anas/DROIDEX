@@ -241,9 +241,11 @@ async function writeSettings(filePath, value, signal) {
     signal.throwIfAborted();
     await fsp.writeFile(temporaryPath, JSON.stringify(value, null, 2), { mode: 0o600, signal });
     signal.throwIfAborted();
+    // Successful replacement commits the write, even if cancellation arrives while it runs.
     await fsp.rename(temporaryPath, filePath);
-  } finally {
+  } catch (error) {
     await fsp.rm(temporaryPath, { force: true });
+    throw error;
   }
 }
 

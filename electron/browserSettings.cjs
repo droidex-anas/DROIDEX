@@ -88,6 +88,7 @@ function createBrowserSettingsController({
       if (!changed) return snapshot();
       const next = validateSettings(changed, createDefaultBrowserSettings(downloadsPath));
       await writeSettings(settingsPath, next, signal);
+      // writeSettings resolves only after commitment. Cancellation cannot undo that write.
       settings = next;
       if (current.sitePermissionMode !== next.sitePermissionMode) onSitePermissionModeChanged?.();
       return snapshot();

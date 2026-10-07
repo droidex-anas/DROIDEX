@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createBrowserSettingsController } = require('./browserSettings.cjs');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
 
 async function fixture(t, overrides = {}) {
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'droidex-browser-settings-'));
@@ -268,4 +269,50 @@ test('a site grant cancelled during a disk write never becomes active or replace
   await rejected;
   assert.deepEqual(controller.snapshot().sitePermissionRules, []);
   assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), saved);
+});
+
+test('teardown during rename reports the committed permission in the callback, memory and disk', async (t) => {
+  const { controller, options } = await fixture(t);
+  const renaming = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const rename = fs.rename;
+  t.mock.method(fs, 'rename', async (...args) => {
+    renaming.resolve();
+    await release.promise;
+    await rename(...args);
+  });
+  const frame = {
+    url: 'https://site.test/page',
+    origin: 'https://site.test',
+    processId: 1,
+    routingId: 1,
+    detached: false,
+    isDestroyed: () => false,
+  };
+  frame.framesInSubtree = [frame];
+  const contents = { mainFrame: frame, isDestroyed: () => false, getURL: () => frame.url };
+  const permissions = createBrowserPermissionController({
+    isNativeBrowserContents: (page) => page === contents,
+    isWorking: () => false,
+    getSiteDecision: controller.getSitePermissionDecision,
+    persistSiteDecision: controller.setSitePermissionDecision,
+    showPrompt: async () => ({ response: 0 }),
+  });
+  const granted = new Promise((resolve) =>
+    permissions.handleRequest(contents, 'geolocation', resolve, {
+      requestingUrl: frame.url,
+      isMainFrame: true,
+    }),
+  );
+  await renaming.promise;
+  permissions.revokeAll();
+  controller.cancelPendingUpdates();
+  release.resolve();
+  assert.equal(await granted, true);
+  assert.equal(controller.getSitePermissionDecision(frame.origin, 'geolocation'), 'allow');
+  const saved = JSON.parse(await fs.readFile(controller.settingsPath, 'utf8'));
+  assert.equal(saved.sitePermissions[0].geolocation, 'allow');
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  assert.equal(restarted.getSitePermissionDecision(frame.origin, 'geolocation'), 'allow');
 });

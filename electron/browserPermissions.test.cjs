@@ -6,7 +6,7 @@ function fixture(overrides = {}) {
   const contents = {
     url: 'https://site.test/page',
     destroyed: false,
-    agentActions: undefined,
+    working: false,
     getURL() {
       return this.url;
     },
@@ -14,6 +14,16 @@ function fixture(overrides = {}) {
       return this.destroyed;
     },
   };
+  const frame = {
+    url: contents.url,
+    origin: 'https://site.test',
+    processId: 1,
+    routingId: 1,
+    detached: false,
+    isDestroyed: () => false,
+  };
+  frame.framesInSubtree = [frame];
+  contents.mainFrame = frame;
   const decisions = new Map();
   const prompts = [];
   const writes = [];
@@ -22,7 +32,7 @@ function fixture(overrides = {}) {
     platform: 'darwin',
     isNativeBrowserContents: (candidate) => candidate === contents,
     listContents: () => [contents],
-    agentActionsFor: (page) => page.agentActions,
+    isWorking: (page) => page.working,
     getSiteDecision: (origin, permission) => decisions.get(`${origin}/${permission}`) ?? 'ask',
     persistSiteDecision: async (input, signal) => {
       signal.throwIfAborted();
@@ -41,6 +51,7 @@ function fixture(overrides = {}) {
     new Promise((resolve) => {
       controller.handleRequest(contents, permission, resolve, {
         requestingUrl: contents.url,
+        isMainFrame: true,
         mediaTypes: ['video'],
         ...details,
       });
@@ -49,6 +60,7 @@ function fixture(overrides = {}) {
     controller.canAccess(contents, permission, 'https://site.test', {
       requestingUrl: contents.url,
       mediaType: 'video',
+      isMainFrame: true,
       ...details,
     });
   return { controller, contents, decisions, prompts, writes, responses, request, check };
@@ -80,6 +92,8 @@ test('checks fail closed for unapproved access, unknown permissions, media and f
 
 test('allow once grants only requested media on the exact origin until navigation', async () => {
   const { controller, contents, responses, request, check, prompts, writes } = fixture();
+  const embedded = { ...contents.mainFrame, url: 'https://site.test/embedded', routingId: 2 };
+  contents.mainFrame.framesInSubtree.push(embedded);
   responses.push({ response: 1 });
   assert.equal(
     await request('media', {
@@ -90,8 +104,9 @@ test('allow once grants only requested media on the exact origin until navigatio
     true,
   );
   assert.match(prompts[0].message, /^https:\/\/site.test wants to use your camera and microphone/);
-  assert.equal(check(), true);
-  assert.equal(check('media', { mediaType: 'audio' }), true);
+  const details = { requestingUrl: embedded.url, isMainFrame: false };
+  assert.equal(check('media', details), true);
+  assert.equal(check('media', { ...details, mediaType: 'audio' }), true);
   assert.equal(check('media', { requestingUrl: 'https://other.test/frame' }), false);
   assert.equal(check('geolocation'), false);
   assert.deepEqual(writes, []);
@@ -139,6 +154,31 @@ test('a cross-origin frame cannot borrow the top page grant or spoof the request
     false,
   );
   assert.equal(prompts.length, 0);
+});
+
+test('opaque or missing security origins cannot borrow grants from an HTTPS frame URL', async () => {
+  const { controller, contents, decisions, request, prompts } = fixture();
+  const frame = { ...contents.mainFrame, routingId: 2, origin: 'null' };
+  contents.mainFrame.framesInSubtree.push(frame);
+  const details = { requestingUrl: frame.url, isMainFrame: false };
+  for (const permission of ['geolocation', 'midi', 'clipboard-read']) {
+    decisions.set(`https://site.test/${permission}`, 'allow');
+    assert.equal(await request(permission, details), false);
+    for (const origin of ['null', '', undefined, 'https://other.test']) {
+      assert.equal(controller.canAccess(contents, permission, origin, details), false);
+    }
+    // Even a non-opaque handler origin cannot authorize an opaque live frame.
+    assert.equal(controller.canAccess(contents, permission, 'https://site.test', details), false);
+  }
+  frame.origin = undefined;
+  assert.equal(await request('geolocation', details), false);
+  frame.origin = 'https://site.test';
+  for (const origin of ['null', '', undefined, 'https://other.test']) {
+    assert.equal(controller.canAccess(contents, 'geolocation', origin, details), false);
+  }
+  assert.equal(await request('geolocation', { ...details, securityOrigin: 'null' }), false);
+  assert.equal(await request('geolocation', details), true);
+  assert.deepEqual(prompts, []);
 });
 
 test('cancellation and one-time denial are not remembered; always block is explicit', async () => {
@@ -215,26 +255,33 @@ test('revocation clears temporary access and blocks new approval until its write
   ]);
 });
 
-test('each agent execution needs approval, then its follow-up checks can use that answer', async () => {
-  const { contents, decisions, responses, request, check, prompts } = fixture();
+test('saved origin decisions apply during agent work; an unsaved decision still waits for the user', async () => {
+  const answer = Promise.withResolvers();
+  const prompts = [];
+  const { contents, decisions, request, check } = fixture({
+    showPrompt: (prompt) => {
+      prompts.push(prompt);
+      return answer.promise;
+    },
+  });
   decisions.set('https://site.test/camera', 'allow');
+  contents.working = true;
   assert.equal(check(), true);
-  const action = {};
-  contents.agentActions = new Set([action]);
-  assert.equal(check(), false);
-  assert.equal(await request(), false);
-  responses.push({ response: 1 });
   assert.equal(await request(), true);
+  assert.deepEqual(prompts, []);
+  const pending = request('geolocation');
+  assert.equal(check('geolocation'), false);
+  assert.match(prompts[0].detail, /An agent is working on this page\./);
+  contents.working = false;
   assert.equal(check(), true);
-  contents.agentActions.add({});
-  assert.equal(check(), false);
-  contents.agentActions = new Set([{}]);
-  assert.equal(await request(), false);
-  assert.equal(prompts.length, 3);
+  assert.equal(check('geolocation'), false);
+  answer.resolve({ response: 0 });
+  assert.equal(await pending, true);
+  assert.equal(check('geolocation'), true);
 });
 
-test('notification checks without contents require prior origin approval and respect embedding and agent work', async () => {
-  const { controller, contents, responses, request } = fixture();
+test('notification checks without contents require prior origin approval and valid embedding', async () => {
+  const { controller, responses, request } = fixture();
   const check = (embeddingOrigin = 'https://site.test') =>
     controller.canAccess(null, 'notifications', 'https://site.test', { embeddingOrigin });
   assert.equal(check(), false);
@@ -242,11 +289,9 @@ test('notification checks without contents require prior origin approval and res
   assert.equal(await request('notifications'), true);
   assert.equal(check(), true);
   assert.equal(check('https://other.test'), false);
-  contents.agentActions = new Set([{}]);
-  assert.equal(check(), false);
-  responses.push({ response: 1 });
-  assert.equal(await request('notifications'), true);
-  assert.equal(check(), true);
+  assert.equal(check(''), false);
+  assert.equal(check('null'), false);
+  assert.equal(controller.canAccess(null, 'notifications', 'https://site.test'), false);
 });
 
 test('macOS must approve each requested media device before a site grant is saved', async () => {

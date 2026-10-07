@@ -74,35 +74,6 @@ test('user navigation stays available when agent access is off', async () => {
   assert.deepEqual(actions, ['open', 'snapshot']);
 });
 
-test('agent permission guards last through execution even after the tool timeout', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { manager, requests, send } = fixture();
-  const started = Promise.withResolvers();
-  const finished = Promise.withResolvers();
-  const completed = Promise.withResolvers();
-  manager.runAgentAction = async () => {
-    started.resolve();
-    await finished.promise;
-    completed.resolve();
-    return { ok: true };
-  };
-  const evaluating = send('evaluate');
-  await started.promise;
-  assert.equal(requests.agentActionsFor('browser').size, 1);
-  t.mock.timers.tick(15_000);
-  assert.equal((await evaluating).ok, false);
-  assert.deepEqual(requests.workingSessions(), []);
-  assert.equal(requests.agentActionsFor('browser').size, 1);
-  finished.resolve();
-  await completed.promise;
-  await new Promise(setImmediate);
-  assert.equal(requests.agentActionsFor('browser'), undefined);
-  manager.open = async () => {
-    assert.equal(requests.agentActionsFor('browser'), undefined);
-  };
-  assert.equal((await send('open', 'user')).ok, true);
-});
-
 test('disabling agent access stops input already waiting on a page to paint', async () => {
   const { manager, actions, requests, send, disable } = fixture();
   const paint = Promise.withResolvers();

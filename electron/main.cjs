@@ -151,8 +151,10 @@ const browserPermissions = createBrowserPermissionController({
   isNativeBrowserContents: (contents) =>
     Boolean(nativeBrowserManager.sessionIdForWebContents(contents)),
   listContents: () => webContents.getAllWebContents(),
-  agentActionsFor: (contents) =>
-    nativeBrowserRequests.agentActionsFor(nativeBrowserManager.sessionIdForWebContents(contents)),
+  isWorking: (contents) =>
+    nativeBrowserRequests
+      .workingSessions()
+      .includes(nativeBrowserManager.sessionIdForWebContents(contents)),
   getSiteDecision: (origin, permission) =>
     browserSettings.getSitePermissionDecision(origin, permission),
   persistSiteDecision: (decision, signal) =>
