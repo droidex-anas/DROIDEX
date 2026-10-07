@@ -346,10 +346,22 @@ await writeFile('dist/index.html', '<!doctype html><html data-mode="' + modes.se
 
 if (process.argv.includes('--serve')) {
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+  const imageType = (bytes) => {
+    if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+    return 'application/octet-stream';
+  };
   const server = createServer(async (request, response) => {
-    const name = request.url === '/app.js' ? 'app.js' : request.url === '/style.css' ? 'style.css' : 'index.html';
-    response.writeHead(200, { 'content-type': types[name.slice(name.lastIndexOf('.'))] });
-    response.end(await readFile(join('dist', name)));
+    const asset = /^\\/assets\\/([0-9a-f]{64})$/.exec(request.url ?? '');
+    const name = asset ? join('assets', asset[1]) : request.url === '/app.js' ? 'app.js' : request.url === '/style.css' ? 'style.css' : 'index.html';
+    try {
+      const bytes = await readFile(join('dist', name));
+      response.writeHead(200, { 'content-type': asset ? imageType(bytes) : types[name.slice(name.lastIndexOf('.'))], 'x-content-type-options': 'nosniff' });
+      response.end(bytes);
+    } catch (error) {
+      response.writeHead(error.code === 'ENOENT' ? 404 : 500).end();
+    }
   });
   const portOption = process.argv.find((argument) => argument.startsWith('--port='));
   server.listen(Number(portOption?.slice(7) ?? 4173), '127.0.0.1', () => {

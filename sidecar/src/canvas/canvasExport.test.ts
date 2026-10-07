@@ -181,7 +181,13 @@ test('refuses linked destination paths and escaping revision paths', async (t) =
 
 test('the exported Hey starter builds and serves outside the checkout without a download', async (t) => {
   const { root, destination } = await profile(t);
-  await saveRevision(root, { 'main.tsx': DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'] }, defaultKit);
+  const image = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const assetId = createHash('sha256').update(image).digest('hex');
+  await mkdir(join(root, 'canvases', canvasId, 'assets'), { recursive: true });
+  await writeFile(join(root, 'canvases', canvasId, 'assets', assetId), image);
+  const source = `import { Card } from '@droidex/design-system';
+export default function Hey() { return <Card><img src="canvas-asset:${assetId}" alt="Hey" /></Card>; }`;
+  await saveRevision(root, { 'main.tsx': source }, defaultKit);
   await exportCanvasSource(canvasId, ref, destination);
   const sidecarModules = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules');
   await symlink(sidecarModules, join(destination, 'node_modules'), 'dir');
@@ -204,11 +210,14 @@ test('the exported Hey starter builds and serves outside the checkout without a 
       reject(new Error(`Exported build exited ${String(code)}: ${errors}`)),
     );
   });
-  const [document, script] = await Promise.all([
+  const [document, script, asset] = await Promise.all([
     fetch(address).then((response) => response.text()),
     fetch(`${address}/app.js`).then((response) => response.text()),
+    fetch(`${address}/assets/${assetId}`),
   ]);
   assert.match(document, /canvas-root/);
   assert.match(script, /Hey/);
+  assert.equal(asset.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await asset.arrayBuffer()), image);
   assert.match(await readFile(join(destination, 'dist/style.css'), 'utf8'), /--ds-accent/);
 });
