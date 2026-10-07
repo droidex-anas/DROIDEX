@@ -168,7 +168,8 @@ function createBrowserPermissionController(options) {
         { origin, permissions: needsApproval, decision: 'allow' },
         abort.signal,
       );
-      return true;
+      // A grant revoked while this save was in flight must not ride along.
+      return permissions.every((name) => hasGrant(contents, origin, name, pending.document.frame));
     }
     if (response === 1) {
       for (const name of needsApproval) state.grants.set(grantKey(origin, name), pending.document);
