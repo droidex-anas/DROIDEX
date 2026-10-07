@@ -10,6 +10,9 @@
 // canvas header (5e) mount beside the board.
 
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
+// The pane is the lazy entry to every Canvas surface, so its animations load
+// here rather than from the stylesheet every window parses at startup.
+import './canvasAnimations.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { bridge } from '../../lib/bridge';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
