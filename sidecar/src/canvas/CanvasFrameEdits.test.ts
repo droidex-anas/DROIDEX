@@ -70,6 +70,19 @@ test('remove and retry publish once; Undo restores source, name and location', a
     code: 'not_found',
     message: /Undo/,
   });
+  await assert.rejects(
+    workspace.write(
+      { ...scope, origin: 'turn', scopeId: 'turn-1', allowedDesignIds: [original.designId] },
+      {
+        mutationId: 'write-removed',
+        designId: original.designId,
+        expectedRevisionId: written.revisionId,
+        files: { 'main.tsx': 'export default () => null' },
+        deletedPaths: [],
+      },
+    ),
+    { code: 'not_found', message: /Undo/ },
+  );
 
   const restored = await workspace.undoRemoval(scope, 'undo-hey', removed.undoId);
   assert.equal(restored.frames[0]?.name, 'Hey');

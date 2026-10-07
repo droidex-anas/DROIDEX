@@ -317,12 +317,7 @@ export class CanvasWorkspace {
   }
 
   async readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles> {
-    const manifest = this.canvas(canvasId);
-    if (!manifest.designs.some((design) => design.designId === ref.designId))
-      throw canvasError(
-        'not_found',
-        'That frame was removed. Use Undo to restore it before reading its source.',
-      );
+    this.design(this.canvas(canvasId), ref.designId);
     const tree = await this.files.readRevision(canvasId, ref);
     // A null-prototype tree, so a source path can never reach an inherited
     // member even if the path rules change.
@@ -455,7 +450,8 @@ export class CanvasWorkspace {
 
   private design(manifest: CanvasManifest, designId: string): PersistedDesign {
     const design = manifest.designs.find((entry) => entry.designId === designId);
-    if (!design) throw canvasError('invalid_input', 'That frame is not on this canvas.');
+    if (!design)
+      throw canvasError('not_found', 'That frame is not on this canvas. Use Undo if it was removed.');
     return design;
   }
 
