@@ -1,4 +1,8 @@
 const { ipcRenderer } = require('electron');
+const { randomUUID } = require('node:crypto');
+const { submittedCredential, fillCredentialForm } = require('./browserCredentialFields.cjs');
+const { sensitiveFieldKind, sensitiveFieldDescription } = require('./browserFormSafety.cjs');
+const credentialDocumentId = randomUUID();
 const { isSensitiveBrowserKey, redactBrowserDiagnosticUrl } = require('./browserDiagnostics.cjs');
 const { createDesignOverlay, INTERNAL_ATTR } = require('./browserDesignOverlay.cjs');
 
@@ -59,7 +63,14 @@ const redactedUrlAttributes = new Set(['ping', 'srcdoc', 'srcset', 'style']);
 Object.assign(globalThis, {
   __droidexApplyDesignState: applyState,
   __droidexInspect: inspectElement,
-  __droidexFillCredentials: fillCredentials,
+  __droidexCredentialDocument: () => credentialDocumentId,
+  __droidexFillCredentials: (payload) => {
+    if (payload.documentId !== credentialDocumentId)
+      throw new Error('The page changed before the login was filled.');
+    return fillCredentialForm(document, payload, () =>
+      ipcRenderer.sendSync('native-browser-credential-fill-valid', payload.token),
+    );
+  },
   __droidexNextChange: nextChange,
 });
 
@@ -491,105 +502,9 @@ function swallow(event) {
 // save the credential. The values flow straight to main over IPC and are
 // encrypted there; nothing is stored in the page or exposed to the agent.
 function onFormSubmit(event) {
-  try {
-    const form = event.target;
-    if (!form || form.getAttribute(INTERNAL_ATTR)) return;
-    const fields = form.querySelectorAll ? form.querySelectorAll('input') : [];
-    let password = null;
-    let username = null;
-    for (const field of fields) {
-      const type = (field.getAttribute('type') || '').toLowerCase();
-      if (!password && type === 'password' && field.value) password = field.value;
-      else if (
-        !username &&
-        (type === 'email' || type === 'text' || type === '' || type === 'tel') &&
-        field.value
-      )
-        username = field.value;
-    }
-    if (!password) return;
-    ipcRenderer.send('native-browser-credential-capture', {
-      origin: location.origin,
-      url: location.href,
-      username: username || '',
-      password,
-    });
-  } catch {
-    /* never interfere with the page's own submit */
-  }
-}
-
-function fillCredentials(payload) {
-  try {
-    if (!payload || payload.origin !== location.origin)
-      return { ok: false, filled: false, error: 'The page changed before the login was filled.' };
-    // Checked again around each focus: the page's handlers can take their time.
-    const inTime = () => {
-      if (payload.startBy && Date.now() >= payload.startBy)
-        throw new Error('The browser page did not finish in time.');
-    };
-    inTime();
-    const username = typeof payload.username === 'string' ? payload.username : '';
-    const password = typeof payload.password === 'string' ? payload.password : '';
-    if (!password) return { ok: false, filled: false };
-    const passwordField = firstVisible(document.querySelectorAll('input[type="password"]'));
-    if (!passwordField) return { ok: false, filled: false };
-    if (username) {
-      const userField = usernameFieldFor(passwordField);
-      if (userField) setFieldValue(userField, username, inTime);
-    }
-    setFieldValue(passwordField, password, inTime);
-    return { ok: true, filled: true };
-  } catch (err) {
-    return { ok: false, filled: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-function usernameFieldFor(passwordField) {
-  const form = passwordField.form;
-  const scope = form || document;
-  const fields = scope.querySelectorAll('input');
-  let previous = null;
-  for (const field of fields) {
-    if (field === passwordField) break;
-    const type = (field.getAttribute('type') || '').toLowerCase();
-    if ((type === 'email' || type === 'text' || type === 'tel' || type === '') && isVisible(field))
-      previous = field;
-  }
-  return (
-    previous ||
-    firstVisible(
-      scope.querySelectorAll(
-        'input[type="email"],input[type="text"],input[type="tel"],input:not([type])',
-      ),
-    )
-  );
-}
-
-function setFieldValue(field, value, inTime) {
-  inTime();
-  field.focus();
-  inTime();
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-  if (setter) setter.call(field, value);
-  else field.value = value;
-  field.dispatchEvent(new Event('input', { bubbles: true }));
-  field.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function firstVisible(nodes) {
-  for (const node of nodes) if (isVisible(node)) return node;
-  return null;
-}
-
-function isVisible(el) {
-  if (!el) return false;
-  const rect = el.getBoundingClientRect();
-  return (
-    rect.width > 0 &&
-    rect.height > 0 &&
-    el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
-  );
+  if (!event.isTrusted || event.target?.getAttribute(INTERNAL_ATTR)) return;
+  const credential = submittedCredential(event.target);
+  if (credential) ipcRenderer.send('native-browser-credential-capture', credential);
 }
 
 function inspectElement(selector) {
@@ -793,7 +708,7 @@ function verifySelector(el, selector) {
 
 function attrsFor(el) {
   const out = {};
-  const secret = isSensitiveField(el);
+  const secret = sensitiveFieldKind(el, sensitiveFieldDescription);
   for (const name of [
     'id',
     'class',
@@ -848,16 +763,6 @@ function isMetaRefreshContent(name, el) {
     el.tagName === 'META' &&
     String(el.getAttribute('http-equiv') || '').toLowerCase() === 'refresh'
   );
-}
-
-// Password and one-time-code fields must never reach the agent transcript, so
-// their live values are redacted from every snapshot/detail payload.
-function isSensitiveField(el) {
-  if (!el || el.tagName !== 'INPUT') return false;
-  const type = (el.getAttribute('type') || '').toLowerCase();
-  if (type === 'password') return true;
-  const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
-  return auto.includes('password') || auto === 'one-time-code';
 }
 
 function stylesFor(el) {

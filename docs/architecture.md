@@ -65,11 +65,68 @@ waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
-saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
-are retained for subsequent runtime ports; this foundation enforces only the agent
-access switch. The removed native cursor overlay's style and size fields are absent
+diagnostics, site permissions, downloads, homepage and cursor policies
+are retained for subsequent runtime ports. Saved-login use enforces the existing
+`loginFillApproval` policy; `never` disables saving and filling. The removed native
+cursor overlay's style and size fields are absent
 from schema version 4. Grants and cookie import receipts remain validated data,
 without restoring the old engine's services or claiming unsupported capabilities.
+
+Saved logins use `electron/browserCredentialVault.cjs`: OS encryption with queued,
+atomic writes to `browser-credentials.enc`, at most 500 exact origins. Electron 39
+provides synchronous encryption APIs; file I/O remains asynchronous. There is no
+legacy ciphertext reader or consent-file migration. Invalid storage reports recovery
+steps instead of resetting it. `browserCredentialsList` returns origins and OS
+capabilities only; `browserCredentialsDelete(origin)` deletes one exact site's login.
+Both commands require the trusted main renderer, with types in
+`src/lib/browserSettings.ts`. The settings UI is a separate stack change.
+
+Threat model: A saved secret may be filled only into a page whose real origin owns
+it, after user approval, and must never be sent to the sidecar or model. On an
+ordinary page, even a prompt-injected agent must obtain approval or hand off before
+signing in, creating an account, using passkeys or OAuth, paying, or entering
+passwords, one-time codes or card details. Hostile pages racing their own forms are
+out of scope: their scripts can already submit forms, rewrite destinations, and
+read or exfiltrate anything typed into the page.
+
+Capture takes its security origin from the registered guest's main frame, rejects
+opaque origins (including sandboxed HTTPS pages), requires HTTPS
+(except localhost/loopback), and considers only the submitted form's current
+password. New-password and ambiguous forms are not saved. Each save asks first.
+There is no page-load autofill. `browser_fill_login` asks through the credential
+priority queue on every use, then requires Touch ID when available on macOS.
+DROIDEX sends the login to the preload's isolated world for filling, never to the
+sidecar or model. A document token prevents a delayed fill from reaching a new page,
+even at the same URL. A revocable use token is checked synchronously with main immediately
+before each write; navigation, closure, cancellation, expiry and policy changes
+invalidate it. Capture revalidates the document and policy immediately before
+scheduling the vault rename that publishes a saved login.
+
+`browser_fill_login` returns only success. Agent text results, snapshots, titles,
+accessibility reads, inspections and console/network diagnostics redact the exact
+filled values for that document until navigation. Existing field and screenshot
+masking remains in place. A hostile page that receives a login can still leak it,
+including through encoding or painting it outside a field; these protections do
+not make an untrusted site safe to receive a password.
+
+Agent type, fill and editing keys share the read path's sensitive-field classifier
+and refuse password, one-time-code, payment-card and other secret fields. Type and
+fill also refuse button controls. Click, Enter and Space inspect sign-in, sign-up,
+OAuth, passkey and payment controls,
+request single-use approval, then recheck the real focus or activation target
+immediately before dispatch, including the destination before mouse release.
+Clicks classify the hit-tested control at the click point, even for ancestor refs.
+Implicit Enter submissions use the default submit button's action and method overrides.
+Control wording includes accessible names from referenced labels, ARIA labels and
+image alternatives. Direct agent navigation to sign-in paths or OAuth authorization
+URLs uses the same single-use approval; OAuth detection uses authorization query
+parameters or endpoint paths, without a provider list.
+Detection uses form fields and control wording, so sites with custom controls may
+need a user handoff. CDP inspects and fills in isolated worlds; unreadable input
+focus is refused. These checks run only on agent actions; direct user input is not
+gated. Actions that can ask approval receive an additional 120 seconds in the
+sidecar request deadline, and abandoned requests dismiss their queued prompts.
+OAuth popup handling, passkey sheets and site permissions belong to later ports.
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.

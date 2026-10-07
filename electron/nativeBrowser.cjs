@@ -35,6 +35,9 @@ function createNativeBrowserManager(options) {
     appName: options.appName,
     safeStorage: options.safeStorage,
     showPrompt: options.showPrompt,
+    systemPreferences: options.systemPreferences,
+    getSettings: options.getSettings,
+    findEntry: findNativeBrowserEntryForWebContents,
   });
   const guests = createBrowserGuests({
     partition: BROWSER_PARTITION,
@@ -51,7 +54,6 @@ function createNativeBrowserManager(options) {
     emitLoaded: emitNativeBrowserLoaded,
     emitLoadFailed: emitNativeBrowserLoadFailed,
     applyDesignState: (entry) => page.applyDesignState(entry),
-    autofill: (contents) => credentials.autofill(contents),
     onCrashed: reportNativeBrowserCrash,
     onInput: options.onBrowserInput,
     listEntries: () => nativeBrowsers.values(),
@@ -73,6 +75,7 @@ function createNativeBrowserManager(options) {
     sendToRenderer: options.sendToRenderer,
     findEntryForContents: findNativeBrowserEntryForWebContents,
     nativeImage: options.nativeImage,
+    showPrompt: options.showPrompt,
   });
 
   const preview = createBrowserPreview({
@@ -388,6 +391,7 @@ function createNativeBrowserManager(options) {
   function closeAllNativeBrowsers() {
     preview.forget();
     for (const entry of nativeBrowsers.values()) {
+      entry.contents = null;
       forgetLoad(entry);
       guests.release(entry.browserSessionId);
     }
@@ -424,6 +428,9 @@ function createNativeBrowserManager(options) {
     forgetWatchers: preview.forget,
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,
+    canFillCredential: credentials.canFill,
+    listCredentials: credentials.list,
+    deleteCredential: credentials.deleteLogin,
     sessionIdForWebContents: guests.sessionIdFor,
     closeAll: closeAllNativeBrowsers,
     resourceCounts: () => {
