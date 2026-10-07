@@ -221,7 +221,10 @@ export class ProjectService {
     const main = project.threads.find((thread) => !thread.ownerAppSessionId);
     const lead = main ? this.sessions.get(main.appSessionId) : undefined;
     const cwd = lead?.cwd;
-    const startedAt = project.startedAt ?? lead?.createdAt;
+    // A session's creation time can come from a file's birth time, which has a
+    // fractional part; the renderer takes whole milliseconds only and drops the
+    // whole event batch otherwise.
+    const startedAt = Math.floor(project.startedAt ?? lead?.createdAt ?? 0);
     return {
       id: project.id,
       title: project.title,
