@@ -35,7 +35,7 @@ applyTheme({
   uiFontSize: Number(params.get('font') ?? 14),
   codeFontSize: 13,
   translucentSidebar: false,
-  contrast: 0,
+  contrast: 100,
 });
 
 const initial: CanvasSnapshot = {
