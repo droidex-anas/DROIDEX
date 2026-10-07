@@ -1,15 +1,12 @@
-// One file's text, edited in place. The app already colours code with Prism in
-// theme tokens (the files pane preview reads the same theme), so this is a
-// transparent textarea laid over that highlight: the caret and the selection
-// are the platform's, and the colour comes from the one shared code theme.
-// Lines never wrap, which is what keeps the gutter, the highlight and the
-// caret on the same line as the build's diagnostics.
+// One file's text, edited in place: a transparent textarea laid over the shared
+// code layer (CanvasSourceCode.tsx), so the caret and the selection are the
+// platform's and the colour comes from the one shared code theme. Lines never
+// wrap, which is what keeps the gutter, the highlight and the caret on the same
+// line as the build's diagnostics.
 
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { Highlight } from 'prism-react-renderer';
-import { CODE_THEME, HIGHLIGHT_CHAR_LIMIT } from '../../lib/codeTheme';
-import { resolveFilePresentation } from '../../lib/filePresentation';
-import type { SourceIssue } from './canvasSourceState';
+import { useEffect, useRef } from 'react';
+import { INPUT_METRICS, LINE_HEIGHT, SourceCode, SourceScroller } from './CanvasSourceCode';
+import type { SourceIssue } from './canvasSourceIssues';
 
 interface CanvasSourceEditorProps {
   path: string;
@@ -23,14 +20,6 @@ interface CanvasSourceEditorProps {
   onSave: () => void;
 }
 
-// Exact pixel metrics, shared by the highlight and the textarea: an em-based
-// line height would round differently in the two and drift the overlay.
-const LINE_HEIGHT = 19;
-const TEXT_METRICS = 'font-mono text-[12px]';
-// Both layers take the same box; only the gutter's own left rail differs.
-const PADDING = 'py-2.5 pr-4';
-const GUTTER_PADDING = 'py-2.5 px-3';
-
 export function CanvasSourceEditor({
   path,
   text,
@@ -40,8 +29,6 @@ export function CanvasSourceEditor({
   onSave,
 }: CanvasSourceEditorProps) {
   const input = useRef<HTMLTextAreaElement>(null);
-  const lines = useMemo(() => text.split('\n'), [text]);
-  const language = resolveFilePresentation(path).language;
 
   useEffect(() => {
     const field = input.current;
@@ -53,112 +40,49 @@ export function CanvasSourceEditor({
   }, [reveal]);
 
   return (
-    <div
-      data-source-scroller
-      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-droid-surface"
-    >
-      <div className="flex min-h-full w-max min-w-full">
-        <div
-          aria-hidden
-          className={`sticky left-0 z-10 shrink-0 select-none bg-droid-surface text-right text-droid-text-muted/60 ${TEXT_METRICS} ${GUTTER_PADDING}`}
-        >
-          {lines.map((_, index) => (
-            <div
-              key={index}
-              style={{ height: LINE_HEIGHT, lineHeight: `${String(LINE_HEIGHT)}px` }}
-              className={issues.has(index + 1) ? 'text-droid-red' : undefined}
-            >
-              {index + 1}
-            </div>
-          ))}
-        </div>
-        <div className="relative min-w-0 flex-1">
-          {language && text.length <= HIGHLIGHT_CHAR_LIMIT ? (
-            <Highlight theme={CODE_THEME} code={text} language={language}>
-              {({ tokens, getLineProps, getTokenProps }) => (
-                <CodeLayer>
-                  {tokens.map((line, index) => (
-                    <CodeLine key={index} faulted={issues.has(index + 1)}>
-                      <span {...getLineProps({ line })}>
-                        {line.map((token, at) => (
-                          <span {...getTokenProps({ token })} key={at} />
-                        ))}
-                      </span>
-                    </CodeLine>
-                  ))}
-                </CodeLayer>
-              )}
-            </Highlight>
-          ) : (
-            <CodeLayer>
-              {lines.map((line, index) => (
-                <CodeLine key={index} faulted={issues.has(index + 1)}>
-                  {line}
-                </CodeLine>
-              ))}
-            </CodeLayer>
-          )}
-          <textarea
-            ref={input}
-            value={text}
-            wrap="off"
-            spellCheck={false}
-            aria-label={`${path} source`}
-            onChange={(event) => {
-              onChange(event.target.value);
-            }}
-            // The textarea must never scroll on its own or it would slide out
-            // from under the highlight; the caret moves the one scroller both
-            // layers live in instead.
-            onScroll={(event) => {
-              const field = event.currentTarget;
-              const scroller = scrollerOf(field);
-              if (scroller) {
-                scroller.scrollLeft += field.scrollLeft;
-                scroller.scrollTop += field.scrollTop;
-              }
-              field.scrollLeft = 0;
-              field.scrollTop = 0;
-            }}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-                event.preventDefault();
-                onSave();
-                return;
-              }
-              if (event.key === 'Tab' && !event.shiftKey) {
-                event.preventDefault();
-                insertIndent(event.currentTarget, onChange);
-              }
-            }}
-            style={{ lineHeight: `${String(LINE_HEIGHT)}px`, tabSize: 2 }}
-            className={`absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre break-normal bg-transparent text-transparent caret-droid-text outline-none selection:bg-droid-accent/25 ${TEXT_METRICS} ${PADDING}`}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** The coloured text under the caret: it measures the editor and never takes input. */
-function CodeLayer({ children }: { children: ReactNode }) {
-  return (
-    <pre
-      aria-hidden
-      style={{ lineHeight: `${String(LINE_HEIGHT)}px`, tabSize: 2 }}
-      className={`m-0 whitespace-pre text-droid-text-secondary ${TEXT_METRICS} ${PADDING}`}
-    >
-      {children}
-    </pre>
-  );
-}
-
-/** One line, tinted when the build reported something on it. */
-function CodeLine({ faulted, children }: { faulted: boolean; children: ReactNode }) {
-  return (
-    <div style={{ height: LINE_HEIGHT }} className={faulted ? 'bg-droid-red/10' : undefined}>
-      {children}
-    </div>
+    <SourceScroller>
+      <SourceCode path={path} text={text} issues={issues}>
+        <textarea
+          ref={input}
+          value={text}
+          wrap="off"
+          spellCheck={false}
+          aria-label={`${path} source`}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          // The textarea must never scroll on its own or it would slide out
+          // from under the highlight; the caret moves the one scroller both
+          // layers live in instead.
+          onScroll={(event) => {
+            const field = event.currentTarget;
+            const scroller = scrollerOf(field);
+            if (scroller) {
+              scroller.scrollLeft += field.scrollLeft;
+              scroller.scrollTop += field.scrollTop;
+            }
+            field.scrollLeft = 0;
+            field.scrollTop = 0;
+          }}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+              event.preventDefault();
+              // The drawer listens for this key too. One keystroke is one Save,
+              // so the field that handled it keeps it.
+              event.stopPropagation();
+              onSave();
+              return;
+            }
+            if (event.key === 'Tab' && !event.shiftKey) {
+              event.preventDefault();
+              insertIndent(event.currentTarget, onChange);
+            }
+          }}
+          style={{ lineHeight: `${String(LINE_HEIGHT)}px`, tabSize: 2 }}
+          className={`absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre break-normal bg-transparent text-transparent caret-droid-text outline-none selection:bg-droid-accent/25 ${INPUT_METRICS}`}
+        />
+      </SourceCode>
+    </SourceScroller>
   );
 }
 

@@ -1,26 +1,47 @@
 // The source drawer (spec §4): the files of one frame, edited and saved as a
-// normal source revision. The sidecar owns the revisions; this panel owns the
-// buffers (canvasSourceState.ts) and never loses one — not to a save that races
-// the typing, not to a revision the agent commits underneath it, and not to a
-// frame switch, which keeps each frame's buffers.
+// normal source revision. The sidecar owns the revisions; `canvasSourceStore.ts`
+// owns the buffers, and this panel never loses one — not to a save that races the
+// typing, not to a revision the agent commits underneath it, not to a frame
+// switch, and not to its own unmounting when the user looks at another tab.
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
-  buildDiagnostics,
-  canvasSourceReducer,
-  emptyCanvasSourceState,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import {
+  dirtyPaths,
   isDirty,
-  issuesByLine,
+  isSaving,
   openFrameSource,
   pendingWrite,
-  placeIssues,
+  saveFailure,
   sourcePaths,
   sourceText,
   unsavedFrameIds,
+  type CanvasSourceAction,
+  type CanvasSourceState,
   type FrameSource,
-  type SourceIssue,
 } from './canvasSourceState';
-import type { CanvasFrame, SourceFiles, WriteReceipt } from './protocol';
+import {
+  beginCanvasSave,
+  dispatchCanvasSource,
+  forgetCanvasSource,
+  readCanvasSource,
+  subscribeCanvasSource,
+} from './canvasSourceStore';
+import {
+  buildDiagnostics,
+  issuesByLine,
+  placeIssues,
+  type SourceIssue,
+} from './canvasSourceIssues';
+import { CompareCaption, ConflictBar, ConflictCompare } from './CanvasSourceConflict';
+import type { CanvasFrame, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 // Prism and the editor's chrome load with the first file the user opens, not
 // with the board.
@@ -33,12 +54,8 @@ export interface CanvasSourcePanelProps {
   /** The frame whose source is open. */
   frame: CanvasFrame;
   readSource: (canvasId: string, designId: string, revisionId: string) => Promise<SourceFiles>;
-  writeSource: (
-    canvasId: string,
-    designId: string,
-    expectedRevisionId: string | null,
-    files: SourceFiles,
-  ) => Promise<WriteReceipt>;
+  /** Sends one submitted write exactly as the store minted it. */
+  writeSource: (canvasId: string, write: WriteFilesInput) => Promise<WriteReceipt>;
   onClose: () => void;
 }
 
@@ -49,27 +66,43 @@ export function CanvasSourcePanel({
   writeSource,
   onClose,
 }: CanvasSourcePanelProps) {
-  const [state, dispatch] = useReducer(canvasSourceReducer, emptyCanvasSourceState);
+  const state = useSyncExternalStore(
+    useCallback((listener: () => void) => subscribeCanvasSource(canvasId, listener), [canvasId]),
+    useCallback(() => readCanvasSource(canvasId), [canvasId]),
+  );
+  const dispatch = useCallback(
+    (action: CanvasSourceAction) => {
+      dispatchCanvasSource(canvasId, action);
+    },
+    [canvasId],
+  );
   const [reveal, setReveal] = useState<{ line: number; nonce: number } | null>(null);
   const [confirmingClose, setConfirmingClose] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const diagnostics = buildDiagnostics(frame.build);
 
   useEffect(() => {
     dispatch({ type: 'openSourcePanel', designId: frame.designId });
-  }, [frame.designId]);
+  }, [dispatch, frame.designId]);
 
-  // One read per revision a frame reaches. A clean frame follows the head and a
-  // dirty one conflicts, which is the reducer's business, not this effect's.
+  const source = openFrameSource(state);
+  const read = source.read;
+
+  // One read per revision a frame reaches, and one more per Retry. A clean frame
+  // follows the head and a dirty one conflicts, which is the reducer's business,
+  // not this effect's.
   useEffect(() => {
     const { designId, revisionId } = frame;
     if (revisionId === null) return;
     let wanted = true;
+    dispatch({ type: 'reading', designId, revisionId });
     readSource(canvasId, designId, revisionId).then(
       (files) => {
         if (wanted) dispatch({ type: 'loaded', designId, revisionId, files, diagnostics });
       },
       (error: unknown) => {
-        console.error('Canvas could not read a revision’s source:', error);
+        if (wanted)
+          dispatch({ type: 'readFailed', designId, revisionId, message: readMessage(error) });
       },
     );
     return () => {
@@ -78,42 +111,35 @@ export function CanvasSourcePanel({
     // `diagnostics` is read, not watched: a rebuild of the same revision must
     // not re-read the tree the user is typing in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasId, frame.designId, frame.revisionId, readSource]);
+  }, [canvasId, dispatch, frame.designId, frame.revisionId, readSource, source.readAttempt]);
 
-  const source = openFrameSource(state);
   const paths = sourcePaths(source);
   const activePath = source.activePath;
   const write = pendingWrite(state);
   const unsaved = unsavedFrameIds(state);
   const issues = useMemo(() => placeIssues(diagnostics, paths), [diagnostics, paths]);
+  const conflict = activePath === null ? undefined : source.buffers.get(activePath)?.conflict;
+  const failure = saveFailure(state);
 
+  // A write outlives this panel, so its outcome goes straight to the store: a
+  // Save must settle even if the user looked at another tab while it was away.
   const save = useCallback(() => {
-    const next = pendingWrite(state);
-    if (!next) return;
-    const designId = state.openDesignId;
-    if (designId === null) return;
-    dispatch({ type: 'saving' });
-    writeSource(canvasId, designId, next.expectedRevisionId, next.files).then(
+    const submitted = beginCanvasSave(canvasId, crypto.randomUUID());
+    if (!submitted) return;
+    writeSource(canvasId, submitted).then(
       (receipt) => {
-        dispatch({ type: 'saved', designId, revisionId: receipt.revisionId, files: next.files });
+        dispatchCanvasSource(canvasId, { type: 'saved', revisionId: receipt.revisionId });
       },
       (error: unknown) => {
-        dispatch({ type: 'saveFailed', message: saveMessage(error) });
+        dispatchCanvasSource(canvasId, { type: 'saveFailed', message: saveMessage(error) });
       },
     );
-  }, [canvasId, state, writeSource]);
+  }, [canvasId, writeSource]);
 
   const close = useCallback(() => {
-    dispatch({ type: 'closeSourcePanel' });
+    forgetCanvasSource(canvasId);
     onClose();
-  }, [onClose]);
-
-  const requestClose = useCallback(() => {
-    // Spec §4: the buffers are the one piece of state nothing else holds a copy
-    // of, so closing with unsaved work asks before it drops them.
-    if (unsaved.length > 0) setConfirmingClose(true);
-    else close();
-  }, [close, unsaved.length]);
+  }, [canvasId, onClose]);
 
   return (
     <section
@@ -147,11 +173,11 @@ export function CanvasSourcePanel({
               {frame.revisionId ?? 'no source yet'}
             </span>
           </h2>
-          {state.saveError ? (
+          {failure === null ? null : (
             <p role="alert" className="min-w-0 truncate text-[11px] text-droid-red">
-              {state.saveError}
+              {failure}
             </p>
-          ) : null}
+          )}
           <button
             onClick={save}
             disabled={write === null}
@@ -161,10 +187,15 @@ export function CanvasSourcePanel({
             // would read as plain text (05a's note).
             className="rounded-lg bg-droid-accent/10 px-2.5 py-1 text-[11px] text-droid-text transition-colors enabled:hover:bg-droid-accent/20 disabled:bg-transparent disabled:text-droid-text-muted"
           >
-            {state.saving ? 'Saving…' : 'Save and rebuild'}
+            {saveLabel(state)}
           </button>
           <button
-            onClick={requestClose}
+            onClick={() => {
+              // Spec §4: the buffers are the one piece of state nothing else
+              // holds a copy of, so closing with unsaved work asks first.
+              if (unsaved.length > 0) setConfirmingClose(true);
+              else close();
+            }}
             className="rounded-lg px-2 py-1 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
           >
             Close
@@ -182,39 +213,65 @@ export function CanvasSourcePanel({
           }}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {read?.status === 'failed' ? (
+            <ReadFailure
+              message={read.message}
+              keeping={dirtyPaths(source).length > 0}
+              onRetry={() => {
+                dispatch({ type: 'retryRead' });
+              }}
+            />
+          ) : null}
           {activePath === null ? (
-            <p className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-surface text-[12px] text-droid-text-secondary">
-              This frame has no source yet.
-            </p>
+            <EmptyEditor reading={read?.status === 'loading'} />
           ) : (
             <>
-              {source.buffers.get(activePath)?.conflict ? (
+              {conflict ? (
                 <ConflictBar
+                  comparing={comparing}
+                  onCompare={() => {
+                    setComparing((open) => !open);
+                  }}
                   onKeepMine={() => {
+                    setComparing(false);
                     dispatch({ type: 'keepMine', path: activePath });
                   }}
                   onTakeTheirs={() => {
+                    setComparing(false);
                     dispatch({ type: 'takeTheirs', path: activePath });
                   }}
                 />
               ) : null}
-              <Suspense
-                fallback={
-                  <div aria-hidden className="min-h-0 flex-1 rounded-xl bg-droid-surface" />
-                }
-              >
-                <LazyEditor
-                  key={`${frame.designId}:${activePath}`}
-                  path={activePath}
-                  text={sourceText(source, activePath)}
-                  issues={issuesByLine(issues, activePath)}
-                  reveal={reveal}
-                  onChange={(text) => {
-                    dispatch({ type: 'edit', path: activePath, text });
-                  }}
-                  onSave={save}
-                />
-              </Suspense>
+              <div className="flex min-h-0 flex-1 gap-2">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
+                  {conflict && comparing ? <CompareCaption>Yours · unsaved</CompareCaption> : null}
+                  <Suspense
+                    fallback={
+                      <div aria-hidden className="min-h-0 flex-1 rounded-xl bg-droid-surface" />
+                    }
+                  >
+                    <LazyEditor
+                      key={`${frame.designId}:${activePath}`}
+                      path={activePath}
+                      text={sourceText(source, activePath)}
+                      issues={issuesByLine(issues, activePath)}
+                      reveal={reveal}
+                      onChange={(text) => {
+                        dispatch({ type: 'edit', path: activePath, text });
+                      }}
+                      onSave={save}
+                    />
+                  </Suspense>
+                </div>
+                {conflict && comparing ? (
+                  <ConflictCompare
+                    path={activePath}
+                    revisionId={conflict.revisionId}
+                    text={conflict.text}
+                    issues={issuesByLine(issues, activePath)}
+                  />
+                ) : null}
+              </div>
             </>
           )}
           <IssueList
@@ -228,6 +285,55 @@ export function CanvasSourcePanel({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * What the editor area says with no file to show: a frame that genuinely has no
+ * source, or a read that has not answered yet. A failed read says so on its own
+ * row, with Retry, rather than claiming the frame is empty.
+ */
+function EmptyEditor({ reading }: { reading: boolean }) {
+  return (
+    <p
+      role={reading ? 'status' : undefined}
+      className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-surface text-[12px] text-droid-text-secondary"
+    >
+      {reading ? 'Reading this revision’s source…' : 'This frame has no source yet.'}
+    </p>
+  );
+}
+
+/**
+ * A read that failed. Retry asks for the same revision again; nothing here
+ * touches a buffer, because reopening the drawer to force a read is exactly how
+ * the user would lose the draft they are trying to keep.
+ */
+function ReadFailure({
+  message,
+  keeping,
+  onRetry,
+}: {
+  message: string;
+  keeping: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-elevated px-3 py-2 text-[11px] text-droid-text-secondary"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="text-droid-red">{message}</span>
+        {keeping ? ' Your unsaved edits are still here.' : null}
+      </span>
+      <button
+        onClick={onRetry}
+        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
+      >
+        Try again
+      </button>
+    </div>
   );
 }
 
@@ -279,38 +385,6 @@ function FileList({
         );
       })}
     </nav>
-  );
-}
-
-/** Spec §4: a conflict preserves the buffer and never silently overwrites it. */
-function ConflictBar({
-  onKeepMine,
-  onTakeTheirs,
-}: {
-  onKeepMine: () => void;
-  onTakeTheirs: () => void;
-}) {
-  return (
-    <div
-      role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-elevated px-3 py-2 text-[11px] text-droid-text-secondary"
-    >
-      <span className="min-w-0 flex-1">
-        Updated by agent. Your edits are still here, and so is their version.
-      </span>
-      <button
-        onClick={onKeepMine}
-        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
-      >
-        Keep mine
-      </button>
-      <button
-        onClick={onTakeTheirs}
-        className="rounded-lg px-2 py-1 transition-colors hover:bg-droid-accent/10 hover:text-droid-text"
-      >
-        Take theirs
-      </button>
-    </div>
   );
 }
 
@@ -390,9 +464,26 @@ function IssueList({
   );
 }
 
+/**
+ * What the Save button says. A failed Save offers the same write again rather
+ * than a fresh one: the store still holds its mutation identity, so the runtime
+ * can answer the retry from its own ledger instead of committing twice.
+ */
+function saveLabel(state: CanvasSourceState): string {
+  if (isSaving(state)) return 'Saving…';
+  return saveFailure(state) === null ? 'Save and rebuild' : 'Try that save again';
+}
+
 /** The sidecar's own recovery wording, or a neutral line for a lost request. */
 function saveMessage(error: unknown): string {
   return error instanceof Error && error.message.length > 0
     ? error.message
     : 'That save did not reach the runtime. Try again.';
+}
+
+/** Why a read failed, in the runtime's wording where it gave one. */
+function readMessage(error: unknown): string {
+  return error instanceof Error && error.message.length > 0
+    ? error.message
+    : 'This revision’s source could not be read.';
 }

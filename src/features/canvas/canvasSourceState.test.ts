@@ -1,25 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildDiagnostics,
   canvasSourceReducer,
   conflictPaths,
   dirtyPaths,
   emptyCanvasSourceState,
-  issuesByLine,
+  isSaving,
   openFrameSource,
   pendingWrite,
-  placeIssues,
+  saveFailure,
   sourcePaths,
   sourceText,
+  submittedWrite,
   unsavedFrameIds,
   type CanvasSourceAction,
   type CanvasSourceState,
 } from './canvasSourceState';
-import type { CanvasBuildState, CanvasDiagnostic } from './protocol';
 
 const ENTRY = 'App.tsx';
 const STYLES = 'styles.css';
+const MUTATION = 'mut_1';
 
 function run(state: CanvasSourceState, ...actions: CanvasSourceAction[]): CanvasSourceState {
   return actions.reduce(canvasSourceReducer, state);
@@ -143,23 +143,16 @@ test('Keep mine then Save writes the draft against the revision that superseded 
     files: { [ENTRY]: 'mine\n' },
   });
 
-  const written = pendingWrite(state);
-  assert.ok(written);
   const saved = run(
     state,
-    { type: 'saving' },
-    {
-      type: 'saved',
-      designId: 'hey',
-      revisionId: 'rev_3',
-      files: written.files,
-    },
+    { type: 'saving', mutationId: MUTATION },
+    { type: 'saved', revisionId: 'rev_3' },
   );
   const source = openFrameSource(saved);
   assert.equal(source.revisionId, 'rev_3');
   assert.equal(sourceText(source, ENTRY), 'mine\n');
   assert.deepEqual(dirtyPaths(source), []);
-  assert.equal(saved.saving, false);
+  assert.equal(isSaving(saved), false);
 });
 
 test('Take theirs drops the draft for the revision’s own text', () => {
@@ -194,13 +187,11 @@ test('a revision that deleted a dirty file conflicts with nothing to take', () =
 
 test('text typed while a save is in flight stays dirty on the new revision', () => {
   const editing = run(opened(), { type: 'edit', path: ENTRY, text: 'first\n' });
-  const written = pendingWrite(editing);
-  assert.ok(written);
   const state = run(
     editing,
-    { type: 'saving' },
+    { type: 'saving', mutationId: MUTATION },
     { type: 'edit', path: ENTRY, text: 'first and more\n' },
-    { type: 'saved', designId: 'hey', revisionId: 'rev_2', files: written.files },
+    { type: 'saved', revisionId: 'rev_2' },
   );
   const source = openFrameSource(state);
   assert.equal(sourceText(source, ENTRY), 'first and more\n');
@@ -211,15 +202,69 @@ test('text typed while a save is in flight stays dirty on the new revision', () 
   });
 });
 
+test('a save settles without touching a file it never carried', () => {
+  const editing = run(opened({ [ENTRY]: 'const a = 1;\n', [STYLES]: 'body {}' }), {
+    type: 'edit',
+    path: ENTRY,
+    text: 'mine\n',
+  });
+  const state = run(
+    editing,
+    { type: 'saving', mutationId: MUTATION },
+    { type: 'edit', path: STYLES, text: 'body { color: red }' },
+    { type: 'saved', revisionId: 'rev_2' },
+  );
+  const source = openFrameSource(state);
+  // The CSS was typed after the write was submitted, so the write never carried
+  // it and settling that write cannot be what drops it.
+  assert.equal(sourceText(source, STYLES), 'body { color: red }');
+  assert.deepEqual(dirtyPaths(source), [STYLES]);
+  assert.deepEqual(pendingWrite(state), {
+    expectedRevisionId: 'rev_2',
+    files: { [STYLES]: 'body { color: red }' },
+  });
+});
+
+test('a revision that restores the text an edit began from settles its conflict', () => {
+  const state = run(
+    opened(),
+    { type: 'edit', path: ENTRY, text: 'mine\n' },
+    {
+      type: 'loaded',
+      designId: 'hey',
+      revisionId: 'rev_2',
+      files: { [ENTRY]: 'theirs\n' },
+      diagnostics: [],
+    },
+    {
+      type: 'loaded',
+      designId: 'hey',
+      revisionId: 'rev_3',
+      files: { [ENTRY]: 'const a = 1;\n' },
+      diagnostics: [],
+    },
+    { type: 'keepMine', path: ENTRY },
+  );
+  const source = openFrameSource(state);
+  // rev_3 put the file back to what the edit began from, so there is nothing
+  // left to compare and Save must name the revision the panel now holds.
+  assert.deepEqual(conflictPaths(source), []);
+  assert.equal(source.revisionId, 'rev_3');
+  assert.deepEqual(pendingWrite(state), {
+    expectedRevisionId: 'rev_3',
+    files: { [ENTRY]: 'mine\n' },
+  });
+});
+
 test('a refused save keeps the buffer and reports the runtime’s own wording', () => {
   const state = run(
     opened(),
     { type: 'edit', path: ENTRY, text: 'mine\n' },
-    { type: 'saving' },
+    { type: 'saving', mutationId: MUTATION },
     { type: 'saveFailed', message: 'Another change landed first. Compare and save again.' },
   );
-  assert.equal(state.saving, false);
-  assert.equal(state.saveError, 'Another change landed first. Compare and save again.');
+  assert.equal(isSaving(state), false);
+  assert.equal(saveFailure(state), 'Another change landed first. Compare and save again.');
   assert.equal(sourceText(openFrameSource(state), ENTRY), 'mine\n');
 });
 
@@ -243,15 +288,6 @@ test('a read for a frame the panel is not showing still reaches that frame', () 
   assert.equal(sourceText(openFrameSource(back), ENTRY), 'mine\n');
 });
 
-test('closing the panel drops every buffer it was holding', () => {
-  const state = run(
-    opened(),
-    { type: 'edit', path: ENTRY, text: 'mine\n' },
-    { type: 'closeSourcePanel' },
-  );
-  assert.deepEqual(state, emptyCanvasSourceState);
-});
-
 test('Revert shows the file as the revision has it', () => {
   const state = run(
     opened(),
@@ -262,55 +298,120 @@ test('Revert shows the file as the revision has it', () => {
   assert.deepEqual(dirtyPaths(openFrameSource(state)), []);
 });
 
-// ── Build diagnostics ────────────────────────────────────────────────
-
-const failure: CanvasDiagnostic = {
-  code: 'syntax_error',
-  message: 'Unexpected token',
-  file: ENTRY,
-  line: 4,
-  column: 12,
-};
-
-test('a build that produced nothing yet has no diagnostics to show', () => {
-  const building: CanvasBuildState = { status: 'building', revisionId: 'rev_1', generation: 2 };
-  assert.deepEqual(buildDiagnostics(building), []);
-  assert.deepEqual(buildDiagnostics({ status: 'pending', generation: 0 }), []);
-  assert.deepEqual(
-    buildDiagnostics({
-      status: 'failed',
-      revisionId: 'rev_1',
-      diagnostics: [failure],
-      lastWorkingRevisionId: null,
-      generation: 3,
-    }),
-    [failure],
+test('an uncertain save keeps its identity, and a changed one gets its own', () => {
+  const editing = run(opened(), { type: 'edit', path: ENTRY, text: 'mine\n' });
+  const lost = run(
+    editing,
+    { type: 'saving', mutationId: MUTATION },
+    { type: 'saveFailed', message: 'That save did not reach the runtime. Try again.' },
   );
+  // The write is still held, so the retry is the same write: only a matching
+  // mutation reaches the sidecar's receipt for a save whose reply was lost.
+  const retried = run(lost, { type: 'saving', mutationId: 'mut_2' });
+  assert.deepEqual(submittedWrite(retried), {
+    mutationId: MUTATION,
+    designId: 'hey',
+    expectedRevisionId: 'rev_1',
+    files: { [ENTRY]: 'mine\n' },
+    deletedPaths: [],
+  });
+
+  // Typing again makes it a different save, which must not claim that receipt.
+  const changed = run(
+    lost,
+    { type: 'edit', path: ENTRY, text: 'mine again\n' },
+    {
+      type: 'saving',
+      mutationId: 'mut_3',
+    },
+  );
+  assert.equal(submittedWrite(changed)?.mutationId, 'mut_3');
 });
 
-test('diagnostics land on the file and line the build named', () => {
-  const issues = placeIssues([failure], [ENTRY, STYLES]);
-  assert.deepEqual(issues, [{ diagnostic: failure, path: ENTRY, line: 4 }]);
-  assert.deepEqual([...issuesByLine(issues, ENTRY).keys()], [4]);
-  assert.equal(issuesByLine(issues, STYLES).size, 0);
+test('a conflict offers both texts and reapplying is still a CAS save', () => {
+  const state = run(
+    opened(),
+    { type: 'edit', path: ENTRY, text: 'mine\n' },
+    {
+      type: 'loaded',
+      designId: 'hey',
+      revisionId: 'rev_2',
+      files: { [ENTRY]: 'theirs\n' },
+      diagnostics: [],
+    },
+  );
+  const source = openFrameSource(state);
+  // Both versions are there to inspect, and inspecting one cannot move the other.
+  assert.equal(sourceText(source, ENTRY), 'mine\n');
+  assert.equal(source.buffers.get(ENTRY)?.conflict?.text, 'theirs\n');
+  assert.equal(pendingWrite(state), null);
+
+  const reapplied = run(state, { type: 'keepMine', path: ENTRY });
+  assert.deepEqual(pendingWrite(reapplied), {
+    expectedRevisionId: 'rev_2',
+    files: { [ENTRY]: 'mine\n' },
+  });
 });
 
-test('a diagnostic from outside the frame’s own files is left unplaced', () => {
-  const kit: CanvasDiagnostic = {
-    code: 'unsupported_import',
-    message: 'That import is not available.',
-    file: '@droidex/design-system/Button.tsx',
-    line: 9,
-  };
-  const nowhere: CanvasDiagnostic = { code: 'build_timeout', message: 'This build was too slow.' };
-  assert.deepEqual(placeIssues([kit, nowhere], [ENTRY]), [
-    { diagnostic: kit, path: null, line: null },
-    { diagnostic: nowhere, path: null, line: null },
-  ]);
+test('a failed read is reported for its own revision and retried without a loss', () => {
+  const state = run(
+    opened(),
+    { type: 'edit', path: ENTRY, text: 'mine\n' },
+    { type: 'reading', designId: 'hey', revisionId: 'rev_2' },
+    {
+      type: 'readFailed',
+      designId: 'hey',
+      revisionId: 'rev_2',
+      message: 'Canvas is not available.',
+    },
+  );
+  const failed = openFrameSource(state);
+  assert.deepEqual(failed.read, {
+    status: 'failed',
+    revisionId: 'rev_2',
+    message: 'Canvas is not available.',
+  });
+  // The draft is the state nothing else holds a copy of; a failed read is not
+  // allowed to be the reason the user has to go and fetch it again.
+  assert.equal(sourceText(failed, ENTRY), 'mine\n');
+  assert.equal(failed.revisionId, 'rev_1');
+
+  const retrying = openFrameSource(run(state, { type: 'retryRead' }));
+  assert.deepEqual(retrying.read, { status: 'loading', revisionId: 'rev_2' });
+  assert.equal(retrying.readAttempt, failed.readAttempt + 1);
+  assert.equal(sourceText(retrying, ENTRY), 'mine\n');
+
+  // The retry answers, and the dirty buffer conflicts instead of vanishing.
+  const loaded = openFrameSource(
+    run(
+      state,
+      { type: 'retryRead' },
+      {
+        type: 'loaded',
+        designId: 'hey',
+        revisionId: 'rev_2',
+        files: { [ENTRY]: 'theirs\n' },
+        diagnostics: [],
+      },
+    ),
+  );
+  assert.equal(loaded.read, null);
+  assert.deepEqual(conflictPaths(loaded), [ENTRY]);
+  assert.equal(sourceText(loaded, ENTRY), 'mine\n');
 });
 
-test('a diagnostic with no usable line marks the file but no line', () => {
-  const whole: CanvasDiagnostic = { code: 'invalid_source', message: 'Nope', file: ENTRY, line: 0 };
-  assert.deepEqual(placeIssues([whole], [ENTRY]), [{ diagnostic: whole, path: ENTRY, line: null }]);
-  assert.equal(issuesByLine(placeIssues([whole], [ENTRY]), ENTRY).size, 0);
+test('a stale read answer cannot report a failure for the revision now shown', () => {
+  const state = run(
+    opened(),
+    { type: 'reading', designId: 'hey', revisionId: 'rev_2' },
+    {
+      type: 'loaded',
+      designId: 'hey',
+      revisionId: 'rev_2',
+      files: { [ENTRY]: 'theirs\n' },
+      diagnostics: [],
+    },
+    { type: 'readFailed', designId: 'hey', revisionId: 'rev_1', message: 'Too late.' },
+  );
+  assert.equal(openFrameSource(state).read, null);
 });

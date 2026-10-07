@@ -5,7 +5,7 @@
 import { lazy, Suspense } from 'react';
 import { CanvasClient } from './client';
 import { bridge } from '../../lib/bridge';
-import type { CanvasFrame, SourceFiles } from './protocol';
+import type { CanvasFrame } from './protocol';
 
 const LazySourcePanel = lazy(async () => ({
   default: (await import('./CanvasSourcePanel')).CanvasSourcePanel,
@@ -33,9 +33,10 @@ export function CanvasSourceSlot({
           canvasId={canvasId}
           frame={frame}
           readSource={readSource}
-          writeSource={(id, designId, expectedRevisionId, files) =>
-            writeSource(id, appSessionId, designId, expectedRevisionId, files)
-          }
+          // An explicit Save, sent exactly as the drawer submitted it: the
+          // mutation identity belongs to the write, not to this call, so a retry
+          // of an uncertain Save reaches the sidecar's ledger as the same write.
+          writeSource={(id, write) => canvas.writeFiles(appSessionId, id, write)}
           onClose={onClose}
         />
       </Suspense>
@@ -45,21 +46,4 @@ export function CanvasSourceSlot({
 
 function readSource(canvasId: string, designId: string, revisionId: string) {
   return canvas.readSource(canvasId, designId, revisionId);
-}
-
-/** An explicit Save: one write, one mutation ID, and this drawer's own base. */
-function writeSource(
-  canvasId: string,
-  appSessionId: string,
-  designId: string,
-  expectedRevisionId: string | null,
-  files: SourceFiles,
-) {
-  return canvas.writeFiles(appSessionId, canvasId, {
-    mutationId: crypto.randomUUID(),
-    designId,
-    expectedRevisionId,
-    files,
-    deletedPaths: [],
-  });
 }

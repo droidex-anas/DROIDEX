@@ -1,6 +1,8 @@
-// The source panel's state, as a pure reducer. The sidecar owns canonical
-// source; this module owns the one thing it cannot: what the user has typed and
-// has not saved yet.
+// The source drawer's state, as a pure reducer. The sidecar owns canonical
+// source; this module owns the two things it cannot: what the user has typed and
+// has not saved yet, and which write the drawer is still waiting on.
+// `canvasSourceStore.ts` holds one of these per canvas, outside the components,
+// so neither survives only as long as a mounted panel.
 //
 // Spec §4: "A dirty buffer is local editor state; saving uses the revision
 // captured when editing began. A conflict preserves that buffer and offers
@@ -13,7 +15,7 @@
 // The wire's `SourceFiles` record becomes a map on the way in: a path is user
 // and agent data, and a map keeps a lookup honest about missing keys.
 
-import type { CanvasBuildState, CanvasDiagnostic, SourceFiles } from './protocol';
+import type { CanvasDiagnostic, SourceFiles, WriteFilesInput } from './protocol';
 
 /** One file the user has edited, and the revision the edit began from. */
 export interface SourceBuffer {
@@ -41,6 +43,31 @@ export interface FrameSource {
   buffers: ReadonlyMap<string, SourceBuffer>;
   /** The build diagnostics for `revisionId`. */
   diagnostics: readonly CanvasDiagnostic[];
+  /**
+   * The read this frame is waiting on or could not finish, and null once its
+   * files are current. A failure keeps the revision it was for, so Retry can ask
+   * for that one again without going near a buffer.
+   */
+  read: SourceRead | null;
+  /** Bumped by Retry, so the read runs again for a revision it already tried. */
+  readAttempt: number;
+}
+
+export type SourceRead =
+  | { status: 'loading'; revisionId: string }
+  | { status: 'failed'; revisionId: string; message: string };
+
+/**
+ * One Save, from submission until its outcome is known. The request is kept
+ * verbatim: a reply that is lost or times out leaves the write's outcome
+ * unknown, and only the same `mutationId` and the same files let the sidecar's
+ * ledger answer the retry with that write's own receipt instead of committing a
+ * second revision for one intended save.
+ */
+export interface PendingSave {
+  write: WriteFilesInput;
+  /** null while in flight; the runtime's own recovery wording once it failed. */
+  failure: string | null;
 }
 
 export interface CanvasSourceState {
@@ -48,10 +75,8 @@ export interface CanvasSourceState {
   openDesignId: string | null;
   /** Keyed by design ID. A frame the user leaves keeps its unsaved buffers. */
   frames: ReadonlyMap<string, FrameSource>;
-  /** True from Save until its receipt or its failure. */
-  saving: boolean;
-  /** The last save failure, in the sidecar's own recovery wording. */
-  saveError: string | null;
+  /** The Save whose outcome is not known yet, or null when none is. */
+  save: PendingSave | null;
 }
 
 const EMPTY_FRAME: FrameSource = {
@@ -60,20 +85,25 @@ const EMPTY_FRAME: FrameSource = {
   activePath: null,
   buffers: new Map(),
   diagnostics: [],
+  read: null,
+  readAttempt: 0,
 };
 
 export const emptyCanvasSourceState: CanvasSourceState = {
   openDesignId: null,
   frames: new Map(),
-  saving: false,
-  saveError: null,
+  save: null,
 };
 
 export type CanvasSourceAction =
   /** The toolbar's Source action, and the panel slot's only way in. */
   | { type: 'openSourcePanel'; designId: string }
-  /** Closes the panel and discards every buffer it was holding. */
-  | { type: 'closeSourcePanel' }
+  /** A read is in flight for one revision of one frame. */
+  | { type: 'reading'; designId: string; revisionId: string }
+  /** That read failed, with the recovery wording to offer beside Retry. */
+  | { type: 'readFailed'; designId: string; revisionId: string; message: string }
+  /** Asks for the open frame's failed read again, keeping every buffer. */
+  | { type: 'retryRead' }
   /**
    * One revision's source tree: the first read of a frame, and every revision
    * that lands on it afterwards. Both are the same event here — a clean frame
@@ -94,9 +124,13 @@ export type CanvasSourceAction =
   | { type: 'keepMine'; path: string }
   /** Drops the draft for the revision's own text. */
   | { type: 'takeTheirs'; path: string }
-  | { type: 'saving' }
-  /** A write's receipt, with the files it carried. */
-  | { type: 'saved'; designId: string; revisionId: string; files: SourceFiles }
+  /**
+   * Submits the open frame's dirty buffers. `mutationId` names this attempt; a
+   * retry of the same request keeps the identity it was first submitted with.
+   */
+  | { type: 'saving'; mutationId: string }
+  /** The receipt for the submitted write, which is the one record of what it carried. */
+  | { type: 'saved'; revisionId: string }
   | { type: 'saveFailed'; message: string };
 
 export function canvasSourceReducer(
@@ -105,9 +139,32 @@ export function canvasSourceReducer(
 ): CanvasSourceState {
   switch (action.type) {
     case 'openSourcePanel':
-      return { ...state, openDesignId: action.designId, saveError: null };
-    case 'closeSourcePanel':
-      return emptyCanvasSourceState;
+      return { ...state, openDesignId: action.designId };
+    case 'reading':
+      return withFrame(state, action.designId, (frame) => ({
+        ...frame,
+        read: { status: 'loading', revisionId: action.revisionId },
+      }));
+    case 'readFailed':
+      return withFrame(state, action.designId, (frame) =>
+        // A read the frame has moved on from has nothing left to report.
+        frame.read?.revisionId === action.revisionId
+          ? {
+              ...frame,
+              read: { status: 'failed', revisionId: action.revisionId, message: action.message },
+            }
+          : frame,
+      );
+    case 'retryRead':
+      return onOpenFrame(state, (frame) =>
+        frame.read?.status === 'failed'
+          ? {
+              ...frame,
+              read: { status: 'loading', revisionId: frame.read.revisionId },
+              readAttempt: frame.readAttempt + 1,
+            }
+          : frame,
+      );
     case 'loaded':
       return withFrame(state, action.designId, (frame) => load(frame, action));
     case 'selectFile':
@@ -125,18 +182,60 @@ export function canvasSourceReducer(
     case 'takeTheirs':
       return onOpenFrame(state, (frame) => resolve(frame, action.path, 'theirs'));
     case 'saving':
-      return { ...state, saving: true, saveError: null };
+      return submit(state, action.mutationId);
     case 'saved':
-      return {
-        ...withFrame(state, action.designId, (frame) =>
-          save(frame, action.revisionId, toMap(action.files)),
-        ),
-        saving: false,
-        saveError: null,
-      };
+      return settle(state, action.revisionId);
     case 'saveFailed':
-      return { ...state, saving: false, saveError: action.message };
+      // The request is kept: its outcome is unknown until a retry carrying the
+      // same mutation ID gets an answer.
+      return state.save === null
+        ? state
+        : { ...state, save: { ...state.save, failure: action.message } };
   }
+}
+
+/**
+ * Submits the open frame's dirty buffers. One Save is in flight at a time: a
+ * second submission against the same base would race its own write, and one of
+ * the two would be refused. A retry of a write whose outcome is still unknown
+ * keeps the mutation ID it was first submitted with, so the sidecar answers it
+ * from its ledger; a write the user has since changed is a different save.
+ */
+function submit(state: CanvasSourceState, mutationId: string): CanvasSourceState {
+  if (isSaving(state)) return state;
+  const next = pendingWrite(state);
+  const designId = state.openDesignId;
+  if (next === null || designId === null) return state;
+  const held = state.save?.write;
+  const write =
+    held !== undefined && isSameRequest(held, designId, next)
+      ? held
+      : { mutationId, designId, ...next, deletedPaths: [] };
+  return { ...state, save: { write, failure: null } };
+}
+
+function isSameRequest(
+  held: WriteFilesInput,
+  designId: string,
+  next: { expectedRevisionId: string | null; files: SourceFiles },
+): boolean {
+  if (held.designId !== designId || held.expectedRevisionId !== next.expectedRevisionId)
+    return false;
+  const paths = Object.keys(next.files);
+  if (paths.length !== Object.keys(held.files).length) return false;
+  return paths.every((path) => held.files[path] === next.files[path]);
+}
+
+/** Applies the receipt for the submitted write, which is the record of what it carried. */
+function settle(state: CanvasSourceState, revisionId: string): CanvasSourceState {
+  const submitted = state.save;
+  if (submitted === null) return state;
+  return {
+    ...withFrame(state, submitted.write.designId, (frame) =>
+      save(frame, revisionId, toMap(submitted.write.files)),
+    ),
+    save: null,
+  };
 }
 
 /** The open frame's source, or an empty one while the panel has no frame. */
@@ -175,18 +274,21 @@ function load(
 ): FrameSource {
   // A read that answers for the revision this frame already holds moves nothing
   // but the diagnostics, which a rebuild of the same source does change.
-  if (loaded.revisionId === frame.revisionId) return { ...frame, diagnostics: loaded.diagnostics };
+  if (loaded.revisionId === frame.revisionId)
+    return { ...frame, diagnostics: loaded.diagnostics, read: null };
   const files = toMap(loaded.files);
   const buffers = new Map<string, SourceBuffer>();
   for (const [path, buffer] of frame.buffers) {
     // A clean buffer has nothing to lose and follows the head.
-    if (buffer.draft === buffer.baseText && !buffer.conflict) continue;
+    if (!isLive(buffer)) continue;
     const text = files.get(path) ?? null;
-    // The revision left this file alone, so the edit still applies and only its
-    // base moves: a Save against the revision it was typed on would be refused
-    // for a change somewhere else in the tree.
+    // The revision left this file as the edit found it, so the edit still
+    // applies and only its base moves: a Save against the revision it was typed
+    // on would be refused for a change somewhere else in the tree. Any earlier
+    // conflict is settled too — the text it offered is no longer the head's, so
+    // comparing or reapplying against it would target a superseded revision.
     if (text === buffer.baseText || loaded.revisionId === null)
-      buffers.set(path, { ...buffer, baseRevisionId: loaded.revisionId });
+      buffers.set(path, { ...buffer, baseRevisionId: loaded.revisionId, conflict: null });
     else buffers.set(path, { ...buffer, conflict: { revisionId: loaded.revisionId, text } });
   }
   return {
@@ -195,6 +297,8 @@ function load(
     activePath: activePath(frame.activePath, files, buffers),
     buffers,
     diagnostics: loaded.diagnostics,
+    read: null,
+    readAttempt: frame.readAttempt,
   };
 }
 
@@ -259,7 +363,14 @@ function save(
   const buffers = new Map<string, SourceBuffer>();
   for (const [path, buffer] of frame.buffers) {
     const text = written.get(path);
-    if (text === undefined || text === buffer.draft) continue;
+    // A path the write never carried was edited after it was submitted. The new
+    // revision leaves that file as it was, so the draft stands and only its base
+    // moves; settling someone else's write is never what drops it.
+    if (text === undefined) {
+      if (isLive(buffer)) buffers.set(path, { ...buffer, baseRevisionId: revisionId });
+      continue;
+    }
+    if (text === buffer.draft) continue;
     buffers.set(path, {
       draft: buffer.draft,
       baseRevisionId: revisionId,
@@ -298,7 +409,11 @@ export function sourceText(frame: FrameSource, path: string): string {
 
 export function isDirty(frame: FrameSource, path: string): boolean {
   const buffer = frame.buffers.get(path);
-  if (!buffer) return false;
+  return buffer !== undefined && isLive(buffer);
+}
+
+/** A buffer still worth holding: its draft has moved, or it is in conflict. */
+function isLive(buffer: SourceBuffer): boolean {
   return buffer.draft !== buffer.baseText || buffer.conflict !== null;
 }
 
@@ -308,6 +423,27 @@ export function dirtyPaths(frame: FrameSource): readonly string[] {
 
 export function conflictPaths(frame: FrameSource): readonly string[] {
   return dirtyPaths(frame).filter((path) => frame.buffers.get(path)?.conflict);
+}
+
+/** The write a Save submitted and has no answer for yet, or null when none is. */
+export function submittedWrite(state: CanvasSourceState): WriteFilesInput | null {
+  return state.save !== null && state.save.failure === null ? state.save.write : null;
+}
+
+/** True from a Save's submission until the sidecar answers it one way or another. */
+export function isSaving(state: CanvasSourceState): boolean {
+  return submittedWrite(state) !== null;
+}
+
+/**
+ * Why the open frame's last Save did not land, or null when none has failed. The
+ * submitted request is still held, so Save offers that same write again. A
+ * failure is reported on the frame it was for and nowhere else.
+ */
+export function saveFailure(state: CanvasSourceState): string | null {
+  const save = state.save;
+  if (save === null) return null;
+  return save.write.designId === state.openDesignId ? save.failure : null;
 }
 
 /** Every frame holding unsaved work, so closing the panel can say what it drops. */
@@ -328,7 +464,7 @@ export function unsavedFrameIds(state: CanvasSourceState): readonly string[] {
 export function pendingWrite(
   state: CanvasSourceState,
 ): { expectedRevisionId: string | null; files: SourceFiles } | null {
-  if (state.saving) return null;
+  if (isSaving(state)) return null;
   const frame = openFrameSource(state);
   const dirty = dirtyPaths(frame);
   if (dirty.length === 0 || conflictPaths(frame).length > 0) return null;
@@ -337,60 +473,4 @@ export function pendingWrite(
   const files: SourceFiles = {};
   for (const path of dirty) files[path] = sourceText(frame, path);
   return { expectedRevisionId: [...bases][0] ?? null, files };
-}
-
-/**
- * The diagnostics a build left behind. A build that has not produced any yet
- * has none; that never means the last ones still stand.
- */
-export function buildDiagnostics(build: CanvasBuildState): readonly CanvasDiagnostic[] {
-  return build.status === 'ready' || build.status === 'failed' ? build.diagnostics : [];
-}
-
-/** One diagnostic placed in the editor, or in the panel's own list. */
-export interface SourceIssue {
-  diagnostic: CanvasDiagnostic;
-  /** The listed file it belongs to, or null when it is not in this tree. */
-  path: string | null;
-  /** The 1-based line the build reported, or null when it named no line. */
-  line: number | null;
-}
-
-/**
- * Places each diagnostic on a file and a line. A diagnostic can name a file
- * outside the frame's own tree — the pinned design kit is built with it — and a
- * failure in a generated module names no file at all. Neither can be pinned to
- * a line the user can see, so both stay unplaced instead of landing on the
- * wrong one.
- */
-export function placeIssues(
-  diagnostics: readonly CanvasDiagnostic[],
-  paths: readonly string[],
-): SourceIssue[] {
-  const listed = new Set(paths);
-  return diagnostics.map((diagnostic) => {
-    const named = diagnostic.file;
-    const path = named !== undefined && listed.has(named) ? named : null;
-    const line = diagnostic.line;
-    return {
-      diagnostic,
-      path,
-      line: path !== null && line !== undefined && line > 0 ? line : null,
-    };
-  });
-}
-
-/** The issues the editor marks on one file's lines, by line number. */
-export function issuesByLine(
-  issues: readonly SourceIssue[],
-  path: string,
-): Map<number, SourceIssue[]> {
-  const byLine = new Map<number, SourceIssue[]>();
-  for (const issue of issues) {
-    if (issue.path !== path || issue.line === null) continue;
-    const held = byLine.get(issue.line);
-    if (held) held.push(issue);
-    else byLine.set(issue.line, [issue]);
-  }
-  return byLine;
 }
