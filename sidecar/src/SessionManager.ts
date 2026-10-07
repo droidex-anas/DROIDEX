@@ -842,8 +842,8 @@ export class SessionManager {
       },
       framePrompt: (appSessionId, text, responseFormat) =>
         this.sessionPrompt(appSessionId, text, responseFormat),
-      sendPrompt: (appSessionId, prompt, mentions) =>
-        this.lifecycle.send(appSessionId, prompt, mentions),
+      sendPrompt: (appSessionId, prompt, mentions, steerId) =>
+        this.lifecycle.send(appSessionId, prompt, mentions, steerId),
       requestBrowser:
         options.requestBrowser ??
         (() =>

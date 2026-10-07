@@ -35,7 +35,7 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
             />
           </div>
         ) : (
-          <UserBubble event={{ text: steer.text }} onSendNow={sendNow} />
+          <UserBubble event={steer} onSendNow={sendNow} />
         )}
       </div>
     );

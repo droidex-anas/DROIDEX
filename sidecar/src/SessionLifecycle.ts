@@ -1758,9 +1758,18 @@ function queueSummary(
 ): Pick<SessionSummary, 'queuedSends' | 'pendingSteers'> {
   const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends]
     .sort((a, b) => a.order - b.order)
-    .flatMap(({ steerId, text }) =>
-      steerId ? [{ id: steerId, text: userPromptDisplay(text).text }] : [],
-    );
+    .flatMap(({ steerId, text }) => {
+      if (!steerId) return [];
+      const display = userPromptDisplay(text);
+      return [
+        {
+          id: steerId,
+          text: display.text,
+          ...(display.browserRefs ? { browserRefs: display.browserRefs } : {}),
+          ...(display.sideChatReplies ? { sideChatReplies: display.sideChatReplies } : {}),
+        },
+      ];
+    });
   return { queuedSends: liveSession.pendingSends.length, pendingSteers };
 }
 

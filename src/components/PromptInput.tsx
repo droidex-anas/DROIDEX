@@ -1639,9 +1639,10 @@ export default function PromptInput({
 
     // A design prompt goes with its marks' reference pack, built by the sidecar
     // from their own snapshots, so it goes the same way once their browser has
-    // closed. It waits for a running turn like a queued prompt, whichever way
-    // it was sent.
+    // closed. While a turn runs, it follows the same steer/queue choice as text.
     const appSessionId = activeSession.appSessionId;
+    const steerId =
+      isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     if (marks.length > 0) {
       const design = { browserKey: appSessionId, references: marks };
       // Only the marks this prompt carries go; one picked while it settles stays.
@@ -1654,7 +1655,7 @@ export default function PromptInput({
         );
         dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
       };
-      if (isLive) {
+      if (isLive && !steerId) {
         dispatch({
           type: 'QUEUE_PROMPT',
           appSessionId,
@@ -1673,21 +1674,22 @@ export default function PromptInput({
         clearDesign();
         return;
       }
-      startTurnStarting();
+      if (!isLive) startTurnStarting();
       const committed = await commitPrimaryPromptAfterBaseline({
         waitForBaseline: () =>
           workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
         canCommit: () => !updateInterruptedSubmit(),
         appendTranscript: () => {
-          dispatch({
-            type: 'SESSION_TRANSCRIPT',
-            event: createLocalDesignTranscriptEvent(
-              appSessionId,
-              displayText,
-              browserTranscriptReferencesFromDesignReferences(design.references),
-              { skills: skillNames, files: allFiles, sideChatReplies },
-            ),
-          });
+          if (!steerId)
+            dispatch({
+              type: 'SESSION_TRANSCRIPT',
+              event: createLocalDesignTranscriptEvent(
+                appSessionId,
+                displayText,
+                browserTranscriptReferencesFromDesignReferences(design.references),
+                { skills: skillNames, files: allFiles, sideChatReplies },
+              ),
+            });
           if (sideChatReplies.length > 0) detachSideChatReplies();
         },
         resetComposer: () => {
@@ -1703,7 +1705,14 @@ export default function PromptInput({
         },
         sendCommand: () => {
           try {
-            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            sendDesignPrompt(
+              appSessionId,
+              composed,
+              design.references,
+              responseFormat,
+              mentions,
+              steerId,
+            );
             armTurnStartingTimeout();
           } catch (err) {
             stopTurnStarting();
@@ -1739,8 +1748,6 @@ export default function PromptInput({
     // A steer into the chat's own turn is pending under this id until the model
     // takes it in. A child runs on Droid, which cannot take a steer yet, so its
     // prompt waits behind the turn like any other send.
-    const steerId =
-      isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
       // A steer shows from the sidecar's list of pending steers instead.
       if (!steerId)

@@ -396,7 +396,13 @@ function isSessionSummary(value: unknown): boolean {
     (value.pendingSteers === undefined ||
       (Array.isArray(value.pendingSteers) &&
         value.pendingSteers.every(
-          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+          (steer) =>
+            isRecord(steer) &&
+            hasStrings(steer, ['id', 'text']) &&
+            (steer.browserRefs === undefined ||
+              (Array.isArray(steer.browserRefs) &&
+                steer.browserRefs.every(isBrowserTranscriptReference))) &&
+            (steer.sideChatReplies === undefined || stringArray(steer.sideChatReplies)),
         ))) &&
     (value.lineage === undefined || isSessionLineage(value.lineage)) &&
     (value.usageLimit === undefined || isUsageLimit(value.usageLimit))
@@ -444,6 +450,17 @@ function isChildSessionSummary(value: unknown): boolean {
     isOptionalNonNegativeInteger(value.startedAt) &&
     isOptionalNonNegativeInteger(value.settledAt) &&
     isOptionalNonNegativeInteger(value.tokensUsed)
+  );
+}
+
+function isBrowserTranscriptReference(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ['id', 'label']) &&
+    (value.kind === 'element' || value.kind === 'region' || value.kind === 'text') &&
+    isOptionalString(value.url) &&
+    isOptionalString(value.selector) &&
+    isOptionalString(value.imageDataUrl)
   );
 }
 
