@@ -11,6 +11,7 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
     name: designId,
     rect: { x: 0, y: 0, width: 720, height: 720 },
     layoutVersion: 0,
+    manifestVersion: 0,
     revisionId,
     designSystem,
     build: { status: 'pending' },

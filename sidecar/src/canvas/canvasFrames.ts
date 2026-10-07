@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { REVISION_METADATA_VERSION, type CanvasFiles, type NewRevision } from './canvasFiles.js';
-import type { PersistedDesign } from './canvasManifest.js';
+import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
 import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation } from './schema.js';
 
@@ -32,6 +32,22 @@ export async function stageFrames(
     staged.push({ designId, revisionId, frame });
   }
   return staged;
+}
+
+/** A seed can copy only a frame that still belongs to this board. */
+export function requireSeedFrames(manifest: CanvasManifest, input: CreateFramesInput): void {
+  for (const frame of input.frames) {
+    const seed = frame.seed;
+    if (seed?.kind !== 'revision') continue;
+    if (
+      seed.canvasId === manifest.canvasId &&
+      !manifest.designs.some((design) => design.designId === seed.revision.designId)
+    )
+      throw canvasError(
+        'not_found',
+        'That source frame was removed. Undo it before creating a variant.',
+      );
+  }
 }
 
 /**
@@ -85,6 +101,7 @@ export function placeFrames(
       name: frame.name,
       rect: { x, y, width: frame.width, height: frame.height },
       layoutVersion: 0,
+      manifestVersion: 0,
       revisionId,
       lastWorkingRevisionId: null,
       designSystem: frame.designSystem,

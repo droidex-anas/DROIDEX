@@ -31,6 +31,7 @@ const CANVAS_MANIFEST_VERSION = 1;
  * retry run twice, so the ledger refuses the new mutation instead.
  */
 export const CANVAS_MUTATION_RETENTION = { retained: 256, unsettled: 4096 } as const;
+export const CANVAS_TOMBSTONE_LIMIT = 50;
 
 const timestampSchema = z.number().int().nonnegative();
 const versionSchema = z.number().int().nonnegative();
@@ -43,6 +44,7 @@ const persistedDesignSchema = z
     name: z.string().min(1).max(CANVAS_LIMITS.maxFrameNameLength),
     rect: frameRectSchema,
     layoutVersion: versionSchema,
+    manifestVersion: versionSchema,
     revisionId: canvasIdentifierSchema.nullable(),
     // Spec §7: the manifest owns the revision a failed build falls back to.
     // The artifact itself is a derived cache that `CanvasBuilds` rebuilds.
@@ -109,7 +111,47 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       placements: z.array(placementSchema),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('remove'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      undoId: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('undo'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      designs: z.array(persistedDesignSchema),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('rename'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      design: persistedDesignSchema,
+    })
+    .strict(),
 ]);
+
+const tombstoneSchema = z
+  .object({
+    undoId: canvasIdentifierSchema,
+    removedAt: timestampSchema,
+    expectedLayoutSequence: versionSchema,
+    occupants: z.array(placementSchema),
+    consumed: z.boolean(),
+    designs: z.array(persistedDesignSchema).min(1).max(CANVAS_LIMITS.maxFramesPerArrange),
+  })
+  .strict();
 
 export const canvasManifestSchema = z
   .object({
@@ -119,10 +161,12 @@ export const canvasManifestSchema = z
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
     sequence: versionSchema,
+    layoutSequence: versionSchema,
     // Spec §7: the manifest owns its attachment references, so an unattached
     // chat's first create commits the canvas and the attachment in one write.
     attachedAppSessionIds: z.array(appSessionIdSchema),
     designs: z.array(persistedDesignSchema),
+    tombstones: z.array(tombstoneSchema).max(CANVAS_TOMBSTONE_LIMIT),
     mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.unsettled),
   })
   .strict()
@@ -131,6 +175,9 @@ export const canvasManifestSchema = z
   })
   .refine((manifest) => !hasDuplicate(manifest.mutations.map((record) => record.mutationId)), {
     message: 'A canvas manifest holds each mutation ID once.',
+  })
+  .refine((manifest) => !hasDuplicate(manifest.tombstones.map((entry) => entry.undoId)), {
+    message: 'A canvas manifest holds each Undo ID once.',
   });
 
 export type PersistedDesign = z.infer<typeof persistedDesignSchema>;
@@ -146,8 +193,10 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     createdAt: now,
     updatedAt: now,
     sequence: 0,
+    layoutSequence: 0,
     attachedAppSessionIds: [],
     designs: [],
+    tombstones: [],
     mutations: [],
   };
 }
@@ -167,6 +216,7 @@ export function toFrame(
     name: design.name,
     rect: { ...design.rect },
     layoutVersion: design.layoutVersion,
+    manifestVersion: design.manifestVersion,
     revisionId: design.revisionId,
     designSystem: { ...design.designSystem },
     build: builds.stateOf(canvasId, design.designId),
@@ -246,6 +296,47 @@ export function recordedArrange(
       const design = manifest.designs.find((entry) => entry.designId === placement.designId);
       return design ? [toFrame(manifest.canvasId, { ...design, ...placement }, builds)] : [];
     }),
+    removedDesignIds: [],
+  };
+}
+
+export function recordedRemove(
+  manifest: CanvasManifest,
+  mutationId: string,
+  fingerprint: string,
+): { undoId: string } | null {
+  const record = findMutation(manifest, mutationId, 'remove', fingerprint);
+  return record?.kind === 'remove' ? { undoId: record.undoId } : null;
+}
+
+export function recordedUndo(
+  manifest: CanvasManifest,
+  mutationId: string,
+  fingerprint: string,
+  builds: BuildStates,
+): CanvasChange | null {
+  const record = findMutation(manifest, mutationId, 'undo', fingerprint);
+  if (record?.kind !== 'undo') return null;
+  return {
+    canvasId: manifest.canvasId,
+    sequence: record.sequence,
+    frames: record.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
+    removedDesignIds: [],
+  };
+}
+
+export function recordedRename(
+  manifest: CanvasManifest,
+  mutationId: string,
+  fingerprint: string,
+  builds: BuildStates,
+): CanvasChange | null {
+  const record = findMutation(manifest, mutationId, 'rename', fingerprint);
+  if (record?.kind !== 'rename') return null;
+  return {
+    canvasId: manifest.canvasId,
+    sequence: record.sequence,
+    frames: [toFrame(manifest.canvasId, record.design, builds)],
     removedDesignIds: [],
   };
 }

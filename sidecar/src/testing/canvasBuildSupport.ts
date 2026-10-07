@@ -209,6 +209,7 @@ export function standIn(builds: CanvasBuilds) {
         name: designId,
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 0,
+        manifestVersion: 0,
         revisionId,
         designSystem,
         build: builds.stateOf(canvasId, designId),

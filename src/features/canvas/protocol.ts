@@ -111,6 +111,7 @@ export interface CanvasFrame {
   name: string;
   rect: FrameRect;
   layoutVersion: number;
+  manifestVersion: number;
   // null while the frame is reserved and has no source yet.
   revisionId: string | null;
   designSystem: DesignSystemRef;
@@ -187,6 +188,23 @@ export interface ArrangeFramesInput {
   frames: { designId: string; expectedLayoutVersion: number; rect: FrameRect }[];
 }
 
+export interface RemoveFramesInput {
+  mutationId: string;
+  designIds: string[];
+}
+
+export interface UndoRemovalInput {
+  mutationId: string;
+  undoId: string;
+}
+
+export interface RenameFrameInput {
+  mutationId: string;
+  designId: string;
+  name: string;
+  expectedManifestVersion: number;
+}
+
 // The stable codes from spec §8. Every failure carries a short recovery message
 // and never a stack trace, private path or provider prompt.
 export type CanvasErrorCode =
@@ -203,11 +221,14 @@ export type CanvasErrorCode =
   | 'ambiguous_element'
   | 'invalid_edit'
   | 'invalid_source'
-  | 'unsupported_edit';
+  | 'unsupported_edit'
+  | 'layout_conflict'
+  | 'not_found';
 
 export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
+  currentRect?: FrameRect;
 }
 
 // ── Bridge commands and events ───────────────────────────────────────
@@ -258,6 +279,27 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: ArrangeFramesInput;
+    }
+  | {
+      type: 'canvas.remove';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RemoveFramesInput;
+    }
+  | {
+      type: 'canvas.undoRemoval';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: UndoRemovalInput;
+    }
+  | {
+      type: 'canvas.renameFrame';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RenameFrameInput;
     };
 
 /** What a successful command answers with, one kind per command. */
@@ -268,6 +310,9 @@ export type CanvasReply =
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'removed'; undoId: string }
+  | { kind: 'undone'; change: CanvasChange }
+  | { kind: 'renamed'; change: CanvasChange }
   | { kind: 'artifact'; artifact: PreviewArtifact | null };
 
 export type CanvasEvent =
