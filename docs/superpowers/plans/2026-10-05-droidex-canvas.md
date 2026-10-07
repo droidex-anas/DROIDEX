@@ -1398,6 +1398,14 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] Complete shutdown/profile isolation: cancel queues before awaiting external cleanup, terminate compiler workers, stop preview hosts/subscriptions, revoke MCP scopes, and release all waiters. Verify repeated close is harmless and a new session with a reused provider handle cannot accept old writes/events. Run failure cases with locked/unavailable capture, not only a visible happy-path window.
 - [ ] Run focused export, teardown and runtime tests; manually export a stateful design and confirm PNG and source describe the selected revision. Record capture limitations honestly.
 
+Settled by 10c (builds/shutdown):
+
+- Shutdown refuses new Canvas commands, revokes turn scopes before session-file reconciliation settles, and starts Canvas cleanup without waiting for sessions or automation persistence.
+- Abandoning a compile cancels cooperatively, then uses bounded compiler termination; replacement work never reuses the abandoned child.
+- Build close starts compiler termination before draining storage, still waits for its runs, and publishes no late ready outcome.
+- Concurrent compiler termination joins one promise that settles on child exit, including the controlled grace-kill path. The worker flushes `stopped` before exiting.
+- Failing-first regressions cover held reconciliation/session cleanup, abandoned child ownership, held artifact storage, and acknowledgement versus exit. Storage exclusion, watches, and commit-queue recovery belong to the parallel 10c thread; no Task 10 checkbox is completed here.
+
 ## Task 11: Motion, accessibility and measured performance
 
 **Subtasks (one branch and PR each, merged in order):**

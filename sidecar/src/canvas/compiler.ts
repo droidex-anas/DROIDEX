@@ -99,16 +99,15 @@ export const COMPILER_UNAVAILABLE = 'The Canvas compiler is unavailable; restart
 export const RUNTIME_UNAVAILABLE =
   'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
-// How long a shutdown may take before the thread is ended anyway. This is
+// How long a shutdown may take before the process is forcibly ended. This is
 // cleanup, not the build deadline Task 3b owns.
 const SHUTDOWN_GRACE_MS = 2_000;
 
 export class CompilerWorker {
   private compiler: ChildProcess | null = null;
   private readonly pending = new Map<number, PendingCompile>();
-  private shutdownAck: (() => void) | null = null;
+  private termination: Promise<void> | null = null;
   private nextRequestId = 1;
-  private terminated = false;
 
   /**
    * Compiles one revision. Rejects with `CompileFailedError` when the source is
@@ -116,7 +115,7 @@ export class CompilerWorker {
    * `CompilerUnavailableError` when the worker dies under the call.
    */
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
-    if (this.terminated)
+    if (this.termination !== null)
       return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
 
@@ -143,37 +142,30 @@ export class CompilerWorker {
     });
   }
 
-  /** Final: every in-flight compile rejects and no later compile is accepted. */
-  async terminate(): Promise<void> {
-    if (this.terminated) return;
-    this.terminated = true;
+  /** Final: rejects all compiles, refuses new ones, and awaits the owned child's exit. */
+  terminate(): Promise<void> {
+    if (this.termination !== null) return this.termination;
     const compiler = this.compiler;
     this.compiler = null;
-    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-    if (!compiler) return;
-    // The compiler owns esbuild's service process, so it gets the turn it needs
-    // to stop that service while it can still reap it.
-    await this.awaitShutdown(compiler);
-    compiler.kill();
-  }
-
-  private awaitShutdown(compiler: ChildProcess): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const finish = (): void => {
-        clearTimeout(grace);
-        this.shutdownAck = null;
+    this.termination = new Promise<void>((resolve) => {
+      if (compiler === null) {
         resolve();
-      };
-      const grace = setTimeout(finish, SHUTDOWN_GRACE_MS);
+        return;
+      }
+      // Give the compiler time to stop and reap esbuild before forcing its exit.
+      const grace = setTimeout(() => compiler.kill('SIGKILL'), SHUTDOWN_GRACE_MS);
       grace.unref();
-      this.shutdownAck = finish;
-      // A compiler that is already gone cannot answer, and neither can one that
-      // dies while stopping.
-      compiler.once('exit', finish);
-      compiler.once('error', finish);
+      compiler.once('exit', () => {
+        clearTimeout(grace);
+        resolve();
+      });
+    });
+    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    if (compiler !== null) {
       const requestId = this.nextRequestId++;
       compiler.send({ type: 'shutdown', requestId } satisfies CompilerRequest);
-    });
+    }
+    return this.termination;
   }
 
   /**
@@ -213,10 +205,7 @@ export class CompilerWorker {
   }
 
   private receive(response: CompilerResponse): void {
-    if (response.status === 'stopped') {
-      this.shutdownAck?.();
-      return;
-    }
+    if (response.status === 'stopped') return;
     this.settle(response.requestId, (call) => {
       switch (response.status) {
         case 'ready':
