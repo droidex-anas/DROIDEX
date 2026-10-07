@@ -3,12 +3,46 @@ import { test } from 'node:test';
 import { DESIGN_SYSTEM_LIMITS, readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
+import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { HEY_TSX } from './presets/starter.js';
 
 const input = {
   name: 'Owned studio',
   sourceCanvasId: 'canvas-owned',
   from: { designId: 'design-owned', revisionId: 'revision-owned' },
 };
+
+test('a saved token-only extraction compiles all six shared primitives with styles and tokens in both modes', async (t) => {
+  const result = extractDesignSystem(
+    { 'tokens.css': ':root { --ds-accent: #ff0000; }', 'main.tsx': HEY_TSX },
+    input,
+  );
+  assert.equal(result.status, 'extracted');
+  if (result.status !== 'extracted') return;
+  const ref = await saveDesignSystem(result.system);
+  const worker = new CompilerWorker();
+  t.after(() => worker.terminate());
+  for (const mode of ['light', 'dark'] as const) {
+    const compiled = await worker.compile(
+      {
+        designId: input.from.designId,
+        revisionId: input.from.revisionId,
+        generation: 1,
+        designSystem: { ...ref, mode },
+        files: { 'main.tsx': HEY_TSX },
+      },
+      new AbortController().signal,
+    );
+    assert.deepEqual(compiled.diagnostics, []);
+    assert.equal(result.system.modes[mode]['--ds-accent'], '#ff0000');
+    for (const name of ['button', 'input', 'card', 'badge', 'tab', 'dialog']) {
+      assert.ok(compiled.html.includes('.ds-' + name), `${name} retains its base styles`);
+    }
+    for (const match of compiled.html.matchAll(/var\((--ds-[\w-]+)/g)) {
+      assert.ok(Object.hasOwn(result.system.modes[mode], match[1]), `${match[1]} is mapped`);
+    }
+  }
+});
 
 test('extraction keeps owned tokens and primitive modules, reports inherited values, and persists provenance', async (t) => {
   const extracted = extractDesignSystem(
@@ -27,8 +61,8 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
   assert.equal(extracted.status, 'extracted');
   if (extracted.status !== 'extracted') return;
   assert.deepEqual(extracted.system.modes, {
-    light: { '--ds-space': '8px', '--ds-accent': '#123456' },
-    dark: { '--ds-space': '8px', '--ds-accent': '#abcdef' },
+    light: { ...DROIDEX_DESIGN_SYSTEM.modes.light, '--ds-space': '8px', '--ds-accent': '#123456' },
+    dark: { ...DROIDEX_DESIGN_SYSTEM.modes.dark, '--ds-space': '8px', '--ds-accent': '#abcdef' },
   });
   assert.deepEqual(extracted.system.provenance, {
     sourceCanvasId: input.sourceCanvasId,
@@ -79,10 +113,9 @@ test('a wrapper around an imported kit primitive is reported instead of copying 
   );
   assert.equal(result.status, 'extracted');
   if (result.status !== 'extracted') return;
-  assert.equal(result.system.files['index.tsx'], 'export {};\n');
   assert.ok(!Object.hasOwn(result.system.files, 'source/button.tsx'));
   assert.ok(result.diagnostics.some((entry) => entry.code === 'not_source_owned'));
-  assert.deepEqual(result.system.modes, { light: {}, dark: {} });
+  assert.deepEqual(result.system.modes, DROIDEX_DESIGN_SYSTEM.modes);
 });
 
 test('extraction refuses missing mode counterparts and ambiguous values rather than guessing', () => {

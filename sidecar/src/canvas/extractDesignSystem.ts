@@ -3,6 +3,9 @@ import { posix } from 'node:path';
 import postcss from 'postcss';
 import { designSystemSchema, type DesignSystem } from './designSystems.js';
 import { lineAt, sourceTokens } from './designSystemTokens.js';
+import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { PRIMITIVES_TSX } from './presets/primitives.js';
+import { KIT_CSS } from './presets/styles.js';
 import type { CanvasDiagnostic, RevisionRef, SourceFiles } from './protocol.js';
 import { sourceFilesSchema } from './schema.js';
 
@@ -21,7 +24,7 @@ const OWNED_IMPORTS = new Set(['react', 'react/jsx-runtime', 'lucide-react']);
 const PRIMITIVE_SELECTOR =
   /\.ds-(?:button|input|field|hint|error|card|badge|tab|tablist|tabpanel|dialog)(?:[-\s.:[#>,+~]|$)/;
 
-/** Builds a draft, never copies inherited kit values, and leaves saving to the immutable kit owner. */
+/** Maps owned overrides onto the shared contract without copying the source canvas's inherited kit. */
 export function extractDesignSystem(
   files: SourceFiles,
   input: ExtractDesignSystemInput,
@@ -36,6 +39,13 @@ export function extractDesignSystem(
     )
   )
     return { status: 'refused', diagnostics: tokens.diagnostics };
+  const lightNames = Object.keys(tokens.modes.light);
+  const darkNames = Object.keys(tokens.modes.dark);
+  if (
+    lightNames.length !== darkNames.length ||
+    lightNames.some((name) => !Object.hasOwn(tokens.modes.dark, name))
+  )
+    return refused('Light and dark modes must declare the same design tokens.');
   const diagnostics = tokens.diagnostics;
   const primitives = extractPrimitives(source);
   diagnostics.push(...primitives.diagnostics);
@@ -56,7 +66,10 @@ export function extractDesignSystem(
     id: randomUUID(),
     version: 1,
     name: input.name,
-    modes: tokens.modes,
+    modes: {
+      light: { ...DROIDEX_DESIGN_SYSTEM.modes.light, ...tokens.modes.light },
+      dark: { ...DROIDEX_DESIGN_SYSTEM.modes.dark, ...tokens.modes.dark },
+    },
     files: primitives.files,
     guidance: source['DESIGN.md'] ?? '',
     examples: {},
@@ -75,7 +88,7 @@ function extractPrimitives(source: SourceFiles): {
   diagnostics: CanvasDiagnostic[];
 } {
   const diagnostics: CanvasDiagnostic[] = [];
-  const files: SourceFiles = {};
+  const files: SourceFiles = { 'shared.tsx': PRIMITIVES_TSX, 'base.css': KIT_CSS };
   const exports: string[] = [];
   const claimed = new Set<string>();
   for (const [file, text] of Object.entries(source)) {
@@ -134,7 +147,10 @@ function extractPrimitives(source: SourceFiles): {
     for (const name of names) claimed.add(name);
     exports.push(`export { ${names.join(', ')} } from ${JSON.stringify('./source/' + file)};`);
   }
-  files['index.tsx'] = exports.length > 0 ? exports.join('\n') + '\n' : 'export {};\n';
+  const sharedNames = [...PRIMITIVES].filter((name) => !claimed.has(name));
+  if (sharedNames.length > 0)
+    exports.push(`export { ${sharedNames.join(', ')} } from "./shared.tsx";`);
+  files['index.tsx'] = exports.join('\n') + '\n';
   return { files, diagnostics };
 }
 

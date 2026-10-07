@@ -1328,6 +1328,9 @@ Settled by 07c (`thread/canvas-07c-canvas-theme`):
   modules with explicit named Button/Input/Card/Badge/Tabs/Dialog exports plus
   their owned relative dependencies. Imported kit implementations, inline/scoped
   token interpretations and ambiguous exports are reported instead of inferred.
+  Missing primitives use the shared implementations and base styles; required
+  tokens use the shared DROIDEX defaults with owned values overlaid in each mode,
+  not values inherited from the source canvas's selected kit.
   Missing mode counterparts, competing values and guidance over 16 KiB are refused;
   source-owned `DESIGN.md` guidance is never truncated. No checklist items are ticked.
 
