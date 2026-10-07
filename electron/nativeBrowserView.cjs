@@ -111,7 +111,8 @@ function createNativeBrowserViewFactory({
       onInput(event, input);
     });
     contents.on('did-start-navigation', (details) => {
-      if (!current() || !details.isMainFrame) return;
+      // An in-page change on the current document is not the pending navigation.
+      if (!current() || !details.isMainFrame || details.isSameDocument) return;
       navigation = { url: details.url, typed: entry.typedUrl === details.url };
       entry.typedUrl = null;
     });
@@ -200,6 +201,8 @@ function createNativeBrowserViewFactory({
       if (!current() || !isMainFrame) return;
       discardTypedNavigation(failedUrl);
       if (errorCode === -3) return;
+      // The error page replaced the document, so its title is not the visit's.
+      committedUrl = null;
       const fallback = urls.httpFallbackUrl(failedUrl, errorCode);
       if (fallback) {
         urls.rememberFailedRestoreUrl(entry, entry.targetUrl || failedUrl);
@@ -217,10 +220,9 @@ function createNativeBrowserViewFactory({
       if (!current() || !isMainFrame) return;
       if (committedUrl !== null) {
         committedUrl = nextUrl;
-        saveHistory(history.recordVisit(nextUrl, navigation?.typed ?? false));
+        saveHistory(history.recordVisit(nextUrl, false));
         updateTitle(contents.getTitle());
       }
-      navigation = null;
       entry.targetUrl = nextUrl;
       emitLoaded(entry, nextUrl);
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
