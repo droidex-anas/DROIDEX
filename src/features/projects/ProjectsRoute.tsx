@@ -12,7 +12,7 @@ import { ProjectsBetaNote } from './ProjectsBetaNote';
 import { ProjectThreads } from './ProjectThreads';
 import { projectLead } from './threadBoard';
 import { useProjectBoard, type ProjectBoardEntry } from './useProjectBoard';
-import { useRelativeTimeNow } from './useRelativeTimeNow';
+import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
 
 /* Projects: every project, and one project at a time with the threads it is
    running. A project is one conversation that hands work to others, so this
