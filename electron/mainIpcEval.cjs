@@ -99,7 +99,8 @@ function observeMain(electron) {
   electron.session.defaultSession.protocol = {
     handle: (scheme, handler) => boot.protocolHandlers.set(scheme, handler),
   };
-  electron.session.fromPartition = () => ({ protocol: { handle() {} } });
+  electron.session.fromPartition = () =>
+    Object.assign(new EventEmitter(), { protocol: { handle() {} } });
 
   const github = require('./github.cjs');
   const conversation = require('./githubPrConversation.cjs');
