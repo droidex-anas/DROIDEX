@@ -42,6 +42,11 @@ const REPORT_HEAD = /^(.+?)\s*\((thread|chat) ([^),]+)[^)]*\):\s*$/;
 // ProjectWakeQueue's VERB, which ends a project message's head.
 const ACTIONS = ['reported back', 'needs a decision', 'sent a message'];
 
+/** Whether a prompt is the project's own threads speaking. */
+export function isThreadReport(text: string | undefined): boolean {
+  return text?.startsWith(REPORT_PREFIX) === true;
+}
+
 export function threadReports(text: string | undefined): ThreadReport[] | null {
   if (!text?.startsWith(REPORT_PREFIX) && !text?.startsWith(MESSAGE_PREFIX)) return null;
   const project = text.startsWith(REPORT_PREFIX);

@@ -221,7 +221,10 @@ export class ProjectService {
     const main = project.threads.find((thread) => !thread.ownerAppSessionId);
     const lead = main ? this.sessions.get(main.appSessionId) : undefined;
     const cwd = lead?.cwd;
-    const startedAt = project.startedAt ?? lead?.createdAt;
+    // A session's creation time can come from a file's birth time, which has a
+    // fractional part; the renderer takes whole milliseconds only and drops the
+    // whole event batch otherwise.
+    const startedAt = Math.floor(project.startedAt ?? lead?.createdAt ?? 0);
     return {
       id: project.id,
       title: project.title,
@@ -230,10 +233,14 @@ export class ProjectService {
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
       launching: project.launching,
-      plan: project.plan,
+      plan: project.plan.map(({ milestone, note, ...step }) => ({
+        ...step,
+        ...(milestone ? { milestone } : {}),
+        ...(note ? { note } : {}),
+      })),
       threads: project.threads.map((thread) => ({
         appSessionId: thread.appSessionId,
-        title: thread.title,
+        title: thread.title || 'Untitled thread',
         waiting: thread.waiting,
         ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
       })),
@@ -903,6 +910,11 @@ export class ProjectService {
           this.membership.set(bound, project);
           await this.save();
           if (!isCurrent()) throw new Error('Project launch was cancelled.');
+          // A new chat is named after its first prompt, which here is DROIDEX's
+          // brief. Named before the first turn, so its own plan_set title wins.
+          await this.sessions.rename(bound, input.title).catch((error: unknown) => {
+            console.warn(`Could not name project thread ${bound ?? ''}:`, error);
+          });
         },
         clientRef,
       );

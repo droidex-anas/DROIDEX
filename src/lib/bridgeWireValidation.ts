@@ -49,7 +49,7 @@ function eventBatch(value: Record<string, unknown>): ServerEventBatch | null {
 function hasOrderedBatchEntries(events: unknown[], firstSeq: number, lastSeq: number): boolean {
   let previousSeq = firstSeq - 1;
   for (const entry of events) {
-    if (!isRecord(entry) || !positiveSafeInteger(entry.seq) || !isServerEvent(entry.event)) {
+    if (!isRecord(entry) || !positiveSafeInteger(entry.seq)) {
       return false;
     }
     const seq = entry.seq;
@@ -136,7 +136,7 @@ function interruptedRecord(value: unknown): value is InterruptedSessionRecord {
 // The exhaustive discriminant stays centralized so every inbound event takes
 // the same validation path before renderer code can observe it.
 // eslint-disable-next-line complexity
-function isServerEvent(value: unknown): value is ServerEvent {
+export function isServerEvent(value: unknown): value is ServerEvent {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
   const type = value.type as ServerEvent['type'];

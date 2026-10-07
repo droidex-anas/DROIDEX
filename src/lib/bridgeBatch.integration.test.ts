@@ -457,21 +457,64 @@ test('malformed batches reset the cursor and reconnect without publishing payloa
   assert.deepEqual(resumeCursor(await reconnect()), { generation: null, seq: null });
 });
 
-test('known events with missing payloads are rejected as malformed batches', async () => {
-  const { socket, seen } = await startBridge();
-  socket.message({
+test('an entirely invalid batch warns once and advances the cursor without reconnecting', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const { socket, seen, reconnect } = await startBridge();
+  const invalidBatch = {
     type: 'events.batch',
     generation: 'generation-1',
     firstSeq: 1,
     lastSeq: 1,
     events: [{ seq: 1, event: { type: 'session.updated' } }],
+  };
+  socket.message(invalidBatch);
+  socket.message(invalidBatch);
+
+  assert.equal(socket.closeArgs, null);
+  assert.deepEqual(seen, []);
+  assert.equal(warn.mock.calls.length, 1);
+  assert.deepEqual(warn.mock.calls[0].arguments, [
+    'Dropped bridge event: isServerEvent check failed',
+    { type: 'session.updated', seq: 1 },
+  ]);
+  socket.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-1', seq: '1' });
+});
+
+test('a mixed batch preserves valid events and advances past an invalid last event', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const { bridge, socket, seen, reconnect } = await startBridge();
+  const batches: ServerEvent[][] = [];
+  bridge.subscribeBatch((events) => batches.push([...events]));
+  const runtime: ServerEvent = { type: 'runtime.updated', status: RUNTIME };
+  socket.message({
+    type: 'events.batch',
+    generation: 'generation-1',
+    firstSeq: 1,
+    lastSeq: 4,
+    events: [
+      { seq: 1, event: CONNECTED },
+      { seq: 2, event: { type: 'projects.snapshot', projects: [{ secret: 'private payload' }] } },
+      { seq: 3, event: runtime },
+      { seq: 4, event: { type: 'session.updated' } },
+    ],
   });
 
-  assert.deepEqual(socket.closeArgs, [4002, 'malformed bridge message']);
+  assert.equal(socket.closeArgs, null);
+  assert.deepEqual(seen, [CONNECTED, runtime]);
+  assert.deepEqual(batches, [[CONNECTED, runtime]]);
   assert.deepEqual(
-    seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
-    ['bridge.resync_required'],
+    warn.mock.calls.map((call) => call.arguments),
+    [
+      ['Dropped bridge event: isServerEvent check failed', { type: 'projects.snapshot', seq: 2 }],
+      ['Dropped bridge event: isServerEvent check failed', { type: 'session.updated', seq: 4 }],
+    ],
   );
+  socket.message(batch('generation-1', 5, 5, [CONNECTED]));
+  assert.equal(socket.closeArgs, null);
+  assert.deepEqual(seen, [CONNECTED, runtime, CONNECTED]);
+  socket.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-1', seq: '5' });
 });
 
 test('empty reset generations cannot replace a valid resume cursor', async () => {

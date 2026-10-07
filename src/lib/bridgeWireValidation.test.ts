@@ -1,24 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { serverWireMessage } from './bridgeWireValidation';
-
-function batch(event: unknown): unknown {
-  return {
-    type: 'events.batch',
-    generation: 'generation-1',
-    firstSeq: 1,
-    lastSeq: 1,
-    events: [{ seq: 1, event }],
-  };
-}
+import { isServerEvent, serverWireMessage } from './bridgeWireValidation';
 
 function assertAccepted(event: unknown): void {
-  assert.notEqual(serverWireMessage(batch(event)), null, JSON.stringify(event));
+  assert.equal(isServerEvent(event), true, JSON.stringify(event));
 }
 
 function assertRejected(event: unknown): void {
-  assert.equal(serverWireMessage(batch(event)), null, JSON.stringify(event));
+  assert.equal(isServerEvent(event), false, JSON.stringify(event));
 }
 
 test('interaction wire validation preserves rich questions and approval eligibility', () => {
