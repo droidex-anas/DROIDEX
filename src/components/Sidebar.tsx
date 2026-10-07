@@ -40,6 +40,7 @@ import { sessionResumeId } from '../features/providers/providerIdentity';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
 import { SidebarNavigation } from './SidebarNavigation';
+import { browserAtWork } from './browser/browserTurn';
 
 export default function Sidebar({
   workspaceScopes,
@@ -66,6 +67,16 @@ export default function Sidebar({
       sessions: current.sessions,
     }),
     shallowEqual,
+  );
+  // The chats with an agent at work in their browser, one id after another.
+  const atWorkInBrowserIds = useStoreSelector((current) =>
+    Object.keys(current.browsers)
+      .filter((id) => browserAtWork(current.sessions[id], current.transcripts[id]))
+      .join(' '),
+  );
+  const atWorkInBrowser = useMemo(
+    () => new Set(atWorkInBrowserIds.split(' ')),
+    [atWorkInBrowserIds],
   );
   const activeSession = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
   // Sidebar-local chrome state: the search palette and the unread-only filter
@@ -274,6 +285,7 @@ export default function Sidebar({
         running={sessionIsLive(m)}
         agentsWorking={Boolean(state.agentsWorkingByParent[m.appSessionId])}
         activityStatus={status}
+        browserAtWork={atWorkInBrowser.has(m.appSessionId)}
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
         pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}

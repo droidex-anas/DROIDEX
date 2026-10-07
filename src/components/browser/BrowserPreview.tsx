@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
-import { useBrowserHost } from '../../lib/browserHost';
 import { watchNativeBrowser, type NativeBrowserFrame } from '../../lib/nativeBrowser';
 import { BrowserAgentCursor } from './BrowserAgentCursor';
 import design from './browserAgentCursorDesign.json';
@@ -40,8 +39,6 @@ export function BrowserPreview({
   const [onScreen, setOnScreen] = useState(false);
   const [width, setWidth] = useState(0);
   const visible = useDocumentVisible();
-  const busy = useBrowserHost().working;
-  const working = browserSessionId !== undefined && browserSessionId in busy;
 
   useEffect(() => {
     const box = boxRef.current;
@@ -99,8 +96,12 @@ export function BrowserPreview({
             key={browserSessionId}
             browserSessionId={browserSessionId}
             scale={fit}
-            shown={live && frame !== null}
-            working={working}
+            // Off screen or with the window hidden it is not drawn and takes
+            // no points; before the first frame it takes them, unseen.
+            shown={live && frame !== null && onScreen && visible}
+            follow={live && onScreen && visible}
+            present={live}
+            rest={frame ? { x: frame.width / 2, y: frame.height / 2 } : undefined}
             size={design.size.min}
           />
         )}
