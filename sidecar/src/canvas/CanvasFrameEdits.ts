@@ -122,10 +122,7 @@ export class CanvasFrameEdits {
           designs: removed,
           consumed: false,
         });
-        next.tombstones.splice(
-          0,
-          Math.max(0, next.tombstones.length - CANVAS_TOMBSTONE_LIMIT),
-        );
+        next.tombstones.splice(0, Math.max(0, next.tombstones.length - CANVAS_TOMBSTONE_LIMIT));
         recordMutation(
           next,
           {

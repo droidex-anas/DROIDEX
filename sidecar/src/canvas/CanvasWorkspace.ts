@@ -452,7 +452,10 @@ export class CanvasWorkspace {
   private design(manifest: CanvasManifest, designId: string): PersistedDesign {
     const design = manifest.designs.find((entry) => entry.designId === designId);
     if (!design)
-      throw canvasError('not_found', 'That frame is not on this canvas. Use Undo if it was removed.');
+      throw canvasError(
+        'not_found',
+        'That frame is not on this canvas. Use Undo if it was removed.',
+      );
     return design;
   }
 

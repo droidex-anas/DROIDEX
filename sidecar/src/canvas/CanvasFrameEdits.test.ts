@@ -77,7 +77,14 @@ test('remove and retry publish once; Undo restores source, name and location', a
   });
   await assert.rejects(
     workspace.write(
-      { ...scope, origin: 'turn', scopeId: 'turn-1', allowedDesignIds: [original.designId] },
+      {
+        ...scope,
+        origin: 'turn',
+        scopeId: 'turn-1',
+        generation: 1,
+        context: { designs: [written], elements: [], designSystem },
+        allowedDesignIds: [original.designId],
+      },
       {
         mutationId: 'write-removed',
         designId: original.designId,
