@@ -138,7 +138,7 @@ test('a failed autonomy update settles its session and toasts; without a session
 
 test('a runtime replacement drops lost autonomy writes and keeps requests resent to the new sidecar', () => {
   let state = initialState;
-  for (const appSessionId of ['lost', 'resent']) {
+  for (const appSessionId of ['lost', 'resent', 'not-adopted']) {
     state = reducer(state, {
       type: 'AUTONOMY_UPDATE_REQUESTED',
       appSessionId,

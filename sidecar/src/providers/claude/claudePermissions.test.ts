@@ -30,12 +30,13 @@ test('Auto is probed once, with one notice and default fallback when refused, wi
     false,
     () => undefined,
     async () => undefined,
+    async () => undefined,
   );
   await modes.initialize(query);
   assert.deepEqual(calls, ['auto', 'default']);
   assert.match(modes.takeNotice() ?? '', /approvals still ask/);
-  await modes.change(query, Promise.resolve(), { autonomy: 'low', planning: false });
-  await modes.change(query, Promise.resolve(), { autonomy: 'medium', planning: false });
+  await modes.change(Promise.resolve(), { autonomy: 'low', planning: false });
+  await modes.change(Promise.resolve(), { autonomy: 'medium', planning: false });
   assert.deepEqual(calls, ['auto', 'default', 'acceptEdits', 'default']);
   assert.equal(modes.takeNotice(), undefined);
 
@@ -45,9 +46,10 @@ test('Auto is probed once, with one notice and default fallback when refused, wi
     false,
     () => undefined,
     async () => undefined,
+    async () => undefined,
   );
   await reselected.initialize(query);
-  await reselected.change(query, Promise.resolve(), { autonomy: 'high', planning: false });
+  await reselected.change(Promise.resolve(), { autonomy: 'high', planning: false });
   assert.equal(reselected.takeNotice(), undefined);
 });
 
@@ -65,100 +67,115 @@ test('Spec restores the chosen permission mode and rejected changes keep the sel
     true,
     () => undefined,
     async () => undefined,
+    async () => undefined,
   );
   await modes.initialize(query);
-  await modes.change(query, Promise.resolve(), { autonomy: 'low', planning: true });
+  await modes.change(Promise.resolve(), { autonomy: 'low', planning: true });
   assert.deepEqual(calls, ['auto', 'plan']);
-  await modes.change(query, Promise.resolve(), {
+  await modes.change(Promise.resolve(), {
     autonomy: modes.selection(),
     planning: false,
   });
   assert.equal(calls.at(-1), 'acceptEdits');
   reject = true;
   await assert.rejects(
-    modes.change(query, Promise.resolve(), { autonomy: 'high', planning: false }),
+    modes.change(Promise.resolve(), { autonomy: 'high', planning: false }),
     /refused/,
   );
   assert.equal(modes.selection(), 'low');
 });
 
-test('failed Claude revocations interrupt and must recover before a turn, including an older grant', async () => {
-  let nativeMode: PermissionMode = 'default';
-  let refuseRevocation = false;
-  let interrupts = 0;
-  let turns = 0;
-  const start = () => {
-    assert.equal(nativeMode, 'default');
-    turns += 1;
-  };
-  let grantStarted = () => {};
-  let acceptGrant = () => {};
-  let grant = Promise.resolve();
+test('Claude coalesces queued grants into the latest revocation before native dispatch', async () => {
+  const calls: PermissionMode[] = [];
+  let acceptMedium = () => {};
+  let markMediumStarted = () => {};
+  const medium = new Promise<void>((resolve) => {
+    acceptMedium = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markMediumStarted = resolve;
+  });
+  let holdMedium = false;
   const query = {
     async setPermissionMode(mode: PermissionMode) {
-      if (mode === 'bypassPermissions') {
-        grantStarted();
-        await grant;
+      calls.push(mode);
+      if (holdMedium && mode === 'auto') {
+        markMediumStarted();
+        await medium;
       }
-      if (mode === 'default' && refuseRevocation) throw new Error('refused');
-      nativeMode = mode;
     },
   };
   const modes = new ClaudePermissionModes(
     'off',
     false,
     () => undefined,
-    async () => {
-      interrupts += 1;
-    },
+    async () => undefined,
+    async () => undefined,
   );
   await modes.initialize(query);
-  await modes.change(query, Promise.resolve(), { autonomy: 'high' });
-  refuseRevocation = true;
-  await assert.rejects(modes.change(query, Promise.resolve(), { autonomy: 'off' }), /refused/);
-  assert.equal(modes.selection(), 'off');
-  assert.equal(nativeMode, 'bypassPermissions');
-  assert.equal(interrupts, 1);
-  await assert.rejects(modes.startTurn(query, start), /refused/);
-  assert.equal(turns, 0);
-  assert.equal(nativeMode, 'bypassPermissions');
-  refuseRevocation = false;
-  await modes.startTurn(query, start);
-  assert.equal(turns, 1);
-  assert.equal(nativeMode, 'default');
-
-  const started = new Promise<void>((resolve) => {
-    grantStarted = resolve;
-  });
-  grant = new Promise<void>((resolve) => {
-    acceptGrant = resolve;
-  });
-  const raised = modes.change(query, Promise.resolve(), { autonomy: 'high' });
+  calls.length = 0;
+  holdMedium = true;
+  const mediumChange = modes.change(Promise.resolve(), { autonomy: 'medium' });
   await started;
-  const revoked = modes.change(query, Promise.resolve(), { autonomy: 'off' });
-  refuseRevocation = true;
-  const staleRefusal = assert.rejects(raised, /refused/);
-  const revokeRefusal = assert.rejects(revoked, /refused/);
-  acceptGrant();
-  await Promise.all([staleRefusal, revokeRefusal]);
+  const high = modes.change(Promise.resolve(), { autonomy: 'high' });
+  const off = modes.change(Promise.resolve(), { autonomy: 'off' });
   assert.equal(modes.selection(), 'off');
-  assert.equal(nativeMode, 'bypassPermissions');
-  assert.equal(interrupts, 4);
-  refuseRevocation = false;
-  await modes.startTurn(query, start);
-  assert.equal(turns, 2);
-  assert.equal(nativeMode, 'default');
+  let turns = 0;
+  const turn = modes.startTurn(() => {
+    assert.equal(calls.at(-1), 'default');
+    turns += 1;
+  });
+  assert.equal(turns, 0);
+  acceptMedium();
+  await Promise.all([mediumChange, high, off, turn]);
+  assert.deepEqual(calls, ['auto', 'default']);
+  assert.equal(modes.selection(), 'off');
+  assert.equal(turns, 1);
+});
 
-  await modes.change(query, Promise.resolve(), { autonomy: 'high' });
-  const launched = modes.startTurn(query, () => {
-    assert.equal(modes.selection(), 'high');
+test('Claude retires an unsafe runtime when interruption fails or revocation stays refused', async () => {
+  for (const interruptFails of [true, false]) {
+    let closed = false;
+    let nativeMode: PermissionMode = 'bypassPermissions';
+    let interrupts = 0;
+    const modes = new ClaudePermissionModes(
+      'high',
+      false,
+      () => {
+        if (closed) throw new Error('closed');
+      },
+      async () => {
+        interrupts += 1;
+        if (interruptFails) throw new Error('interrupt refused');
+      },
+      async () => {
+        closed = true;
+      },
+    );
+    const query = {
+      async setPermissionMode(mode: PermissionMode) {
+        if (mode === 'default') throw new Error('revocation refused');
+        nativeMode = mode;
+      },
+    };
+    await modes.initialize(query);
+    await assert.rejects(
+      modes.change(Promise.resolve(), { autonomy: 'off' }),
+      /revocation refused/,
+    );
+    assert.equal(modes.selection(), 'off');
+    assert.equal(closed, true);
     assert.equal(nativeMode, 'bypassPermissions');
-  });
-  const revokedAfterCheck = new Promise<void>((resolve) => {
-    queueMicrotask(() => resolve(modes.change(query, Promise.resolve(), { autonomy: 'off' })));
-  });
-  await Promise.all([launched, revokedAfterCheck]);
-  assert.equal(nativeMode, 'default');
+    assert.ok(interrupts > 0);
+    let turns = 0;
+    await assert.rejects(
+      modes.startTurn(() => {
+        turns += 1;
+      }),
+      /closed/,
+    );
+    assert.equal(turns, 0);
+  }
 });
 
 test('closing during the Auto probe prevents restoration and later publication', async () => {
@@ -170,6 +187,7 @@ test('closing during the Auto probe prevents restoration and later publication',
     () => {
       if (closed) throw new Error('closed');
     },
+    async () => undefined,
     async () => undefined,
   );
   await assert.rejects(

@@ -122,6 +122,7 @@ export class ClaudeSession implements ProviderSession {
         this.requireOpen();
       },
       () => this.interrupt(),
+      () => this.close(),
     );
     this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId, input.models);
     this.closed = new Promise((resolve) => {
@@ -242,7 +243,7 @@ export class ClaudeSession implements ProviderSession {
       await this.waitUntilInitialized();
       const notice = this.permissions.takeNotice();
       if (notice) yield this.mapper.statusEvent(notice);
-      await this.permissions.startTurn(this.query, () => {
+      await this.permissions.startTurn(() => {
         this.prompts.push({
           type: 'user',
           uuid: turnId,
@@ -489,12 +490,12 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.permissions.change(this.query, this.initialized, { autonomy });
+    await this.permissions.change(this.initialized, { autonomy });
     this.publishPermissionNotice();
   }
 
   async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
-    await this.permissions.change(this.query, this.initialized, { planning: mode === 'spec' });
+    await this.permissions.change(this.initialized, { planning: mode === 'spec' });
     this.publishPermissionNotice();
   }
 

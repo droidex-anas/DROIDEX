@@ -2756,10 +2756,9 @@ function reduceAction(state: AppState, action: Action): AppState {
           !action.liveAppSessionIds.has(appSessionId) ||
           (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
       );
+      // Unresent autonomy requests cannot settle in the replacement, even for absent chats.
       const keptAutonomy = Object.entries(state.pendingAutonomy).filter(
-        ([appSessionId, pending]) =>
-          !action.liveAppSessionIds.has(appSessionId) ||
-          (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
+        ([, pending]) => pending !== undefined && action.resentRequestIds.has(pending.requestId),
       );
       if (
         kept.length === Object.keys(state.pendingModelUpdates).length &&

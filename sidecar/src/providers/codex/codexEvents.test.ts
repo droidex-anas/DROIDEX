@@ -256,6 +256,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
   const interrupted: unknown[] = [];
   const settingsWrites: Record<string, unknown>[] = [];
   let nativeSettings: Record<string, unknown> | undefined;
+  let refuseHigh = false;
   let nextSettingsWrite:
     | {
         started: () => void;
@@ -287,6 +288,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
       nextSettingsWrite = undefined;
       write?.started();
       return (write?.result ?? Promise.resolve()).then(() => {
+        if (refuseHigh && params.approvalPolicy === 'never') throw new Error('refused');
         nativeSettings = params;
       });
     }
@@ -363,6 +365,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
       { decision: 'cancel' },
     );
     assert.equal(asked, 10);
+    refuseHigh = true;
     const rejectedEscalation = deferSettings();
     const writesBefore = settingsWrites.length;
     const rejected = session.setAutonomy('high');
@@ -385,6 +388,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     });
     assert.deepEqual(await approval('../rejected-full-access.ts'), { decision: 'cancel' });
 
+    refuseHigh = false;
     const escalation = deferSettings();
     const raised = session.setAutonomy('high');
     await escalation.started;
@@ -407,74 +411,101 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     assert.equal(session.voice.isLive(), true);
     const downgrade = deferSettings();
     const lowered = session.setAutonomy('off');
-    const downgradeRefusal = assert.rejects(lowered, /refused/);
     // Revocation precedes even the start of the queued native write.
     assert.deepEqual(await approval('pending-supervised.ts'), { decision: 'cancel' });
     await downgrade.started;
     downgrade.reject(new Error('refused'));
-    await downgradeRefusal;
+    await lowered;
     assert.deepEqual(interrupted, ['turn-1']);
     assert.equal(session.voice.isLive(), false);
     assert.deepEqual(voiceEvents, ['closed']);
-    assert.equal(nativeSettings?.approvalPolicy, 'never');
+    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
     assert.deepEqual(await approval('failed-supervised.ts'), { decision: 'cancel' });
     await session.setModel({ reasoningEffort: 'high' });
     assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
     assert.deepEqual(nativeSettings?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-    const pendingEscalation = deferSettings();
-    const earlierRaise = session.setAutonomy('high');
-    await pendingEscalation.started;
-    const queuedDowngrade = deferSettings();
-    const laterRevoke = session.setAutonomy('off');
-    const staleGrantRefusal = assert.rejects(earlierRaise, /refused/);
-    const laterRevokeRefusal = assert.rejects(laterRevoke, /refused/);
-    pendingEscalation.resolve();
-    await queuedDowngrade.started;
-    assert.deepEqual(await approval('revoked-before-escalation-ack.ts'), { decision: 'cancel' });
-    // The old grant repairs native permissions before its own settlement.
-    const queuedRetry = deferSettings();
-    queuedDowngrade.reject(new Error('refused'));
-    await staleGrantRefusal;
-    await queuedRetry.started;
-    queuedRetry.reject(new Error('refused'));
-    await laterRevokeRefusal;
-    assert.equal(session.autonomy, 'off');
-    assert.equal(nativeSettings?.approvalPolicy, 'never');
-    assert.deepEqual(interrupted, ['turn-1', 'turn-1', 'turn-1']);
     await stream.return(undefined);
-
-    const failedRetry = deferSettings();
-    const blocked = session.stream('must not start');
-    const blockedTurn = blocked.next();
-    const blockedRefusal = assert.rejects(blockedTurn, /refused/);
-    await failedRetry.started;
-    assert.equal(starts.length, 2);
-    failedRetry.reject(new Error('refused'));
-    await blockedRefusal;
-    assert.equal(starts.length, 2);
-    const nextStarted = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    const recovered = deferSettings();
-    const second = session.stream('next');
-    const next = second.next();
-    await recovered.started;
-    assert.equal(starts.length, 2);
-    recovered.resolve();
-    await nextStarted;
-    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
-    assert.deepEqual(nativeSettings?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-    assert.equal(starts[2]?.approvalPolicy, 'untrusted');
-    assert.deepEqual(starts[2]?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-    notifications.get('turn/completed')?.({
-      threadId: 'thread-1',
-      turn: { id: 'turn-2', status: 'completed' },
-    });
-    await next;
-    await second.return(undefined);
   } finally {
     unsubscribeVoice();
     await session.close();
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Codex skips queued High after Off, including behind a model write', async () => {
+  const writes: Record<string, unknown>[] = [];
+  let release = () => {};
+  let markStarted = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let hold = false;
+  const { client } = fakeClient(async (method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'thread/settings/update') {
+      writes.push(params);
+      if (hold) {
+        hold = false;
+        markStarted();
+        await held;
+      }
+    }
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  writes.length = 0;
+  hold = true;
+  const medium = session.setAutonomy('medium');
+  await started;
+  assert.equal(session.autonomy, 'low');
+  const model = session.setModel({ modelId: 'updated' });
+  const high = session.setAutonomy('high');
+  const off = session.setAutonomy('off');
+  assert.equal(session.autonomy, 'off');
+  release();
+  await Promise.all([medium, model, high, off]);
+  assert.ok(writes.every((params) => params.approvalPolicy !== 'never'));
+  assert.deepEqual(writes.at(-1)?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
+  assert.equal(writes.at(-1)?.model, 'updated');
+  assert.equal(session.autonomy, 'off');
+  await session.close();
+});
+
+test('Codex closes the provider runtime when a refused downgrade cannot be contained', async () => {
+  for (const interruptFails of [true, false]) {
+    let refuseOff = false;
+    let closes = 0;
+    let turns = 0;
+    let interrupts = 0;
+    const { client, notifications } = fakeClient((method, params) => {
+      if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+      if (method === 'thread/settings/update' && refuseOff && params.approvalPolicy === 'untrusted')
+        throw new Error('revocation refused');
+      if (method === 'turn/interrupt') {
+        interrupts += 1;
+        if (interruptFails) throw new Error('interrupt refused');
+      }
+      if (method === 'turn/start') turns += 1;
+    });
+    client.close = async () => {
+      closes += 1;
+    };
+    const session = codexSession(client, 'app-1');
+    await session.open();
+    await session.setAutonomy('high');
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+    refuseOff = true;
+    await assert.rejects(session.setAutonomy('off'), /revocation refused/);
+    assert.equal(closes, 1);
+    assert.equal(session.isClosed, true);
+    assert.equal(session.autonomy, 'off');
+    assert.ok(interrupts > 0);
+    await session.closed;
+    const next = session.stream('blocked');
+    await assert.rejects(next.next());
+    assert.equal(turns, 0);
   }
 });

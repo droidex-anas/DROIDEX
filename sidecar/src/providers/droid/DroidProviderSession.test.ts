@@ -27,6 +27,7 @@ function droidOn(modelId: string) {
     onSettingsWrite: (settings: Parameters<FactorySession['updateSettings']>[0]): unknown =>
       void settings,
     onInterrupt: (): void => undefined,
+    closed: false,
     notify(notification: Record<string, unknown>): void {
       for (const listener of listeners)
         listener({ method: 'droid.session_notification', params: { notification } });
@@ -45,6 +46,9 @@ function droidOn(modelId: string) {
     },
     async interrupt() {
       cli.onInterrupt();
+    },
+    async close() {
+      cli.closed = true;
     },
     async *stream() {
       await cli.turn();
@@ -83,74 +87,66 @@ async function turnEvents(turn: AsyncGenerator<NormalizedEvent>): Promise<Normal
 const switches = (events: NormalizedEvent[]) =>
   events.flatMap((event) => (event.harnessModelSwitch ? [event.harnessModelSwitch] : []));
 
-test('Droid interrupts a failed native revocation and retries before starting any new turn', async () => {
+test('Droid coalesces queued High into Off and waits for the native revocation before a turn', async () => {
   const { cli, session } = droidOn('model');
-  let nativeLevel = AutonomyLevel.Off;
-  let refuseRevocation = false;
-  let interrupts = 0;
-  let turns = 0;
-  cli.onSettingsWrite = async (settings) => {
-    if (settings.autonomyLevel === AutonomyLevel.Off && refuseRevocation)
-      throw new Error('refused');
-    nativeLevel = settings.autonomyLevel ?? nativeLevel;
-  };
-  let releaseTurn = () => {};
-  const running = new Promise<void>((resolve) => {
-    releaseTurn = resolve;
-  });
+  const writes: unknown[] = [];
+  let acceptMedium = () => {};
   let markStarted = () => {};
+  const held = new Promise<void>((resolve) => {
+    acceptMedium = resolve;
+  });
   const started = new Promise<void>((resolve) => {
     markStarted = resolve;
   });
-  cli.turn = () => {
-    turns += 1;
-    markStarted();
-    return running;
+  cli.onSettingsWrite = async (settings) => {
+    writes.push(settings.autonomyLevel);
+    if (settings.autonomyLevel === AutonomyLevel.Medium) {
+      markStarted();
+      await held;
+    }
   };
-  cli.onInterrupt = () => {
-    interrupts += 1;
-    releaseTurn();
-  };
-  await session.setAutonomy('high');
-  const turn = turnEvents(session.stream('go'));
+  const medium = session.setAutonomy('medium');
   await started;
-  refuseRevocation = true;
-  await assert.rejects(session.setAutonomy('off'), /refused/);
-  await turn;
-  assert.equal(interrupts, 1);
-  assert.equal(nativeLevel, AutonomyLevel.High);
   assert.equal(session.autonomy, 'off');
-  await assert.rejects(turnEvents(session.stream('blocked')), /refused/);
-  assert.equal(turns, 1);
-  refuseRevocation = false;
+  const high = session.setAutonomy('high');
+  const off = session.setAutonomy('off');
+  let turns = 0;
   cli.turn = () => {
+    assert.equal(writes.at(-1), AutonomyLevel.Off);
     turns += 1;
-    assert.equal(nativeLevel, AutonomyLevel.Off);
   };
-  await turnEvents(session.stream('recovered'));
-  assert.equal(turns, 2);
-
-  let acceptGrant = () => {};
-  const grant = new Promise<void>((resolve) => {
-    acceptGrant = resolve;
-  });
-  const grantStarted = new Promise<void>((resolve) => {
-    cli.onSettingsWrite = async (settings) => {
-      if (settings.autonomyLevel === AutonomyLevel.High) {
-        resolve();
-        await grant;
-      }
-      nativeLevel = settings.autonomyLevel ?? nativeLevel;
-    };
-  });
-  const raised = session.setAutonomy('high');
-  await grantStarted;
-  const revoked = session.setAutonomy('off');
-  acceptGrant();
-  await raised;
-  assert.equal(nativeLevel, AutonomyLevel.Off);
-  await revoked;
+  const turn = turnEvents(session.stream('go'));
+  assert.equal(turns, 0);
+  acceptMedium();
+  await Promise.all([medium, high, off, turn]);
+  assert.deepEqual(writes, [AutonomyLevel.Medium, AutonomyLevel.Off]);
   assert.equal(session.autonomy, 'off');
+  assert.equal(turns, 1);
+  await session.close();
+});
+
+test('Droid closes the runtime if a failed downgrade cannot be interrupted or remains unapplied', async () => {
+  for (const interruptFails of [true, false]) {
+    const { cli, session } = droidOn('model');
+    await session.setAutonomy('high');
+    cli.onSettingsWrite = () => {
+      throw new Error('revocation refused');
+    };
+    cli.onInterrupt = () => {
+      if (interruptFails) throw new Error('interrupt refused');
+    };
+    await assert.rejects(session.setAutonomy('off'), /revocation refused/);
+    assert.equal(cli.closed, true);
+    assert.equal(session.isClosed, true);
+    assert.equal(session.autonomy, 'off');
+    await session.closed;
+    let turns = 0;
+    cli.turn = () => {
+      turns += 1;
+    };
+    await assert.rejects(turnEvents(session.stream('blocked')), /closed/);
+    assert.equal(turns, 0);
+  }
 });
 
 test('a switch Droid makes on the usage limit is reported once, and never for our own write', async () => {

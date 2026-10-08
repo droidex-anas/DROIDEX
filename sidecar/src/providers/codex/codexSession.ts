@@ -29,6 +29,7 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexToolBridge } from './codexTools.js';
+import { SessionAutonomy } from '../sessionAutonomy.js';
 import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
@@ -67,9 +68,7 @@ export class CodexSession implements ProviderSession {
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
-  private currentAutonomy: Autonomy;
-  private requestedAutonomy: Autonomy;
-  private nativeAutonomy: Autonomy;
+  private readonly permissions: SessionAutonomy;
   private settingsChanges: Promise<void> = Promise.resolve();
   private model: ProviderModelSettings;
   private threadId?: string;
@@ -113,15 +112,35 @@ export class CodexSession implements ProviderSession {
     this.client = input.client;
     this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
-    this.currentAutonomy = input.autonomy;
-    this.requestedAutonomy = input.autonomy;
-    this.nativeAutonomy = input.autonomy;
+    this.permissions = new SessionAutonomy(input.autonomy, {
+      write: () =>
+        this.changeThreadSettings(async () => {
+          const autonomy = this.permissions.latestAutonomy;
+          await this.applyThreadSettings(autonomy);
+          return autonomy;
+        }),
+      isApplied: () => true,
+      isUnsafe: () =>
+        AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
+        AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
+      interrupt: async () => {
+        await Promise.all([this.interrupt(), this.voice.stop()]);
+      },
+      close: () => this.close(),
+      requireOpen: () => {
+        if (this.hasClosed) throw new Error('This Codex session is closed.');
+      },
+    });
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.voice = new CodexVoice(
       this.client,
       () => this.threadId,
-      () => this.changeThreadSettings(() => this.applyThreadSettings()),
+      async () => {
+        await this.changeThreadSettings(() => this.applyThreadSettings());
+        while (!this.permissions.isApplied) await this.permissions.synchronize();
+        this.permissions.requireOpen();
+      },
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     this.tools = new CodexToolBridge(input.inAppMcpServers ?? [], {
@@ -155,7 +174,7 @@ export class CodexSession implements ProviderSession {
   }
 
   get autonomy(): Autonomy {
-    return this.currentAutonomy;
+    return this.permissions.selection;
   }
 
   get process(): { pid: number; isAlive(): boolean } | undefined {
@@ -252,9 +271,7 @@ export class CodexSession implements ProviderSession {
     this.interruptedTurnId = undefined;
     try {
       await this.settingsChanges;
-      // A failed revocation must be repaired before another turn can bypass callbacks.
-      while (AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) > AUTONOMY_LEVELS.indexOf(this.autonomy))
-        await this.changeThreadSettings(() => this.applyThreadSettings());
+      while (!this.permissions.isApplied) await this.permissions.synchronize();
       if (this.hasClosed) throw new Error('This Codex session is closed.');
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
@@ -282,21 +299,8 @@ export class CodexSession implements ProviderSession {
     }
   }
 
-  // Revocations apply now; grants wait for the native write. The running
-  // turn keeps its native sandbox, but callbacks use the safer selection.
-  // Thread settings also cover turns Codex starts itself for spoken requests.
-  async setAutonomy(autonomy: Autonomy): Promise<void> {
-    this.requestedAutonomy = autonomy;
-    if (AUTONOMY_LEVELS.indexOf(autonomy) < AUTONOMY_LEVELS.indexOf(this.autonomy))
-      this.currentAutonomy = autonomy;
-    await this.changeThreadSettings(async () => {
-      await this.applyThreadSettings(autonomy);
-      this.currentAutonomy =
-        AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) <
-        AUTONOMY_LEVELS.indexOf(this.requestedAutonomy)
-          ? this.nativeAutonomy
-          : this.requestedAutonomy;
-    });
+  setAutonomy(autonomy: Autonomy): Promise<void> {
+    return this.permissions.set(autonomy);
   }
 
   setModel(settings: ProviderModelSettings): Promise<void> {
@@ -333,11 +337,14 @@ export class CodexSession implements ProviderSession {
     });
   }
 
-  private changeThreadSettings(change: () => Promise<void>): Promise<void> {
+  private changeThreadSettings<T>(change: () => Promise<T>): Promise<T> {
     // Every write carries full settings, so it must read state only after the
     // preceding mutation has either committed or rolled back.
     const applied = this.settingsChanges.then(change);
-    this.settingsChanges = applied.catch(() => undefined);
+    this.settingsChanges = applied.then(
+      () => undefined,
+      () => undefined,
+    );
     return applied;
   }
 
@@ -350,7 +357,7 @@ export class CodexSession implements ProviderSession {
   // a sandboxed one that cannot ask for the escalation it needs.
   private async applyThreadSettings(autonomy = this.autonomy): Promise<void> {
     const threadId = this.threadId;
-    if (!threadId) return;
+    if (!threadId) throw new Error('This Codex session has no thread to apply settings to.');
     const { reasoningEffort } = this.model;
     // A cleared pin means the thread's own model, which is what the mapper and
     // `turn/start` already read it as. Omitting it would leave the thread on
@@ -359,30 +366,17 @@ export class CodexSession implements ProviderSession {
     // `null` is how the thread is told to go back to the model's own effort;
     // leaving the field out keeps whatever it had.
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
-    try {
-      do {
-        const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
-        await this.client.request('thread/settings/update', {
-          threadId,
-          approvalPolicy,
-          sandboxPolicy: codexSandboxPolicy(sandbox),
-          ...(model ? { model } : {}),
-          ...(effort !== undefined ? { effort } : {}),
-        });
-        this.nativeAutonomy = autonomy;
-        // An older grant may acknowledge after revocation was requested.
-        autonomy = this.requestedAutonomy;
-      } while (
-        AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
-        AUTONOMY_LEVELS.indexOf(this.requestedAutonomy)
-      );
-    } catch (error) {
-      if (AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) > AUTONOMY_LEVELS.indexOf(this.autonomy)) {
-        // Voice can hand off further turns without going through stream().
-        await Promise.all([this.interrupt(), this.voice.stop()]);
-      }
-      throw error;
-    }
+    this.permissions.requireOpen();
+    const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
+    await this.client.request('thread/settings/update', {
+      threadId,
+      approvalPolicy,
+      sandboxPolicy: codexSandboxPolicy(sandbox),
+      ...(model ? { model } : {}),
+      ...(effort !== undefined ? { effort } : {}),
+    });
+    this.permissions.requireOpen();
+    this.permissions.confirm(autonomy);
   }
 
   // For the paths whose own work does not depend on this landing: the model
@@ -456,6 +450,7 @@ export class CodexSession implements ProviderSession {
   }
 
   close(): Promise<void> {
+    this.permissions.stop();
     this.resolveClosed();
     this.prompts.cancel();
     this.catalog?.close();

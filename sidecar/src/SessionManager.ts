@@ -1913,14 +1913,13 @@ export class SessionManager {
       });
       return;
     }
-    if (
-      liveSession.summary.autonomy === nextAutonomy &&
-      !this.autonomyMutationTails.has(appSessionId)
-    ) {
-      this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
-      return;
-    }
     const session = liveSession.session;
+    const isCurrent = () =>
+      !this.shutdownPromise &&
+      this.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      !hasSessionCloseStarted(liveSession) &&
+      !session.isClosed;
     const publishAutonomy = () => {
       if (liveSession.summary.autonomy === session.autonomy) return;
       this.registry.updateSummary(appSessionId, { autonomy: session.autonomy });
@@ -1934,24 +1933,23 @@ export class SessionManager {
         await applied;
       }
       // Native acknowledgements belong only to the runtime that received them.
-      if (
-        this.shutdownPromise ||
-        this.registry.getLive(appSessionId) !== liveSession ||
-        liveSession.session !== session ||
-        hasSessionCloseStarted(liveSession)
-      ) {
+      if (!isCurrent()) {
         throw new Error('Autonomy change was interrupted by a session restart or close.');
       }
       publishAutonomy();
       this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
     } catch (err) {
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        requestId,
-        appSessionId,
-        message: `Could not change autonomy: ${errMsg(err)}`,
-        recoverable: true,
-      });
+      try {
+        if (isCurrent()) publishAutonomy();
+      } finally {
+        this.emitError({
+          code: 'session.autonomy_update_failed',
+          requestId,
+          appSessionId,
+          message: `Could not change autonomy: ${errMsg(err)}`,
+          recoverable: true,
+        });
+      }
     }
   }
 

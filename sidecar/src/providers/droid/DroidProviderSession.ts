@@ -12,6 +12,8 @@ import {
   type NormalizedEvent,
 } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
+import { normalizeAutonomy } from '../../values.js';
+import { SessionAutonomy } from '../sessionAutonomy.js';
 import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
@@ -47,9 +49,16 @@ export class DroidProviderSession implements ProviderSession {
   // The refusal Droid gave this turn, if any.
   private limitDetail: string | undefined;
   private readonly stopListening: () => void;
-  private requestedAutonomy: Autonomy;
+  private readonly permissions: SessionAutonomy;
+  private retired = false;
+  private closePromise?: Promise<void>;
+  private resolveClosed: () => void = () => undefined;
+  readonly closed = new Promise<Error | undefined>((resolve) => {
+    this.resolveClosed = () => {
+      resolve(undefined);
+    };
+  });
   private nativeAutonomy: FactorySession['initResult']['settings']['autonomyLevel'];
-  private autonomyChanges: Promise<void> = Promise.resolve();
 
   constructor(
     // Primary-session events are stamped with DROIDEX's identity, not the
@@ -57,10 +66,37 @@ export class DroidProviderSession implements ProviderSession {
     private readonly appSessionId: string,
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
-    private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
+    autonomy: Autonomy = 'off',
   ) {
-    this.requestedAutonomy = permissions.autonomy;
     this.nativeAutonomy = droid.initResult.settings.autonomyLevel;
+    this.permissions = new SessionAutonomy(autonomy, {
+      write: async () => {
+        const level = this.permissions.latestAutonomy;
+        await this.droid.updateSettings({ autonomyLevel: mapAutonomy(level) });
+        this.permissions.requireOpen();
+        this.nativeAutonomy = mapAutonomy(level);
+        return level;
+      },
+      isApplied: () => this.nativeAutonomy === mapAutonomy(this.permissions.latestAutonomy),
+      isUnsafe: () =>
+        this.nativeAutonomy === undefined ||
+        NATIVE_AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
+          NATIVE_AUTONOMY_LEVELS.indexOf(mapAutonomy(this.permissions.latestAutonomy)),
+      interrupt: () => this.interrupt(),
+      close: async () => {
+        // Ordinary closes belong to lifecycle or compaction; forced retirement
+        // must also notify lifecycle so it releases this dead runtime.
+        this.retired = true;
+        const closing = this.close();
+        this.resolveClosed();
+        await closing;
+      },
+      requireOpen: () => {
+        if (this.retired) throw new Error('This Droid session is closed.');
+      },
+    });
+    if (this.nativeAutonomy !== mapAutonomy(autonomy))
+      this.permissions.confirm(normalizeAutonomy(this.nativeAutonomy) ?? 'off');
     this.modelId = droid.initResult.settings.modelId;
     // Listened to for the session's life: a switch Droid reports between turns
     // is still the model the next turn runs on.
@@ -96,15 +132,8 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
-    await this.autonomyChanges;
-    // Native modes above the selection bypass the local approval callback.
-    while (this.needsNativeDowngrade()) {
-      const applied = this.autonomyChanges.then(async () => {
-        await this.applyAutonomy(this.autonomy);
-      });
-      this.autonomyChanges = applied.catch(() => undefined);
-      await applied;
-    }
+    while (!this.permissions.isApplied) await this.permissions.synchronize();
+    this.permissions.requireOpen();
     // The raw listener hears each notification before the stream yields it. A
     // switch waits until Droid says the usage limit caused it, or a turn reaches
     // its result; one not yet reported when a turn fails goes with the next.
@@ -174,51 +203,16 @@ export class DroidProviderSession implements ProviderSession {
     return { from, to: modelId, cause: 'harness', ...(reasoningEffort ? { reasoningEffort } : {}) };
   }
 
-  async setAutonomy(autonomy: Autonomy): Promise<void> {
-    this.requestedAutonomy = autonomy;
-    // Off and edits-only share native Off, so callbacks own their distinction.
-    if (AUTONOMY_LEVELS.indexOf(autonomy) < AUTONOMY_LEVELS.indexOf(this.permissions.autonomy))
-      this.permissions.autonomy = autonomy;
-    const applied = this.autonomyChanges.then(async () => {
-      const appliedAutonomy = await this.applyAutonomy(autonomy);
-      this.permissions.autonomy =
-        AUTONOMY_LEVELS.indexOf(appliedAutonomy) < AUTONOMY_LEVELS.indexOf(this.requestedAutonomy)
-          ? appliedAutonomy
-          : this.requestedAutonomy;
-    });
-    this.autonomyChanges = applied.catch(() => undefined);
-    await applied;
-  }
-
-  private needsNativeDowngrade(): boolean {
-    return (
-      this.nativeAutonomy === undefined ||
-      NATIVE_AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
-        NATIVE_AUTONOMY_LEVELS.indexOf(mapAutonomy(this.autonomy))
-    );
-  }
-
-  private async applyAutonomy(autonomy: Autonomy): Promise<Autonomy> {
-    try {
-      let appliedAutonomy: Autonomy;
-      do {
-        await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
-        this.nativeAutonomy = mapAutonomy(autonomy);
-        appliedAutonomy = autonomy;
-        autonomy = this.requestedAutonomy;
-      } while (
-        NATIVE_AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
-        NATIVE_AUTONOMY_LEVELS.indexOf(mapAutonomy(this.requestedAutonomy))
-      );
-      return appliedAutonomy;
-    } catch (error) {
-      if (this.needsNativeDowngrade()) await this.interrupt();
-      throw error;
-    }
+  setAutonomy(autonomy: Autonomy): Promise<void> {
+    return this.permissions.set(autonomy);
   }
 
   get autonomy(): Autonomy {
-    return this.permissions.autonomy;
+    return this.permissions.selection;
+  }
+
+  get isClosed(): boolean {
+    return this.retired;
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
@@ -277,10 +271,16 @@ export class DroidProviderSession implements ProviderSession {
     return this.runtime.steer(this.droid, text);
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.permissions.stop();
     this.runtime.stopTurn(this.droid);
     this.stopListening();
-    await this.droid.close();
+    this.closePromise = this.droid.close().catch((error: unknown) => {
+      this.closePromise = undefined;
+      throw error;
+    });
+    return this.closePromise;
   }
 }
 

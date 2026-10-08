@@ -1,4 +1,5 @@
 import {
+  type AutonomyLevel,
   ContextStatsAccuracy,
   dispatchNotification,
   InitializeSessionResultSchema,
@@ -15,6 +16,7 @@ import {
 } from '@factory/droid-sdk';
 
 import type { Autonomy, ReasoningEffort } from '../protocol.js';
+import { mapAutonomy } from '../DroidRuntime.js';
 import type {
   CreateRuntimeSessionOptions,
   FactoryRuntime,
@@ -51,7 +53,7 @@ export interface FakeFactorySessionInit {
     modelId?: string;
     reasoningEffort?: ReasoningEffort;
     interactionMode?: 'auto' | 'spec' | 'agi';
-    autonomyLevel?: Autonomy;
+    autonomyLevel?: Autonomy | AutonomyLevel;
   };
   mission?: {
     state?: string;
@@ -493,7 +495,9 @@ export class FakeFactoryRuntime implements FactoryRuntime {
           interactionMode: options.interactionMode,
           // Mirror the real runtime: an explicit create-time autonomy level
           // shows up in the session's init result.
-          ...(options.autonomyLevel === undefined ? {} : { autonomyLevel: options.autonomyLevel }),
+          ...(options.autonomyLevel === undefined
+            ? {}
+            : { autonomyLevel: mapAutonomy(options.autonomyLevel) }),
         },
       });
     if (next instanceof Error) return Promise.reject(next);
