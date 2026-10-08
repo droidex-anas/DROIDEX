@@ -8,14 +8,19 @@ import { threadCounts, threadGroups, type ThreadRow as ThreadRowModel } from './
 import type { ProjectDone, ProjectStep } from './types';
 import { projectTimeline, threadGreeting } from './threadGreeting';
 
-/* The Threads list: the panel's own line, the project it belongs to and how
-   long it has run, then the plan and the threads grouped the way the inbox
-   groups chats, each section folding on a heading that carries its count. Every row carries the
-   thread's own last step, never a status the app cannot back up.
+/* The Threads list: where the project stands, the project it belongs to and how
+   long it has run, then what needs attention or is running now, then the plan,
+   then the history. Sections fold on a heading that carries their count; every
+   row carries the thread's own last step, never a status the app cannot back
+   up. A long project gets a search box and starts with its history folded.
 
    Nothing here starts a thread. The chat that owns the project does that, with
    the settings it chooses, so this surface stays somewhere to read and steer
    from rather than a second place to launch work. */
+
+// Projects past these sizes fold their history and offer search.
+const HISTORY_FOLD = 10;
+const SEARCH_FROM = 20;
 
 export function ThreadList({
   rows,
@@ -50,7 +55,11 @@ export function ThreadList({
   onOpenThread: (appSessionId: string) => void;
 }) {
   const reduceMotion = useReducedMotion() === true;
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  // A long history starts folded so what is happening now stays in view.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(
+    () => new Set(rows.length > HISTORY_FOLD ? ['ready'] : []),
+  );
+  const [query, setQuery] = useState('');
   const toggle = (key: string) => {
     setFolded((current) => {
       const next = new Set(current);
@@ -58,8 +67,41 @@ export function ThreadList({
       return next;
     });
   };
-  const groups = threadGroups(rows);
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? rows.filter((row) => `${row.title} ${row.detail}`.toLowerCase().includes(needle))
+    : rows;
+  const groups = threadGroups(shown);
+  const current = groups.filter((group) => group.key !== 'ready');
+  const history = groups.filter((group) => group.key === 'ready');
   const counts = threadCounts(rows);
+  const renderGroup = (group: (typeof groups)[number]) => {
+    const open = !folded.has(group.key);
+    return (
+      <div key={group.key} className="pt-3">
+        <motion.div layout={!reduceMotion}>
+          <SidebarSectionHeading
+            label={`${group.label} · ${String(group.rows.length)}`}
+            open={open}
+            onToggle={() => {
+              toggle(group.key);
+            }}
+          />
+        </motion.div>
+        {open &&
+          group.rows.map((row) => (
+            <ThreadRow
+              key={row.appSessionId}
+              row={row}
+              now={now}
+              active={row.appSessionId === activeAppSessionId}
+              reduceMotion={reduceMotion}
+              onOpen={onOpenThread}
+            />
+          ))}
+      </div>
+    );
+  };
   const timeline = projectTimeline(startedAt, done, cwd, now);
 
   return (
@@ -67,7 +109,7 @@ export function ThreadList({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="px-4 pb-2 pt-5">
           <h2 className="text-[22px] font-semibold leading-tight tracking-tight text-droid-text">
-            {threadGreeting(rows, counts, now, done)}
+            {threadGreeting(rows, counts, done)}
           </h2>
           {title && (
             <p className="mt-2.5 truncate text-[15px] font-semibold leading-5 tracking-tight text-droid-text">
@@ -111,46 +153,39 @@ export function ThreadList({
           )}
         </div>
 
-        <ProjectPlan
-          plan={plan}
-          rows={rows}
-          open={!folded.has('plan')}
-          onToggle={() => {
-            toggle('plan');
-          }}
-          onOpenThread={onOpenThread}
-        />
+        {rows.length > SEARCH_FROM && (
+          <div className="px-4 pb-1 pt-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              placeholder="Search threads"
+              aria-label="Search threads"
+              className="w-full rounded-lg border border-droid-border bg-transparent px-2.5 py-1.5 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:border-droid-border-hover focus:outline-none"
+            />
+          </div>
+        )}
+
+        <div className="px-2">
+          <LayoutGroup>{current.map(renderGroup)}</LayoutGroup>
+        </div>
+
+        {!needle && (
+          <ProjectPlan
+            plan={plan}
+            rows={rows}
+            open={!folded.has('plan')}
+            onToggle={() => {
+              toggle('plan');
+            }}
+            onOpenThread={onOpenThread}
+          />
+        )}
 
         <div className="px-2 pb-3">
-          <LayoutGroup>
-            {groups.map((group) => {
-              const open = !folded.has(group.key);
-              return (
-                <div key={group.key} className="pt-3">
-                  <motion.div layout={!reduceMotion}>
-                    <SidebarSectionHeading
-                      label={`${group.label} · ${String(group.rows.length)}`}
-                      open={open}
-                      onToggle={() => {
-                        toggle(group.key);
-                      }}
-                    />
-                  </motion.div>
-                  {open &&
-                    group.rows.map((row) => (
-                      <ThreadRow
-                        key={row.appSessionId}
-                        row={row}
-                        now={now}
-                        active={row.appSessionId === activeAppSessionId}
-                        reduceMotion={reduceMotion}
-                        onOpen={onOpenThread}
-                      />
-                    ))}
-                </div>
-              );
-            })}
-          </LayoutGroup>
+          <LayoutGroup>{history.map(renderGroup)}</LayoutGroup>
           {rows.length === 0 && plan.length === 0 && (
             <p className="px-3 py-2 text-[13px] leading-5 text-droid-text-muted">
               This project has not started any threads. Tell its chat what to run in parallel and it
