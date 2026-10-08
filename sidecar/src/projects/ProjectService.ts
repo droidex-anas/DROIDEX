@@ -808,9 +808,10 @@ export class ProjectService {
   async stop(source: string, target: string): Promise<'stopped' | 'cancelled'> {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
+    const turnCount = this.turns.turnCount(target);
     this.wakes.invalidateTarget(target);
     await this.sessions.interrupt(target);
-    return this.quiet(project, target);
+    return this.quiet(project, target, turnCount);
   }
 
   async setPaused(id: string, paused: boolean, acknowledgeDelivery = false): Promise<void> {
@@ -874,6 +875,7 @@ export class ProjectService {
     // and a Stop then has to cancel that spawn like any other.
     const project = this.membership.get(appSessionId) ?? this.adopting.get(appSessionId);
     if (!project || this.closed) return;
+    const turnCount = this.turns.turnCount(appSessionId);
     if (!requireThread(project, appSessionId).ownerAppSessionId) {
       project.leadStopped = true;
       delete project.leadFailed;
@@ -882,7 +884,7 @@ export class ProjectService {
       return;
     }
     this.wakes.invalidateTarget(appSessionId);
-    await this.quiet(project, appSessionId);
+    await this.quiet(project, appSessionId, turnCount);
   }
 
   async userContinued(appSessionId: string): Promise<void> {
@@ -1033,7 +1035,11 @@ export class ProjectService {
   }
 
   /** Drops what was queued for a stopped thread once admission has settled. */
-  private async quiet(project: Project, target: string): Promise<'stopped' | 'cancelled'> {
+  private async quiet(
+    project: Project,
+    target: string,
+    turnCount: number,
+  ): Promise<'stopped' | 'cancelled'> {
     // A question asked after Stop began belongs to a newer turn; leave it with its owner.
     const askedBefore = requireThread(project, target).ask;
     await this.wakes.settle(project);
@@ -1043,9 +1049,8 @@ export class ProjectService {
       project.interrupted = project.interrupted.filter((id) => id !== target);
       if (!project.interrupted.length) delete project.interrupted;
     }
-    // A stopped thread stays stopped, with no continuation after a restart, unless
-    // a newer turn started while Stop settled.
-    if (!this.sessions.get(target)?.streaming) thread.stopped = true;
+    // A late interrupt receipt must not suppress restart recovery for a newer turn.
+    if (this.turns.turnCount(target) === turnCount) thread.stopped = true;
     this.inbox.forgetRecovery(target, project);
     const queued = thread.queuedSpawn;
     const checkoutOwner = queued?.workspace

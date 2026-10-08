@@ -420,7 +420,8 @@ export class ProjectWakeQueue {
           },
         });
         receipt = current() ? { status: 'busy', retryOn: 'target' } : { status: 'cancelled' };
-      } else receipt = await this.sessions.deliver(target, prompt, current);
+      } else
+        receipt = await this.sessions.deliver(target, prompt, current, isLead(project, target));
     } catch (error) {
       receipt = {
         status: 'unavailable',

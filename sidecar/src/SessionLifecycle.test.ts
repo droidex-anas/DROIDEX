@@ -2475,6 +2475,53 @@ test('automatic creates and resumes reserve the same twenty slots while user sta
   await h.lifecycle.closeAll();
 });
 
+test('a retired project lead wakes at the runtime cap when all twenty workers need answers', async (t) => {
+  const saved = wakeProject();
+  saved.pending = [];
+  saved.threads = [
+    saved.threads[0],
+    ...Array.from({ length: 20 }, (_, index) => ({
+      appSessionId: `worker-${index}`,
+      ownerAppSessionId: 'main',
+      title: `Worker ${index}`,
+      reply: '',
+      waiting: false,
+    })),
+  ];
+  const project = await projectHarness(t, [saved], false);
+  const h = createHarness([summary('main'), summary('cold-worker')]);
+  t.after(() => h.lifecycle.closeAll());
+  for (const thread of saved.threads.slice(1)) {
+    const provider = queueCreate(h, thread.appSessionId);
+    provider.deferNextStream();
+    assert.equal(await h.lifecycle.createAutomatic(createCommand(), thread.appSessionId), true);
+    await provider.waitForPrompts(1);
+    project.sessions.set(thread.appSessionId, { ...requireLive(h, thread.appSessionId).summary });
+    await project.streaming(thread.appSessionId, true);
+    await project.ask(thread.appSessionId, `ask-${thread.appSessionId}`);
+  }
+  project.port.get = (id) => h.registry.getCanonicalSummary(id);
+  project.port.isLive = (id) => h.registry.getLive(id) !== undefined;
+  project.port.runtimeLoad = () => h.lifecycle.runtimeLoad();
+  project.port.makeRoom = h.lifecycle.makeAutomaticRuntimeRoom.bind(h.lifecycle);
+  project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
+  const lead = queueLoad(h, 'main');
+  lead.deferNextStream();
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
+  assert.equal(await h.lifecycle.makeAutomaticRuntimeRoom('main'), false);
+
+  project.projects.historyReady();
+  await drain();
+  assert.equal(lead.prompts.length, 1, 'the lead resumes to answer its blocked workers');
+  assert.match(lead.prompts[0], /Which format/);
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 21, limit: 20 });
+  assert.equal(await h.lifecycle.createAutomatic(createCommand(), 'queued-worker'), false);
+  assert.deepEqual(await h.lifecycle.deliverScheduled('cold-worker', 'continue', () => true), {
+    status: 'busy',
+    retryOn: 'capacity',
+  });
+});
+
 test('registration publishes each runtime without double-counting its create reservation', async () => {
   const h = createHarness();
   for (let index = 0; index < 20; index += 1) {

@@ -81,6 +81,10 @@ export class ProjectTurns {
     this.activity.clear();
   }
 
+  turnCount(appSessionId: string): number {
+    return this.activity.turnCounts.get(appSessionId) ?? 0;
+  }
+
   private async settle(session: SessionSummary): Promise<void> {
     const project = this.d.project(session.appSessionId);
     if (!project) return;

@@ -64,6 +64,8 @@ needs no slot. A runtime idle for 30 minutes is released to save memory (only
 the three most recent idle ones may stay that long). A message to its thread
 brings it back with its conversation intact. Chats the user starts are never
 capped.
+Lead wakes may exceed the automatic limit so workers waiting for answers cannot
+deadlock the project. Worker resumes and queued spawns still honor the limit.
 
 **Stop and Pause.** Stop on the lead stops only the lead; workers continue and
 their reports wait until the user sends the lead a message or explicitly
@@ -72,6 +74,7 @@ resumes. Starting another thread never releases that Stop. Hold project (or
 `project_resume` continues those turns and drains retained reports; previously
 stopped threads stay stopped. A delivery loop above `max(60, 3 × threads)` in
 five minutes holds the project with a message naming the cause.
+A late Stop receipt does not mark a thread stopped if a newer turn has opened.
 
 **After a restart.** DROIDEX loads the transcripts first. Waiting messages and
 queued threads are kept. A queued thread keeps its initial task until its first
@@ -447,8 +450,9 @@ stop every other project's reports until the user comes back. Busy targets retai
 retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
-Automatic runtime opens and resumes share a limit of 20, including opens still
-in flight. Queued spawns keep their original task, checkout reservation and
+Automatic worker opens and resumes share a limit of 20, including opens still
+in flight; lead wakes may exceed it to keep coordination moving.
+Queued spawns keep their original task, checkout reservation and
 position in the ledger; checkout instructions are added only when launching.
 Workspace-free launches omit `cwd`; launch persistence failures hold only the
 affected project.

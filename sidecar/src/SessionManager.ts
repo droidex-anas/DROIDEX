@@ -1282,8 +1282,9 @@ export class SessionManager {
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
+    wakingProjectLead = false,
   ): Promise<AutomationDeliveryReceipt> {
-    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent);
+    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent, wakingProjectLead);
   }
 
   steerRunningTurn(

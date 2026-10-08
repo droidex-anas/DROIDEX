@@ -701,13 +701,16 @@ export class SessionLifecycle {
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
+    wakingProjectLead = false,
   ): Promise<AutomationDeliveryReceipt> {
+    // Lead wakes bypass the soft cap so workers waiting on the lead cannot deadlock.
+    const automatic = !wakingProjectLead;
     return deliverScheduledMessage(
       {
         dependencies: this.dependencies,
-        canResume: () => this.canStartAutomaticRuntime(),
+        canResume: () => !automatic || this.canStartAutomaticRuntime(),
         makeRoom: (id) => this.dependencies.releaseRuntimeForCapacity(id),
-        resume: (id) => this.resume(id, true),
+        resume: (id) => this.resume(id, automatic),
         start: (id, text, delivery) =>
           this.driveInBackground(id, { ...sessionPrompt(text), announce: true }, delivery),
       },

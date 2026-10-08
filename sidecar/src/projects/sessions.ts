@@ -30,6 +30,7 @@ export interface ProjectPort {
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
+    wakingProjectLead?: boolean,
   ): Promise<AutomationDeliveryReceipt>;
   interrupt(appSessionId: string): Promise<void>;
   /** Whether a question routed to an owner is still waiting on its thread. */
@@ -166,8 +167,13 @@ export class ProjectSessions implements ProjectPort {
     if (launch) launch.error = event.message;
   }
 
-  deliver(appSessionId: string, prompt: string, isCurrent: () => boolean) {
-    return this.host.deliverScheduledMessage(appSessionId, prompt, isCurrent);
+  deliver(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    wakingProjectLead = false,
+  ) {
+    return this.host.deliverScheduledMessage(appSessionId, prompt, isCurrent, wakingProjectLead);
   }
 
   isAsking(appSessionId: string, requestId: string): boolean {

@@ -27,10 +27,12 @@ export interface ThreadTurn {
  */
 export class ProjectActivity {
   private readonly turns = new Map<string, ThreadTurn>();
+  readonly turnCounts = new Map<string, number>();
 
   open(appSessionId: string): boolean {
     if (this.turns.has(appSessionId)) return false;
     this.turns.set(appSessionId, { text: '' });
+    this.turnCounts.set(appSessionId, (this.turnCounts.get(appSessionId) ?? 0) + 1);
     return true;
   }
 
@@ -58,6 +60,7 @@ export class ProjectActivity {
 
   clear(): void {
     this.turns.clear();
+    this.turnCounts.clear();
   }
 }
 
