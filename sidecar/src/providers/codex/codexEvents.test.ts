@@ -110,6 +110,275 @@ test('a server that failed before the first turn is still reported in it', async
   await events.return(undefined);
 });
 
+test('Codex steers wait for delivery and the RPC reply, and a new turn starts a fresh queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  // Codex never answers the first steer's request.
+  const firstRequest = new Promise<void>(() => undefined);
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method !== 'turn/steer') return undefined;
+    steers.push(params);
+    return steers.length === 1 ? firstRequest : undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
+
+  const first = session.steer('first');
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'the second request must wait for the first steer');
+  assert.equal(steers[0].expectedTurnId, 'turn-1');
+
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'an early delivery must still wait for the RPC reply');
+
+  notifications.get('error')?.({
+    threadId: 'thread-1',
+    error: { message: 'Turn failed' },
+    willRetry: false,
+  });
+  void session.steer('after failure');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'a reset must invalidate its target');
+
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'completed' },
+  });
+  assert.equal(await second, false, 'a queued steer must not follow a replacement turn');
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-2' } });
+  const third = session.steer('third');
+  const fourth = session.steer('fourth');
+  await new Promise((resolve) => setImmediate(resolve));
+  // The first steer's reply never came; it named turn-1 and cannot hold turn-2 back.
+  assert.equal(steers.length, 2, 'a new turn must not wait for a reply from the last one');
+  assert.equal(steers[1].expectedTurnId, 'turn-2');
+  assert.deepEqual(steers[1].input, [{ type: 'text', text: 'third' }]);
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await third, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 3);
+  assert.equal(steers[2].expectedTurnId, 'turn-2');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[2].clientUserMessageId },
+  });
+  assert.equal(await fourth, true);
+});
+
+test('a delegated turn completing preserves the active typed turn steer queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  let releaseFirstRequest: () => void = () => undefined;
+  const firstRequest = new Promise<void>((resolve) => {
+    releaseFirstRequest = resolve;
+  });
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method !== 'turn/steer') return undefined;
+    steers.push(params);
+    return steers.length === 1 ? firstRequest : undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  const first = session.steer('first');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1);
+  assert.equal(steers[0].expectedTurnId, 'typed-turn');
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn', status: 'completed' },
+  });
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'delegated completion must not release the typed queue');
+
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true, 'delegated completion must not drop a typed steer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'the second steer must still wait for the first RPC reply');
+  releaseFirstRequest();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2);
+  assert.equal(steers[1].expectedTurnId, 'typed-turn');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await second, true);
+});
+
+test('a delegated turn starting preserves the typed turn accepted Stop', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method === 'turn/steer') {
+      steers.push(params);
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  await session.interrupt();
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  assert.equal(await session.steer('after Stop'), false);
+  assert.equal(steers.length, 0, 'the accepted typed Stop must still block steering');
+});
+
+test('a delegated turn fatal error preserves the typed stream and steer queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method === 'turn/steer') steers.push(params);
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  const first = session.steer('first');
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1);
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  notifications.get('error')?.({
+    threadId: 'thread-1',
+    turnId: 'delegated-turn',
+    error: { message: 'Spoken request failed' },
+    willRetry: false,
+  });
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true, 'the delegated error must not drop the typed steer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2);
+  assert.equal(steers[1].expectedTurnId, 'typed-turn');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await second, true);
+
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  const remaining = [];
+  for await (const event of events) remaining.push(event);
+  assert.ok(
+    remaining.some((event) => event.done),
+    'the typed stream must complete normally',
+  );
+});
+
+test('a refused Stop reopens steering only when no Stop was accepted for that turn', async (t) => {
+  let releaseTurn: (response: { turn: { id: string } }) => void = () => undefined;
+  const turnStart = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseTurn = resolve;
+  });
+  let interrupts = 0;
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return turnStart;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    if (method === 'turn/interrupt') {
+      interrupts += 1;
+      if (interrupts === 1 || interrupts === 3) throw new Error('Stop refused');
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  const first = events.next();
+  await session.interrupt();
+  releaseTurn({ turn: { id: 'turn-1' } });
+  await first;
+
+  assert.equal(
+    await session.steer('after refusal'),
+    true,
+    'a refused early Stop restores steering',
+  );
+
+  await session.interrupt();
+  await assert.rejects(session.interrupt(), /Stop refused/);
+  assert.equal(
+    await session.steer('after duplicate'),
+    false,
+    'the accepted Stop still owns the turn',
+  );
+  await events.return(undefined);
+});
+
 test('Codex approvals retain file diffs and questions retain answer arrays', async () => {
   const mapper = new CodexEventMapper('app');
   const changes = [{ path: '/workspace/a.ts', kind: { type: 'update' }, diff: '-old\n+new' }];
