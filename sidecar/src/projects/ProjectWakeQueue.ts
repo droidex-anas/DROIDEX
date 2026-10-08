@@ -2,6 +2,8 @@ import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { ProjectPort } from './sessions.js';
 import type { Project, ProjectThread, ThreadMessage, ThreadWait } from './types.js';
 import { wakePrompt, isAsked, isOwnerUpdate, batch } from './projectMessages.js';
+import { inboxFull } from './projectInbox.js';
+import { requireThread } from './projectTurns.js';
 
 const MAX_ACTIVE = 2;
 
@@ -397,10 +399,16 @@ export class ProjectWakeQueue {
             void this.save().catch(() => undefined);
           },
           declined: (reason) => {
-            if (reason !== 'refused' || !handedOff || this.closed) return;
+            if (reason !== 'refused' || !handedOff || !isCurrent()) return;
             handedOff = false;
             for (const message of messages) this.acceptedMessages.delete(message);
-            project.pending.unshift(...messages.filter(relevant));
+            for (const message of messages.filter(relevant).reverse()) {
+              if (message.kind === 'result' && inboxFull(project)) {
+                const thread = requireThread(project, message.from);
+                thread.owedReport ??= { text: message.text, replyId: message.replyId };
+                if (message.to !== thread.ownerAppSessionId) thread.owedLeadAlert = true;
+              } else project.pending.unshift(message);
+            }
             this.recent.get(project.id)?.pop();
             this.park(target, 'target', capacityRevision, targetRevision);
             void this.save()

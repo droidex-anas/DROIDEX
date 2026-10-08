@@ -261,6 +261,70 @@ test('a main-shaped ledger loads string owed reports and saves the canonical rep
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), loaded);
 });
 
+test('a refused report waits outside a full inbox, persists and delivers when room opens', async (t) => {
+  const store = new ProjectStore(await ledgerPath(t));
+  const saved = wakeProject();
+  saved.pending = [];
+  await store.save([saved]);
+  const h = await harness(t, [], false);
+  h.projects.close();
+  h.sessions.set('main', summary('main'));
+  h.sessions.set('worker', summary('worker'));
+  const reportSaved = deferred();
+  const projects = await ProjectService.open(h.port, store, (event) => {
+    h.events.push(event);
+    if (h.steered.some(({ prompt }) => prompt.includes('Retain this report.')))
+      reportSaved.resolve();
+  });
+  t.after(() => projects.close());
+  t.mock.method(h.projects, 'observe', projects.observe.bind(projects));
+  const refusal = deferred<boolean>();
+  const steer = h.port.steer;
+  h.port.steer = async (_target, _prompt, _current, _now, delivery) => {
+    delivery?.accepted();
+    void refusal.promise.then((accepted) => {
+      if (!accepted) delivery?.declined('refused');
+    });
+    return true;
+  };
+  await h.streaming('main', true);
+  await h.streaming('worker', true);
+  projects.historyReady();
+  await h.finish('worker', 'Retain this report.');
+  await drain();
+  await projects.flush();
+  assert.equal((await store.load())[0].pending.length, 0);
+  h.state.capacity = 'busy';
+  for (let index = 0; index < LEDGER_LIMITS.inbox; index += 1)
+    await projects.send('main', 'worker', `Task ${index}`, 'queue');
+  await drain();
+
+  refusal.resolve(false);
+  await drain();
+  await projects.flush();
+  const [retained] = await store.load();
+  const worker = retained.threads.find((thread) => thread.appSessionId === 'worker');
+  assert.equal(retained.pending.length, LEDGER_LIMITS.inbox);
+  assert.equal(projects.list()[0].queued, LEDGER_LIMITS.inbox);
+  assert.deepEqual(worker?.owedReport, { text: 'Retain this report.', replyId: worker?.replyId });
+  assert.equal(retained.paused, false);
+  await projects.resume('main');
+  assert.equal((await store.load())[0].paused, false);
+
+  h.port.steer = steer;
+  h.state.capacity = 'free';
+  projects.capacityChanged();
+  await reportSaved.promise;
+  const reports = h.steered.filter(({ prompt }) => prompt.includes('Retain this report.'));
+  assert.equal(reports.length, 1);
+  const [delivered] = await store.load();
+  assert.equal(
+    delivered.threads.find((thread) => thread.appSessionId === 'worker')?.owedReport,
+    undefined,
+  );
+  assert.ok(delivered.pending.length <= LEDGER_LIMITS.inbox);
+});
+
 test('workspace-free spawns persist at either capacity and a failed spawn holds only its project', async (t) => {
   const store = new ProjectStore(await ledgerPath(t));
   const h = await harness(t, [], false);

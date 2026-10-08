@@ -2255,6 +2255,51 @@ test('Send now and Stop after report handoff never replay it and leave its reply
   assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
 });
 
+test('a late report refusal cannot restart its stopped nested owner', async (t) => {
+  const project = await projectHarness(t);
+  const { main } = await project.root();
+  const owner = await project.projects.spawn(main, projectInput);
+  const child = await project.projects.spawn(owner.appSessionId, projectInput);
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, owner.appSessionId);
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, owner.appSessionId);
+  const refusal = turnGate();
+  live.session.steer = () => refusal.promise.then(() => false);
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  project.port.interrupt = async (id) => {
+    await h.lifecycle.interrupt(id);
+    await project.streaming(id, false);
+  };
+  await project.finish(child.appSessionId, 'Nested report.');
+  await drain();
+  assert.equal(project.state.saved[0].pending.length, 0);
+  assert.equal(project.state.saved[0].delivery, undefined);
+
+  await project.projects.stop(main, owner.appSessionId);
+  turn.resolve();
+  await live.turnPromise;
+  refusal.resolve();
+  await drain();
+  assert.equal(project.sessions.get(owner.appSessionId)?.streaming, false);
+  const stopped = project.state.saved[0].threads.find(
+    (thread) => thread.appSessionId === owner.appSessionId,
+  );
+  assert.equal(stopped?.stopped, true);
+  assert.equal(
+    project.state.saved[0].pending.some((message) => message.to === owner.appSessionId),
+    false,
+  );
+  assert.equal(
+    project.sent.some(({ id }) => id === owner.appSessionId),
+    false,
+  );
+  assert.deepEqual(provider.prompts, ['working']);
+});
+
 test('Claude withdrawal rejection after Stop leaves a handed-off report unread', async (t) => {
   const project = await projectHarness(t);
   const { main } = await project.root();
