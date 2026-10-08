@@ -1835,6 +1835,38 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   assert.ok(
     harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
   );
+
+  queueLoad(harness, 'cold-close');
+  assert.equal(await harness.lifecycle.resume('cold-close'), true);
+  await harness.lifecycle.close('cold-close');
+  await harness.lifecycle.close('cold-close');
+  queueLoad(harness, 'cold-close');
+  assert.equal(await harness.lifecycle.resume('cold-close'), true);
+  await harness.lifecycle.closeAll();
+});
+
+test('closing a pending fork refuses its first open but permits a later resume', async (t) => {
+  const harness = createHarness([summary('unopened-copy', 'provider-copy')]);
+  t.after(() => harness.lifecycle.closeAll());
+  const provider = queueLoad(harness, 'provider-copy');
+
+  harness.lifecycle.beginForkOpen('provider-copy');
+  await harness.lifecycle.close('provider-copy');
+  await harness.lifecycle.send('unopened-copy', 'Do not reopen');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), false);
+
+  assert.equal(harness.registry.getLive('unopened-copy'), undefined);
+  assert.equal(harness.runtime.loadCalls.length, 0);
+  assert.deepEqual(provider.prompts, []);
+
+  harness.lifecycle.endForkOpen('provider-copy');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), true);
+
+  harness.lifecycle.beginForkOpen('provider-copy');
+  await harness.lifecycle.close('provider-copy');
+  await harness.lifecycle.closeAll();
+  queueLoad(harness, 'provider-copy');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), true);
 });
 
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {
