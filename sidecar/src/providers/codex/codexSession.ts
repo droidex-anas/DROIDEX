@@ -1,8 +1,6 @@
 // One `codex app-server` process per DROIDEX session, holding one thread. Turns
 // run on that thread; model, effort and autonomy ride on each `turn/start`,
 // which Codex applies to that turn and the ones after it.
-import { randomUUID } from 'node:crypto';
-
 import type { NormalizedEvent } from '../../normalize.js';
 import type { SdkMcpServer } from '@factory/droid-sdk';
 import type { Autonomy } from '../../protocol.js';
@@ -12,6 +10,7 @@ import type {
   DelegatedTurnEnd,
   ProviderModelSettings,
   ProviderSession,
+  SteerOutcome,
   UsageMetersListener,
 } from '../session.js';
 import type { AppServerClient } from './appServer.js';
@@ -37,6 +36,7 @@ export interface CodexSessionInput {
   // DROIDEX's own identity for the session. Codex mints its thread id itself,
   // which the session carries separately as its resume handle.
   appSessionId: string;
+  providerSessionId?: string;
   client: AppServerClient;
   cwd: string;
   autonomy: Autonomy;
@@ -104,10 +104,13 @@ export class CodexSession implements ProviderSession {
   >();
   // Steers waiting to send or held by the running turn, until Codex reports
   // delivery or the turn ends without them.
-  private readonly steers = new Map<string, (delivered: boolean) => void>();
+  private readonly steers = new Map<string, (delivered: SteerOutcome) => void>();
   // Echoes wait for queued output and acknowledge in send order, even after
   // turn completion releases this.turn.
-  private readonly steerEchoes = new Map<(delivered: boolean) => void, boolean | undefined>();
+  private readonly steerEchoes = new Map<
+    (delivered: SteerOutcome) => void,
+    SteerOutcome | undefined
+  >();
   private steerTail: Promise<void> = Promise.resolve();
   // A thread's MCP servers start before its first turn, so a notice about one
   // has no transcript to land in yet and waits for the turn that follows.
@@ -116,7 +119,7 @@ export class CodexSession implements ProviderSession {
   readonly usage: CodexRateLimits;
 
   constructor(input: CodexSessionInput) {
-    this.providerSessionId = input.appSessionId;
+    this.providerSessionId = input.providerSessionId ?? input.appSessionId;
     this.closed = new Promise((resolve) => {
       this.resolveClosed = (error) => {
         this.hasClosed = true;
@@ -482,7 +485,11 @@ export class CodexSession implements ProviderSession {
   // server's own precondition, so a steer aimed at a turn that has already
   // settled is refused rather than applied to whatever runs now. A steer keeps
   // the turn's id, so Stop still reaches the same turn.
-  steer(text: string, mentions?: ProviderMention[]): Promise<boolean> {
+  steer(
+    text: string,
+    mentions: ProviderMention[] | undefined,
+    steerId: string,
+  ): Promise<SteerOutcome> {
     const threadId = this.threadId;
     // A turn started for a spoken request takes a typed prompt the same way.
     const turnId = this.turn ? this.turnId : this.delegatedTurnId;
@@ -495,8 +502,8 @@ export class CodexSession implements ProviderSession {
       turnId === this.failedTurnId
     )
       return Promise.resolve(false);
-    const clientUserMessageId = randomUUID();
-    const delivered = new Promise<boolean>((resolve) => {
+    const clientUserMessageId = steerId;
+    const delivered = new Promise<SteerOutcome>((resolve) => {
       this.steers.set(clientUserMessageId, resolve);
     });
     this.steerTail = this.steerTail.then(async () => {
@@ -524,7 +531,7 @@ export class CodexSession implements ProviderSession {
     return delivered;
   }
 
-  private settleSteer(clientUserMessageId: string, delivered: boolean): void {
+  private settleSteer(clientUserMessageId: string, delivered: SteerOutcome): void {
     this.steers.get(clientUserMessageId)?.(delivered);
     this.steers.delete(clientUserMessageId);
   }
@@ -537,7 +544,7 @@ export class CodexSession implements ProviderSession {
     this.steerTail = Promise.resolve();
   }
 
-  private settleSteerEchoes(delivered: boolean): void {
+  private settleSteerEchoes(delivered: SteerOutcome): void {
     for (const [resolve, ready] of this.steerEchoes) resolve(ready ?? delivered);
     this.steerEchoes.clear();
   }
@@ -582,7 +589,7 @@ export class CodexSession implements ProviderSession {
     this.releaseTurnStart();
     this.turn?.discard();
     this.dropSteers();
-    this.settleSteerEchoes(false);
+    this.settleSteerEchoes('unconfirmed');
     this.prompts.cancel();
     this.catalog?.close();
     return (this.closePromise ??= this.client.close());
@@ -758,6 +765,15 @@ export class CodexSession implements ProviderSession {
           canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId))
         );
       },
+      (request, actor) =>
+        actor.provider === 'codex' &&
+        actor.autonomy !== 'off' &&
+        !this.hasClosed &&
+        this.turnId !== undefined &&
+        request.threadId === this.threadId &&
+        request.turnId === this.turnId &&
+        canApproveWorkspaceEdits(actor.cwd, this.mapper.fileChanges(request.itemId)) &&
+        canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
     );
     // Codex can ask for things this build has no card for. They are refused at
     // the transport, and the chat says so: a silent refusal reads as the turn
@@ -807,7 +823,7 @@ export class CodexSession implements ProviderSession {
     if (!resolve) return;
     // The echo survives turn settlement, but its row must follow queued output.
     this.steers.delete(clientId);
-    const settle = (delivered: boolean) => {
+    const settle = (delivered: SteerOutcome) => {
       if (!this.steerEchoes.has(resolve)) return;
       this.steerEchoes.set(resolve, delivered);
       for (const [acknowledge, ready] of this.steerEchoes) {

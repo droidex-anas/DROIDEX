@@ -1,7 +1,9 @@
 import { useReducedMotion } from 'framer-motion';
+import { toast } from '../../lib/toast';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import type { UtilityTab } from '../../lib/utilityPanel';
 import type { TranscriptEvent } from '../../types/bridge';
+import { resumeProject } from './client';
 import { PaneTransition } from './PaneTransition';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList } from './ThreadList';
@@ -71,6 +73,17 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             startedAt={project?.startedAt}
             done={project?.done}
             held={project?.paused === true}
+            uncertain={project?.uncertain ?? 0}
+            leadStopped={project?.leadStopped === true}
+            {...(project
+              ? {
+                  onResume: () => {
+                    resumeProject(project.id).catch((error: unknown) => {
+                      toast.error(error instanceof Error ? error.message : String(error));
+                    });
+                  },
+                }
+              : {})}
             now={now}
             error={project?.error ?? ''}
             activeAppSessionId={session?.appSessionId}

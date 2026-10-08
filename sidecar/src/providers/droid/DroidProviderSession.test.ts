@@ -443,7 +443,7 @@ test('a delivered steer follows earlier output in both the main stream and the t
         h.answer('after');
         h.state('idle');
       });
-      await h.session.steer('steer').then((delivered) => {
+      await h.session.steer('steer', undefined, 'steer').then((delivered) => {
         assert.equal(delivered, true);
         rows.push('steer');
       });
@@ -485,7 +485,7 @@ test(
       h.showUserMessage(messageId, 'try again');
       h.state('idle');
     });
-    const steered = h.session.steer('try again');
+    const steered = h.session.steer('try again', undefined, 'try again');
     await steer;
     assert.equal(await steered, true);
     // The turn reads the idle before the reply loop starts.
@@ -510,7 +510,7 @@ test(
     const events = turnEvents(h.session.stream('hello'));
     await prompt;
     const steer = h.nextRequest('droid.add_user_message');
-    const steered = h.session.steer('try again');
+    const steered = h.session.steer('try again', undefined, 'try again');
     const { messageId } = await steer;
     h.state('idle');
     await turnCatchesUp();
@@ -542,7 +542,7 @@ test(
         h.fail();
         h.state('idle');
       });
-      const steered = h.session.steer('try again');
+      const steered = h.session.steer('try again', undefined, 'try again');
       await steer;
       assert.equal(await steered, true);
       await turnCatchesUp();
@@ -577,7 +577,7 @@ test(
       h.fail();
       h.state('idle');
     });
-    const steered = h.session.steer('try again');
+    const steered = h.session.steer('try again', undefined, 'try again');
     await steer;
     assert.equal(await steered, true);
     await turnCatchesUp();

@@ -25,6 +25,9 @@ import { parseStoredNotice } from './sessionNotices.js';
 const MAX_TEXT_CHARS = 12_000;
 const MAX_APP_ANSWER_CHARS = 256_000;
 
+// Droid persists caller-supplied message ids; native writers use the same marker.
+export const STEER_MESSAGE_PREFIX = 'droidex-steer-';
+
 export function isLlmOnlyMessage(message: unknown): boolean {
   return objectValue(message)?.visibility === 'llm_only';
 }
@@ -108,6 +111,7 @@ function assistantBlockEvent(
   index: number,
   block: Record<string, unknown>,
   forkPointId: string | undefined,
+  fullText: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'thinking') {
@@ -118,7 +122,8 @@ function assistantBlockEvent(
     return text ? event(base, index, 'thinking', { text }) : null;
   }
   if (type === 'text') {
-    const text = trimAnswerText(nonEmpty(stringValue(block.text)));
+    const answer = nonEmpty(stringValue(block.text));
+    const text = fullText ? answer : trimAnswerText(answer);
     if (!text) return null;
     return event(base, index, 'text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
@@ -204,7 +209,7 @@ export function parseSessionLineEvents(
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
-  { textOnly = false }: { textOnly?: boolean } = {},
+  { textOnly = false, fullText = false }: { textOnly?: boolean; fullText?: boolean } = {},
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -296,9 +301,13 @@ export function parseSessionLineEvents(
     }
     const parsed =
       messageRole === 'assistant'
-        ? assistantBlockEvent(base, index, block, forkPointId)
+        ? assistantBlockEvent(base, index, block, forkPointId, fullText)
         : nonAssistantBlockEvent(base, index, block, messageRole, textOnly);
-    if (parsed) events.push(parsed);
+    if (parsed) {
+      if (parsed.author === 'user' && line.id?.startsWith(STEER_MESSAGE_PREFIX))
+        parsed.steered = true;
+      events.push(parsed);
+    }
   });
   return events;
 }

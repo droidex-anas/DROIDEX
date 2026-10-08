@@ -1,5 +1,5 @@
 import type { SessionSummary } from '../protocol.js';
-import type { ProjectPort } from './ProjectService.js';
+import type { ProjectPort } from './sessions.js';
 import {
   CHAT_BRIEF,
   checkWithinAutonomy,

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   convertNotificationToStreamMessage,
   DroidWorkingState,
@@ -7,6 +6,8 @@ import {
   type DroidStreamEvent,
 } from '@factory/droid-sdk';
 import { extractNotification } from './normalize.js';
+import type { SteerOutcome } from './providers/session.js';
+import { STEER_MESSAGE_PREFIX } from './sessionTranscriptParser.js';
 
 // Notices of Droid working on its loop. A busy working state counts too; an
 // error does not, since a loop can fail before it takes up a steer.
@@ -26,7 +27,7 @@ const SDK_STATES: ReadonlySet<string> = new Set(Object.values(DroidWorkingState)
 export class DroidTurn {
   private readonly deliveries = new Map<
     string,
-    { resolve: (delivered: boolean) => void; received: boolean }
+    { resolve: (delivered: SteerOutcome) => void; received: boolean }
   >();
   private readonly tracker: StreamStateTracker;
   private readonly tail: unknown[] = [];
@@ -54,12 +55,16 @@ export class DroidTurn {
     this.tracker = new StreamStateTracker({ sessionId, startedAt: Date.now() });
   }
 
-  steer(client: DroidClient, text: string): Promise<boolean> {
-    // Embedded slash commands can fail without a delivery or discard notice.
-    if (!this.acceptingSteers || this.interrupting || /(^|\s)\//.test(text))
+  steer(
+    client: Pick<DroidClient, 'addUserMessage'>,
+    text: string,
+    steerId: string,
+  ): Promise<SteerOutcome> {
+    // Leading slash commands can fail without a delivery or discard notice.
+    if (!this.acceptingSteers || this.interrupting || /^\s*\//.test(text))
       return Promise.resolve(false);
-    const messageId = randomUUID();
-    const delivered = new Promise<boolean>((resolve) =>
+    const messageId = `${STEER_MESSAGE_PREFIX}${steerId}`;
+    const delivered = new Promise<SteerOutcome>((resolve) =>
       this.deliveries.set(messageId, { resolve, received: false }),
     );
     void client.addUserMessage({ text, messageId }).catch(() => {
@@ -235,7 +240,7 @@ export class DroidTurn {
     const delivery = this.deliveries.get(messageId);
     // A rejection or interrupt cannot undo an echo still waiting behind output.
     if (!delivered && delivery?.received && !this.stopped) return;
-    delivery?.resolve(delivered);
+    delivery?.resolve(!delivered && delivery.received ? 'unconfirmed' : delivered);
     this.deliveries.delete(messageId);
     this.wake?.();
   }

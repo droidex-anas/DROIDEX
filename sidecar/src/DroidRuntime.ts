@@ -22,9 +22,9 @@ import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
 import { DroidTurn } from './DroidTurn.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
+import type { SteerOutcome } from './providers/session.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
-const SESSION_INIT_TIMEOUT_MS = 20_000;
 const ignoreError = (): void => undefined;
 
 export interface RuntimeHandlers {
@@ -128,7 +128,7 @@ export interface FactoryRuntime {
   readContextBreakdown(session: FactorySession): Promise<unknown>;
   processIdOf(session: FactorySession): number | undefined;
   isProcessAlive(session: FactorySession): boolean;
-  steer(session: FactorySession, text: string): Promise<boolean>;
+  steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome>;
   streamTurn(
     session: FactorySession,
     prompt: string,
@@ -147,10 +147,10 @@ export class DroidRuntime implements FactoryRuntime {
   >();
   private readonly turns = new WeakMap<object, DroidTurn>();
 
-  steer(session: FactorySession, text: string): Promise<boolean> {
+  steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome> {
     const client = this.processes.get(session)?.client;
     const turn = this.turns.get(session);
-    return client && turn ? turn.steer(client, text) : Promise.resolve(false);
+    return client && turn ? turn.steer(client, text, steerId) : Promise.resolve(false);
   }
 
   observeNotification(session: FactorySession, notification: Record<string, unknown>): void {
@@ -251,11 +251,7 @@ export class DroidRuntime implements FactoryRuntime {
     // the process that just started must go with it.
     try {
       const params = createInitializeSessionParams(options);
-      const init = await withTimeout(
-        client.initializeSession(params),
-        SESSION_INIT_TIMEOUT_MS,
-        'initialize_session',
-      );
+      const init = await client.initializeSession(params);
       const session = new DroidSession(client, init.sessionId, init);
       const pid = transport.processId;
       if (pid !== undefined) this.processes.set(session, { pid, transport, client });
@@ -265,7 +261,7 @@ export class DroidRuntime implements FactoryRuntime {
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
-      throw err;
+      throw explainInitFailure(err);
     }
   }
 
@@ -274,11 +270,7 @@ export class DroidRuntime implements FactoryRuntime {
     const params: LoadSessionRequestParams = { sessionId };
     if (handlers.mcpServers?.length) params.mcpServers = handlers.mcpServers;
     try {
-      const init = await withTimeout(
-        client.loadSession(params),
-        SESSION_INIT_TIMEOUT_MS,
-        'load_session',
-      );
+      const init = await client.loadSession(params);
       const session = new DroidSession(client, sessionId, init);
       const pid = transport.processId;
       if (pid !== undefined) this.processes.set(session, { pid, transport, client });
@@ -288,7 +280,7 @@ export class DroidRuntime implements FactoryRuntime {
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
-      throw explainLoadFailure(sessionId, err);
+      throw explainInitFailure(explainLoadFailure(sessionId, err));
     }
   }
 
@@ -448,18 +440,10 @@ function missionSettingsFor(
   };
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`Droid ${label} timed out after ${String(timeoutMs)}ms`));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+function explainInitFailure(error: unknown): unknown {
+  if (!(error instanceof Error) || !/timed?\s*out|timeout/i.test(error.message)) return error;
+  return new Error(
+    'Droid did not finish opening this session within 60 seconds. Send again to retry.',
+    { cause: error },
+  );
 }
