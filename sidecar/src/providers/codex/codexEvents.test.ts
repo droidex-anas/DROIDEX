@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-import type { AppServerClient } from './appServer.js';
 import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
-import type { PermissionOutcome } from '../../protocol.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
-import { CodexSession } from './codexSession.js';
+import { codexSession, fakeClient } from './codexTestSupport.js';
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
 const FAILED = {
@@ -21,52 +16,6 @@ const FAILED = {
   failureReason: null,
 };
 const STARTING = { ...FAILED, status: 'starting', error: null };
-
-/**
- * An app-server client that records notification and request handlers and
- * answers requests with `request`, or with an empty catalog page.
- */
-function fakeClient(request: (method: string, params: Record<string, unknown>) => unknown) {
-  const notifications = new Map<string, (params: unknown) => void>();
-  const requests = new Map<string, (params: unknown) => Promise<unknown>>();
-  const client = {
-    onNotification: (method: string, handler: (params: unknown) => void) =>
-      notifications.set(method, handler),
-    onRequest: (method: string, handler: (params: unknown) => Promise<unknown>) =>
-      requests.set(method, handler),
-    onUnsupportedRequest: () => undefined,
-    onClose: () => undefined,
-    notify: () => undefined,
-    close: async () => undefined,
-    request: async (method: string, params: Record<string, unknown>) => {
-      if (method === 'skills/list') return { data: [] };
-      if (method === 'plugin/installed') return { marketplaces: [] };
-      return (await request(method, params)) ?? { data: [], nextCursor: null };
-    },
-  } as unknown as AppServerClient;
-  return { client, notifications, requests };
-}
-
-function codexSession(
-  client: AppServerClient,
-  appSessionId: string,
-  cwd = '/tmp',
-  requestApproval: () => Promise<PermissionOutcome> = () => Promise.reject(new Error('unused')),
-): CodexSession {
-  return new CodexSession({
-    appSessionId,
-    client,
-    cwd,
-    autonomy: 'low',
-    model: {},
-    interactions: {
-      requestApproval,
-      requestQuestion: async () => ({ cancelled: true, answers: [] }),
-      isActive: () => true,
-      cancelPending: () => undefined,
-    },
-  });
-}
 
 test('a failed MCP server is read once per server, and its startup is not', () => {
   const mapper = new CodexEventMapper('app-1');
@@ -107,6 +56,428 @@ test('a server that failed before the first turn is still reported in it', async
   assert.ok(!first.done, 'the turn ended without reporting the failed server');
   assert.equal(first.value.transcript?.kind, 'status');
   assert.match(first.value.transcript?.text ?? '', /broken_probe/);
+  await events.return(undefined);
+});
+
+test('Codex steers wait for delivery and the RPC reply, and a new turn starts a fresh queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  // Codex never answers the first steer's request.
+  const firstRequest = new Promise<void>(() => undefined);
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method !== 'turn/steer') return undefined;
+    steers.push(params);
+    return steers.length === 1 ? firstRequest : undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
+
+  const first = session.steer('first');
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'the second request must wait for the first steer');
+  assert.equal(steers[0].expectedTurnId, 'turn-1');
+
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'an early delivery must still wait for the RPC reply');
+
+  notifications.get('error')?.({
+    threadId: 'thread-1',
+    error: { message: 'Turn failed' },
+    willRetry: false,
+  });
+  void session.steer('after failure');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'a reset must invalidate its target');
+
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'completed' },
+  });
+  assert.equal(await second, false, 'a queued steer must not follow a replacement turn');
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-2' } });
+  const third = session.steer('third');
+  const fourth = session.steer('fourth');
+  await new Promise((resolve) => setImmediate(resolve));
+  // The first steer's reply never came; it named turn-1 and cannot hold turn-2 back.
+  assert.equal(steers.length, 2, 'a new turn must not wait for a reply from the last one');
+  assert.equal(steers[1].expectedTurnId, 'turn-2');
+  assert.deepEqual(steers[1].input, [{ type: 'text', text: 'third' }]);
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await third, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 3);
+  assert.equal(steers[2].expectedTurnId, 'turn-2');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[2].clientUserMessageId },
+  });
+  assert.equal(await fourth, true);
+});
+
+test('a delegated turn completing preserves the active typed turn steer queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  let releaseFirstRequest: () => void = () => undefined;
+  const firstRequest = new Promise<void>((resolve) => {
+    releaseFirstRequest = resolve;
+  });
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method !== 'turn/steer') return undefined;
+    steers.push(params);
+    return steers.length === 1 ? firstRequest : undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  const first = session.steer('first');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1);
+  assert.equal(steers[0].expectedTurnId, 'typed-turn');
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn', status: 'completed' },
+  });
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'delegated completion must not release the typed queue');
+
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  // The typed stream must consume the echo before delivery is acknowledged.
+  const nextEvent = events.next();
+  assert.equal(await first, true, 'delegated completion must not drop a typed steer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'the second steer must still wait for the first RPC reply');
+  releaseFirstRequest();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2);
+  assert.equal(steers[1].expectedTurnId, 'typed-turn');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await second, true);
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  await nextEvent;
+});
+
+test('process closure preserves a steer echoed while the turn start reply is outstanding', async (t) => {
+  let releaseStart: (response: { turn: { id: string } }) => void = () => undefined;
+  const startReply = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseStart = resolve;
+  });
+  const { client, notifications, endProcess } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return startReply;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  const events = session.stream('hello');
+  const firstEvent = events.next();
+  t.after(async () => {
+    releaseStart({ turn: { id: 'typed-turn' } });
+    await session.close();
+    await Promise.allSettled([firstEvent]);
+    await events.return(undefined);
+  });
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn' },
+  });
+  const delivered = session.steer('follow up');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'pending');
+
+  const failure = new Error('Codex process exited');
+  endProcess(failure);
+  assert.equal(await delivered, true, 'an echoed steer must not be resent after resume');
+  releaseStart({ turn: { id: 'typed-turn' } });
+  await assert.rejects(firstEvent, failure);
+});
+
+test('a delegated steer waits for an earlier typed echo awaiting the turn start reply', async (t) => {
+  let releaseStart: (response: { turn: { id: string } }) => void = () => undefined;
+  const startReply = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseStart = resolve;
+  });
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return startReply;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  const events = session.stream('hello');
+  const firstEvent = events.next();
+  t.after(async () => {
+    releaseStart({ turn: { id: 'typed-turn' } });
+    await session.close();
+    await firstEvent;
+    await events.return(undefined);
+  });
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn' },
+  });
+  const acknowledgements: { text: string; delivered: boolean }[] = [];
+  const first = session.steer('first').then((delivered) => {
+    acknowledgements.push({ text: 'first', delivered });
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  const second = session.steer('second').then((delivered) => {
+    acknowledgements.push({ text: 'second', delivered });
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(acknowledgements, [], 'the delegated echo must wait for the typed echo');
+
+  releaseStart({ turn: { id: 'typed-turn' } });
+  await firstEvent;
+  await Promise.all([first, second]);
+  assert.deepEqual(acknowledgements, [
+    { text: 'first', delivered: true },
+    { text: 'second', delivered: true },
+  ]);
+});
+
+test('close discards a queued Codex steer echo after its turn completes', async (t) => {
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') {
+      notifications.get('item/agentMessage/delta')?.({
+        threadId: 'thread-1',
+        itemId: 'message-1',
+        delta: 'before the steer',
+      });
+      return { turn: { id: 'turn-1' } };
+    }
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  assert.equal((await events.next()).value?.transcript?.text, 'before the steer');
+  const delivered = session.steer('follow up');
+  await new Promise((resolve) => setImmediate(resolve));
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'completed' },
+  });
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'pending');
+
+  await session.close();
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), false);
+});
+
+test('a delegated turn starting preserves the typed turn accepted Stop', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method === 'turn/steer') {
+      steers.push(params);
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  await session.interrupt();
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  assert.equal(await session.steer('after Stop'), false);
+  assert.equal(steers.length, 0, 'the accepted typed Stop must still block steering');
+});
+
+test('a delegated turn fatal error preserves the typed stream and steer queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method === 'turn/steer') steers.push(params);
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  const first = session.steer('first');
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1);
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  notifications.get('error')?.({
+    threadId: 'thread-1',
+    turnId: 'delegated-turn',
+    error: { message: 'Spoken request failed' },
+    willRetry: false,
+  });
+  assert.equal((await events.next()).value?.transcript?.text, 'Spoken request failed');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  // The typed stream must consume the echo before delivery is acknowledged.
+  const nextEvent = events.next();
+  assert.equal(await first, true, 'the delegated error must not drop the typed steer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2);
+  assert.equal(steers[1].expectedTurnId, 'typed-turn');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await second, true);
+
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  const next = await nextEvent;
+  const remaining = next.done ? [] : [next.value];
+  for await (const event of events) remaining.push(event);
+  assert.ok(
+    remaining.some((event) => event.done),
+    'the typed stream must complete normally',
+  );
+});
+
+test('a refused Stop reopens steering only when no Stop was accepted for that turn', async (t) => {
+  let releaseTurn: (response: { turn: { id: string } }) => void = () => undefined;
+  const turnStart = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseTurn = resolve;
+  });
+  let interrupts = 0;
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return turnStart;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    if (method === 'turn/interrupt') {
+      interrupts += 1;
+      if (interrupts === 1 || interrupts === 3) throw new Error('Stop refused');
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  const first = events.next();
+  await session.interrupt();
+  releaseTurn({ turn: { id: 'turn-1' } });
+  await first;
+  const next = events.next();
+
+  assert.equal(
+    await session.steer('after refusal'),
+    true,
+    'a refused early Stop restores steering',
+  );
+
+  await session.interrupt();
+  await assert.rejects(session.interrupt(), /Stop refused/);
+  assert.equal(
+    await session.steer('after duplicate'),
+    false,
+    'the accepted Stop still owns the turn',
+  );
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'interrupted' },
+  });
+  await next;
   await events.return(undefined);
 });
 
@@ -243,535 +614,4 @@ test('thread start, resume and every turn carry the requested service tier inclu
       ['thread/resume', 'default'],
     ],
   );
-});
-
-test('running Codex approvals grant only confirmed escalations, keep failed downgrades and serialize settings', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'codex-permissions-'));
-  const cwd = join(directory, 'workspace');
-  mkdirSync(cwd);
-  mkdirSync(join(cwd, '.git'));
-  symlinkSync(directory, join(cwd, 'escape'));
-  symlinkSync(join(directory, 'missing'), join(cwd, 'dangling'));
-  const starts: Record<string, unknown>[] = [];
-  const interrupted: unknown[] = [];
-  const settingsWrites: Record<string, unknown>[] = [];
-  let nativeSettings: Record<string, unknown> | undefined;
-  let refuseHigh = false;
-  let nextSettingsWrite:
-    | {
-        started: () => void;
-        result: Promise<void>;
-      }
-    | undefined;
-  const deferSettings = () => {
-    let markStarted: () => void = () => undefined;
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    let resolve: () => void = () => undefined;
-    let reject: (error: Error) => void = () => undefined;
-    const result = new Promise<void>((done, fail) => {
-      resolve = done;
-      reject = fail;
-    });
-    nextSettingsWrite = { started: markStarted, result };
-    return { started, resolve, reject };
-  };
-  let asked = 0;
-  let turnNumber = 0;
-  let markStarted: () => void = () => undefined;
-  const { client, notifications, requests } = fakeClient((method, params) => {
-    if (method === 'turn/interrupt') interrupted.push(params.turnId);
-    if (method === 'thread/settings/update') {
-      settingsWrites.push(params);
-      const write = nextSettingsWrite;
-      nextSettingsWrite = undefined;
-      write?.started();
-      return (write?.result ?? Promise.resolve()).then(() => {
-        if (refuseHigh && params.approvalPolicy === 'never') throw new Error('refused');
-        nativeSettings = params;
-      });
-    }
-    if (method === 'thread/resume') {
-      starts.push(params);
-      return { thread: { id: 'thread-1' }, model: 'model' };
-    }
-    if (method !== 'turn/start') return undefined;
-    starts.push(params);
-    turnNumber += 1;
-    markStarted();
-    return { turn: { id: `turn-${String(turnNumber)}` } };
-  });
-  const session = codexSession(client, 'app-1', cwd, async () => {
-    asked += 1;
-    return 'cancel';
-  });
-  const voiceEvents: string[] = [];
-  const unsubscribeVoice = session.voice.onEvent((event) => voiceEvents.push(event.kind));
-  try {
-    await session.open('thread-1');
-    assert.equal(starts[0]?.approvalPolicy, 'untrusted');
-    assert.equal(starts[0]?.sandbox, 'workspace-write');
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    const stream = session.stream('edit');
-    const first = stream.next();
-    await started;
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
-    let itemNumber = 0;
-    const approval = async (path: string, movePath?: string) => {
-      const itemId = `edit-${++itemNumber}`;
-      notifications.get('item/started')?.({
-        threadId: 'thread-1',
-        item: {
-          type: 'fileChange',
-          id: itemId,
-          status: 'inProgress',
-          changes: [
-            { path, kind: { type: 'update', move_path: movePath ?? null }, diff: '+ edit' },
-          ],
-        },
-      });
-      return requests.get('item/fileChange/requestApproval')?.({
-        threadId: 'thread-1',
-        turnId: 'turn-1',
-        itemId,
-      });
-    };
-    assert.deepEqual(await approval('src/new.ts'), { decision: 'accept' });
-    await first;
-    await session.setAutonomy('off');
-    assert.deepEqual(await approval('still-this-turn.ts'), { decision: 'cancel' });
-    await session.setAutonomy('low');
-    assert.deepEqual(await approval('accept-edits-now.ts'), { decision: 'accept' });
-    for (const path of [
-      '../outside',
-      '.git/config',
-      '.codex/config.toml',
-      '.agents/rules',
-      'escape/file',
-      'escape/../beside-the-workspace',
-      'dangling',
-    ]) {
-      assert.deepEqual(await approval(path), { decision: 'cancel' });
-    }
-    assert.deepEqual(await approval('inside.ts', '../renamed.ts'), { decision: 'cancel' });
-    assert.deepEqual(
-      await requests.get('item/commandExecution/requestApproval')?.({
-        itemId: 'exec',
-        command: 'pwd',
-      }),
-      { decision: 'cancel' },
-    );
-    assert.equal(asked, 10);
-    refuseHigh = true;
-    const rejectedEscalation = deferSettings();
-    const writesBefore = settingsWrites.length;
-    const rejected = session.setAutonomy('high');
-    const refusal = assert.rejects(rejected, /refused/);
-    const modelUpdate = session.setModel({ modelId: 'updated-model' });
-    await rejectedEscalation.started;
-    assert.equal(settingsWrites.length, writesBefore + 1);
-    assert.deepEqual(await approval('../unconfirmed-full-access.ts'), { decision: 'cancel' });
-    rejectedEscalation.reject(new Error('refused'));
-    await refusal;
-    await modelUpdate;
-    assert.equal(nativeSettings?.model, 'updated-model');
-    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
-    assert.deepEqual(nativeSettings?.sandboxPolicy, {
-      type: 'workspaceWrite',
-      writableRoots: [],
-      networkAccess: false,
-      excludeTmpdirEnvVar: false,
-      excludeSlashTmp: false,
-    });
-    assert.deepEqual(await approval('../rejected-full-access.ts'), { decision: 'cancel' });
-
-    refuseHigh = false;
-    const escalation = deferSettings();
-    const raised = session.setAutonomy('high');
-    await escalation.started;
-    assert.deepEqual(await approval('../pending-full-access.ts'), { decision: 'cancel' });
-    const asksBeforeFullAccess = asked;
-    escalation.resolve();
-    await raised;
-    assert.deepEqual(await approval('../full-access.ts'), { decision: 'accept' });
-    assert.deepEqual(
-      await requests.get('item/commandExecution/requestApproval')?.({
-        threadId: 'thread-1',
-        turnId: 'turn-1',
-        itemId: 'exec-full',
-        command: 'pwd',
-      }),
-      { decision: 'accept' },
-    );
-    assert.equal(asked, asksBeforeFullAccess);
-    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
-    assert.equal(session.voice.isLive(), true);
-    const downgrade = deferSettings();
-    const lowered = session.setAutonomy('off');
-    // Revocation precedes even the start of the queued native write.
-    assert.deepEqual(await approval('pending-supervised.ts'), { decision: 'cancel' });
-    await downgrade.started;
-    downgrade.reject(new Error('refused'));
-    await lowered;
-    assert.deepEqual(interrupted, ['turn-1']);
-    assert.equal(session.voice.isLive(), false);
-    assert.deepEqual(voiceEvents, ['closed']);
-    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
-    assert.deepEqual(await approval('failed-supervised.ts'), { decision: 'cancel' });
-    await session.setModel({ reasoningEffort: 'high' });
-    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
-    assert.deepEqual(nativeSettings?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-    await stream.return(undefined);
-  } finally {
-    unsubscribeVoice();
-    await session.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test('Codex skips queued High after Off, including behind a model write', async () => {
-  const writes: Record<string, unknown>[] = [];
-  let release = () => {};
-  let markStarted = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const started = new Promise<void>((resolve) => {
-    markStarted = resolve;
-  });
-  let hold = false;
-  const { client } = fakeClient(async (method, params) => {
-    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-    if (method === 'thread/settings/update') {
-      writes.push(params);
-      if (hold) {
-        hold = false;
-        markStarted();
-        await held;
-      }
-    }
-  });
-  const session = codexSession(client, 'app-1');
-  await session.open();
-  writes.length = 0;
-  hold = true;
-  const medium = session.setAutonomy('medium');
-  await started;
-  assert.equal(session.autonomy, 'low');
-  const model = session.setModel({ modelId: 'updated' });
-  const high = session.setAutonomy('high');
-  const off = session.setAutonomy('off');
-  assert.equal(session.autonomy, 'off');
-  release();
-  await Promise.all([medium, model, high, off]);
-  assert.ok(writes.every((params) => params.approvalPolicy !== 'never'));
-  assert.deepEqual(writes.at(-1)?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-  assert.equal(writes.at(-1)?.model, 'updated');
-  assert.equal(session.autonomy, 'off');
-  await session.close();
-});
-
-test('Codex closes the provider runtime when a refused downgrade cannot be contained', async () => {
-  for (const interruptFails of [true, false]) {
-    let refuseOff = false;
-    let closes = 0;
-    let turns = 0;
-    let interrupts = 0;
-    const { client, notifications } = fakeClient((method, params) => {
-      if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-      if (method === 'thread/settings/update' && refuseOff && params.approvalPolicy === 'untrusted')
-        throw new Error('revocation refused');
-      if (method === 'turn/interrupt') {
-        interrupts += 1;
-        if (interruptFails) throw new Error('interrupt refused');
-      }
-      if (method === 'turn/start') turns += 1;
-    });
-    client.close = async () => {
-      closes += 1;
-    };
-    const session = codexSession(client, 'app-1');
-    await session.open();
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
-    await session.setAutonomy('high');
-    refuseOff = true;
-    await assert.rejects(session.setAutonomy('off'), /revocation refused/);
-    assert.equal(closes, 1);
-    assert.equal(session.isClosed, true);
-    assert.equal(session.autonomy, 'off');
-    assert.ok(interrupts > 0);
-    await session.closed;
-    const next = session.stream('blocked');
-    await assert.rejects(next.next());
-    assert.equal(turns, 0);
-  }
-});
-
-test('Codex stops a downgrade only when the running turn bypasses approval callbacks', async () => {
-  for (const level of ['low', 'medium', 'high'] as const) {
-    let markStarted = () => {};
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    const starts: Record<string, unknown>[] = [];
-    let interrupts = 0;
-    let refuseInterrupt = level === 'high';
-    const { client, notifications } = fakeClient((method, params) => {
-      if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-      if (method === 'turn/interrupt') {
-        if (refuseInterrupt) {
-          refuseInterrupt = false;
-          throw new Error('interrupt refused');
-        }
-        interrupts += 1;
-        notifications.get('turn/completed')?.({
-          threadId: 'thread-1',
-          turn: { id: 'turn-1', status: 'interrupted' },
-        });
-      }
-      if (method !== 'turn/start') return;
-      starts.push(params);
-      markStarted();
-      const id = `turn-${starts.length}`;
-      if (starts.length > 1)
-        notifications.get('turn/completed')?.({
-          threadId: 'thread-1',
-          turn: { id, status: 'completed' },
-        });
-      return { turn: { id } };
-    });
-    const session = codexSession(client, 'app-1');
-    await session.open();
-    await session.setAutonomy(level);
-    const rows: string[] = [];
-    const running = (async () => {
-      for await (const event of session.stream('work'))
-        if (event.transcript?.kind === 'status') rows.push(event.transcript.text ?? '');
-    })();
-    await started;
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
-    // A later thread escalation does not change the running turn's own policy.
-    if (level === 'low') await session.setAutonomy('high');
-    // A failed Stop denied callbacks but did not revoke native permissions.
-    if (level === 'high') await assert.rejects(session.interrupt(), /interrupt refused/);
-    await session.setAutonomy('off');
-    assert.equal(interrupts, level === 'low' ? 0 : 1);
-    assert.deepEqual(
-      rows,
-      level === 'low'
-        ? []
-        : ["Stopped the turn to apply off: Codex keeps a turn's permissions until it ends"],
-    );
-    if (level === 'low')
-      notifications.get('turn/completed')?.({
-        threadId: 'thread-1',
-        turn: { id: 'turn-1', status: 'completed' },
-      });
-    await running;
-    for await (const event of session.stream('continue')) assert.equal(event.done, true);
-    assert.equal(starts.at(-1)?.approvalPolicy, 'untrusted');
-    assert.deepEqual(starts.at(-1)?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-    await session.close();
-  }
-});
-
-test('Codex keeps voice live and contains old-policy spoken turns arriving after a downgrade ack', async () => {
-  const interrupted: unknown[] = [];
-  let voiceStops = 0;
-  const rows: string[] = [];
-  const { client, notifications } = fakeClient((method, params) => {
-    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-    if (method === 'turn/interrupt') interrupted.push(params.turnId);
-    if (method === 'thread/realtime/stop') voiceStops += 1;
-  });
-  const session = codexSession(client, 'app-1');
-  session.onBackgroundEvent((event) => {
-    if (event.transcript?.kind === 'status') rows.push(event.transcript.text ?? '');
-  });
-  try {
-    await session.open();
-    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
-    await session.setAutonomy('off');
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'callback-turn' } });
-    assert.deepEqual(interrupted, []);
-    assert.equal(session.voice.isLive(), true);
-    notifications.get('turn/completed')?.({
-      threadId: 'thread-1',
-      turn: { id: 'callback-turn', status: 'completed' },
-    });
-    await session.setAutonomy('high');
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
-    await session.setAutonomy('off');
-    assert.equal(session.autonomy, 'off');
-    notifications.get('turn/completed')?.({
-      threadId: 'thread-1',
-      turn: { id: 'spoken-1', status: 'interrupted' },
-    });
-    // Its policy was captured before the update; the notification arrives after the ack.
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
-    assert.deepEqual(interrupted, ['spoken-1', 'late-spoken']);
-    assert.deepEqual(rows, [
-      "Stopped the turn to apply off: Codex keeps a turn's permissions until it ends",
-      "Stopped the turn to apply off: Codex keeps a turn's permissions until it ends",
-    ]);
-    assert.equal(session.voice.isLive(), true);
-    assert.equal(voiceStops, 0);
-  } finally {
-    await session.close();
-  }
-});
-
-test('Codex disarms a failed escalation before an ordinary turn', async () => {
-  let refuseHigh = true;
-  const policies: unknown[] = [];
-  let turnPolicy: unknown;
-  const { client, notifications } = fakeClient((method, params) => {
-    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-    if (method === 'thread/settings/update') {
-      policies.push(params.approvalPolicy);
-      if (refuseHigh && params.approvalPolicy === 'never') throw new Error('escalation refused');
-    }
-    if (method === 'turn/start') {
-      turnPolicy = params.approvalPolicy;
-      notifications.get('turn/completed')?.({
-        threadId: 'thread-1',
-        turn: { id: 'turn-1', status: 'completed' },
-      });
-      return { turn: { id: 'turn-1' } };
-    }
-  });
-  const session = codexSession(client, 'app-1');
-  await session.open();
-  await assert.rejects(session.setAutonomy('high'), /escalation refused/);
-  const writesAfterRefusal = policies.length;
-  refuseHigh = false;
-  for await (const event of session.stream('continue')) assert.equal(event.done, true);
-  assert.equal(turnPolicy, 'untrusted');
-  assert.equal(policies.length, writesAfterRefusal);
-  assert.equal(session.autonomy, 'low');
-  await session.close();
-});
-
-test('Codex contains a downgrade during turn start and closes if interruption fails', async () => {
-  for (const interruptFails of [false, true]) {
-    let release = () => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let markStarted = () => {};
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    const policies: unknown[] = [];
-    let interrupts = 0;
-    let closes = 0;
-    const { client, notifications } = fakeClient(async (method, params) => {
-      if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-      if (method === 'thread/settings/update') policies.push(params.approvalPolicy);
-      if (method === 'turn/interrupt') {
-        interrupts += 1;
-        if (interruptFails) throw new Error('interrupt refused');
-      }
-      if (method === 'turn/start') {
-        markStarted();
-        await held;
-        return { turn: { id: 'turn-1' } };
-      }
-    });
-    client.close = async () => {
-      closes += 1;
-    };
-    const session = codexSession(client, 'app-1');
-    await session.open();
-    await session.setAutonomy('high');
-    policies.length = 0;
-    const stream = session.stream('work');
-    const first = stream.next();
-    const firstSettled = interruptFails ? assert.rejects(first, /closed/) : first;
-    await started;
-    const off = session.setAutonomy('off');
-    const settled = interruptFails ? assert.rejects(off, /closed/) : off;
-    assert.equal(session.autonomy, 'off');
-    assert.equal(policies.length, 0, 'revocation waits for the running turn to be contained');
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
-    await settled;
-    assert.equal(interrupts, 1);
-    assert.equal(closes, interruptFails ? 1 : 0);
-    assert.deepEqual(policies, interruptFails ? [] : ['untrusted']);
-    release();
-    await firstSettled;
-    if (!interruptFails)
-      assert.match((await first).value?.transcript?.text ?? '', /Stopped the turn to apply off/);
-    await stream.return(undefined);
-    if (interruptFails) await assert.rejects(session.stream('blocked').next(), /closed/);
-    await session.close();
-  }
-});
-
-test('Codex retires a runtime whose voice stop stalls failed-revocation containment', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  let releaseStop = () => {};
-  const heldStop = new Promise<void>((resolve) => {
-    releaseStop = resolve;
-  });
-  let markStopping = () => {};
-  const stopping = new Promise<void>((resolve) => {
-    markStopping = resolve;
-  });
-  let closes = 0;
-  let turns = 0;
-  let refuseDowngrade = false;
-  const { client, notifications } = fakeClient((method) => {
-    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-    if (method === 'thread/settings/update' && refuseDowngrade)
-      throw new Error('revocation refused');
-    if (method === 'thread/realtime/stop') {
-      markStopping();
-      return heldStop;
-    }
-    if (method === 'turn/interrupt')
-      notifications.get('turn/completed')?.({
-        threadId: 'thread-1',
-        turn: { id: 'spoken-1', status: 'interrupted' },
-      });
-    if (method === 'turn/start') turns += 1;
-  });
-  client.close = async () => {
-    closes += 1;
-  };
-  const session = codexSession(client, 'app-1');
-  try {
-    await session.open();
-    await session.setAutonomy('high');
-    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
-    refuseDowngrade = true;
-    const off = session.setAutonomy('off');
-    const offRejected = assert.rejects(off, /revocation refused/);
-    await stopping;
-    const queued = Promise.allSettled([
-      session.setModel({ modelId: 'updated' }),
-      session.stream('next prompt').next(),
-    ]);
-    t.mock.timers.tick(3_000);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.equal(session.isClosed, true);
-    assert.equal(closes, 1);
-    assert.equal(session.autonomy, 'off');
-    for (const [index, result] of (await queued).entries()) {
-      assert.equal(result.status, 'rejected');
-      if (result.status === 'rejected')
-        assert.match(result.reason.message, index === 0 ? /revocation refused/ : /closed/);
-    }
-    assert.equal(turns, 0);
-    await offRejected;
-    await session.closed;
-  } finally {
-    releaseStop();
-    await session.close();
-  }
 });

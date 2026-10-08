@@ -30,7 +30,6 @@ import {
 } from './codexEvents.js';
 import { CodexToolBridge } from './codexTools.js';
 import { SessionAutonomy } from '../sessionAutonomy.js';
-import { stopVoiceWithDeadline } from '../voiceStop.js';
 import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
@@ -83,7 +82,8 @@ export class CodexSession implements ProviderSession {
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
   // to name it with yet.
   private pendingInterrupt = false;
-  private interruptedTurnId?: string;
+  private interruption?: { turnId: string; interrupts: number };
+  private failedTurnId?: string;
   private stoppedTurnId?: string;
   // A turn Codex started by itself, for a request spoken to a voice
   // conversation. It has no stream of its own, so its id is kept here: Stop has
@@ -101,9 +101,13 @@ export class CodexSession implements ProviderSession {
   private readonly delegatedListeners = new Set<
     (running: boolean, end?: DelegatedTurnEnd) => void
   >();
-  // Steers the running turn holds, by the client id each was sent with, until
-  // Codex reports the message delivered or the turn ends without it.
+  // Steers waiting to send or held by the running turn, until Codex reports
+  // delivery or the turn ends without them.
   private readonly steers = new Map<string, (delivered: boolean) => void>();
+  // Echoes wait for queued output and acknowledge in send order, even after
+  // turn completion releases this.turn.
+  private readonly steerEchoes = new Map<(delivered: boolean) => void, boolean | undefined>();
+  private steerTail: Promise<void> = Promise.resolve();
   // A thread's MCP servers start before its first turn, so a notice about one
   // has no transcript to land in yet and waits for the turn that follows.
   private readonly heldNotices: NormalizedEvent[] = [];
@@ -139,11 +143,7 @@ export class CodexSession implements ProviderSession {
       isUnsafe: () =>
         AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
         AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
-      interrupt: async () => {
-        if (this.turnStarted) await this.turnStarted;
-        this.permissions.requireOpen();
-        await Promise.all([this.interrupt(), stopVoiceWithDeadline(this.voice.stop())]);
-      },
+      interrupt: () => this.stopUnenforceableTurn(),
       close: () => this.close(),
       requireOpen: () => {
         if (this.hasClosed) throw new Error('This Codex session is closed.');
@@ -167,7 +167,13 @@ export class CodexSession implements ProviderSession {
       threadId: () => this.threadId,
       turnId: () => {
         const turnId = this.turnId ?? this.delegatedTurnId;
-        return this.pendingInterrupt || turnId === this.interruptedTurnId ? undefined : turnId;
+        if (
+          this.pendingInterrupt ||
+          turnId === this.interruption?.turnId ||
+          turnId === this.failedTurnId
+        )
+          return undefined;
+        return turnId;
       },
       isLive: () => !this.hasClosed && input.interactions.isActive(),
       prompts: this.prompts,
@@ -204,6 +210,8 @@ export class CodexSession implements ProviderSession {
   // Opens the session's thread: a new one, or the stored one it is resuming.
   // A thread Codex cannot load is a visible failure; starting a fresh thread
   // under the same identity would silently lose the conversation.
+  // Typed turns carry settings on turn/start; voice applies them before
+  // connecting, so opening needs no extra settings acknowledgement.
   async open(resumeId?: string): Promise<void> {
     const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
     const settings = {
@@ -237,7 +245,6 @@ export class CodexSession implements ProviderSession {
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
     // Never awaited: the limits only add detail to a later refusal.
     void this.usage.read().catch(() => undefined);
-    await this.pushThreadSettings();
   }
 
   // Codex takes developerInstructions in place of the configured ones, so the
@@ -286,7 +293,8 @@ export class CodexSession implements ProviderSession {
     this.mapper.beginTurn();
     this.turn = turn;
     this.pendingInterrupt = false;
-    this.interruptedTurnId = undefined;
+    this.interruption = undefined;
+    this.failedTurnId = undefined;
     try {
       await this.settingsChanges;
       while (!this.permissions.isApplied) await this.permissions.synchronize();
@@ -303,6 +311,8 @@ export class CodexSession implements ProviderSession {
           ...(this.threadModel ? { threadModel: this.threadModel } : {}),
         }),
       );
+      // Process death retains the stream's original failure and echoed deliveries.
+      if (this.isClosed) yield* turn.drain();
       this.permissions.requireOpen();
       this.adoptTurn(started.turn.id);
       // Only a turn that started can carry them; one that Codex refused would
@@ -310,11 +320,12 @@ export class CodexSession implements ProviderSession {
       if (this.heldNotices.length > 0) turn.push(this.heldNotices.splice(0));
       yield* turn.drain();
     } finally {
-      turn.finish();
+      turn.discard();
       // Settlement may already have let go, and a later turn may already own
       // these; only the turn that set them takes them away.
       if (this.turn === turn) {
         this.prompts.cancel();
+        this.dropSteers();
         this.turn = undefined;
         this.turnId = undefined;
         this.turnAutonomy = undefined;
@@ -439,13 +450,6 @@ export class CodexSession implements ProviderSession {
     this.permissions.confirm(autonomy);
   }
 
-  // For the paths whose own work does not depend on this landing: the model
-  // and effort ride `turn/start` anyway, and a conversation applies all of it
-  // again before it opens, which is where the failure is worth reporting.
-  private async pushThreadSettings(): Promise<void> {
-    await this.changeThreadSettings(() => this.applyThreadSettings()).catch(() => undefined);
-  }
-
   // Codex hands the prompt to the running turn at its next model request,
   // after the tool calls already in flight, and echoes it then as a user
   // message carrying the client id it was sent with. The turn id is the
@@ -456,23 +460,41 @@ export class CodexSession implements ProviderSession {
     const threadId = this.threadId;
     // A turn started for a spoken request takes a typed prompt the same way.
     const turnId = this.turn ? this.turnId : this.delegatedTurnId;
-    if (!threadId || !turnId) return Promise.resolve(false);
+    if (
+      !threadId ||
+      !turnId ||
+      this.hasClosed ||
+      this.pendingInterrupt ||
+      turnId === this.interruption?.turnId ||
+      turnId === this.failedTurnId
+    )
+      return Promise.resolve(false);
     const clientUserMessageId = randomUUID();
     const delivered = new Promise<boolean>((resolve) => {
       this.steers.set(clientUserMessageId, resolve);
     });
-    // Not awaited: the echo can arrive before the reply, and the caller must
-    // hear of delivery the moment it happens.
-    void this.client
-      .request('turn/steer', {
-        threadId,
-        expectedTurnId: turnId,
-        clientUserMessageId,
-        input: turnInput(text, mentions),
-      })
-      .catch(() => {
+    this.steerTail = this.steerTail.then(async () => {
+      if (!this.steers.has(clientUserMessageId)) return;
+      // A Stop can arrive while this steer waits. A sent steer can still be
+      // delivered before the turn ends, but an unsent one stays withdrawn.
+      if (turnId === this.interruption?.turnId) {
         this.settleSteer(clientUserMessageId, false);
-      });
+        return;
+      }
+      try {
+        // Delivery can beat the reply. Report it at once, but wait for both
+        // before sending the next steer, even if the turn ends meanwhile.
+        await this.client.request('turn/steer', {
+          threadId,
+          expectedTurnId: turnId,
+          clientUserMessageId,
+          input: turnInput(text, mentions),
+        });
+        await delivered;
+      } catch {
+        this.settleSteer(clientUserMessageId, false);
+      }
+    });
     return delivered;
   }
 
@@ -485,6 +507,13 @@ export class CodexSession implements ProviderSession {
   private dropSteers(): void {
     for (const clientUserMessageId of this.steers.keys())
       this.settleSteer(clientUserMessageId, false);
+    // A reply Codex never sends would otherwise hold back every later steer.
+    this.steerTail = Promise.resolve();
+  }
+
+  private settleSteerEchoes(delivered: boolean): void {
+    for (const [resolve, ready] of this.steerEchoes) resolve(ready ?? delivered);
+    this.steerEchoes.clear();
   }
 
   async interrupt(): Promise<void> {
@@ -494,10 +523,7 @@ export class CodexSession implements ProviderSession {
     // thread, and the user can see its work in the chat.
     if (!this.turn) {
       const delegated = this.delegatedTurnId;
-      if (delegated) {
-        this.interruptedTurnId = delegated;
-        await this.sendInterrupt(delegated);
-      }
+      if (delegated) await this.interruptTurn(delegated);
       return;
     }
     // A stale pair would end a turn that already settled, or none at all.
@@ -505,14 +531,32 @@ export class CodexSession implements ProviderSession {
       this.pendingInterrupt = true;
       return;
     }
-    this.interruptedTurnId = this.turnId;
-    await this.sendInterrupt(this.turnId);
+    await this.interruptTurn(this.turnId);
+  }
+
+  private async interruptTurn(turnId: string): Promise<void> {
+    if (this.interruption?.turnId !== turnId) this.interruption = { turnId, interrupts: 0 };
+    const interruption = this.interruption;
+    // Pending and accepted Stops both block the turn; only a refusal releases its own claim.
+    interruption.interrupts += 1;
+    try {
+      await this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
+      this.stoppedTurnId = turnId;
+    } catch (error) {
+      interruption.interrupts -= 1;
+      if (this.interruption === interruption && interruption.interrupts === 0)
+        this.interruption = undefined;
+      throw error;
+    }
   }
 
   close(): Promise<void> {
     this.permissions.stop();
     this.resolveClosed();
     this.releaseTurnStart();
+    this.turn?.discard();
+    this.dropSteers();
+    this.settleSteerEchoes(false);
     this.prompts.cancel();
     this.catalog?.close();
     return (this.closePromise ??= this.client.close());
@@ -548,7 +592,10 @@ export class CodexSession implements ProviderSession {
     const was = this.delegatedTurnId !== undefined;
     const isNewTurn = turnId !== this.delegatedTurnId;
     this.delegatedTurnId = turnId;
-    if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
+    if (!this.turn && turnId) {
+      if (turnId !== this.interruption?.turnId) this.interruption = undefined;
+      if (turnId !== this.failedTurnId) this.failedTurnId = undefined;
+    }
     if (turnId && isNewTurn) {
       void this.stopUnenforceableTurn().catch((error: unknown) => {
         this.deliver([this.mapper.errorEvent(error)]);
@@ -620,7 +667,8 @@ export class CodexSession implements ProviderSession {
       const turn = turnOf(params, this.usage);
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
-        this.dropSteers();
+        // An active typed stream owns steering even when a delegated turn ends.
+        if (!this.turn) this.dropSteers();
         this.setDelegatedTurn(undefined, delegatedTurnEnd(turn));
         // Same as settle() does for a typed turn: an approval nobody can
         // answer any more leaves the screen with the turn that asked.
@@ -637,6 +685,11 @@ export class CodexSession implements ProviderSession {
       this.deliver([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
       if (failure.willRetry) return;
+      const activeTurnId = this.turn ? this.turnId : this.delegatedTurnId;
+      if (isObject(params) && typeof params.turnId === 'string' && params.turnId !== activeTurnId)
+        return;
+      // Resetting the queue must not let another steer reuse the failed turn.
+      this.failedTurnId = activeTurnId;
       this.dropSteers();
       this.turn?.fail(failure.error);
     });
@@ -647,6 +700,8 @@ export class CodexSession implements ProviderSession {
       // settlement here would start the next prompt on a client that is gone.
       this.delegatedTurnId = undefined;
       this.dropSteers();
+      // Codex already echoed these; process death must not resend them on resume.
+      this.settleSteerEchoes(true);
       // A turn still in flight when the process goes away has failed, however
       // the process ended; an idle chat only records a death that was abnormal.
       this.turn?.fail(error);
@@ -662,7 +717,7 @@ export class CodexSession implements ProviderSession {
         if (
           this.hasClosed ||
           turnId === undefined ||
-          this.interruptedTurnId === turnId ||
+          this.interruption?.turnId === turnId ||
           request.threadId !== this.threadId ||
           request.turnId !== turnId
         )
@@ -698,13 +753,10 @@ export class CodexSession implements ProviderSession {
     this.releaseTurnStart();
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
-    // Stopped before it had an id: its tool calls are refused from now on, as
-    // for any other stopped turn.
-    this.interruptedTurnId = turnId;
     // Nobody is waiting on this one, so a refused stop is reported in the turn
     // it belongs to — never in whichever turn happens to be open by then.
     const turn = this.turn;
-    void this.sendInterrupt(turnId).catch((error: unknown) => {
+    void this.interruptTurn(turnId).catch((error: unknown) => {
       if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
   }
@@ -715,16 +767,26 @@ export class CodexSession implements ProviderSession {
     this.turnStarted = undefined;
   }
 
-  private async sendInterrupt(turnId: string): Promise<void> {
-    await this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
-    this.stoppedTurnId = turnId;
-  }
-
-  // The echo of a steered message is the moment the model took it in.
   private settleDeliveredSteer(params: unknown): void {
     if (!isObject(params) || !isObject(params.item)) return;
     const { type, clientId } = params.item;
-    if (type === 'userMessage' && typeof clientId === 'string') this.settleSteer(clientId, true);
+    if (type !== 'userMessage' || typeof clientId !== 'string') return;
+    const resolve = this.steers.get(clientId);
+    if (!resolve) return;
+    // The echo survives turn settlement, but its row must follow queued output.
+    this.steers.delete(clientId);
+    const settle = (delivered: boolean) => {
+      if (!this.steerEchoes.has(resolve)) return;
+      this.steerEchoes.set(resolve, delivered);
+      for (const [acknowledge, ready] of this.steerEchoes) {
+        if (ready === undefined) break;
+        this.steerEchoes.delete(acknowledge);
+        acknowledge(ready);
+      }
+    };
+    this.steerEchoes.set(resolve, undefined);
+    if (this.turn) this.turn.push([settle]);
+    else settle(true);
   }
 
   private settle(turn: CodexTurn): void {

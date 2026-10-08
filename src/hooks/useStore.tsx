@@ -728,6 +728,7 @@ export type Action =
       appSessionId?: string;
       send?: boolean;
       focus?: boolean;
+      prompt?: QueuedPrompt;
     }
   | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
@@ -2384,6 +2385,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         draftTileId,
         send: action.send,
         focus: action.focus,
+        prompt: action.prompt,
       });
       return { ...state, composerSeeds: [...state.composerSeeds, seed] };
     }

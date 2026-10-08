@@ -1,8 +1,8 @@
 // electron-builder config for DROIDEX.
 //
 // Produces website DMGs plus the ZIP/update metadata consumed by electron-updater.
-// Free builds use an ad-hoc signature; production Developer ID releases fail
-// closed unless signing and notarization credentials are present.
+// Free releases use a stable self-signed identity when configured. Developer ID
+// releases fail closed unless signing and notarization credentials are present.
 
 const process = require('node:process');
 const fs = require('node:fs');
@@ -31,7 +31,9 @@ const datadog = {
   distributionChannel: process.env.DROIDEX_DISTRIBUTION_CHANNEL === 'release' ? 'release' : 'local',
 };
 const hasSigningCredentials = Boolean(process.env.CSC_LINK || process.env.APPLE_SIGNING_IDENTITY);
-const identity = process.env.APPLE_SIGNING_IDENTITY || (process.env.CSC_LINK ? undefined : '-');
+const selfSignedIdentity = isUnsignedReleaseBuild ? process.env.DROIDEX_SELF_SIGNED_IDENTITY : '';
+let identity = process.env.APPLE_SIGNING_IDENTITY || (process.env.CSC_LINK ? undefined : '-');
+if (isUnsignedReleaseBuild) identity = selfSignedIdentity || '-';
 const hasApiKeyCredentials = Boolean(
   process.env.APPLE_API_KEY &&
   path.isAbsolute(process.env.APPLE_API_KEY) &&
@@ -40,6 +42,7 @@ const hasApiKeyCredentials = Boolean(
   process.env.APPLE_API_ISSUER,
 );
 const canNotarize = Boolean(
+  !isUnsignedReleaseBuild &&
   hasSigningCredentials &&
   ((process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID) ||
     hasApiKeyCredentials),
@@ -82,7 +85,7 @@ if (
 module.exports = {
   appId: 'app.droidex',
   productName: 'DROIDEX',
-  forceCodeSigning: isReleaseBuild,
+  forceCodeSigning: isReleaseBuild || Boolean(selfSignedIdentity),
   extraMetadata: {
     sentryDsn,
     datadog,
@@ -129,8 +132,11 @@ module.exports = {
       SURequireSignedFeed: true,
       SUSignedFeedFailureExpirationInterval: 0,
     },
+    // electron-builder accepts trusted non-Apple certificates by explicit name.
     identity,
-    hardenedRuntime: hasSigningCredentials,
+    // Free releases do not notarize; retain their existing Electron runtime policy.
+    hardenedRuntime: !isUnsignedReleaseBuild && hasSigningCredentials,
+    timestamp: isUnsignedReleaseBuild ? 'none' : undefined,
     entitlements: 'assets/brand/entitlements.mac.plist',
     entitlementsInherit: 'assets/brand/entitlements.mac.plist',
     target: [{ target: 'dmg' }, { target: 'zip' }],

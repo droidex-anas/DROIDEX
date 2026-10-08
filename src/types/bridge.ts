@@ -228,7 +228,7 @@ export interface SessionSummary {
   queuedSends?: number;
   // The steers sent while a turn ran that the model has not taken in yet, in
   // the order they were sent, as the chat shows them.
-  pendingSteers?: { id: string; text: string }[];
+  pendingSteers?: { id: string; text: string; canWithdraw: boolean }[];
   proposal?: string; // markdown plan from propose_mission
   features: BridgeFeature[];
   tokensIn: number;
@@ -304,6 +304,8 @@ export interface TranscriptEvent {
   // Side-chat answers the user attached to this prompt.
   sideChatReplies?: string[];
   steered?: boolean;
+  // Links the delivered user row to its pending steer, including ordinary-turn fallback.
+  steerId?: string;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';
@@ -773,6 +775,8 @@ export type ClientCommand =
     }
   // Stops the running turn so a steer the model has not taken in yet goes first.
   | { type: 'session.sendNow'; appSessionId: string; steerId: string }
+  // Replies with session.steerWithdrawn; true confirms the model cannot see it.
+  | { type: 'session.withdrawSteer'; appSessionId: string; steerId: string; requestId: string }
   | { type: 'session.repairApp'; appSessionId: string; error: string; source: string }
   | { type: 'session.resume'; appSessionId: string }
   | { type: 'session.interrupt'; appSessionId: string }
@@ -1074,6 +1078,16 @@ export type ServerEvent =
   | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.autonomy_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.updated'; session: SessionSummary }
+  | {
+      type: 'session.steerWithdrawn';
+      appSessionId: string;
+      steerId: string;
+      requestId: string;
+      withdrawn: boolean;
+      // The prompt's full text and catalog mentions, sent when it was withdrawn.
+      text?: string;
+      mentions?: ProviderMention[];
+    }
   | { type: 'session.closed'; appSessionId: string }
   | { type: 'session.processes'; appSessionId: string; processes: AgentProcess[] }
   | { type: 'sessions.processes'; processes: Record<string, AgentProcess[]> }

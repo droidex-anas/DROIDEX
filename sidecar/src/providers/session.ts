@@ -72,6 +72,8 @@ export interface ProviderForkSource {
 export interface ProviderForkHandle {
   providerSessionId: string;
   resumeId?: string;
+  // Releases a provisional fork client if resume did not take ownership.
+  release?: () => Promise<void>;
   // Source fork points the copy knows by another id, for a provider that
   // renames messages as it copies them.
   forkPointRenames?: ReadonlyMap<string, string>;
@@ -174,10 +176,15 @@ export interface ProviderSession {
   // `end` says how a turn that ended did.
   onDelegatedTurn?(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void;
   // Hands a prompt to the running turn, which the harness delivers at its own
-  // next step. Resolves true once the model has it, and false when the turn
-  // cannot take it or ends without it; the session layer then sends it as an
-  // ordinary message.
-  steer(text: string, mentions?: ProviderMention[]): Promise<boolean>;
+  // next step. True confirms delivery; false requeues it; 'withdrawn' settles
+  // it without delivery or requeue. The id also names provider cancellation.
+  steer(
+    text: string,
+    mentions: ProviderMention[] | undefined,
+    steerId: string,
+  ): Promise<boolean | 'withdrawn'>;
+  // True only after the harness confirms the model can no longer take it in.
+  withdrawSteer?(steerId: string): Promise<boolean>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.
   catalogItems?(): Promise<SkillInfo[]>;
   onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;
@@ -202,7 +209,8 @@ export interface Provider {
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
   // Copies a settled conversation into a new, independent one the provider can
-  // resume. Nothing is opened; the caller resumes the copy.
+  // resume. The caller releases any provisional client after the first send,
+  // or when the copy fails or stays unopened.
   fork(source: ProviderForkSource): Promise<ProviderForkHandle>;
   // Reads the account's usage with no session to go through. Claude Code and
   // Codex start a short-lived process for it, which `signal` ends.
