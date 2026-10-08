@@ -220,7 +220,15 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       return (
         hasStrings(value, ['appSessionId', 'steerId', 'requestId']) &&
         typeof value.withdrawn === 'boolean' &&
-        (value.text === undefined || typeof value.text === 'string')
+        (value.text === undefined || typeof value.text === 'string') &&
+        (value.mentions === undefined ||
+          (Array.isArray(value.mentions) &&
+            value.mentions.every(
+              (mention: unknown) =>
+                isRecord(mention) &&
+                typeof mention.name === 'string' &&
+                typeof mention.kind === 'string',
+            )))
       );
     case 'session.model_update_applied':
       return hasStrings(value, ['appSessionId', 'requestId']);

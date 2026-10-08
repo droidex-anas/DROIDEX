@@ -1211,8 +1211,9 @@ export type ServerEvent =
       steerId: string;
       requestId: string;
       withdrawn: boolean;
-      // The prompt's full text, sent when it was withdrawn.
+      // The prompt's full text and catalog mentions, sent when it was withdrawn.
       text?: string;
+      mentions?: ProviderMention[];
     }
   | { type: 'session.closed'; appSessionId: string }
   | { type: 'session.processes'; appSessionId: string; processes: AgentProcess[] }

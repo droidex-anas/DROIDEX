@@ -826,7 +826,7 @@ test('withdrawal requires harness confirmation, including during Send now, and n
     await h.lifecycle.send(provider, 'queued', undefined, 'queued');
     assert.deepEqual(pending(), [{ id: 'queued', text: 'queued', canWithdraw: true }]);
     live.closeMode = 'preserve-pending';
-    assert.equal(await h.lifecycle.withdrawSteer(provider, 'queued'), 'queued');
+    assert.equal((await h.lifecycle.withdrawSteer(provider, 'queued'))?.text, 'queued');
     assert.deepEqual(pending(), []);
     delete live.closeMode;
     live.compacting = false;
@@ -839,7 +839,7 @@ test('withdrawal requires harness confirmation, including during Send now, and n
     assert.equal(pending()?.length, 1);
     if (provider === 'claude') {
       confirmed = true;
-      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), 'held');
+      assert.equal((await h.lifecycle.withdrawSteer(provider, 'held'))?.text, 'held');
       await sending;
     } else {
       const interrupt = backend.deferNextInterrupt();
@@ -851,7 +851,7 @@ test('withdrawal requires harness confirmation, including during Send now, and n
       interrupt.resolve();
       await stopping;
       assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: true }]);
-      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), 'held');
+      assert.equal((await h.lifecycle.withdrawSteer(provider, 'held'))?.text, 'held');
     }
     assert.deepEqual(pending(), []);
     turn.resolve();

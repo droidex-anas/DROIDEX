@@ -774,7 +774,10 @@ export class SessionLifecycle {
 
   // Resolves to the prompt's full text once the model can no longer see it,
   // so a window that no longer holds the draft can still give it back whole.
-  async withdrawSteer(appSessionId: string, steerId: string): Promise<string | undefined> {
+  async withdrawSteer(
+    appSessionId: string,
+    steerId: string,
+  ): Promise<Pick<SessionPrompt, 'text' | 'mentions'> | undefined> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession) return undefined;
     const prompt = [...liveSession.steers, ...liveSession.pendingSends].find(
@@ -784,14 +787,14 @@ export class SessionLifecycle {
     if (!liveSession.steers.includes(prompt)) {
       removePrompt(liveSession.pendingSends, prompt);
       this.updateQueuedSends(liveSession);
-      return prompt.text;
+      return prompt;
     }
     const session = liveSession.session;
     if (!session.withdrawSteer) return undefined;
     const withdrawn = await session.withdrawSteer(steerId).catch(() => false);
     const current = this.dependencies.registry.getLive(appSessionId);
     return current === liveSession && current.session === session && !current.closeMode && withdrawn
-      ? prompt.text
+      ? prompt
       : undefined;
   }
 

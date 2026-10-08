@@ -1044,14 +1044,15 @@ export class SessionManager {
         await this.lifecycle.sendNow(cmd.appSessionId, cmd.steerId);
         return;
       case 'session.withdrawSteer': {
-        const text = await this.lifecycle.withdrawSteer(cmd.appSessionId, cmd.steerId);
+        const prompt = await this.lifecycle.withdrawSteer(cmd.appSessionId, cmd.steerId);
         this.emit({
           type: 'session.steerWithdrawn',
           appSessionId: cmd.appSessionId,
           steerId: cmd.steerId,
           requestId: cmd.requestId,
-          withdrawn: text !== undefined,
-          ...(text !== undefined ? { text } : {}),
+          withdrawn: prompt !== undefined,
+          ...(prompt ? { text: prompt.text } : {}),
+          ...(prompt?.mentions ? { mentions: prompt.mentions } : {}),
         });
         return;
       }

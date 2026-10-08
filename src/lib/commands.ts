@@ -1,4 +1,5 @@
 import { bridge } from './bridge';
+import { hasConnectedAgentTransport, subscribeRuntimeHealth } from './runtimeHealth';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
@@ -214,15 +215,11 @@ export const sendSteerNow = (appSessionId: string, steerId: string) => {
 export const withdrawSteer = (
   appSessionId: string,
   steerId: string,
-): Promise<{ withdrawn: boolean; text?: string }> => {
+): Promise<{ withdrawn: boolean; lost?: true; text?: string; mentions?: ProviderMention[] }> => {
   const requestId = newClientRef();
   return new Promise((resolve, reject) => {
-    const unsubscribe = bridge.subscribe((event) => {
-      if (event.type === 'connection' && event.status !== 'connected') {
-        unsubscribe();
-        resolve({ withdrawn: false });
-        return;
-      }
+    let stopWatchingHealth: () => void = () => undefined;
+    const stopListening = bridge.subscribe((event) => {
       if (
         event.type !== 'session.steerWithdrawn' ||
         event.requestId !== requestId ||
@@ -230,16 +227,27 @@ export const withdrawSteer = (
         event.steerId !== steerId
       )
         return;
-      unsubscribe();
+      stopWatchingHealth();
+      stopListening();
       resolve({
         withdrawn: event.withdrawn,
         ...(event.text !== undefined ? { text: event.text } : {}),
+        ...(event.mentions ? { mentions: event.mentions } : {}),
       });
+    });
+    // The answer may be lost with the socket; the chat then decides from what
+    // the sidecar lists once it is back.
+    stopWatchingHealth = subscribeRuntimeHealth(() => {
+      if (hasConnectedAgentTransport()) return;
+      stopWatchingHealth();
+      stopListening();
+      resolve({ withdrawn: false, lost: true });
     });
     if (
       !bridge.sendIfConnected({ type: 'session.withdrawSteer', appSessionId, steerId, requestId })
     ) {
-      unsubscribe();
+      stopWatchingHealth();
+      stopListening();
       reject(new Error('Reconnect to DROIDEX before withdrawing a steer.'));
     }
   });

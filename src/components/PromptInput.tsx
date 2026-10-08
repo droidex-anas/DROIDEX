@@ -1881,11 +1881,17 @@ export default function PromptInput({
       ...current,
       ...p.files.filter((path) => !current.includes(path)),
     ]);
+    // Without saved rows, a returned prompt's skills and catalog mentions still
+    // bring their chips back by name.
     const rowKeys = new Set(p.rowKeys);
+    const mentioned = new Set(p.mentions?.map((mention) => mention.name));
     const added =
       rowKeys.size > 0
         ? catalog.filter((row) => rowKeys.has(catalogRowKey(row)))
-        : invocableSkills.filter((skill) => p.skills.includes(skill.name));
+        : [
+            ...invocableSkills.filter((skill) => p.skills.includes(skill.name)),
+            ...catalog.filter((row) => mentioned.has(row.name)),
+          ];
     setActiveSkills((current) => {
       const have = new Set(current.map(catalogRowKey));
       return [...current, ...added.filter((row) => !have.has(catalogRowKey(row)))];
