@@ -6,7 +6,10 @@ import {
   DroidSession,
   InitializeSessionResultSchema,
   ReasoningEffort,
+  ToolConfirmationOutcome,
+  ToolConfirmationType,
   type DroidClientTransport,
+  type RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
 
 import { DroidRuntime, type FactorySession } from '../../DroidRuntime.js';
@@ -15,6 +18,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import { successfulResultEvent } from '../../testing/fakeFactoryRuntime.js';
 import { UsageLimitError } from '../usageLimit.js';
 import { DroidProviderSession } from './DroidProviderSession.js';
+import { droidInteractionHandlers } from './droidInteractions.js';
 
 type RawListener = (note: Record<string, unknown>) => void;
 
@@ -162,6 +166,55 @@ test('Droid disarms a refused escalation before the next ordinary prompt', async
   await turnEvents(session.stream('continue'));
   assert.equal(turns, 1);
   assert.deepEqual(writes, [AutonomyLevel.High, AutonomyLevel.High]);
+  assert.equal(session.autonomy, 'off');
+  await session.close();
+});
+
+test('Droid keeps refused Low to Off revocations for edit approval callbacks', async () => {
+  const { cli, session } = droidOn('model');
+  await session.setAutonomy('low');
+  let asked = 0;
+  const { permissionHandler } = droidInteractionHandlers(
+    {
+      id: 'app-1',
+      get autonomy() {
+        return session.autonomy;
+      },
+    },
+    {
+      requestApproval: async () => {
+        asked += 1;
+        return 'cancel';
+      },
+      requestQuestion: async () => ({ cancelled: true, answers: [] }),
+      isActive: () => true,
+      cancelPending: () => undefined,
+    },
+  );
+  const edit: RequestPermissionRequestParams = {
+    toolUses: [
+      {
+        toolUse: {
+          type: 'tool_use',
+          id: 'edit-1',
+          name: 'Edit',
+          input: { file_path: '/workspace/a' },
+        },
+        confirmationType: ToolConfirmationType.Edit,
+        details: { type: ToolConfirmationType.Edit, filePath: '/workspace/a', fileName: 'a' },
+      },
+    ],
+    options: [],
+  };
+  assert.equal(await permissionHandler(edit), ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(asked, 0);
+  cli.onSettingsWrite = (settings) => {
+    assert.equal(settings.autonomyLevel, AutonomyLevel.Off);
+    throw new Error('revocation refused');
+  };
+  await assert.rejects(session.setAutonomy('off'), /revocation refused/);
+  assert.equal(await permissionHandler(edit), ToolConfirmationOutcome.Cancel);
+  assert.equal(asked, 1);
   assert.equal(session.autonomy, 'off');
   await session.close();
 });

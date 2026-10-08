@@ -578,6 +578,60 @@ test('Codex stops a downgrade only when the running turn bypasses approval callb
   }
 });
 
+test('Codex stops a spoken turn that starts while a downgrade is in flight', async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markStarted = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let hold = false;
+  const interrupted: unknown[] = [];
+  const { client, notifications } = fakeClient(async (method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'thread/settings/update' && hold) {
+      markStarted();
+      await held;
+    }
+    if (method === 'turn/interrupt') {
+      interrupted.push(params.turnId);
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-1',
+        turn: { id: params.turnId, status: 'interrupted' },
+      });
+    }
+  });
+  const session = codexSession(client, 'app-1');
+  const rows: string[] = [];
+  session.onBackgroundEvent((event) => {
+    if (event.transcript?.kind === 'status') rows.push(event.transcript.text ?? '');
+  });
+  try {
+    await session.open();
+    await session.setAutonomy('high');
+    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+    hold = true;
+    const off = session.setAutonomy('off');
+    await started;
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+    assert.deepEqual(interrupted, []);
+    assert.equal(session.voice.isLive(), true);
+    release();
+    await off;
+    assert.deepEqual(interrupted, ['spoken-1']);
+    assert.deepEqual(rows, [
+      "Stopped the turn to apply off: Codex keeps a turn's permissions until it ends",
+    ]);
+    assert.equal(session.voice.isLive(), false);
+    assert.equal(session.autonomy, 'off');
+  } finally {
+    release();
+    await session.close();
+  }
+});
+
 test('Codex disarms a failed escalation before an ordinary turn', async () => {
   let refuseHigh = true;
   const policies: unknown[] = [];

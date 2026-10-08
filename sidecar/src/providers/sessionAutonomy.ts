@@ -96,9 +96,10 @@ export class SessionAutonomy {
             retryLevel = attempted === this.latestAutonomy ? attempted : undefined;
             continue;
           }
-          // A refused escalation must not be retried by the next ordinary prompt.
+          // Disarm refused escalations before the next prompt, but keep app-level
+          // revocations even when both levels map to the same native policy.
           if (this.native.isUnsafe()) await this.retire();
-          else this.latestAutonomy = this.confirmedAutonomy;
+          else this.latestAutonomy = this.selection;
           throw error;
         }
       }

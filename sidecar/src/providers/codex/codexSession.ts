@@ -128,6 +128,8 @@ export class CodexSession implements ProviderSession {
           await this.stopUnenforceableTurn();
           const autonomy = this.permissions.latestAutonomy;
           await this.applyThreadSettings(autonomy);
+          // Voice can start a turn while the native settings write is in flight.
+          await this.stopUnenforceableTurn();
           return autonomy;
         });
       },
