@@ -86,13 +86,49 @@ does not publish a release.
 
 ## 3. What the pipeline publishes
 
-The current website build is ad-hoc signed and not notarized. It does not need
-an Apple Developer Program subscription, but users must approve DROIDEX once in
-Privacy & Security.
+The website build uses a stable self-signed certificate when configured, or an
+ad-hoc signature when its secrets are absent. Neither is notarized or requires
+an Apple Developer Program subscription. Users still approve the first launch
+in Privacy & Security; Sparkle EdDSA signing stays unchanged.
+
+### One-time free signing setup
+
+Run this once locally, choosing a new directory outside the checkout:
+
+```bash
+bash tools/create-self-signed-signing-cert.sh /secure/path/droidex-signing
+```
+
+The script creates a 10-year RSA certificate named `DROIDEX Self-Signed` with
+the code-signing extended key usage, prompts for a nonempty export password,
+and writes `droidex-signing.p12` plus its public `certificate.pem`. It prints
+the password-protected .p12 as one base64 line and never uploads anything or
+changes your Keychain. Treat that output as private. Add these secrets to the
+source repository's protected `macos-release` environment:
+
+- `DROIDEX_SIGNING_CERT_P12_BASE64`: the printed base64 line.
+- `DROIDEX_SIGNING_CERT_PASSWORD`: the password you entered.
+
+Back up the .p12 and password securely and reuse them for every release. CI
+imports it into a temporary Keychain and trusts it only for code signing on
+the disposable runner. The build uses `DROIDEX_SELF_SIGNED_IDENTITY` and
+`CSC_KEYCHAIN`; verification rejects ad-hoc signing or a per-build cdhash
+designated requirement when that identity is configured. Missing either secret
+warns and keeps the ad-hoc build; invalid configured credentials fail the job.
+Free releases keep hardened runtime off and retain the Electron and microphone
+entitlements. No Apple notarization is attempted.
+
+Users re-grant macOS permissions once after installing the first self-signed
+build. Later updates retain the certificate-based identity; replacing the
+certificate or reverting to ad-hoc signing changes it again. Self-signing does
+not remove Gatekeeper's first-launch approval. Before the first signed release,
+update the public releases README to disclose `self-signed` and `not notarized`;
+the preflight checks those disclosures.
 
 The automated workflow executes the equivalent of these local commands:
 
 ```bash
+# CI exports CSC_KEYCHAIN and DROIDEX_SELF_SIGNED_IDENTITY after importing the certificate.
 DROIDEX_UNSIGNED_RELEASE_BUILD=1 npm run dist:mac
 
 # The last three published ZIPs, one directory per tag, as Sparkle delta bases.

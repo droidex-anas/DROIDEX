@@ -68,7 +68,43 @@ jobs:
           npm run quality:duplicates
           npm run security:audit-report
 
-      - name: Build ad-hoc-signed macOS artifacts
+      - name: Import stable self-signed release certificate
+        shell: bash
+        env:
+          DROIDEX_SIGNING_CERT_P12_BASE64: ${{ secrets.DROIDEX_SIGNING_CERT_P12_BASE64 }}
+          DROIDEX_SIGNING_CERT_PASSWORD: ${{ secrets.DROIDEX_SIGNING_CERT_PASSWORD }}
+        run: |
+          if test -z "$DROIDEX_SIGNING_CERT_P12_BASE64" || test -z "$DROIDEX_SIGNING_CERT_PASSWORD"; then
+            echo "::warning::DROIDEX signing certificate secrets are incomplete or absent; using ad-hoc signing. macOS permissions may be requested again after updates."
+            exit 0
+          fi
+          umask 077
+          CERTIFICATE_PATH="$RUNNER_TEMP/droidex-signing.p12"
+          PUBLIC_CERTIFICATE_PATH="$RUNNER_TEMP/droidex-signing.pem"
+          KEYCHAIN_PATH="$RUNNER_TEMP/droidex-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          printf '%s' "$DROIDEX_SIGNING_CERT_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          openssl pkcs12 -in "$CERTIFICATE_PATH" -clcerts -nokeys \
+            -passin env:DROIDEX_SIGNING_CERT_PASSWORD |
+            openssl x509 -out "$PUBLIC_CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" \
+            -P "$DROIDEX_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          # Trust only code signing on this disposable runner so identity discovery accepts it.
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k "$KEYCHAIN_PATH" "$PUBLIC_CERTIFICATE_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F '"DROIDEX Self-Signed"'
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "DROIDEX_SELF_SIGNED_IDENTITY=DROIDEX Self-Signed" >> "$GITHUB_ENV"
+          rm "$CERTIFICATE_PATH"
+
+      - name: Build macOS artifacts
         env:
           DROIDEX_UNSIGNED_RELEASE_BUILD: '1'
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
@@ -203,3 +239,16 @@ jobs:
               --cleanup-tag \
               --yes
           fi
+
+      - name: Remove release signing certificate and keychain
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/droidex-signing.pem"; then
+            sudo security remove-trusted-cert -d "$RUNNER_TEMP/droidex-signing.pem" ||
+              echo "::warning::Could not remove the runner's code-signing trust entry."
+          fi
+          if test -f "$RUNNER_TEMP/droidex-signing.keychain-db"; then
+            security delete-keychain "$RUNNER_TEMP/droidex-signing.keychain-db" ||
+              echo "::warning::Could not delete the runner's temporary signing keychain."
+          fi
+          rm -f "$RUNNER_TEMP/droidex-signing.p12" "$RUNNER_TEMP/droidex-signing.pem"
