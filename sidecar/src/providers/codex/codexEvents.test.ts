@@ -416,3 +416,33 @@ test('edits-only checks workspace paths and follows current approval autonomy', 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('a model write racing a lowered autonomy cannot restore the old level on the thread', async () => {
+  const writes: unknown[] = [];
+  let gate: Promise<void> | undefined;
+  let release: (() => void) | undefined;
+  const { client } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method !== 'thread/settings/update') return undefined;
+    writes.push(params.approvalPolicy);
+    // The raise waits, so the lowering and the model write queue behind it.
+    const held = gate;
+    gate = undefined;
+    return held;
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  writes.length = 0;
+  gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const raised = session.setAutonomy('high');
+  const lowered = session.setAutonomy('off');
+  const model = session.setModel({ modelId: 'other' });
+  release?.();
+  await Promise.all([raised, lowered, model]);
+  // Every write carries the latest level asked for, so the thread never goes
+  // back to acting unattended once Off has been chosen.
+  assert.equal(writes.length, 3);
+  assert.ok(!writes.includes('never'));
+});

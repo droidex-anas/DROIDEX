@@ -51,6 +51,9 @@ interface ThreadResponse {
   model: string;
 }
 
+// Least to most unattended.
+const LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+
 export class CodexSession implements ProviderSession {
   readonly provider = 'codex' as const;
   readonly providerSessionId: string;
@@ -66,6 +69,11 @@ export class CodexSession implements ProviderSession {
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
   private autonomy: Autonomy;
+  // The level the thread itself should carry: the latest one asked for, so a
+  // model write that lands after an autonomy change cannot restore the old one.
+  private threadAutonomy: Autonomy;
+  // thread/settings/update writes, one at a time in the order they were asked.
+  private settingsWrites: Promise<void> = Promise.resolve();
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
@@ -109,6 +117,7 @@ export class CodexSession implements ProviderSession {
     this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
     this.autonomy = input.autonomy;
+    this.threadAutonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.voice = new CodexVoice(
@@ -272,7 +281,19 @@ export class CodexSession implements ProviderSession {
   // spoken to. Approvals use the new level as soon as the update succeeds;
   // the running turn keeps its sandbox until the next turn.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.applyThreadSettings(autonomy);
+    const previous = this.autonomy;
+    const lowering = LEVELS.indexOf(autonomy) < LEVELS.indexOf(previous);
+    this.threadAutonomy = autonomy;
+    // Asking first takes hold at once; acting unattended only once the thread
+    // has taken the new level.
+    if (lowering) this.autonomy = autonomy;
+    try {
+      await this.applyThreadSettings();
+    } catch (error) {
+      this.threadAutonomy = previous;
+      this.autonomy = previous;
+      throw error;
+    }
     this.autonomy = autonomy;
     this.prompts.approvePending();
   }
@@ -314,9 +335,16 @@ export class CodexSession implements ProviderSession {
   // sandbox travel together, the way `turn/start` sends them, because half an
   // autonomy level is worse than none: an unsandboxed turn that never asks, or
   // a sandboxed one that cannot ask for the escalation it needs.
-  private async applyThreadSettings(autonomy = this.autonomy): Promise<void> {
+  private applyThreadSettings(): Promise<void> {
+    const write = this.settingsWrites.then(() => this.writeThreadSettings());
+    this.settingsWrites = write.catch(() => undefined);
+    return write;
+  }
+
+  private async writeThreadSettings(): Promise<void> {
     const threadId = this.threadId;
     if (!threadId) return;
+    const autonomy = this.threadAutonomy;
     const { reasoningEffort } = this.model;
     const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
     // A cleared pin means the thread's own model, which is what the mapper and
