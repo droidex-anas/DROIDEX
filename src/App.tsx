@@ -84,7 +84,10 @@ import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
 import { useBackgroundWorkTier } from './hooks/useBackgroundWorkTier';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { sideChatPanel } from './lib/sideChats';
-import { useCloseSideChat } from './components/sidechats/useCloseSideChat';
+import {
+  useCloseRevivedSideChats,
+  useCloseSideChat,
+} from './components/sidechats/useCloseSideChat';
 import {
   bindLazySurfaceIntent,
   scheduleIdleLazyWarmup,
@@ -278,7 +281,11 @@ export default function App() {
   const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
   const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
-  const sideChatClose = useCloseSideChat();
+  // The side tab leaving the pane must not hand its expansion to the next tab.
+  const sideChatClose = useCloseSideChat(() => {
+    setExpandedPaneAppSessionId(null);
+  });
+  useCloseRevivedSideChats();
   // A late busy-check must not restore a dialog in a hidden or replaced pane.
   const visibleUtilityPanelRef = useRef(showUtilityPane ? utilityPanel : null);
   visibleUtilityPanelRef.current = showUtilityPane ? utilityPanel : null;
