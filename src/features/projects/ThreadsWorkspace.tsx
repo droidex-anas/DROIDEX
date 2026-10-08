@@ -10,7 +10,7 @@ import { ThreadList } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
 import type { ProjectStep } from './types';
 import { entryForSession, useProjectBoard } from './useProjectBoard';
-import { useRelativeTimeNow } from './useRelativeTimeNow';
+import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
 
 /* The Threads tab of the utility panel: every thread this chat runs, grouped by
    what it needs, and the one thread the user opened. One level deep, like the

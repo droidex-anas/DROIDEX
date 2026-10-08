@@ -757,7 +757,8 @@ export class SessionManager {
       appendError: (appSessionId, message, details) => {
         this.timeline.appendError(appSessionId, message, details);
       },
-      appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
+      appendSteer: (appSessionId, text, steerId) =>
+        this.timeline.announcePrompt(appSessionId, text, true, steerId),
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
         this.emit({
@@ -828,6 +829,13 @@ export class SessionManager {
         this.timeline.readTranscript(appSessionId) ?? readProviderTranscript(appSessionId),
       updateModel: (appSessionId, settings) =>
         this.modelSettings.update(appSessionId, 'primary', settings),
+      beginForkOpen: (appSessionId) => {
+        this.lifecycle.beginForkOpen(appSessionId);
+      },
+      endForkOpen: (appSessionId) => {
+        this.lifecycle.endForkOpen(appSessionId);
+      },
+      isCloseRequested: (appSessionId) => this.lifecycle.isCloseRequested(appSessionId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       create: (command, branch) => this.lifecycle.create(command, branch),
       send: (appSessionId, text) => this.lifecycle.send(appSessionId, text),
@@ -1046,6 +1054,19 @@ export class SessionManager {
       case 'session.sendNow':
         await this.lifecycle.sendNow(cmd.appSessionId, cmd.steerId);
         return;
+      case 'session.withdrawSteer': {
+        const prompt = await this.lifecycle.withdrawSteer(cmd.appSessionId, cmd.steerId);
+        this.emit({
+          type: 'session.steerWithdrawn',
+          appSessionId: cmd.appSessionId,
+          steerId: cmd.steerId,
+          requestId: cmd.requestId,
+          withdrawn: prompt !== undefined,
+          ...(prompt ? { text: prompt.text } : {}),
+          ...(prompt?.mentions ? { mentions: prompt.mentions } : {}),
+        });
+        return;
+      }
       case 'approval.respond':
         await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
         return;

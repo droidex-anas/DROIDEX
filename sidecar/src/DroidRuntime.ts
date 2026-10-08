@@ -22,6 +22,7 @@ import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
 import { DroidTurn } from './DroidTurn.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
+import type { SteerOutcome } from './providers/session.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
 const ignoreError = (): void => undefined;
@@ -127,7 +128,7 @@ export interface FactoryRuntime {
   readContextBreakdown(session: FactorySession): Promise<unknown>;
   processIdOf(session: FactorySession): number | undefined;
   isProcessAlive(session: FactorySession): boolean;
-  steer(session: FactorySession, text: string): Promise<boolean>;
+  steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome>;
   streamTurn(
     session: FactorySession,
     prompt: string,
@@ -146,10 +147,10 @@ export class DroidRuntime implements FactoryRuntime {
   >();
   private readonly turns = new WeakMap<object, DroidTurn>();
 
-  steer(session: FactorySession, text: string): Promise<boolean> {
+  steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome> {
     const client = this.processes.get(session)?.client;
     const turn = this.turns.get(session);
-    return client && turn ? turn.steer(client, text) : Promise.resolve(false);
+    return client && turn ? turn.steer(client, text, steerId) : Promise.resolve(false);
   }
 
   observeNotification(session: FactorySession, notification: Record<string, unknown>): void {

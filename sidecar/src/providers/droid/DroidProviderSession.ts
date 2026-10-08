@@ -14,7 +14,8 @@ import {
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
-import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import type { ProviderMention } from '../catalog.js';
+import type { ProviderModelSettings, ProviderSession, SteerOutcome } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
@@ -215,8 +216,12 @@ export class DroidProviderSession implements ProviderSession {
     return this.runtime.interruptTurn(this.droid);
   }
 
-  steer(text: string): Promise<boolean> {
-    return this.runtime.steer(this.droid, text);
+  steer(
+    text: string,
+    _mentions: ProviderMention[] | undefined,
+    steerId: string,
+  ): Promise<SteerOutcome> {
+    return this.runtime.steer(this.droid, text, steerId);
   }
 
   async close(): Promise<void> {
