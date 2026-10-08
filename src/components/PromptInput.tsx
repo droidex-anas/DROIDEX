@@ -1869,6 +1869,37 @@ export default function PromptInput({
     requestAnimationFrame(() => editorRef.current?.focus());
   };
 
+  // A steer taken back while the composer already holds a draft joins it
+  // instead of replacing it, so two take-backs in a row both come back.
+  const appendPromptToComposer = (p: QueuedPrompt) => {
+    if (!activeSession) return;
+    setInput((current) => (current.trim() ? `${current}\n\n${p.text}` : p.text));
+    for (const path of p.files)
+      if (!attachedFileSeqRef.current.has(path))
+        attachedFileSeqRef.current.set(path, takeIntakeSeq());
+    setAttachedFiles((current) => [
+      ...current,
+      ...p.files.filter((path) => !current.includes(path)),
+    ]);
+    const rowKeys = new Set(p.rowKeys);
+    const added =
+      rowKeys.size > 0
+        ? catalog.filter((row) => rowKeys.has(catalogRowKey(row)))
+        : invocableSkills.filter((skill) => p.skills.includes(skill.name));
+    setActiveSkills((current) => {
+      const have = new Set(current.map(catalogRowKey));
+      return [...current, ...added.filter((row) => !have.has(catalogRowKey(row)))];
+    });
+    for (const reply of p.sideChatReplies ?? []) {
+      dispatch({
+        type: 'ATTACH_SIDE_CHAT_REPLY',
+        sourceAppSessionId: activeSession.appSessionId,
+        reply,
+      });
+    }
+    requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
   const editQueuedInComposer = (p: QueuedPrompt) => {
     if (!activeSession) return;
     restorePromptToComposer(p);
@@ -1877,7 +1908,10 @@ export default function PromptInput({
 
   // The seed effect above runs before this declaration in source order, so it
   // reaches the restore through a ref.
-  restoreRef.current = restorePromptToComposer;
+  restoreRef.current = (prompt) => {
+    if (input.trim() || attachedFiles.length > 0) appendPromptToComposer(prompt);
+    else restorePromptToComposer(prompt);
+  };
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)
