@@ -89,7 +89,9 @@ export class CodexSession implements ProviderSession {
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
   private delegatedTurnId?: string;
-  private voiceStoppedForDowngrade = false;
+  // Handoffs expose no bound policy. Keep the highest possible binding across
+  // settings acknowledgements and turn completions until this runtime closes.
+  private delegatedAutonomyCeiling?: Autonomy;
   // The chat asked for the model's own effort, which the thread has to be told
   // explicitly; an omitted effort would leave the previous one in place.
   private effortCleared = false;
@@ -121,30 +123,7 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.permissions = new SessionAutonomy(input.autonomy, {
       write: () => {
-        const latest = this.permissions.latestAutonomy;
-        let stopping: Promise<void>;
-        if (
-          this.voice.isLive() &&
-          AUTONOMY_LEVELS.indexOf(latest) < AUTONOMY_LEVELS.indexOf(this.permissions.inForce)
-        ) {
-          this.voiceStoppedForDowngrade = true;
-          this.deliver([
-            this.mapper.statusEvent(`Ended the voice conversation to apply ${latest}`),
-          ]);
-          stopping = Promise.all([
-            this.delegatedTurnId ? this.interrupt() : Promise.resolve(),
-            stopVoiceWithDeadline(this.voice.stop()),
-          ])
-            .then(() => {
-              this.permissions.requireOpen();
-            })
-            .catch(async (error: unknown) => {
-              await this.close();
-              throw error;
-            });
-        } else {
-          stopping = this.stopUnenforceableTurn();
-        }
+        const stopping = this.stopUnenforceableTurn();
         // The queued writer reports failure even if another settings write delays it.
         void stopping.catch(() => undefined);
         return this.changeThreadSettings(async () => {
@@ -179,7 +158,6 @@ export class CodexSession implements ProviderSession {
         await this.changeThreadSettings(() => this.applyThreadSettings());
         while (!this.permissions.isApplied) await this.permissions.synchronize();
         this.permissions.requireOpen();
-        this.voiceStoppedForDowngrade = false;
       },
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
@@ -353,7 +331,7 @@ export class CodexSession implements ProviderSession {
   private async stopUnenforceableTurn(): Promise<void> {
     if (this.turnStarted) await this.turnStarted;
     this.permissions.requireOpen();
-    const runningAutonomy = this.turnAutonomy;
+    const runningAutonomy = this.turnAutonomy ?? this.delegatedAutonomyCeiling;
     const latest = this.permissions.latestAutonomy;
     if (
       runningAutonomy === undefined ||
@@ -363,14 +341,14 @@ export class CodexSession implements ProviderSession {
       return;
     // Thread settings cannot revoke a turn whose tools bypass host callbacks.
     try {
-      const turnId = this.turnId;
+      const turnId = this.turnId ?? this.delegatedTurnId;
       if (turnId === undefined || turnId === this.stoppedTurnId) return;
       this.deliver([
         this.mapper.statusEvent(
           `Stopped the turn to apply ${latest}: Codex keeps a turn's permissions until it ends`,
         ),
       ]);
-      await Promise.all([this.interrupt(), stopVoiceWithDeadline(this.voice.stop())]);
+      await this.interrupt();
       this.permissions.requireOpen();
     } catch (error) {
       await this.close();
@@ -443,6 +421,13 @@ export class CodexSession implements ProviderSession {
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
     this.permissions.requireOpen();
     const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
+    if (this.voice.isLive()) {
+      this.delegatedAutonomyCeiling ??= this.permissions.inForce;
+      if (
+        AUTONOMY_LEVELS.indexOf(autonomy) > AUTONOMY_LEVELS.indexOf(this.delegatedAutonomyCeiling)
+      )
+        this.delegatedAutonomyCeiling = autonomy;
+    }
     await this.client.request('thread/settings/update', {
       threadId,
       approvalPolicy,
@@ -564,12 +549,9 @@ export class CodexSession implements ProviderSession {
     const isNewTurn = turnId !== this.delegatedTurnId;
     this.delegatedTurnId = turnId;
     if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
-    if (turnId && isNewTurn && this.voiceStoppedForDowngrade) {
-      this.interruptedTurnId = turnId;
-      this.prompts.cancel();
-      void this.sendInterrupt(turnId).catch(async (error: unknown) => {
+    if (turnId && isNewTurn) {
+      void this.stopUnenforceableTurn().catch((error: unknown) => {
         this.deliver([this.mapper.errorEvent(error)]);
-        await this.close();
       });
     }
     const running = turnId !== undefined;

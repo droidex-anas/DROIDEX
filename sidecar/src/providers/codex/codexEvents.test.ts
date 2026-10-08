@@ -578,19 +578,14 @@ test('Codex stops a downgrade only when the running turn bypasses approval callb
   }
 });
 
-test('Codex ends live voice before a downgrade write and interrupts spoken turns during it', async () => {
-  let startSpokenTurn = false;
+test('Codex keeps voice live and contains old-policy spoken turns arriving after a downgrade ack', async () => {
   const interrupted: unknown[] = [];
+  let voiceStops = 0;
   const rows: string[] = [];
   const { client, notifications } = fakeClient((method, params) => {
     if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
     if (method === 'turn/interrupt') interrupted.push(params.turnId);
-    if (method === 'thread/settings/update' && startSpokenTurn) {
-      assert.equal(session.voice.isLive(), false);
-      assert.deepEqual(rows, ['Ended the voice conversation to apply off']);
-      notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
-      assert.deepEqual(interrupted, ['spoken-1']);
-    }
+    if (method === 'thread/realtime/stop') voiceStops += 1;
   });
   const session = codexSession(client, 'app-1');
   session.onBackgroundEvent((event) => {
@@ -598,40 +593,33 @@ test('Codex ends live voice before a downgrade write and interrupts spoken turns
   });
   try {
     await session.open();
-    await session.setAutonomy('high');
-    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
-    startSpokenTurn = true;
-    await session.setAutonomy('off');
-    assert.equal(session.autonomy, 'off');
-  } finally {
-    await session.close();
-  }
-});
-
-test('Codex interrupts a late spoken turn after acknowledging a voice downgrade', async () => {
-  const interrupted: unknown[] = [];
-  const { client, notifications } = fakeClient((method, params) => {
-    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-    if (method === 'turn/interrupt') interrupted.push(params.turnId);
-  });
-  const session = codexSession(client, 'app-1');
-  try {
-    await session.open();
-    await session.setAutonomy('high');
     await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
     await session.setAutonomy('off');
-    assert.equal(session.autonomy, 'off');
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
-    assert.deepEqual(interrupted, ['late-spoken']);
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
-    assert.deepEqual(interrupted, ['late-spoken']);
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'callback-turn' } });
+    assert.deepEqual(interrupted, []);
+    assert.equal(session.voice.isLive(), true);
     notifications.get('turn/completed')?.({
       threadId: 'thread-1',
-      turn: { id: 'late-spoken', status: 'interrupted' },
+      turn: { id: 'callback-turn', status: 'completed' },
     });
-    await session.voice.start({ sdp: 'offer', attempt: 'voice-2' });
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'new-spoken' } });
-    assert.deepEqual(interrupted, ['late-spoken']);
+    await session.setAutonomy('high');
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+    await session.setAutonomy('off');
+    assert.equal(session.autonomy, 'off');
+    notifications.get('turn/completed')?.({
+      threadId: 'thread-1',
+      turn: { id: 'spoken-1', status: 'interrupted' },
+    });
+    // Its policy was captured before the update; the notification arrives after the ack.
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
+    assert.deepEqual(interrupted, ['spoken-1', 'late-spoken']);
+    assert.deepEqual(rows, [
+      "Stopped the turn to apply off: Codex keeps a turn's permissions until it ends",
+      "Stopped the turn to apply off: Codex keeps a turn's permissions until it ends",
+    ]);
+    assert.equal(session.voice.isLive(), true);
+    assert.equal(voiceStops, 0);
   } finally {
     await session.close();
   }
@@ -724,7 +712,7 @@ test('Codex contains a downgrade during turn start and closes if interruption fa
   }
 });
 
-test('Codex retires a runtime whose voice stop stalls containment', async (t) => {
+test('Codex retires a runtime whose voice stop stalls failed-revocation containment', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let releaseStop = () => {};
   const heldStop = new Promise<void>((resolve) => {
@@ -736,8 +724,11 @@ test('Codex retires a runtime whose voice stop stalls containment', async (t) =>
   });
   let closes = 0;
   let turns = 0;
+  let refuseDowngrade = false;
   const { client, notifications } = fakeClient((method) => {
     if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'thread/settings/update' && refuseDowngrade)
+      throw new Error('revocation refused');
     if (method === 'thread/realtime/stop') {
       markStopping();
       return heldStop;
@@ -758,10 +749,11 @@ test('Codex retires a runtime whose voice stop stalls containment', async (t) =>
     await session.setAutonomy('high');
     await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
     notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+    refuseDowngrade = true;
     const off = session.setAutonomy('off');
+    const offRejected = assert.rejects(off, /revocation refused/);
     await stopping;
     const queued = Promise.allSettled([
-      off,
       session.setModel({ modelId: 'updated' }),
       session.stream('next prompt').next(),
     ]);
@@ -770,11 +762,13 @@ test('Codex retires a runtime whose voice stop stalls containment', async (t) =>
     assert.equal(session.isClosed, true);
     assert.equal(closes, 1);
     assert.equal(session.autonomy, 'off');
-    for (const result of await queued) {
+    for (const [index, result] of (await queued).entries()) {
       assert.equal(result.status, 'rejected');
-      if (result.status === 'rejected') assert.match(result.reason.message, /closed/);
+      if (result.status === 'rejected')
+        assert.match(result.reason.message, index === 0 ? /revocation refused/ : /closed/);
     }
     assert.equal(turns, 0);
+    await offRejected;
     await session.closed;
   } finally {
     releaseStop();
