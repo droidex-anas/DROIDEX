@@ -489,7 +489,7 @@ export const FeedItemView = memo(function FeedItemView({
       return item.event.errorKind === 'usage_limit' ? (
         <TranscriptNotice event={item.event} />
       ) : (
-        <ErrorLine text={item.event.text ?? ''} />
+        <ErrorLine text={item.event.text ?? ''} attempts={item.attempts} />
       );
     case 'diff':
       return (
