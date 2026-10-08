@@ -1373,7 +1373,7 @@ Settled by 07c (`thread/canvas-07c-canvas-theme`):
   Done: Round-trip tests preserve surrounding source and reject stale, repeated or computed edits honestly.
 - [ ] `canvas/08b-element-selection`: Add bounded preview selection events, board overlays and the direct inspector with scoped composer references.
   Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
-- [ ] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
+- [x] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
   Done: Agent updates preserve the local buffer; explicit Save creates a source revision.
 - [ ] `canvas/08d-revision-history`: Add canonical revision history/diff, read-only viewing and restore through the normal commit/build path.
   Done: Restore creates a new head, retains later history and reports system version/build status.
