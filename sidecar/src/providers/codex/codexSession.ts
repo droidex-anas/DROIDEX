@@ -491,8 +491,10 @@ export class CodexSession implements ProviderSession {
   private setDelegatedTurn(turnId: string | undefined, end?: DelegatedTurnEnd): void {
     const was = this.delegatedTurnId !== undefined;
     this.delegatedTurnId = turnId;
-    if (turnId && turnId !== this.interruption?.turnId) this.interruption = undefined;
-    if (turnId && turnId !== this.failedTurnId) this.failedTurnId = undefined;
+    if (!this.turn && turnId) {
+      if (turnId !== this.interruption?.turnId) this.interruption = undefined;
+      if (turnId !== this.failedTurnId) this.failedTurnId = undefined;
+    }
     const running = turnId !== undefined;
     if (running === was) return;
     for (const listener of this.delegatedListeners) listener(running, end);
@@ -577,8 +579,11 @@ export class CodexSession implements ProviderSession {
       this.deliver([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
       if (failure.willRetry) return;
+      const activeTurnId = this.turn ? this.turnId : this.delegatedTurnId;
+      if (isObject(params) && typeof params.turnId === 'string' && params.turnId !== activeTurnId)
+        return;
       // Resetting the queue must not let another steer reuse the failed turn.
-      this.failedTurnId = this.turnId ?? this.delegatedTurnId;
+      this.failedTurnId = activeTurnId;
       this.dropSteers();
       this.turn?.fail(failure.error);
     });

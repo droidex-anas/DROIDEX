@@ -236,6 +236,103 @@ test('a delegated turn completing preserves the active typed turn steer queue', 
   assert.equal(await second, true);
 });
 
+test('a delegated turn starting preserves the typed turn accepted Stop', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method === 'turn/steer') {
+      steers.push(params);
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  await session.interrupt();
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  assert.equal(await session.steer('after Stop'), false);
+  assert.equal(steers.length, 0, 'the accepted typed Stop must still block steering');
+});
+
+test('a delegated turn fatal error preserves the typed stream and steer queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method === 'turn/steer') steers.push(params);
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  const first = session.steer('first');
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1);
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  notifications.get('error')?.({
+    threadId: 'thread-1',
+    turnId: 'delegated-turn',
+    error: { message: 'Spoken request failed' },
+    willRetry: false,
+  });
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true, 'the delegated error must not drop the typed steer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2);
+  assert.equal(steers[1].expectedTurnId, 'typed-turn');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await second, true);
+
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  const remaining = [];
+  for await (const event of events) remaining.push(event);
+  assert.ok(
+    remaining.some((event) => event.done),
+    'the typed stream must complete normally',
+  );
+});
+
 test('a refused Stop reopens steering only when no Stop was accepted for that turn', async (t) => {
   let releaseTurn: (response: { turn: { id: string } }) => void = () => undefined;
   const turnStart = new Promise<{ turn: { id: string } }>((resolve) => {
