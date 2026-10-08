@@ -85,6 +85,7 @@ export class CodexSession implements ProviderSession {
   private interruption?: { turnId: string; interrupts: number };
   private failedTurnId?: string;
   private stoppedTurnId?: string;
+  private readonly turnContainment = new Map<string, Promise<void>>();
   // A turn Codex started by itself, for a request spoken to a voice
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
@@ -352,6 +353,16 @@ export class CodexSession implements ProviderSession {
     runningAutonomy: Autonomy | undefined,
   ): Promise<void> {
     this.permissions.requireOpen();
+    const stopping = this.turnContainment.get(turnId);
+    if (stopping) return stopping;
+    // A typed start can steer into a handoff whose native policy is not reported.
+    const ceiling = this.delegatedAutonomyCeiling;
+    if (
+      ceiling !== undefined &&
+      (runningAutonomy === undefined ||
+        AUTONOMY_LEVELS.indexOf(ceiling) > AUTONOMY_LEVELS.indexOf(runningAutonomy))
+    )
+      runningAutonomy = ceiling;
     const latest = this.permissions.latestAutonomy;
     if (
       turnId === this.stoppedTurnId ||
@@ -368,11 +379,15 @@ export class CodexSession implements ProviderSession {
           `Stopped the turn to apply ${latest}: Codex keeps a turn's permissions until it ends`,
         ),
       ]);
-      await this.interruptTurn(turnId);
+      const stopping = this.interruptTurn(turnId);
+      this.turnContainment.set(turnId, stopping);
+      await stopping;
       this.permissions.requireOpen();
     } catch (error) {
       await this.close();
       throw error;
+    } finally {
+      this.turnContainment.delete(turnId);
     }
   }
 
@@ -758,8 +773,14 @@ export class CodexSession implements ProviderSession {
   // The turn's id arrives either on `turn/started` or with the `turn/start`
   // response, whichever lands first; a Stop that beat both goes out now.
   private adoptTurn(turnId: string): void {
+    const isNewTurn = turnId !== this.turnId;
     this.turnId = turnId;
     this.releaseTurnStart();
+    if (isNewTurn && this.delegatedAutonomyCeiling !== undefined) {
+      void this.stopUnenforceableTurns().catch((error: unknown) => {
+        this.deliver([this.mapper.errorEvent(error)]);
+      });
+    }
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
     // Nobody is waiting on this one, so a refused stop is reported in the turn

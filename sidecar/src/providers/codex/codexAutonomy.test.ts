@@ -179,7 +179,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     await downgrade.started;
     downgrade.reject(new Error('refused'));
     await lowered;
-    assert.deepEqual(interrupted, []);
+    assert.deepEqual(interrupted, ['turn-1']);
     assert.equal(session.voice.isLive(), true);
     assert.deepEqual(voiceEvents, []);
     assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
@@ -392,7 +392,7 @@ test('Codex keeps voice live and contains old-policy spoken turns arriving after
   }
 });
 
-test('Codex contains a late spoken turn independently of a running Low typed turn', async (t) => {
+test('Codex applies the voice ceiling to a Low typed turn and a later spoken turn', async (t) => {
   const interrupted: unknown[] = [];
   const { client, notifications } = fakeClient((method, params) => {
     if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
@@ -417,12 +417,12 @@ test('Codex contains a late spoken turn independently of a running Low typed tur
   assert.equal((await events.next()).value?.transcript?.text, 'Working');
   await session.setAutonomy('high');
   await session.setAutonomy('off');
-  assert.deepEqual(interrupted, [], 'the typed turn still uses its callback-enforced Low policy');
+  assert.deepEqual(interrupted, ['typed-turn'], 'the voice ceiling also contains typed turns');
 
   for (let notification = 0; notification < 2; notification += 1)
     notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
   await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.deepEqual(interrupted, ['late-spoken'], 'containment must target the spoken turn itself');
+  assert.deepEqual(interrupted, ['typed-turn', 'late-spoken']);
   assert.equal(session.voice.isLive(), true);
   assert.equal(session.isClosed, false);
   notifications.get('turn/completed')?.({
@@ -435,8 +435,61 @@ test('Codex contains a late spoken turn independently of a running Low typed tur
   });
   let typedCompleted = false;
   for await (const event of events) if (event.done) typedCompleted = true;
-  assert.equal(typedCompleted, true, 'the typed turn must finish normally');
+  assert.equal(typedCompleted, true, 'typed completion must still settle its stream');
+  assert.deepEqual(interrupted, ['typed-turn', 'late-spoken']);
+});
+
+test('Codex contains a delayed High voice handoff adopted by a Low typed start', async (t) => {
+  const interrupted: unknown[] = [];
+  let releaseStart = () => {};
+  const startReply = new Promise<void>((resolve) => {
+    releaseStart = resolve;
+  });
+  let markStarting = () => {};
+  const starting = new Promise<void>((resolve) => {
+    markStarting = resolve;
+  });
+  const { client, notifications } = fakeClient(async (method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'turn/interrupt') interrupted.push(params.turnId);
+    if (method === 'turn/start') {
+      assert.equal(params.approvalPolicy, 'untrusted');
+      assert.deepEqual(params.sandboxPolicy, {
+        type: 'workspaceWrite',
+        writableRoots: [],
+        networkAccess: false,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      });
+      // The handoff bound High before the downgrade; turn/start steers into it.
+      notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
+      markStarting();
+      await startReply;
+      return { turn: { id: 'late-spoken' } };
+    }
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  await session.setAutonomy('high');
+  await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+  await session.setAutonomy('low');
+  const events = session.stream('typed work');
+  const first = events.next();
+  t.after(async () => {
+    releaseStart();
+    await session.close();
+    await Promise.allSettled([first]);
+    await events.return(undefined);
+  });
+  await starting;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(interrupted, ['late-spoken'], 'contain before the typed start reply arrives');
+  releaseStart();
+  assert.match((await first).value?.transcript?.text ?? '', /Stopped the turn to apply low/);
   assert.deepEqual(interrupted, ['late-spoken']);
+  assert.equal(session.autonomy, 'low');
+  assert.equal(session.voice.isLive(), true);
+  assert.equal(session.isClosed, false);
 });
 
 test('Codex recovery keeps voice live and interrupts only callback-bypassing turns', async (t) => {
