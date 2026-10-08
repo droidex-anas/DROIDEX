@@ -1759,17 +1759,17 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
 });
 
 test('scheduled historical resumes honor the runtime cap without restricting live targets', async () => {
-  const summaries = Array.from({ length: 9 }, (_, index) => summary(`bounded-${index}`));
+  const summaries = Array.from({ length: 21 }, (_, index) => summary(`bounded-${index}`));
   const harness = createHarness(summaries);
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 20; index += 1) {
     queueLoad(harness, `bounded-${index}`);
     await harness.lifecycle.resume(`bounded-${index}`);
   }
   assert.deepEqual(
-    await harness.lifecycle.deliverScheduled('bounded-8', 'wait for capacity', () => true),
+    await harness.lifecycle.deliverScheduled('bounded-20', 'wait for capacity', () => true),
     { status: 'busy', retryOn: 'capacity' },
   );
-  assert.equal(harness.runtime.loadCalls.length, 8);
+  assert.equal(harness.runtime.loadCalls.length, 20);
   const live = await harness.lifecycle.deliverScheduled(
     'bounded-0',
     'already resident',
@@ -1778,9 +1778,9 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   assert.equal(live.status, 'accepted');
   if (live.status === 'accepted') await live.settled;
   await harness.lifecycle.close('bounded-0');
-  const provider = queueLoad(harness, 'bounded-8');
+  const provider = queueLoad(harness, 'bounded-20');
   const receipt = await harness.lifecycle.deliverScheduled(
-    'bounded-8',
+    'bounded-20',
     'capacity freed',
     () => true,
   );
@@ -1792,11 +1792,11 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
 
 test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {
   const harness = createHarness([
-    ...Array.from({ length: 7 }, (_, index) => summary(`held-${index}`)),
+    ...Array.from({ length: 19 }, (_, index) => summary(`held-${index}`)),
     summary('doomed'),
     summary('waiting'),
   ]);
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 19; index += 1) {
     queueLoad(harness, `held-${index}`);
     await harness.lifecycle.resume(`held-${index}`);
   }

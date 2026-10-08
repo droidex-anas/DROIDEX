@@ -49,7 +49,9 @@ import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
 
-const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+// Projects routinely run fifteen to twenty threads; a lower cap left messages
+// to stopped threads waiting for a slot that never freed.
+const MAX_SCHEDULED_SESSION_RUNTIMES = 20;
 // How long a settled turn waits for Send now's interrupt. A harness that never
 // answers it must not leave the chat busy for good.
 const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
