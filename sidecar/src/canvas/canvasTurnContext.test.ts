@@ -53,6 +53,18 @@ test('a turn pins the references its prompt carried, and nothing it did not', ()
   assert.deepEqual(pinned.allowedDesignIds, ['dsg_hey']);
   assert.equal(pinned.canvasId, 'cv_01');
 
+  const variants = {
+    designs: [
+      { designId: 'dsg_layout', revisionId: 'rev_layout' },
+      { designId: 'dsg_color', revisionId: 'rev_color' },
+    ],
+    elements: [],
+    designSystem,
+  };
+  turns.beginTurn('app-variants', variants);
+  assert.deepEqual(lease(turns, 'app-variants').context, variants);
+  assert.deepEqual(lease(turns, 'app-variants').allowedDesignIds, ['dsg_layout', 'dsg_color']);
+
   // An element names the design it sits in, so selecting one is not authority
   // over every other design on the board.
   turns.beginTurn('app-2', elementContext('dsg_selected'));

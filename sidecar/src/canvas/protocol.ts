@@ -12,7 +12,10 @@ import type {
   EditElementInput,
   ElementRef,
   FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
   SourceFiles,
+  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 
@@ -25,8 +28,12 @@ export type {
   DesignSystemRef,
   EditElementInput,
   ElementRef,
+  FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
   RevisionRef,
   SourceFiles,
+  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 
@@ -122,6 +129,7 @@ export interface CanvasFrame {
   name: string;
   rect: FrameRect;
   layoutVersion: number;
+  manifestVersion: number;
   // null while the frame is reserved and has no source yet.
   revisionId: string | null;
   designSystem: DesignSystemRef;
@@ -167,6 +175,8 @@ export interface WriteReceipt {
 export type CanvasErrorCode =
   | 'invalid_input'
   | 'revision_conflict'
+  | 'preset_read_only'
+  | 'version_mismatch'
   | 'invalid_source_path'
   | 'unsupported_import'
   | 'build_timeout'
@@ -179,11 +189,14 @@ export type CanvasErrorCode =
   | 'ambiguous_element'
   | 'invalid_edit'
   | 'invalid_source'
-  | 'unsupported_edit';
+  | 'unsupported_edit'
+  | 'layout_conflict'
+  | 'not_found';
 
 export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
+  currentRect?: FrameRect;
 }
 
 // ── Bridge commands and events ───────────────────────────────────────
@@ -245,6 +258,27 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: ArrangeFramesInput;
+    }
+  | {
+      type: 'canvas.remove';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RemoveFramesInput;
+    }
+  | {
+      type: 'canvas.undoRemoval';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: UndoRemovalInput;
+    }
+  | {
+      type: 'canvas.renameFrame';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RenameFrameInput;
     };
 
 /** What a successful command answers with, one kind per command. */
@@ -256,6 +290,9 @@ export type CanvasReply =
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
+  | { kind: 'removed'; undoId: string }
+  | { kind: 'undone'; change: CanvasChange }
+  | { kind: 'renamed'; change: CanvasChange }
   | { kind: 'artifact'; artifact: PreviewArtifact | null }
   | { kind: 'source'; files: SourceFiles };
 

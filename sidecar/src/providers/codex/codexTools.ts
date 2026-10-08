@@ -6,6 +6,8 @@ import { mcpGrantSignature } from '../../mcpGrant.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplayTitle } from '../../sessionsMcpPolicy.js';
 import { objectValue } from '../../values.js';
+import { invalidCanvasArguments } from '../../canvas/canvasMcpServer.js';
+import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
 import type { OpenPrompts } from './codexApprovals.js';
 
 interface CodexTool {
@@ -53,12 +55,17 @@ export class CodexToolBridge {
     servers: SdkMcpServer[],
     private readonly session: CodexToolSession,
   ) {
+    const namespaces = new Set<string>();
     this.declarations = servers.map((server) => {
       const namespace = server.name.replaceAll('-', '_');
       if (!TOOL_NAME.test(namespace)) throw new Error(`Invalid Codex tool namespace: ${namespace}`);
+      if (namespaces.has(namespace))
+        throw new Error(`Reserved in-app MCP namespace collision: ${namespace}`);
+      namespaces.add(namespace);
       const tools = server.tools.map((tool) => {
         if (!TOOL_NAME.test(tool.name)) throw new Error(`Invalid Codex tool name: ${tool.name}`);
-        const input = z.object(tool.inputSchema ?? {});
+        const shape = z.object(tool.inputSchema ?? {});
+        const input = server.name === CANVAS_MCP_SERVER_NAME ? shape.strict() : shape;
         this.tools.set(`${namespace}/${tool.name}`, { serverName: server.name, tool, input });
         return {
           type: 'function' as const,
@@ -78,7 +85,9 @@ export class CodexToolBridge {
         description:
           server.name === SESSIONS_MCP_SERVER_NAME
             ? "DROIDEX app tools: start chats and threads, keep a project plan, and list, read, message, stop or settle the chats in the user's sidebar, including what needs the user."
-            : 'DROIDEX automations: schedule a prompt or a recurring task, and list, change, pause, run now or remove scheduled ones.',
+            : server.name === CANVAS_MCP_SERVER_NAME
+              ? 'DROIDEX Canvas: make exploration, comparison, and visualization interactive. Read the attached canvas, create named frames, write complete files, inspect builds, arrange frames, and read or apply design systems.'
+              : 'DROIDEX automations: schedule a prompt or a recurring task, and list, change, pause, run now or remove scheduled ones.',
         tools,
       };
     });
@@ -143,6 +152,13 @@ export class CodexToolBridge {
         input: entry.input.parse(call.arguments),
       };
     } catch (error) {
+      if (entry.serverName === CANVAS_MCP_SERVER_NAME && error instanceof z.ZodError) {
+        const failure = invalidCanvasArguments(error);
+        return reply(
+          JSON.stringify({ ok: false, code: failure.code, message: failure.message }),
+          false,
+        );
+      }
       return reply(`Invalid tool arguments: ${message(error)}`, false);
     }
   }

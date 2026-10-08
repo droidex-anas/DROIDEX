@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: './tests/smoke',
   testMatch: [
     'electronCanvas.smoke.spec.ts',
+    'electronCanvasKit.smoke.spec.ts',
     'electronCanvasPreview.smoke.spec.ts',
     'electronCanvasRecovery.smoke.spec.ts',
   ],

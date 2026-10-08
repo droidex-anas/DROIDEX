@@ -179,7 +179,7 @@ export interface SessionLifecycleDependencies {
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
-  canvasTurns: Pick<CanvasTurns, 'beginTurn' | 'endSession'>;
+  canvasTurns: Pick<CanvasTurns, 'beginTurn' | 'endSession' | 'activeScope'>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
   context: Pick<
     SessionContext,
@@ -271,6 +271,7 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
       const mcp = await d.startLocalMcpServers(ref, kind, appCwd);
       pendingMcpServers = mcp.servers;
+      this.requireOpenAdmission();
       const providerSession = await provider.create({
         cwd: runtimeCwd,
         interactionMode,
@@ -281,6 +282,9 @@ export class SessionLifecycle {
           : {}),
         contextWindowTokens: command.contextWindowTokens,
         mcpServers: mcp.configs,
+        ...(kind === 'claude'
+          ? { canvasScopeForRead: () => d.canvasTurns.activeScope(ref.id)?.scopeId }
+          : {}),
         interactions: d.interactionsFor(ref),
         ...(kind === 'droid'
           ? {
@@ -454,6 +458,9 @@ export class SessionLifecycle {
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
         ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
+        ...(kind === 'claude'
+          ? { canvasScopeForRead: () => d.canvasTurns.activeScope(appSessionId)?.scopeId }
+          : {}),
         cwd: runtimeCwd,
         modelId: historical?.modelId,
         reasoningEffort: historical?.reasoningEffort,

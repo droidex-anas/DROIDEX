@@ -84,20 +84,6 @@ const MAX_PREVIEW_TEXT_BYTES = 512;
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
 /**
- * How often main asks the generated frame whether it is still running, and how
- * long one of those questions may take. The renderer's poll bounds the
- * intermediate; this bounds the design, which is a process of its own and so is
- * invisible to those polls once it has reported `ready`.
- *
- * The question is a literal no-op evaluated in the frame, never a heartbeat the
- * design emits: generated code cannot be asked to report on itself.
- */
-const GENERATED_PROBE_INTERVAL_MS = 2_000;
-const GENERATED_PROBE_DEADLINE_MS = 3_000;
-/** The whole probe: a literal with no reachable identifier. */
-const GENERATED_PROBE = '0';
-
-/**
  * The reporter that runs inside the generated frame: readiness once it has
  * painted, its content size, and its own uncaught failures as bounded
  * diagnostics. It is the only code the host adds to a design, it talks to its
@@ -273,6 +259,14 @@ const INTERMEDIATE_SCRIPT = `(() => {
         dropped: lost,
       });
     },
+    identity() {
+      if (!instance) return null;
+      return {
+        designId: instance.designId,
+        revisionId: instance.revisionId,
+        generation: instance.generation,
+      };
+    },
   };
 })();`;
 
@@ -306,122 +300,6 @@ ${script}
 </html>
 `;
 }
-
-/**
- * The guests main attached, and the only way one is ended.
- *
- * `terminate` crashes the guest's renderer through main's own handle, which also
- * takes the generated frame's process with it: spec §6 requires main to end the
- * queue owner, because killing only the generated sender leaves the intermediate
- * holding a backlog. A guest ID main did not attach is refused.
- */
-function createCanvasPreviewHosts({ log, clock = realClock }) {
-  const guests = new Map();
-
-  /** Drops a guest that is already gone, releasing its probe timers. */
-  function forget(guestId) {
-    const guest = guests.get(guestId);
-    if (!guest) return;
-    guests.delete(guestId);
-    guest.stopProbing();
-  }
-
-  function end(guestId, reason) {
-    const guest = guests.get(guestId);
-    if (!guest) return false;
-    guests.delete(guestId);
-    guest.stopProbing();
-    if (guest.contents.isDestroyed()) return true;
-    log(`Ending preview guest ${String(guestId)}: ${reason}`);
-    // Synchronous and main-owned: it waits for no guest reply.
-    guest.contents.forcefullyCrashRenderer();
-    return true;
-  }
-
-  /**
-   * Main's own liveness check on the design. A guest whose intermediate answers
-   * every poll can still hold a design that stopped running after it reported
-   * `ready`: that frame is a separate process, so nothing the renderer measures
-   * sees it. One probe is in flight at a time and a probe that misses its
-   * deadline ends the guest, without waiting for the probe to settle.
-   */
-  function watchGeneratedFrame(guestId, contents) {
-    let releaseDeadline = null;
-    let probing = false;
-
-    const tick = () => {
-      if (probing) return;
-      const frame = generatedFrameOf(contents);
-      // No design mounted yet; the next tick looks again.
-      if (!frame) return;
-      probing = true;
-      releaseDeadline = clock.schedule(() => {
-        releaseDeadline = null;
-        end(guestId, 'its design stopped responding');
-      }, GENERATED_PROBE_DEADLINE_MS);
-      const settle = () => {
-        probing = false;
-        releaseDeadline?.();
-        releaseDeadline = null;
-      };
-      frame.executeJavaScript(GENERATED_PROBE).then(settle, settle);
-    };
-
-    const releaseInterval = clock.repeat(tick, GENERATED_PROBE_INTERVAL_MS);
-    return () => {
-      releaseInterval();
-      releaseDeadline?.();
-      releaseDeadline = null;
-    };
-  }
-
-  return {
-    /** Registers one attached guest and installs main's own watchdogs on it. */
-    attach(contents) {
-      const guestId = contents.id;
-      // No UDP that is not proxied, and the guest's session proxies to nowhere,
-      // so ICE has neither a datagram path nor a TCP one.
-      contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
-      contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-      contents.on('will-navigate', (event, url) => {
-        if (url !== CANVAS_PREVIEW_URL) event.preventDefault();
-      });
-      // Main's independent watchdogs: a wedged guest and a wedged design are
-      // both ended here, with no renderer request and no guest cooperation.
-      contents.on('unresponsive', () => end(guestId, 'unresponsive'));
-      contents.on('render-process-gone', (_event, details) => {
-        log(`Preview guest ${String(guestId)} is gone: ${details.reason}`);
-        forget(guestId);
-      });
-      contents.on('destroyed', () => forget(guestId));
-      guests.set(guestId, { contents, stopProbing: watchGeneratedFrame(guestId, contents) });
-    },
-
-    /** Ends a guest the renderer asked about. False when main does not own it. */
-    terminate(guestId) {
-      return end(guestId, 'the renderer asked for it');
-    },
-  };
-}
-
-/** The design's frame inside one guest, once the intermediate has mounted it. */
-function generatedFrameOf(contents) {
-  if (contents.isDestroyed()) return null;
-  return contents.mainFrame.frames[0] ?? null;
-}
-
-const realClock = {
-  schedule(task, delayMs) {
-    const timer = setTimeout(task, delayMs);
-    timer.unref?.();
-    return () => clearTimeout(timer);
-  },
-  repeat(task, everyMs) {
-    const timer = setInterval(task, everyMs);
-    timer.unref?.();
-    return () => clearInterval(timer);
-  },
-};
 
 /**
  * The sessions whose network has actually been shut off. An unconfigured session
@@ -460,5 +338,4 @@ module.exports = {
   configureCanvasPreviewSession,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
-  createCanvasPreviewHosts,
 };

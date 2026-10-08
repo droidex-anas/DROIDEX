@@ -230,10 +230,15 @@ function mergeStreamingDelta(
     };
   }
   if (isToolCallDelta(previous) && isToolCallDelta(next) && previous.toolUseId === next.toolUseId) {
+    let canvasActivity = next.canvasActivity ?? previous.canvasActivity;
+    if (previous.canvasActivity?.designIds.length && !next.canvasActivity?.designIds.length) {
+      canvasActivity = previous.canvasActivity;
+    }
     return {
       ...previous,
       toolName: next.toolName ?? previous.toolName,
       toolArgs: mergeToolArgs(previous.toolArgs, next.toolArgs),
+      ...(canvasActivity ? { canvasActivity } : {}),
       endTs: next.endTs ?? next.ts,
     };
   }

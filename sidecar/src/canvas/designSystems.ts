@@ -5,10 +5,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, rm, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-import { canvasError, storageFailure } from './canvasError.js';
+import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { canvasDir } from '../droidexPaths.js';
 import type { DesignSystemRef } from './protocol.js';
@@ -59,12 +62,24 @@ const kitFilesSchema = sourceFilesSchema.refine((files) => Object.hasOwn(files, 
   message: ENTRY_MESSAGE,
 });
 
-const designSystemSchema = z
+export const designSystemSchema = z
   .object({
     id: canvasIdentifierSchema,
-    version: z.number().int().positive(),
+    version: z.number().int().positive().safe(),
     name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
-    modes: z.object({ light: modeTokensSchema, dark: modeTokensSchema }).strict(),
+    modes: z
+      .object({ light: modeTokensSchema, dark: modeTokensSchema })
+      .strict()
+      .refine(
+        ({ light, dark }) => {
+          const names = Object.keys(light);
+          return (
+            names.length === Object.keys(dark).length &&
+            names.every((name) => Object.hasOwn(dark, name))
+          );
+        },
+        { message: 'Light and dark modes must declare the same design tokens.' },
+      ),
     files: kitFilesSchema,
     guidance: z
       .string()
@@ -72,12 +87,47 @@ const designSystemSchema = z
         message: GUIDANCE_MESSAGE,
       }),
     examples: sourceFilesSchema,
+    provenance: z
+      .object({
+        sourceCanvasId: canvasIdentifierSchema,
+        revision: z
+          .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
+          .strict(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
 export type DesignSystem = z.infer<typeof designSystemSchema>;
 
-const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [DROIDEX_DESIGN_SYSTEM];
+const swatchesSchema = z.object({ surface: tokenValueSchema, accent: tokenValueSchema }).strict();
+const summarySchema = z
+  .object({
+    id: canvasIdentifierSchema,
+    version: z.number().int().positive().safe(),
+    name: z.string().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
+    kind: z.enum(['preset', 'user']),
+    swatches: z.object({ light: swatchesSchema, dark: swatchesSchema }).strict(),
+  })
+  .strict();
+export type DesignSystemSummary = z.infer<typeof summarySchema>;
+
+const savedSystemSchema = z
+  .object({
+    summary: summarySchema,
+    system: designSystemSchema,
+    mutationId: canvasIdentifierSchema.optional(),
+  })
+  .strict();
+const SUMMARY_HEADER_BYTES = 8192;
+
+// Parsing snapshots the authored kits and validates their limits at startup.
+const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
+  DROIDEX_DESIGN_SYSTEM,
+  OPENAI_INSPIRED_DESIGN_SYSTEM,
+  CLAUDE_INSPIRED_DESIGN_SYSTEM,
+].map((system) => designSystemSchema.parse(system));
 
 /** The kit a new design starts from when nothing else is selected. */
 export const DEFAULT_DESIGN_SYSTEM_REF: DesignSystemRef = {
@@ -86,36 +136,151 @@ export const DEFAULT_DESIGN_SYSTEM_REF: DesignSystemRef = {
   mode: 'dark',
 };
 
+/** Presets followed by the latest published user version; reads only metadata headers. */
+export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
+  const summaries = BUILT_IN_DESIGN_SYSTEMS.map((system) => summarize(system, 'preset'));
+  const root = systemsRoot();
+  try {
+    await refuseLinkedPath(join(root, '_'));
+    const entries = await readdir(root, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
+      if (!entry.isDirectory()) continue;
+      const id = canvasIdentifierSchema.parse(entry.name);
+      const versions = (await readdir(join(root, id)))
+        .filter((name) => /^[1-9][0-9]*\.json$/.test(name))
+        .map((name) => Number(name.slice(0, -5)));
+      if (versions.length === 0) continue;
+      const version = versions.reduce((latest, current) => Math.max(latest, current), 0);
+      const header = await readSavedText(versionPath(id, version), SUMMARY_HEADER_BYTES);
+      if (header === null) continue; // A concurrent save has not published its version yet.
+      const newline = header.indexOf('\n');
+      if (newline < 0 || !header.startsWith('{"summary":'))
+        throw canvasError(
+          'storage_failed',
+          'Design system metadata is damaged. Restore the saved kit.',
+        );
+      const firstLine = header.slice(0, newline);
+      const parsed = summarySchema.safeParse(parseJson(firstLine.slice('{"summary":'.length, -1)));
+      if (
+        !parsed.success ||
+        parsed.data.id !== id ||
+        parsed.data.version !== version ||
+        parsed.data.kind !== 'user'
+      )
+        throw canvasError(
+          'storage_failed',
+          'Design system metadata is damaged. Restore the saved kit.',
+        );
+      summaries.push(parsed.data);
+    }
+    return summaries;
+  } catch (error) {
+    if (isMissing(error)) return summaries;
+    throw storageFailure(
+      'Design systems could not be listed. Restore the saved kits and retry.',
+      error,
+    );
+  }
+}
+
 /** Exactly the pinned version, from the built-in kits or the user's saved ones. */
 export async function readDesignSystem(ref: DesignSystemRef): Promise<DesignSystem> {
   const builtIn = BUILT_IN_DESIGN_SYSTEMS.find(
     (system) => system.id === ref.id && system.version === ref.version,
   );
-  if (builtIn) return builtIn;
+  if (builtIn) return structuredClone(builtIn);
+  if (BUILT_IN_DESIGN_SYSTEMS.some((system) => system.id === ref.id))
+    throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
 
   const text = await readSavedText(versionPath(ref.id, ref.version));
-  if (text === null) throw canvasError('invalid_input', UNKNOWN_MESSAGE);
-  const parsed = designSystemSchema.safeParse(parseJson(text));
-  if (!parsed.success) throw canvasError('invalid_input', UNKNOWN_MESSAGE);
+  if (text === null) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
+  const parsed = savedSystemSchema.safeParse(parseJson(text));
+  if (!parsed.success)
+    throw canvasError(
+      'storage_failed',
+      'The saved kit is damaged. Restore that design system version.',
+    );
   // A file whose contents name another version would serve the wrong kit.
-  if (parsed.data.id !== ref.id || parsed.data.version !== ref.version)
-    throw canvasError('invalid_input', UNKNOWN_MESSAGE);
-  return parsed.data;
+  if (
+    parsed.data.system.id !== ref.id ||
+    parsed.data.system.version !== ref.version ||
+    JSON.stringify(parsed.data.summary) !== JSON.stringify(summarize(parsed.data.system, 'user'))
+  )
+    throw canvasError(
+      'storage_failed',
+      'The saved kit metadata disagrees with its content. Restore that version.',
+    );
+  return parsed.data.system;
 }
 
 /** Writes one new immutable version and returns the reference that pins it. */
-export async function saveDesignSystem(system: DesignSystem): Promise<DesignSystemRef> {
+export async function saveDesignSystem(
+  system: DesignSystem,
+  options: { mutationId?: string; beforePublish?: () => void } = {},
+): Promise<DesignSystemRef> {
   const parsed = designSystemSchema.safeParse(system);
   if (!parsed.success)
     throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? UNKNOWN_MESSAGE);
   const kit = parsed.data;
   if (BUILT_IN_DESIGN_SYSTEMS.some((builtIn) => builtIn.id === kit.id))
-    throw canvasError('invalid_input', BUILT_IN_MESSAGE);
+    throw canvasError('preset_read_only', BUILT_IN_MESSAGE);
 
-  await writeVersion(versionPath(kit.id, kit.version), `${JSON.stringify(kit)}\n`);
+  // The summary and executable content publish together in one immutable version.
+  const summary = summarize(kit, 'user');
+  const path = versionPath(kit.id, kit.version);
+  try {
+    await writeVersion(
+      path,
+      `{"summary":${JSON.stringify(summary)},\n"system":${JSON.stringify(kit)}${options.mutationId ? `,"mutationId":${JSON.stringify(options.mutationId)}` : ''}}\n`,
+      options.beforePublish ?? (() => undefined),
+    );
+  } catch (error) {
+    if (!(error instanceof CanvasCommandError) || error.message !== IMMUTABLE_MESSAGE) throw error;
+    if (!options.mutationId || !(await sameSavedMutation(path, options.mutationId, kit)))
+      throw error;
+  }
+  try {
+    await flushAncestors(dirname(path));
+  } catch (error) {
+    throw storageFailure(SAVE_RECOVERY, error);
+  }
   // A reference also names a mode; a saved kit has both, so the light one is
   // the selection a caller gets back until the user picks otherwise.
   return { id: kit.id, version: kit.version, mode: 'light' };
+}
+
+async function sameSavedMutation(
+  path: string,
+  mutationId: string,
+  kit: DesignSystem,
+): Promise<boolean> {
+  const text = await readSavedText(path);
+  if (text === null) return false;
+  const existing = savedSystemSchema.safeParse(parseJson(text));
+  if (!existing.success || existing.data.mutationId !== mutationId) return false;
+  return (
+    isDeepStrictEqual(existing.data.system, kit) &&
+    isDeepStrictEqual(existing.data.summary, summarize(kit, 'user'))
+  );
+}
+
+function summarize(system: DesignSystem, kind: DesignSystemSummary['kind']): DesignSystemSummary {
+  const swatches = (mode: 'light' | 'dark') => {
+    const tokens = system.modes[mode];
+    let surface = 'transparent';
+    if (Object.hasOwn(tokens, '--ds-surface')) surface = tokens['--ds-surface'];
+    else if (Object.hasOwn(tokens, '--ds-canvas')) surface = tokens['--ds-canvas'];
+    const accent = Object.hasOwn(tokens, '--ds-accent') ? tokens['--ds-accent'] : 'transparent';
+    return { surface, accent };
+  };
+  return {
+    id: system.id,
+    version: system.version,
+    name: system.name,
+    kind,
+    swatches: { light: swatches('light'), dark: swatches('dark') },
+  };
 }
 
 function systemsRoot(): string {
@@ -142,7 +307,7 @@ const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
 const CREATE_FLAGS =
   constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
 
-async function readSavedText(path: string): Promise<string | null> {
+async function readSavedText(path: string, maxBytes?: number): Promise<string | null> {
   let file;
   try {
     await refuseLinkedPath(path);
@@ -152,6 +317,11 @@ async function readSavedText(path: string): Promise<string | null> {
     throw storageFailure(UNKNOWN_MESSAGE, error);
   }
   try {
+    if (maxBytes !== undefined) {
+      const buffer = Buffer.alloc(maxBytes);
+      const { bytesRead } = await file.read(buffer, 0, maxBytes, 0);
+      return buffer.subarray(0, bytesRead).toString('utf8');
+    }
     return await file.readFile('utf8');
   } catch (error) {
     throw storageFailure(UNKNOWN_MESSAGE, error);
@@ -167,7 +337,11 @@ async function readSavedText(path: string): Promise<string | null> {
  * nothing overwrite each other. The temporary is named per call, so concurrent
  * writers never collide on it either.
  */
-async function writeVersion(path: string, content: string): Promise<void> {
+async function writeVersion(
+  path: string,
+  content: string,
+  beforePublish: () => void,
+): Promise<void> {
   const directory = dirname(path);
   const temporary = join(directory, `.${randomUUID()}.tmp`);
   try {
@@ -180,9 +354,9 @@ async function writeVersion(path: string, content: string): Promise<void> {
     } finally {
       await file.close();
     }
+    beforePublish();
     await link(temporary, path);
     await unlink(temporary);
-    await flushAncestors(directory);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
     if (isExisting(error)) throw canvasError('invalid_input', IMMUTABLE_MESSAGE);

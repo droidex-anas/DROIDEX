@@ -12,6 +12,8 @@ import type { ProviderModelSettings } from '../session.js';
 import { errMsg } from '../../errors.js';
 import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
 import type { FileChangeDetail } from './codexApprovals.js';
+import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from '../../canvas/canvasMcpNames.js';
+import type { ToolProvenance } from '../../canvas/canvasToolPresentation.js';
 import { imageUsageLimit } from './codexImages.js';
 import {
   collabChildSignals,
@@ -145,6 +147,18 @@ interface OpenTool {
   changes?: FileUpdateChange[];
   detail: string;
   output: string;
+}
+
+function canvasProvenance(item: ThreadItem): ToolProvenance | undefined {
+  if (item.type !== 'mcpToolCall' && item.type !== 'dynamicToolCall') return undefined;
+  const serverName =
+    item.type === 'mcpToolCall' ? item.server : item.namespace.replaceAll('_', '-');
+  if (
+    serverName !== CANVAS_MCP_SERVER_NAME ||
+    !CANVAS_TOOL_NAMES.some((name) => name === item.tool)
+  )
+    return undefined;
+  return { serverName, toolName: item.tool, toolUseId: item.id };
 }
 
 let sequence = 0;
@@ -314,6 +328,7 @@ export class CodexEventMapper {
   private started(item: ThreadItem): NormalizedEvent[] {
     const call = toolCall(item);
     if (!call) return [];
+    const provenance = canvasProvenance(item);
     this.tools.set(call.id, {
       detail: call.detail,
       output: '',
@@ -321,6 +336,7 @@ export class CodexEventMapper {
     });
     return [
       {
+        ...(provenance ? { toolProvenance: provenance } : {}),
         transcript: this.transcript('tool_call', {
           toolName: call.name,
           toolArgs: call.args,
@@ -345,10 +361,12 @@ export class CodexEventMapper {
     }
     const call = toolCall(item);
     if (!call) return [];
+    const provenance = canvasProvenance(item);
     const open = this.tools.get(call.id);
     this.tools.delete(call.id);
     const events: NormalizedEvent[] = [
       {
+        ...(provenance ? { toolProvenance: provenance } : {}),
         transcript: this.transcript('tool_result', {
           toolName: call.name,
           text: toolOutput(item, open?.output ?? '', this.appSessionId),

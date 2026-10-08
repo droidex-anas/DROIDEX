@@ -6,6 +6,9 @@ import type * as Renderer from '../../../src/features/canvas/protocol.js';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import type {
   ArrangeFramesInput,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   CanvasChange,
   CanvasCommand,
   CanvasError,
@@ -29,6 +32,9 @@ import {
   arrangeFramesInputSchema,
   createFramesInputSchema,
   editElementInputSchema,
+  removeFramesInputSchema,
+  renameFrameInputSchema,
+  undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -45,6 +51,9 @@ type SidecarWire = {
   createResult: CreateFramesResult;
   write: WriteFilesInput;
   arrange: ArrangeFramesInput;
+  remove: RemoveFramesInput;
+  undo: UndoRemovalInput;
+  rename: RenameFrameInput;
   snapshot: CanvasSnapshot;
   change: CanvasChange;
   summary: CanvasSummary;
@@ -66,6 +75,9 @@ type RendererWire = {
   createResult: Renderer.CreateFramesResult;
   write: Renderer.WriteFilesInput;
   arrange: Renderer.ArrangeFramesInput;
+  remove: Renderer.RemoveFramesInput;
+  undo: Renderer.UndoRemovalInput;
+  rename: Renderer.RenameFrameInput;
   snapshot: Renderer.CanvasSnapshot;
   change: Renderer.CanvasChange;
   summary: Renderer.CanvasSummary;
@@ -94,6 +106,7 @@ const wire: SidecarWire = {
   createCanvasResult: { canvasId: 'cv_01', attachedCanvasId: 'cv_02' },
   create: {
     mutationId: 'create-hey',
+    placeBeside: { designId: 'dsg_hey' },
     frames: [
       { name: 'Hey', width: 720, height: 720, designSystem },
       {
@@ -117,6 +130,7 @@ const wire: SidecarWire = {
         name: 'Hey',
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 0,
+        manifestVersion: 0,
         revisionId: null,
         designSystem,
         build: { status: 'pending', generation: 0 },
@@ -144,6 +158,14 @@ const wire: SidecarWire = {
       },
     ],
   },
+  remove: { mutationId: 'remove-hey', designIds: ['dsg_hey'] },
+  undo: { mutationId: 'undo-hey', undoId: 'undo_01' },
+  rename: {
+    mutationId: 'rename-hey',
+    designId: 'dsg_hey',
+    name: 'Hey again',
+    expectedManifestVersion: 2,
+  },
   snapshot: {
     canvasId: 'cv_01',
     sequence: 7,
@@ -153,6 +175,7 @@ const wire: SidecarWire = {
         name: 'Hey',
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 2,
+        manifestVersion: 2,
         revisionId: 'rev_02',
         designSystem,
         build: {
@@ -169,6 +192,7 @@ const wire: SidecarWire = {
         name: 'Cards',
         rect: { x: 760, y: 0, width: 720, height: 720 },
         layoutVersion: 1,
+        manifestVersion: 1,
         revisionId: null,
         designSystem,
         build: { status: 'pending', generation: 0 },
@@ -184,6 +208,7 @@ const wire: SidecarWire = {
         name: 'Hey',
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 2,
+        manifestVersion: 2,
         revisionId: 'rev_03',
         designSystem,
         build: {
@@ -266,6 +291,9 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     createResult: true,
     write: true,
     arrange: true,
+    remove: true,
+    undo: true,
+    rename: true,
     snapshot: true,
     change: true,
     summary: true,
@@ -335,6 +363,34 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       requestId: 'req_01',
       ok: true,
       reply: { kind: 'arranged', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'removed', undoId: 'undo_01' },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'undone', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'renamed', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: false,
+      error: {
+        code: 'layout_conflict',
+        message: 'Move the occupant.',
+        currentRect: { x: 0, y: 0, width: 720, height: 720 },
+      },
     },
     {
       type: 'canvas.result',
@@ -417,15 +473,21 @@ test('the renderer accepts a ready element map and rejects incomplete or unbound
   assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
 });
 
-test('the create, write, edit and arrange fixtures parse and fit the mirror', () => {
+test('the mutation fixtures parse, and the parsed values fit the mirror', () => {
   const create: Renderer.CreateFramesInput = createFramesInputSchema.parse(wire.create);
   const write: Renderer.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
   const arrange: Renderer.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
   const edit: Renderer.EditElementInput = editElementInputSchema.parse(wire.edit);
+  const remove: Renderer.RemoveFramesInput = removeFramesInputSchema.parse(wire.remove);
+  const undo: Renderer.UndoRemovalInput = undoRemovalInputSchema.parse(wire.undo);
+  const rename: Renderer.RenameFrameInput = renameFrameInputSchema.parse(wire.rename);
   assert.deepEqual(create, wire.create);
   assert.deepEqual(write, wire.write);
   assert.deepEqual(arrange, wire.arrange);
   assert.deepEqual(edit, wire.edit);
+  assert.deepEqual(remove, wire.remove);
+  assert.deepEqual(undo, wire.undo);
+  assert.deepEqual(rename, wire.rename);
 });
 
 test('create rejects more than four frames and an out-of-range dimension', () => {

@@ -6,6 +6,46 @@ import type { ProviderApprovalRequest } from '../interactions.js';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 import { sessionOptions } from './claudeOptions.js';
+import { claudeCanvasHook } from './claudeCanvasHook.js';
+
+for (const kind of ['read', 'inspect'] as const)
+  test(`Claude Canvas ${kind} hook keeps each tool-use ID on its original lease`, async () => {
+    let active: string | undefined = 'turn-first';
+    const hook = claudeCanvasHook(() => active).hooks[0];
+    const read = (tool_use_id: string, tool_input: Record<string, unknown> = {}) =>
+      hook(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: `mcp__droidex-canvas__canvas_${kind}`,
+          tool_input,
+          tool_use_id,
+          session_id: 'chat-one',
+          transcript_path: '/unused',
+          cwd: '/unused',
+        },
+        tool_use_id,
+        { signal: new AbortController().signal },
+      );
+    assert.deepEqual(await read('use-one'), {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { scopeId: 'turn-first' } },
+    });
+    active = 'turn-second';
+    assert.deepEqual(await read('use-one'), {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { scopeId: 'turn-first' } },
+    });
+    assert.deepEqual(await read('use-two'), {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { scopeId: 'turn-second' } },
+    });
+    assert.deepEqual(await read('use-explicit', { scopeId: 'turn-first' }), {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { scopeId: 'turn-first' } },
+    });
+    assert.match(
+      JSON.stringify(await read('use-explicit', { scopeId: 'turn-second' })),
+      /scope_expired/,
+    );
+    active = undefined;
+    assert.match(JSON.stringify(await read('use-three')), /scope_expired/);
+  });
 
 test('Claude maps product permission modes to distinct CLI modes', () => {
   assert.deepEqual(

@@ -1,8 +1,8 @@
 // Which Canvas mutations are still authorized. The pane registers a user scope
 // for the length of one request; `CanvasTurns` registers a turn lease at the
 // turn's admission seam and revokes it when that turn settles. `CanvasWorkspace`
-// reads this registry through `CanvasLeaseRegistry` and concludes nothing else
-// from it.
+// reads this registry through `CanvasLeaseRegistry`; the bridge also consults
+// its turn leases before cancelling preview work when the last pane closes.
 
 import { canvasError, EXPIRED_TURN } from './canvasError.js';
 import type { CanvasLeaseRegistry } from './canvasLeases.js';
@@ -16,6 +16,13 @@ export class CanvasScopes implements CanvasLeaseRegistry {
     return this.active.get(scopeId);
   }
 
+  /** The live turns that still own work on this canvas, independent of panes. */
+  activeTurns(canvasId: string): CanvasScope[] {
+    return [...this.active.values()].filter(
+      (scope) => scope.origin === 'turn' && scope.canvasId === canvasId,
+    );
+  }
+
   register(scope: CanvasScope): void {
     if (this.active.has(scope.scopeId))
       throw canvasError('invalid_input', 'That request identity is already running.');
@@ -25,6 +32,13 @@ export class CanvasScopes implements CanvasLeaseRegistry {
   /** Idempotent, so a turn can revoke in every path that ends it. */
   revoke(scopeId: string): void {
     this.active.delete(scopeId);
+  }
+
+  /** Pane requests lose their authority as soon as app shutdown starts. */
+  revokeUsers(): void {
+    for (const [scopeId, scope] of this.active) {
+      if (scope.origin === 'user') this.active.delete(scopeId);
+    }
   }
 
   isScopeActive(scopeId: string): boolean {

@@ -10,6 +10,7 @@ import {
   claudeCanUseTool,
   claudePermissionMode,
 } from './claudePermissions.js';
+import { claudeCanvasHook } from './claudeCanvasHook.js';
 
 export function sessionOptions(
   input: ClaudeSessionInput,
@@ -53,7 +54,12 @@ export function sessionOptions(
     // with setPermissionMode, which the CLI refuses without this.
     allowDangerouslySkipPermissions: true,
     canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
-    hooks: CLAUDE_SESSIONS_TOOL_HOOKS,
+    hooks: {
+      PreToolUse: [
+        ...(CLAUDE_SESSIONS_TOOL_HOOKS?.PreToolUse ?? []),
+        ...(input.canvasScopeForRead ? [claudeCanvasHook(input.canvasScopeForRead)] : []),
+      ],
+    },
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and
     // kill, the way it tracks Droid's.

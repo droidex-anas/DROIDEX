@@ -11,6 +11,8 @@ import {
   type StoredSessionStart,
 } from './sessionTranscriptParser.js';
 import type { TranscriptEvent } from './protocol.js';
+import { CanvasToolPresentation } from './canvas/canvasToolPresentation.js';
+import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 
 export interface SessionSearchCandidate {
   providerSessionId: string;
@@ -47,6 +49,7 @@ export async function readSessionSearchSlice(
   assertSearchSliceInput(startByteOffset, maxBytes);
   const handle = await open(candidate.path, 'r');
   const records: SessionSearchRecord[] = [];
+  const canvas = new CanvasToolPresentation(readCanvasToolBindings(candidate.appSessionId));
   let position = Math.min(startByteOffset, candidate.sizeBytes);
   let nextByteOffset = position;
   let lineParts: Buffer[] = [];
@@ -75,6 +78,7 @@ export async function readSessionSearchSlice(
             Buffer.concat(lineParts).toString('utf8'),
             lineStartByteOffset,
             records,
+            canvas,
           );
         }
         lineParts = [];
@@ -121,6 +125,7 @@ export async function readSessionSearchSlice(
       position,
       nextByteOffset,
       isDiscardingLine,
+      canvas,
     });
     return {
       records,
@@ -150,6 +155,7 @@ function completeFinalSearchLine({
   position,
   nextByteOffset,
   isDiscardingLine,
+  canvas,
 }: {
   candidate: SessionSearchCandidate;
   records: SessionSearchRecord[];
@@ -158,11 +164,12 @@ function completeFinalSearchLine({
   position: number;
   nextByteOffset: number;
   isDiscardingLine: boolean;
+  canvas: CanvasToolPresentation;
 }): number {
   if (isDiscardingLine) return position;
   if (lineParts.length === 0) return nextByteOffset;
   const raw = Buffer.concat(lineParts).toString('utf8');
-  return appendSearchRecords(candidate, raw, lineStartByteOffset, records)
+  return appendSearchRecords(candidate, raw, lineStartByteOffset, records, canvas)
     ? position
     : nextByteOffset;
 }
@@ -216,6 +223,7 @@ function appendSearchRecords(
   raw: string,
   sourceByteOffset: number,
   records: SessionSearchRecord[],
+  canvas: CanvasToolPresentation,
 ): boolean {
   let events: TranscriptEvent[];
   try {
@@ -224,6 +232,7 @@ function appendSearchRecords(
       candidate.providerSessionId,
       'primary',
       JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
+      canvas,
     );
   } catch {
     return false;

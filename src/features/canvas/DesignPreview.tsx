@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { canvasPreviewUrl, terminateCanvasPreviewGuest } from '../../lib/desktop';
 import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
+import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame, PreviewArtifact } from './protocol';
 
@@ -43,9 +44,11 @@ export function DesignPreview({ canvasId, frame, readArtifact, onResize }: Desig
     return <PreviewPlacard label={missingLabel(read.state, frame.build)} diagnostics={failures} />;
   return (
     <PreviewGuestFrame
-      key={`${frame.designId}:${read.artifact.artifactId}`}
+      key={`${frame.designId}:${read.artifact.artifactId}:${String(frame.build.generation)}`}
+      canvasId={canvasId}
       designId={frame.designId}
       revisionId={revisionId}
+      generation={frame.build.generation}
       // Spec §5: a failed revision labels the older working preview it is showing.
       showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
       html={read.artifact.html}
@@ -114,15 +117,19 @@ function useArtifact(
  * element API, and removing it on unmount is what releases the guest's processes.
  */
 export function PreviewGuestFrame({
+  canvasId,
   designId,
   revisionId,
+  generation,
   showingRevisionId,
   html,
   diagnostics,
   onResize,
 }: {
+  canvasId: string;
   designId: string;
   revisionId: string;
+  generation: number;
   /** Named when this is an older working revision rather than the frame's own. */
   showingRevisionId: string | null;
   html: string;
@@ -142,6 +149,51 @@ export function PreviewGuestFrame({
     const guest = createGuestElement(url);
     let run: PreviewRun | null = null;
     let mounted = true;
+    let releaseCapture: (() => void) | null = null;
+    let captureSize = '';
+    const mountGeneration = (previewMounts += 1);
+    const thumbnailCapture = new AbortController();
+    let thumbnailTimer: ReturnType<typeof setTimeout> | null = null;
+    const updateCapture = () => {
+      const width = guest.offsetWidth;
+      const height = guest.offsetHeight;
+      const scaleFactor = window.devicePixelRatio;
+      const size = `${String(width)}:${String(height)}:${String(scaleFactor)}`;
+      if (captureSize === size) return;
+      captureSize = size;
+      if (thumbnailTimer) clearTimeout(thumbnailTimer);
+      releaseCapture?.();
+      releaseCapture = null;
+      if (width < 1 || height < 1) return;
+      let guestId: number;
+      try {
+        guestId = guest.getWebContentsId();
+      } catch {
+        return;
+      }
+      if (!Number.isSafeInteger(guestId) || guestId < 1) return;
+      releaseCapture = registerCanvasPreview(
+        canvasId,
+        { designId, revisionId },
+        {
+          guestId,
+          generation: mountGeneration,
+          width,
+          height,
+          scaleFactor,
+        },
+      );
+      thumbnailTimer = setTimeout(() => {
+        thumbnailTimer = null;
+        void captureCanvasImage(canvasId, { designId, revisionId }, thumbnailCapture.signal).catch(
+          (error: unknown) => {
+            if (!(error instanceof CanvasImageError))
+              console.error('A Canvas thumbnail could not be captured:', error);
+          },
+        );
+      }, 150);
+    };
+    const sizeObserver = new ResizeObserver(updateCapture);
     guest.addEventListener(
       'dom-ready',
       () => {
@@ -150,18 +202,27 @@ export function PreviewGuestFrame({
           guest,
           designId,
           revisionId,
-          generation: (previewMounts += 1),
+          generation: mountGeneration,
           html,
           terminate: terminateCanvasPreviewGuest,
           observer: {
             onReady: () => {
               setPhase('ready');
+              updateCapture();
+              sizeObserver.observe(guest);
             },
             onResize: (size) => resized.current?.(designId, size),
             onDiagnostics: (entries) => {
               setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
             },
-            onLost: setPhase,
+            onLost: (reason) => {
+              thumbnailCapture.abort();
+              if (thumbnailTimer) clearTimeout(thumbnailTimer);
+              releaseCapture?.();
+              releaseCapture = null;
+              sizeObserver.disconnect();
+              setPhase(reason);
+            },
           },
         });
       },
@@ -170,10 +231,14 @@ export function PreviewGuestFrame({
     container.append(guest);
     return () => {
       mounted = false;
+      thumbnailCapture.abort();
+      if (thumbnailTimer) clearTimeout(thumbnailTimer);
+      releaseCapture?.();
+      sizeObserver.disconnect();
       run?.stop();
       guest.remove();
     };
-  }, [designId, revisionId, html]);
+  }, [canvasId, designId, revisionId, generation, html]);
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
   return (

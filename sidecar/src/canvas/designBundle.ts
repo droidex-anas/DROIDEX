@@ -8,6 +8,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
+import { truncateDiagnosticText } from './canvasDiagnostics.js';
 import { canvasRuntime } from './canvasRuntime.js';
 import { KIT_ENTRY } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
@@ -22,11 +23,12 @@ export const KIT_SPECIFIER = '@droidex/design-system';
 /** The element `main.tsx`'s default export is mounted into. */
 export const ROOT_ELEMENT_ID = 'canvas-root';
 
-// Task 7 adds lucide-react; nothing else resolves.
+// Only explicitly supported packages resolve.
 const SUPPORTED_IMPORTS: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react',
   'recharts',
   KIT_SPECIFIER,
 ];
@@ -207,7 +209,10 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
           const resolved = resolveRelative(treeFor(args.namespace), args.importer, args.path);
           if (resolved.kind === 'escapes') return refuse('unsupported_import', ESCAPE_MESSAGE);
           if (resolved.kind === 'missing')
-            return refuse('missing_module', `No file in this design matches "${args.path}".`);
+            return refuse(
+              'missing_module',
+              `No file in this design matches "${truncateDiagnosticText(args.path, 512)}".`,
+            );
           return { path: resolved.path, namespace: args.namespace };
         }
         // Node's package entry is CommonJS. Its ESM entry lets esbuild omit
@@ -216,7 +221,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
         if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
         return refuse(
           'unsupported_import',
-          `"${args.path}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design.`,
+          `"${truncateDiagnosticText(args.path, 512)}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design.`,
         );
       });
 
@@ -239,7 +244,11 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
  * package from a real directory, which is its own business.
  */
 function runtimePath(specifier: string): string {
-  return canvasRuntime().resolve(specifier);
+  // Node's resolver selects Lucide's CommonJS barrel, which retains every icon.
+  // Its pinned ESM entry lets esbuild remove all unused icons.
+  return canvasRuntime().resolve(
+    specifier === 'lucide-react' ? 'lucide-react/dist/esm/lucide-react.js' : specifier,
+  );
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {
