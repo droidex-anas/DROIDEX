@@ -578,33 +578,21 @@ test('Codex stops a downgrade only when the running turn bypasses approval callb
   }
 });
 
-test('Codex stops a spoken turn that starts while a downgrade is in flight', async () => {
-  let release = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let markStarted = () => {};
-  const started = new Promise<void>((resolve) => {
-    markStarted = resolve;
-  });
-  let hold = false;
+test('Codex ends live voice before a downgrade write and interrupts spoken turns during it', async () => {
+  let startSpokenTurn = false;
   const interrupted: unknown[] = [];
-  const { client, notifications } = fakeClient(async (method, params) => {
+  const rows: string[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
     if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
-    if (method === 'thread/settings/update' && hold) {
-      markStarted();
-      await held;
-    }
-    if (method === 'turn/interrupt') {
-      interrupted.push(params.turnId);
-      notifications.get('turn/completed')?.({
-        threadId: 'thread-1',
-        turn: { id: params.turnId, status: 'interrupted' },
-      });
+    if (method === 'turn/interrupt') interrupted.push(params.turnId);
+    if (method === 'thread/settings/update' && startSpokenTurn) {
+      assert.equal(session.voice.isLive(), false);
+      assert.deepEqual(rows, ['Ended the voice conversation to apply off']);
+      notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+      assert.deepEqual(interrupted, ['spoken-1']);
     }
   });
   const session = codexSession(client, 'app-1');
-  const rows: string[] = [];
   session.onBackgroundEvent((event) => {
     if (event.transcript?.kind === 'status') rows.push(event.transcript.text ?? '');
   });
@@ -612,22 +600,39 @@ test('Codex stops a spoken turn that starts while a downgrade is in flight', asy
     await session.open();
     await session.setAutonomy('high');
     await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
-    hold = true;
-    const off = session.setAutonomy('off');
-    await started;
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
-    assert.deepEqual(interrupted, []);
-    assert.equal(session.voice.isLive(), true);
-    release();
-    await off;
-    assert.deepEqual(interrupted, ['spoken-1']);
-    assert.deepEqual(rows, [
-      "Stopped the turn to apply off: Codex keeps a turn's permissions until it ends",
-    ]);
-    assert.equal(session.voice.isLive(), false);
+    startSpokenTurn = true;
+    await session.setAutonomy('off');
     assert.equal(session.autonomy, 'off');
   } finally {
-    release();
+    await session.close();
+  }
+});
+
+test('Codex interrupts a late spoken turn after acknowledging a voice downgrade', async () => {
+  const interrupted: unknown[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'turn/interrupt') interrupted.push(params.turnId);
+  });
+  const session = codexSession(client, 'app-1');
+  try {
+    await session.open();
+    await session.setAutonomy('high');
+    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+    await session.setAutonomy('off');
+    assert.equal(session.autonomy, 'off');
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
+    assert.deepEqual(interrupted, ['late-spoken']);
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
+    assert.deepEqual(interrupted, ['late-spoken']);
+    notifications.get('turn/completed')?.({
+      threadId: 'thread-1',
+      turn: { id: 'late-spoken', status: 'interrupted' },
+    });
+    await session.voice.start({ sdp: 'offer', attempt: 'voice-2' });
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'new-spoken' } });
+    assert.deepEqual(interrupted, ['late-spoken']);
+  } finally {
     await session.close();
   }
 });

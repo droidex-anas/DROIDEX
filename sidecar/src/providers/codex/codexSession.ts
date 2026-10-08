@@ -89,7 +89,7 @@ export class CodexSession implements ProviderSession {
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
   private delegatedTurnId?: string;
-  private delegatedTurnAutonomy?: Autonomy;
+  private voiceStoppedForDowngrade = false;
   // The chat asked for the model's own effort, which the thread has to be told
   // explicitly; an omitted effort would leave the previous one in place.
   private effortCleared = false;
@@ -121,7 +121,30 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.permissions = new SessionAutonomy(input.autonomy, {
       write: () => {
-        const stopping = this.stopUnenforceableTurn();
+        const latest = this.permissions.latestAutonomy;
+        let stopping: Promise<void>;
+        if (
+          this.voice.isLive() &&
+          AUTONOMY_LEVELS.indexOf(latest) < AUTONOMY_LEVELS.indexOf(this.permissions.inForce)
+        ) {
+          this.voiceStoppedForDowngrade = true;
+          this.deliver([
+            this.mapper.statusEvent(`Ended the voice conversation to apply ${latest}`),
+          ]);
+          stopping = Promise.all([
+            this.delegatedTurnId ? this.interrupt() : Promise.resolve(),
+            stopVoiceWithDeadline(this.voice.stop()),
+          ])
+            .then(() => {
+              this.permissions.requireOpen();
+            })
+            .catch(async (error: unknown) => {
+              await this.close();
+              throw error;
+            });
+        } else {
+          stopping = this.stopUnenforceableTurn();
+        }
         // The queued writer reports failure even if another settings write delays it.
         void stopping.catch(() => undefined);
         return this.changeThreadSettings(async () => {
@@ -129,7 +152,6 @@ export class CodexSession implements ProviderSession {
           await this.stopUnenforceableTurn();
           const autonomy = this.permissions.latestAutonomy;
           await this.applyThreadSettings(autonomy);
-          // Voice can start a turn while the native settings write is in flight.
           await this.stopUnenforceableTurn();
           return autonomy;
         });
@@ -157,6 +179,7 @@ export class CodexSession implements ProviderSession {
         await this.changeThreadSettings(() => this.applyThreadSettings());
         while (!this.permissions.isApplied) await this.permissions.synchronize();
         this.permissions.requireOpen();
+        this.voiceStoppedForDowngrade = false;
       },
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
@@ -330,7 +353,7 @@ export class CodexSession implements ProviderSession {
   private async stopUnenforceableTurn(): Promise<void> {
     if (this.turnStarted) await this.turnStarted;
     this.permissions.requireOpen();
-    const runningAutonomy = this.turnAutonomy ?? this.delegatedTurnAutonomy;
+    const runningAutonomy = this.turnAutonomy;
     const latest = this.permissions.latestAutonomy;
     if (
       runningAutonomy === undefined ||
@@ -340,7 +363,7 @@ export class CodexSession implements ProviderSession {
       return;
     // Thread settings cannot revoke a turn whose tools bypass host callbacks.
     try {
-      const turnId = this.turnId ?? this.delegatedTurnId;
+      const turnId = this.turnId;
       if (turnId === undefined || turnId === this.stoppedTurnId) return;
       this.deliver([
         this.mapper.statusEvent(
@@ -538,10 +561,17 @@ export class CodexSession implements ProviderSession {
   // not settle the same turn twice.
   private setDelegatedTurn(turnId: string | undefined, end?: DelegatedTurnEnd): void {
     const was = this.delegatedTurnId !== undefined;
-    if (turnId !== this.delegatedTurnId)
-      this.delegatedTurnAutonomy = turnId ? this.permissions.inForce : undefined;
+    const isNewTurn = turnId !== this.delegatedTurnId;
     this.delegatedTurnId = turnId;
     if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
+    if (turnId && isNewTurn && this.voiceStoppedForDowngrade) {
+      this.interruptedTurnId = turnId;
+      this.prompts.cancel();
+      void this.sendInterrupt(turnId).catch(async (error: unknown) => {
+        this.deliver([this.mapper.errorEvent(error)]);
+        await this.close();
+      });
+    }
     const running = turnId !== undefined;
     if (running === was) return;
     for (const listener of this.delegatedListeners) listener(running, end);
@@ -634,7 +664,6 @@ export class CodexSession implements ProviderSession {
       // Not announced: the close path owns what happens to the queue, and a
       // settlement here would start the next prompt on a client that is gone.
       this.delegatedTurnId = undefined;
-      this.delegatedTurnAutonomy = undefined;
       this.dropSteers();
       // A turn still in flight when the process goes away has failed, however
       // the process ended; an idle chat only records a death that was abnormal.
