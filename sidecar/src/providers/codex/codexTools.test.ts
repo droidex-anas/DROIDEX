@@ -283,7 +283,14 @@ test('a tool is refused after a pending approval when the chat closes, and befor
 
 test('below High, DROIDEX asks before a spawn and a denial never runs it', async () => {
   const events: ServerEvent[] = [];
-  const liveSession = { summary: sessionSummary({ appSessionId: 'chat-one', provider: 'codex' }) };
+  const liveSession = {
+    summary: sessionSummary({ appSessionId: 'chat-one', provider: 'codex' }),
+    session: {
+      get autonomy() {
+        return liveSession.summary.autonomy;
+      },
+    },
+  };
   const interactions = new SessionInteractions({
     getLiveSession: () => liveSession,
     updateSummary: () => {},

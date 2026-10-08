@@ -144,6 +144,8 @@ export type DelegatedTurnEnd =
 
 export interface ProviderSession {
   readonly provider: ProviderKind;
+  // Local approval policy: revocations apply immediately, grants after acceptance.
+  readonly autonomy: Autonomy;
   // Native id of the session the provider holds open.
   readonly providerSessionId: string;
   // The provider's own handle for reopening this conversation, when it differs

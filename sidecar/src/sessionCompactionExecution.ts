@@ -144,7 +144,13 @@ export class SessionCompactionExecution {
     carryover: UsageOffset,
   ): Promise<void> {
     const appSessionId = liveSession.summary.appSessionId;
-    const ref = { id: appSessionId, autonomy: liveSession.summary.autonomy };
+    let provider: DroidProviderSession | undefined;
+    const ref = {
+      id: appSessionId,
+      get autonomy() {
+        return provider?.autonomy ?? liveSession.summary.autonomy;
+      },
+    };
     const oldSession = liveSession.session;
     const target = this.effects.primaryTarget(liveSession);
     const replacement = await this.dependencies.runtime.loadSession(providerSessionId, {
@@ -165,11 +171,11 @@ export class SessionCompactionExecution {
           () => this.dependencies.runtime.isProcessAlive(replacement),
           'provisional',
         );
-      const provider = new DroidProviderSession(
+      provider = new DroidProviderSession(
         appSessionId,
         replacement,
         this.dependencies.runtime,
-        ref,
+        liveSession.summary.autonomy,
       );
       const autonomy = liveSession.summary.autonomy;
       await provider.setAutonomy(autonomy);

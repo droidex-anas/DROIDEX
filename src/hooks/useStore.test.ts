@@ -295,7 +295,7 @@ test('a lost bridge drops model changes it can no longer settle', () => {
   // sess-c's request went to the new sidecar on reconnect; sess-b is closed and
   // gets no summary from the snapshot, so both keep their pending change.
   state = reducer(state, {
-    type: 'MODEL_UPDATES_UNANSWERED',
+    type: 'SETTINGS_UPDATES_UNANSWERED',
     liveAppSessionIds: new Set(['sess-a', 'sess-c']),
     resentRequestIds: new Set(['r4']),
   });
