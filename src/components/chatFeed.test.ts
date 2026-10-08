@@ -86,6 +86,16 @@ test('#20 a TodoWrite update does not add a chat message and answer stays single
   assert.ok(inWorked, 'TodoWrite activity should be inside the Worked group');
 });
 
+test('a steer delivered into a running turn keeps the work before it in view', () => {
+  const steer = ev({ kind: 'text', author: 'user', text: 'also check tests', steered: true });
+  const events = [userMsg('fix it'), asst('looking'), grep(), asst('found it'), steer, asst('ok')];
+  const live = groupTurns(buildFeed(events), true);
+  assert.equal(workedChildren(live).length, 0, 'nothing of the running turn folds');
+  assert.equal(toolEvents(live).length, 1);
+  // Once the turn settles it folds as usual.
+  assert.ok(workedChildren(groupTurns(buildFeed(events), false)).length > 0);
+});
+
 test('a spoken line stays its own marked row beside the turn it was said in', () => {
   const spokenAsk = ev({ kind: 'text', author: 'user', text: 'what changed?', spoken: true });
   const spokenReply = ev({ kind: 'text', text: 'the composer', spoken: true });

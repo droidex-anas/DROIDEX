@@ -141,8 +141,15 @@ import { join } from 'node:path';
 // emits them into the one stylesheet even though both viewers load lazily, so
 // main at 1b21548c (102_602) measures 103_872 with them, leaving ~1.1KB. The
 // entry JS stays ~1.3KB under main's.
+//
+// Raised from 1_459_000 to 1_468_000 for steers and side chats. A pending
+// steer paints as the user's bubble with its relative time and take-back
+// button (~4.5KB), and a collapsed sidebar keeps the side chat's restore pill
+// and its close path (~3KB); both render with the chat. Main measured
+// 1_457_268, the steer change 1_461_815 and the side chat change 1_460_242, so
+// the two together leave ~3.2KB of headroom.
 const BUDGETS = {
-  initialRendererJsBytes: 1_459_000,
+  initialRendererJsBytes: 1_468_000,
   initialCssBytes: 105_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
