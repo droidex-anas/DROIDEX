@@ -93,6 +93,7 @@ import {
 } from './SessionCompaction.js';
 import {
   SessionLifecycle,
+  type SessionLifecycleDependencies,
   type LiveSession,
   type StartedLocalMcpResources,
 } from './SessionLifecycle.js';
@@ -204,13 +205,7 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
-  beforeFirstTurn?:
-    | ((
-        session: SessionSummary,
-        clientRef: string,
-        canvas?: Extract<ClientCommand, { type: 'session.create' }>['canvas'],
-      ) => Promise<void>)
-    | undefined;
+  beforeFirstTurn?: SessionLifecycleDependencies['beforeFirstTurn'];
   // The Canvas lease owner turns mint into. The sidecar entry passes the one the
   // Canvas workspace checks; a harness that opens no workspace gets its own, so
   // turns still mint and revoke exactly as they do in production.
@@ -667,7 +662,7 @@ export class SessionManager {
         this.timeline.append(event);
       },
       ensureRunning: async (appSessionId) => {
-        if (!this.registry.getLive(appSessionId)) await this.lifecycle.resume(appSessionId);
+        return (await this.lifecycle.prepareTurn(appSessionId))?.session;
       },
       emit: (event) => {
         this.emit(event);
@@ -1775,6 +1770,16 @@ export class SessionManager {
       this.registry.getCanonicalSummary(requestedAppSessionId)?.appSessionId ??
       requestedAppSessionId;
     if (!isAdmitted(appSessionId)) return;
+    if (
+      previousLiveSession?.createAdmission &&
+      !previousLiveSession.createAdmission.canChangeProvider()
+    ) {
+      this.timeline.appendProgress(
+        appSessionId,
+        'This chat is still opening. Wait for it to finish before compacting.',
+      );
+      return;
+    }
     if (
       previousLiveSession?.streaming ||
       previousLiveSession?.compacting ||
