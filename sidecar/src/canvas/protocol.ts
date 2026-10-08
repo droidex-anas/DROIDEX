@@ -124,6 +124,15 @@ export interface PreviewArtifact {
   html: string;
 }
 
+/** An image copied into one canvas; no private path crosses this contract. */
+export interface OwnedAsset {
+  assetId: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
 export interface CanvasFrame {
   designId: string;
   name: string;
@@ -207,6 +216,7 @@ export interface CanvasError {
 
 export type CanvasCommand =
   | { type: 'canvas.list'; requestId: string }
+  | { type: 'canvas.listAssets'; requestId: string; canvasId: string }
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
@@ -285,6 +295,7 @@ export type CanvasCommand =
 export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
+  | { kind: 'assets'; assets: OwnedAsset[] }
   | { kind: 'attachment'; canvasId: string | null }
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }

@@ -168,7 +168,28 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         forget(guestId);
       });
       contents.on('destroyed', () => forget(guestId));
-      guests.set(guestId, { contents, stopProbing: watchGeneratedFrame(guestId, contents) });
+      guests.set(guestId, {
+        contents,
+        canvasId: null,
+        stopProbing: watchGeneratedFrame(guestId, contents),
+      });
+    },
+
+    /** Binds a guest to the one canvas whose assets its design may read. */
+    bindCanvas(guestId, canvasId) {
+      const guest = guests.get(guestId);
+      if (!guest || guest.contents.isDestroyed()) return false;
+      if (guest.canvasId !== null && guest.canvasId !== canvasId) return false;
+      guest.canvasId = canvasId;
+      return true;
+    },
+
+    /** The bound canvas of a request's own generated frame, or null. */
+    canvasForFrame(guestId, frame) {
+      const guest = guests.get(guestId);
+      if (!guest || guest.contents.isDestroyed()) return null;
+      if (frame !== generatedFrameOf(guest.contents)) return null;
+      return guest.canvasId;
     },
 
     terminate(guestId) {

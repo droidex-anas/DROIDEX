@@ -1268,6 +1268,14 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+Settled by 07d (`canvas/07d-image-references`):
+
+- Electron main is the file permission boundary. Its picker chooses the path, and its drop API accepts only a native `File` path obtained by preload. Main matches the extension to the PNG/JPEG/WebP content, bounds the file, decodes PNG/JPEG with `nativeImage` and WebP with `@napi-rs/canvas`, then sends the path, SHA-256 digest and dimensions over a private loopback bridge route. The sidecar opens that exact file without following its final link and refuses a changed digest; a renderer WebSocket command or agent tool cannot submit a path. Import failures return a curated code and recovery message without the private path.
+- The sidecar stores each accepted image as `canvases/<canvasId>/assets/<sha256>` with a durable metadata record and 10 MiB and 8192 × 8192 limits. Identical bytes return the same asset ID. `canvas.listAssets` recovers IDs after a lost reply or deleted source file. The durable-listing crash/reopen case was not red-run. Canvas deletion in 09d must remove these assets; chat deletion or detachment keeps them with the canvas. Composer picker/drop chips and provider multimodal attachment wiring remain owned by 07b; this branch adds no text path to a prompt.
+- `canvas-asset:<assetId>` is the source spelling. The artifact read signs each owned reference for its canvas; main also binds each generated preview frame to its canvas and refuses images owned by other canvases. Fonts are global content-addressed kit resources; any bound frame may request an installed kit font by hash. Main refuses image and font requests from unbound guests and the default session. The guest keeps its opaque origin and network-denied session.
+- Asset URLs are canvas-scoped by design, so owned image references survive guest replacement and source revisions.
+- The three 07a presets import Inter/Lora WOFF2 source and OFL notices from `presets/fonts/*.json`. The stylesheet writer replaces their kit font data URLs with content-addressed host URLs and saves each font once under the profile; no second font loader is needed.
+- Known decode limit: Electron `nativeImage` accepts a PNG missing its final CRC byte. The image is still decoded and bounded, but this is not a complete file-integrity check.
 
 Settled by 07a (`canvas/07a-design-kits`):
 
@@ -1295,9 +1303,9 @@ Settled by 07a (`canvas/07a-design-kits`):
   for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
   SIL OFL files both in the repository and the kit's virtual source files. Provenance is
   in `presets/fonts/README.md`; other scripts use the local font stack.
-  Inline fonts are accepted for 07a: 64 KB of Inter, or 115 KB of Inter plus Lora,
-  per artifact is within every current limit. 07d owns serving each immutable font
-  once through a preview-host asset URL and changing the matching `font-src`/CSS allowlist.
+  The kit source retains those data URLs; 07d's stylesheet writer now serves each
+  immutable font once through a preview-host asset URL instead of repeating 64 KB
+  of Inter, or 115 KB of Inter plus Lora, in every artifact.
 - `lucide-react` is pinned to 0.460.0, the app's existing version. The shared browser
   module graph stages its ESM files, package metadata and ISC licence alongside Recharts;
   unused Lucide CJS is absent. The flat design import allowlist includes `lucide-react`

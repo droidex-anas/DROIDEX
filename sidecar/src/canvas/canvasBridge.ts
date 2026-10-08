@@ -4,15 +4,23 @@
 // attachment, not from an agent turn's lease (spec §6).
 
 import { CanvasWatches } from './canvasWatches.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ServerEvent } from '../protocol.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
+import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import { editCanvasElement } from './canvasElementEdit.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
-import type { CanvasCommand, CanvasError, CanvasEvent, CanvasReply } from './protocol.js';
+import type {
+  CanvasCommand,
+  CanvasError,
+  CanvasEvent,
+  CanvasReply,
+  OwnedAsset,
+  PreviewArtifact,
+} from './protocol.js';
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
@@ -41,6 +49,9 @@ const target = { ...session, canvasId: canvasIdentifierSchema };
 
 const canvasCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('canvas.list'), ...request }).strict(),
+  z
+    .object({ type: z.literal('canvas.listAssets'), ...request, canvasId: canvasIdentifierSchema })
+    .strict(),
   z.object({ type: z.literal('canvas.attachment'), ...request, ...session }).strict(),
   z
     .object({ type: z.literal('canvas.subscribe'), ...request, canvasId: canvasIdentifierSchema })
@@ -160,6 +171,10 @@ class CanvasDispatch {
     ready: Promise<CanvasWorkspace>,
     private readonly scopes: CanvasScopes,
     private readonly builds: CanvasBuilds,
+    private readonly assets: {
+      secret: string;
+      list: (canvasId: string) => Promise<OwnedAsset[]>;
+    },
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
@@ -240,6 +255,9 @@ class CanvasDispatch {
     switch (command.type) {
       case 'canvas.list':
         return { kind: 'summaries', summaries: workspace.listCanvases() };
+      case 'canvas.listAssets':
+        workspace.snapshot(command.canvasId);
+        return { kind: 'assets', assets: await this.assets.list(command.canvasId) };
       case 'canvas.attachment':
         return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
       case 'canvas.createCanvas': {
@@ -287,7 +305,10 @@ class CanvasDispatch {
       type: 'canvas.result',
       requestId: command.requestId,
       ok: true,
-      reply: { kind: 'artifact', artifact },
+      reply: {
+        kind: 'artifact',
+        artifact: artifact && signAssetUrls(artifact, command.canvasId, this.assets.secret),
+      },
     };
   }
 
@@ -375,11 +396,12 @@ export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
   builds: CanvasBuilds,
+  assets: { secret: string; list: (canvasId: string) => Promise<OwnedAsset[]> },
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
 ): (command: unknown, pageId: string | null) => Promise<boolean> {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  const dispatch = new CanvasDispatch(ready, scopes, builds, emit, onPageGone);
+  const dispatch = new CanvasDispatch(ready, scopes, builds, assets, emit, onPageGone);
 
   return async (value, pageId) => {
     if (!isCanvasRequest(value)) return false;
@@ -454,6 +476,19 @@ function rejection(value: Record<string, unknown>, error: z.ZodError): ServerEve
 
 function failure(requestId: string, error: CanvasError): CanvasEvent {
   return { type: 'canvas.result', requestId, ok: false, error };
+}
+
+/**
+ * Owned-asset URLs are signed for the reader, so the artifact ID has to follow
+ * the signed document the guest will actually load.
+ */
+function signAssetUrls(
+  artifact: PreviewArtifact,
+  canvasId: string,
+  secret: string,
+): PreviewArtifact {
+  const html = resolveCanvasAssetReferences(artifact.html, canvasId, secret);
+  return { html, artifactId: createHash('sha256').update(html).digest('hex') };
 }
 
 /** A CanvasError passes through; anything else is storage damage we own. */

@@ -89,6 +89,7 @@ async function measureOnce(
 ): Promise<{ readyMs: number; firstSessionsListMs: number }> {
   const token = randomBytes(32).toString('hex');
   const assetToken = randomBytes(32).toString('hex');
+  const canvasAssetSecret = randomBytes(32).toString('hex');
   const spawnAt = performance.now();
   const child = spawn(process.execPath, [entry], {
     env: {
@@ -96,6 +97,7 @@ async function measureOnce(
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_TOKEN: token,
       BROWSER_ASSET_TOKEN: assetToken,
+      CANVAS_ASSET_SECRET: canvasAssetSecret,
       BRIDGE_PORT: '0',
       DROIDEX_USER_DATA_DIR: home,
       HOME: home,

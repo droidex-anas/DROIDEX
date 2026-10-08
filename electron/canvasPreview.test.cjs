@@ -113,7 +113,7 @@ function createHosts(canCapture = () => true) {
   };
 }
 
-test('the intermediate forbids every network source and allows only about: frames', () => {
+test('the intermediate forbids network sources and allows only local images and fonts', () => {
   const directives = new Map(
     CANVAS_PREVIEW_CSP.split('; ').map((directive) => {
       const [name, ...values] = directive.split(' ');
@@ -124,8 +124,8 @@ test('the intermediate forbids every network source and allows only about: frame
   assert.equal(directives.get('default-src'), "'none'");
   assert.equal(directives.get('connect-src'), "'none'");
   assert.equal(directives.get('frame-src'), 'about:');
-  assert.equal(directives.get('img-src'), 'data:');
-  assert.equal(directives.get('font-src'), 'data:');
+  assert.equal(directives.get('img-src'), 'data: droidex-canvas-preview:');
+  assert.equal(directives.get('font-src'), 'data: droidex-canvas-preview:');
   // The generated document is inline script and inline style, and inherits this
   // policy through `srcdoc`; nothing beyond that is allowed.
   assert.equal(directives.get('script-src'), "'unsafe-inline'");
@@ -168,6 +168,20 @@ test('main refuses a guest ID it never attached', () => {
 
   assert.equal(hosts.terminate(8), false);
   assert.equal(guest.crashes, 0);
+});
+
+test('a preview frame is bound once to its canvas and loses that binding on close', () => {
+  const { hosts } = createHosts();
+  const frame = createGeneratedFrame();
+  const guest = createGuest(42, [frame]);
+  hosts.attach(guest);
+  assert.equal(hosts.canvasForFrame(42, frame), null);
+  assert.equal(hosts.bindCanvas(42, 'canvas-a'), true);
+  assert.equal(hosts.canvasForFrame(42, frame), 'canvas-a');
+  assert.equal(hosts.canvasForFrame(42, {}), null);
+  assert.equal(hosts.bindCanvas(42, 'canvas-b'), false);
+  hosts.terminate(42);
+  assert.equal(hosts.canvasForFrame(42, frame), null);
 });
 
 test("main's own watchdog ends an unresponsive guest", () => {

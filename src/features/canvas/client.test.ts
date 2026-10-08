@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { listCanvasAssets } from '../../../sidecar/src/canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../../../sidecar/src/canvas/canvasBridge.js';
 import { CanvasScopes } from '../../../sidecar/src/canvas/canvasScopes.js';
 import { CanvasWorkspace } from '../../../sidecar/src/canvas/CanvasWorkspace.js';
@@ -223,7 +224,8 @@ test('a reported failure rejects its own request with the stable code', async ()
 test('a replayed Create keeps the current attachment in the bridge reply, pane and renderer cache', async (t) => {
   const scopes = new CanvasScopes();
   const builds = quietBuilds();
-  const workspace = await CanvasWorkspace.open(await canvasRoot(t), builds, {
+  const root = await canvasRoot(t);
+  const workspace = await CanvasWorkspace.open(root, builds, {
     isChatKnown: (id) => id === 'app-1',
     isScopeActive: (id) => scopes.isScopeActive(id),
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
@@ -235,6 +237,7 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
     Promise.resolve(workspace),
     scopes,
     builds,
+    { secret: 'test-canvas-secret', list: (canvasId) => listCanvasAssets(root, canvasId) },
     (event) => {
       if (!event.type.startsWith('canvas.')) return;
       const serialized: Record<string, unknown> = JSON.parse(JSON.stringify(event));

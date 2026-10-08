@@ -94,7 +94,11 @@ module.exports = {
     buildResources: 'assets/brand',
   },
   files: ['package.json', 'dist/**', 'electron/**', '!**/*.test.*', '!**/*.map'],
-  asarUnpack: ['node_modules/node-pty/**', 'node_modules/@droidex/sparkle-updater/**'],
+  asarUnpack: [
+    'node_modules/node-pty/**',
+    'node_modules/@droidex/sparkle-updater/**',
+    'node_modules/@napi-rs/canvas-*/**',
+  ],
   extraFiles: [
     {
       from: 'vendor/sparkle/distribution/Sparkle.framework',

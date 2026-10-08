@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
+import { readdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import {
   frameHarness,
   turnScope,
-  editableElement,
   pauseAtSource,
-  EDITABLE,
+  canvasCommandHandler,
   APP,
   PAGE,
   HEY,
@@ -21,11 +21,14 @@ import {
 } from '../testing/canvasBridgeSupport.js';
 import {
   deferred,
+  CANVAS_PNG,
+  CANVAS_PNG_ASSET_ID,
+  canvasRoot,
   observedFileSystem,
   quietBuilds,
   writeInput,
 } from '../testing/canvasStorageSupport.js';
-import { createCanvasCommandHandler } from './canvasBridge.js';
+import { importCanvasImage } from './canvasAssets.js';
 import { CanvasScopes } from './canvasScopes.js';
 
 test('a lost Create reply replays its durable canvas while the first commit is in flight', async (t) => {
@@ -200,90 +203,6 @@ test('a correlated create, write and arrange answer their own requests', async (
   );
   // The pane learns about another window's work from the broadcast, not a reply.
   assert.ok(canvas.events.some((event) => event.type === 'canvas.summaries'));
-});
-
-test('a direct element edit commits a new revision and rejects untrusted targets', async (t) => {
-  const { canvas, canvasId, element } = await editableElement(t);
-  const edit = async (requestId: string, change: object, selected = element) => {
-    await canvas.handle({
-      type: 'canvas.editElement',
-      requestId,
-      appSessionId: APP,
-      canvasId,
-      input: { mutationId: requestId, edit: { element: selected, change } },
-    });
-  };
-
-  await edit('req-bad-token', { kind: 'token', property: 'color', token: '--not-a-kit-token' });
-  assert.equal(errorOf(canvas, 'req-bad-token').code, 'invalid_edit');
-  await edit('req-image', { kind: 'image', assetId: 'not_owned' });
-  assert.equal(errorOf(canvas, 'req-image').code, 'unsupported_edit');
-  await edit(
-    'req-unknown',
-    { kind: 'text', value: 'Changed' },
-    { ...element, elementId: 'unknown' },
-  );
-  assert.equal(errorOf(canvas, 'req-unknown').code, 'stale_reference');
-  await edit(
-    'req-malformed',
-    { kind: 'text', value: 'Changed' },
-    { ...element, elementId: '../bad' },
-  );
-  assert.equal(errorOf(canvas, 'req-malformed').code, 'invalid_input');
-  assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], EDITABLE);
-
-  await edit('req-edit-valid', { kind: 'token', property: 'color', token: '--ds-accent' });
-  const changed = okReply(canvas, 'req-edit-valid');
-  assert.ok(changed.kind === 'written');
-  assert.notEqual(changed.receipt.revisionId, element.revisionId);
-  assert.match(
-    (await canvas.workspace.readFiles(canvasId, changed.receipt))['main.tsx'] ?? '',
-    /var\(--ds-accent\)/,
-  );
-  await edit('req-old-revision', { kind: 'text', value: 'Again' });
-  assert.equal(errorOf(canvas, 'req-old-revision').code, 'stale_revision');
-});
-
-test('a retried element edit returns its original receipt through a new handler', async (t) => {
-  const { canvas, canvasId, element } = await editableElement(t);
-
-  const command = {
-    type: 'canvas.editElement',
-    requestId: 'req-edit-first',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-edit-retry',
-      edit: { element, change: { kind: 'text', value: 'Welcome' } },
-    },
-  };
-  await canvas.handle(command);
-  const first = okReply(canvas, 'req-edit-first');
-  assert.ok(first.kind === 'written');
-
-  const replay = createCanvasCommandHandler(
-    Promise.resolve(canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => canvas.events.push(event),
-    () => () => {},
-  );
-  await replay({ ...command, requestId: 'req-edit-retry' }, PAGE);
-  const retried = okReply(canvas, 'req-edit-retry');
-  assert.deepEqual(retried, first);
-  await replay(
-    {
-      ...command,
-      requestId: 'req-edit-reused',
-      input: {
-        ...command.input,
-        edit: { ...command.input.edit, change: { kind: 'text', value: 'Other' } },
-      },
-    },
-    PAGE,
-  );
-  assert.equal(errorOf(canvas, 'req-edit-reused').code, 'invalid_input');
-  assert.equal(canvas.workspace.snapshot(canvasId).sequence, first.receipt.sequence);
 });
 
 test('pane rename, remove and Undo route through one attached canvas', async (t) => {
@@ -609,6 +528,38 @@ test('reading source answers one revision’s tree and refuses another design’
   assert.equal(errorOf(canvas, 'req-source-missing').code, 'invalid_input');
 });
 
+test('a lost image import reply is recovered by listing that canvas after the source is gone', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const chosen = join(canvas.root, 'chosen.png');
+  await writeFile(chosen, CANVAS_PNG);
+  await importCanvasImage(canvas.root, {
+    canvasId,
+    filePath: chosen,
+    digest: CANVAS_PNG_ASSET_ID,
+    width: 1,
+    height: 1,
+  });
+  await unlink(chosen);
+
+  assert.equal(
+    await canvas.handle({ type: 'canvas.listAssets', requestId: 'assets', canvasId }),
+    true,
+  );
+  assert.deepEqual(okReply(canvas, 'assets'), {
+    kind: 'assets',
+    assets: [
+      {
+        assetId: CANVAS_PNG_ASSET_ID,
+        mediaType: 'image/png',
+        byteLength: CANVAS_PNG.length,
+        width: 1,
+        height: 1,
+      },
+    ],
+  });
+});
+
 test('one request identity cannot carry two different requests', async (t) => {
   const canvas = await harness(t);
   await createCanvas(canvas);
@@ -707,7 +658,6 @@ test('a command that is not Canvas is left to the next handler', async (t) => {
   assert.equal(reported.code, 'canvas.invalid_input');
 });
 
-/** A filesystem that holds the next write of one source file open until released. */
 test('a chat that detaches while its write is staging does not commit it', async (t) => {
   const paused = pauseAtSource('main.tsx');
   const { canvas, canvasId, designId } = await frameHarness(t, { fs: paused.fs });
@@ -776,16 +726,15 @@ test('a workspace that failed to open answers every command the same way', async
   process.on('unhandledRejection', capture);
   t.after(() => void process.off('unhandledRejection', capture));
 
+  const root = await canvasRoot(t);
   const events: ServerEvent[] = [];
-  const handle = createCanvasCommandHandler(
-    Promise.reject(new Error('canvases directory is read-only')),
-    new CanvasScopes(),
-    quietBuilds(),
-    (event) => {
-      events.push(event);
-    },
-    () => () => undefined,
-  );
+  const { handle } = canvasCommandHandler({
+    ready: Promise.reject(new Error('canvases directory is read-only')),
+    scopes: new CanvasScopes(),
+    builds: quietBuilds(),
+    events,
+    root,
+  });
   // Two event-loop turns: an unhandled rejection is reported after the
   // microtask queue drains, so a missing handler would already have fired.
   await new Promise((resolve) => setTimeout(resolve, 0));

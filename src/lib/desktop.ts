@@ -21,7 +21,7 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
-import type { RevisionRef } from '../features/canvas/protocol';
+import type { OwnedAsset, RevisionRef } from '../features/canvas/protocol';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -216,6 +216,8 @@ interface DroidControlApi {
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   pickFiles: () => Promise<string[]>;
+  canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
+  canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
   discardImage: (path: string) => Promise<void>;
@@ -229,6 +231,7 @@ interface DroidControlApi {
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   canvasPreviewUrl: string;
+  canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
   canvasPreviewCapture: (
     request: CanvasPreviewCaptureRequest,
@@ -726,6 +729,12 @@ export async function editorIcon(editor: EditorId): Promise<string | null> {
 /** The owned source every Canvas live preview guest loads (spec §6). */
 export function canvasPreviewUrl(): string | null {
   return desktopApi()?.canvasPreviewUrl ?? null;
+}
+
+export async function bindCanvasPreviewGuest(guestId: number, canvasId: string): Promise<boolean> {
+  const api = desktopApi();
+  if (!api) return false;
+  return api.canvasPreviewBind(guestId, canvasId);
 }
 
 /**

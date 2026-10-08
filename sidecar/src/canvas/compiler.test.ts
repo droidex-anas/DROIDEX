@@ -185,7 +185,8 @@ test('every kit starter compiles in both pinned modes with offline fonts', async
       assert.deepEqual(design.diagnostics, []);
       assert.ok(design.html.includes("You're all set"));
       assert.ok(design.html.includes('data-mode="' + mode + '"'));
-      assert.match(design.html, /data:font\/woff2;base64,/);
+      assert.match(design.html, /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/);
+      assert.doesNotMatch(design.html, /data:font\/woff2;base64,/);
       assert.doesNotMatch(design.html, /url\(\s*['"]?https?:/);
     }
   }

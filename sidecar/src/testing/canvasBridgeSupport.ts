@@ -3,6 +3,7 @@ import type { TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
+import { listCanvasAssets } from '../canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../canvas/canvasBridge.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
@@ -32,6 +33,48 @@ export const EDITABLE =
 export const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
 /** The chats these suites act as; any other identity reads as a closed chat. */
 const KNOWN_CHATS = new Set([APP, 'agent-1', 'app-2']);
+
+/** The asset secret the Canvas suites sign their preview URLs with. */
+export const ASSET_SECRET = 'test-canvas-secret';
+
+/**
+ * One bridge handler over a workspace, collecting the events it emits. Owned
+ * assets are read from the real store under `root`, so a listing reply is the
+ * store's answer rather than a fixture's.
+ */
+export function canvasCommandHandler(options: {
+  ready: Promise<CanvasWorkspace>;
+  scopes: CanvasScopes;
+  builds: CanvasBuilds;
+  events: ServerEvent[];
+  root: string;
+}) {
+  const listeners = new Set<(pageId: string) => void>();
+  const handle = createCanvasCommandHandler(
+    options.ready,
+    options.scopes,
+    options.builds,
+    {
+      secret: ASSET_SECRET,
+      list: (canvasId) => listCanvasAssets(options.root, canvasId),
+    },
+    (event) => {
+      options.events.push(event);
+    },
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  );
+  return {
+    listeners,
+    handle: (command: unknown, pageId: string | null = PAGE) => handle(command, pageId),
+    /** Reports a renderer page's socket closing, the way the bridge server does. */
+    pageGone: (pageId: string) => {
+      for (const listener of listeners) listener(pageId);
+    },
+  };
+}
 
 export interface Harness {
   root: string;
@@ -65,30 +108,14 @@ export async function harness(
     },
     ...(options.fs ? { fs: options.fs } : {}),
   });
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    Promise.resolve(workspace),
-    scopes,
-    builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
-  return {
-    root: directory,
-    workspace,
+  const { handle, pageGone } = canvasCommandHandler({
+    ready: Promise.resolve(workspace),
     scopes,
     builds,
     events,
-    handle: (command, pageId = PAGE) => handle(command, pageId),
-    pageGone: (pageId) => {
-      for (const listener of listeners) listener(pageId);
-    },
-  };
+    root: directory,
+  });
+  return { root: directory, workspace, scopes, builds, events, handle, pageGone };
 }
 
 export async function buildingCanvas(t: TestContext, fs?: CanvasFileSystem) {
@@ -333,19 +360,13 @@ export async function pendingWorkspaceHandler(t: TestContext) {
   builds.cancelCanvas(canvasId);
   const opening = deferred();
   const events: ServerEvent[] = [];
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    opening.promise.then(() => canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
+  const { handle, listeners } = canvasCommandHandler({
+    ready: opening.promise.then(() => canvas.workspace),
+    scopes: canvas.scopes,
+    builds: canvas.builds,
+    events,
+    root: canvas.root,
+  });
 
   return { builds, canvas, canvasId, designId, events, listeners, handle, opening };
 }

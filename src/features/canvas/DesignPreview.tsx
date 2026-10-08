@@ -7,7 +7,11 @@
 // component owns one frame and reports only bounded preview facts upward.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { canvasPreviewUrl, terminateCanvasPreviewGuest } from '../../lib/desktop';
+import {
+  bindCanvasPreviewGuest,
+  canvasPreviewUrl,
+  terminateCanvasPreviewGuest,
+} from '../../lib/desktop';
 import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
@@ -194,37 +198,58 @@ export function PreviewGuestFrame({
       }, 150);
     };
     const sizeObserver = new ResizeObserver(updateCapture);
+
+    // Main binds the guest to this canvas before a design runs in it, so the
+    // design can only ever read its own canvas's assets. A guest main refuses
+    // to bind never gets a design at all.
+    async function bindAndStart() {
+      const guestId = guest.getWebContentsId();
+      let bound = false;
+      try {
+        bound = await bindCanvasPreviewGuest(guestId, canvasId);
+      } catch (error) {
+        console.error('A Canvas preview could not be bound to its canvas:', error);
+      }
+      if (!mounted) return;
+      if (!bound) {
+        setPhase('guest_gone');
+        void terminateCanvasPreviewGuest(guestId);
+        return;
+      }
+      run = startPreview({
+        guest,
+        designId,
+        revisionId,
+        generation: mountGeneration,
+        html,
+        terminate: terminateCanvasPreviewGuest,
+        observer: {
+          onReady: () => {
+            setPhase('ready');
+            updateCapture();
+            sizeObserver.observe(guest);
+          },
+          onResize: (size) => resized.current?.(designId, size),
+          onDiagnostics: (entries) => {
+            setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+          },
+          onLost: (reason) => {
+            thumbnailCapture.abort();
+            if (thumbnailTimer) clearTimeout(thumbnailTimer);
+            releaseCapture?.();
+            releaseCapture = null;
+            sizeObserver.disconnect();
+            setPhase(reason);
+          },
+        },
+      });
+    }
+
     guest.addEventListener(
       'dom-ready',
       () => {
         if (!mounted) return;
-        run = startPreview({
-          guest,
-          designId,
-          revisionId,
-          generation: mountGeneration,
-          html,
-          terminate: terminateCanvasPreviewGuest,
-          observer: {
-            onReady: () => {
-              setPhase('ready');
-              updateCapture();
-              sizeObserver.observe(guest);
-            },
-            onResize: (size) => resized.current?.(designId, size),
-            onDiagnostics: (entries) => {
-              setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
-            },
-            onLost: (reason) => {
-              thumbnailCapture.abort();
-              if (thumbnailTimer) clearTimeout(thumbnailTimer);
-              releaseCapture?.();
-              releaseCapture = null;
-              sizeObserver.disconnect();
-              setPhase(reason);
-            },
-          },
-        });
+        void bindAndStart();
       },
       { once: true },
     );

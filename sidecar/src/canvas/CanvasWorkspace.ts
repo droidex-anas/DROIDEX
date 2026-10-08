@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasAttachments } from './canvasAttachments.js';
+import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
 import type { BuildCommit, BuildTarget } from './canvasBuildHost.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING } from './canvasCommits.js';
@@ -24,9 +25,10 @@ import {
   recordedCreate,
   recordedRevision,
   recordMutation,
+  requireDesign,
+  requireExpectedRevision,
   toFrame,
   type CanvasManifest,
-  type PersistedDesign,
 } from './canvasManifest.js';
 import type {
   ArrangeFramesInput,
@@ -37,6 +39,7 @@ import type {
   CreateFramesInput,
   CreateFramesResult,
   EditElementInput,
+  OwnedAsset,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -56,6 +59,7 @@ export class CanvasWorkspace {
   private readonly commits = new CanvasCommits(this.changes);
   private readonly attachments: CanvasAttachments;
   private readonly frameEdits: CanvasFrameEdits;
+  private readonly root: string;
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -66,6 +70,7 @@ export class CanvasWorkspace {
     isChatKnown: (appSessionId: string) => boolean,
   ) {
     this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
+    this.root = writerLease.directory;
     this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
   }
 
@@ -107,6 +112,14 @@ export class CanvasWorkspace {
   /** Canvases that exist on disk but are not served, for a recovery action. */
   damagedCanvasIds(): string[] {
     return this.heads.damagedIds();
+  }
+
+  importCanvasImage(request: CanvasImageImport): Promise<OwnedAsset> {
+    return this.commits.admit(() => {
+      this.commits.requireOpen();
+      this.canvas(request.canvasId);
+      return importCanvasImage(this.root, request);
+    });
   }
 
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */
@@ -265,7 +278,7 @@ export class CanvasWorkspace {
       const recorded = recordedRevision(manifest, input.mutationId, kind, fingerprint);
       if (recorded) return recorded;
 
-      const design = this.design(manifest, input.designId);
+      const design = requireDesign(manifest, input.designId);
       requireExpectedRevision(design, input.expectedRevisionId);
       const revision = await stageRevision(this.files, canvasId, design, input, validateSource);
 
@@ -274,7 +287,7 @@ export class CanvasWorkspace {
         const again = recordedRevision(live, input.mutationId, kind, fingerprint);
         if (again) return { value: again };
         const next = structuredClone(live);
-        const target = this.design(next, input.designId);
+        const target = requireDesign(next, input.designId);
         requireExpectedRevision(target, input.expectedRevisionId);
         target.revisionId = revision.revisionId;
         target.designSystem = revision.designSystem;
@@ -334,9 +347,9 @@ export class CanvasWorkspace {
   }
 
   async readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles> {
-    this.design(this.canvas(canvasId), ref.designId);
+    requireDesign(this.canvas(canvasId), ref.designId);
     const tree = await this.files.readRevision(canvasId, ref);
-    this.design(this.canvas(canvasId), ref.designId);
+    requireDesign(this.canvas(canvasId), ref.designId);
     // A null-prototype tree, so a source path can never reach an inherited
     // member even if the path rules change.
     const files = Object.create(null) as SourceFiles;
@@ -379,7 +392,7 @@ export class CanvasWorkspace {
           const committed = await publish();
           if (!committed) return { value: undefined };
           const next = structuredClone(live);
-          const target = this.design(next, designId);
+          const target = requireDesign(next, designId);
           if (committed.workingRevisionId !== null)
             target.lastWorkingRevisionId = committed.workingRevisionId;
           target.manifestVersion += 1;
@@ -451,22 +464,4 @@ export class CanvasWorkspace {
     if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
     throw canvasError('invalid_input', 'That canvas is not open.');
   }
-
-  private design(manifest: CanvasManifest, designId: string): PersistedDesign {
-    const design = manifest.designs.find((entry) => entry.designId === designId);
-    if (!design)
-      throw canvasError(
-        'not_found',
-        'That frame is not on this canvas. Use Undo if it was removed.',
-      );
-    return design;
-  }
-}
-
-function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
-  if (design.revisionId === expected) return;
-  throw canvasError(
-    'revision_conflict',
-    'That frame has a newer revision. Read it and apply your change again.',
-  );
 }
