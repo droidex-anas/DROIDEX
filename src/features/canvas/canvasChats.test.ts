@@ -182,6 +182,10 @@ test('a provisional canvas name is the prompt, trimmed, or nothing', () => {
     'A pricing card with three tiers',
   );
   assert.equal(provisionalCanvasName('  Settings page\nwith a theme toggle  '), 'Settings page');
+  assert.equal(
+    provisionalCanvasName('A pricing card\u001b[0m with tiers'),
+    'A pricing card [0m with tiers',
+  );
   assert.equal(provisionalCanvasName('   '), null);
   const long = provisionalCanvasName(`${'word '.repeat(40)}end`);
   assert.ok(long && long.length <= 120, 'a long prompt is cut to the sidecar name limit');

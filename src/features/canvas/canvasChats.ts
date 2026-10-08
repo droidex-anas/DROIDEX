@@ -135,7 +135,11 @@ const MAX_CANVAS_NAME_LENGTH = 120;
  * nameable, which leaves the sidecar's own name in place.
  */
 export function provisionalCanvasName(prompt: string): string | null {
-  const firstLine = prompt.split('\n', 1)[0].replace(/\s+/g, ' ').trim();
+  const firstLine = prompt
+    .split('\n', 1)[0]
+    // eslint-disable-next-line no-control-regex -- Match canvasNameSchema's rejected control ranges.
+    .replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .trim();
   if (!firstLine) return null;
   const whole =
     firstLine.length <= MAX_CANVAS_NAME_LENGTH
