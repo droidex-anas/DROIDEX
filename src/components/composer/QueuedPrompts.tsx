@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
+import { GripVertical, ListPlus, Pencil, X } from 'lucide-react';
 import type { QueuedPrompt } from '../../hooks/useStore';
 import { formatResetTime } from '../../lib/usageLimit';
 import type { UsageLimit } from '../../types/bridge';
+import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
+import { BrowserReferenceChip } from '../browser/BrowserReferenceChip';
 import { PendingPromptPreview } from './PendingPromptPreview';
 
 function deliveryHint(usageLimit: UsageLimit | undefined): string {
@@ -77,24 +79,20 @@ export function QueuedPrompts({
               <GripVertical className="w-3.5 h-3.5" />
             </span>
             <PendingPromptPreview text={p.text} files={p.files} skills={p.skills}>
-              {p.design && p.design.references.length > 0 && (
-                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-droid-active px-1.5 py-0.5 text-[11px] text-droid-text-muted">
-                  <MousePointerSquareDashed className="w-3 h-3" />
-                  {p.design.references.length} reference
-                  {p.design.references.length === 1 ? '' : 's'}
-                </span>
-              )}
+              {p.design && <QueuedDesignReferences prompt={p} />}
             </PendingPromptPreview>
             <div className="flex shrink-0 items-center gap-0.5">
-              <button
-                onClick={() => {
-                  onEdit(p);
-                }}
-                className="rounded p-1 text-droid-text-muted transition-colors hover:bg-droid-active/70 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-                title="Edit in composer"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
+              {!p.design && (
+                <button
+                  onClick={() => {
+                    onEdit(p);
+                  }}
+                  className="rounded p-1 text-droid-text-muted transition-colors hover:bg-droid-active/70 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                  title="Edit in composer"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button
                 onClick={() => {
                   onRemove(p.id);
@@ -109,5 +107,19 @@ export function QueuedPrompts({
         );
       })}
     </div>
+  );
+}
+
+function QueuedDesignReferences({ prompt }: { prompt: QueuedPrompt }) {
+  if (!prompt.design || prompt.design.references.length === 0) return null;
+  const references = browserTranscriptReferencesFromDesignReferences(prompt.design.references);
+  if (references.length === 0) return null;
+
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {references.map((reference) => (
+        <BrowserReferenceChip key={`${reference.kind}:${reference.id}`} reference={reference} />
+      ))}
+    </span>
   );
 }

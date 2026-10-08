@@ -49,6 +49,35 @@ test('queued mixed attachments keep paste order', () => {
   assert.match(html, /min-w-3\.5[^>]*">2</);
 });
 
+test('queued design references render openable image chips', () => {
+  const html = render([
+    prompt({
+      design: {
+        browserKey: 'browser-1',
+        referenceIds: ['@region-2'],
+        references: [
+          {
+            id: '@region-2',
+            anchor: {
+              id: '@region-2',
+              kind: 'region',
+              label: 'region',
+              box: { x: 0, y: 0, width: 50, height: 20 },
+            },
+            url: 'https://example.com',
+            screenshot: { base64: 'abc123', box: { x: 0, y: 0, width: 50, height: 20 } },
+          },
+        ],
+      },
+    }),
+  ]);
+
+  assert.match(html, /<button[^>]+title="View @region"/);
+  assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.match(html, /alt=""/);
+  assert.doesNotMatch(html, /reference<\/span>/);
+});
+
 test('queued duplicate native paths still render two chips', () => {
   const html = render([prompt({ files: ['/tmp/notes.pdf', '/tmp/notes.pdf'] })]);
   assert.equal(html.split('>PDF<').length - 1, 2);

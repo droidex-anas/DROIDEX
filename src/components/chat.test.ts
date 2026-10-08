@@ -71,6 +71,30 @@ test('a sent prompt shows Visualize and skill chips instead of slash text', () =
   assert.ok(html.indexOf('review') < html.indexOf('PR #100'));
 });
 
+test('design reference screenshots render as openable image chips', () => {
+  const html = renderToStaticMarkup(
+    createElement(UserBubble, {
+      event: {
+        text: 'Make this button primary',
+        browserRefs: [
+          {
+            id: '@region-2',
+            kind: 'region',
+            label: 'region',
+            url: 'https://example.com',
+            imageDataUrl: 'data:image/png;base64,abc123',
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.match(html, /<button[^>]+title="View @region"/);
+  assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.match(html, /alt=""/);
+  assert.match(html, /@region/);
+});
+
 test('a pinned spec alone never produces an empty Worked disclosure', () => {
   const spec = '# Plan\n\nImplement the feature';
   const events = [userMsg('plan'), asst(spec)];
