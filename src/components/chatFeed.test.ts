@@ -881,3 +881,19 @@ test('prepending older events keeps each row viewport identity while its key cha
   assert.notEqual(beforeChanges.key, afterChanges.key);
   assert.equal(feedRowId(beforeChanges), feedRowId(afterChanges));
 });
+
+test('consecutive connection retries fold into one row that keeps the latest state', () => {
+  const items = buildFeed([
+    ev({ id: 'r1', kind: 'error', text: 'Reconnecting... 2/5' }),
+    ev({ id: 'r2', kind: 'error', text: 'Reconnecting... 3/5' }),
+    ev({ id: 'r3', kind: 'error', text: 'Reconnecting... waiting for network' }),
+    ev({ id: 'e1', kind: 'error', text: 'Tool failed' }),
+  ]);
+  assert.deepEqual(
+    items.map((item) => item.type === 'error' && [item.key, item.event.text, item.attempts]),
+    [
+      ['r1', 'Reconnecting... waiting for network', 3],
+      ['e1', 'Tool failed', undefined],
+    ],
+  );
+});

@@ -215,7 +215,7 @@ export function summarizeTools(events: TranscriptEvent[], live = false): string 
 // row: a red "error" tag with the first line, expanding to the full message.
 // An error reads like the other turn rows ("Worked for 12s"): a disclosure
 // whose label names the error, with the tag at the row's right edge.
-export function ErrorLine({ text }: { text: string }) {
+export function ErrorLine({ text, attempts }: { text: string; attempts?: number }) {
   const [open, setOpen] = useState(false);
   const body = stripAnsi(text).trim();
   const head = firstLine(body);
@@ -231,6 +231,9 @@ export function ErrorLine({ text }: { text: string }) {
       >
         <Caret open={open} />
         <span className="min-w-0 truncate text-droid-text-secondary">{label}</span>
+        {attempts ? (
+          <span className="shrink-0 text-droid-text-muted">· {attempts} attempts</span>
+        ) : null}
         <ErrorTag emphasis />
       </button>
       <Expand open={open}>
