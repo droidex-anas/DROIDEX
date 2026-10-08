@@ -106,7 +106,9 @@ export interface ProjectThread {
   /** Its latest final reply has not been read or acknowledged by its owner. */
   unread?: true;
   waiting: boolean;
-  /** Original task and selected checkout while this thread waits for a runtime slot. */
+  /** Explicit Stop prevents restart recovery until another turn starts. */
+  stopped?: true;
+  /** Original task and selected checkout until this thread's first turn starts. */
   queuedSpawn?: {
     phase: 'queued' | 'opening';
     input: ThreadInput;

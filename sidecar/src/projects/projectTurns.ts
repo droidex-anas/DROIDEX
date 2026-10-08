@@ -71,11 +71,15 @@ export class ProjectTurns {
     const thread = requireThread(project, session.appSessionId);
     if (session.streaming) {
       const opened = this.activity.open(session.appSessionId);
+      const started = thread.queuedSpawn !== undefined || thread.stopped === true;
+      delete thread.queuedSpawn;
+      delete thread.stopped;
       // A question answered in the thread itself settles without an event, and
       // the turn carries on: checking it here is what lets the answer given
       // first win, instead of the owner being told to answer it all turn.
       const settled = thread.ask && !this.d.isAsking(thread.appSessionId, thread.ask.requestId);
-      if ((opened || settled) && clearAsk(project, thread)) {
+      const cleared = (opened || settled) && clearAsk(project, thread);
+      if (started || cleared) {
         await this.d.save();
         this.d.wakes.kick(project);
       }

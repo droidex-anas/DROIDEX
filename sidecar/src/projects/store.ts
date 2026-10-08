@@ -156,6 +156,7 @@ const project = z
             .optional(),
           unread: z.literal(true).optional(),
           waiting: z.boolean(),
+          stopped: z.literal(true).optional(),
           queuedSpawn: z
             .object({
               phase: z.enum(['queued', 'opening']),

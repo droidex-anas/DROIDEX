@@ -54,9 +54,11 @@ its thread brings it back with its conversation intact. Chats the user starts
 are never capped.
 
 **After a restart.** DROIDEX loads the transcripts first. Waiting messages and
-queued threads are kept. A thread cut off mid-turn gets one "continue" from
-DROIDEX unless a message for it is already waiting. Finished threads whose
-runtimes were idle receive no continuation, and finished projects stay done.
+queued threads are kept. A queued thread keeps its initial task until its first
+turn starts. A thread cut off mid-turn gets one "continue" from DROIDEX unless
+it was explicitly stopped or a message for it is already waiting. Finished
+threads whose runtimes were idle receive no continuation, and finished projects
+stay done.
 An in-flight delivery that held only reports leaves identified, durable replies
 unread. Reports without a reply identity or retained reply text return to the
 pending queue, including failed, stopped and empty turns. Any other in-flight
@@ -238,9 +240,10 @@ project and its main chat in place of the opening prompt. Once the goal is
 achieved and no thread is working or starting, the main chat calls
 `project_done` with what the project achieved. Projects then shows it as done,
 with that outcome and how long the project took. Any work after that reopens
-it: a new thread, a message to a thread, a thread starting a turn, or a plan
-with a step of the main chat's own that is not done. A project records when it
-started; one from before that shows its main chat's start.
+it: a new thread (including a queued one), a message to a thread, a thread
+starting a turn, or a plan with a step of the main chat's own that is not done.
+A project records when it started; one from before that shows its main chat's
+start.
 
 ## The Threads panel
 
