@@ -16,7 +16,7 @@ import { conversationMarkdown } from './sessionMarkdown.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
 import { forkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
 import type { ProviderKind } from './providers/providerKind.js';
-import type { Provider, ProviderModelSettings } from './providers/session.js';
+import type { Provider, ProviderForkHandle, ProviderModelSettings } from './providers/session.js';
 
 type SessionForkCommand = Extract<ClientCommand, { type: 'session.fork' }>;
 
@@ -49,14 +49,13 @@ export interface SessionForksDependencies {
   }) => void;
 }
 
-// Copies a session into a new one. Native copies are stored closed and resumed
-// by their first send. Cross-provider branches, streaming sources and Codex
-// side chats instead create a session whose first prompt carries the transcript.
+// Native copies preserve the provider's full context and resume on their first
+// send. Cross-provider branches and streaming sources carry a transcript instead.
 export class SessionForks {
   constructor(private readonly d: SessionForksDependencies) {}
 
   async fork(command: SessionForkCommand): Promise<void> {
-    let copiedAppSessionId: string | undefined;
+    let copy: ProviderForkHandle | undefined;
     try {
       const source = this.forkableSource(command);
       const lineage: SessionLineage = {
@@ -65,11 +64,8 @@ export class SessionForks {
         forkedAt: Date.now(),
       };
       const provider = command.provider ?? source.provider;
-      // Codex's native fork starts a temporary app-server, then resumes in a
-      // second one. A side chat creates once with the source transcript instead.
-      const isCodexSideChat = command.lineage === 'side' && provider === 'codex';
-      if (provider === source.provider && !this.isStreaming(source) && !isCodexSideChat) {
-        copiedAppSessionId = await this.copyNatively(command, source, lineage);
+      if (provider === source.provider && !this.isStreaming(source)) {
+        copy = await this.copyNatively(command, source, lineage);
       } else {
         await this.branchFromTranscript(command, source, provider, lineage);
       }
@@ -83,10 +79,17 @@ export class SessionForks {
     }
     // Outside the fork's own failure path: the copy exists by now, so a model
     // or a send that fails is that chat's error, not a failed fork.
-    if (!copiedAppSessionId) return;
-    if (command.modelId && !(await this.applyPickedModel(copiedAppSessionId, command))) return;
-    const request = command.prompt?.trim();
-    if (request) await this.d.send(copiedAppSessionId, firstMessage(command.lineage, request));
+    if (!copy) return;
+    try {
+      if (command.modelId && !(await this.applyPickedModel(copy.providerSessionId, command)))
+        return;
+      const request = command.prompt?.trim();
+      if (request)
+        await this.d.send(copy.providerSessionId, firstMessage(command.lineage, request));
+    } finally {
+      // Resume owns a transferred client; failed or unopened copies release it.
+      await copy.release?.();
+    }
   }
 
   // A model picked for the copy replaces the source's and its effort, since an
@@ -133,7 +136,7 @@ export class SessionForks {
     command: SessionForkCommand,
     source: SessionSummary,
     lineage: SessionLineage,
-  ): Promise<string> {
+  ): Promise<ProviderForkHandle> {
     const live = this.d.registry.getLive(source.appSessionId);
     const handle = await this.d.provider(source.provider).fork({
       providerSessionId: source.providerSessionId ?? source.appSessionId,
@@ -146,40 +149,45 @@ export class SessionForks {
       ...(live ? { live: live.session } : {}),
       ...(command.forkPointId ? { forkPointId: command.forkPointId } : {}),
     });
-    // Droid writes its copy where its own sessions live. Every other provider's
-    // scrollback is DROIDEX's transcript file, which is copied beside it.
-    let transcript = null;
-    if (source.provider !== 'droid') {
-      this.requireUnchanged(source, live);
-      const stored = await this.d.readTranscript(source.appSessionId);
-      this.requireUnchanged(source, live);
-      transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
-    }
-    const appSessionId = handle.providerSessionId;
-    const change = transcript && {
-      providerSessionId: appSessionId,
-      path: await writeForkedTranscript(transcript, {
+    try {
+      // Droid writes its copy where its own sessions live. Every other provider's
+      // scrollback is DROIDEX's transcript file, which is copied beside it.
+      let transcript = null;
+      if (source.provider !== 'droid') {
+        this.requireUnchanged(source, live);
+        const stored = await this.d.readTranscript(source.appSessionId);
+        this.requireUnchanged(source, live);
+        transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
+      }
+      const appSessionId = handle.providerSessionId;
+      const change = transcript && {
+        providerSessionId: appSessionId,
+        path: await writeForkedTranscript(transcript, {
+          appSessionId,
+          title: command.title,
+          ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
+          ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
+          dropContextWindow: changesModel(command, source),
+        }),
+      };
+      // Recorded before the copy is indexed, so the list that indexing publishes
+      // already keeps a side chat out of the sidebar.
+      this.d.lineage.record(appSessionId, lineage);
+      await this.d.indexSessionFiles(change);
+      // The stored row makes the copy a DROIDEX chat and carries the source's
+      // settings, which the provider's file does not always hold.
+      const stored = await this.d.registry.updateStoredSummary(
         appSessionId,
-        title: command.title,
-        ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
-        ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
-        dropContextWindow: changesModel(command, source),
-      }),
-    };
-    // Recorded before the copy is indexed, so the list that indexing publishes
-    // already keeps a side chat out of the sidebar.
-    this.d.lineage.record(appSessionId, lineage);
-    await this.d.indexSessionFiles(change);
-    // The stored row makes the copy a DROIDEX chat and carries the source's
-    // settings, which the provider's file does not always hold.
-    const stored = await this.d.registry.updateStoredSummary(
-      appSessionId,
-      copiedSettings(command, source),
-    );
-    const session = stored && this.d.registry.resolveSummary(appSessionId);
-    if (!session) throw new Error('The copied chat could not be found after forking.');
-    this.d.emit({ type: 'session.forked', clientRef: command.clientRef, session });
-    return appSessionId;
+        copiedSettings(command, source),
+      );
+      const session = stored && this.d.registry.resolveSummary(appSessionId);
+      if (!session) throw new Error('The copied chat could not be found after forking.');
+      this.d.emit({ type: 'session.forked', clientRef: command.clientRef, session });
+      return handle;
+    } catch (error) {
+      await handle.release?.();
+      throw error;
+    }
   }
 
   private async branchFromTranscript(

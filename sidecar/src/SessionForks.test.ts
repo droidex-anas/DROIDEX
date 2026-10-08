@@ -1,11 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import type { ServerEvent, SessionSummary } from './protocol.js';
-import type { ProviderForkSource } from './providers/session.js';
+import type { Provider, ProviderForkSource, ProviderSession } from './providers/session.js';
+import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { readProviderTranscript } from './providers/ProviderTranscriptFile.js';
 import type { SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import type { SessionSummaryPatch } from './SessionRegistry.js';
@@ -98,6 +108,8 @@ function harness(
   options: {
     streaming?: boolean;
     provider?: 'droid' | 'claude' | 'codex';
+    providerInstance?: Provider;
+    send?: (appSessionId: string, text: string) => Promise<void>;
     contextWindowTokens?: 1000000;
     duringFork?: (stored: Map<string, SessionSummary>) => void;
   } = {},
@@ -111,6 +123,7 @@ function harness(
       summary({
         appSessionId: 'source',
         provider: options.provider ?? 'droid',
+        ...(options.provider === 'codex' ? { resumeId: 'thread-source' } : {}),
         modelId: 'claude-opus',
         reasoningEffort: 'high',
         ...(options.contextWindowTokens
@@ -126,17 +139,18 @@ function harness(
   const created: { command: SessionCreateCommand; branch: SessionBranch }[] = [];
 
   const forks = new SessionForks({
-    provider: () => ({
-      kind: 'droid',
-      create: () => Promise.reject(new Error('not used')),
-      resume: () => Promise.reject(new Error('not used')),
-      readUsage: () => Promise.reject(new Error('not used')),
-      fork: (source) => {
-        forkSources.push(source);
-        options.duringFork?.(stored);
-        return Promise.resolve({ providerSessionId: 'copy' });
+    provider: () =>
+      options.providerInstance ?? {
+        kind: 'droid',
+        create: () => Promise.reject(new Error('not used')),
+        resume: () => Promise.reject(new Error('not used')),
+        readUsage: () => Promise.reject(new Error('not used')),
+        fork: (source) => {
+          forkSources.push(source);
+          options.duringFork?.(stored);
+          return Promise.resolve({ providerSessionId: 'copy' });
+        },
       },
-    }),
     registry: {
       getLive: (id) =>
         id === 'source' && options.streaming
@@ -155,17 +169,36 @@ function harness(
       },
     },
     lineage,
-    indexSessionFiles: () => {
+    indexSessionFiles: (change) => {
       order.push(lineage.project(summary({ appSessionId: 'copy' })).lineage ? 'lineage' : 'none');
       // Indexing the copied file is what makes the copy a stored row.
-      stored.set('copy', summary({ appSessionId: 'copy', title: 'Provider title' }));
+      const appSessionId = change?.providerSessionId ?? 'copy';
+      const head: { resumeId?: string } = change
+        ? JSON.parse(readFileSync(change.path, 'utf8').split('\n')[0])
+        : {};
+      stored.set(
+        appSessionId,
+        summary({
+          appSessionId,
+          provider: options.provider ?? 'droid',
+          resumeId: head.resumeId,
+          title: 'Provider title',
+        }),
+      );
       return Promise.resolve();
     },
-    readTranscript: () => Promise.reject(new Error('not used')),
+    readTranscript: readProviderTranscript,
     updateModel: (appSessionId, settings) => {
       order.push(
         `model ${appSessionId}: ${String(settings.modelId)} ${String(settings.reasoningEffort)}`,
       );
+      const found = stored.get(appSessionId);
+      if (found)
+        stored.set(appSessionId, {
+          ...found,
+          modelId: settings.modelId ?? found.modelId,
+          reasoningEffort: settings.reasoningEffort ?? undefined,
+        });
       return Promise.resolve(true);
     },
     isShutdownStarted: () => false,
@@ -175,7 +208,7 @@ function harness(
     },
     send: (appSessionId, text) => {
       order.push(`send ${appSessionId}: ${text}`);
-      return Promise.resolve();
+      return options.send?.(appSessionId, text) ?? Promise.resolve();
     },
     emit: (event) => {
       order.push(event.type);
@@ -192,6 +225,7 @@ function harness(
     order,
     created,
     dir,
+    stored,
   };
 }
 
@@ -343,8 +377,75 @@ test('a side chat on a chat with a turn in progress branches from its stored tra
   assert.match(branch.prompt, /Step one moves the schema\./);
 });
 
-test('a settled Codex side chat creates from the transcript without a native fork', async (t) => {
-  const h = harness(t, { provider: 'codex' });
+test('a settled Codex side chat natively forks and runs on one app-server', async (t) => {
+  const provider = new CodexProvider();
+  let session: ProviderSession | undefined;
+  const originalCodexPath = process.env.CODEX_PATH;
+  t.after(async () => {
+    await session?.close();
+    if (originalCodexPath === undefined) delete process.env.CODEX_PATH;
+    else process.env.CODEX_PATH = originalCodexPath;
+  });
+  const h = harness(t, {
+    provider: 'codex',
+    providerInstance: provider,
+    send: async (appSessionId, text) => {
+      const stored = h.stored.get(appSessionId);
+      assert.ok(stored);
+      session = await provider.resume(appSessionId, {
+        appSessionId,
+        resumeId: stored.resumeId,
+        cwd: h.dir,
+        autonomy: stored.autonomy,
+        modelId: stored.modelId,
+        reasoningEffort: stored.reasoningEffort,
+        interactions: {
+          isActive: () => true,
+          cancelPending: () => undefined,
+          requestApproval: async () => 'cancel',
+          requestQuestion: async () => ({ cancelled: true, answers: [] }),
+        },
+      });
+      for await (const event of session.stream(text)) assert.equal(event.done, true);
+    },
+  });
+  const executable = join(h.dir, 'fake-codex.mjs');
+  const log = join(h.dir, 'requests.jsonl');
+  // A stdio stand-in counts real transport spawns without launching a harness.
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env node
+import { appendFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+const log = new URL('./requests.jsonl', import.meta.url);
+appendFileSync(log, JSON.stringify({ method: 'spawn' }) + '\\n');
+const write = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  appendFileSync(log, line + '\\n');
+  if (message.id === undefined) return;
+  let result = {};
+  if (message.method === 'thread/fork' || message.method === 'thread/resume') {
+    result = { thread: { id: 'thread-copy' }, model: 'codex-model' };
+  } else if (message.method === 'turn/start') {
+    result = { turn: { id: 'turn-copy' } };
+  } else if (message.method === 'skills/list' || message.method === 'app/list') {
+    result = { data: [], nextCursor: null };
+  } else if (message.method === 'plugin/installed') {
+    result = { marketplaces: [] };
+  }
+  write({ id: message.id, result });
+  if (message.method === 'turn/start') write({ method: 'turn/completed', params: {
+    threadId: 'thread-copy', turn: { id: 'turn-copy', status: 'completed' }
+  } });
+});
+`,
+  );
+  chmodSync(executable, 0o755);
+  process.env.CODEX_PATH = executable;
+  const source = h.stored.get('source');
+  assert.ok(source);
+  h.stored.set('source', { ...source, cwd: h.dir });
   storeTranscript('source', 'Step one moves the schema.', 'codex');
 
   await h.forks.fork({
@@ -358,20 +459,43 @@ test('a settled Codex side chat creates from the transcript without a native for
     reasoningEffort: 'medium',
   });
 
-  assert.deepEqual(h.forkSources, []);
   assert.deepEqual(h.errors, []);
-  assert.equal(h.created.length, 1);
-  const [{ command, branch }] = h.created;
-  assert.equal(command.clientRef, 'ref-codex-side');
-  assert.equal(command.provider, 'codex');
-  assert.equal(command.cwd, '/repo');
-  assert.equal(command.autonomy, 'medium');
-  assert.equal(command.modelId, 'codex-model');
-  assert.equal(command.reasoningEffort, 'medium');
-  assert.equal(branch.lineage.kind, 'side');
-  assert.equal(branch.lineage.sourceAppSessionId, 'source');
-  assert.ok(branch.prompt.includes(formatSideChatPrompt('Is step one safe?')));
-  assert.match(branch.prompt, /Step one moves the schema\./);
+  assert.equal(h.created.length, 0);
+  const [event] = h.events;
+  assert.equal(event?.type, 'session.forked');
+  if (event.type !== 'session.forked') return assert.fail('expected session.forked');
+  assert.equal(event.clientRef, 'ref-codex-side');
+  assert.equal(event.session.lineage?.kind, 'side');
+  assert.equal(event.session.lineage.sourceAppSessionId, 'source');
+  assert.match(
+    await readProviderTranscript(event.session.appSessionId),
+    /Step one moves the schema\./,
+  );
+  const requests: { method: string; params: Record<string, unknown> }[] = readFileSync(log, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.equal(requests.filter(({ method }) => method === 'spawn').length, 1);
+  assert.deepEqual(
+    requests.filter(({ method }) => method === 'thread/fork').map(({ params }) => params),
+    [{ threadId: 'thread-source', excludeTurns: true }],
+  );
+  assert.equal(
+    requests.find(({ method }) => method === 'thread/resume')?.params.threadId,
+    'thread-copy',
+  );
+  assert.equal(
+    requests.some(({ method }) => method === 'thread/start' || method === 'thread/settings/update'),
+    false,
+  );
+  const turn = requests.find(({ method }) => method === 'turn/start')?.params;
+  assert.ok(turn);
+  assert.equal(turn.threadId, 'thread-copy');
+  assert.equal(turn.model, 'codex-model');
+  assert.equal(turn.effort, 'medium');
+  assert.equal(turn.serviceTier, 'default');
+  assert.equal(turn.approvalPolicy, 'on-request');
+  assert.deepEqual(turn.input, [{ type: 'text', text: formatSideChatPrompt('Is step one safe?') }]);
 });
 
 test('a copy taken while the source was replaced is not kept', async (t) => {
