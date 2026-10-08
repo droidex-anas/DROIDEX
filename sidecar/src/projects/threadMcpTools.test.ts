@@ -157,6 +157,28 @@ test('thread_read clears unread durably without starting a runtime', async (t) =
   assert.equal(h.launched.length, 0);
 });
 
+test('a failed thread_read returns the save error and keeps unread through Resume', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.threads[1].unread = true;
+  const h = await harness(t, [saved], false);
+  registerProjectService(Promise.resolve(h.projects));
+  h.state.failSave = true;
+  assert.deepEqual(await call('lead0000-main', 'thread_read', { threadId: 'worker00-a' }), {
+    ok: false,
+    error: 'Disk full',
+  });
+  const list = await call('lead0000-main', 'thread_list');
+  assert.ok(Array.isArray(list.threads));
+  assert.equal(list.threads[0]?.unread, true);
+  h.state.failSave = false;
+  await h.projects.setPaused(saved.id, false);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, true);
+  assert.match(h.state.saved[0]?.pending[0]?.text ?? '', /Unread threads: Alpha/);
+  const read = await call('lead0000-main', 'thread_read', { threadId: 'worker00-a' });
+  assert.deepEqual(read.replies, ['First reply']);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, undefined);
+});
+
 test('todo_add keeps a lead follow-up and todo_done removes it durably', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
   const h = await harness(t, [recovered]);

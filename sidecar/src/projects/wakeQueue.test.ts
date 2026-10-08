@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';
 import {
+  deferred,
   drain,
+  wakeMessage as message,
+  wakeProject as project,
+  wakeQueue,
+  queuedThread,
   harness,
   input,
   interruptedSummary,
@@ -11,87 +16,10 @@ import {
   tick,
 } from '../testing/projectServiceHarness.js';
 import { LEDGER_LIMITS } from './store.js';
-import type { ProjectPort } from './ProjectService.js';
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { threadReports } from '../../../src/features/projects/threadNotices.js';
-import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { wakePrompt } from './projectMessages.js';
-import type { Project, ThreadMessage } from './types.js';
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-function message(id: string, target = 'main'): ThreadMessage {
-  return { id, from: 'worker', to: target, kind: 'result', text: id };
-}
-function project(id = 'project'): Project {
-  return {
-    id,
-    title: id,
-    paused: false,
-    launching: 0,
-    plan: [],
-    todos: [],
-    threads: [
-      { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
-      {
-        appSessionId: 'worker',
-        ownerAppSessionId: 'main',
-        title: 'Worker',
-        reply: '',
-        waiting: false,
-      },
-    ],
-    pending: [message('first')],
-  };
-}
-
-/** A started wake queue over `deliver`, closed and flushed when the test ends. */
-function wakeQueue(
-  t: TestContext,
-  deliver: (target: string, prompt: string) => Promise<AutomationDeliveryReceipt>,
-  options: {
-    save?: () => Promise<void>;
-    fail?: (error: unknown) => void;
-    sessions?: Partial<Pick<ProjectPort, 'get' | 'isLive' | 'steer'>>;
-    launch?: (project: Project, thread: Project['threads'][number]) => Promise<boolean>;
-  } = {},
-): ProjectWakeQueue {
-  const queue = new ProjectWakeQueue(
-    {
-      deliver,
-      steer: async (target, prompt, _isCurrent, _now, delivery) => {
-        const receipt = await deliver(target, prompt);
-        if (receipt.status !== 'accepted') return false;
-        delivery?.accepted();
-        delivery?.acknowledged?.();
-        return true;
-      },
-      awaitingApproval: () => false,
-      pendingApproval: () => undefined,
-      get: () => undefined,
-      isLive: () => true,
-      ...options.sessions,
-    },
-    options.save ?? (() => Promise.resolve()),
-    (_project, error) => {
-      if (!options.fail) throw error;
-      options.fail(error);
-    },
-    () => undefined,
-    options.launch,
-  );
-  queue.start([]);
-  t.after(async () => {
-    queue.close();
-    await queue.flush();
-  });
-  return queue;
-}
+import type { Project } from './types.js';
 
 test('acceptance removes only its claim and holds the turn slot until completion', async (t) => {
   const state = project();
@@ -127,8 +55,7 @@ test('acceptance removes only its claim and holds the turn slot until completion
   await tick();
   assert.equal(calls.length, 1, 'a live accepted turn still owns its slot');
   finished.resolve();
-  await tick();
-  await tick();
+  await drain();
   assert.equal(calls.length, 2);
   assert.match(calls[1], /arrived-during-admission/);
   assert.doesNotMatch(calls[1], /"first"/);
@@ -147,8 +74,7 @@ test('availability arriving during an awaited busy receipt is not lost', async (
   await tick();
   queue.available(state, 'main');
   receipt.resolve({ status: 'busy', retryOn: 'target' });
-  await tick();
-  await tick();
+  await drain();
   assert.equal(calls, 2);
 });
 
@@ -162,20 +88,17 @@ test('capacity waits block only that recipient until availability', async (t) =>
       : { status: 'accepted', settled: Promise.resolve() };
   });
   queue.kick(state);
-  await tick();
-  await tick();
+  await drain();
   assert.deepEqual(targets, ['main']);
 
   state.pending.push(message('worker-message', 'worker'));
   queue.kick(state);
-  await tick();
-  await tick();
+  await drain();
   assert.deepEqual(targets, ['main', 'worker']);
 
   state.pending.push(message('main-again'));
   queue.available(state, 'main');
-  await tick();
-  await tick();
+  await drain();
   assert.deepEqual(targets, ['main', 'worker', 'main']);
 });
 
@@ -213,24 +136,33 @@ test('a report refused before handoff stays unchanged and delivers once after av
 });
 
 test('completed callbacks free the global limit of two accepted worker turns', async (t) => {
-  const states = [project('one'), project('two'), project('three')];
-  states.forEach((item, index) => {
-    item.pending[0].to = `main-${String(index)}`;
+  const states = [project('first'), project('second'), project('third')];
+  states.forEach((item) => {
+    item.pending[0].to = item.id;
   });
+  states[0].pending.push(message('first-backlog', 'first-next'));
+  const firstFinished = deferred<void>();
   const finished = deferred<void>();
-  let calls = 0;
-  const queue = wakeQueue(t, async () => {
-    calls += 1;
-    return { status: 'accepted', settled: finished.promise };
+  t.after(() => {
+    firstFinished.resolve();
+    finished.resolve();
   });
-  states.forEach((item) => queue.kick(item));
-  await tick();
-  await tick();
-  assert.equal(calls, 2);
-  finished.resolve();
-  await tick();
-  await tick();
-  assert.equal(calls, 3);
+  const order: string[] = [];
+  const queue = wakeQueue(t, async (target) => {
+    order.push(target);
+    return {
+      status: 'accepted',
+      settled: target === 'first' ? firstFinished.promise : finished.promise,
+    };
+  });
+  queue.start(states);
+  await drain();
+  assert.equal(order.length, 2);
+  assert.deepEqual(order, ['first', 'second']);
+  firstFinished.resolve();
+  await drain();
+  assert.equal(order.length, 3);
+  assert.deepEqual(order, ['first', 'second', 'third']);
 });
 
 test('explicit resume rechecks both target and capacity busy markers', async (t) => {
@@ -276,8 +208,7 @@ test('a cancelled admission cannot restore a busy marker after resume', async (t
   state.paused = false;
   queue.invalidate(state);
   queue.kick(state);
-  await tick();
-  await tick();
+  await drain();
   assert.equal(calls, 2);
   assert.equal(state.pending.length, 0);
 });
@@ -313,8 +244,7 @@ test('reports steer through a full delivery gate and settle at handoff', async (
     },
   );
   queue.start([first, second, report]);
-  await tick();
-  await tick();
+  await drain();
   assert.equal(wakes.length, 2);
   assert.equal(steers.length, 1);
   assert.equal(report.delivery, undefined);
@@ -330,21 +260,9 @@ test('reports steer through a full delivery gate and settle at handoff', async (
 test('existing resume admissions precede queued starts, which launch in FIFO order', async (t) => {
   const state = project();
   state.pending[0].to = 'stopped';
-  const input = {
-    title: 'Work',
-    prompt: 'Do it',
-    provider: 'droid' as const,
-    autonomy: 'low' as const,
-  };
+
   for (const [index, id] of ['new-first', 'new-second'].entries())
-    state.threads.push({
-      appSessionId: id,
-      ownerAppSessionId: 'main',
-      title: id,
-      reply: '',
-      waiting: false,
-      queuedSpawn: { phase: 'queued', input, order: index + 1 },
-    });
+    state.threads.push(queuedThread(id, index + 1));
   const admitted = deferred<AutomationDeliveryReceipt>();
   const finished = deferred<void>();
   const starts: string[] = [];
@@ -362,19 +280,76 @@ test('existing resume admissions precede queued starts, which launch in FIFO ord
   assert.deepEqual(queue.waitReason('new-second'), { kind: 'start', position: 2 });
   assert.deepEqual(starts, []);
   admitted.resolve({ status: 'accepted', settled: finished.promise });
-  await tick();
-  await tick();
+  await drain();
   await tick();
   assert.deepEqual(starts, ['new-first', 'new-second']);
   assert.equal(queue.waitReason('new-first'), undefined);
   finished.resolve();
 });
 
+test('acknowledging eight queued reports does not mark the ninth reply read', async (t) => {
+  const { h, id, main, child } = await projectWithThread(t, { ...input, title: 'Parser' });
+  await h.finish(child.appSessionId, '');
+  await drain();
+  await h.finish(main, '');
+  h.sent.length = 0;
+  await h.projects.setPaused(id, true);
+  for (let index = 1; index <= 9; index += 1) {
+    await h.streaming(child.appSessionId, true);
+    await h.finish(child.appSessionId, `Reply ${index}`);
+  }
+  const finished = deferred<void>();
+  h.port.deliver = async (target, prompt) => {
+    h.sent.push({ id: target, prompt });
+    return {
+      status: 'accepted',
+      settled: h.sent.length === 1 ? finished.promise : Promise.resolve(),
+    };
+  };
+  await h.projects.setPaused(id, false);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].prompt, /Reply 8/);
+  assert.doesNotMatch(h.sent[0].prompt, /Reply 9/);
+  assert.equal(h.state.saved[0]?.pending.length, 1);
+  assert.equal(h.state.saved[0]?.pending[0]?.text, 'Reply 9');
+  assert.equal(h.projects.listThreads(main).threads[0]?.unread, true);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, true);
+  finished.resolve();
+  await drain();
+  assert.equal(h.sent.length, 2);
+  assert.match(h.sent[1].prompt, /Reply 9/);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, undefined);
+});
+
+test('Resume wakes an idle lead to read a lost handed-off report with an empty inbox', async (t) => {
+  const { h, id, main, child } = await projectWithThread(t, { ...input, title: 'Parser' });
+  await h.streaming(main, true);
+  h.port.steer = async (_target, _prompt, _current, _now, delivery) => {
+    delivery?.accepted();
+    return true;
+  };
+  await h.finish(child.appSessionId, 'Parsed the config.');
+  await drain();
+  await h.projects.userStopped(main);
+  await h.streaming(main, false);
+  assert.equal(h.state.saved[0]?.pending.length, 0);
+  assert.equal(h.state.saved[0]?.delivery, undefined);
+  assert.equal(h.sent.length, 0);
+  await h.projects.setPaused(id, false);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent[0].id, main);
+  assert.match(h.sent[0].prompt, /Unread threads: Parser\. Read them with thread_read\./);
+  assert.doesNotMatch(h.sent[0].prompt, /Parsed the config/);
+  assert.equal(h.sessions.get(main)?.streaming, true);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, true);
+  await h.finish(main);
+});
+
 test('a lost report push survives restart as unread and appears in the next wake', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, { ...input, title: 'Parser' });
+  const { h, main, child } = await projectWithThread(t, { ...input, title: 'Parser' });
   await h.streaming(main, true);
   let disk: Project[] = [];
   h.port.steer = async (_target, _prompt, _current, _now, delivery) => {
@@ -406,6 +381,38 @@ test('a lost report push survives restart as unread and appears in the next wake
   assert.doesNotMatch(recovered.sent[0].prompt, /Parsed the config/);
   assert.equal(recovered.projects.listThreads(main).threads[0]?.unread, true);
   await recovered.finish(main);
+});
+
+test('restart retains report-only sending claims for failed, stopped and empty turns without replies', async (t) => {
+  for (const [phase, text] of [
+    ['failed', 'It failed before finishing.\nModel provider refused the request.'],
+    ['paused', 'It was stopped before it finished.'],
+    ['running', 'It ended its turn without a reply.'],
+  ] as const) {
+    const saved = project();
+    saved.paused = true;
+    const report = { ...message('report'), text };
+    saved.delivery = { state: 'sending', messages: [report] };
+    saved.pending = [];
+    const h = await harness(t, [saved], false);
+    h.sessions.set('main', summary('main'));
+    h.sessions.set('worker', { ...summary('worker'), phase });
+    assert.deepEqual(h.projects.read('main', 'worker').replies, []);
+    assert.deepEqual(h.state.saved[0]?.pending, [report]);
+    assert.equal(h.state.saved[0]?.delivery, undefined);
+    assert.equal(h.projects.listThreads('main').threads[0]?.threadId, 'worker');
+    h.projects.historyReady();
+    await drain();
+    assert.equal(h.sent.length, 0, 'recovery respects the hold');
+    await h.projects.setPaused(saved.id, false);
+    await drain();
+    assert.equal(h.sent.length, 1);
+    assert.ok(h.sent[0].prompt.includes(text));
+    assert.deepEqual(h.state.saved[0]?.pending, []);
+    await h.finish('main');
+    await drain();
+    assert.equal(h.sent.length, 1, 'the recovered report is delivered once');
+  }
 });
 
 test('restart drains reports, queued starts and interrupted threads only after history is ready', async (t) => {
@@ -615,14 +622,7 @@ test('a queued spawn waits for its own project resumes hidden by a report claim'
   queue.kick(state);
   await drain();
   assert.ok(state.delivery);
-  state.threads.push({
-    appSessionId: 'queued',
-    ownerAppSessionId: 'main',
-    title: 'Queued',
-    reply: '',
-    waiting: false,
-    queuedSpawn: { phase: 'queued', input, order: 1 },
-  });
+  state.threads.push(queuedThread('queued', 1));
   state.pending.push({ id: 'resume', from: 'main', to: 'worker', kind: 'message', text: 'Go' });
   queue.capacityChanged([state]);
   await drain();
@@ -762,11 +762,7 @@ test('a sleeping lead wakes through two occupied worker slots before a new worke
   await drain();
   assert.deepEqual(order, ['worker', 'second']);
   state.pending.push(message('lead-wake'));
-  state.threads.push({
-    ...state.threads[1],
-    appSessionId: 'new',
-    queuedSpawn: { phase: 'queued', input, order: 1 },
-  });
+  state.threads.push(queuedThread('new', 1));
   queue.kick(state);
   await drain();
   assert.deepEqual(order, ['worker', 'second', 'main']);

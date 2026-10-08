@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -2238,13 +2238,90 @@ test('Send now and Stop after report handoff never replay it and leave its reply
   await live.turnPromise;
   consumed.resolve();
   await drain();
+  project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
   await project.projects.setPaused(id, false);
   await h.lifecycle.send(main, 'resume work');
+  await drain();
   await project.projects.flush();
   assert.equal(reports.length, 1);
-  assert.deepEqual(provider.prompts, ['working', 'resume work']);
+  assert.deepEqual(provider.prompts.slice(0, 2), ['working', 'resume work']);
+  assert.equal(provider.prompts.length, 3);
+  assert.match(provider.prompts[2], /Unread threads: Parser\. Read them with thread_read\./);
+  assert.doesNotMatch(provider.prompts[2], /Parsed the config/);
   assert.equal(project.state.saved[0]?.pending.length, 0);
   assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
+});
+
+test('Claude withdrawal rejection after Stop leaves a handed-off report unread', async (t) => {
+  const project = await projectHarness(t);
+  const { main } = await project.root();
+  const child = await project.projects.spawn(main, { ...projectInput, title: 'Parser' });
+  const cwd = await mkdtemp(join(tmpdir(), 'claude-report-stop-'));
+  const executable = join(cwd, 'cli.mjs');
+  await writeFile(
+    executable,
+    String.raw`#!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline';
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\n');
+let turn;
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  if (message.type === 'user') {
+    turn ??= message;
+    send({ type: 'assistant', uuid: randomUUID(), session_id: message.session_id,
+      parent_tool_use_id: null, message: { id: randomUUID(), role: 'assistant',
+        content: [{ type: 'text', text: message.message.content }] } });
+    return;
+  }
+  if (message.type !== 'control_request') return;
+  const subtype = message.request.subtype;
+  send({ type: 'control_response', response: subtype === 'cancel_async_message'
+    ? { subtype: 'error', request_id: message.request_id, error: 'Cancellation failed' }
+    : { subtype: 'success', request_id: message.request_id, response: { models: [], commands: [] } } });
+  if (subtype === 'interrupt') send({ type: 'result', subtype: 'error_during_execution',
+    session_id: turn.session_id, user_message_uuid: turn.uuid, errors: ['Stopped'],
+    usage: { input_tokens: 0, output_tokens: 0 }, modelUsage: {}, permission_denials: [] });
+});
+`,
+    { mode: 0o755 },
+  );
+  const priorPath = process.env.CLAUDE_PATH;
+  process.env.CLAUDE_PATH = executable;
+  t.after(async () => {
+    if (priorPath === undefined) delete process.env.CLAUDE_PATH;
+    else process.env.CLAUDE_PATH = priorPath;
+    await rm(cwd, { recursive: true, force: true });
+  });
+  const started = turnGate();
+  const handedOff = turnGate();
+  const h = createHarness([], undefined, {
+    runPrimaryTurn: async (live, { prompt }) => {
+      for await (const event of live.session.stream(prompt)) {
+        if (event.transcript?.text === 'working') started.resolve();
+        if (event.transcript?.text?.startsWith('Project update — lead action required'))
+          handedOff.resolve();
+      }
+    },
+  });
+  h.setProvider(new ClaudeProvider());
+  t.after(() => h.lifecycle.closeAll());
+  await h.lifecycle.createAutomatic({ ...createCommand('working'), provider: 'claude', cwd }, main);
+  await started.promise;
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  await project.streaming(main, true);
+  await project.finish(child.appSessionId, 'Parsed the config.');
+  await handedOff.promise;
+  await drain();
+  assert.equal(project.state.saved[0]?.pending.length, 0);
+  assert.equal(project.state.saved[0]?.delivery, undefined);
+  await project.projects.userStopped(main);
+  await h.lifecycle.interrupt(main);
+  await requireLive(h, main).turnPromise;
+  await drain();
+  assert.equal(project.state.saved[0]?.threads[1]?.unread, true);
+  assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
+  assert.equal(project.state.saved[0]?.pending.length, 0, 'handoff stays settled');
 });
 
 test('queued identities reach real Droid, Claude and Codex mappers on creation and resume', async (t) => {

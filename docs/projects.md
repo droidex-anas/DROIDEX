@@ -17,7 +17,7 @@ Every conversation also keeps its own full transcript.
 that talks to the user. Every thread belongs to the chat that started it;
 threads can start their own, up to three levels below the lead. The lead
 controls every thread in the project; any other thread controls only its own.
-Threads default to Full access, capped by their owner's autonomy. Messages from
+Threads inherit their owner's autonomy and can never exceed it. Messages from
 the lead or direct owner are instructions within that ceiling; reports remain
 data. Permission prompts wake the lead and show an approval state. The lead can
 use `thread_approve` only for an action its own autonomy permits without asking.
@@ -31,12 +31,19 @@ the moment it is handed to the provider, and nothing can send it again. If it
 is refused before that moment, it stays queued and is tried again later.
 
 **Unread is the safety net.** A new reply marks its thread unread until the
-lead reads it (`thread_read`), a turn starts with its report, or the provider
-confirms the steer. If a report is handed over just as the lead's turn is
-stopped, the thread stays unread. After a restart or compaction, the lead calls
-`project_read` first and reads the unread threads. After a stop it can also use
-`thread_list`; every wake lists unread threads apart from the reports themselves.
-Being unread does not wake anyone by itself.
+lead reads it (`thread_read`), a turn starts with that reply's report, or the
+provider confirms consumption of that reply's steer. An uncertain withdrawal
+or an older report's acknowledgement never clears a newer reply. If a report
+is handed over just as the lead's turn is stopped, the thread stays unread.
+After a restart or compaction, the lead calls `project_read` first and reads
+the unread threads. After a stop it can also use `thread_list`; every wake lists
+unread threads apart from the reports themselves. Being unread does not wake
+anyone by itself. Resume lifts the hold before queuing an unread reminder
+when no message is already waiting for the lead and the inbox has room. With
+no unread replies, an idle lead gets a coordination wake instead. A full inbox
+can skip the unread reminder and never blocks Resume. Wakes list at most 20
+unread thread titles and count the rest; every unread thread remains discoverable
+through `thread_list`.
 
 **What wakes the lead.** A report, a thread's question or approval request, a
 thread's failure or rate limit, a due to-do, the last working thread going idle
@@ -49,7 +56,8 @@ that time. An idle team with unfinished plan work gets a durable wake after a re
 **Runtime slots.** Starting and restoring threads automatically shares
 **20 runtimes**, counting ones still starting. Threads waiting to resume go
 before newly queued threads, and queued threads start in the order they were
-queued. At most two worker deliveries start turns at once; sleeping leads have
+queued. Delivery admission rotates fairly between projects of the same priority.
+At most two worker deliveries start turns at once; sleeping leads have
 a separate lane and wake before new worker starts. Steering into a running turn
 needs no slot. A runtime idle for 30 minutes is released to save memory (only
 the three most recent idle ones may stay that long). A message to its thread
@@ -65,10 +73,17 @@ stopped threads stay stopped. A delivery loop above `max(60, 3 × threads)` in
 five minutes holds the project with a message naming the cause.
 
 **After a restart.** DROIDEX loads the transcripts first. Waiting messages and
-queued threads are kept. A thread cut off mid-turn gets one "continue" from
-DROIDEX unless a message for it is already waiting. A delivery that was in
-flight is dropped if it held only reports (their threads stay unread); any
-other in-flight delivery holds the project for review, and Resume discards it.
+queued threads are kept. A queued thread keeps its initial task until its first
+turn starts. A thread cut off mid-turn gets one "continue" from DROIDEX unless
+it was explicitly stopped or a message for it is already waiting. Finished
+threads whose runtimes were idle receive no continuation, and finished projects
+stay done. Interrupted work is recorded even when startup finds the project
+held, and continues only after Resume. An explicit thread Stop remains durable
+across restarts until another turn starts.
+An in-flight delivery that held only reports leaves identified, durable replies
+unread. Reports without a reply identity or retained reply text return to the
+pending queue, including failed, stopped and empty turns. Any other in-flight
+delivery holds the project for review, and Resume discards it.
 A ledger that cannot be read is reported and left untouched.
 
 | Tool | Changes now | Later effect |
@@ -209,8 +224,9 @@ returns runtime load (`live`: in use, running or starting, including reserved
 opens and resumes; `limit`: automatic runtime limit) and the lead's open to-dos. A main chat
 reaches all other threads in its project; a thread lists only its direct children.
 `thread_read` returns the same wait reason and runtime load with the full reply
-readout and clears unread. Neither tool starts or resumes a runtime, even when
-capacity is full, a thread is stopped or the project is held.
+readout and clears unread only after saving succeeds. A failed save returns an
+error and keeps the thread unread. Neither tool starts or resumes a runtime,
+even when capacity is full, a thread is stopped or the project is held.
 
 Every thread-id argument accepts the full id or a unique prefix of at least
 eight characters within that scope, including `workspaceOf`, plan links and
@@ -269,8 +285,8 @@ achieved, the main chat calls `project_done` with what the project achieved.
 It refuses with every outstanding item: unread reports, open to-dos, failed or
 approval-waiting threads, pending messages and active work. Projects then shows
 it as done, with that outcome and how long the project took. Any work after that
-reopens it: a new thread, a message to a thread, a thread starting a turn, or a
-plan with any step that is not done. Answering a historical question does not
+reopens it: a new thread (including a queued one), a message to a thread, a thread
+starting a turn, or a plan with any step that is not done. Answering a historical question does not
 reopen it. A project records when it started; one from before that shows its
 main chat's start.
 
@@ -278,18 +294,21 @@ main chat's start.
 
 The chat's utility panel has a **Threads** tab. It opens with a short greeting
 that changes through the day, the project's name, and how long it has been
-running or how long it took, with the outcome once it is done, or a line saying to resume the
-project in Projects while it is held. Below them come the plan, headed by how
+running or how long it took, with the outcome once it is done. A paused project
+says that work and messages are kept and offers Resume; a stopped lead says that
+the team keeps working while its reports wait. Below them come the plan, headed by how
 many of its steps are done, and the threads, grouped the way the sidebar's
-Activity view groups chats: **Needs you**, **Working** and **Recent**. Each
+Activity view groups chats, with **Waiting** and **Queued** for project admission.
+**Needs you** previews the approval or question in one line. Each
 heading carries its count and folds its section. Each row
 carries the thread's own last step and how long ago it moved. The states come
 from the signals the sidebar reads, a pending approval or question, the session
 phase and the chat's activity digest, so the panel never claims something the
 app cannot back up.
 
-Opening a row shows that thread's conversation read-only, loading its history
-first if this window has not, with **Open** to bring it into the main pane,
+Opening a row shows that thread's transcript read-only, loading its history
+first if this window has not. Pending questions, approvals and plans can be
+answered there through the same inline cards the chat uses. **Open** brings it into the main pane,
 where the ordinary composer and Stop steer it. In the chat, a started thread
 renders as an inline line with its live step that stays visible after the turn
 folds, and opening it shows the thread in the Threads tab. A project's chat
@@ -403,8 +422,9 @@ receives its first task.
 
 The wake queue writes its claim before dispatch. A steered report settles when
 `session.steer(text)` is called, and never returns to the queue afterward.
-Its acknowledgement clears unread; a failed or missing acknowledgement does not
-change settlement. An idle owner's scheduled turn keeps its existing receipt:
+Confirmed consumption clears unread only for the reply that report carries;
+a failed, uncertain or missing acknowledgement does not change settlement.
+An idle owner's scheduled turn keeps its existing receipt:
 **Accepted** means the provider acknowledged its prompt. Its concurrency slot stays
 held until that turn settles, except while the turn waits on a question routed
 to the chat that started it, or on the user's permission: it runs nothing then,
@@ -422,23 +442,26 @@ They start when capacity opens, after resumes that can be admitted. A resume
 blocked by its own project's delivery does not hold up other projects' spawns.
 That project's spawns wait until its delivery claim clears and its pending
 resumes go first, including resumes parked on busy or capacity markers.
-Reports and due reminders can steer into a busy owner's turn without starting a
-competing turn. Stop waits for admissions; steered handoffs settle without
-waiting for provider acknowledgement. An unread reply remains discoverable
-through `thread_list` and the next wake even if Stop loses the push. Interrupted
-threads receive one restart continuation only when they have no instruction
-already queued, including when the inbox is full.
+Projects take turns admitting deliveries, so one project's backlog cannot
+starve another project. Reports and due reminders can steer into a busy owner's
+turn without starting a competing turn. Stop waits for admissions; steered
+handoffs settle without waiting for provider acknowledgement. An unread reply
+remains discoverable through `thread_list` and the next wake even if Stop loses
+the push. Interrupted threads receive one restart continuation only when they
+have no instruction already queued, including when the inbox is full.
 
 A report refused before steer handoff returns unchanged to the ledger. A
 scheduled turn whose outcome is unknown holds the project for review. A
 withdrawal before dispatch, by Stop, a hold or a question its thread stopped
 asking, returns messages to the queue, less the withdrawn question. After a
-restart, a sending claim made entirely of reports is dropped: their durable
-replies remain unread. Other claims caught mid-flight hold the project;
-the others carry on, delivering what the restart left queued once session
+restart, reports in a sending claim with an identified, durable reply are
+dropped: their replies remain unread. Reports without a reply identity or
+retained reply text return to pending and remain in compact `thread_list` until
+delivered. Other claims caught mid-flight hold the project; the others carry
+on, delivering what the restart left queued once session
 history has loaded. No delivery goes out before that, because until
 then a thread reads as an unknown session. Projects shows a held project with a
-Resume control, and the Threads panel says to resume it there. Resuming discards
+Resume control, also available in the Threads panel. Resuming discards
 an uncertain claim **without resending it**; automatic replay could duplicate
 work and is deliberately forbidden.
 
@@ -450,8 +473,10 @@ from an uncertain delivery needs explicit review in Projects before Resume
 discards the claim without replay. Spawns already underway when the user
 presses Stop are canceled, including the first spawn of an ordinary chat.
 
-Malformed ledgers fail visibly and are left untouched. A ledger without `todos`
-loads with an empty list; a thread without `queuedSpawn` has no queued launch.
+Malformed ledgers fail visibly and are left untouched. String `owedReport`
+values load as `{ text }`; saves use that object shape, optionally with a reply
+identity. A ledger without `todos` loads with an empty list; a thread without
+`queuedSpawn` has no queued launch.
 If a to-do's `after` thread has left the project, only that link is removed; the
 note and any time trigger remain.
 

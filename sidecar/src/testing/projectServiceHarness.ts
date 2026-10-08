@@ -5,9 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { promisify } from 'node:util';
+import type { AutomationDeliveryReceipt } from '../automations/types.js';
+import { ProjectWakeQueue } from '../projects/ProjectWakeQueue.js';
 import { ProjectService, type ProjectPort } from '../projects/ProjectService.js';
 import type { ProjectPersistence } from '../projects/store.js';
-import type { Project, ThreadInput } from '../projects/types.js';
+import type { Project, ThreadInput, ThreadMessage } from '../projects/types.js';
 import type {
   PermissionRequest,
   ServerEvent,
@@ -30,9 +32,9 @@ export async function drain() {
   for (let i = 0; i < 8; i += 1) await tick();
 }
 
-export function deferred() {
-  let resolve: () => void = () => undefined;
-  const promise = new Promise<void>((done) => {
+export function deferred<T = void>() {
+  let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+  const promise = new Promise<T>((done) => {
     resolve = done;
   });
   return { promise, resolve };
@@ -320,10 +322,10 @@ export async function ordinaryChat(t: TestContext, selection: ThreadInput = inpu
 }
 
 /** A settled lead and its first working thread. */
-export async function projectWithThread(t: TestContext) {
+export async function projectWithThread(t: TestContext, selection: ThreadInput = input) {
   const h = await harness(t);
   const { id, main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const child = await h.projects.spawn(main, selection);
   return { h, id, main, child };
 }
 
@@ -332,4 +334,83 @@ export async function idleProject(t: TestContext) {
   const h = await harness(t);
   const { id, main } = await h.root();
   return { h, id, main };
+}
+
+export function wakeMessage(id: string, target = 'main'): ThreadMessage {
+  return { id, from: 'worker', to: target, kind: 'result', text: id };
+}
+export function wakeProject(id = 'project'): Project {
+  return {
+    id,
+    title: id,
+    paused: false,
+    launching: 0,
+    plan: [],
+    todos: [],
+    threads: [
+      { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
+      {
+        appSessionId: 'worker',
+        ownerAppSessionId: 'main',
+        title: 'Worker',
+        reply: '',
+        waiting: false,
+      },
+    ],
+    pending: [wakeMessage('first')],
+  };
+}
+
+/** A started wake queue over `deliver`, closed and flushed when the test ends. */
+export function wakeQueue(
+  t: TestContext,
+  deliver: (target: string, prompt: string) => Promise<AutomationDeliveryReceipt>,
+  options: {
+    save?: () => Promise<void>;
+    fail?: (error: unknown) => void;
+    sessions?: Partial<Pick<ProjectPort, 'get' | 'isLive' | 'steer'>>;
+    launch?: (project: Project, thread: Project['threads'][number]) => Promise<boolean>;
+  } = {},
+): ProjectWakeQueue {
+  const queue = new ProjectWakeQueue(
+    {
+      deliver,
+      steer: async (target, prompt, _isCurrent, _now, delivery) => {
+        const receipt = await deliver(target, prompt);
+        if (receipt.status !== 'accepted') return false;
+        delivery?.accepted();
+        delivery?.acknowledged?.();
+        return true;
+      },
+      awaitingApproval: () => false,
+      pendingApproval: () => undefined,
+      get: () => undefined,
+      isLive: () => true,
+      ...options.sessions,
+    },
+    options.save ?? (() => Promise.resolve()),
+    (_project, error) => {
+      if (!options.fail) throw error;
+      options.fail(error);
+    },
+    () => undefined,
+    options.launch,
+  );
+  queue.start([]);
+  t.after(async () => {
+    queue.close();
+    await queue.flush();
+  });
+  return queue;
+}
+
+export function queuedThread(appSessionId: string, order: number): Project['threads'][number] {
+  return {
+    appSessionId,
+    ownerAppSessionId: 'main',
+    title: appSessionId,
+    reply: '',
+    waiting: false,
+    queuedSpawn: { phase: 'queued', input, order },
+  };
 }

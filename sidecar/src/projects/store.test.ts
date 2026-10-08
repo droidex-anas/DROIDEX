@@ -5,7 +5,14 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { fitLedger, LEDGER_LIMITS, ProjectStore, threadInputSchema } from './store.js';
 import type { Project } from './types.js';
-import { drain, harness, input, summary } from '../testing/projectServiceHarness.js';
+import {
+  deferred,
+  drain,
+  harness,
+  input,
+  interruptedSummary,
+  summary,
+} from '../testing/projectServiceHarness.js';
 import { ProjectService } from './ProjectService.js';
 
 /** The ledger path in a scratch directory removed after the test. */
@@ -208,6 +215,51 @@ test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do lin
   assert.deepEqual((await store.load())[0]?.todos, [{ id: 'todo', text: 'Review' }]);
 });
 
+test('a main-shaped ledger loads string owed reports and saves the canonical report shape', async (t) => {
+  const path = await ledgerPath(t);
+  const saved = {
+    id: 'project',
+    title: 'Example',
+    paused: true,
+    leadStopped: true,
+    launching: 0,
+    threads: [
+      { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
+      {
+        appSessionId: 'worker',
+        ownerAppSessionId: 'main',
+        title: 'Worker',
+        reply: 'Latest reply',
+        earlierReplies: ['Earlier reply'],
+        owedReport: 'Report waiting for inbox room',
+        waiting: false,
+      },
+    ],
+    pending: [{ id: 'note', from: 'main', to: 'worker', kind: 'message', text: 'Continue' }],
+    delivery: {
+      state: 'uncertain',
+      messages: [{ id: 'report', from: 'worker', to: 'main', kind: 'result', text: 'Done' }],
+    },
+  };
+  await writeFile(path, JSON.stringify([saved]));
+  const store = new ProjectStore(path);
+  const loaded = await store.load();
+  assert.deepEqual(loaded, [
+    {
+      ...saved,
+      plan: [],
+      todos: [],
+      threads: [
+        saved.threads[0],
+        { ...saved.threads[1], owedReport: { text: saved.threads[1].owedReport } },
+      ],
+    },
+  ]);
+  await store.save(loaded);
+  assert.deepEqual(await new ProjectStore(path).load(), loaded);
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), loaded);
+});
+
 test('workspace-free spawns persist at either capacity and a failed spawn holds only its project', async (t) => {
   const store = new ProjectStore(await ledgerPath(t));
   const h = await harness(t, [], false);
@@ -216,6 +268,7 @@ test('workspace-free spawns persist at either capacity and a failed spawn holds 
   h.sessions.set('other', summary('other'));
   const projects = await ProjectService.open(h.port, store, () => undefined);
   t.after(() => projects.close());
+  t.mock.method(h.projects, 'observe', projects.observe.bind(projects));
   await projects.setPlan('free', [{ title: 'Build' }]);
   await projects.setPlan('other', [{ title: 'Unrelated work' }]);
 
@@ -279,4 +332,122 @@ test('a maximal queued task with checkout instructions survives a ledger reload 
   assert.ok(launched.prompt.includes(prompt));
   assert.match(launched.prompt, /Work in \/workspace, where that work was done\./);
   assert.equal(recovered.sessions.get(queued.appSessionId)?.cwd, '/workspace');
+});
+
+test('user and lead Stop survive another held restart without continuing the worker', async (t) => {
+  const store = new ProjectStore(await ledgerPath(t));
+  for (const stop of ['user', 'lead']) {
+    const original = await harness(t);
+    const { id, main } = await original.root();
+    const worker = await original.projects.spawn(main, { ...input, provider: 'codex' });
+    await original.projects.setPaused(id, true);
+    original.projects.close();
+
+    const restored = await harness(t, original.state.saved, false);
+    restored.sessions.set(main, summary(main));
+    restored.sessions.set(worker.appSessionId, {
+      ...interruptedSummary(worker.appSessionId),
+      provider: 'codex',
+    });
+    restored.projects.historyReady();
+    await drain();
+    if (stop === 'user') await restored.projects.userStopped(worker.appSessionId);
+    else await restored.projects.stop(main, worker.appSessionId);
+    await store.save(restored.state.saved);
+    restored.projects.close();
+
+    const restarted = await harness(t, await store.load(), false);
+    restarted.sessions.set(main, summary(main));
+    const stopped = restored.sessions.get(worker.appSessionId);
+    assert.ok(stopped);
+    restarted.sessions.set(worker.appSessionId, { ...stopped });
+    restarted.projects.historyReady();
+    await drain();
+    await restarted.projects.setPaused(id, false);
+    await drain();
+    assert.equal(restarted.sent.filter(({ id }) => id === worker.appSessionId).length, 0, stop);
+    assert.equal(restarted.sessions.get(worker.appSessionId)?.streaming, false);
+
+    await restarted.projects.send(main, worker.appSessionId, 'Run explicitly.');
+    await drain();
+    assert.equal(restarted.sent.filter(({ id }) => id === worker.appSessionId).length, 1);
+  }
+});
+
+test('a queued task bound before dispatch survives restart and starts exactly once', async (t) => {
+  const store = new ProjectStore(await ledgerPath(t));
+  const h = await harness(t, [], false);
+  const { main } = await h.root();
+  h.state.capacity = 'busy';
+  const queued = await h.projects.spawn(main, { ...input, title: 'Queued work' });
+  const firstTurn = deferred();
+  t.after(() => firstTurn.resolve());
+  h.state.firstTurnGate = firstTurn.promise;
+  const create = h.port.create;
+  const openings: Promise<unknown>[] = [];
+  h.port.create = async (selection, bind, clientRef, appSessionId, start) => {
+    assert.ok(appSessionId);
+    const bound = deferred();
+    openings.push(
+      create(
+        selection,
+        async (session) => {
+          await bind(session);
+          bound.resolve();
+        },
+        clientRef,
+        appSessionId,
+        start,
+      ),
+    );
+    await bound.promise;
+    return h.sessions.get(appSessionId);
+  };
+  h.state.capacity = 'free';
+  h.projects.historyReady();
+  await drain();
+  assert.equal(openings.length, 1, 'a bound runtime awaiting dispatch is not opened again');
+  const boundSession = h.sessions.get(queued.appSessionId);
+  assert.ok(boundSession && !boundSession.streaming);
+  await store.save(h.state.saved);
+  h.projects.close();
+  firstTurn.resolve();
+  await Promise.all(openings);
+
+  const recovered = await harness(t, await store.load(), false);
+  recovered.sessions.set(main, summary(main));
+  recovered.sessions.set(queued.appSessionId, { ...boundSession });
+  recovered.projects.historyReady();
+  await drain();
+  recovered.projects.capacityChanged();
+  recovered.projects.sessionAvailable(queued.appSessionId);
+  await drain();
+  const launches = recovered.launched.filter(({ title }) => title === 'Queued work');
+  assert.equal(launches.length, 1);
+  assert.ok(launches[0].prompt.includes(input.prompt));
+  assert.equal(recovered.sent.filter(({ id }) => id === queued.appSessionId).length, 0);
+  assert.equal(recovered.sessions.get(queued.appSessionId)?.streaming, true);
+  await store.save(recovered.state.saved);
+  const thread = (await store.load())[0]?.threads.find(
+    (thread) => thread.appSessionId === queued.appSessionId,
+  );
+  assert.equal(thread?.queuedSpawn, undefined);
+});
+
+test('accepting a queued spawn immediately clears the durable project completion', async (t) => {
+  const store = new ProjectStore(await ledgerPath(t));
+  const h = await harness(t);
+  const { main } = await h.root();
+  await h.projects.finish(main, 'Shipped the feature.');
+  assert.equal(h.projects.list()[0]?.done?.outcome, 'Shipped the feature.');
+  h.state.capacity = 'busy';
+  const queued = await h.projects.spawn(main, input);
+  assert.equal(queued.delivery, 'queued');
+  assert.equal(h.projects.list()[0]?.done, undefined);
+  await store.save(h.state.saved);
+  const [saved] = await store.load();
+  assert.equal(saved?.done, undefined);
+  assert.ok(
+    saved?.threads.find((thread) => thread.appSessionId === queued.appSessionId)?.queuedSpawn,
+  );
 });

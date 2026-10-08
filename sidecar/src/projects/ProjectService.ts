@@ -1,7 +1,8 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { SteeredReportDelivery } from '../SessionLifecycle.js';
+import { TURN_INTERRUPTED } from '../sessionAdoption.js';
 import { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import { failureReport, wakePrompt } from './projectMessages.js';
+import { failureReport, unreadThreadNote, wakePrompt } from './projectMessages.js';
 import {
   clearAsk,
   ProjectTurns,
@@ -236,8 +237,8 @@ export class ProjectService {
       enqueue: (project, message) => {
         this.enqueue(project, message);
       },
-      report: (project, thread, text, leadAlert) => {
-        this.report(project, thread, text, leadAlert);
+      report: (project, thread, text, replyId, leadAlert) => {
+        this.report(project, thread, text, replyId, leadAlert);
       },
       leadFailed: (project) => {
         this.leadFailed(project);
@@ -267,13 +268,17 @@ export class ProjectService {
     for (const project of saved) {
       project.launching = 0;
       if (project.delivery) {
-        // Replies are durable before reports queue; unread survives a lost push.
         if (
           project.delivery.state === 'sending' &&
           project.delivery.messages.every((message) => message.kind === 'result')
-        )
+        ) {
+          // Unread recovers durable replies; reports without one still need delivery.
+          const reports = project.delivery.messages.filter(
+            (message) => !message.replyId || !requireThread(project, message.from).reply,
+          );
+          project.pending.unshift(...reports);
           delete project.delivery;
-        else {
+        } else {
           project.delivery.state = 'uncertain';
           project.paused = true;
           delete project.leadStopped;
@@ -854,8 +859,7 @@ export class ProjectService {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     if (!thread.unread) return;
-    delete thread.unread;
-    await this.save();
+    await this.save(undefined, thread);
   }
 
   listThreads(source: string, all = false) {
@@ -1266,11 +1270,21 @@ export class ProjectService {
     if (
       shouldWake &&
       lead &&
-      !this.sessions.get(lead.appSessionId)?.streaming &&
       !project.pending.some((message) => message.to === lead.appSessionId)
-    )
-      project.wakePending = 'resume';
+    ) {
+      const unread = unreadThreadNote(project);
+      if (unread) {
+        if (!inboxFull(project))
+          this.enqueue(project, {
+            from: lead.appSessionId,
+            to: lead.appSessionId,
+            kind: 'message',
+            text: unread,
+          });
+      } else if (!this.sessions.get(lead.appSessionId)?.streaming) project.wakePending = 'resume';
+    }
     this.refill(project);
+    this.refillRestartRecovery(project);
     await this.save();
     this.wakes.kick(project);
     return resumed;
@@ -1289,7 +1303,9 @@ export class ProjectService {
           from: thread.ownerAppSessionId ?? id,
           to: id,
           kind: 'message',
-          text: 'The project resumed. Continue the work interrupted by project Pause from where you stopped.',
+          text: this.restartRecovery.has(id)
+            ? 'DROIDEX restarted while you were working. Continue from where you stopped; your worktree and history are intact.'
+            : 'The project resumed. Continue the work interrupted by project Pause from where you stopped.',
         });
       }
       project.interrupted = project.interrupted.filter((target) => target !== id);
@@ -1454,11 +1470,15 @@ export class ProjectService {
 
   private async recoverAfterRestart(): Promise<void> {
     for (const project of this.projects.values()) {
-      if (this.closed || project.paused) continue;
+      if (this.closed) continue;
       for (const thread of project.threads) {
-        if (!thread.ownerAppSessionId || thread.queuedSpawn) continue;
+        if (!thread.ownerAppSessionId || thread.queuedSpawn || thread.stopped) continue;
         const session = this.sessions.get(thread.appSessionId);
-        if (session?.interruptReason && !session.streaming && session.phase === 'paused')
+        if (
+          session?.interruptReason?.startsWith(TURN_INTERRUPTED) &&
+          !session.streaming &&
+          session.phase === 'paused'
+        )
           this.restartRecovery.add(thread.appSessionId);
       }
       this.refillRestartRecovery(project);
@@ -1472,6 +1492,7 @@ export class ProjectService {
   }
 
   private refillRestartRecovery(project: Project): void {
+    if (project.paused) return;
     for (const thread of project.threads) {
       if (!this.restartRecovery.has(thread.appSessionId) || !thread.ownerAppSessionId) continue;
       const alreadyQueued = [...project.pending, ...(project.delivery?.messages ?? [])].some(
@@ -1543,6 +1564,8 @@ export class ProjectService {
       project.interrupted = project.interrupted.filter((id) => id !== target);
       if (!project.interrupted.length) delete project.interrupted;
     }
+    // A stopped thread stays stopped: no continuation after a restart either.
+    thread.stopped = true;
     this.restartRecovery.delete(target);
     const queued = thread.queuedSpawn;
     const checkoutOwner = queued?.workspace
@@ -1584,6 +1607,7 @@ export class ProjectService {
       queuedSpawn: { phase, input, order: ++this.spawnOrder, workspace },
     };
     if (phase === 'queued') this.commitAdoption(ownerAppSessionId, project);
+    delete project.done;
     project.threads.push(thread);
     this.membership.set(thread.appSessionId, project);
     try {
@@ -1610,6 +1634,7 @@ export class ProjectService {
     const owner = thread.ownerAppSessionId;
     if (!queued || !owner) throw new Error('Only an identified, unstarted thread can open.');
     const wasQueued = queued.phase === 'queued';
+    let opened = false;
     queued.phase = 'opening';
     const { input, workspace } = queued;
     project.launching += 1;
@@ -1633,6 +1658,7 @@ export class ProjectService {
       }
       if (!session)
         throw new Error('The selected harness did not start this thread and reported no reason.');
+      opened = true;
       return true;
     } catch (error) {
       if (wasQueued && isCurrent()) {
@@ -1642,17 +1668,16 @@ export class ProjectService {
           0,
           LEDGER_LIMITS.threadError,
         );
-        this.report(project, thread, failureReport(thread.title, thread.error), true);
+        this.report(project, thread, failureReport(thread.title, thread.error), undefined, true);
         return true;
       }
-      if (wasQueued) thread.queuedSpawn = queued;
-      else {
+      if (!wasQueued) {
         project.threads = project.threads.filter((candidate) => candidate !== thread);
         this.membership.delete(thread.appSessionId);
       }
       throw error;
     } finally {
-      if (thread.queuedSpawn?.phase === 'opening') thread.queuedSpawn.phase = 'queued';
+      if (thread.queuedSpawn?.phase === 'opening' && !opened) thread.queuedSpawn.phase = 'queued';
       project.launching -= 1;
       await this.save(project);
     }
@@ -1668,14 +1693,19 @@ export class ProjectService {
       console.warn(`Could not name project thread ${thread.appSessionId}:`, error);
     });
     if (!isCurrent()) throw new Error('Project launch was cancelled.');
-    delete thread.queuedSpawn;
     await this.save(project);
     if (!isCurrent()) throw new Error('Project launch was cancelled.');
   }
 
   /* A report that finds the inbox full waits on its thread and queues as soon as
      a delivery makes room. A newer report from the same thread replaces it. */
-  private report(project: Project, thread: ProjectThread, text: string, leadAlert = false): void {
+  private report(
+    project: Project,
+    thread: ProjectThread,
+    text: string,
+    replyId?: string,
+    leadAlert = false,
+  ): void {
     const owner = thread.ownerAppSessionId;
     if (!owner) return;
     requireMessageText(text);
@@ -1690,13 +1720,13 @@ export class ProjectService {
     }
     const queued = project.pending.length + (project.delivery?.messages.length ?? 0);
     if (queued + recipients.length > LEDGER_LIMITS.inbox) {
-      thread.owedReport = text;
+      thread.owedReport = { text, replyId };
       if (recipients.length > 1) thread.owedLeadAlert = true;
       else delete thread.owedLeadAlert;
       return;
     }
     for (const to of recipients)
-      this.enqueue(project, { from: thread.appSessionId, to, kind: 'result', text });
+      this.enqueue(project, { from: thread.appSessionId, to, kind: 'result', text, replyId });
     delete thread.owedReport;
     delete thread.owedLeadAlert;
   }
@@ -1719,8 +1749,8 @@ export class ProjectService {
     this.refillInterrupted(project);
     for (const thread of project.threads) {
       if (inboxFull(project)) return;
-      const text = thread.owedReport;
-      if (text) this.report(project, thread, text, thread.owedLeadAlert);
+      const report = thread.owedReport;
+      if (report) this.report(project, thread, report.text, report.replyId, thread.owedLeadAlert);
     }
     if (!lead) return;
     this.refillApprovals(project);
@@ -1771,6 +1801,9 @@ export class ProjectService {
     if (
       !workRemains ||
       project.launching ||
+      [...project.pending, ...(project.delivery?.messages ?? [])].some(
+        (message) => message.kind === 'message' && message.to !== lead.appSessionId,
+      ) ||
       project.threads.some(
         (thread) =>
           thread.ownerAppSessionId &&
@@ -1917,9 +1950,24 @@ export class ProjectService {
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 
-  private async save(affectedProject?: Project): Promise<void> {
-    const projects = [...this.projects.values()];
+  private async save(affectedProject?: Project, readThread?: ProjectThread): Promise<void> {
+    let projects = [...this.projects.values()];
     fitLedger(projects, (appSessionId) => this.sessions.get(appSessionId)?.updatedAt ?? 0);
+    const readProject = readThread ? this.membership.get(readThread.appSessionId) : undefined;
+    const readReplyId = readThread?.replyId;
+    if (readThread)
+      projects = projects.map((project) => {
+        if (project !== readProject) return project;
+        return {
+          ...project,
+          threads: project.threads.map((thread) => {
+            if (thread !== readThread) return thread;
+            const saved = { ...thread };
+            delete saved.unread;
+            return saved;
+          }),
+        };
+      });
     try {
       await this.store.save(projects);
     } catch (error) {
@@ -1927,6 +1975,14 @@ export class ProjectService {
       else for (const project of this.projects.values()) this.fail(project, error);
       throw error;
     }
+    // A failed save or a reply arriving during it must keep the live unread flag.
+    if (
+      !this.closed &&
+      readThread &&
+      this.membership.get(readThread.appSessionId) === readProject &&
+      readThread.replyId === readReplyId
+    )
+      delete readThread.unread;
     this.armTodoTimer();
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }

@@ -70,6 +70,7 @@ const message = z
     text,
     questionId: id.optional(),
     approvalId: id.optional(),
+    replyId: id.optional(),
   })
   .strict();
 
@@ -150,13 +151,19 @@ const project = z
           ownerAppSessionId: id.optional(),
           title: z.string().max(LEDGER_LIMITS.title),
           reply: text,
+          replyId: id.optional(),
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
-          owedReport: text.optional(),
+          owedReport: z
+            .union([text, z.object({ text, replyId: id.optional() }).strict()])
+            // Main ledgers store report text alone; runtime state uses one shape.
+            .transform((report) => (typeof report === 'string' ? { text: report } : report))
+            .optional(),
           owedLeadAlert: z.literal(true).optional(),
           unread: z.literal(true).optional(),
           waiting: z.boolean(),
+          stopped: z.literal(true).optional(),
           queuedSpawn: z
             .object({
               phase: z.enum(['queued', 'opening', 'failed']),
