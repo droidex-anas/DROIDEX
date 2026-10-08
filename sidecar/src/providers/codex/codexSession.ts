@@ -456,7 +456,9 @@ export class CodexSession implements ProviderSession {
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
     this.permissions.requireOpen();
     const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
-    if (this.voice.isLive()) {
+    // A failed hang-up leaves Codex holding the conversation, so once voice has
+    // started, every escalation can still reach a handoff.
+    if (this.voice.isLive() || this.delegatedAutonomyCeiling !== undefined) {
       this.delegatedAutonomyCeiling ??= this.permissions.inForce;
       if (
         AUTONOMY_LEVELS.indexOf(autonomy) > AUTONOMY_LEVELS.indexOf(this.delegatedAutonomyCeiling)

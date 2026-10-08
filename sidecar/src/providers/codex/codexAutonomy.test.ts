@@ -691,3 +691,23 @@ test('closing a Codex voice session proceeds when its stop misses the deadline',
     await session.close();
   }
 });
+
+test('Codex contains a handoff bound after a refused hang-up and a later escalation', async () => {
+  const interrupted: unknown[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'turn/interrupt') interrupted.push(params.turnId);
+    if (method === 'thread/realtime/stop') throw new Error('stop refused');
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+  // Codex refused the stop, so it still holds the conversation.
+  await session.voice.stop().catch(() => undefined);
+  await session.setAutonomy('high');
+  notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'handoff-high' } });
+  await session.setAutonomy('off');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(interrupted, ['handoff-high']);
+  await session.close();
+});
