@@ -6,7 +6,7 @@ import { mcpGrantSignature } from '../../mcpGrant.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplayTitle } from '../../sessionsMcpPolicy.js';
 import { objectValue } from '../../values.js';
-import { invalidCanvasArguments } from '../../canvas/canvasMcpServer.js';
+import { invalidCanvasArguments } from '../../canvas/canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
 import type { OpenPrompts } from './codexApprovals.js';
 

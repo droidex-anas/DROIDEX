@@ -354,9 +354,16 @@ successfully; build publication checks the captured job at the final manifest re
 
 Each chat gets one local `droidex-canvas` MCP server with six tools: read, create,
 write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
-`canvas_read` returns that chat's newest live lease. Every mutation requires its
-explicit `scopeId`; retries keep the original scope and cannot borrow a later
-turn's authority. Named leases expire when their turn or provider ends.
+call `canvas_read` with no arguments first to obtain that chat's newest live lease.
+Reads may then name a returned `scopeId` to retain its pinned references across
+steers; Claude's read hook relies on this to bind retries to their original lease.
+Never invent a scope ID. Unknown IDs and IDs issued to another chat return
+`invalid_input` with this recovery step; known revoked IDs return `scope_expired`.
+`CanvasTurns` retains issued IDs and their chat owners for the live provider era,
+without retaining revoked scope payloads. `endSession` drops that chat's issued
+IDs, so requests naming its closed era return `invalid_input`. Every mutation
+requires its explicit `scopeId`; retries keep the original scope and cannot
+borrow a later turn's authority. Named leases expire when their turn or provider ends.
 Read replies revalidate that lease after awaited work. Mutation owners check it
 at publication; a mutation already published durably returns its receipt even
 if shutdown revokes the turn while the final flush finishes.
