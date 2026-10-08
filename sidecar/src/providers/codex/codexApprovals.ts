@@ -65,11 +65,13 @@ export interface CodexApproval {
   // The key an always-allow grant is stored under; absent leaves the request
   // ineligible for one.
   signature?: string;
-  raw: unknown;
+  raw: CommandApproval | FileChangeApproval;
   canApproveFor?: (actor: SessionSummary) => boolean;
 }
 
 interface CommandApproval {
+  threadId: string;
+  turnId: string;
   itemId: string;
   command?: string | null;
   reason?: string | null;
@@ -202,19 +204,22 @@ export class OpenPrompts {
   register(
     client: Pick<AppServerClient, 'onRequest'>,
     fileDetail: (itemId: string) => FileChangeDetail | undefined,
-    canApproveEdits: (request: FileChangeApproval) => boolean,
+    canAutoApprove: (approval: CodexApproval) => boolean,
     ownerCanApproveEdits: (request: FileChangeApproval, actor: SessionSummary) => boolean,
   ): void {
-    client.onRequest('item/commandExecution/requestApproval', (params) =>
-      this.decide(commandApproval(params as CommandApproval)),
-    );
+    client.onRequest('item/commandExecution/requestApproval', (params) => {
+      const approval = commandApproval(params as CommandApproval);
+      if (canAutoApprove(approval)) return Promise.resolve({ decision: 'accept' });
+      return this.decide(approval);
+    });
     client.onRequest('item/fileChange/requestApproval', async (params) => {
       const request = params as FileChangeApproval;
-      if (request.grantRoot == null && canApproveEdits(request)) return { decision: 'accept' };
-      return this.decide({
+      const approval: CodexApproval = {
         ...fileChangeApproval(request, fileDetail(request.itemId)),
         canApproveFor: (actor) => request.grantRoot == null && ownerCanApproveEdits(request, actor),
-      });
+      };
+      if (canAutoApprove(approval)) return { decision: 'accept' };
+      return this.decide(approval);
     });
     client.onRequest('item/tool/requestUserInput', async (params) => {
       const { questions } = params as { questions: RequestedQuestion[] };

@@ -600,7 +600,12 @@ function updateAutonomy(
   appSessionId: string,
   autonomy: Protocol.Autonomy,
 ): Promise<void> {
-  return h.handle({ type: 'session.updateSettings', appSessionId, autonomy });
+  return h.handle({
+    type: 'session.updateSettings',
+    appSessionId,
+    autonomy,
+    requestId: `autonomy-${autonomy}`,
+  });
 }
 
 function assertAutonomyError(error: ErrorEvent | undefined, message: RegExp): void {
@@ -631,6 +636,15 @@ test('live autonomy update writes the provider first and publishes the confirmed
     await h.waitForIdle();
     assert.equal(settings.length, writesBefore);
     assert.equal(errorEvents(h.events).length, 1);
+    assert.deepEqual(
+      h.events.filter((event) => event.type === 'session.autonomy_update_applied'),
+      Array.from({ length: 2 }, () => ({
+        type: 'session.autonomy_update_applied',
+        appSessionId: 'provider-1',
+        requestId: 'autonomy-high',
+      })),
+    );
+    assert.equal(errorEvents(h.events)[0]?.requestId, 'autonomy-high');
   } finally {
     await h.dispose();
   }
@@ -667,7 +681,7 @@ test('queued autonomy updates serialize and apply in request order', async () =>
   }
 });
 
-test('a provider rejection is a recoverable coded error that keeps the confirmed level and the queue behind it', async () => {
+test('a superseded native rejection applies the latest autonomy and settles each request once', async () => {
   const h = createSessionManagerTestContext();
   try {
     await createAutonomyChat(h);
@@ -682,20 +696,80 @@ test('a provider rejection is a recoverable coded error that keeps the confirmed
     ]);
     await h.waitForIdle();
 
-    const errors = errorEvents(h.events);
-    assert.equal(errors.length, 1);
-    assertAutonomyError(errors[0], /Could not change autonomy/);
-    assert.equal(errors[0]?.appSessionId, 'provider-1');
+    assert.deepEqual(errorEvents(h.events), []);
+    assert.deepEqual(
+      h.events
+        .filter((event) => event.type === 'session.autonomy_update_applied')
+        .map((event) => event.requestId),
+      ['autonomy-medium', 'autonomy-high'],
+    );
     assert.equal(
       sessionUpdates(h.events, 'provider-1').some((summary) => summary.autonomy === 'medium'),
       false,
     );
-    // The update queued behind the rejected one still reaches the provider.
+    // The failed write settles before the loop dispatches the newest choice.
     assert.deepEqual(session.settings.slice(writesBefore), [
       { autonomyLevel: AutonomyLevel.Medium },
       { autonomyLevel: AutonomyLevel.High },
     ]);
     assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'high');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a later failed escalation still publishes the level native already accepted', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await createAutonomyChat(h);
+    await h.waitForIdle();
+    const session = h.provider.session('provider-1');
+    const write = session.updateSettings.bind(session);
+    session.updateSettings = async (settings) => {
+      if (settings.autonomyLevel === AutonomyLevel.High) throw new Error('grant refused');
+      return write(settings);
+    };
+    const gate = h.provider.deferNextUpdateSettings('provider-1');
+    const medium = updateAutonomy(h, 'provider-1', 'medium');
+    await h.waitForIdle();
+    const high = updateAutonomy(h, 'provider-1', 'high');
+    gate.resolve();
+    await Promise.all([medium, high]);
+    await h.waitForIdle();
+    assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'medium');
+    assert.equal(h.history.summaryPatchesAndHidden().patches.get('provider-1')?.autonomy, 'medium');
+    assertAutonomyError(errorEvents(h.events).at(-1), /grant refused/);
+    assert.equal(errorEvents(h.events).at(-1)?.requestId, 'autonomy-high');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('choosing confirmed Off after a failed grant replaces the pending native choice', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await createAutonomyChat(h);
+    await h.waitForIdle();
+    await updateAutonomy(h, 'provider-1', 'off');
+    const session = h.provider.session('provider-1');
+    const write = session.updateSettings.bind(session);
+    let highAttempts = 0;
+    session.updateSettings = async (settings) => {
+      if (settings.autonomyLevel === AutonomyLevel.High) {
+        highAttempts += 1;
+        throw new Error('grant refused');
+      }
+      return write(settings);
+    };
+    await updateAutonomy(h, 'provider-1', 'high');
+    assertAutonomyError(errorEvents(h.events).at(-1), /grant refused/);
+    const attemptsBeforeOff = highAttempts;
+    await updateAutonomy(h, 'provider-1', 'off');
+    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'continue' });
+    await h.waitForIdle();
+    assert.equal(highAttempts, attemptsBeforeOff);
+    assert.deepEqual(session.prompts, ['go', 'continue']);
+    assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'off');
   } finally {
     await h.dispose();
   }
@@ -724,6 +798,7 @@ test('an autonomy update dropped by a close settles the caller and publishes not
     const errors = errorEvents(h.events);
     assert.equal(errors.length, 1);
     assertAutonomyError(errors[0], /interrupted/);
+    assert.equal(errors[0]?.requestId, 'autonomy-high');
   } finally {
     await h.dispose();
   }

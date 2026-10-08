@@ -816,6 +816,7 @@ test('withdrawal requires harness confirmation, including during Send now, and n
     live.session = {
       provider,
       providerSessionId: provider,
+      autonomy: live.session.autonomy,
       stream: live.session.stream.bind(live.session),
       setModel: live.session.setModel.bind(live.session),
       setAutonomy: live.session.setAutonomy.bind(live.session),
@@ -1159,9 +1160,7 @@ test('a provider swap during compaction preserves a pending steer outcome', asyn
     await handedOver.promise;
     live.compacting = true;
     const replacement = new FakeFactorySession('replacement', {}, h.calls);
-    live.session = new DroidProviderSession('steer', replacement, h.runtime, {
-      autonomy: 'low',
-    });
+    live.session = new DroidProviderSession('steer', replacement, h.runtime, 'low');
     settleDelivery(outcome);
     await sending;
 
@@ -1176,6 +1175,7 @@ test('a provider swap during compaction preserves a pending steer outcome', asyn
     live.compacting = false;
     turn.resolve();
     await live.turnPromise;
+    if (outcome === false) await replacement.waitForPrompts(1);
     assert.deepEqual(replacement.prompts, outcome === false ? ['held'] : []);
   }
 });
@@ -2241,6 +2241,9 @@ function claudeResumeProvider(
       await beforeResume(id, input);
       return {
         provider: 'claude',
+        get autonomy() {
+          return resumed.autonomy;
+        },
         providerSessionId: id,
         ...(setInteractionMode ? { setInteractionMode } : {}),
         stream: resumed.stream.bind(resumed),

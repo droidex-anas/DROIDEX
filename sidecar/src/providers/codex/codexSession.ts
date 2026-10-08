@@ -28,6 +28,7 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexToolBridge } from './codexTools.js';
+import { SessionAutonomy } from '../sessionAutonomy.js';
 import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
@@ -51,6 +52,8 @@ interface ThreadResponse {
   model: string;
 }
 
+const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+
 export class CodexSession implements ProviderSession {
   readonly provider = 'codex' as const;
   readonly providerSessionId: string;
@@ -65,22 +68,31 @@ export class CodexSession implements ProviderSession {
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
-  private autonomy: Autonomy;
-  private turnAutonomy?: Autonomy;
+  private readonly permissions: SessionAutonomy;
+  private settingsChanges: Promise<void> = Promise.resolve();
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
   private turnId?: string;
   private turn?: TurnStream;
+  private turnAutonomy?: Autonomy;
+  // Containment needs the id as soon as it arrives, even before the start reply.
+  private turnStarted?: Promise<void>;
+  private resolveTurnStarted?: () => void;
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
   // to name it with yet.
   private pendingInterrupt = false;
   private interruption?: { turnId: string; interrupts: number };
   private failedTurnId?: string;
+  private stoppedTurnId?: string;
+  private readonly turnContainment = new Map<string, Promise<void>>();
   // A turn Codex started by itself, for a request spoken to a voice
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
   private delegatedTurnId?: string;
+  // Handoffs expose no bound policy. Keep the highest possible binding across
+  // settings acknowledgements and turn completions until this runtime closes.
+  private delegatedAutonomyCeiling?: Autonomy;
   // The chat asked for the model's own effort, which the thread has to be told
   // explicitly; an omitted effort would leave the previous one in place.
   private effortCleared = false;
@@ -117,13 +129,40 @@ export class CodexSession implements ProviderSession {
     this.client = input.client;
     this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
-    this.autonomy = input.autonomy;
+    this.permissions = new SessionAutonomy(input.autonomy, {
+      write: () => {
+        const stopping = this.stopUnenforceableTurns();
+        // The queued writer reports failure even if another settings write delays it.
+        void stopping.catch(() => undefined);
+        return this.changeThreadSettings(async () => {
+          await stopping;
+          await this.stopUnenforceableTurns();
+          const autonomy = this.permissions.latestAutonomy;
+          await this.applyThreadSettings(autonomy);
+          await this.stopUnenforceableTurns();
+          return autonomy;
+        });
+      },
+      isApplied: () => true,
+      isUnsafe: () =>
+        AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
+        AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
+      interrupt: () => this.stopUnenforceableTurns(),
+      close: () => this.close(),
+      requireOpen: () => {
+        if (this.hasClosed) throw new Error('This Codex session is closed.');
+      },
+    });
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.voice = new CodexVoice(
       this.client,
       () => this.threadId,
-      () => this.applyThreadSettings(),
+      async () => {
+        await this.changeThreadSettings(() => this.applyThreadSettings());
+        while (!this.permissions.isApplied) await this.permissions.synchronize();
+        this.permissions.requireOpen();
+      },
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     this.tools = new CodexToolBridge(input.inAppMcpServers ?? [], {
@@ -160,6 +199,10 @@ export class CodexSession implements ProviderSession {
 
   get isClosed(): boolean {
     return this.hasClosed;
+  }
+
+  get autonomy(): Autonomy {
+    return this.permissions.selection;
   }
 
   get process(): { pid: number; isAlive(): boolean } | undefined {
@@ -253,19 +296,28 @@ export class CodexSession implements ProviderSession {
     const turn = new TurnStream();
     this.mapper.beginTurn();
     this.turn = turn;
-    this.turnAutonomy = this.autonomy;
     this.pendingInterrupt = false;
     this.interruption = undefined;
     this.failedTurnId = undefined;
     try {
+      await this.settingsChanges;
+      while (!this.permissions.isApplied) await this.permissions.synchronize();
+      if (this.hasClosed) throw new Error('This Codex session is closed.');
+      this.turnAutonomy = this.autonomy;
+      this.turnStarted = new Promise<void>((resolve) => {
+        this.resolveTurnStarted = resolve;
+      });
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
         turnStartParams(threadId, prompt, mentions, {
-          autonomy: this.autonomy,
+          autonomy: this.turnAutonomy,
           model: this.model,
           ...(this.threadModel ? { threadModel: this.threadModel } : {}),
         }),
       );
+      // Process death retains the stream's original failure and echoed deliveries.
+      if (this.isClosed) yield* turn.drain();
+      this.permissions.requireOpen();
       this.adoptTurn(started.turn.id);
       // Only a turn that started can carry them; one that Codex refused would
       // have dropped them with it.
@@ -279,57 +331,112 @@ export class CodexSession implements ProviderSession {
         this.prompts.cancel();
         this.dropSteers();
         this.turn = undefined;
-        this.turnAutonomy = undefined;
         this.turnId = undefined;
+        this.turnAutonomy = undefined;
+        this.releaseTurnStart();
       }
       this.pendingInterrupt = false;
     }
   }
 
-  // A typed turn takes the autonomy on its own `turn/start`. A turn Codex
-  // starts for a spoken request has none, so the thread is told as well:
-  // otherwise a chat turned down to ask-first would still act unattended when
-  // spoken to. This one does not swallow: the caller declines to publish a
-  // level the thread never took, and the session keeps the one it still has.
-  async setAutonomy(autonomy: Autonomy): Promise<void> {
-    const previous = this.autonomy;
-    this.autonomy = autonomy;
+  setAutonomy(autonomy: Autonomy): Promise<void> {
+    return this.permissions.set(autonomy);
+  }
+
+  private async stopUnenforceableTurns(): Promise<void> {
+    if (this.turnStarted) await this.turnStarted;
+    this.permissions.requireOpen();
+    if (this.turnId) await this.stopUnenforceableTurn(this.turnId, this.turnAutonomy);
+    if (this.delegatedTurnId)
+      await this.stopUnenforceableTurn(this.delegatedTurnId, this.delegatedAutonomyCeiling);
+  }
+
+  private async stopUnenforceableTurn(
+    turnId: string,
+    runningAutonomy: Autonomy | undefined,
+  ): Promise<void> {
+    this.permissions.requireOpen();
+    const stopping = this.turnContainment.get(turnId);
+    if (stopping) return stopping;
+    // A typed start can steer into a handoff whose native policy is not reported.
+    const ceiling = this.delegatedAutonomyCeiling;
+    if (
+      ceiling !== undefined &&
+      (runningAutonomy === undefined ||
+        AUTONOMY_LEVELS.indexOf(ceiling) > AUTONOMY_LEVELS.indexOf(runningAutonomy))
+    )
+      runningAutonomy = ceiling;
+    const latest = this.permissions.latestAutonomy;
+    if (
+      turnId === this.stoppedTurnId ||
+      runningAutonomy === undefined ||
+      AUTONOMY_LEVELS.indexOf(runningAutonomy) <= AUTONOMY_LEVELS.indexOf(latest) ||
+      codexAutonomy(runningAutonomy).approvalPolicy === 'untrusted'
+    )
+      return;
+    // Thread settings cannot revoke a turn whose tools bypass host callbacks.
     try {
-      await this.applyThreadSettings();
+      this.prompts.cancel();
+      this.deliver([
+        this.mapper.statusEvent(
+          `Stopped the turn to apply ${latest}: Codex keeps a turn's permissions until it ends`,
+        ),
+      ]);
+      const stopping = this.interruptTurn(turnId);
+      this.turnContainment.set(turnId, stopping);
+      await stopping;
+      this.permissions.requireOpen();
     } catch (error) {
-      this.autonomy = previous;
+      await this.close();
       throw error;
+    } finally {
+      this.turnContainment.delete(turnId);
     }
   }
 
-  async setModel(settings: ProviderModelSettings): Promise<void> {
-    // An omitted field keeps its value; only what the caller named changes.
-    // A cleared effort leaves `turn/start` to the model's own.
-    const model = { ...this.model };
-    if (settings.modelId !== undefined) model.modelId = settings.modelId;
-    if (settings.reasoningEffort === null) {
-      delete model.reasoningEffort;
-      // Omitting it would leave the thread on the effort it already had, so
-      // the reset has to be said out loud the next time settings are applied.
-      this.effortCleared = true;
-    } else if (settings.reasoningEffort) {
-      model.reasoningEffort = settings.reasoningEffort;
-      this.effortCleared = false;
-    }
-    if (settings.fastMode !== undefined) model.fastMode = settings.fastMode;
-    const previous = this.model;
-    this.model = model;
-    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-    try {
-      // Not swallowed: a turn Codex starts for a spoken request runs on what
-      // the thread has, so a rejected write means the selection the chat shows
-      // is not the one that would run.
-      await this.applyThreadSettings();
-    } catch (error) {
-      this.model = previous;
+  setModel(settings: ProviderModelSettings): Promise<void> {
+    return this.changeThreadSettings(async () => {
+      // An omitted field keeps its value; only what the caller named changes.
+      // A cleared effort leaves `turn/start` to the model's own.
+      const model = { ...this.model };
+      const previousEffortCleared = this.effortCleared;
+      if (settings.modelId !== undefined) model.modelId = settings.modelId;
+      if (settings.reasoningEffort === null) {
+        delete model.reasoningEffort;
+        // Omitting it would leave the thread on the effort it already had, so
+        // the reset has to be said out loud the next time settings are applied.
+        this.effortCleared = true;
+      } else if (settings.reasoningEffort) {
+        model.reasoningEffort = settings.reasoningEffort;
+        this.effortCleared = false;
+      }
+      if (settings.fastMode !== undefined) model.fastMode = settings.fastMode;
+      const previous = this.model;
+      this.model = model;
       this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-      throw error;
-    }
+      try {
+        // Not swallowed: a turn Codex starts for a spoken request runs on what
+        // the thread has, so a rejected write means the selection the chat shows
+        // is not the one that would run.
+        await this.applyThreadSettings();
+      } catch (error) {
+        this.model = previous;
+        this.effortCleared = previousEffortCleared;
+        this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+        throw error;
+      }
+    });
+  }
+
+  private changeThreadSettings<T>(change: () => Promise<T>): Promise<T> {
+    // Every write carries full settings, so it must read state only after the
+    // preceding mutation has either committed or rolled back.
+    const applied = this.settingsChanges.then(change);
+    this.settingsChanges = applied.then(
+      () => undefined,
+      () => undefined,
+    );
+    return applied;
   }
 
   // The chat's settings on the thread itself. A typed turn carries these on
@@ -339,11 +446,10 @@ export class CodexSession implements ProviderSession {
   // sandbox travel together, the way `turn/start` sends them, because half an
   // autonomy level is worse than none: an unsandboxed turn that never asks, or
   // a sandboxed one that cannot ask for the escalation it needs.
-  private async applyThreadSettings(): Promise<void> {
+  private async applyThreadSettings(autonomy = this.autonomy): Promise<void> {
     const threadId = this.threadId;
-    if (!threadId) return;
+    if (!threadId) throw new Error('This Codex session has no thread to apply settings to.');
     const { reasoningEffort } = this.model;
-    const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
     // A cleared pin means the thread's own model, which is what the mapper and
     // `turn/start` already read it as. Omitting it would leave the thread on
     // the model the chat no longer names.
@@ -351,6 +457,17 @@ export class CodexSession implements ProviderSession {
     // `null` is how the thread is told to go back to the model's own effort;
     // leaving the field out keeps whatever it had.
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
+    this.permissions.requireOpen();
+    const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
+    // A failed hang-up leaves Codex holding the conversation, so once voice has
+    // started, every escalation can still reach a handoff.
+    if (this.voice.isLive() || this.delegatedAutonomyCeiling !== undefined) {
+      this.delegatedAutonomyCeiling ??= this.permissions.inForce;
+      if (
+        AUTONOMY_LEVELS.indexOf(autonomy) > AUTONOMY_LEVELS.indexOf(this.delegatedAutonomyCeiling)
+      )
+        this.delegatedAutonomyCeiling = autonomy;
+    }
     await this.client.request('thread/settings/update', {
       threadId,
       approvalPolicy,
@@ -358,6 +475,8 @@ export class CodexSession implements ProviderSession {
       ...(model ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
     });
+    this.permissions.requireOpen();
+    this.permissions.confirm(autonomy);
   }
 
   // Codex hands the prompt to the running turn at its next model request,
@@ -455,6 +574,7 @@ export class CodexSession implements ProviderSession {
     interruption.interrupts += 1;
     try {
       await this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
+      this.stoppedTurnId = turnId;
     } catch (error) {
       interruption.interrupts -= 1;
       if (this.interruption === interruption && interruption.interrupts === 0)
@@ -464,7 +584,9 @@ export class CodexSession implements ProviderSession {
   }
 
   close(): Promise<void> {
+    this.permissions.stop();
     this.resolveClosed();
+    this.releaseTurnStart();
     this.turn?.discard();
     this.dropSteers();
     this.settleSteerEchoes('unconfirmed');
@@ -501,10 +623,16 @@ export class CodexSession implements ProviderSession {
   // not settle the same turn twice.
   private setDelegatedTurn(turnId: string | undefined, end?: DelegatedTurnEnd): void {
     const was = this.delegatedTurnId !== undefined;
+    const isNewTurn = turnId !== this.delegatedTurnId;
     this.delegatedTurnId = turnId;
     if (!this.turn && turnId) {
       if (turnId !== this.interruption?.turnId) this.interruption = undefined;
       if (turnId !== this.failedTurnId) this.failedTurnId = undefined;
+    }
+    if (turnId && isNewTurn) {
+      void this.stopUnenforceableTurns().catch((error: unknown) => {
+        this.deliver([this.mapper.errorEvent(error)]);
+      });
     }
     const running = turnId !== undefined;
     if (running === was) return;
@@ -600,6 +728,7 @@ export class CodexSession implements ProviderSession {
     });
     this.client.onClose((error, cleanExit) => {
       this.catalog?.close();
+      this.releaseTurnStart();
       // Not announced: the close path owns what happens to the queue, and a
       // settlement here would start the next prompt on a client that is gone.
       this.delegatedTurnId = undefined;
@@ -615,13 +744,27 @@ export class CodexSession implements ProviderSession {
     this.prompts.register(
       this.client,
       (itemId) => this.mapper.toolDetail(itemId),
-      (request) =>
-        !this.hasClosed &&
-        this.turnAutonomy === 'low' &&
-        this.turnId !== undefined &&
-        request.threadId === this.threadId &&
-        request.turnId === this.turnId &&
-        canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
+      (approval) => {
+        const request = approval.raw;
+        const turnId = this.turnId ?? this.delegatedTurnId;
+        if (
+          this.hasClosed ||
+          turnId === undefined ||
+          this.interruption?.turnId === turnId ||
+          request.threadId !== this.threadId ||
+          request.turnId !== turnId
+        )
+          return false;
+        if (this.autonomy === 'high') return true;
+        // Auto still asks for command escalations; only verified workspace
+        // edits can bypass an approval without Full access.
+        return (
+          (this.autonomy === 'low' || this.autonomy === 'medium') &&
+          approval.kind !== 'exec' &&
+          (!('grantRoot' in request) || request.grantRoot == null) &&
+          canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId))
+        );
+      },
       (request, actor) =>
         actor.provider === 'codex' &&
         actor.autonomy !== 'off' &&
@@ -648,7 +791,14 @@ export class CodexSession implements ProviderSession {
   // The turn's id arrives either on `turn/started` or with the `turn/start`
   // response, whichever lands first; a Stop that beat both goes out now.
   private adoptTurn(turnId: string): void {
+    const isNewTurn = turnId !== this.turnId;
     this.turnId = turnId;
+    this.releaseTurnStart();
+    if (isNewTurn && this.delegatedAutonomyCeiling !== undefined) {
+      void this.stopUnenforceableTurns().catch((error: unknown) => {
+        this.deliver([this.mapper.errorEvent(error)]);
+      });
+    }
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
     // Nobody is waiting on this one, so a refused stop is reported in the turn
@@ -657,6 +807,12 @@ export class CodexSession implements ProviderSession {
     void this.interruptTurn(turnId).catch((error: unknown) => {
       if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
+  }
+
+  private releaseTurnStart(): void {
+    this.resolveTurnStarted?.();
+    this.resolveTurnStarted = undefined;
+    this.turnStarted = undefined;
   }
 
   private settleDeliveredSteer(params: unknown): void {
@@ -695,6 +851,8 @@ export class CodexSession implements ProviderSession {
     // this same batch that the turn it announces is Codex's own.
     this.turn = undefined;
     this.turnId = undefined;
+    this.turnAutonomy = undefined;
+    this.releaseTurnStart();
   }
 }
 

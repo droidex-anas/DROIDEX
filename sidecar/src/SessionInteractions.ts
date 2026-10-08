@@ -21,6 +21,7 @@ import {
   type ProviderQuestionAnswers,
 } from './providers/interactions.js';
 import { errMsg } from './errors.js';
+import type { ProviderSession } from './providers/session.js';
 
 interface PendingPermission {
   resolve: (outcome: PermissionOutcome) => void;
@@ -39,6 +40,7 @@ interface InteractionScope {
 
 export interface InteractionLiveSession {
   summary: SessionSummary;
+  session: Pick<ProviderSession, 'autonomy'>;
   closePromise?: Promise<void>;
 }
 
@@ -100,27 +102,41 @@ export class SessionInteractions {
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
     if (!liveSession) return 'cancel';
+    const providerSession = liveSession.session;
     const tool = approval.mcpTool;
-    const autoApproved = (unattended: boolean) =>
-      tool !== undefined &&
-      (shouldAutoApproveAutomationTool(
-        tool.serverName,
-        tool.toolName,
-        liveSession.summary.autonomy,
-        unattended,
-      ) ||
-        shouldAutoApproveSessionsTool(
-          tool.serverName,
-          tool.toolName,
-          liveSession.summary.autonomy,
-          unattended,
-        ));
-    if (autoApproved(true)) return 'proceed_once';
-    if (autoApproved(false)) {
-      const unattended = await isUnattendedAutomationSession(liveSession.summary.appSessionId);
-      if (this.dependencies.getLiveSession(sessionId) !== liveSession) return 'cancel';
-      if (autoApproved(unattended)) return 'proceed_once';
+    const autoApproved = (unattended: boolean) => {
+      const current = this.dependencies.getLiveSession(sessionId);
+      if (
+        approval.signal?.aborted ||
+        !current ||
+        current !== liveSession ||
+        current.session !== providerSession ||
+        current.closePromise
+      )
+        return false;
+      const autonomy = current.session.autonomy;
+      return (
+        tool !== undefined &&
+        (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+          shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended))
+      );
+    };
+    const safeForUnattended = autoApproved(true);
+    const safeForInteractive = autoApproved(false);
+    if (
+      safeForUnattended ||
+      (safeForInteractive &&
+        !(await isUnattendedAutomationSession(liveSession.summary.appSessionId)) &&
+        autoApproved(false))
+    ) {
+      return 'proceed_once';
     }
+    if (
+      approval.signal?.aborted ||
+      this.dependencies.getLiveSession(sessionId) !== liveSession ||
+      liveSession?.session !== providerSession
+    )
+      return 'cancel';
     return await new Promise<PermissionOutcome>((resolve) => {
       const { request, signature } = approval;
       const canAlwaysAllow = request.canAlwaysAllow && Boolean(signature);

@@ -35,6 +35,11 @@ function createHarness(options: HarnessOptions = {}) {
 
   const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
     const liveSession: InteractionLiveSession = {
+      session: {
+        get autonomy() {
+          return liveSession.summary.autonomy;
+        },
+      },
       summary: sessionSummary({
         appSessionId,
         providerSessionId,
@@ -394,6 +399,7 @@ test('Claude answers allow the tool with original question keys and structured s
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const input = {
     questions: [
@@ -441,6 +447,7 @@ test('Claude always-allow suppression prevents grant reuse, caching, and SDK rul
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const options = {
     signal: new AbortController().signal,
@@ -813,6 +820,7 @@ test('lead approvals cannot disable a worker sandbox', async () => {
     'worker',
     h.interactions.interactionsFor({ id: 'worker' }),
     () => false,
+    () => 'off',
   );
   const pending = callback(
     'Bash',

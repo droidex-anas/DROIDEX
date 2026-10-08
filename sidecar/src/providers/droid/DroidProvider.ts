@@ -38,8 +38,16 @@ export class DroidProvider implements Provider {
     interactions,
     droidLaunch,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // Ordinary chats adopt Droid's id; queued threads bring their own.
-    const ref = { id: appSessionId ?? '', autonomy };
+    // Ordinary chats adopt Droid's id; queued threads bring their own. The daemon
+    // can ask for permission before the session exists, so the handlers read its
+    // autonomy lazily from this holder.
+    let providerSession: DroidProviderSession | undefined = undefined;
+    const ref = {
+      id: appSessionId ?? '',
+      get autonomy(): Autonomy {
+        return providerSession?.autonomy ?? autonomy;
+      },
+    };
     const session = await this.runtime.createSession({
       cwd,
       interactionMode,
@@ -52,7 +60,8 @@ export class DroidProvider implements Provider {
     });
     ref.id = appSessionId ?? session.sessionId;
     this.onAvailableModels(session.initResult.availableModels ?? []);
-    return new DroidProviderSession(ref.id, session, this.runtime, ref);
+    providerSession = new DroidProviderSession(ref.id, session, this.runtime, autonomy);
+    return providerSession;
   }
 
   async resume(
@@ -60,9 +69,12 @@ export class DroidProvider implements Provider {
     { appSessionId, interactions, cwd, mcpServers, autonomy }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // Droid resumes by session id, so the generic resume handle is not needed.
-    const ref: { id: string; autonomy: Autonomy } = {
+    let providerSession: DroidProviderSession | undefined = undefined;
+    const ref = {
       id: appSessionId,
-      autonomy: autonomy ?? 'off',
+      get autonomy(): Autonomy {
+        return providerSession?.autonomy ?? autonomy ?? 'off';
+      },
     };
     const session = await this.runtime.loadSession(providerSessionId, {
       cwd,
@@ -70,7 +82,12 @@ export class DroidProvider implements Provider {
       ...droidInteractionHandlers(ref, interactions),
     });
     this.onAvailableModels(session.initResult.availableModels ?? []);
-    const providerSession = new DroidProviderSession(appSessionId, session, this.runtime, ref);
+    providerSession = new DroidProviderSession(
+      appSessionId,
+      session,
+      this.runtime,
+      autonomy ?? 'off',
+    );
     try {
       // The SDK's stored level cannot distinguish Supervised from edits-only.
       await providerSession.setAutonomy(

@@ -308,8 +308,8 @@ export class SessionManager {
   private readonly lineage = new SessionLineageStore(sessionLineagePath(droidexUserDataDir()));
   private readonly forks: SessionForks;
   private shutdownPromise?: Promise<void>;
-  // Per-session autonomy mutation queue: rapid changes settle against the
-  // provider in the order they were requested.
+  // Providers serialize native writes; this tracks outstanding changes so
+  // delivery and retirement cannot outlive them.
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly browsers: SessionBrowsers;
@@ -661,7 +661,7 @@ export class SessionManager {
         this.runtimeRetirement.arm();
         // A settled write is one of the states that made this session refuse a
         // turn, so a scheduled delivery waiting on it can be rearmed.
-        this.onSessionAvailable?.(appSessionId);
+        if (!this.autonomyMutationTails.has(appSessionId)) this.onSessionAvailable?.(appSessionId);
       },
       emitError: (error) => {
         this.emitError(error);
@@ -705,7 +705,17 @@ export class SessionManager {
         this.lineage.record(appSessionId, lineage);
       },
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
-      waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
+      waitForSettingsMutations: async (appSessionId) => {
+        do {
+          await Promise.all([
+            this.modelSettings.waitForMutations(appSessionId),
+            this.autonomyMutationTails.get(appSessionId),
+          ]);
+        } while (
+          this.modelSettings.hasActiveMutations(appSessionId) ||
+          this.autonomyMutationTails.has(appSessionId)
+        );
+      },
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
       settleStreaming: (appSessionId, sourceSessionId) =>
@@ -714,7 +724,8 @@ export class SessionManager {
         this.runtimeRetirement.releaseOldestForCapacity(excludedAppSessionId),
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
-        this.modelSettings.hasActiveMutations(appSessionId),
+        this.modelSettings.hasActiveMutations(appSessionId) ||
+        this.autonomyMutationTails.has(appSessionId),
       onSessionAvailable: options.onSessionAvailable,
       onScheduledCapacityChanged: options.onScheduledCapacityChanged,
       context: this.context,
@@ -777,7 +788,8 @@ export class SessionManager {
       onScreenAppSessionIds: () => this.context.onScreenSessions(),
       hasUnsettledChildren: (id) => this.childSessions.hasUnsettledChildren(id),
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
-      hasPendingSettings: (id) => this.modelSettings.hasPending(id),
+      hasPendingSettings: (id) =>
+        this.modelSettings.hasPending(id) || this.autonomyMutationTails.has(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
@@ -1114,10 +1126,13 @@ export class SessionManager {
         return;
       case 'session.updateSettings':
         assertProviderUnchanged(cmd);
-        await this.updatePrimaryModel(cmd);
-        if (cmd.autonomy !== undefined) {
-          await this.setAutonomy(cmd.appSessionId, cmd.autonomy);
-        }
+        // Permission decisions cannot wait for a model change to finish the turn.
+        await Promise.all([
+          this.updatePrimaryModel(cmd),
+          cmd.autonomy !== undefined
+            ? this.setAutonomy(cmd.appSessionId, cmd.autonomy, cmd.requestId)
+            : undefined,
+        ]);
         if (cmd.interactionMode !== undefined) {
           await this.setInteractionMode(cmd.appSessionId, cmd.interactionMode);
         }
@@ -1910,23 +1925,31 @@ export class SessionManager {
     });
   }
 
-  private setAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
-    const tail = this.autonomyMutationTails.get(appSessionId) ?? Promise.resolve();
-    // A rejected predecessor must not drop the changes queued behind it.
-    const next = tail.catch(() => undefined).then(() => this.applyAutonomy(appSessionId, autonomy));
+  private setAutonomy(appSessionId: string, autonomy: Autonomy, requestId?: string): Promise<void> {
+    const tail = this.autonomyMutationTails.get(appSessionId);
+    const applied = this.applyAutonomy(appSessionId, autonomy, requestId);
+    const next = tail ? Promise.all([tail, applied]).then(() => undefined) : applied;
     this.autonomyMutationTails.set(appSessionId, next);
     return next.finally(() => {
       if (this.autonomyMutationTails.get(appSessionId) === next) {
         this.autonomyMutationTails.delete(appSessionId);
+        this.runtimeRetirement.arm();
+        if (!this.modelSettings.hasActiveMutations(appSessionId))
+          this.onSessionAvailable?.(appSessionId);
       }
     });
   }
 
-  private async applyAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
+  private async applyAutonomy(
+    appSessionId: string,
+    autonomy: Autonomy,
+    requestId: string = randomUUID(),
+  ): Promise<void> {
     const liveSession = this.registry.getLive(appSessionId);
     if (!liveSession) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: 'Autonomy can only be changed on a live session.',
         recoverable: true,
@@ -1937,54 +1960,50 @@ export class SessionManager {
     if (!nextAutonomy) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: `Unsupported autonomy level: ${autonomy}`,
         recoverable: true,
       });
       return;
     }
-    if (liveSession.summary.autonomy === nextAutonomy) return;
     const session = liveSession.session;
+    const isCurrent = () =>
+      !this.shutdownPromise &&
+      this.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      !hasSessionCloseStarted(liveSession) &&
+      !session.isClosed;
+    const publishAutonomy = () => {
+      if (liveSession.summary.autonomy === session.autonomy) return;
+      this.registry.updateSummary(appSessionId, { autonomy: session.autonomy });
+    };
     try {
-      await session.setAutonomy(nextAutonomy);
+      const applied = session.setAutonomy(nextAutonomy);
+      // Save revocations before the native acknowledgement, including refusals.
+      try {
+        publishAutonomy();
+      } finally {
+        await applied;
+      }
+      // Native acknowledgements belong only to the runtime that received them.
+      if (!isCurrent()) {
+        throw new Error('Autonomy change was interrupted by a session restart or close.');
+      }
+      publishAutonomy();
+      this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
     } catch (err) {
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: `Could not change autonomy: ${errMsg(err)}`,
-        recoverable: true,
-      });
-      return;
-    }
-    // The provider accepted the change, but the session may have closed or its
-    // provider session may have been swapped (compaction/resume) while the
-    // request was in flight. Publish only when the captured session is still
-    // the live one so a stale settlement cannot clobber its replacement.
-    if (
-      this.shutdownPromise ||
-      this.registry.getLive(appSessionId) !== liveSession ||
-      liveSession.session !== session ||
-      hasSessionCloseStarted(liveSession)
-    ) {
-      // Dropping the confirmation silently would leave the caller's pending
-      // state spinning forever; settle it with a recoverable error instead.
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: 'Autonomy change was interrupted by a session restart or close.',
-        recoverable: true,
-      });
-      return;
-    }
-    try {
-      this.registry.updateSummary(appSessionId, { autonomy: nextAutonomy });
-    } catch (err) {
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: `Could not record the autonomy change: ${errMsg(err)}`,
-        recoverable: true,
-      });
+      try {
+        if (isCurrent()) publishAutonomy();
+      } finally {
+        this.emitError({
+          code: 'session.autonomy_update_failed',
+          requestId,
+          appSessionId,
+          message: `Could not change autonomy: ${errMsg(err)}`,
+          recoverable: true,
+        });
+      }
     }
   }
 

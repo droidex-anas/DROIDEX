@@ -14,6 +14,8 @@ export interface ProviderApprovalRequest {
   confirmationType: string;
   // Stable key for an always-allow grant; absent when the request cannot earn one.
   signature?: string;
+  // A cancelled callback must not create a card after an async policy check.
+  signal?: AbortSignal;
   // The MCP server and tool, when the request is for one. The policies for
   // DROIDEX's own servers approve their tools by the chat's autonomy.
   mcpTool?: { serverName: string; toolName: string };

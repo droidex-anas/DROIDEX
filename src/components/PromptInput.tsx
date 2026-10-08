@@ -332,7 +332,7 @@ export default function PromptInput({
       missionControlMode: current.missionControlMode,
       modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
-      autonomyPending: appSessionId ? appSessionId in current.pendingAutonomy : false,
+      pendingAutonomy: appSessionId ? current.pendingAutonomy[appSessionId] : undefined,
       pendingActiveModelUpdate: appSessionId
         ? current.pendingModelUpdates[appSessionId]
         : undefined,
@@ -2582,16 +2582,19 @@ export default function PromptInput({
                 align="start"
                 scope="session"
                 provider={activeSession.provider}
-                value={activeSession.autonomy}
-                pending={state.autonomyPending}
+                value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
+                pending={state.pendingAutonomy !== undefined}
                 onSelect={(level) => {
+                  const requestId = newClientRef();
                   dispatch({
                     type: 'AUTONOMY_UPDATE_REQUESTED',
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                   updateSessionSettings({
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                 }}

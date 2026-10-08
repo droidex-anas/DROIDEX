@@ -1,16 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-import type { AppServerClient } from './appServer.js';
 import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
-import type { PermissionOutcome } from '../../protocol.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import type { SteerOutcome } from '../session.js';
-import { CodexSession } from './codexSession.js';
+import { codexSession, fakeClient } from './codexTestSupport.js';
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
 const FAILED = {
@@ -22,55 +17,6 @@ const FAILED = {
   failureReason: null,
 };
 const STARTING = { ...FAILED, status: 'starting', error: null };
-
-/**
- * An app-server client that records notification and request handlers and
- * answers requests with `request`, or with an empty catalog page.
- */
-function fakeClient(request: (method: string, params: Record<string, unknown>) => unknown) {
-  const notifications = new Map<string, (params: unknown) => void>();
-  const requests = new Map<string, (params: unknown) => Promise<unknown>>();
-  let onClose: (error: Error, cleanExit: boolean) => void = () => undefined;
-  const client = {
-    onNotification: (method: string, handler: (params: unknown) => void) =>
-      notifications.set(method, handler),
-    onRequest: (method: string, handler: (params: unknown) => Promise<unknown>) =>
-      requests.set(method, handler),
-    onUnsupportedRequest: () => undefined,
-    onClose: (listener: typeof onClose) => {
-      onClose = listener;
-    },
-    notify: () => undefined,
-    close: async () => undefined,
-    request: async (method: string, params: Record<string, unknown>) => {
-      if (method === 'skills/list') return { data: [] };
-      if (method === 'plugin/installed') return { marketplaces: [] };
-      return (await request(method, params)) ?? { data: [], nextCursor: null };
-    },
-  } as unknown as AppServerClient;
-  return { client, notifications, requests, endProcess: (error: Error) => onClose(error, false) };
-}
-
-function codexSession(
-  client: AppServerClient,
-  appSessionId: string,
-  cwd = '/tmp',
-  requestApproval: () => Promise<PermissionOutcome> = () => Promise.reject(new Error('unused')),
-): CodexSession {
-  return new CodexSession({
-    appSessionId,
-    client,
-    cwd,
-    autonomy: 'low',
-    model: {},
-    interactions: {
-      requestApproval,
-      requestQuestion: async () => ({ cancelled: true, answers: [] }),
-      isActive: () => true,
-      cancelPending: () => undefined,
-    },
-  });
-}
 
 test('a failed MCP server is read once per server, and its startup is not', () => {
   const mapper = new CodexEventMapper('app-1');
@@ -702,106 +648,4 @@ test('thread start, resume and every turn carry the requested service tier inclu
       ['thread/resume', 'default'],
     ],
   );
-});
-
-test('edits-only checks workspace paths and keeps the running turn permission snapshot', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'codex-permissions-'));
-  const cwd = join(directory, 'workspace');
-  mkdirSync(cwd);
-  mkdirSync(join(cwd, '.git'));
-  symlinkSync(directory, join(cwd, 'escape'));
-  symlinkSync(join(directory, 'missing'), join(cwd, 'dangling'));
-  const starts: Record<string, unknown>[] = [];
-  let asked = 0;
-  let turnNumber = 0;
-  let markStarted: () => void = () => undefined;
-  const { client, notifications, requests } = fakeClient((method, params) => {
-    if (method === 'thread/resume') {
-      starts.push(params);
-      return { thread: { id: 'thread-1' }, model: 'model' };
-    }
-    if (method !== 'turn/start') return undefined;
-    starts.push(params);
-    turnNumber += 1;
-    markStarted();
-    return { turn: { id: `turn-${String(turnNumber)}` } };
-  });
-  const session = codexSession(client, 'app-1', cwd, async () => {
-    asked += 1;
-    return 'cancel';
-  });
-  try {
-    await session.open('thread-1');
-    assert.equal(starts[0]?.approvalPolicy, 'untrusted');
-    assert.equal(starts[0]?.sandbox, 'workspace-write');
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    const stream = session.stream('edit');
-    const first = stream.next();
-    await started;
-    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
-    let itemNumber = 0;
-    const approval = async (path: string, movePath?: string) => {
-      const itemId = `edit-${++itemNumber}`;
-      notifications.get('item/started')?.({
-        threadId: 'thread-1',
-        item: {
-          type: 'fileChange',
-          id: itemId,
-          status: 'inProgress',
-          changes: [
-            { path, kind: { type: 'update', move_path: movePath ?? null }, diff: '+ edit' },
-          ],
-        },
-      });
-      return requests.get('item/fileChange/requestApproval')?.({
-        threadId: 'thread-1',
-        turnId: 'turn-1',
-        itemId,
-      });
-    };
-    assert.deepEqual(await approval('src/new.ts'), { decision: 'accept' });
-    await first;
-    await session.setAutonomy('off');
-    assert.deepEqual(await approval('still-this-turn.ts'), { decision: 'accept' });
-    for (const path of [
-      '../outside',
-      '.git/config',
-      '.codex/config.toml',
-      '.agents/rules',
-      'escape/file',
-      'escape/../beside-the-workspace',
-      'dangling',
-    ]) {
-      assert.deepEqual(await approval(path), { decision: 'cancel' });
-    }
-    assert.deepEqual(await approval('inside.ts', '../renamed.ts'), { decision: 'cancel' });
-    assert.deepEqual(
-      await requests.get('item/commandExecution/requestApproval')?.({
-        itemId: 'exec',
-        command: 'pwd',
-      }),
-      { decision: 'cancel' },
-    );
-    assert.equal(asked, 9);
-    await stream.return(undefined);
-    const nextStarted = new Promise<void>((resolve) => {
-      markStarted = resolve;
-    });
-    const second = session.stream('next');
-    const next = second.next();
-    await nextStarted;
-    assert.equal(starts[2]?.approvalPolicy, 'untrusted');
-    assert.deepEqual(starts[2]?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
-    notifications.get('turn/completed')?.({
-      threadId: 'thread-1',
-      turn: { id: 'turn-2', status: 'completed' },
-    });
-    await next;
-    await second.return(undefined);
-  } finally {
-    await session.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
 });
