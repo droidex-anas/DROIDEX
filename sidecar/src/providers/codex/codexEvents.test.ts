@@ -222,6 +222,8 @@ test('a delegated turn completing preserves the active typed turn steer queue', 
     threadId: 'thread-1',
     item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
   });
+  // The typed stream must consume the echo before delivery is acknowledged.
+  const nextEvent = events.next();
   assert.equal(await first, true, 'delegated completion must not drop a typed steer');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1, 'the second steer must still wait for the first RPC reply');
@@ -234,6 +236,48 @@ test('a delegated turn completing preserves the active typed turn steer queue', 
     item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
   });
   assert.equal(await second, true);
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  await nextEvent;
+});
+
+test('close discards a queued Codex steer echo after its turn completes', async (t) => {
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') {
+      notifications.get('item/agentMessage/delta')?.({
+        threadId: 'thread-1',
+        itemId: 'message-1',
+        delta: 'before the steer',
+      });
+      return { turn: { id: 'turn-1' } };
+    }
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  assert.equal((await events.next()).value?.transcript?.text, 'before the steer');
+  const delivered = session.steer('follow up');
+  await new Promise((resolve) => setImmediate(resolve));
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'completed' },
+  });
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'pending');
+
+  await session.close();
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), false);
 });
 
 test('a delegated turn starting preserves the typed turn accepted Stop', async (t) => {
