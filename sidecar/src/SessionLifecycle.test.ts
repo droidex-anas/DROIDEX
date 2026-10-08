@@ -2302,7 +2302,6 @@ test('voice and delegated turns wait for the captured Canvas create before leasi
         onEvent: () => () => undefined,
         start: async () => {
           starts += 1;
-          notify(true);
         },
         stop: async () => {
           notify(false);
@@ -2331,7 +2330,6 @@ test('voice and delegated turns wait for the captured Canvas create before leasi
   });
   try {
     notify(true);
-    notify(false);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(starts, 0);
     assert.equal(h.canvasTurns.activeScope('spoken'), undefined);
@@ -2351,6 +2349,9 @@ test('voice and delegated turns wait for the captured Canvas create before leasi
     });
     assert.equal(created.canvasId, workspace.attachedCanvasId('spoken'));
     assert.equal(workspace.listCanvases().length, 1);
+    notify(false);
+    assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+    assert.equal(h.canvasTurns.activeScope('spoken'), undefined);
   } finally {
     binding.resolve();
     await Promise.all([creating, starting]);
@@ -2358,7 +2359,94 @@ test('voice and delegated turns wait for the captured Canvas create before leasi
   }
 });
 
-test('a turn the provider starts beside a typed one never takes its Canvas leases', async () => {
+for (const pendingRunning of [false, true]) {
+  test(`pending delegated running=${String(pendingRunning)} is reconciled before typed turns start`, async () => {
+    const entered = deferred();
+    const binding = deferred();
+    const h = createHarness([], async () => {
+      entered.resolve();
+      await binding.promise;
+    });
+    const session = new FakeFactorySession('pending-delegated', {}, h.calls);
+    let notify: (running: boolean) => void = () => undefined;
+    h.setProvider(
+      delegatingProvider(h, session, (listener) => {
+        notify = listener;
+      }),
+    );
+    const first = session.deferNextStream();
+    const second = session.deferNextStream();
+    const third = session.deferNextStream();
+    const creating = h.lifecycle.create(createCommand('initial'));
+    await entered.promise;
+    notify(true);
+    if (!pendingRunning) notify(false);
+    try {
+      assert.equal(h.canvasTurns.activeScope('pending-delegated'), undefined);
+      binding.resolve();
+      await creating;
+      if (pendingRunning) {
+        assert.deepEqual(session.prompts, []);
+        const delegated = turnLease(h, 'pending-delegated');
+        notify(false);
+        assert.throws(() => h.canvasTurns.requireScope(delegated.scopeId), {
+          code: 'scope_expired',
+        });
+      }
+      await session.waitForPrompts(1);
+      await new Promise((resolve) => setImmediate(resolve));
+      const firstTurn = requireLive(h, 'pending-delegated').turnPromise;
+      const firstScope = turnLease(h, 'pending-delegated');
+      assert.equal(requireLive(h, 'pending-delegated').streaming, true);
+      notify(true);
+      notify(false);
+      assert.equal(requireLive(h, 'pending-delegated').streaming, true);
+      await h.lifecycle.send('pending-delegated', 'second');
+      assert.deepEqual(session.prompts, ['initial']);
+      assert.equal(h.canvasTurns.requireScope(firstScope.scopeId), firstScope);
+
+      first.resolve();
+      await firstTurn;
+      await session.waitForPrompts(2);
+      const secondTurn = requireLive(h, 'pending-delegated').turnPromise;
+      const secondScope = turnLease(h, 'pending-delegated');
+      assert.throws(() => h.canvasTurns.requireScope(firstScope.scopeId), {
+        code: 'scope_expired',
+      });
+      assert.equal(h.canvasTurns.requireScope(secondScope.scopeId), secondScope);
+      notify(true);
+      notify(false);
+      await h.lifecycle.send('pending-delegated', 'third');
+      assert.deepEqual(session.prompts, ['initial', 'second']);
+
+      second.resolve();
+      await secondTurn;
+      await session.waitForPrompts(3);
+      const thirdTurn = requireLive(h, 'pending-delegated').turnPromise;
+      const thirdScope = turnLease(h, 'pending-delegated');
+      assert.throws(() => h.canvasTurns.requireScope(secondScope.scopeId), {
+        code: 'scope_expired',
+      });
+      assert.equal(h.canvasTurns.requireScope(thirdScope.scopeId), thirdScope);
+      third.resolve();
+      await thirdTurn;
+      assert.deepEqual(session.prompts, ['initial', 'second', 'third']);
+      assert.equal(h.canvasTurns.activeScope('pending-delegated'), undefined);
+      assert.throws(() => h.canvasTurns.requireScope(thirdScope.scopeId), {
+        code: 'scope_expired',
+      });
+    } finally {
+      binding.resolve();
+      first.resolve();
+      second.resolve();
+      third.resolve();
+      await creating;
+      await h.lifecycle.closeAll();
+    }
+  });
+}
+
+test("delegated notifications preserve a running typed turn's leases and interrupt state", async () => {
   const h = createHarness();
   const session = new FakeFactorySession('delegated', {}, h.calls);
   let notify: (running: boolean) => void = () => undefined;
@@ -2382,6 +2470,12 @@ test('a turn the provider starts beside a typed one never takes its Canvas lease
   assert.equal(h.canvasTurns.requireScope(typed.scopeId), typed);
   notify(false);
   assert.equal(h.canvasTurns.requireScope(typed.scopeId), typed);
+
+  await h.lifecycle.interrupt('delegated');
+  notify(true);
+  notify(false);
+  assert.equal(requireLive(h, 'delegated').interrupting, true);
+  assert.equal(requireLive(h, 'delegated').streaming, true);
 
   second.resolve();
   await requireLive(h, 'delegated').turnPromise;

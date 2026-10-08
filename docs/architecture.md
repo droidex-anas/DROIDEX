@@ -334,7 +334,9 @@ a failed attachment fails the session open and releases its runtime. The first
 turn therefore leases the committed attachment. Resume publication, typed sends,
 voice starts and delegated turns wait on the same pending create; compaction
 cannot replace its provisional provider. Every admission rechecks the captured
-runtime before applying results.
+runtime before applying results. Admission applies the latest pending delegated
+state before typed work starts; delegated notifications cannot settle a running
+typed turn or advance its queue.
 Closing cancels that create before cleanup. The Canvas queue releases cancelled
 work that has not started, independently of unrelated writes. Canvas checks the
 captured runtime generation before each attachment write, and close drains only

@@ -1196,19 +1196,16 @@ export class SessionLifecycle {
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
     const applyDelegated = (running: boolean): void => {
-      if (!isCurrent()) return;
+      // The typed turn owns busy state, interrupts, settlement and its queue.
+      if (!isCurrent() || liveSession.turnPromise) return;
       liveSession.streaming = running;
       if (running) {
         // A settled turn leaves the chat's own source closed, and nothing else
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
         this.dependencies.eventFlow.beginTurn(appSessionId, appSessionId);
-        // Nobody composed this turn, so it pins nothing; the handle still owns
-        // the leases of any steer the model takes in while it runs. Codex can
-        // start one beside a typed turn, and that turn's handle already owns the
-        // chat's leases, so this never takes the field from it.
-        if (!liveSession.turnPromise)
-          liveSession.canvasTurn = this.dependencies.canvasTurns.beginTurn(appSessionId, undefined);
+        // Nobody composed this turn, so it pins nothing; it still owns steers.
+        liveSession.canvasTurn = this.dependencies.canvasTurns.beginTurn(appSessionId, undefined);
         this.dependencies.registry.updateSummary(appSessionId, {
           phase: 'running',
           streaming: true,
@@ -1216,8 +1213,7 @@ export class SessionLifecycle {
         });
         return;
       }
-      // Only the leases this turn owns: a typed turn still running keeps its own.
-      if (!liveSession.turnPromise) liveSession.canvasTurn?.revoke();
+      liveSession.canvasTurn?.revoke();
       // A Stop lands before the turn reports itself finished, so the flags it
       // set are cleared here as they are for a typed turn.
       const stopped = liveSession.interrupting === true || liveSession.interruptingToSend === true;
@@ -1238,9 +1234,7 @@ export class SessionLifecycle {
         applyDelegated(running);
         return;
       }
-      void admission.deferDelegatedTurn(running, applyDelegated).catch((error: unknown) => {
-        this.dependencies.emitError({ appSessionId, message: errMsg(error) });
-      });
+      admission.onDelegatedTurn(running, applyDelegated);
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {

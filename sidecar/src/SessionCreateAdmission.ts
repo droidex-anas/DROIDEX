@@ -6,7 +6,7 @@ const CLOSE_DIAGNOSTIC_DELAY_MS = 5_000;
 export class SessionCreateAdmission implements CanvasCommitOwner {
   private cancelled = false;
   private admitted = false;
-  private delegatedRevision = 0;
+  private pendingDelegatedTurn?: { running: boolean; apply: (running: boolean) => void };
   private readonly cancellation = new AbortController();
   readonly signal = this.cancellation.signal;
   private settle: (admitted: boolean) => void = () => undefined;
@@ -26,11 +26,17 @@ export class SessionCreateAdmission implements CanvasCommitOwner {
   admit(): void {
     this.requireCurrent();
     this.admitted = true;
+    // Reconcile provider state before ready waiters or the initial goal can run.
+    const pending = this.pendingDelegatedTurn;
+    this.pendingDelegatedTurn = undefined;
+    pending?.apply(pending.running);
+    this.requireCurrent();
     this.settle(true);
   }
 
   cancel(): void {
     this.cancelled = true;
+    this.pendingDelegatedTurn = undefined;
     this.cancellation.abort();
     this.settle(false);
   }
@@ -44,10 +50,12 @@ export class SessionCreateAdmission implements CanvasCommitOwner {
       throw new Error('This chat is still opening. Wait for it to finish before compacting.');
   }
 
-  async deferDelegatedTurn(running: boolean, apply: (running: boolean) => void): Promise<void> {
-    const revision = ++this.delegatedRevision;
-    if (!this.admitted && !(await this.ready)) return;
-    if (revision !== this.delegatedRevision || !this.isCurrent()) return;
+  onDelegatedTurn(running: boolean, apply: (running: boolean) => void): void {
+    if (!this.isCurrent()) return;
+    if (!this.admitted) {
+      this.pendingDelegatedTurn = { running, apply };
+      return;
+    }
     apply(running);
   }
 
