@@ -449,7 +449,7 @@ test('plain restore resolves aliases, records in order, and emits replace teleme
   assert.deepEqual(page.childSessions, childSessions);
 });
 
-test('history page limits tune only the bounded local transcript window', () => {
+test('history page limits tune only the bounded local transcript window', async () => {
   const calls: unknown[][] = [];
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
@@ -464,10 +464,12 @@ test('history page limits tune only the bounded local transcript window', () => 
 
   harness.timeline.load('app-1', 'cursor-1', 240);
   harness.timeline.load('app-1', 'cursor-2', 100_000);
+  await harness.timeline.tail('app-1', 100_000, true);
 
   assert.deepEqual(calls, [
     ['app-1', ['provider-1'], { cursor: 'cursor-1', limit: 240 }],
     ['app-1', ['provider-1'], { cursor: 'cursor-2', limit: 1_600 }],
+    ['app-1', ['provider-1'], { cursor: undefined, limit: 100_000, fullText: true }],
   ]);
 });
 

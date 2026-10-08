@@ -178,6 +178,7 @@ export class SessionTranscriptReader {
     private readonly providerSessionId: string,
     private readonly path: string,
     private readonly role: SessionRole,
+    private readonly fullText = false,
   ) {
     const stat = statSync(path);
     this.mtimeMs = stat.mtimeMs;
@@ -287,6 +288,7 @@ export class SessionTranscriptReader {
             this.providerSessionId,
             this.role,
             JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
+            { fullText: this.fullText },
           );
         } catch {
           /* skip partial/corrupt JSONL rows */

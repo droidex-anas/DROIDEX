@@ -17,8 +17,8 @@ Every conversation also keeps its own full transcript.
 that talks to the user. Every thread belongs to the chat that started it;
 threads can start their own, up to three levels below the lead. The lead
 controls every thread in the project; any other thread controls only its own.
-A thread's autonomy never exceeds its owner's. Permission prompts still go to
-the user.
+A thread's autonomy never exceeds its owner's. The lead decides approvals
+within its own authority and asks the user about anything beyond it.
 
 **How a report reaches the lead.** When a thread finishes, its report goes to
 its owner. If the owner is in a turn, the report is steered into that turn; if
@@ -29,10 +29,10 @@ is refused before that moment, it stays queued and is tried again later.
 **Unread is the safety net.** A new reply marks its thread unread until the
 lead reads it (`thread_read`), a turn starts with its report, or the provider
 confirms the steer. If a report is handed over just as the lead's turn is
-stopped, the thread stays unread. So after a stop, a restart or a compaction,
-the lead calls `thread_list` and reads the unread threads; every wake also
-lists them, apart from the reports themselves. Being unread does not wake
-anyone by itself.
+stopped, the thread stays unread. After a restart or compaction, the lead calls
+`project_read` first and reads the unread threads. After a stop it can also use
+`thread_list`; every wake lists unread threads apart from the reports themselves.
+Being unread does not wake anyone by itself.
 
 **What wakes the lead.** A report, a thread's question, a thread's failure, a
 due to-do, the last working thread going idle (with how it ended), a message
@@ -58,14 +58,20 @@ A ledger that cannot be read is reported and left untouched.
 | Tool | Changes now | Later effect |
 | --- | --- | --- |
 | `thread_spawn` | Records task, thread and checkout; starts when admitted | Queues for capacity; below High needs approval |
-| `thread_send` | Steers, sends now, queues, or answers a question | Queued text waits for settlement or capacity |
+| `thread_send` | Sends instructions with `steer`, `interrupt` or `queue` | Returns the outcome and state after: steered, started, resumed, queued with position, held or interrupt |
+| `thread_answer` | Answers the current `questionId`, one answer per question | Refuses stale questions; never reopens completion |
+| `thread_approve` | Allows or denies a thread request within the lead’s authority | Refuses actions the lead must ask the user about |
+| `project_pause` | Stops all thread turns and holds new work | Continues only through Resume |
+| `project_resume` | Continues paused threads from where they stopped | New work waits for capacity |
+| `project_guide` | Returns the full lead playbook | Read at the start and after compaction |
+| `project_read` | Recovers brief, milestone, plan, decisions, to-dos and unread/relevant threads | First call after restart or compaction; starts no work; clears no unread reports |
 | `thread_list` | Reads threads, unread, runtime load and to-dos | Starts no work |
-| `thread_read` | Reads replies and durably clears unread | Starts no work |
+| `thread_read` | Reads replies and durably clears unread; `full: true` reads the latest settled final reply from its transcript | Starts no work; ordinary reads keep bounded ledger previews |
 | `thread_configure` | Sets autonomy or queued launch settings | Running model/effort changes wait for settlement |
 | `thread_stop` | Interrupts and drops queued messages; cancels queued starts | Handed-off reports stay settled |
-| `plan_set` | Saves plan and optional title | Linked steps follow actual thread state |
-| `project_done` | Records outcome when work has settled | New work reopens the project |
-| `todo_add` | Saves a follow-up and optional triggers | Report or due time triggers one reminder |
+| `plan_set` | Saves plan, optional title and agreed `brief` (≤2,000 characters) | Lead owns planned/doing/review/done/blocked; ids survive reordering and explicit ids survive renaming |
+| `project_done` | Records outcome after work is handled | Refuses with unread reports, open to-dos, failed/approval-waiting threads, pending messages and active work; new work reopens it |
+| `todo_add` | Saves a follow-up: `after`, `inMinutes` or absolute ISO `at` | Due after the next report, including failure/interruption, or the reminder time; first trigger wins |
 | `todo_done` | Removes follow-up and pending reminder | A handed-off reminder may still arrive |
 
 Projects ships in beta. The Projects view says so under its title, with links to
@@ -79,10 +85,11 @@ it is one of the sidebar's announcements (`src/lib/sidebarCards.ts`, id
 
 A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
 Droid and Claude Code receive the `droidex-sessions` MCP server; Codex receives
-the same tools as deferred dynamic tools in `droidex_sessions`. Ten run a
+the same tools as deferred dynamic tools in `droidex_sessions`. Sixteen run a
 project: `thread_spawn`, `thread_send`, `thread_list`, `thread_read`,
-`thread_configure`, `thread_stop`, `plan_set`, `project_done`, `todo_add` and
-`todo_done`.
+`thread_configure`, `thread_stop`, `thread_answer`, `thread_approve`,
+`project_guide`, `project_read`, `project_pause`, `project_resume`, `plan_set`,
+`project_done`, `todo_add` and `todo_done`.
 The other five are the [session tools](session-tools.md) for the chats in the
 user's sidebar. A Codex chat started before these tools were added resumes
 without them because Codex cannot add dynamic tools to an existing thread;
@@ -138,30 +145,32 @@ chat's current name, so one started by voice is named from what was said.
 
 When a thread asks its harness's own question, the one a person clicks an answer
 to, DROIDEX routes it to the chat that started the thread, options intact, and
-wakes that chat. That chat answers with `thread_send`'s `answers`, one per
+wakes that chat. That chat answers with `thread_answer`'s `answers`, one per
 question, which reach the waiting call at once instead of queueing behind the
-question; a send without them is refused while the thread waits. The answers
+question; instruction sends are refused while the thread waits. The answers
 name the question by the `questionId` its wake and `thread_read` give, and are
 refused when the thread now waits on another question. The user can still
 answer inside the thread, and whichever answer comes first wins. A held project
 routes nothing: its threads wait for the user.
 
-Permission requests are never routed. They stay with the user whatever the
-project is doing.
+A thread waiting on an approval is reported as `approval`, with the request
+id and summary. The lead uses `thread_approve` only within its own authority;
+otherwise it asks the user. Approval never raises autonomy or bypasses a sandbox.
 
 ## Steering a thread
 
 `thread_send` reaches a working thread the way the user's Steer does: the
 harness takes the message at its next step inside the running turn, with its
 own steer on Droid, Claude Code and Codex alike, or right after that turn when
-it cannot take it sooner. `delivery: 'now'` is Send now: DROIDEX
+it cannot take it sooner. `delivery: 'interrupt'` is Send now: DROIDEX
 stops the running turn and the message runs next. `delivery: 'queue'` waits for
 the turn to end. A stopped or idle thread queues the message through the
 project's queue and waits for a runtime slot when capacity is full. When a
 working thread's turn ends or is
 stopped while the message is on its way, the send is refused rather than
 starting a new turn a Stop meant to end, and the chat reads the thread and
-sends again. The tool says whether the message was steered, sent now or queued,
+sends again. The tool says whether the message was steered, started, resumed,
+queued, held or interrupted,
 with its queue position and wait reason when queued. A queued result means it has not
 started yet. Continue a stopped or queued thread with `thread_send` instead of
 spawning another. A spawn still creates a thread when its title matches a
@@ -170,8 +179,9 @@ continuing it; title matching ignores case and a trailing number or `(retry)`.
 
 ## Recovering the project and keeping follow-ups
 
-After compaction or a restart, `thread_list` returns controlled threads that are
-working, queued, waiting, failed, unread or still owe a report. The remaining
+After the first `project_read` on compaction or restart, `thread_list` returns
+controlled threads that are working, queued, waiting, failed, unread or still
+owe a report. The remaining
 threads are counted in one line; pass `all: true` to list them too. Each row
 includes its full id, title, owner id, state, wait reason, a one-line preview of
 up to 120 characters of its latest reply and its queued message count. It also
@@ -187,13 +197,15 @@ eight characters within that scope, including `workspaceOf`, plan links and
 `todo_add.after`. An ambiguous prefix fails with the matching titles and full
 ids. Runtime calls and returned ids use the canonical `appSessionId`.
 
-The lead records follow-ups with `todo_add({ text, after?, inMinutes? })`, then
+The lead records follow-ups with `todo_add({ text, after?, inMinutes?, at? })`, then
 removes a handled follow-up with `todo_done({ id })`. A project holds at most 40
 open to-dos; text is 1–400 characters. `after` marks it due when that thread
-reports. `inMinutes` is an integer from 1 to 1440 and persists an absolute due
-time, so DROIDEX rearms the reminder after a restart once session history is
-ready. If both triggers are present, the first one makes it due. With neither,
-it stays in the open list until handled.
+next reports, including failure or interruption. `inMinutes` is an integer from
+1 to 1440; `at` accepts a future ISO timestamp with timezone for reminders days
+away. Choose one time field. Both persist an absolute due time, so DROIDEX rearms
+the reminder after a restart once session history is ready. If `after` and a
+time are present, the first trigger makes it due. With neither, it stays in the
+open list until handled.
 
 Every wake lists the open to-dos in its own section before the thread reports,
 due ones first and marked `[DUE]`. A timed reminder uses the same delivery path
@@ -217,21 +229,30 @@ The main chat keeps a plan with `plan_set`: the steps it means to take,
 optionally grouped under milestones, each one able to name the thread carrying
 it. A chat that is not a project yet becomes one with its first plan, so it can
 plan first and then start a thread for each step. `thread_spawn` takes the step
-it carries, so starting the work is what links the step to its conversation. A
-step with a thread shows that conversation's real state and its own last step,
-so the plan reports what DROIDEX can see rather than what a model claimed. A
-step without one shows only what the main chat said about it. The plan holds at
+it carries, so starting the work links the step to its conversation. The lead
+owns every step’s state: `planned`, `doing`, `review`, `done` or `blocked`,
+independently of whether its linked thread is running. Step ids stay stable
+when steps move; pass the existing `id` when renaming a step. The plan holds at
 most 60 steps, is stored in the project ledger, and appears above the threads
 wherever the project is read.
 
+`plan_set` also takes an optional `brief` (at most 2,000 characters): the
+agreed goal, scope, out of scope, done criteria and authority. `project_read`
+returns it with the current milestone, plan, step notes as decisions, open
+to-dos, unread reports and relevant threads without changing anything. The lead
+calls it first after restart or compaction, and reads `project_guide` at the
+start and after compaction.
+
 `plan_set` also takes a `title`: a few words for the goal, which name the
 project and its main chat in place of the opening prompt. Once the goal is
-achieved and no thread is working or starting, the main chat calls
-`project_done` with what the project achieved. Projects then shows it as done,
-with that outcome and how long the project took. Any work after that reopens
-it: a new thread, a message to a thread, a thread starting a turn, or a plan
-with a step of the main chat's own that is not done. A project records when it
-started; one from before that shows its main chat's start.
+achieved, the main chat calls `project_done` with what the project achieved.
+It refuses with every outstanding item: unread reports, open to-dos, failed or
+approval-waiting threads, pending messages and active work. Projects then shows
+it as done, with that outcome and how long the project took. Any work after that
+reopens it: a new thread, a message to a thread, a thread starting a turn, or a
+plan with any step that is not done. Answering a historical question does not
+reopen it. A project records when it started; one from before that shows its
+main chat's start.
 
 ## The Threads panel
 
@@ -268,15 +289,22 @@ is still starting, taking back any worktree already cut for it.
 
 ## Reports
 
+Thread reports lead with the conclusion and what was or was not changed, then
+the few findings that matter with numbers, a link to the full write-up and
+honest caveats. Implementers also name branch, commits and checks. Write-ups
+live in `reports/<step>/` in the thread’s worktree, never `/tmp`.
+
 A settled turn of a thread reports to the chat that started it however it ended:
 an excerpt of its final primary reply, the error that failed it, that it was
 stopped, or that it ended without a reply. A reply longer than 1,200 characters
-is cut to its end, and the report says so. Thinking and tool output never enter
-a report. `thread_read` gives that chat the rest: the thread's latest replies,
-up to their last 8,192 characters each, the question it is waiting on and what
-it is running as, so the chat can look again after a compaction or before
-deciding a step is done. It returns the latest reply alone unless asked for
-more. DROIDEX keeps up to ten replies for each of the eight settled threads
+keeps its beginning, marks truncation and points to `thread_read({ full: true })`.
+Thinking and tool output never enter a report. `thread_read` gives that chat the
+rest: the thread's latest replies, up to their first 8,192 characters each, the
+question it is waiting on and what it is running as, so the chat can look again
+after a compaction or before deciding a step is done. It returns the latest
+reply alone unless asked for more. `full: true` reads the latest settled final
+reply from the transcript without truncation. DROIDEX keeps up to ten replies
+for each of the eight settled threads
 whose conversations moved most recently; an older thread keeps only its final
 reply, and its whole conversation stays in its own transcript. A turn that ends
 without a reply never erases the last real one, and the main chat's own replies
@@ -295,10 +323,10 @@ thread which reports nothing twice is not working, and to stop it and tell the
 user rather than nudge it again.
 
 Reports use the project delivery path and may reach a lead mid-turn. No model
-polls or stays running to wait for another model. Permission requests always
-need the user, never approval by another agent. A question can be answered by another
-chat: a thread's by the chat that started it, and any sidebar chat's by a chat
-that sends it answers with `session_send`.
+polls or stays running to wait for another model. The lead may approve only
+within its own authority; anything beyond that needs the user. A question can be
+answered by another chat: a thread's by the chat that started it, and any sidebar
+chat's by a chat that sends it answers with `session_send`.
 
 ## Holds and limits
 
@@ -351,9 +379,10 @@ directory. Writes use an atomic replacement and private file permissions. No
 count bounds the ledger, so replies are what keeps it in check: past 6 MiB, the
 threads whose conversations moved longest ago, in any project, give up their
 earlier replies and then their final one. `thread_read` on a thread that lost
-its final reply this way says so rather than returning nothing. A ledger that
-still passed 8 MiB would be refused, and every project held. Membership is
-persisted before a new session receives its first task.
+its final reply this way says so and points to `full: true` to read the latest
+settled reply from its transcript. A ledger that still passed 8 MiB would be
+refused, and every project held. Membership is persisted before a new session
+receives its first task.
 
 The wake queue writes its claim before dispatch. A steered report settles when
 `session.steer(text)` is called, and never returns to the queue afterward.

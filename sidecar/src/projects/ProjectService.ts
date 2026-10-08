@@ -12,7 +12,8 @@ import {
   type ThreadState,
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
-import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
+import type { ProviderStatus, ServerEvent, SessionSummary, TranscriptEvent } from '../protocol.js';
+import { latestSettledReply } from './activity.js';
 import { findPlanStep, planFromSteps } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
@@ -45,6 +46,7 @@ import type {
 } from './types.js';
 
 export interface ProjectPort {
+  transcriptTail(appSessionId: string, limit: number): Promise<TranscriptEvent[]>;
   runtimeLoad(): RuntimeLoad;
   makeRoom(appSessionId: string): Promise<boolean>;
   get(appSessionId: string): SessionSummary | undefined;
@@ -130,6 +132,8 @@ export interface ThreadReadout {
   waitReason?: string;
   runtimeLoad: RuntimeLoad;
   wait?: ThreadWait;
+  approval?: { requestId: string; summary: string };
+  resetsAt?: number;
   position?: number;
   /** The replies asked for, oldest first; the latest one alone by default. */
   replies: string[];
@@ -287,6 +291,7 @@ export class ProjectService {
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
       launching: project.launching,
+      ...(project.brief !== undefined ? { brief: project.brief } : {}),
       plan: project.plan.map(({ milestone, note, ...step }) => ({
         ...step,
         ...(milestone ? { milestone } : {}),
@@ -303,6 +308,7 @@ export class ProjectService {
           ...(thread.unread ? { unread: true as const } : {}),
           state: status.state,
           ...(status.wait ? { wait: status.wait } : {}),
+          ...(status.resetsAt !== undefined ? { resetsAt: status.resetsAt } : {}),
           ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
         };
       }),
@@ -492,7 +498,6 @@ export class ProjectService {
         : named;
     if (step) {
       step.threadAppSessionId = appSessionId;
-      delete step.state;
       await this.save(project);
     }
     const status = this.threadStatus(project, requireThread(project, appSessionId));
@@ -530,10 +535,13 @@ export class ProjectService {
    */
   async setPlan(
     source: string,
-    steps: readonly Omit<ProjectStep, 'id'>[],
+    steps: readonly (Omit<ProjectStep, 'id'> & { id?: string })[],
     title?: string,
+    brief?: string,
   ): Promise<number> {
     this.requireOpen();
+    if (brief !== undefined && brief.length > LEDGER_LIMITS.brief)
+      throw new Error('Project brief must be at most 2000 characters.');
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
     let project = this.membership.get(source);
@@ -570,10 +578,18 @@ export class ProjectService {
         : {}),
     }));
     const members = new Set(project.threads.map((thread) => thread.appSessionId));
-    project.plan = planFromSteps(resolved, (id) => members.has(id));
-    // A step of the chat's own that is not done, stated or not, means work remains.
-    if (project.plan.some((step) => !step.threadAppSessionId && step.state !== 'done'))
-      delete project.done;
+    project.plan = planFromSteps(
+      resolved,
+      (id) => members.has(id),
+      project.plan,
+      project.lastStepId,
+    );
+    project.lastStepId = Math.max(
+      project.lastStepId ?? 0,
+      ...project.plan.map((step) => Number(step.id) || 0),
+    );
+    if (brief !== undefined) project.brief = brief;
+    if (project.plan.some((step) => step.state !== 'done')) delete project.done;
     this.settleAdoption(project);
     await this.save();
     return project.plan.length;
@@ -585,27 +601,31 @@ export class ProjectService {
     const project = this.requireProjectFor(source);
     if (requireThread(project, source).ownerAppSessionId)
       throw new Error('Only the chat that leads a project can mark it done.');
-    if (project.launching > 0 || project.threads.some((thread) => thread.queuedSpawn))
-      throw new Error('A thread of this project is still starting or queued to start.');
-    const waiting = project.threads.find(
-      (thread) =>
-        thread.appSessionId !== source &&
-        (thread.ask !== undefined || this.sessions.awaitingApproval(thread.appSessionId)),
-    );
-    if (waiting) throw new Error(`${waiting.title} is still waiting on an answer or an approval.`);
-    if (
-      project.delivery ||
-      (this.sending.get(project) ?? 0) > 0 ||
-      project.pending.some((message) => message.to !== source)
-    )
-      throw new Error('Messages to its threads are still on their way.');
-    const working = project.threads.filter(
-      (thread) =>
-        thread.appSessionId !== source && this.sessions.get(thread.appSessionId)?.streaming,
-    );
-    if (working.length)
+    const outstanding: string[] = [];
+    if (project.launching > 0) outstanding.push('Threads are still starting.');
+    for (const thread of project.threads) {
+      if (thread.appSessionId === source) continue;
+      const state = this.threadStatus(project, thread).state;
+      if (thread.unread) outstanding.push(`${thread.title}: unread report.`);
+      if (thread.owedReport) outstanding.push(`${thread.title}: report awaiting delivery.`);
+      if (thread.queuedSpawn) outstanding.push(`${thread.title}: queued to start.`);
+      if (thread.ask) outstanding.push(`${thread.title}: waiting on an answer.`);
+      if (state === 'approval') outstanding.push(`${thread.title}: waiting on an approval.`);
+      if (state === 'failed' || state === 'rate-limited')
+        outstanding.push(`${thread.title}: ${state}. Continue it with thread_send.`);
+      if (this.sessions.get(thread.appSessionId)?.streaming)
+        outstanding.push(`${thread.title}: still working.`);
+    }
+    for (const todo of project.todos) outstanding.push(`Open to-do: ${todo.text}`);
+    const messages = [...project.pending, ...(project.delivery?.messages ?? [])];
+    const toLead = messages.filter((message) => message.to === source);
+    const toThreads = messages.length - toLead.length;
+    if (toLead.length) outstanding.push(`${String(toLead.length)} pending messages to the lead.`);
+    if (toThreads || (this.sending.get(project) ?? 0) > 0)
+      outstanding.push('Messages to threads are still on their way.');
+    if (outstanding.length)
       throw new Error(
-        `${working.map((thread) => thread.title).join(', ')} ${working.length === 1 ? 'is' : 'are'} still working. Wait for ${working.length === 1 ? 'its' : 'their'} report, or stop ${working.length === 1 ? 'it' : 'them'}, first.`,
+        `Project has outstanding work:\n${outstanding.map((item) => `- ${item}`).join('\n')}`,
       );
     project.done = { at: Date.now(), outcome: outcome.slice(0, LEDGER_LIMITS.outcome) };
     await this.save();
@@ -622,58 +642,51 @@ export class ProjectService {
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 
-  /**
-   * Sends a thread instructions, or the answers to the question it asked. A
-   * queued message would sit behind that question, so answers go straight to
-   * the harness call waiting on it.
-   */
-  async send(
-    source: string,
-    target: string,
-    text: string,
-    answers?: string[],
-    questionId?: string,
-    delivery: ThreadDelivery = 'steer',
-  ): Promise<'answered' | 'already-answered' | 'steered' | 'sent-now' | 'queued' | 'held'> {
+  /** Answers only the current question, without reopening a completed project. */
+  async answer(source: string, target: string, questionId: string, answers: string[]) {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     const ask = thread.ask;
-    if (ask && !answers?.length)
+    if (!ask) throw new Error(`${thread.title} has no question waiting for an answer.`);
+    if (!questionId) throw new Error('Pass the questionId of the question these answers are for.');
+    if (questionId !== ask.requestId)
       throw new Error(
-        `${thread.title} is waiting on the question it asked. Send its answers with this thread's answers argument.`,
+        `${thread.title} is no longer waiting on that question. Read it again with thread_read.`,
       );
-    if (answers?.length) {
-      if (!ask) throw new Error(`${thread.title} has no question waiting for an answer.`);
-      if (!questionId)
-        throw new Error('Pass the questionId of the question these answers are for.');
-      // The thread may have moved on to another question since the caller read this one.
-      if (questionId !== ask.requestId)
-        throw new Error(
-          `${thread.title} is no longer waiting on that question. Read it again with thread_read.`,
-        );
-      if (answers.length !== ask.questions.length)
-        throw new Error(
-          `${thread.title} asked ${String(ask.questions.length)} questions; answer them all, in order.`,
-        );
-      const landed = this.sessions.answer(
-        target,
-        ask.requestId,
-        ask.questions.map((item, position) => ({
-          index: item.index,
-          question: item.question,
-          answer: answers[position],
-        })),
+    if (answers.length !== ask.questions.length)
+      throw new Error(
+        `${thread.title} asked ${String(ask.questions.length)} questions; answer them all, in order.`,
       );
-      clearAsk(project, thread);
-      // Words sent with an answer are instructions of their own and reach the
-      // thread either way: alongside an answer that landed, or in place of one
-      // the thread had already settled without.
-      if (text.trim()) this.enqueue(project, { from: source, to: target, kind: 'message', text });
-      await this.save();
-      this.wakes.kick(project);
-      return landed ? 'answered' : 'already-answered';
-    }
+    const landed = this.sessions.answer(
+      target,
+      questionId,
+      ask.questions.map((item, index) => ({
+        index: item.index,
+        question: item.question,
+        answer: answers[index],
+      })),
+    );
+    clearAsk(project, thread);
+    await this.save();
+    this.wakes.kick(project);
+    return { threadId: target, answered: landed, state: this.threadStatus(project, thread).state };
+  }
+
+  /** Sends instructions through the same queue that owns report delivery. */
+  async send(
+    source: string,
+    target: string,
+    text: string,
+    delivery: ThreadDelivery = 'steer',
+  ): Promise<'steered' | 'interrupt' | 'started' | 'resumed' | 'queued' | 'held'> {
+    target = this.resolveThreadId(source, target);
+    const project = this.controlledProject(source, target);
+    const thread = requireThread(project, target);
+    if (thread.ask)
+      throw new Error(
+        `${thread.title} is waiting on the question it asked. Answer it with thread_answer.`,
+      );
     // A running turn takes it at the harness's next step, or, sent now, in
     // place of the rest of that turn. A thread with no turn running gets it as
     // its next turn, which the wake queue starts.
@@ -703,14 +716,14 @@ export class ProjectService {
       this.sending.set(project, (this.sending.get(project) ?? 0) + 1);
       let steered: boolean;
       try {
-        steered = await this.sessions.steer(target, prompt, isCurrent, delivery === 'now');
+        steered = await this.sessions.steer(target, prompt, isCurrent, delivery === 'interrupt');
       } finally {
         this.sending.set(project, (this.sending.get(project) ?? 1) - 1);
       }
       if (steered) {
         this.restartRecovery.delete(target);
         if (reopened) await this.save();
-        return delivery === 'now' ? 'sent-now' : 'steered';
+        return delivery === 'interrupt' ? 'interrupt' : 'steered';
       }
       // Its turn ended, or was stopped, while this was on its way. Starting a
       // new turn could undo a Stop, so the lead decides.
@@ -718,10 +731,22 @@ export class ProjectService {
         `${thread.title}'s turn ended before it took this message. Read it with thread_read, and send again if the message still applies.`,
       );
     }
-    this.enqueue(project, { from: source, to: target, kind: 'message', text });
+    const resumed = !this.sessions.isLive(target) || this.sessions.get(target)?.phase === 'paused';
+    const message = this.enqueue(project, { from: source, to: target, kind: 'message', text });
     await this.save();
     this.wakes.kick(project);
-    return project.paused ? 'held' : 'queued';
+    if (project.paused) return 'held';
+    const accepted = await this.wakes.dispatch(project, message);
+    const currentProject = this.controlledProject(source, target);
+    if (currentProject !== project || requireThread(project, target) !== thread)
+      throw new Error('Thread changed while sending. Read it before sending again.');
+    if (accepted) return resumed ? 'resumed' : 'started';
+    if (currentProject.paused) return 'held';
+    const pending = [...project.pending, ...(project.delivery?.messages ?? [])];
+    if (pending.some((item) => item.id === message.id)) return 'queued';
+    throw new Error(
+      'The message was cancelled before it started. Read the thread before sending again.',
+    );
   }
 
   /**
@@ -730,6 +755,43 @@ export class ProjectService {
    * excerpt, so this is how a lead reads the rest or looks again later. It asks
    * for how far back it wants to read: one answer by default, never the lot.
    */
+  async readFull(source: string, target: string): Promise<ThreadReadout> {
+    const read = this.read(source, target);
+    const project = this.controlledProject(source, read.threadId);
+    const thread = requireThread(project, read.threadId);
+    const reply = thread.reply;
+    const earlierReplies = thread.earlierReplies;
+    const providerSessionId = this.sessions.get(read.threadId)?.providerSessionId;
+    const updatedAt = this.sessions.get(read.threadId)?.updatedAt;
+    const running = this.sessions.get(read.threadId)?.streaming === true;
+    let limit = 200;
+    let fullReply = '';
+    let complete = false;
+    while (!complete) {
+      const events = await this.sessions.transcriptTail(read.threadId, limit);
+      this.requireOpen();
+      if (
+        this.membership.get(read.threadId) !== project ||
+        requireThread(project, read.threadId) !== thread ||
+        thread.reply !== reply ||
+        thread.earlierReplies !== earlierReplies ||
+        this.sessions.get(read.threadId)?.providerSessionId !== providerSessionId ||
+        (this.sessions.get(read.threadId)?.streaming === true) !== running ||
+        this.sessions.get(read.threadId)?.updatedAt !== updatedAt
+      )
+        throw new Error(
+          'Thread changed while reading its transcript. Read it again with thread_read.',
+        );
+      fullReply = latestSettledReply(events, running);
+      const prompts = events.filter(
+        (event) => event.role === 'primary' && event.author === 'user',
+      ).length;
+      complete = events.length < limit || (fullReply.length > 0 && prompts >= (running ? 2 : 1));
+      limit *= 2;
+    }
+    return { ...read, replies: fullReply ? [fullReply] : [], moreReplies: 0, note: undefined };
+  }
+
   read(source: string, target: string, replies = 1): ThreadReadout {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
@@ -749,7 +811,7 @@ export class ProjectService {
       ...(session ? { live: this.sessions.isLive(target) } : {}),
       ...(thread.repliesShed
         ? {
-            note: 'DROIDEX dropped its replies to keep the project ledger small. Its whole conversation stays in its own transcript, which the user can open.',
+            note: 'DROIDEX dropped its replies to keep the project ledger small. Read its latest settled final reply with thread_read full: true.',
           }
         : {}),
       ...(thread.error ? { error: thread.error } : {}),
@@ -799,6 +861,7 @@ export class ProjectService {
           ownerId: thread.ownerAppSessionId,
           state: status.state,
           ...(thread.unread ? { unread: true as const } : {}),
+          ...(status.resetsAt !== undefined ? { resetsAt: status.resetsAt } : {}),
           ...(status.position ? { position: status.position } : {}),
           ...(status.waitReason ? { waitReason: status.waitReason } : {}),
           lastReply: thread.reply.replace(/\s+/g, ' ').trim().slice(0, 120),
@@ -816,6 +879,47 @@ export class ProjectService {
     };
   }
 
+  /** Recovers the lead's agreement and current work without changing unread or starting work. */
+  projectRead(source: string) {
+    const project = this.requireLeadProject(source);
+    const threads = this.listThreads(source);
+    const current = project.plan.find((step) => step.state !== 'done');
+    return {
+      projectId: project.id,
+      title: project.title,
+      brief: project.brief ?? null,
+      currentMilestone: current?.milestone ?? null,
+      plan: project.plan.map((step) => ({ ...step, state: step.state ?? 'planned' })),
+      decisions: project.plan
+        .filter((step) => step.note)
+        .map((step) => ({ stepId: step.id, note: step.note })),
+      todos: threads.todos,
+      unreadThreads: scopedThreads(project, source)
+        .filter((thread) => thread.unread)
+        .map((thread) => thread.appSessionId),
+      threads: threads.threads,
+      ...(threads.summary ? { summary: threads.summary } : {}),
+      paused: project.paused,
+      ...(project.done ? { done: project.done } : {}),
+    };
+  }
+
+  // Round 2 items 3/6: worker A replaces these during integration.
+  approve: (
+    source: string,
+    threadId: string,
+    requestId: string,
+    decision: 'allow' | 'deny',
+    note?: string,
+  ) => Promise<{ state: string }> = () =>
+    Promise.reject(new Error('Thread approval is not integrated yet.'));
+
+  pause: (source: string) => Promise<{ interrupted: string[] }> = () =>
+    Promise.reject(new Error('Project pause is not integrated yet.'));
+
+  resume: (source: string) => Promise<{ resumed: string[] }> = () =>
+    Promise.reject(new Error('Project resume is not integrated yet.'));
+
   resolveThreadId(source: string, target: string): string {
     this.requireOpen();
     const project = this.requireProjectFor(source);
@@ -826,7 +930,7 @@ export class ProjectService {
 
   async addTodo(
     source: string,
-    input: { text: string; after?: string; inMinutes?: number },
+    input: { text: string; after?: string; inMinutes?: number; at?: string },
   ): Promise<Omit<ProjectTodo, 'notified'>> {
     const project = this.requireLeadProject(source);
     const text = input.text.trim();
@@ -837,6 +941,16 @@ export class ProjectService {
       (!Number.isInteger(input.inMinutes) || input.inMinutes < 1 || input.inMinutes > 1440)
     )
       throw new Error('inMinutes must be a whole number from 1 to 1440.');
+    if (input.at !== undefined && input.inMinutes !== undefined)
+      throw new Error('Choose at or inMinutes for the reminder time, not both.');
+    const at = input.at === undefined ? undefined : Date.parse(input.at);
+    if (
+      at !== undefined &&
+      (!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.at ?? '') ||
+        !Number.isFinite(at) ||
+        at <= Date.now())
+    )
+      throw new Error('at must be a future ISO timestamp with a timezone.');
     if (project.todos.length >= LEDGER_LIMITS.todos)
       throw new Error(
         `This project already has ${String(LEDGER_LIMITS.todos)} open to-dos. Use todo_done before adding another.`,
@@ -846,6 +960,7 @@ export class ProjectService {
       id: randomUUID(),
       text,
       ...(after ? { after } : {}),
+      ...(at !== undefined ? { dueAt: at } : {}),
       ...(input.inMinutes !== undefined ? { dueAt: Date.now() + input.inMinutes * 60_000 } : {}),
     };
     if (after && this.hasUndeliveredReport(project, after)) todo.due = true;
@@ -905,24 +1020,33 @@ export class ProjectService {
   private threadStatus(project: Project, thread: ProjectThread) {
     const wait = this.wakes.waitReason(thread.appSessionId);
     const approval = this.sessions.awaitingApproval(thread.appSessionId);
-    const state = approval
-      ? 'waiting'
-      : threadState(thread, this.sessions.get(thread.appSessionId), wait);
-    const reason =
-      approval && !project.paused && !wait
-        ? 'waiting for user approval'
-        : threadWaitReason(
-            state,
-            wait,
-            this.sessions.runtimeLoad(),
-            project.paused,
-            this.queuedMessages(project, thread.appSessionId),
-          );
+    const session = this.sessions.get(thread.appSessionId);
+    let state = threadState(thread, session, wait);
+    if (approval) state = 'approval';
+    else if (session?.usageLimit) state = 'rate-limited';
+    let reason = threadWaitReason(
+      state,
+      wait,
+      this.sessions.runtimeLoad(),
+      project.paused,
+      this.queuedMessages(project, thread.appSessionId),
+    );
+    if (state === 'approval' && !project.paused && !wait) reason = 'waiting for user approval';
+    if (state === 'rate-limited') {
+      const resetsAt = session?.usageLimit?.resetsAt;
+      reason =
+        resetsAt === undefined
+          ? 'rate-limited · send again when the provider limit resets'
+          : `rate-limited · send again after ${new Date(resetsAt).toISOString()}`;
+    }
     const targets = [...new Set(project.pending.map((message) => message.to))];
     const position =
       wait && wait.kind !== 'turn' ? wait.position : targets.indexOf(thread.appSessionId) + 1;
     return {
       state,
+      ...(session?.usageLimit?.resetsAt !== undefined
+        ? { resetsAt: session.usageLimit.resetsAt }
+        : {}),
       ...(wait ? { wait } : {}),
       ...(reason ? { waitReason: reason } : {}),
       ...(position > 0 ? { position } : {}),
@@ -1410,21 +1534,23 @@ export class ProjectService {
         from: lead.appSessionId,
         to: lead.appSessionId,
         kind: 'message',
-        text: `Follow-up due (to-do ${todo.id}): ${todo.text}`,
+        text: `Reminder — follow-up due (to-do ${todo.id}): ${todo.text}`,
       });
       todo.notified = true;
     }
   }
 
-  private enqueue(project: Project, message: Omit<ThreadMessage, 'id'>): void {
+  private enqueue(project: Project, message: Omit<ThreadMessage, 'id'>): ThreadMessage {
     this.requireOpen();
     requireMessageText(message.text);
     if (inboxFull(project))
       throw new Error(
         `The project inbox is full: ${String(LEDGER_LIMITS.inbox)} messages are waiting for their threads, and nothing more can queue until they are delivered.`,
       );
-    project.pending.push({ id: randomUUID(), ...message });
+    const queued = { id: randomUUID(), ...message };
+    project.pending.push(queued);
     if (message.kind === 'message') this.restartRecovery.delete(message.to);
+    return queued;
   }
 
   private blankProject(title: string, id: string = randomUUID()): Project {

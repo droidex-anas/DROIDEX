@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { ProjectService, type ProjectPort } from '../projects/ProjectService.js';
 import type { ProjectPersistence } from '../projects/store.js';
 import type { Project, ThreadInput } from '../projects/types.js';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type { ServerEvent, SessionSummary, TranscriptEvent } from '../protocol.js';
 import { sessionSummary } from './sessionSummaryFixture.js';
 
 export const input: ThreadInput = {
@@ -81,6 +81,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   const steered: { id: string; prompt: string; now: boolean }[] = [];
   const launched: ThreadInput[] = [];
   const events: ServerEvent[] = [];
+  const transcripts = new Map<string, TranscriptEvent[]>();
   const state = {
     saved: structuredClone(saved),
     failSave: false,
@@ -111,6 +112,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
+    transcriptTail: (id, limit) => Promise.resolve((transcripts.get(id) ?? []).slice(-limit)),
     runtimeLoad: () => ({ live: state.capacity === 'busy' ? 20 : sessions.size, limit: 20 }),
     makeRoom: () => Promise.resolve(state.capacity === 'free'),
     awaitingApproval: (id) => state.awaitingApproval.has(id),
@@ -255,6 +257,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     asking,
     launched,
     events,
+    transcripts,
     state,
     port,
     streaming,

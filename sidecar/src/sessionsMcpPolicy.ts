@@ -5,6 +5,12 @@ export const SESSIONS_MCP_SERVER_NAME = 'droidex-sessions';
 
 const TOOL_TITLES = new Map([
   ['thread_spawn', 'Start a DROIDEX chat'],
+  ['thread_answer', 'Answer a DROIDEX thread'],
+  ['thread_approve', 'Decide a DROIDEX thread approval'],
+  ['project_guide', 'Read the DROIDEX project guide'],
+  ['project_read', 'Read the DROIDEX project'],
+  ['project_pause', 'Hold the DROIDEX project'],
+  ['project_resume', 'Resume the DROIDEX project'],
   ['thread_send', 'Message a DROIDEX thread'],
   ['thread_read', 'Read a DROIDEX thread'],
   ['thread_list', 'List DROIDEX threads'],
@@ -29,6 +35,12 @@ const TOOL_TITLES = new Map([
 // stopping or moving a chat the user follows acts on their work, so those ask
 // unless this chat runs at High.
 const ALWAYS_ALLOWED = new Set([
+  'thread_answer',
+  'thread_approve',
+  'project_guide',
+  'project_read',
+  'project_pause',
+  'project_resume',
   'thread_send',
   'thread_read',
   'thread_list',

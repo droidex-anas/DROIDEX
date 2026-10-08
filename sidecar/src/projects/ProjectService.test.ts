@@ -361,15 +361,8 @@ test("a lead's message reaches a working thread's turn, or starts an idle one", 
   const child = await h.projects.spawn(main, input);
   assert.equal(await h.projects.send(main, child.appSessionId, 'Also cover the tests'), 'steered');
   assert.equal(
-    await h.projects.send(
-      main,
-      child.appSessionId,
-      'Stop, wrong branch',
-      undefined,
-      undefined,
-      'now',
-    ),
-    'sent-now',
+    await h.projects.send(main, child.appSessionId, 'Stop, wrong branch', 'interrupt'),
+    'interrupt',
   );
   assert.deepEqual(
     h.steered.map(({ now }) => now),
@@ -378,7 +371,7 @@ test("a lead's message reaches a working thread's turn, or starts an idle one", 
   await h.finish(child.appSessionId);
   await drain();
   const reported = h.sent.length;
-  assert.equal(await h.projects.send(main, child.appSessionId, 'One more thing'), 'queued');
+  assert.equal(await h.projects.send(main, child.appSessionId, 'One more thing'), 'started');
   await drain();
   assert.ok(h.sent.slice(reported).some(({ id }) => id === child.appSessionId));
 });
@@ -388,10 +381,7 @@ test('persistence failure fails closed without delivering a queued wake', async 
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
   h.state.failSave = true;
-  await assert.rejects(
-    h.projects.send(main, child.appSessionId, 'Work', undefined, undefined, 'queue'),
-    /Disk full/,
-  );
+  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work', 'queue'), /Disk full/);
   await drain();
   assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.paused, true);
@@ -474,10 +464,7 @@ test("the main chat's next spawn lifts the hold its Stop put on, and no other ho
 
   // A failure's hold stays the user's to lift, even after a later Stop.
   h.state.failSave = true;
-  await assert.rejects(
-    h.projects.send(main, child.appSessionId, 'Work', undefined, undefined, 'queue'),
-    /Disk full/,
-  );
+  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work', 'queue'), /Disk full/);
   h.state.failSave = false;
   await h.projects.userStopped(main);
   await assert.rejects(h.projects.spawn(main, input), /held/);
@@ -487,7 +474,7 @@ test('a closed recipient unparks the delivery that waited on its turn', async (t
   const h = await harness(t);
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
-  await h.projects.send(main, child.appSessionId, 'Continue', undefined, undefined, 'queue');
+  await h.projects.send(main, child.appSessionId, 'Continue', 'queue');
   await drain();
   assert.equal(h.sent.length, 0);
   const recipient = h.sessions.get(child.appSessionId);
@@ -528,10 +515,11 @@ test('a lead reads a thread in full and retunes it within its own autonomy', asy
   const h = await harness(t);
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
-  await h.finish(child.appSessionId, 'x'.repeat(2_000));
+  await h.finish(child.appSessionId, 'Conclusion.' + 'x'.repeat(1_989));
   await drain();
   // The report is an excerpt; reading the thread gives the whole reply back.
-  assert.match(h.sent.at(-1)?.prompt ?? '', /last 1,200 characters/);
+  assert.match(h.sent.at(-1)?.prompt ?? '', /first 1,200 characters.*thread_read full: true/);
+  assert.match(h.sent.at(-1)?.prompt ?? '', /Conclusion\./);
   const read = h.projects.read(main, child.appSessionId);
   assert.deepEqual(read.replies.length, 1);
   assert.equal(read.replies[0]?.length, 2_000);
@@ -628,14 +616,17 @@ test('a spawn carries a settled plan step, or none at all', async (t) => {
   const h = await harness(t);
   const { main } = await h.root();
   await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /no plan yet/);
-  await h.projects.setPlan(main, [{ title: 'Port the payments client' }]);
+  await h.projects.setPlan(main, [{ title: 'Port the payments client', state: 'review' }]);
   await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /No plan step/);
   const started = await h.projects.spawn(main, { ...input, step: 'Port the payments client' });
   assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
+  assert.equal(h.projects.list()[0]?.plan[0]?.state, 'review');
 
-  // A step named by number keeps that step when two share a title.
+  // A stable step id picks the intended step when two share a title.
   await h.projects.setPlan(main, [{ title: 'Review' }, { title: 'Review' }]);
-  const second = await h.projects.spawn(main, { ...input, step: '2' });
+  const stepId = h.projects.list()[0]?.plan[1]?.id;
+  assert.ok(stepId);
+  const second = await h.projects.spawn(main, { ...input, step: stepId });
   const plan = h.projects.list()[0]?.plan;
   assert.equal(plan?.[0]?.threadAppSessionId, undefined);
   assert.equal(plan?.[1]?.threadAppSessionId, second.appSessionId);
@@ -734,7 +725,10 @@ test('a thread’s own question reaches its lead with its options, and the answe
     /waiting on the question/,
   );
   // Answering must reach the waiting harness call, not the delivery queue.
-  assert.equal(await h.projects.send(main, child.appSessionId, '', ['JSON'], 'ask-1'), 'answered');
+  assert.equal(
+    (await h.projects.answer(main, child.appSessionId, 'ask-1', ['JSON'])).answered,
+    true,
+  );
   assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.projects.list()[0]?.queued, 0);
@@ -758,12 +752,12 @@ test('a question answered in its thread stops asking the owner, and a late answe
 
   // The lead decided the first question, so its answer must not settle the second.
   await assert.rejects(
-    h.projects.send(main, child.appSessionId, '', ['JSON'], 'ask-1'),
+    h.projects.answer(main, child.appSessionId, 'ask-1', ['JSON']),
     /no longer waiting on that question/,
   );
-  await assert.rejects(h.projects.send(main, child.appSessionId, '', ['yes']), /questionId/);
+  await assert.rejects(h.projects.answer(main, child.appSessionId, '', ['yes']), /questionId/);
   assert.deepEqual(h.answered, []);
-  assert.equal(await h.projects.send(main, child.appSessionId, '', ['no'], 'ask-2'), 'answered');
+  assert.equal((await h.projects.answer(main, child.appSessionId, 'ask-2', ['no'])).answered, true);
 });
 
 test('threads stopped on questions for their lead leave it a delivery slot', async (t) => {

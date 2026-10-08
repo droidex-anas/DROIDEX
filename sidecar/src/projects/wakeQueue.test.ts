@@ -503,7 +503,9 @@ test('timed to-dos survive restart and a full held inbox, then steer into a busy
   assert.equal(restored.projects.list()[0]?.queued, LEDGER_LIMITS.inbox);
   await restored.projects.setPaused(id, false);
   await drain();
-  const reminders = restored.steered.filter(({ prompt }) => prompt.includes('Follow-up due'));
+  const reminders = restored.steered.filter(({ prompt }) =>
+    prompt.includes('Reminder — follow-up due'),
+  );
   assert.equal(reminders.length, 1);
   assert.match(reminders[0]?.prompt ?? '', /Check the build/);
   assert.ok(

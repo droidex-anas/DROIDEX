@@ -4,7 +4,15 @@ import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.j
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
 
-export type ThreadState = 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
+export type ThreadState =
+  | 'working'
+  | 'queued'
+  | 'waiting'
+  | 'stopped'
+  | 'failed'
+  | 'idle'
+  | 'approval'
+  | 'rate-limited';
 
 /* A project runs as many threads as its work needs, so the ledger cannot keep
    every thread's history. The settled threads whose conversations moved most
@@ -309,10 +317,10 @@ export function threadState(
    is excerpted here and read in full with thread_read, so the excerpt says it is
    one, in words that read the same to the person watching this chat. */
 function threadReport(session: SessionSummary, turn: ThreadTurn): string {
-  const reply = turn.text.slice(-1_200);
+  const reply = turn.text.slice(0, 1_200);
   const excerpt =
     reply.length < turn.text.length
-      ? `The last 1,200 characters of a longer reply:\n${reply}`
+      ? `The first 1,200 characters of a longer reply (truncated; read the full reply with thread_read full: true):\n${reply}`
       : reply;
   if (session.phase === 'failed')
     return ['It failed before finishing.', turn.error, excerpt].filter(Boolean).join('\n');

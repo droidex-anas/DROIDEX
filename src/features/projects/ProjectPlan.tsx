@@ -128,6 +128,13 @@ function PlanRow({
 
 // A step's mark is its thread's, so the plan and the thread list never disagree.
 function StepMark({ row, state }: { row: ThreadRow | undefined; state?: ProjectStep['state'] }) {
+  if (state === 'review') {
+    return (
+      <span role="img" aria-label="In review" title="In review">
+        <ActivityStatusGlyph status={PLANNED_STATUS.review} decorative />
+      </span>
+    );
+  }
   if (row?.live === true) {
     return (
       <span
@@ -143,6 +150,7 @@ function StepMark({ row, state }: { row: ThreadRow | undefined; state?: ProjectS
 const PLANNED_STATUS: Record<NonNullable<ProjectStep['state']>, SessionActivityStatus> = {
   planned: 'ready',
   doing: 'working',
+  review: 'working',
   done: 'settled',
   blocked: 'input',
 };

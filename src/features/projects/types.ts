@@ -21,7 +21,7 @@ export interface ProjectStep {
   id: string;
   title: string;
   milestone?: string;
-  state?: 'planned' | 'doing' | 'done' | 'blocked';
+  state?: 'planned' | 'doing' | 'review' | 'done' | 'blocked';
   threadAppSessionId?: string;
   note?: string;
 }
@@ -37,8 +37,18 @@ export interface ProjectThread {
   title: string;
   waiting: boolean;
   unread?: true;
-  state: 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
+  state:
+    | 'working'
+    | 'queued'
+    | 'waiting'
+    | 'stopped'
+    | 'failed'
+    | 'idle'
+    | 'approval'
+    | 'rate-limited';
   wait?: ThreadWait;
+  approval?: { requestId: string; summary: string };
+  resetsAt?: number;
 }
 
 export interface ProjectTodo {
@@ -64,6 +74,7 @@ export interface ProjectView {
   cwd?: string;
   paused: boolean;
   launching: number;
+  brief?: string;
   plan: ProjectStep[];
   todos: ProjectTodo[];
   runtimeLoad: { live: number; limit: number };

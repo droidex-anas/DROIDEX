@@ -33,6 +33,8 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
   return (
     text(value.id, 200) &&
     text(value.title, 120) &&
+    (value.brief === undefined ||
+      (typeof value.brief === 'string' && value.brief.length <= 2_000)) &&
     (value.cwd === undefined || text(value.cwd, 4_096)) &&
     (value.startedAt === undefined || count(value.startedAt)) &&
     (value.done === undefined ||
@@ -59,7 +61,7 @@ function isPlan(value: unknown): value is ProjectStep[] {
         (step.note === undefined || text(step.note, 400)) &&
         (step.threadAppSessionId === undefined || text(step.threadAppSessionId, 200)) &&
         (step.state === undefined ||
-          ['planned', 'doing', 'done', 'blocked'].includes(step.state as string)),
+          ['planned', 'doing', 'review', 'done', 'blocked'].includes(step.state as string)),
     )
   );
 }
@@ -75,7 +77,21 @@ function isThreadList(value: unknown): value is ProjectThread[] {
         typeof thread.waiting === 'boolean' &&
         (thread.unread === undefined || thread.unread === true) &&
         typeof thread.state === 'string' &&
-        ['working', 'queued', 'waiting', 'stopped', 'failed', 'idle'].includes(thread.state) &&
+        [
+          'working',
+          'queued',
+          'waiting',
+          'stopped',
+          'failed',
+          'idle',
+          'approval',
+          'rate-limited',
+        ].includes(thread.state) &&
+        (thread.approval === undefined ||
+          (record(thread.approval) &&
+            text(thread.approval.requestId, 200) &&
+            text(thread.approval.summary, 600))) &&
+        (thread.resetsAt === undefined || count(thread.resetsAt)) &&
         (thread.wait === undefined || isThreadWait(thread.wait)) &&
         (thread.ownerAppSessionId === undefined || text(thread.ownerAppSessionId, 200)),
     )

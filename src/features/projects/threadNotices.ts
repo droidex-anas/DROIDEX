@@ -6,7 +6,8 @@
 
 // Written by ProjectWakeQueue's wakePrompt, threadStart's briefs, SpawnedChats'
 // opening prompt and SidebarSessions' messagePrompt; each pair must stay in step.
-const REPORT_PREFIX = 'From DROIDEX, not the user: your project threads reported.';
+const REPORT_PREFIX = 'Project update — lead action required.';
+const INSTRUCTIONS_PREFIX = 'Instructions from your project lead.';
 const MESSAGE_PREFIX = 'From DROIDEX, not the user: another chat sent you a message.';
 const THREAD_BRIEF_PREFIX = 'You are an independent DROIDEX thread:';
 const LEAD_BRIEF_PREFIX = 'You lead a DROIDEX project.';
@@ -44,12 +45,12 @@ const ACTIONS = ['reported back', 'needs a decision', 'sent a message'];
 
 /** Whether a prompt is the project's own threads speaking. */
 export function isThreadReport(text: string | undefined): boolean {
-  return text?.startsWith(REPORT_PREFIX) === true;
+  return text?.startsWith(REPORT_PREFIX) === true || text?.startsWith(INSTRUCTIONS_PREFIX) === true;
 }
 
 export function threadReports(text: string | undefined): ThreadReport[] | null {
-  if (!text?.startsWith(REPORT_PREFIX) && !text?.startsWith(MESSAGE_PREFIX)) return null;
-  const project = text.startsWith(REPORT_PREFIX);
+  if (!text || (!isThreadReport(text) && !text.startsWith(MESSAGE_PREFIX))) return null;
+  const project = isThreadReport(text);
   const reports: { lead: string; threadId: string; body: string[] }[] = [];
   for (const line of text.split('\n')) {
     const head = REPORT_HEAD.exec(line);
