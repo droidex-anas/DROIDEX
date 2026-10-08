@@ -559,7 +559,8 @@ export class CodexSession implements ProviderSession {
       const turn = turnOf(params, this.usage);
       if (!turn) return;
       if (turn.id === this.delegatedTurnId) {
-        this.dropSteers();
+        // An active typed stream owns steering even when a delegated turn ends.
+        if (!this.turn) this.dropSteers();
         this.setDelegatedTurn(undefined, delegatedTurnEnd(turn));
         // Same as settle() does for a typed turn: an approval nobody can
         // answer any more leaves the screen with the turn that asked.

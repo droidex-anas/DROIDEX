@@ -176,6 +176,66 @@ test('Codex steers wait for delivery and the RPC reply, and a new turn starts a 
   assert.equal(await fourth, true);
 });
 
+test('a delegated turn completing preserves the active typed turn steer queue', async (t) => {
+  const steers: Record<string, unknown>[] = [];
+  let releaseFirstRequest: () => void = () => undefined;
+  const firstRequest = new Promise<void>((resolve) => {
+    releaseFirstRequest = resolve;
+  });
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'typed-turn' } };
+    if (method !== 'turn/steer') return undefined;
+    steers.push(params);
+    return steers.length === 1 ? firstRequest : undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  const firstEvent = events.next();
+  notifications.get('item/agentMessage/delta')?.({
+    threadId: 'thread-1',
+    itemId: 'answer',
+    delta: 'Working',
+  });
+  await firstEvent;
+
+  const first = session.steer('first');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1);
+  assert.equal(steers[0].expectedTurnId, 'typed-turn');
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn', status: 'completed' },
+  });
+  const second = session.steer('second');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'delegated completion must not release the typed queue');
+
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
+  });
+  assert.equal(await first, true, 'delegated completion must not drop a typed steer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'the second steer must still wait for the first RPC reply');
+  releaseFirstRequest();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 2);
+  assert.equal(steers[1].expectedTurnId, 'typed-turn');
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'userMessage', clientId: steers[1].clientUserMessageId },
+  });
+  assert.equal(await second, true);
+});
+
 test('a refused Stop reopens steering only when no Stop was accepted for that turn', async (t) => {
   let releaseTurn: (response: { turn: { id: string } }) => void = () => undefined;
   const turnStart = new Promise<{ turn: { id: string } }>((resolve) => {
