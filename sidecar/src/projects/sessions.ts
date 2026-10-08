@@ -1,4 +1,4 @@
-import type { AutomationDeliveryReceipt } from '../automations/types.js';
+import type { SteeredReportDelivery } from '../SessionLifecycle.js';
 import { randomUUID } from 'node:crypto';
 import type { SessionManager } from '../SessionManager.js';
 import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
@@ -44,39 +44,6 @@ export class ProjectSessions implements ProjectPort {
 
   makeRoom(appSessionId: string): Promise<boolean> {
     return this.host.makeAutomaticRuntimeRoom(appSessionId);
-  }
-
-  async deliverReport(
-    appSessionId: string,
-    prompt: string,
-    isCurrent: () => boolean,
-  ): Promise<AutomationDeliveryReceipt> {
-    let acknowledge: (receipt: AutomationDeliveryReceipt) => void = () => undefined;
-    const receipt = new Promise<AutomationDeliveryReceipt>((resolve) => {
-      acknowledge = resolve;
-    });
-    const admitted = await this.host.steerRunningTurn(appSessionId, prompt, isCurrent, false, {
-      isCurrent,
-      accepted: () => {
-        acknowledge({ status: 'accepted', settled: Promise.resolve() });
-      },
-      declined: (reason) => {
-        if (reason === 'failed' || reason === 'unknown') {
-          acknowledge({
-            status: 'unavailable',
-            error:
-              reason === 'unknown'
-                ? 'Report delivery was not acknowledged; inspect the conversation before resuming.'
-                : 'The report could not be delivered to the running turn.',
-          });
-          return;
-        }
-        acknowledge(isCurrent() ? { status: 'busy', retryOn: 'target' } : { status: 'cancelled' });
-      },
-    });
-    if (!admitted)
-      return isCurrent() ? { status: 'busy', retryOn: 'target' } : { status: 'cancelled' };
-    return receipt;
   }
 
   catalog(): Promise<ProviderStatus[]> {
@@ -152,8 +119,14 @@ export class ProjectSessions implements ProjectPort {
     return this.host.handle({ type: 'session.updateSettings', appSessionId, ...settings });
   }
 
-  steer(appSessionId: string, prompt: string, isCurrent: () => boolean, now: boolean) {
-    return this.host.steerRunningTurn(appSessionId, prompt, isCurrent, now);
+  steer(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now: boolean,
+    delivery?: SteeredReportDelivery,
+  ) {
+    return this.host.steerRunningTurn(appSessionId, prompt, isCurrent, now, delivery);
   }
 
   rename(appSessionId: string, title: string): Promise<void> {

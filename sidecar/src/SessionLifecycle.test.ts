@@ -12,6 +12,11 @@ import type {
   SessionSummary,
   TranscriptEvent,
 } from './protocol.js';
+import {
+  harness as projectHarness,
+  drain,
+  input as projectInput,
+} from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
@@ -1766,17 +1771,17 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
 });
 
 test('scheduled historical resumes honor the runtime cap without restricting live targets', async () => {
-  const summaries = Array.from({ length: 13 }, (_, index) => summary(`bounded-${index}`));
+  const summaries = Array.from({ length: 21 }, (_, index) => summary(`bounded-${index}`));
   const harness = createHarness(summaries);
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index < 20; index += 1) {
     queueLoad(harness, `bounded-${index}`);
     await harness.lifecycle.resume(`bounded-${index}`);
   }
   assert.deepEqual(
-    await harness.lifecycle.deliverScheduled('bounded-12', 'wait for capacity', () => true),
+    await harness.lifecycle.deliverScheduled('bounded-20', 'wait for capacity', () => true),
     { status: 'busy', retryOn: 'capacity' },
   );
-  assert.equal(harness.runtime.loadCalls.length, 12);
+  assert.equal(harness.runtime.loadCalls.length, 20);
   const live = await harness.lifecycle.deliverScheduled(
     'bounded-0',
     'already resident',
@@ -1785,9 +1790,9 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   assert.equal(live.status, 'accepted');
   if (live.status === 'accepted') await live.settled;
   await harness.lifecycle.close('bounded-0');
-  const provider = queueLoad(harness, 'bounded-12');
+  const provider = queueLoad(harness, 'bounded-20');
   const receipt = await harness.lifecycle.deliverScheduled(
-    'bounded-12',
+    'bounded-20',
     'capacity freed',
     () => true,
   );
@@ -1799,17 +1804,17 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
 
 test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {
   const harness = createHarness([
-    ...Array.from({ length: 11 }, (_, index) => summary(`held-${index}`)),
+    ...Array.from({ length: 19 }, (_, index) => summary(`held-${index}`)),
     summary('doomed'),
     summary('waiting'),
   ]);
-  for (let index = 0; index < 11; index += 1) {
+  for (let index = 0; index < 19; index += 1) {
     queueLoad(harness, `held-${index}`);
     await harness.lifecycle.resume(`held-${index}`);
   }
   assert.equal(harness.capacityReleases(), 0);
 
-  // Eleven resident plus one resume in flight is the whole scheduled budget.
+  // Nineteen resident plus one resume in flight is the whole scheduled budget.
   harness.runtime.loadQueue.set('doomed', [new Error('provider is gone')]);
   const gate = harness.runtime.deferNextLoad();
   const doomed = harness.lifecycle.resume('doomed');
@@ -2146,9 +2151,9 @@ test('dependent ownership is committed before the first provider turn, and a fai
   );
 });
 
-test('automatic creates and resumes reserve the same twelve slots while user starts remain open', async () => {
+test('automatic creates and resumes reserve the same twenty slots while user starts remain open', async () => {
   const h = createHarness([summary('cold'), summary('other-cold')]);
-  for (let index = 0; index < 10; index += 1) {
+  for (let index = 0; index < 18; index += 1) {
     queueCreate(h, `resident-${index}`);
     await h.lifecycle.createAutomatic(createCommand(), `thread-${index}`);
   }
@@ -2163,7 +2168,7 @@ test('automatic creates and resumes reserve the same twelve slots while user sta
   queueLoad(h, 'cold');
   const resuming = h.lifecycle.resume('cold', true);
   await h.runtime.waitForLoad('cold');
-  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 12, limit: 12 });
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
   assert.equal(await h.lifecycle.createAutomatic(createCommand(), 'excess'), false);
   assert.deepEqual(await h.lifecycle.deliverScheduled('other-cold', 'wait', () => true), {
     status: 'busy',
@@ -2177,7 +2182,7 @@ test('automatic creates and resumes reserve the same twelve slots while user sta
     h.registry.getCanonicalSummary('queued-identity')?.providerSessionId,
     'new-provider',
   );
-  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 12, limit: 12 });
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
   h.setCompactionLimit(() => Promise.resolve(1000));
   queueCreate(h, 'user-chat');
   await h.lifecycle.create(createCommand());
@@ -2187,107 +2192,59 @@ test('automatic creates and resumes reserve the same twelve slots while user sta
 
 test('registration publishes each runtime without double-counting its create reservation', async () => {
   const h = createHarness();
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index < 20; index += 1) {
     queueCreate(h, `provider-${index}`);
     assert.equal(await h.lifecycle.createAutomatic(createCommand(''), `queued-${index}`), true);
   }
   assert.deepEqual(
     h.runtimeLoads,
-    Array.from({ length: 12 }, (_, index) => index + 1),
+    Array.from({ length: 20 }, (_, index) => index + 1),
   );
-  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 12, limit: 12 });
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
   await h.lifecycle.closeAll();
 });
 
-test('report steering acknowledges consumption separately from admission', async () => {
+test('Send now and Stop after report handoff never replay it and leave its reply unread', async (t) => {
+  const project = await projectHarness(t);
+  const { id, main } = await project.root();
+  const child = await project.projects.spawn(main, { ...projectInput, title: 'Parser' });
   const h = createHarness();
-  const provider = queueCreate(h, 'owner');
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, main);
   const turn = provider.deferNextStream();
   await h.lifecycle.create(createCommand('working'));
   await provider.waitForPrompts(1);
-  let consume: (accepted: boolean) => void = () => undefined;
-  requireLive(h, 'owner').session.steer = () =>
-    new Promise<boolean>((resolve) => {
-      consume = resolve;
-    });
-  let accepted = 0;
-  const admitted = await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
-    isCurrent: () => true,
-    accepted: () => {
-      accepted += 1;
-    },
-    declined: () => undefined,
-  });
-  assert.equal(admitted, true);
-  assert.equal(accepted, 0);
-  assert.deepEqual(provider.prompts, ['working']);
-  consume(true);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(accepted, 1);
-  assert.equal(requireLive(h, 'owner').pendingSends.length, 0);
-  turn.resolve();
-  await h.lifecycle.closeAll();
-});
-
-test('Stop leaves an in-flight report unsettled until the provider acknowledges consumption', async () => {
-  const h = createHarness();
-  const provider = queueCreate(h, 'owner');
-  const turn = provider.deferNextStream();
-  await h.lifecycle.create(createCommand('working'));
-  await provider.waitForPrompts(1);
-  let consume: (accepted: boolean) => void = () => undefined;
-  requireLive(h, 'owner').session.steer = () =>
-    new Promise<boolean>((resolve) => {
-      consume = resolve;
-    });
-  const settlements: string[] = [];
-  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
-    isCurrent: () => true,
-    accepted: () => settlements.push('accepted'),
-    declined: (reason) => settlements.push(reason),
-  });
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  const interruption = provider.deferNextInterrupt();
-  const stopping = h.lifecycle.interrupt('owner');
-  assert.deepEqual(settlements, []);
-  consume(true);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  interruption.resolve();
-  await stopping;
-  turn.resolve();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  await h.lifecycle.send('owner', 'resume work');
-  assert.deepEqual(settlements, ['accepted']);
-  assert.deepEqual(provider.prompts, ['working', 'resume work']);
-  await h.lifecycle.closeAll();
-});
-
-test('failed compaction recovery settles the receipt of a queued report', async () => {
-  const h = createHarness();
-  const provider = queueCreate(h, 'owner');
-  const turn = provider.deferNextStream();
-  await h.lifecycle.create(createCommand());
-  await provider.waitForPrompts(1);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  const live = requireLive(h, 'owner');
-  const settlements: string[] = [];
-  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
-    isCurrent: () => true,
-    accepted: () => settlements.push('accepted'),
-    declined: (reason) => settlements.push(reason),
-  });
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(live.pendingSends.length, 1);
-  live.autoCompacting = true;
+  const live = requireLive(h, main);
+  const consumed = turnGate();
+  const reports: string[] = [];
+  live.session.steer = (text) => {
+    if (!text.includes('your project threads reported')) return Promise.resolve(false);
+    reports.push(text);
+    return consumed.promise.then(() => false);
+  };
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  await project.streaming(main, true);
+  await project.finish(child.appSessionId, 'Parsed the config.');
+  await drain();
+  await project.projects.flush();
+  assert.equal(project.state.saved[0]?.delivery, undefined);
+  assert.equal(project.state.saved[0]?.pending.length, 0);
+  assert.equal(live.steers.length, 0);
+  await h.lifecycle.send(main, 'send-now instruction', undefined, 'send-now');
+  await h.lifecycle.sendNow(main, 'send-now');
+  await h.lifecycle.interrupt(main);
+  await project.projects.userStopped(main);
   turn.resolve();
   await live.turnPromise;
-  live.compacting = true;
-  await h.lifecycle.close('owner', 'preserve-pending');
-  h.runtime.loadQueue.set('owner', [new Error('Provider recovery failed')]);
-  await h.lifecycle.settleAfterCompaction('owner', live);
-  assert.equal(live.pendingSends.length, 0);
-  assert.deepEqual(settlements, ['failed']);
-  assert.deepEqual(provider.prompts, ['first']);
+  consumed.resolve();
+  await drain();
+  await project.projects.setPaused(id, false);
+  await h.lifecycle.send(main, 'resume work');
+  await project.projects.flush();
+  assert.equal(reports.length, 1);
+  assert.deepEqual(provider.prompts, ['working', 'resume work']);
+  assert.equal(project.state.saved[0]?.pending.length, 0);
+  assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
 });
 
 test('queued identities reach real Droid, Claude and Codex mappers on creation and resume', async (t) => {
@@ -2370,7 +2327,6 @@ test('a report arriving while Stop interrupts its owner cannot start another tur
     () => true,
     false,
     {
-      isCurrent: () => true,
       accepted: () => settlements.push('accepted'),
       declined: (reason) => settlements.push(reason),
     },
@@ -2386,7 +2342,7 @@ test('a report arriving while Stop interrupts its owner cannot start another tur
   await h.lifecycle.closeAll();
 });
 
-test('Stop during a context relaunch settles the report queued behind a typed prompt', async () => {
+test('a report refused during a context relaunch never joins the typed prompt queue', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'owner');
   const turn = provider.deferNextStream();
@@ -2396,14 +2352,6 @@ test('Stop during a context relaunch settles the report queued behind a typed pr
   live.summary.provider = 'claude';
   live.restartBeforeNextTurn = true;
   await h.lifecycle.send('owner', 'typed follow-up');
-  const settlements: string[] = [];
-  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
-    isCurrent: () => true,
-    accepted: () => settlements.push('accepted'),
-    declined: (reason) => settlements.push(reason),
-  });
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(live.pendingSends.length, 2);
   const resuming = turnGate();
   const entered = turnGate();
   const replacement = new FakeFactorySession('owner', {}, h.calls);
@@ -2415,6 +2363,12 @@ test('Stop during a context relaunch settles the report queued behind a typed pr
   );
   turn.resolve();
   await entered.promise;
+  const settlements: string[] = [];
+  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
+    accepted: () => settlements.push('accepted'),
+    declined: (reason) => settlements.push(reason),
+  });
+  assert.equal(live.pendingSends.length, 0);
   await h.lifecycle.interrupt('owner');
   resuming.resolve();
   await new Promise<void>((resolve) => setImmediate(resolve));

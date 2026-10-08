@@ -101,6 +101,8 @@ export interface ProjectThread {
   error?: string;
   /** Its newest report, kept here while the project's inbox is full. */
   owedReport?: string;
+  /** Its latest final reply has not been read or acknowledged by its owner. */
+  unread?: true;
   waiting: boolean;
   /** Original task and selected checkout while this thread waits for a runtime slot. */
   queuedSpawn?: {
@@ -170,7 +172,10 @@ export interface ProjectView {
   plan: ProjectStep[];
   todos: Omit<ProjectTodo, 'notified'>[];
   runtimeLoad: RuntimeLoad;
-  threads: (Pick<ProjectThread, 'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId'> & {
+  threads: (Pick<
+    ProjectThread,
+    'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId' | 'unread'
+  > & {
     state: ThreadState;
     wait?: ThreadWait;
   })[];

@@ -120,6 +120,7 @@ export class ProjectTurns {
       this.forgetOlderReplies(project);
     }
     thread.reply = text;
+    thread.unread = true;
     delete thread.repliesShed;
   }
 

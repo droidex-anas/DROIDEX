@@ -49,7 +49,7 @@ import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
 
-const MAX_SCHEDULED_SESSION_RUNTIMES = 12;
+const MAX_AUTOMATIC_SESSION_RUNTIMES = 20;
 // How long a settled turn waits for Send now's interrupt. A harness that never
 // answers it must not leave the chat busy for good.
 const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
@@ -97,7 +97,7 @@ export interface SessionPrompt {
   mentions?: ProviderMention[];
   // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
   notice?: string;
-  // Set on a prompt sent as a steer. It is listed as pending until the model
+  // A typed steer is listed as pending until the model
   // takes it in, whether the harness holds it or it waits on the queue.
   steerId?: string;
   // When it was sent, relative to the chat's other prompts.
@@ -108,7 +108,14 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
-  delivery?: ScheduledTurnDelivery;
+  delivery?: SteeredReportDelivery;
+}
+
+/** Acceptance settles handoff; acknowledgement only clears the reply's unread flag. */
+export interface SteeredReportDelivery {
+  accepted: () => void;
+  declined: (reason: 'stale') => void;
+  acknowledged?: () => void;
 }
 
 interface LiveTurnState {
@@ -247,12 +254,12 @@ export class SessionLifecycle {
     const opening = [...this.resumeOperations.keys()].filter((id) => !registry.getLive(id)).length;
     return {
       live: registry.liveCount + this.automaticCreates + opening,
-      limit: MAX_SCHEDULED_SESSION_RUNTIMES,
+      limit: MAX_AUTOMATIC_SESSION_RUNTIMES,
     };
   }
 
   private canStartAutomaticRuntime(): boolean {
-    return this.runtimeLoad().live < MAX_SCHEDULED_SESSION_RUNTIMES;
+    return this.runtimeLoad().live < MAX_AUTOMATIC_SESSION_RUNTIMES;
   }
 
   async createAutomatic(command: SessionCreateCommand, appSessionId?: string): Promise<boolean> {
@@ -691,13 +698,14 @@ export class SessionLifecycle {
    * `isCurrent` turning false withdraws it: this resolves false while the chat
    * has not taken it, and one that went on behind the turn is dropped there.
    * `now` sends it as Send now does: the turn stops and the prompt runs next.
+   * A delivery report settles at the provider call and never joins that queue.
    */
   async steerRunningTurn(
     appSessionId: string,
     text: string,
     isCurrent: () => boolean,
     now = false,
-    delivery?: ScheduledTurnDelivery,
+    delivery?: SteeredReportDelivery,
   ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (delivery && (!liveSession || !this.canReceiveReport(liveSession) || !isCurrent())) {
@@ -721,7 +729,7 @@ export class SessionLifecycle {
       delivery?.declined('stale');
       return false;
     }
-    if (now) {
+    if (now && !delivery) {
       // A runtime replaced during admission would carry the prompt off with it.
       if (this.dependencies.registry.getLive(appSessionId) !== admitted.liveSession) return false;
       admitted.liveSession.pendingSends.push(prompt);
@@ -734,7 +742,6 @@ export class SessionLifecycle {
       return true;
     }
     void this.handOver(appSessionId, admitted, prompt).catch((error: unknown) => {
-      delivery?.declined('failed');
       if (!this.dependencies.isShutdownStarted())
         this.dependencies.emitError({ appSessionId, message: errMsg(error) });
     });
@@ -753,19 +760,11 @@ export class SessionLifecycle {
   // A redelivered prompt keeps what it was sent with, so one nobody typed is
   // still drawn when it finally runs.
   private async sendPrompt(requestedAppSessionId: string, prompt: SessionPrompt): Promise<void> {
-    try {
-      const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
-      if (!admitted || admitted === 'held') return;
-      // A Stop can land between admission and this line.
-      if (this.stopCount(requestedAppSessionId) !== admitted.stops) {
-        prompt.delivery?.declined('stale');
-        return;
-      }
-      await this.handOver(requestedAppSessionId, admitted, prompt);
-    } catch (error) {
-      prompt.delivery?.declined('failed');
-      throw error;
-    }
+    const admitted = await this.admitPrompt(requestedAppSessionId, prompt);
+    if (!admitted || admitted === 'held') return;
+    // A Stop can land between admission and this line.
+    if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
+    await this.handOver(requestedAppSessionId, admitted, prompt);
   }
 
   // Gives an admitted prompt to the chat: into the running turn, behind it, or
@@ -777,18 +776,15 @@ export class SessionLifecycle {
   ): Promise<void> {
     const { liveSession } = admitted;
     if (prompt.steerId) {
-      if (await this.steer(liveSession, prompt)) return;
+      if ((await this.steer(liveSession, prompt)) || prompt.delivery) return;
       // A Stop, a new runtime, or its sender withdrawing it since it was sent
       // takes it back.
       if (
         this.stopCount(requestedAppSessionId) !== admitted.stops ||
         this.dependencies.registry.getLive(liveSession.summary.appSessionId) !== liveSession ||
-        isWithdrawn(prompt) ||
-        (prompt.delivery && !this.canReceiveReport(liveSession))
-      ) {
-        prompt.delivery?.declined('stale');
+        isWithdrawn(prompt)
+      )
         return;
-      }
     }
     // A steer the turn could not take goes on as an ordinary message: behind
     // the turn, or as the next turn if this one settled meanwhile.
@@ -800,9 +796,7 @@ export class SessionLifecycle {
     await this.drive(liveSession.summary.appSessionId, prompt);
   }
 
-  // Hands a steer to the running turn and waits for the harness to deliver it.
-  // True when that settles it: the model took it in, or a Stop or Send now
-  // took it back first. False when the turn could not take it.
+  // Reports settle at handoff and never enter the typed-message queues.
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const session = liveSession.session;
     if (
@@ -810,23 +804,26 @@ export class SessionLifecycle {
       liveSession.compacting ||
       liveSession.autoCompacting ||
       liveSession.interrupting ||
-      liveSession.interruptingToSend
-    )
+      liveSession.interruptingToSend ||
+      (prompt.delivery && !this.canReceiveReport(liveSession))
+    ) {
+      prompt.delivery?.declined('stale');
       return false;
-    liveSession.steers.push(prompt);
-    this.updateQueuedSends(liveSession);
+    }
+    if (!prompt.delivery) {
+      liveSession.steers.push(prompt);
+      this.updateQueuedSends(liveSession);
+    }
+    prompt.delivery?.accepted();
     const delivered = await session.steer(prompt.text, prompt.mentions).catch(() => false);
     const held = removePrompt(liveSession.steers, prompt);
-    if (!delivered) {
-      if (!held && !liveSession.pendingSends.includes(prompt)) prompt.delivery?.declined('stale');
-      return !held;
-    }
+    if (!delivered) return !held;
     // Send now may have queued it again just as the harness delivered it. It
     // leaves the queue at once, so a turn settling while the row is written
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
-    prompt.delivery?.accepted();
+    prompt.delivery?.acknowledged?.();
     const appSessionId = liveSession.summary.appSessionId;
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       await this.dependencies.appendSteer(appSessionId, prompt.text);
@@ -900,13 +897,9 @@ export class SessionLifecycle {
     if (this.waitForRelaunch(id, prompt)) return 'held';
     const stops = this.stopCount(id);
     const liveSession = await this.prepareToSend(id);
-    if (this.stopCount(id) !== stops || isWithdrawn(prompt)) {
-      prompt.delivery?.declined('stale');
-      return undefined;
-    }
+    if (this.stopCount(id) !== stops || isWithdrawn(prompt)) return undefined;
     if (!liveSession) {
       if (this.waitForRelaunch(id, prompt)) return 'held';
-      prompt.delivery?.declined('failed');
       return undefined;
     }
     return { liveSession, stops };
@@ -931,13 +924,11 @@ export class SessionLifecycle {
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
     this.noteStop(requestedAppSessionId);
-    const waiting = this.relaunches.get(this.chatKey(requestedAppSessionId))?.waiting.splice(0);
-    for (const prompt of waiting ?? []) prompt.delivery?.declined('stale');
+    this.relaunches.get(this.chatKey(requestedAppSessionId))?.waiting.splice(0);
     const liveSession = this.dependencies.registry.getLive(requestedAppSessionId);
     if (!liveSession) return;
     const appSessionId = liveSession.summary.appSessionId;
     // The harness drops the steers it holds when the turn stops.
-    this.declinePendingDeliveries(liveSession);
     liveSession.pendingSends = [];
     liveSession.steers = [];
     if (liveSession.compacting) {
@@ -1012,7 +1003,7 @@ export class SessionLifecycle {
       this.noteStop(appSessionId);
       const relaunch = this.relaunches.get(appSessionId);
       this.relaunches.delete(appSessionId);
-      for (const prompt of relaunch?.waiting.splice(0) ?? []) prompt.delivery?.declined('stale');
+      relaunch?.waiting.splice(0);
     }
     const pendingResume = this.resumeOperations.get(appSessionId);
     if (pendingResume) this.canceledResumes.add(appSessionId);
@@ -1029,12 +1020,10 @@ export class SessionLifecycle {
   private beginClose(liveSession: LiveSession, mode: SessionCloseMode): CloseOperation {
     if (mode === 'discard-pending') {
       liveSession.closeMode = mode;
-      this.declinePendingDeliveries(liveSession);
       liveSession.pendingSends = [];
       liveSession.steers = [];
     } else {
       liveSession.closeMode ??= mode;
-      if (this.dependencies.isShutdownStarted()) this.declinePendingDeliveries(liveSession);
     }
     const existing = this.deferredCloses.get(liveSession);
     if (existing) return { deferred: existing, created: false };
@@ -1558,7 +1547,7 @@ export class SessionLifecycle {
   private async drive(
     appSessionId: string,
     prompt: SessionPrompt,
-    delivery: ScheduledTurnDelivery | undefined = prompt.delivery,
+    delivery?: ScheduledTurnDelivery,
   ): Promise<void> {
     const d = this.dependencies;
     const stops = this.stopCount(appSessionId);
@@ -1679,8 +1668,7 @@ export class SessionLifecycle {
       // until the runtime can actually be released.
       await liveSession.providerClosePromise.catch(() => undefined);
     }
-    if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
-      this.declinePendingDeliveries(liveSession);
+    if (d.isShutdownStarted() || liveSession.closeMode === 'discard-pending') {
       liveSession.pendingSends = [];
     } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
       const queued = liveSession.pendingSends.splice(0);
@@ -1743,18 +1731,6 @@ export class SessionLifecycle {
     );
   }
 
-  private declinePendingDeliveries(liveSession: LiveSession): void {
-    // A Stop cannot know whether an in-flight steer was consumed. Its provider
-    // acknowledgement settles it; shutdown leaves it uncertain instead.
-    if (this.dependencies.isShutdownStarted())
-      for (const prompt of liveSession.steers) prompt.delivery?.declined('unknown');
-    for (const prompt of liveSession.pendingSends) prompt.delivery?.declined('stale');
-  }
-
-  private shouldDiscardPendingSends(liveSession: LiveSession): boolean {
-    return liveSession.closeMode === 'discard-pending';
-  }
-
   // A chat whose context window changed runs on a new process. The runtime is
   // released and reopened the way an idle one is. The prompt that found it
   // stale, what was queued behind it and what is sent meanwhile wait here in
@@ -1763,12 +1739,7 @@ export class SessionLifecycle {
     const d = this.dependencies;
     const appSessionId = stale.summary.appSessionId;
     const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
-    const queued = [prompt, ...stale.pendingSends.splice(0)];
-    const waiting = queued.filter((pending) => {
-      if (!pending.delivery) return true;
-      pending.delivery.declined('stale');
-      return false;
-    });
+    const waiting = [prompt, ...stale.pendingSends.splice(0)];
     const relaunch = { waiting, usageLimit: stale.summary.usageLimit };
     this.relaunches.set(appSessionId, relaunch);
     // A discarding close removes the queue; a Stop only empties it.
@@ -1840,10 +1811,7 @@ export class SessionLifecycle {
 
   private async redeliverQueuedSends(appSessionId: string, queued: SessionPrompt[]): Promise<void> {
     for (const prompt of queued) {
-      if (this.dependencies.isShutdownStarted()) {
-        prompt.delivery?.declined('stale');
-        continue;
-      }
+      if (this.dependencies.isShutdownStarted()) continue;
       try {
         await this.sendPrompt(appSessionId, prompt);
       } catch (error) {

@@ -341,15 +341,15 @@ test('holding a project cancels in-flight starts and holds queued threads', asyn
   const { id, main } = await h.root();
   const gate = deferred();
   h.state.bindGate = gate.promise;
-  // The lead occupies one slot; eleven starts reserve the rest and the last queues.
-  const requests = Array.from({ length: 12 }, () => h.projects.spawn(main, input));
-  // Hold after the queued request has durably answered; the other eleven are still binding.
-  await requests[11];
-  assert.equal(h.projects.list()[0]?.launching, 11);
+  // The lead occupies one slot; nineteen starts reserve the rest and the last queues.
+  const requests = Array.from({ length: 20 }, () => h.projects.spawn(main, input));
+  // Hold after the queued request has durably answered; the other nineteen are still binding.
+  await requests[19];
+  assert.equal(h.projects.list()[0]?.launching, 19);
   await h.projects.setPaused(id, true);
   gate.resolve();
   const outcomes = await Promise.allSettled(requests);
-  assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 11);
+  assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 19);
   assert.equal(h.state.saved[0]?.threads.filter((thread) => thread.queuedSpawn).length, 1);
   assert.equal(h.launched.length, 1, 'no child goal reached the provider');
   assert.equal(h.projects.list()[0]?.launching, 0);

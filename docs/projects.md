@@ -5,6 +5,69 @@ it starts are normal top-level sessions, not harness subagents: each keeps its
 own history, settings, transcript and runtime identity, and each can be opened,
 steered and reviewed like any other chat.
 
+## How a project runs
+
+**What is kept.** `projects.json` is the project's memory: who started whom,
+each thread's latest reply, messages waiting to be delivered, threads waiting
+to start, the plan, the lead's to-dos, holds and unread flags. A thread's reply
+is saved before its report is sent, so a report can be missed but never lost.
+Every conversation also keeps its own full transcript.
+
+**Who is in charge.** The lead owns the goal and the plan and is the one chat
+that talks to the user. Every thread belongs to the chat that started it;
+threads can start their own, up to three levels below the lead. The lead
+controls every thread in the project; any other thread controls only its own.
+A thread's autonomy never exceeds its owner's. Permission prompts still go to
+the user.
+
+**How a report reaches the lead.** When a thread finishes, its report goes to
+its owner. If the owner is in a turn, the report is steered into that turn; if
+it is idle, the report starts a new turn. A steered report counts as delivered
+the moment it is handed to the provider, and nothing can send it again. If it
+is refused before that moment, it stays queued and is tried again later.
+
+**Unread is the safety net.** A new reply marks its thread unread until the
+lead reads it (`thread_read`), a turn starts with its report, or the provider
+confirms the steer. If a report is handed over just as the lead's turn is
+stopped, the thread stays unread. So after a stop, a restart or a compaction,
+the lead calls `thread_list` and reads the unread threads; every wake also
+lists them, apart from the reports themselves. Being unread does not wake
+anyone by itself.
+
+**What wakes the lead.** A report, a thread's question, a thread's failure, a
+due to-do, the last working thread going idle (with how it ended), a message
+from the user, and Resume. Nothing else: reading, listing, planning and
+waiting never start a turn. A held project delivers nothing until it resumes.
+
+**Runtime slots.** Starting and restoring threads automatically shares
+**20 runtimes**, counting ones still starting. Threads waiting to resume go
+before newly queued threads, and queued threads start in the order they were
+queued. At most two project deliveries start turns at once; steering into a
+running turn needs no slot. A runtime idle for 30 minutes is released to save
+memory (only the three most recent idle ones may stay that long). A message to
+its thread brings it back with its conversation intact. Chats the user starts
+are never capped.
+
+**After a restart.** DROIDEX loads the transcripts first. Waiting messages and
+queued threads are kept. A thread cut off mid-turn gets one "continue" from
+DROIDEX unless a message for it is already waiting. A delivery that was in
+flight is dropped if it held only reports (their threads stay unread); any
+other in-flight delivery holds the project for review, and Resume discards it.
+A ledger that cannot be read is reported and left untouched.
+
+| Tool | Changes now | Later effect |
+| --- | --- | --- |
+| `thread_spawn` | Records task, thread and checkout; starts when admitted | Queues for capacity; below High needs approval |
+| `thread_send` | Steers, sends now, queues, or answers a question | Queued text waits for settlement or capacity |
+| `thread_list` | Reads threads, unread, runtime load and to-dos | Starts no work |
+| `thread_read` | Reads replies and durably clears unread | Starts no work |
+| `thread_configure` | Sets autonomy or queued launch settings | Running model/effort changes wait for settlement |
+| `thread_stop` | Interrupts and drops queued messages; cancels queued starts | Handed-off reports stay settled |
+| `plan_set` | Saves plan and optional title | Linked steps follow actual thread state |
+| `project_done` | Records outcome when work has settled | New work reopens the project |
+| `todo_add` | Saves a follow-up and optional triggers | Report or due time triggers one reminder |
+| `todo_done` | Removes follow-up and pending reminder | A handed-off reminder may still arrive |
+
 Projects ships in beta. The Projects view says so under its title, with links to
 the app's own feedback and bug report (the dialog `/feedback` and `/bug` open)
 and to the maker's account on X. A one-time spotlight beside the sidebar's
@@ -71,19 +134,6 @@ On Codex the orb starts one by voice: its main chat opens on a turn that asks
 for the goal, and the conversation opens on that chat. A project shows its main
 chat's current name, so one started by voice is named from what was said.
 
-## How a project works
-
-A project started with **New project** gives its main chat a brief: settle the
-goal before handing anything out, by asking the user what is unclear and reading
-the code, and only then write the plan. A step is one concrete piece of work
-whose finish the chat could recognise, such as "Port the payments client to v3"
-rather than "look into payments", and a thread is started for a settled step,
-never to explore an open question or to work out what the task is. The thread
-cannot see the chat, so the prompt it is given carries the whole task: context,
-the files or areas involved, and what done means. A chat that became a project
-on its own has no such brief, but the description of `thread_spawn` asks it the
-same way to investigate open questions itself and start only decided work.
-
 ## A thread's questions reach the chat that started it
 
 When a thread asks its harness's own question, the one a person clicks an answer
@@ -121,7 +171,7 @@ continuing it; title matching ignores case and a trailing number or `(retry)`.
 ## Recovering the project and keeping follow-ups
 
 After compaction or a restart, `thread_list` returns controlled threads that are
-working, queued, waiting, failed or still owe an unseen report. The remaining
+working, queued, waiting, failed, unread or still owe a report. The remaining
 threads are counted in one line; pass `all: true` to list them too. Each row
 includes its full id, title, owner id, state, wait reason, a one-line preview of
 up to 120 characters of its latest reply and its queued message count. It also
@@ -129,8 +179,8 @@ returns runtime load (`live`: in use, running or starting, including reserved
 opens and resumes; `limit`: automatic runtime limit) and the lead's open to-dos. A main chat
 reaches all other threads in its project; a thread lists only its direct children.
 `thread_read` returns the same wait reason and runtime load with the full reply
-readout. Both tools only observe: they never start or resume a runtime, even
-when capacity is full, a thread is stopped or the project is held.
+readout and clears unread. Neither tool starts or resumes a runtime, even when
+capacity is full, a thread is stopped or the project is held.
 
 Every thread-id argument accepts the full id or a unique prefix of at least
 eight characters within that scope, including `workspaceOf`, plan links and
@@ -255,9 +305,9 @@ that sends it answers with `session_send`.
 **Holding a project** stops new automatic deliveries and launches, not turns
 already handed to a provider. DROIDEX holds a project when the user stops or
 closes its main chat, when that chat's turn fails, when a delivery cannot be
-made or was caught mid-flight by a restart, when a question arrives at a full
-inbox or the ledger cannot be saved, and when deliveries run far past the pace
-real turns could produce: 60 within five minutes reads as threads talking in
+made or needs review after a restart, when a question arrives at a full inbox
+or the ledger cannot be saved, and when deliveries run far past the pace real
+turns could produce: 60 within five minutes reads as threads talking in
 circles rather than working. There is no wake allowance otherwise: a project
 reports as often as its threads settle, for as long as the work runs. A hold
 put on by the main chat's failed turn lifts by itself when that chat's next turn
@@ -305,8 +355,11 @@ its final reply this way says so rather than returning nothing. A ledger that
 still passed 8 MiB would be refused, and every project held. Membership is
 persisted before a new session receives its first task.
 
-The wake queue writes its claim before dispatch. **Accepted** means the provider
-acknowledged the prompt, not that the model finished. The concurrency slot stays
+The wake queue writes its claim before dispatch. A steered report settles when
+`session.steer(text)` is called, and never returns to the queue afterward.
+Its acknowledgement clears unread; a failed or missing acknowledgement does not
+change settlement. An idle owner's scheduled turn keeps its existing receipt:
+**Accepted** means the provider acknowledged its prompt. Its concurrency slot stays
 held until that turn settles, except while the turn waits on a question routed
 to the chat that started it, or on the user's permission: it runs nothing then,
 and holding the slot could keep that chat from ever being woken to answer, or
@@ -314,7 +367,7 @@ stop every other project's reports until the user comes back. Busy targets retai
 retry from lifecycle availability or runtime capacity events, not a timer.
 Messages arriving during admission stay queued independently of that claim.
 
-Automatic runtime opens and resumes share a limit of 12, including opens still
+Automatic runtime opens and resumes share a limit of 20, including opens still
 in flight. Queued spawns keep their original task, checkout reservation and
 position in the ledger; checkout instructions are added only when launching.
 Workspace-free launches omit `cwd`; launch persistence failures hold only the
@@ -324,17 +377,20 @@ blocked by its own project's delivery does not hold up other projects' spawns.
 That project's spawns wait until its delivery claim clears and its pending
 resumes go first, including resumes parked on busy or capacity markers.
 Reports and due reminders can steer into a busy owner's turn without starting a
-competing turn. Stop waits for admissions, independently of report consumption;
-the provider's acknowledgement settles an in-flight report even if Stop races
-it. Interrupted threads receive one restart continuation only when they have no
-instruction already queued, including when the inbox is full.
+competing turn. Stop waits for admissions; steered handoffs settle without
+waiting for provider acknowledgement. An unread reply remains discoverable
+through `thread_list` and the next wake even if Stop loses the push. Interrupted
+threads receive one restart continuation only when they have no instruction
+already queued, including when the inbox is full.
 
-A delivery the runtime could not take holds the project with its claim retained
-as uncertain. One withdrawn before any turn was dispatched, by a Stop, a hold or
-a question its thread stopped asking, holds nothing: its messages go back to the
-queue, less the withdrawn question. After a restart, a project whose delivery was caught mid-flight is
-held the same way; the others carry on, delivering what the restart left queued
-once session history has loaded. No delivery goes out before that, because until
+A report refused before steer handoff returns unchanged to the ledger. A
+scheduled turn whose outcome is unknown holds the project for review. A
+withdrawal before dispatch, by Stop, a hold or a question its thread stopped
+asking, returns messages to the queue, less the withdrawn question. After a
+restart, a sending claim made entirely of reports is dropped: their durable
+replies remain unread. Other claims caught mid-flight hold the project;
+the others carry on, delivering what the restart left queued once session
+history has loaded. No delivery goes out before that, because until
 then a thread reads as an unknown session. Projects shows a held project with a
 Resume control, and the Threads panel says to resume it there. Resuming discards
 an uncertain claim **without resending it**; automatic replay could duplicate

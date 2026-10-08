@@ -95,8 +95,11 @@ membership durably before the first goal can execute. `SessionLifecycle`
 remains the sole runtime owner.
 
 Thinking and tool output are never forwarded in a report. Busy recipients wait
-for session availability or capacity events. Interrupted delivery is retained
-as uncertain and requires review, rather than being silently replayed.
+for session availability or capacity events. A steered report settles at the
+provider call and never replays; unread replies survive lost pushes. Scheduled
+turns retain their provider acceptance receipt. On restart, sending claims made
+entirely of reports are dropped with their replies unread; other claims require
+review.
 Permission requests stay with the human. A thread's own question goes to the
 chat that started it, and the human can still answer it in the thread.
 

@@ -209,7 +209,7 @@ export function threadTools(appSessionId: () => string) {
   return [
     tool(
       'thread_list',
-      "List controlled threads that are working, queued, waiting, failed or have an unseen report, plus a count of inactive threads. Pass all: true for every thread. Returns full ids, owners, states, queue positions, wait reasons, one-line reply previews, queued messages, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and the lead's open to-dos. Starts no work. Use after compaction or restart; do not poll.",
+      "List controlled threads that are working, queued, waiting, failed or unread, plus a count of inactive threads. Pass all: true for every thread. unread means a final reply you have not acted on. Returns full ids, owners, states, queue positions, wait reasons, one-line reply previews, queued messages, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and the lead's open to-dos. Starts no work. Use after a stop/resume, restart or compaction; do not poll.",
       { all: z.boolean().optional() },
       safeTool(async ({ all }: { all?: boolean }) => {
         const projects = await requireProjectService();
@@ -331,13 +331,15 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_read',
-      "Read a controlled thread's final replies, question, settings, state, wait reason, queue position, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and queued message count. Starts no work, even when full or held. Do not poll.",
+      "Read a controlled thread's final replies and clear unread. Returns its question, settings, state, wait reason, queue position, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and queued message count. Starts no work, even when full or held. Do not poll.",
       readInput.shape,
       safeTool(async (input: z.infer<typeof readInput>) => {
         const projects = await requireProjectService();
+        const read = projects.read(appSessionId(), input.threadId, input.replies);
+        await projects.markRead(appSessionId(), read.threadId);
         return jsonResult({
           ok: true,
-          ...projects.read(appSessionId(), input.threadId, input.replies),
+          ...read,
         });
       }),
     ),

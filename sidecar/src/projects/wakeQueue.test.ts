@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';
 import {
-  deferred as admissionGate,
   drain,
   harness,
   input,
@@ -56,14 +55,20 @@ function wakeQueue(
   options: {
     save?: () => Promise<void>;
     fail?: (error: unknown) => void;
-    sessions?: Partial<Pick<ProjectPort, 'get' | 'isLive' | 'deliverReport'>>;
+    sessions?: Partial<Pick<ProjectPort, 'get' | 'isLive' | 'steer'>>;
     launch?: (project: Project, thread: Project['threads'][number]) => Promise<boolean>;
   } = {},
 ): ProjectWakeQueue {
   const queue = new ProjectWakeQueue(
     {
       deliver,
-      deliverReport: deliver,
+      steer: async (target, prompt, _isCurrent, _now, delivery) => {
+        const receipt = await deliver(target, prompt);
+        if (receipt.status !== 'accepted') return false;
+        delivery?.accepted();
+        delivery?.acknowledged?.();
+        return true;
+      },
       awaitingApproval: () => false,
       get: () => undefined,
       isLive: () => true,
@@ -171,26 +176,37 @@ test('capacity waits block only that recipient until availability', async (t) =>
   assert.deepEqual(targets, ['main', 'worker', 'main']);
 });
 
-test('an unacknowledged delivery keeps its claim and is not retried', async (t) => {
+test('a report refused before handoff stays unchanged and delivers once after availability', async (t) => {
   const state = project();
-  let calls = 0;
-  const failures: unknown[] = [];
+  const pending = structuredClone(state.pending);
+  let attempts = 0;
+  const sent: string[] = [];
   const queue = wakeQueue(
     t,
-    async () => {
-      calls += 1;
-      return { status: 'unavailable', error: 'Delivery outcome unknown' };
+    async (_target, prompt) => {
+      attempts += 1;
+      if (attempts === 1) return { status: 'busy', retryOn: 'target' };
+      sent.push(prompt);
+      return { status: 'accepted', settled: Promise.resolve() };
     },
-    { fail: (error) => failures.push(error) },
+    { sessions: { get: () => sessionSummary({ streaming: true }) } },
   );
   queue.kick(state);
-  await tick();
+  await drain();
+  assert.deepEqual(state.pending, pending);
+  assert.equal(state.delivery, undefined);
+  queue.kick(state);
+  await drain();
+  assert.equal(attempts, 1);
   queue.available(state, 'main');
-  queue.capacityChanged([state]);
-  await tick();
-  assert.equal(calls, 1);
-  assert.equal(failures.length, 1);
-  assert.equal(state.delivery?.messages[0]?.id, 'first');
+  await drain();
+  assert.equal(state.pending.length, 0);
+  assert.equal(state.delivery, undefined);
+  queue.available(state, 'main');
+  await drain();
+  assert.equal(attempts, 2);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Worker reported back \(thread worker\):\nfirst/);
 });
 
 test('completed callbacks free the global limit of two accepted project turns', async (t) => {
@@ -263,7 +279,7 @@ test('a cancelled admission cannot restore a busy marker after resume', async (t
   assert.equal(state.pending.length, 0);
 });
 
-test('reports steer through a full delivery gate and keep their claim until acknowledgement', async (t) => {
+test('reports steer through a full delivery gate and settle at handoff', async (t) => {
   const first = project('first');
   const second = project('second');
   second.pending[0].to = 'other';
@@ -272,7 +288,6 @@ test('reports steer through a full delivery gate and keep their claim until ackn
   report.threads[1].ownerAppSessionId = 'running';
   report.pending[0].to = 'running';
   const finished = deferred<void>();
-  const acknowledged = deferred<AutomationDeliveryReceipt>();
   const wakes: string[] = [];
   const steers: string[] = [];
   let running = true;
@@ -286,9 +301,10 @@ test('reports steer through a full delivery gate and keep their claim until ackn
       sessions: {
         get: (id) =>
           id === 'running' ? sessionSummary({ appSessionId: id, streaming: running }) : undefined,
-        deliverReport: async (_target, prompt) => {
+        steer: async (_target, prompt, _current, _now, delivery) => {
+          delivery?.accepted();
           steers.push(prompt);
-          return acknowledged.promise;
+          return true;
         },
       },
     },
@@ -298,17 +314,14 @@ test('reports steer through a full delivery gate and keep their claim until ackn
   await tick();
   assert.equal(wakes.length, 2);
   assert.equal(steers.length, 1);
-  assert.equal(report.delivery?.messages[0]?.id, 'first');
-  assert.match(steers[0], /Worker reported back \(thread worker\)/);
-  acknowledged.resolve({ status: 'accepted', settled: Promise.resolve() });
-  await tick();
   assert.equal(report.delivery, undefined);
+  assert.match(steers[0], /Worker reported back \(thread worker\)/);
   assert.equal(report.pending.length, 0);
   running = false;
   queue.available(report, 'running');
   finished.resolve();
   await tick();
-  assert.equal(wakes.length, 2, 'an acknowledged steer cannot wake the owner again');
+  assert.equal(wakes.length, 2, 'a handed-off steer cannot wake the owner again');
 });
 
 test('existing resume admissions precede queued starts, which launch in FIFO order', async (t) => {
@@ -354,31 +367,42 @@ test('existing resume admissions precede queued starts, which launch in FIFO ord
   finished.resolve();
 });
 
-test('restart preserves an uncertain delivery and never replays it implicitly', async (t) => {
+test('a lost report push survives restart as unread and appears in the next wake', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
   const h = await harness(t);
-  const { id, main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  const gate = admissionGate();
-  h.state.gate = gate.promise;
-  await h.finish(child.appSessionId);
-  await tick();
-  const disk = structuredClone(h.state.saved);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, { ...input, title: 'Parser' });
+  await h.streaming(main, true);
+  let disk: Project[] = [];
+  h.port.steer = async (_target, _prompt, _current, _now, delivery) => {
+    delivery?.accepted();
+    // Crash before the handoff's next save, with no provider acknowledgement.
+    disk = structuredClone(h.state.saved);
+    return true;
+  };
+  await h.finish(child.appSessionId, 'Parsed the config.');
+  await drain();
   assert.equal(disk[0]?.delivery?.state, 'sending');
+  await h.projects.userStopped(main);
+  assert.equal(h.projects.listThreads(main).threads[0]?.unread, true);
+  h.projects.close();
   const recovered = await harness(t, disk, false);
-  recovered.sessions.set(child.appSessionId, interruptedSummary(child.appSessionId));
+  recovered.sessions.set(main, summary(main));
+  recovered.sessions.set(child.appSessionId, summary(child.appSessionId));
   recovered.projects.historyReady();
   await drain();
-  assert.equal(recovered.sent.length, 0);
-  assert.equal(recovered.projects.list()[0]?.paused, true);
-  assert.equal(recovered.projects.list()[0]?.uncertain, 1);
-  await assert.rejects(recovered.projects.setPaused(id, false), /uncertain/);
-  await recovered.projects.setPaused(id, false, true);
+  assert.equal(recovered.projects.list()[0]?.paused, false);
+  assert.equal(recovered.state.saved[0]?.delivery, undefined);
+  assert.equal(recovered.sent.length, 0, 'a lost push is never replayed');
+  assert.equal(recovered.projects.listThreads(main).threads[0]?.unread, true);
+  await recovered.projects.addTodo(main, { text: 'Review the parser', inMinutes: 1 });
+  t.mock.timers.tick(60_000);
   await drain();
-  assert.equal(recovered.sent.length, 0);
-  assert.equal(recovered.projects.list()[0]?.uncertain, 0);
-  h.projects.close();
-  gate.resolve();
-  await h.projects.flush();
+  assert.equal(recovered.sent.length, 1);
+  assert.match(recovered.sent[0].prompt, /Unread threads: Parser/);
+  assert.doesNotMatch(recovered.sent[0].prompt, /Parsed the config/);
+  assert.equal(recovered.projects.listThreads(main).threads[0]?.unread, true);
+  await recovered.finish(main);
 });
 
 test('restart drains reports, queued starts and interrupted threads only after history is ready', async (t) => {
@@ -395,7 +419,7 @@ test('restart drains reports, queued starts and interrupted threads only after h
     [listed?.state, listed?.position, listed?.waitReason],
     ['queued', 1, 'queued to start · 1st'],
   );
-  assert.deepEqual(h.projects.read(main, queued.appSessionId).runtimeLoad, { live: 12, limit: 12 });
+  assert.deepEqual(h.projects.read(main, queued.appSessionId).runtimeLoad, { live: 20, limit: 20 });
   // Before startup reconciliation finishes, reports stay durable and undelivered.
   await h.finish(child.appSessionId, 'Parsed the config.');
   const disk = structuredClone(h.state.saved);
@@ -496,29 +520,6 @@ test('timed to-dos survive restart and a full held inbox, then steer into a busy
   assert.deepEqual(restored.state.saved[0]?.todos, []);
 });
 
-test('thread_stop returns while a report steered into its caller awaits consumption', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  await h.streaming(main, true);
-  const consumed = deferred<AutomationDeliveryReceipt>();
-  h.port.deliverReport = () => consumed.promise;
-  await h.finish(child.appSessionId);
-  await drain();
-  assert.equal(h.state.saved[0]?.delivery?.state, 'sending');
-  let stopped = false;
-  const stopping = h.projects.stop(main, child.appSessionId).then(() => {
-    stopped = true;
-  });
-  await drain();
-  const returnedBeforeConsumption = stopped;
-  consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
-  await stopping;
-  await h.projects.flush();
-  assert.equal(returnedBeforeConsumption, true);
-  assert.equal(h.state.saved[0]?.delivery, undefined);
-});
-
 test('a full restart inbox consumes its existing instruction without a second continuation', async (t) => {
   const saved = project();
   saved.pending = Array.from({ length: LEDGER_LIMITS.inbox }, (_, index) =>
@@ -548,13 +549,17 @@ test('a resume behind its own report claim does not block another project from s
   const reports = project('reports');
   reports.threads[1].appSessionId = 'dormant';
   reports.pending[0].from = 'dormant';
-  const consumed = deferred<AutomationDeliveryReceipt>();
+  const admission = deferred<void>();
   const starts: string[] = [];
   const queue = wakeQueue(t, async () => ({ status: 'busy', retryOn: 'target' }), {
     sessions: {
       get: (id) => (id === 'main' ? sessionSummary({ streaming: true }) : undefined),
       isLive: (id) => id !== 'dormant',
-      deliverReport: () => consumed.promise,
+      steer: async (_target, _prompt, _current, _now, delivery) => {
+        await admission.promise;
+        delivery?.accepted();
+        return true;
+      },
     },
     launch: async (_project, thread) => {
       starts.push(thread.appSessionId);
@@ -571,15 +576,15 @@ test('a resume behind its own report claim does not block another project from s
   waiting.threads[1].queuedSpawn = { phase: 'queued', input, order: 1 };
   queue.capacityChanged([reports, waiting]);
   await drain();
-  const startedBeforeConsumption = [...starts];
-  consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
+  const startedBeforeAdmission = [...starts];
+  admission.resolve();
   await drain();
-  assert.deepEqual(startedBeforeConsumption, ['worker']);
+  assert.deepEqual(startedBeforeAdmission, ['worker']);
 });
 
 test('a queued spawn waits for its own project resumes hidden by a report claim', async (t) => {
   const state = project();
-  const consumed = deferred<AutomationDeliveryReceipt>();
+  const admission = deferred<void>();
   const order: string[] = [];
   const queue = wakeQueue(
     t,
@@ -591,7 +596,11 @@ test('a queued spawn waits for its own project resumes hidden by a report claim'
       sessions: {
         get: (id) => (id === 'main' ? sessionSummary({ streaming: true }) : undefined),
         isLive: (id) => id === 'main',
-        deliverReport: () => consumed.promise,
+        steer: async (_target, _prompt, _current, _now, delivery) => {
+          await admission.promise;
+          delivery?.accepted();
+          return true;
+        },
       },
       launch: async (_project, thread) => {
         order.push(thread.appSessionId);
@@ -614,10 +623,10 @@ test('a queued spawn waits for its own project resumes hidden by a report claim'
   state.pending.push({ id: 'resume', from: 'main', to: 'worker', kind: 'message', text: 'Go' });
   queue.capacityChanged([state]);
   await drain();
-  const beforeConsumption = [...order];
-  consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
+  const beforeAdmission = [...order];
+  admission.resolve();
   await drain();
-  assert.deepEqual(beforeConsumption, []);
+  assert.deepEqual(beforeAdmission, []);
   assert.deepEqual(order, ['worker', 'queued']);
 });
 

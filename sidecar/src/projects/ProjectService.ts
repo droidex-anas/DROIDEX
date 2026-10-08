@@ -1,4 +1,5 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
+import type { SteeredReportDelivery } from '../SessionLifecycle.js';
 import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
 import {
   clearAsk,
@@ -46,11 +47,6 @@ import type {
 export interface ProjectPort {
   runtimeLoad(): RuntimeLoad;
   makeRoom(appSessionId: string): Promise<boolean>;
-  deliverReport(
-    appSessionId: string,
-    prompt: string,
-    isCurrent: () => boolean,
-  ): Promise<AutomationDeliveryReceipt>;
   get(appSessionId: string): SessionSummary | undefined;
   /** What each provider can run right now, so a spawn cannot name a model that is not there. */
   catalog(): Promise<ProviderStatus[]>;
@@ -83,6 +79,7 @@ export interface ProjectPort {
     prompt: string,
     isCurrent: () => boolean,
     now: boolean,
+    delivery?: SteeredReportDelivery,
   ): Promise<boolean>;
   rename(appSessionId: string, title: string): Promise<void>;
   /** Answers a question a thread is blocked on; false when it was already settled. */
@@ -244,15 +241,19 @@ export class ProjectService {
     const saved = await store.load();
     for (const project of saved) {
       project.launching = 0;
-      // Only a delivery caught mid-flight is uncertain, and only that needs a
-      // person to look before coordination goes on. Holding every project over
-      // a restart stopped them all silently: a thread would answer, its report
-      // would queue, and the lead would never be woken for it.
       if (project.delivery) {
-        project.delivery.state = 'uncertain';
-        project.paused = true;
-        delete project.leadStopped;
-        delete project.leadFailed;
+        // Replies are durable before reports queue; unread survives a lost push.
+        if (
+          project.delivery.state === 'sending' &&
+          project.delivery.messages.every((message) => message.kind === 'result')
+        )
+          delete project.delivery;
+        else {
+          project.delivery.state = 'uncertain';
+          project.paused = true;
+          delete project.leadStopped;
+          delete project.leadFailed;
+        }
       }
       owner.projects.set(project.id, project);
       for (const thread of project.threads) {
@@ -299,6 +300,7 @@ export class ProjectService {
           appSessionId: thread.appSessionId,
           title: thread.title || 'Untitled thread',
           waiting: thread.waiting,
+          ...(thread.unread ? { unread: true as const } : {}),
           state: status.state,
           ...(status.wait ? { wait: status.wait } : {}),
           ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
@@ -763,6 +765,15 @@ export class ProjectService {
     };
   }
 
+  async markRead(source: string, target: string): Promise<void> {
+    target = this.resolveThreadId(source, target);
+    const project = this.controlledProject(source, target);
+    const thread = requireThread(project, target);
+    if (!thread.unread) return;
+    delete thread.unread;
+    await this.save();
+  }
+
   listThreads(source: string, all = false) {
     this.requireOpen();
     const project = this.requireProjectFor(source);
@@ -774,6 +785,7 @@ export class ProjectService {
       if (
         !all &&
         (status.state === 'idle' || status.state === 'stopped') &&
+        !thread.unread &&
         !this.hasUndeliveredReport(project, thread.appSessionId) &&
         !queued
       ) {
@@ -786,6 +798,7 @@ export class ProjectService {
           title: thread.title,
           ownerId: thread.ownerAppSessionId,
           state: status.state,
+          ...(thread.unread ? { unread: true as const } : {}),
           ...(status.position ? { position: status.position } : {}),
           ...(status.waitReason ? { waitReason: status.waitReason } : {}),
           lastReply: thread.reply.replace(/\s+/g, ' ').trim().slice(0, 120),
@@ -1517,7 +1530,6 @@ export class ProjectService {
     delete project.leadFailed;
     const message = error instanceof Error ? error.message : String(error);
     project.error = message.slice(0, LEDGER_LIMITS.projectError);
-    if (project.delivery) project.delivery.state = 'uncertain';
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 

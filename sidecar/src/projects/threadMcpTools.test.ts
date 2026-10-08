@@ -75,7 +75,7 @@ test('thread_list stays compact for 86 threads and all returns the controlled in
     ok: true,
     threads: [],
     summary: '85 inactive threads; pass all: true to list them',
-    runtimeLoad: { live: 0, limit: 12 },
+    runtimeLoad: { live: 0, limit: 20 },
     todos: [],
   });
   const list = await call('lead0000-main', 'thread_list', { all: true });
@@ -139,6 +139,22 @@ test('thread ids accept unique scoped prefixes and reject ambiguity or foreign o
   );
 });
 
+test('thread_read clears unread durably without starting a runtime', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.threads[1].unread = true;
+  const h = await harness(t, [saved]);
+  registerProjectService(Promise.resolve(h.projects));
+  const before = await call('lead0000-main', 'thread_list');
+  assert.ok(Array.isArray(before.threads));
+  assert.equal(before.threads[0]?.unread, true);
+  const read = await call('lead0000-main', 'thread_read', { threadId: 'worker00-a' });
+  assert.deepEqual(read.replies, ['First reply']);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, undefined);
+  assert.deepEqual((await call('lead0000-main', 'thread_list')).threads, []);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.launched.length, 0);
+});
+
 test('todo_add keeps a lead follow-up and todo_done removes it durably', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
   const h = await harness(t, [recovered]);
@@ -191,7 +207,7 @@ test('thread_spawn reports a real queued start with its position and a matching-
   assert.equal(retry.state, 'queued');
   assert.equal(retry.position, 1);
   assert.equal(retry.waitReason, 'queued to start · 1st');
-  assert.deepEqual(retry.runtimeLoad, { live: 12, limit: 12 });
+  assert.deepEqual(retry.runtimeLoad, { live: 20, limit: 20 });
   assert.match(String(retry.note), /Queued to start/);
   assert.ok(String(retry.reuseNote).includes(`Parser (${String(first.threadId)})`));
   const list = await call(main, 'thread_list');
@@ -226,8 +242,8 @@ test('thread_spawn reports a real queued start with its position and a matching-
   const waiting = await call(main, 'thread_read', { threadId: retry.threadId });
   assert.deepEqual(waiting.wait, { kind: 'slot', position: 1 });
   assert.equal(waiting.position, 1);
-  assert.equal(waiting.waitReason, 'waiting for a free slot · 1st in line (12 running, limit 12)');
-  assert.deepEqual(waiting.runtimeLoad, { live: 12, limit: 12 });
+  assert.equal(waiting.waitReason, 'waiting for a free slot · 1st in line (20 running, limit 20)');
+  assert.deepEqual(waiting.runtimeLoad, { live: 20, limit: 20 });
 });
 
 test('cancelling a queued spawn removes its thread, plan link and reserved checkout', async (t) => {

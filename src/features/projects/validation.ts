@@ -73,6 +73,7 @@ function isThreadList(value: unknown): value is ProjectThread[] {
         text(thread.appSessionId, 200) &&
         text(thread.title, 120) &&
         typeof thread.waiting === 'boolean' &&
+        (thread.unread === undefined || thread.unread === true) &&
         typeof thread.state === 'string' &&
         ['working', 'queued', 'waiting', 'stopped', 'failed', 'idle'].includes(thread.state) &&
         (thread.wait === undefined || isThreadWait(thread.wait)) &&

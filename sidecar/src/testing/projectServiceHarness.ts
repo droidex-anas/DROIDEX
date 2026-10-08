@@ -111,15 +111,8 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
-    runtimeLoad: () => ({ live: state.capacity === 'busy' ? 12 : sessions.size, limit: 12 }),
+    runtimeLoad: () => ({ live: state.capacity === 'busy' ? 20 : sessions.size, limit: 20 }),
     makeRoom: () => Promise.resolve(state.capacity === 'free'),
-    deliverReport: async (id, prompt, isCurrent) => {
-      if (state.gate) await state.gate;
-      if (!isCurrent()) return { status: 'cancelled' };
-      if (!sessions.get(id)?.streaming) return { status: 'busy', retryOn: 'target' };
-      steered.push({ id, prompt, now: false });
-      return { status: 'accepted', settled: Promise.resolve() };
-    },
     awaitingApproval: (id) => state.awaitingApproval.has(id),
     isLive: (id) => sessions.has(id),
     catalog: async () => {
@@ -167,9 +160,12 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
       return { status: 'accepted', settled };
     },
     isAsking: (id, requestId) => asking.get(id) === requestId,
-    steer: async (id, prompt, isCurrent, now) => {
+    steer: async (id, prompt, isCurrent, now, delivery) => {
+      if (delivery && state.gate) await state.gate;
       if (!sessions.get(id)?.streaming || !isCurrent()) return false;
+      delivery?.accepted();
       steered.push({ id, prompt, now });
+      delivery?.acknowledged?.();
       // Send now stops the running turn, as the lifecycle's does.
       if (now) await streaming(id, false);
       return true;

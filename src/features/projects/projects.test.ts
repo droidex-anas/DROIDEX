@@ -15,7 +15,7 @@ const project: ProjectView = {
   launching: 0,
   plan: [{ id: '1', title: 'Port the client', threadAppSessionId: 'worker' }],
   todos: [],
-  runtimeLoad: { live: 0, limit: 12 },
+  runtimeLoad: { live: 0, limit: 20 },
   threads: [
     { appSessionId: 'main', title: 'Main', waiting: false, state: 'idle' },
     {
@@ -77,7 +77,7 @@ test('queued threads, wait reasons, load and due to-dos cross the bridge togethe
     const malformed = { ...snapshot, threads: [{ ...snapshot.threads[0], wait }] };
     assert.equal(wire({ type: 'projects.snapshot', projects: [malformed] }), null);
   }
-  snapshot.runtimeLoad = { live: 14, limit: 12 };
+  snapshot.runtimeLoad = { live: 22, limit: 20 };
   snapshot.todos = [{ id: 'todo', text: 'Review', after: 'worker', dueAt: 123, due: true }];
   assert.ok(wire({ type: 'projects.snapshot', projects: [snapshot] }));
   assert.equal(
@@ -90,7 +90,7 @@ test('queued threads, wait reasons, load and due to-dos cross the bridge togethe
   assert.equal(
     wire({
       type: 'projects.snapshot',
-      projects: [{ ...snapshot, runtimeLoad: { live: -1, limit: 12 } }],
+      projects: [{ ...snapshot, runtimeLoad: { live: -1, limit: 20 } }],
     }),
     null,
   );

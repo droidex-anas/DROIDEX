@@ -36,6 +36,7 @@ export interface ProjectThread {
   ownerAppSessionId?: string;
   title: string;
   waiting: boolean;
+  unread?: true;
   state: 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
   wait?: ThreadWait;
 }

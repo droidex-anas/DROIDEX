@@ -148,6 +148,7 @@ const project = z
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
           owedReport: text.optional(),
+          unread: z.literal(true).optional(),
           waiting: z.boolean(),
           queuedSpawn: z
             .object({

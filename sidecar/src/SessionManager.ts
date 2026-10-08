@@ -1,4 +1,4 @@
-import type { ScheduledTurnDelivery } from './sessionAutomationDelivery.js';
+import type { SteeredReportDelivery } from './SessionLifecycle.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
@@ -1268,7 +1268,7 @@ export class SessionManager {
     prompt: string,
     isCurrent: () => boolean,
     now = false,
-    delivery?: ScheduledTurnDelivery,
+    delivery?: SteeredReportDelivery,
   ): Promise<boolean> {
     return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now, delivery);
   }
