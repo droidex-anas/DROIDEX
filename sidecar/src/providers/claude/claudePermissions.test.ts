@@ -107,6 +107,7 @@ test('reopening Spec keeps plan mode even when Full access is selected', () => {
     new AbortController(),
     () => true,
     () => undefined,
+    () => 'high',
   );
   assert.equal(options.permissionMode, 'plan');
   assert.equal(options.resume, 'app-spec');
@@ -126,6 +127,7 @@ test("an Always allow narrower than its tool never becomes the CLI's rule for th
       isActive: () => true,
     },
     () => false,
+    () => 'off',
   );
   const suggestions: PermissionUpdate[] = [
     { type: 'addRules', rules: [{ toolName: 'tool' }], behavior: 'allow', destination: 'session' },

@@ -58,6 +58,7 @@ export function claudeCanUseTool(
   appSessionId: string,
   interactions: ProviderInteractions,
   isPlanning: () => boolean,
+  getAutonomy: () => Autonomy,
 ): CanUseTool {
   const decide = (
     toolName: string,
@@ -67,6 +68,15 @@ export function claudeCanUseTool(
     if (toolName === 'ExitPlanMode')
       return reviewPlan(appSessionId, input, interactions, isPlanning());
     if (toolName === 'AskUserQuestion') return askUserQuestion(input, interactions);
+    // A callback can arrive while the live mode control request is in flight.
+    // Auto classifier refusals and Spec still need their existing review path.
+    const level = getAutonomy();
+    const kind = permissionKind(toolName);
+    if (
+      !isPlanning() &&
+      (level === 'high' || (level === 'low' && (kind === 'edit' || kind === 'create')))
+    )
+      return Promise.resolve({ behavior: 'allow' });
     return approveTool(appSessionId, toolName, input, options, interactions);
   };
   return async (toolName, input, options): Promise<PermissionResult> => {

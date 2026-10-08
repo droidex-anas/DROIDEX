@@ -659,7 +659,7 @@ export class SessionManager {
         this.runtimeRetirement.arm();
         // A settled write is one of the states that made this session refuse a
         // turn, so a scheduled delivery waiting on it can be rearmed.
-        this.onSessionAvailable?.(appSessionId);
+        if (!this.autonomyMutationTails.has(appSessionId)) this.onSessionAvailable?.(appSessionId);
       },
       emitError: (error) => {
         this.emitError(error);
@@ -702,7 +702,17 @@ export class SessionManager {
         this.lineage.record(appSessionId, lineage);
       },
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
-      waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
+      waitForSettingsMutations: async (appSessionId) => {
+        do {
+          await Promise.all([
+            this.modelSettings.waitForMutations(appSessionId),
+            this.autonomyMutationTails.get(appSessionId),
+          ]);
+        } while (
+          this.modelSettings.hasActiveMutations(appSessionId) ||
+          this.autonomyMutationTails.has(appSessionId)
+        );
+      },
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       eventFlow: this.eventFlow,
       settleStreaming: (appSessionId, sourceSessionId) =>
@@ -711,7 +721,8 @@ export class SessionManager {
         this.runtimeRetirement.releaseOldestForCapacity(excludedAppSessionId),
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
-        this.modelSettings.hasActiveMutations(appSessionId),
+        this.modelSettings.hasActiveMutations(appSessionId) ||
+        this.autonomyMutationTails.has(appSessionId),
       onSessionAvailable: options.onSessionAvailable,
       onScheduledCapacityChanged: options.onScheduledCapacityChanged,
       context: this.context,
@@ -773,7 +784,8 @@ export class SessionManager {
       onScreenAppSessionIds: () => this.context.onScreenSessions(),
       hasUnsettledChildren: (id) => this.childSessions.hasUnsettledChildren(id),
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
-      hasPendingSettings: (id) => this.modelSettings.hasPending(id),
+      hasPendingSettings: (id) =>
+        this.modelSettings.hasPending(id) || this.autonomyMutationTails.has(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
@@ -1089,10 +1101,11 @@ export class SessionManager {
         return;
       case 'session.updateSettings':
         assertProviderUnchanged(cmd);
-        await this.updatePrimaryModel(cmd);
-        if (cmd.autonomy !== undefined) {
-          await this.setAutonomy(cmd.appSessionId, cmd.autonomy);
-        }
+        // Permission decisions cannot wait for a model change to finish the turn.
+        await Promise.all([
+          this.updatePrimaryModel(cmd),
+          cmd.autonomy !== undefined ? this.setAutonomy(cmd.appSessionId, cmd.autonomy) : undefined,
+        ]);
         if (cmd.interactionMode !== undefined) {
           await this.setInteractionMode(cmd.appSessionId, cmd.interactionMode);
         }
@@ -1864,6 +1877,9 @@ export class SessionManager {
     return next.finally(() => {
       if (this.autonomyMutationTails.get(appSessionId) === next) {
         this.autonomyMutationTails.delete(appSessionId);
+        this.runtimeRetirement.arm();
+        if (!this.modelSettings.hasActiveMutations(appSessionId))
+          this.onSessionAvailable?.(appSessionId);
       }
     });
   }

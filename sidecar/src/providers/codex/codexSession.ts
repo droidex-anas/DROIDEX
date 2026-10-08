@@ -66,7 +66,6 @@ export class CodexSession implements ProviderSession {
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
   private autonomy: Autonomy;
-  private turnAutonomy?: Autonomy;
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
@@ -238,7 +237,6 @@ export class CodexSession implements ProviderSession {
     const turn = new TurnStream();
     this.mapper.beginTurn();
     this.turn = turn;
-    this.turnAutonomy = this.autonomy;
     this.pendingInterrupt = false;
     this.interruptedTurnId = undefined;
     try {
@@ -262,18 +260,14 @@ export class CodexSession implements ProviderSession {
       if (this.turn === turn) {
         this.prompts.cancel();
         this.turn = undefined;
-        this.turnAutonomy = undefined;
         this.turnId = undefined;
       }
       this.pendingInterrupt = false;
     }
   }
 
-  // A typed turn takes the autonomy on its own `turn/start`. A turn Codex
-  // starts for a spoken request has none, so the thread is told as well:
-  // otherwise a chat turned down to ask-first would still act unattended when
-  // spoken to. This one does not swallow: the caller declines to publish a
-  // level the thread never took, and the session keeps the one it still has.
+  // Callbacks use this selection now; native permissions change next turn.
+  // Thread settings also cover turns Codex starts itself for spoken requests.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
     const previous = this.autonomy;
     this.autonomy = autonomy;
@@ -551,13 +545,27 @@ export class CodexSession implements ProviderSession {
     this.prompts.register(
       this.client,
       (itemId) => this.mapper.toolDetail(itemId),
-      (request) =>
-        !this.hasClosed &&
-        this.turnAutonomy === 'low' &&
-        this.turnId !== undefined &&
-        request.threadId === this.threadId &&
-        request.turnId === this.turnId &&
-        canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
+      (approval) => {
+        const request = approval.raw;
+        const turnId = this.turnId ?? this.delegatedTurnId;
+        if (
+          this.hasClosed ||
+          turnId === undefined ||
+          this.interruptedTurnId === turnId ||
+          request.threadId !== this.threadId ||
+          request.turnId !== turnId
+        )
+          return false;
+        if (this.autonomy === 'high') return true;
+        // Auto still asks for command escalations; only verified workspace
+        // edits can bypass an approval without Full access.
+        return (
+          (this.autonomy === 'low' || this.autonomy === 'medium') &&
+          approval.kind !== 'exec' &&
+          (!('grantRoot' in request) || request.grantRoot == null) &&
+          canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId))
+        );
+      },
     );
     // Codex can ask for things this build has no card for. They are refused at
     // the transport, and the chat says so: a silent refusal reads as the turn

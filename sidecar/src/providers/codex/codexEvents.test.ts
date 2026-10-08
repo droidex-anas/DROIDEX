@@ -245,7 +245,7 @@ test('thread start, resume and every turn carry the requested service tier inclu
   );
 });
 
-test('edits-only checks workspace paths and keeps the running turn permission snapshot', async () => {
+test('running Codex approvals use current autonomy and retain workspace edit checks', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'codex-permissions-'));
   const cwd = join(directory, 'workspace');
   mkdirSync(cwd);
@@ -305,7 +305,9 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
     assert.deepEqual(await approval('src/new.ts'), { decision: 'accept' });
     await first;
     await session.setAutonomy('off');
-    assert.deepEqual(await approval('still-this-turn.ts'), { decision: 'accept' });
+    assert.deepEqual(await approval('still-this-turn.ts'), { decision: 'cancel' });
+    await session.setAutonomy('low');
+    assert.deepEqual(await approval('accept-edits-now.ts'), { decision: 'accept' });
     for (const path of [
       '../outside',
       '.git/config',
@@ -325,7 +327,20 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
       }),
       { decision: 'cancel' },
     );
-    assert.equal(asked, 9);
+    assert.equal(asked, 10);
+    await session.setAutonomy('high');
+    assert.deepEqual(await approval('../full-access.ts'), { decision: 'accept' });
+    assert.deepEqual(
+      await requests.get('item/commandExecution/requestApproval')?.({
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        itemId: 'exec-full',
+        command: 'pwd',
+      }),
+      { decision: 'accept' },
+    );
+    assert.equal(asked, 10);
+    await session.setAutonomy('off');
     await stream.return(undefined);
     const nextStarted = new Promise<void>((resolve) => {
       markStarted = resolve;

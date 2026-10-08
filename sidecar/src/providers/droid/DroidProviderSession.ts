@@ -159,8 +159,15 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
+    const previous = this.permissions.autonomy;
+    // Off and edits-only share native Off, so callbacks own their distinction.
     this.permissions.autonomy = autonomy;
+    try {
+      await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
+    } catch (error) {
+      this.permissions.autonomy = previous;
+      throw error;
+    }
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {

@@ -388,6 +388,7 @@ test('Claude answers allow the tool with original question keys and structured s
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const input = {
     questions: [
@@ -435,6 +436,7 @@ test('Claude always-allow suppression prevents grant reuse, caching, and SDK rul
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const options = {
     signal: new AbortController().signal,

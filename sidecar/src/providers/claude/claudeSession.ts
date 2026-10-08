@@ -155,6 +155,7 @@ export class ClaudeSession implements ProviderSession {
           process.once('exit', onExit);
           process.once('close', onExit);
         },
+        () => this.permissions.selection(),
       ),
     }) as SteeringQuery;
     this.initialized = this.query.initializationResult().then(

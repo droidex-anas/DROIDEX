@@ -40,9 +40,17 @@ export class ClaudePermissionModes {
       await initialized;
       this.requireOpen();
       const { autonomy, planning } = next();
-      if (!planning || !this.planning) await query.setPermissionMode(this.mode(autonomy, planning));
-      this.requireOpen();
+      const previous = this.autonomy;
+      // Permission callbacks must see the choice before the CLI acknowledges it.
       this.autonomy = autonomy;
+      try {
+        if (!planning || !this.planning)
+          await query.setPermissionMode(this.mode(autonomy, planning));
+        this.requireOpen();
+      } catch (error) {
+        this.autonomy = previous;
+        throw error;
+      }
       this.planning = planning;
       this.noteFallback();
     });
