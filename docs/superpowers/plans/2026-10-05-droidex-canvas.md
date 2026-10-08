@@ -1214,6 +1214,89 @@ Settled by 05e (landed in `src/components/ProductSwitcher.tsx`, `src/features/ca
 - [ ] Add integration behavior: create a frame through the real bridge owner, click its CTA, pan/zoom and expand the pane, then confirm the CTA stays changed while its preview remains mounted. Close/reopen the pane and confirm source/geometry survive; preview-local React state may reset by contract. Start a new chat with this canvas and an ordinary new chat and assert their attachments differ as specified.
 - [ ] Run focused geometry/state/utility tests and `rtk proxy npx playwright test tests/integration/canvas.spec.ts`. Manually inspect light/dark placement with a real chat, narrow utility pane and expanded board. The working create→build→click→reload flow is milestone one, not the final release.
 
+Settled by 05b (`canvas/05b-board-geometry-and-gestures`, landed in
+`src/features/canvas/{canvasGeometry.ts,boardCoordinates.ts,useBoardGestures.ts,CanvasBoard.tsx}`):
+
+- One world-to-screen transform owns the board. `canvasGeometry.ts` exports `screenToCanvas`, `canvasToScreen`, `zoomAtPoint` (clamped 0.1–4), `wheelZoomScale`, `fitFrames`, `moveRect` and `interpolateViewport`; the board applies it as a single `translate()/scale()` on one world layer with `transform-origin: 0 0`, and frames are positioned at world coordinates inside it. `boardCoordinates.ts` converts client points and pixel deltas at the input boundary using the board's bounding rect versus offset size, so app CSS zoom at font sizes 13/14/16 does not change anchoring or 1:1 movement.
+- Fit and focus are the same call. `fitFrames(rects, viewportSize)` centres the union of the rects with 48 px of screen padding and never magnifies past 100%. 5d's public entry point is `CanvasBoardHandle.focusFrame(frameId)`, exposed through the board's React ref; it fits that frame's acknowledged rect and gives keyboard focus to the board. The board fits once before the user has navigated.
+- `useBoardGestures.ts` owns pointer capture, coalesced movement and transient layout. Moving never commits; release sends one `arrangeFrames` with the starting `expectedLayoutVersion`. Escape, pointer cancellation, capture loss, window blur and focus leaving the board's scope cancel through that owner, release capture and restore acknowledged geometry without another write. Focus moving to a control inside the board stays in scope. The same owner holds the Space pan modifier and releases it on either kind of focus loss, with or without a live pointer, because Space released in another app sends the board no keyup.
+- Released drags have separate per-frame holds keyed by the layout version they were sent against. A successful arrange reply alone does not release a hold; a newer snapshot for that frame does, whatever rect it acknowledges. Hold applicability is derived during render, before lifecycle pruning. Cancellation of a re-drag drops its earlier unacknowledged hold; a current rejection drops its own hold and reports the failure. Superseded rejections cannot report stale errors.
+- Plain wheel and two-finger scroll pan with both axes; pinch (`ctrlKey` trackpad wheel) and ctrl/cmd+wheel zoom under the pointer. Pixel, line and page wheel units are normalized before geometry. A gesture stays open until 140 ms of quiet, independently of pan versus zoom. Fit suppresses the pre-Fit gesture until that quiet window ends, independently of its animation or reduced motion. The Select input overlay's hit-test flip waits for quiet and then the frame that paints it.
+- 5a must replace `CanvasBoardMount({ frameCount })` directly with `CanvasBoard({ snapshot, onArrangeFrames })`. Bind `onArrangeFrames` to `(input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, snapshot.canvasId, input)`; preserve the empty invitation, key by canvas identity and retain the board across resize/expansion. No compatibility adapter is needed.
+- `capturePointer` is the hook point 5c toggles for Select and Interact; the board renders the transparent per-frame overlay and owns when flipping it is safe, and implements no modes. Frame headers are the drag handle in both modes and sit outside the overlay. Frame bodies render the `waitingLabel` placeholder until 5c mounts `DesignPreview` under the overlay.
+- Programmatic fit and focus animate 220 ms on `cubic-bezier(0.22, 1, 0.36, 1)`, solved in JS so the viewport stays the one authority; reduced motion lands immediately. Drag and pan coalesce into one transform per animation frame with the pointer followed 1:1 and no easing behind the hand.
+- The zoom readout is bottom-left and Fit bottom-right in the existing soft `bg-droid-elevated` pill. The board has a low-alpha inset keyboard-focus ring and arrow-key pan when `onNudgeSelection` is absent; 5c supplies that callback only with a selection and owns nudging. Descendant controls keep their keyboard input. Permanent `will-change: transform` was removed, not replaced with another compositing hint.
+- `tests/smoke/electronCanvasBoard.smoke.spec.ts` exercises the real board in the existing Playwright Canvas runner, with `page.clock` and controlled arrange replies. The real Fit-click regression fails against `c0974cdf` and passes against `c98acf67`; retained cases cover UI zoom, focus loss including a Space hold left latched by window blur, independent holds, re-drag cancellation, obsolete rejections, trailing wheels, wheel units, keyboard pan and public frame focus. Initial-render unit tests do not claim gesture coverage. The board remains unmounted in this branch's production entry; 5a must rerun bundle budgets after mounting it lazily, and full app/webview composition and 50-frame performance remain integration verification.
+- Left to 5c and 5d: Select/Interact and the mode that drives `capturePointer`, selection, multiselect, resize, align/distribute, keyboard nudge, the frame context menu, the live `DesignPreview` slots, and the navigator.
+
+Settled by 05c (`canvas/05c-frames-selection-previews`, composed onto the
+reviewed 05b owners and landed in
+`src/features/canvas/{DesignFrame.tsx,BoardControls.tsx,CanvasPaneStates.tsx,previewSlots.ts,useBoardGestures.ts,useBoardViewport.ts,canvasGeometry.ts,canvasState.ts,CanvasBoard.tsx,CanvasWorkspace.tsx,previewLabels.ts}`):
+
+- The names 5d consumes are in `canvasState.ts`: `BoardInteraction` holds `mode`
+  (`'select' | 'interact'`), `selectedFrameIds` (in pick order) and
+  `interactedFrameId`; `reduceBoardInteraction` is the only way to change them;
+  `SELECT_MODE` is the resting value. `CanvasBoardHandle.focusFrame(designId)`,
+  which 05b established and `CanvasBoard.tsx` still exports, is how a sibling
+  moves the board — the navigator calls it through the board's `ref`, as the pane
+  already does for an opener's `frameId`. `CanvasWorkspace` owns mode and
+  selection and passes `interaction` / `onInteractionChange` down, so the toolbar
+  and the navigator read the same values the board does without reaching into it.
+- Spec §4's two steps out of Interact are literal: Escape leaves Interact and
+  keeps the selection, Escape again clears it, and an Escape with a gesture in
+  flight is spent cancelling that gesture instead. Picking while interacting
+  moves Interact to the frame picked; picking several leaves Interact, because
+  it drives one frame. Nothing may point at a design the canvas has lost.
+- Slot policy (spec §11, at most four live previews): the interacted frame
+  first, then selected frames that are visible, then frames already live and
+  still visible, then the rest of what is visible, nearest the board's centre
+  first. Keeping a mounted preview mounted outranks mounting a nearer one, so
+  panning does not churn guests. A frame that held a slot and lost it says so
+  rather than silently reloading, because the design restarts from its own
+  beginning; `unmountedLabel` carries that line and the honest waiting line for
+  a frame with nothing built yet. `visibleDesignIds` is the only input that
+  measures the board, so the policy itself is pure.
+- The frame header is the keyboard's way onto the board: it is a `role="button"`
+  tab stop reporting `aria-pressed`, Enter picks it and Enter on the frame
+  already picked starts interacting, Space toggles it in a multiple selection,
+  and the board reads arrows, Escape and Enter from whichever header holds focus.
+  A control, an input or an editor inside the board keeps its own keys. The
+  frame body is never board background either: in Interact the pointer belongs
+  to the preview, and in Select the overlay above it has already decided what
+  the press meant.
+- Every layout write — a released drag or resize, a nudge, an align, a
+  distribute — is one `arrangeFrames` carrying the `expectedLayoutVersion` each
+  frame was read at, and `useBoardGestures` is its single owner, because 05b's
+  review left the deferred holds and error settlement with the hook that owns
+  pointer capture. 05c's separate `useFrameLayout` was therefore not taken: its
+  `reducePendingRects` dropped 05b's reviewed suppression of an obsolete refusal,
+  so the hook's per-frame holds, mutation-ID identity and operation counter stand
+  as the renderer's side of the CAS. A commit is drawn until the sidecar
+  publishes a newer layout version for that frame; a refusal restores only the
+  frames it still describes and names the failure only when no newer operation
+  has started; a frame the canvas has lost keeps nothing. Frames an operation did
+  not actually move are left out of the write.
+- Nudge is 1 world unit, 10 with Shift, in world units rather than screen
+  pixels so a nudge means the same thing at every zoom. Arrows pan the board by
+  32 board-local pixels only while nothing is selected, which is the contract
+  05b's `onNudgeSelection` prop expressed; with `interaction` now a board prop
+  the selection itself is the signal, so that prop is gone and the board writes
+  the nudge through the layout owner that holds the drawn rects. Resize is east,
+  south and southeast, clamped to the dimensions the sidecar accepts (120 to
+  8192). Align uses the selection's own bounds and never resizes; distribute
+  equalises the gaps between the outermost two and leaves fewer than three
+  frames alone.
+- `CanvasBoard` owns no state: the viewport is `useBoardViewport`, the hand's
+  gesture and every layout write `useBoardGestures`, mode and selection
+  `canvasState`, slots `previewSlots`, the strip `BoardControls`.
+  `useBoardViewport` is 05b's reviewed viewport moved out of `CanvasBoard`
+  unchanged, so `boardCoordinates` still normalises app CSS zoom and pixel/line/
+  page wheel units, the wheel and pinch zoom rates stay separate, and Fit's
+  quiet-window suppression still outlives its own animation and holds under
+  reduced motion. 05c's single-rate `wheelZoomScale` and `panBy` were not taken
+  for the same reason. `CanvasPaneStates` took the pane's non-board states out of
+  `CanvasWorkspace`; every production file here is under 500 lines.
+
 ## Task 6: Canvas artifacts in every chat
 
 **Subtasks (one branch and PR each, merged in order):**
@@ -1682,6 +1765,86 @@ Direct pointer input bypasses easing. First ready content crossfades without a m
 - [ ] Seed 50 mixed frames and run a repeatable drag→zoom→focus→interact→resize→variants sequence on recorded hardware. Log p95 frame time, main-thread long tasks, live-preview count, memory after close/reopen and idle animation work. Require four-or-fewer live previews, no idle Canvas loop and targets from spec §11; investigate misses rather than hiding them with a larger budget.
 - [ ] Run `rtk proxy npm run perf:replay -- --scenario idle`, then `streaming`, `multi-agent` and `session-switch`; compare with `origin/main` using existing `perf:compare`, `perf:report` and `perf:gates`. Run `quality:bundle-budgets` and compare startup/lazy chunk size. Canvas closed must not load the compiler, kit source or preview bundle into the renderer's startup path.
 - [ ] Watch both supplied videos alongside the local app. Check pending bloom, ready reveal, toolbar positioning, variant placement, cursor-anchored zoom and pane expansion. Record the app in light and dark plus reduced motion. Visual acceptance is actual observed behavior, not a passing build or an animation screenshot.
+
+
+**Settled by 11a** (landed in `src/features/canvas/{canvasMotion.ts,useCanvasMotion.ts,PendingBloom.tsx}`
+and the `canvas-bloom` keyframes in `src/index.css`). The exported surface, in full:
+
+```ts
+// canvasMotion.ts — no React, no DOM.
+canvasMotion: CanvasMotion;
+motionFor(reducedMotion: boolean): CanvasMotion;
+canvasActivity: Readonly<Record<CanvasActivityStage, { label: string; bloom: boolean }>>;
+activityStageOf(status: CanvasBuildState['status']): CanvasActivityStage;
+type CanvasActivityStage = 'queued' | 'writing' | 'building' | 'ready' | 'failed' | 'cancelled';
+interface CanvasMotion {
+  focusMs; paneMs; popoverMs; frameArrivalMs; readyMs; presenceMs; busyLoopMs;
+  popoverTravelPx; frameArrivalTravelPx;
+  ease: readonly [number, number, number, number];
+  easeCss: string;
+}
+
+// useCanvasMotion.ts
+useCanvasMotion(): CanvasMotion;
+
+// PendingBloom.tsx
+PendingBloom(props: { stage: CanvasActivityStage; visible: boolean; motion: CanvasMotion }): JSX;
+```
+
+- **One token object, one preference read.** `canvasMotion` holds the §11 timings plus the two
+  travel distances the table caps (`popoverTravelPx` 4, `frameArrivalTravelPx` 8) and the easing
+  twice, as `ease` for a framer-motion `transition` and `easeCss` for a CSS shorthand.
+  `motionFor(reducedMotion)` returns the reduced variant, which is the same object shape with
+  every `*Ms` and `*Px` token at zero, so a component writes `duration: motion.focusMs / 1000`
+  and gets immediate behavior without a conditional. `useCanvasMotion()` is the renderer entry
+  point and reads framer-motion's `useReducedMotion`, the app's existing reader; an unread
+  preference means full motion. Pan, drag and resize have no token on purpose: direct pointer
+  input stays 1:1 and never consults this module.
+- **Stages are the event vocabulary.** `CanvasActivityStage` is exactly `queued | writing |
+  building | ready | failed | cancelled`, and `canvasActivity` maps each to its label and
+  whether the bloom runs (`writing` and `building` only). There is no `verifying`.
+  `activityStageOf` is the whole bridge from the wire to that vocabulary: a build's `pending`
+  is `queued`, every other status keeps its name, and `writing` is unreachable from a build
+  state on purpose — see the presence note below.
+- **The bloom owns no timer.** `PendingBloom` is a CSS animation whose duration, per-dot delay
+  and `animation-play-state` come from the tokens and a `visible` prop, so an offscreen frame
+  pauses and a settled or reduced-motion frame drops the animation class and renders the stage
+  label over static dots. A `prefers-reduced-motion` rule beside the keyframes repeats that
+  under CSS, so a caller that passes the wrong tokens still cannot make the dots move. The
+  existing `html[data-window-hidden='true']` rule covers a hidden window. The component takes
+  resolved tokens as a prop rather than calling the hook, which keeps it pure and lets the
+  static reduced-motion render be asserted directly.
+- **Presence has no event source yet, so 11a ships no presence UI.** `presenceMs` (140 ms, zero
+  under reduced motion) is the token the spec's agent-presence row asks for, but nothing on the
+  Canvas wire names an actor or a tool target: `CanvasChange` and `CanvasFrame` carry build
+  state only. Inventing a cursor or a `writing` badge from build state would be exactly the
+  fake progress §11 forbids, so the actor label, the 140 ms interpolation and the reduced-motion
+  static badge land with whichever task first carries a real actor event (agent tool target,
+  user source edit) to the renderer. `activityStageOf` is written so that task adds `writing`
+  by passing an actor fact, not by reinterpreting a build.
+
+**Consumers wired by the board composition** (11a stays unticked: presence, the artifact card
+and the pane transition are still outstanding):
+
+- Board fit and focus read `focusMs` and `ease`. `useBoardViewport` evaluates the token's own
+  cubic-bezier control points rather than restating the curve, and a zero `focusMs` is how
+  reduced motion asks for an immediate fit, so there is no second preference read.
+- A frame arriving uses `frameArrivalMs`/`frameArrivalTravelPx`, and the first working preview
+  crossfades on `readyMs`. Both are attached by a class whose `animation-name` lives in
+  `index.css` beside `canvas-bloom`, with duration, easing and travel set inline from the tokens;
+  zeroed tokens attach no animation, and a `prefers-reduced-motion` rule holds the same line.
+- The board's align/distribute strip reveals on `popoverMs`/`popoverTravelPx`.
+- `activityStageOf` and `PendingBloom` are inside the frame, with `visible` taken from the same
+  `visibleDesignIds` query that hands out live preview slots, so an off-screen frame's dots pause.
+  A frame with nothing built shows `Queued` or `Building`; `writing` is still unreachable, and a
+  failed or cancelled frame gets its existing sentence rather than a stage.
+
+**Still outstanding:**
+
+- `canvas/6a` artifact card: `readyMs` for the inline thumbnail reveal and `popoverMs` for the
+  card's own controls.
+- `paneMs` for pane expand/collapse, which belongs to the utility pane rather than the board.
+- Presence: `presenceMs` still has no actor event to interpolate toward, so no presence UI ships.
 
 ## Task 12: Full acceptance, documentation and implementation handoff
 

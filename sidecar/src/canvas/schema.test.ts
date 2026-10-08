@@ -418,6 +418,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_02',
       ok: false,
+      error: { code: 'unknown_chat', message: 'Open a saved chat and try again.' },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_02',
+      ok: false,
       error: { code: 'stale_revision', message: 'Reselect the element.' },
     },
     { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },

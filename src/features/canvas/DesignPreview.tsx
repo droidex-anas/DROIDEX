@@ -3,8 +3,7 @@
 // labeled surface, and a failed build shows its diagnostics above the last
 // revision that still works.
 //
-// Task 5 owns the board, the live-preview slots and the real Retry; this
-// component owns one frame and reports only bounded preview facts upward.
+// This component owns one guest and reports only bounded preview facts upward.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -15,6 +14,7 @@ import {
 import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
+import { useCanvasMotion } from './useCanvasMotion';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame, PreviewArtifact } from './protocol';
 
 export interface DesignPreviewProps {
@@ -140,6 +140,7 @@ export function PreviewGuestFrame({
   diagnostics: CanvasDiagnostic[];
   onResize: DesignPreviewProps['onResize'];
 }) {
+  const motion = useCanvasMotion();
   const host = useRef<HTMLDivElement>(null);
   const resized = useRef(onResize);
   resized.current = onResize;
@@ -266,10 +267,32 @@ export function PreviewGuestFrame({
   }, [canvasId, designId, revisionId, generation, html]);
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
+  const isReady = phase === 'ready';
+  const transition =
+    isReady && motion.readyMs > 0
+      ? `opacity ${String(motion.readyMs)}ms ${motion.easeCss}`
+      : undefined;
   return (
-    <div className="flex h-full w-full flex-col gap-2">
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-droid-bg">
-        <div ref={host} className="h-full w-full" hidden={lost !== null} />
+    <div data-preview-phase={phase} className="flex h-full w-full flex-col gap-2">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl bg-droid-bg">
+        <div
+          ref={host}
+          className="h-full w-full"
+          hidden={lost !== null}
+          style={{
+            opacity: isReady ? 1 : 0,
+            transition,
+          }}
+        />
+        {lost === null && (
+          <div
+            aria-hidden={isReady}
+            className="pointer-events-none absolute inset-0"
+            style={{ opacity: isReady ? 0 : 1, transition }}
+          >
+            <PreviewPlacard label="Loading this preview…" />
+          </div>
+        )}
         {lost ? <PreviewPlacard label={lostLabel(lost)} /> : null}
       </div>
       {showingRevisionId ? (

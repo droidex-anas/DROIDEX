@@ -1,19 +1,19 @@
-// The Canvas tab of the utility pane. It shows a named canvas when Open supplies
-// one; otherwise it reads and watches the chat's attachment.
-// Opening it only ever reads: no canvas is minted and no build is started until
-// the user presses Create (spec §4, §6).
-//
-// The board, frames, gestures, navigator and toolbar mount in the body below
-// (Tasks 5b–5e); this file owns the pane's lifecycle, its empty state, and the
-// slot the source drawer fills (Task 8c).
-
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
-import { LayoutTemplate, Spinner } from '@droidex/icons';
+import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
+import './canvasAnimations.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
-import { useStoreDispatch } from '../../hooks/useStore';
 import { canvasClient as canvas } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
+import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
+import { DesignPreview } from './DesignPreview';
+import {
+  CanvasAction,
+  CanvasEmptyState,
+  CanvasInvitation,
+  CanvasNote,
+  CanvasPlate,
+  CanvasStatus,
+} from './CanvasPaneStates';
 import {
   acknowledgeAttachment,
   attachCanvasToChat,
@@ -22,6 +22,8 @@ import {
 } from './canvasChats';
 import {
   initialCanvasPaneState,
+  SELECT_MODE,
+  type BoardInteraction,
   openSourceFrame,
   openSourcePanel,
   reduceCanvasPane,
@@ -29,12 +31,15 @@ import {
   type CanvasPaneState,
 } from './canvasState';
 import { CanvasSourceSlot } from './CanvasSourceSlot';
-import type { CanvasFrame, CanvasSummary } from './protocol';
+import type { ArrangeFramesInput, CanvasSnapshot } from './protocol';
+
+const readArtifact = canvas.readArtifact.bind(canvas);
 
 export function CanvasWorkspace({
   appSessionId,
   canvasId,
   namedCanvasId,
+  frameId,
   isExpanded,
   onToggleExpanded,
   onAttachmentChange,
@@ -44,6 +49,8 @@ export function CanvasWorkspace({
   canvasId: string | null;
   /** An explicit Open target, viewed without moving the chat's attachment. */
   namedCanvasId?: string;
+  /** The frame the opener meant, focused once the board has it. */
+  frameId?: string;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onAttachmentChange: (appSessionId: string, canvasId: string | null) => void;
@@ -108,6 +115,28 @@ export function CanvasWorkspace({
     });
   }, [watched]);
 
+  // Mode and selection belong to the canvas on screen, so showing another one
+  // starts from Select with nothing picked.
+  const [interactionCanvasId, setInteractionCanvasId] = useState(watched);
+  const [interaction, setInteraction] = useState(SELECT_MODE);
+  if (interactionCanvasId !== watched) {
+    setInteractionCanvasId(watched);
+    setInteraction(SELECT_MODE);
+  }
+
+  // The opener's frame is focused once the board is up, and only once per
+  // target: re-running it on every snapshot would drag the viewport back while
+  // the user was reading somewhere else.
+  const boardRef = useRef<CanvasBoardHandle | null>(null);
+  const focused = useRef<string | null>(null);
+  useEffect(() => {
+    if (frameId === undefined || watched === null) return;
+    const target = `${watched}:${frameId}`;
+    if (focused.current === target || !boardRef.current) return;
+    focused.current = target;
+    boardRef.current.focusFrame(frameId);
+  }, [frameId, watched, state]);
+
   /**
    * Starts the canvas this chat is owed, or replays the one it already owes:
    * `canvasChats` keeps the create mutation ID and the attach target, so Try
@@ -156,6 +185,10 @@ export function CanvasWorkspace({
       )}
       <CanvasBody
         state={state}
+        appSessionId={appSessionId}
+        interaction={interaction}
+        onInteractionChange={setInteraction}
+        boardRef={boardRef}
         onChoose={chooseCanvas}
         onAttachOwed={attachOwed}
         onRetry={() => {
@@ -180,12 +213,20 @@ export function CanvasWorkspace({
 
 function CanvasBody({
   state,
+  appSessionId,
+  interaction,
+  onInteractionChange,
+  boardRef,
   onAttachOwed,
   onChoose,
   onRetry,
   onOpenSource,
 }: {
   state: CanvasPaneState;
+  appSessionId: string;
+  interaction: BoardInteraction;
+  onInteractionChange: (next: BoardInteraction) => void;
+  boardRef: RefObject<CanvasBoardHandle | null>;
   onAttachOwed: () => void;
   onChoose: (canvasId: string) => Promise<void>;
   onRetry: () => void;
@@ -215,256 +256,62 @@ function CanvasBody({
     case 'unattached':
       return <CanvasEmptyState error={state.error} onCreate={onAttachOwed} onChoose={onChoose} />;
     case 'ready':
-      return <CanvasBoardMount frames={state.snapshot.frames} onOpenSource={onOpenSource} />;
+      return (
+        <CanvasBoardMount
+          appSessionId={appSessionId}
+          snapshot={state.snapshot}
+          interaction={interaction}
+          onInteractionChange={onInteractionChange}
+          boardRef={boardRef}
+          onOpenSource={onOpenSource}
+        />
+      );
   }
 }
 
 /**
- * Where `CanvasBoard` mounts in 5b. Until then the pane states what the
- * snapshot subscription is holding rather than drawing a board that is not here,
- * and each frame offers the Source action the toolbar takes over in 5d.
+ * The board, bound to the canvas it is showing. A canvas whose frames were all
+ * deleted presents the invitation instead (spec §4), because an empty board is
+ * not an answer to "what do I do here".
  */
 function CanvasBoardMount({
-  frames,
+  appSessionId,
+  snapshot,
+  interaction,
+  onInteractionChange,
+  boardRef,
   onOpenSource,
 }: {
-  frames: readonly CanvasFrame[];
+  appSessionId: string;
+  snapshot: CanvasSnapshot;
+  interaction: BoardInteraction;
+  onInteractionChange: (next: BoardInteraction) => void;
+  boardRef: RefObject<CanvasBoardHandle | null>;
   onOpenSource: (designId: string) => void;
 }) {
+  const { canvasId } = snapshot;
+  const arrangeFrames = useCallback(
+    (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
+    [appSessionId, canvasId],
+  );
+
   return (
     <div data-canvas-board className="min-h-0 flex-1">
-      {frames.length === 0 ? (
+      {snapshot.frames.length === 0 ? (
         <CanvasInvitation />
       ) : (
-        <CanvasPlate title={`${designCountLabel(frames.length)} on this canvas`}>
-          <CanvasNote>
-            Ask your agent in the composer to change one of them, or to design something new.
-          </CanvasNote>
-          <ul className="-mx-1.5 flex flex-col gap-0.5">
-            {frames.map((frame) => (
-              <li key={frame.designId}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenSource(frame.designId);
-                  }}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-                >
-                  <span className="min-w-0 truncate">{frame.name}</span>
-                  <span className="shrink-0 text-[11px] text-droid-text-muted">Source</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </CanvasPlate>
+        <CanvasBoard
+          ref={boardRef}
+          snapshot={snapshot}
+          onOpenSource={onOpenSource}
+          onArrangeFrames={arrangeFrames}
+          interaction={interaction}
+          onInteractionChange={onInteractionChange}
+          renderPreview={(frame) => (
+            <DesignPreview canvasId={canvasId} frame={frame} readArtifact={readArtifact} />
+          )}
+        />
       )}
     </div>
   );
-}
-
-// Starting points for a canvas with nothing on it. Each one seeds the chat's
-// own composer; nothing is sent, so the user can keep typing or press Enter.
-const EXAMPLE_REQUESTS = [
-  'Design a settings page with a theme toggle',
-  'Design a pricing card with three tiers',
-  'Design a dashboard with a usage chart',
-];
-
-/**
- * The empty state from spec §4: the agent does the designing, so the example
- * requests lead and anything the user can do by hand follows them.
- */
-function CanvasInvitation({ children }: { children?: ReactNode }) {
-  const dispatch = useStoreDispatch();
-  return (
-    <CanvasPlate title="Ask your agent to design something">
-      <CanvasNote>
-        Describe a screen, a component or a small app and it is designed on this canvas.
-      </CanvasNote>
-      <ul className="-mx-1.5 flex flex-col gap-0.5">
-        {EXAMPLE_REQUESTS.map((request) => (
-          <li key={request}>
-            <button
-              type="button"
-              onClick={() => {
-                dispatch({ type: 'SEED_COMPOSER', text: request });
-              }}
-              className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-            >
-              <span className="shrink-0 text-droid-accent opacity-0 transition-opacity group-hover:opacity-100">
-                &gt;
-              </span>
-              <span className="min-w-0 flex-1">{request}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {children}
-    </CanvasPlate>
-  );
-}
-
-function CanvasEmptyState({
-  error,
-  onCreate,
-  onChoose,
-}: {
-  error: string;
-  onCreate: () => void;
-  onChoose: (canvasId: string) => Promise<void>;
-}) {
-  const [saved, setSaved] = useState<SavedCanvases | null>(null);
-
-  if (saved) {
-    return (
-      <SavedCanvasList
-        saved={saved}
-        onChoose={onChoose}
-        onBack={() => {
-          setSaved(null);
-        }}
-      />
-    );
-  }
-
-  return (
-    <CanvasInvitation>
-      {error && <CanvasFailure>{error}</CanvasFailure>}
-      <div className="flex gap-1.5">
-        <CanvasAction label="Create canvas" onClick={onCreate} />
-        <CanvasAction
-          label="Open saved canvas"
-          onClick={() => {
-            setSaved({ status: 'loading' });
-            canvas
-              .listCanvases()
-              .then((summaries) => {
-                setSaved({ status: 'listed', summaries });
-              })
-              .catch((failure: unknown) => {
-                setSaved({ status: 'failed', message: canvasMessage(failure) });
-              });
-          }}
-        />
-      </div>
-    </CanvasInvitation>
-  );
-}
-
-type SavedCanvases =
-  | { status: 'loading' }
-  | { status: 'listed'; summaries: CanvasSummary[] }
-  | { status: 'failed'; message: string };
-
-function SavedCanvasList({
-  saved,
-  onChoose,
-  onBack,
-}: {
-  saved: SavedCanvases;
-  onChoose: (canvasId: string) => Promise<void>;
-  onBack: () => void;
-}) {
-  const [attaching, setAttaching] = useState(false);
-
-  return (
-    <CanvasPlate title="Saved canvases">
-      {saved.status === 'loading' && <CanvasStatusLine label="Reading saved canvases…" />}
-      {saved.status === 'failed' && <CanvasFailure>{saved.message}</CanvasFailure>}
-      {saved.status === 'listed' &&
-        (saved.summaries.length === 0 ? (
-          <CanvasNote>Nothing has been designed yet. Create a canvas to start one.</CanvasNote>
-        ) : (
-          <ul className="-mx-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
-            {saved.summaries.map((summary) => (
-              <li key={summary.canvasId}>
-                <button
-                  type="button"
-                  disabled={attaching}
-                  onClick={() => {
-                    setAttaching(true);
-                    // The pane reports the outcome: a failure leaves this chat
-                    // owing that canvas, which is what its recovery replays.
-                    void onChoose(summary.canvasId);
-                  }}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-droid-accent/15 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-                >
-                  <span className="truncate text-[13px] text-droid-text">{summary.name}</span>
-                  <span className="shrink-0 text-[11px] text-droid-text-muted">
-                    {designCountLabel(summary.designCount)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ))}
-      <CanvasAction label="Back" onClick={onBack} />
-    </CanvasPlate>
-  );
-}
-
-// Controls on the card take a low-alpha accent tint rather than the elevated
-// rung: a dark theme resolves `raised` to that same rung, so an elevated fill
-// would leave them looking like plain text.
-
-/** The calm centred card every pane state without a board sits on. */
-function CanvasPlate({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex h-full min-h-0 items-center justify-center px-5 pb-[6vh]">
-      <div className="flex w-full max-w-[320px] flex-col gap-3 rounded-2xl bg-droid-raised px-5 py-5 shadow-droid">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-droid-accent/10 text-droid-text-muted">
-            <LayoutTemplate className="h-4 w-4" />
-          </span>
-          <h2 className="min-w-0 text-[13px] font-medium text-droid-text">{title}</h2>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function CanvasNote({ children }: { children: ReactNode }) {
-  return <p className="text-[12px] leading-relaxed text-droid-text-secondary">{children}</p>;
-}
-
-function CanvasFailure({ children }: { children: ReactNode }) {
-  return (
-    <p role="alert" className="text-[12px] leading-relaxed text-droid-red">
-      {children}
-    </p>
-  );
-}
-
-function CanvasAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex-1 rounded-xl bg-droid-accent/10 px-3 py-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-    >
-      {label}
-    </button>
-  );
-}
-
-function CanvasStatus({ label }: { label: string }) {
-  return (
-    <div className="flex h-full items-center justify-center px-5">
-      <CanvasStatusLine label={label} />
-    </div>
-  );
-}
-
-function CanvasStatusLine({ label }: { label: string }) {
-  return (
-    <p role="status" className="flex items-center gap-2 text-[12px] text-droid-text-muted">
-      <Spinner size={14} className="shrink-0 motion-safe:animate-spin-slow" />
-      {label}
-    </p>
-  );
-}
-
-function designCountLabel(count: number): string {
-  return count === 1 ? '1 design' : `${String(count)} designs`;
 }

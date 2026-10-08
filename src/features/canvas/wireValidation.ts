@@ -14,6 +14,7 @@ const ERROR_CODES = new Set([
   'build_timeout',
   'capture_unavailable',
   'scope_expired',
+  'unknown_chat',
   'storage_failed',
   'stale_revision',
   'stale_reference',

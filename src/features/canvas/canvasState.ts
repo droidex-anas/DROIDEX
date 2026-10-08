@@ -1,9 +1,3 @@
-// What the Canvas pane is showing for one chat. The sidecar owns the canvas and
-// `client.ts` owns catching a board up with its change sequence, so this holds
-// only the projection the pane renders. Viewport, selection and inspector state
-// belong to the board (Task 5b onwards); the root store learns nothing but the
-// canvas the chat ended up attached to.
-
 import type { CanvasFrame, CanvasSnapshot } from './protocol';
 
 export type CanvasPaneState =
@@ -128,4 +122,121 @@ function keptSourceDesignId(state: CanvasPaneState, snapshot: CanvasSnapshot): s
   const open = state.status === 'ready' ? state.sourceDesignId : null;
   if (open === null) return null;
   return snapshot.frames.some((frame) => frame.designId === open) ? open : null;
+}
+
+/**
+ * Spec §4: Select gives the board pointer ownership through a transparent
+ * overlay over the guests; Interact removes it so the preview receives real
+ * pointer and keyboard events.
+ */
+export type BoardMode = 'select' | 'interact';
+
+export interface BoardInteraction {
+  mode: BoardMode;
+  /** Selected frames, in the order the user picked them. One frame per design,
+   * so a frame is named by its design ID throughout. */
+  selectedFrameIds: string[];
+  /**
+   * The one frame Interact is driving. It always holds a live preview slot, so
+   * typing into a form cannot be interrupted by a frame scrolling into view.
+   */
+  interactedFrameId: string | null;
+}
+
+export const SELECT_MODE: BoardInteraction = {
+  mode: 'select',
+  selectedFrameIds: [],
+  interactedFrameId: null,
+};
+
+export type BoardInteractionEvent =
+  /** A click on a frame. `additive` is shift-click, which toggles membership. */
+  | { type: 'pick'; designId: string; additive: boolean }
+  /** A finished rubber-band. */
+  | { type: 'pick-band'; designIds: string[]; additive: boolean }
+  /** A click on the board background. */
+  | { type: 'clear' }
+  /** Double-click, or Enter on a single selected frame. */
+  | { type: 'interact'; designId: string }
+  | { type: 'escape' }
+  /** Frames the canvas no longer has, so nothing points at a deleted design. */
+  | { type: 'frames'; designIds: string[] };
+
+/**
+ * Spec §4: Escape returns to selection and Escape again clears it, so the two
+ * steps out of Interact are never one. Picking while interacting moves Interact
+ * to the frame picked, which keeps the live slot under the hand; picking
+ * several leaves Interact, because it drives one frame.
+ */
+export function reduceBoardInteraction(
+  state: BoardInteraction,
+  event: BoardInteractionEvent,
+): BoardInteraction {
+  switch (event.type) {
+    case 'pick': {
+      const selected = event.additive
+        ? toggle(state.selectedFrameIds, event.designId)
+        : [event.designId];
+      return settle(state, selected);
+    }
+    case 'pick-band': {
+      const selected = event.additive
+        ? [
+            ...state.selectedFrameIds,
+            ...event.designIds.filter((id) => !state.selectedFrameIds.includes(id)),
+          ]
+        : event.designIds;
+      return settle(state, selected);
+    }
+    case 'clear':
+      return settle(state, []);
+    case 'interact':
+      return {
+        mode: 'interact',
+        selectedFrameIds: [event.designId],
+        interactedFrameId: event.designId,
+      };
+    case 'escape':
+      if (state.mode === 'interact') return { ...state, mode: 'select', interactedFrameId: null };
+      return state.selectedFrameIds.length === 0 ? state : settle(state, []);
+    case 'frames': {
+      const held = new Set(event.designIds);
+      const selected = state.selectedFrameIds.filter((id) => held.has(id));
+      if (
+        selected.length === state.selectedFrameIds.length &&
+        (state.interactedFrameId === null || held.has(state.interactedFrameId))
+      )
+        return state;
+      return settle(state, selected);
+    }
+  }
+}
+
+/**
+ * The state a new selection leaves, with Interact following a single frame.
+ * A selection that did not actually change keeps its identity, so re-picking
+ * the frame already selected costs the board nothing.
+ */
+function settle(state: BoardInteraction, selected: string[]): BoardInteraction {
+  const interacted = state.mode === 'select' || selected.length !== 1 ? null : selected[0];
+  const next: BoardInteraction = {
+    mode: state.mode === 'interact' && interacted !== null ? 'interact' : 'select',
+    selectedFrameIds: selected,
+    interactedFrameId: interacted,
+  };
+  if (
+    next.mode === state.mode &&
+    next.interactedFrameId === state.interactedFrameId &&
+    sameIds(next.selectedFrameIds, state.selectedFrameIds)
+  )
+    return state;
+  return next;
+}
+
+function sameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function toggle(ids: string[], designId: string): string[] {
+  return ids.includes(designId) ? ids.filter((id) => id !== designId) : [...ids, designId];
 }

@@ -1,0 +1,613 @@
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { createServer, type ViteDevServer } from 'vite';
+import type { FrameRect } from '../../src/features/canvas/protocol';
+import type {} from './board/CanvasBoardHarness';
+
+let server: ViteDevServer;
+let url: string;
+
+test.beforeAll(async () => {
+  server = await createServer({
+    server: { host: '127.0.0.1', port: 0, strictPort: false },
+  });
+  await server.listen();
+  const address = server.httpServer?.address();
+  if (!address || typeof address === 'string') throw new Error('Missing board server');
+  url = `http://127.0.0.1:${address.port}/tests/smoke/board/index.html`;
+});
+
+test('window blur and focus leaving the board cancel without arranging and release capture', async ({
+  page,
+}) => {
+  for (const loss of ['window', 'outside']) {
+    await openBoard(page);
+    const board = page.getByTestId('canvas-board');
+    await board.focus();
+    const acknowledged = await box(frame(page, 'A'));
+    await drag(page, 'A', 60, 40, false);
+    expect((await box(frame(page, 'A'))).x).toBeGreaterThan(acknowledged.x);
+    expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(true);
+    if (loss === 'window') await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    else await page.locator('#outside').focus();
+    await page.mouse.up();
+    await page.clock.runFor(32);
+    expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+    const restored = await box(frame(page, 'A'));
+    expect(restored.x).toBeCloseTo(acknowledged.x, 1);
+    expect(restored.y).toBeCloseTo(acknowledged.y, 1);
+    expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(false);
+    await drag(page, 'A');
+    await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  }
+});
+
+test('window blur ends a held Space, so the next ordinary header drag still arranges', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  // Space is released in whichever app took the keyboard, so the board never
+  // receives a keyup and never loses DOM focus.
+  await page.keyboard.down(' ');
+  expect(await board.evaluate((root) => getComputedStyle(root).cursor)).toBe('grab');
+  const acknowledged = await renderedRect(page, 'A');
+  await drag(page, 'A', 60, 40, false);
+  expect(await renderedRect(page, 'A')).toEqual(acknowledged);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  await drag(page, 'A');
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  expect((await renderedRect(page, 'A')).x).toBeGreaterThan(acknowledged.x);
+  expect(await board.evaluate((root) => getComputedStyle(root).cursor)).toBe('default');
+  await page.keyboard.up(' ');
+});
+
+test.afterAll(async () => {
+  await server?.close();
+});
+
+async function openBoard(
+  page: Page,
+  font = 14,
+  reducedMotion: 'reduce' | 'no-preference' = 'reduce',
+) {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion });
+  await page.clock.install({ time: new Date('2026-10-07T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
+  await page.goto(`${url}?font=${font}`);
+  await expect(page.getByTestId('canvas-board')).toBeVisible();
+  await expect(page.getByTestId('canvas-board').getByText('95%', { exact: true })).toBeVisible();
+  await page.clock.runFor(32);
+}
+
+/** A board with more frames than there are live preview slots. */
+async function openCrowdedBoard(page: Page, frames: number) {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install({ time: new Date('2026-10-07T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
+  await page.goto(`${url}?font=14&frames=${String(frames)}`);
+  await expect(page.getByTestId('canvas-board')).toBeVisible();
+  await expect(page.locator('[data-harness-preview]').first()).toBeVisible();
+  await page.clock.runFor(32);
+}
+
+function mountedPreviews(page: Page) {
+  return page
+    .locator('[data-harness-preview]')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node instanceof HTMLElement ? node.dataset.harnessPreview : null)),
+    );
+}
+
+function frame(page: Page, name: string): Locator {
+  return page.getByText(`Design ${name}`, { exact: true }).locator('..').locator('..');
+}
+
+async function box(locator: Locator) {
+  const rect = await locator.boundingBox();
+  if (!rect) throw new Error('Missing frame box');
+  return rect;
+}
+
+async function drag(page: Page, name: string, x = 60, y = 40, release = true) {
+  const header = await box(frame(page, name).locator(':scope > div').first());
+  const origin = { x: Math.round(header.x + 30), y: Math.round(header.y + 8) };
+  await page.mouse.move(origin.x, origin.y);
+  await page.clock.runFor(32);
+  await page.mouse.down();
+  await page.mouse.move(origin.x + x, origin.y + y);
+  await page.clock.runFor(32);
+  if (release) await page.mouse.up();
+}
+
+async function wheel(
+  page: Page,
+  x: number,
+  y: number,
+  deltaY: number,
+  options: WheelEventInit = { ctrlKey: true },
+) {
+  const prevented = await page.getByTestId('canvas-board').evaluate(
+    (root, point) => {
+      return !root.dispatchEvent(
+        new WheelEvent('wheel', {
+          clientX: point.x,
+          clientY: point.y,
+          deltaY: point.deltaY,
+          ...point.options,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { x, y, deltaY, options },
+  );
+  expect(prevented).toBe(true);
+  await page.clock.runFor(32);
+}
+
+async function renderedRect(page: Page, name: string): Promise<FrameRect> {
+  return frame(page, name).evaluate((element) => {
+    if (!(element instanceof HTMLElement)) throw new Error('Missing frame');
+    return {
+      x: parseFloat(element.style.left),
+      y: parseFloat(element.style.top),
+      width: parseFloat(element.style.width),
+      height: 300,
+    };
+  });
+}
+
+async function clickFit(page: Page) {
+  const button = await box(page.getByRole('button', { name: 'Fit', exact: true }));
+  await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
+}
+
+async function transform(page: Page) {
+  return page
+    .getByTestId('canvas-board')
+    .locator(':scope > div')
+    .first()
+    .evaluate((root) => {
+      if (!(root instanceof HTMLElement)) throw new Error('Missing world layer');
+      return root.style.transform;
+    });
+}
+
+test('Fit suppresses trailing wheel input until quiet, independently of reduced motion or animation', async ({
+  page,
+}) => {
+  for (const motion of ['reduce', 'no-preference'] as const) {
+    await openBoard(page, 14, motion);
+    const fitted = await transform(page);
+    await wheel(page, 400, 300, 20);
+    expect(await transform(page)).not.toBe(fitted);
+    await clickFit(page);
+    for (let trailing = 0; trailing < 5; trailing += 1) {
+      await page.clock.runFor(48);
+      await wheel(page, 400, 300, 20, trailing % 2 === 0 ? { deltaX: 15 } : { ctrlKey: true });
+    }
+    expect(await transform(page)).toBe(fitted);
+    await page.clock.runFor(140);
+    await wheel(page, 400, 300, 20);
+    expect(await transform(page)).not.toBe(fitted);
+
+    // Spec §11: the arrival animation is the motion tokens', so reduced motion
+    // leaves the frame with no animation at all rather than a zero-length one.
+    const animated = await page
+      .locator('[data-design-frame]')
+      .first()
+      .evaluate((node) => getComputedStyle(node).animationName);
+    expect(animated).toBe(motion === 'reduce' ? 'none' : 'canvas-frame-arrival');
+  }
+});
+
+test('a real Fit click never starts background pan or steals the button capture', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const fitted = await transform(page);
+  await wheel(page, 400, 300, -30);
+  await page.clock.runFor(140);
+  expect(await transform(page)).not.toBe(fitted);
+  const button = await box(page.getByRole('button', { name: 'Fit', exact: true }));
+  await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
+  await page.mouse.down();
+  expect(await page.getByTestId('canvas-board').evaluate((root) => root.hasPointerCapture(1))).toBe(
+    false,
+  );
+  await page.mouse.up();
+  await page.clock.runFor(240);
+  expect(await transform(page)).toBe(fitted);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('two deferred releases retain separate holds until each frame receives newer layout', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  const heldA = await renderedRect(page, 'A');
+  await drag(page, 'B', -40, 30);
+  const heldB = await renderedRect(page, 'B');
+  expect(await renderedRect(page, 'A')).toEqual(heldA);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
+  await page.evaluate(() => {
+    window.boardHarness.resolve(0);
+    window.boardHarness.publish('b', { x: 700, y: 340, width: 400, height: 300 }, 3);
+  });
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual(heldA);
+  expect(await renderedRect(page, 'B')).toEqual(heldB);
+  await page.evaluate(() =>
+    window.boardHarness.publish('a', { x: 170, y: 95, width: 400, height: 300 }, 4),
+  );
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual({ x: 170, y: 95, width: 400, height: 300 });
+  expect(await renderedRect(page, 'B')).toEqual(heldB);
+  await page.evaluate(() =>
+    window.boardHarness.publish('b', { x: 610, y: 330, width: 400, height: 300 }, 4),
+  );
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'B')).toEqual({ x: 610, y: 330, width: 400, height: 300 });
+});
+
+test('Escape during a re-drag restores acknowledged geometry, not its earlier hold', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const acknowledged = await renderedRect(page, 'A');
+  await drag(page, 'A');
+  await drag(page, 'A', 25, 20, false);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual(acknowledged);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+});
+
+test('obsolete arrange rejections cannot replace newer work or report stale errors', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  await drag(page, 'A', 30, 20);
+  const newest = await renderedRect(page, 'A');
+  await page.evaluate(() => window.boardHarness.reject(0));
+  await page.clock.runFor(32);
+  expect(await renderedRect(page, 'A')).toEqual(newest);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.evaluate(() => {
+    window.boardHarness.publish('a', { x: 200, y: 120, width: 400, height: 300 }, 4);
+  });
+  await page.clock.runFor(32);
+  await page.evaluate(() => window.boardHarness.reject(1));
+  await page.clock.runFor(32);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(await renderedRect(page, 'A')).toEqual({ x: 200, y: 120, width: 400, height: 300 });
+  await drag(page, 'B');
+  await page.evaluate(() => window.boardHarness.reject(2));
+  await page.clock.runFor(32);
+  await expect(page.getByRole('alert')).toHaveText('Arrange rejected');
+  expect(await renderedRect(page, 'B')).toEqual({ x: 650, y: 300, width: 400, height: 300 });
+});
+
+test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13/14/16', async ({
+  page,
+}) => {
+  for (const font of [13, 14, 16]) {
+    await openBoard(page, font);
+    const beforeZoom = await box(frame(page, 'B'));
+    const anchor = { x: Math.round(beforeZoom.x), y: Math.round(beforeZoom.y) };
+    await wheel(page, anchor.x, anchor.y, 20);
+    const afterZoom = await box(frame(page, 'B'));
+    expect(afterZoom.width).toBeLessThan(beforeZoom.width);
+    const ratio = afterZoom.width / beforeZoom.width;
+    expect(afterZoom.x).toBeCloseTo(anchor.x + (beforeZoom.x - anchor.x) * ratio, 1);
+    expect(afterZoom.y).toBeCloseTo(anchor.y + (beforeZoom.y - anchor.y) * ratio, 1);
+    const beforeDrag = await box(frame(page, 'A'));
+    await drag(page, 'A');
+    const afterDrag = await box(frame(page, 'A'));
+    expect(afterDrag.x - beforeDrag.x).toBeCloseTo(60, 1);
+    expect(afterDrag.y - beforeDrag.y).toBeCloseTo(40, 1);
+    expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+    const board = await box(page.getByTestId('canvas-board'));
+    await page.mouse.move(Math.round(board.x + 10), Math.round(board.y + 10));
+    await page.mouse.down();
+    await page.mouse.move(Math.round(board.x + 70), Math.round(board.y + 50));
+    await page.mouse.up();
+    await page.clock.runFor(32);
+    const afterPan = await box(frame(page, 'A'));
+    expect(afterPan.x - afterDrag.x).toBeCloseTo(60, 1);
+    expect(afterPan.y - afterDrag.y).toBeCloseTo(40, 1);
+    await wheel(page, 400, 300, 40, { deltaX: 60 });
+    await expect.poll(async () => (await box(frame(page, 'A'))).x - afterPan.x).toBeCloseTo(-60, 1);
+    await expect.poll(async () => (await box(frame(page, 'A'))).y - afterPan.y).toBeCloseTo(-40, 1);
+  }
+});
+
+test('plain wheel pans in pixel, line and page units; cmd-wheel zoom stays pointer anchored', async ({
+  page,
+}) => {
+  await openBoard(page);
+  let before = await box(frame(page, 'A'));
+  await wheel(page, 400, 300, 40, { deltaX: 60 });
+  let after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-60, 1);
+  expect(after.y - before.y).toBeCloseTo(-40, 1);
+  expect(after.width).toBeCloseTo(before.width, 1);
+  const linePx = await page
+    .getByTestId('canvas-board')
+    .evaluate((root) => parseFloat(getComputedStyle(root).lineHeight));
+  before = after;
+  await wheel(page, 400, 300, 2, { deltaX: 1, deltaMode: 1 });
+  after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-linePx, 1);
+  expect(after.y - before.y).toBeCloseTo(-2 * linePx, 1);
+  before = after;
+  await wheel(page, 400, 300, 0.1, { deltaX: 0.1, deltaMode: 2 });
+  after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-100, 1);
+  expect(after.y - before.y).toBeCloseTo(-80, 1);
+  before = after;
+  await wheel(page, 400, 300, 20, { metaKey: true });
+  after = await box(frame(page, 'A'));
+  const ratio = after.width / before.width;
+  expect(ratio).toBeLessThan(1);
+  expect(after.x).toBeCloseTo(400 + (before.x - 400) * ratio, 1);
+  expect(after.y).toBeCloseTo(300 + (before.y - 300) * ratio, 1);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('keyboard arrows pan only without a selection, with a visible soft board focus cue', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.locator('#outside').focus();
+  await page.keyboard.press('Tab');
+  const board = page.getByTestId('canvas-board');
+  await expect(board).toBeFocused();
+  const before = await box(frame(page, 'A'));
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await page.clock.runFor(32);
+  const after = await box(frame(page, 'A'));
+  expect(after.x - before.x).toBeCloseTo(-32, 1);
+  expect(after.y - before.y).toBeCloseTo(-32, 1);
+  expect(await board.evaluate((root) => getComputedStyle(root).boxShadow)).not.toBe('none');
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+
+  // With a selection the arrows stop panning and nudge it instead: one world
+  // unit, ten with Shift, each written at the layout version it was read at.
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await expect(page.locator('#outside')).toHaveAttribute('aria-pressed', 'true');
+  await board.focus();
+  const selectedView = await transform(page);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
+  const nudged = await page.evaluate(() => window.boardHarness.calls.map((call) => call.frames));
+  expect(nudged).toEqual([
+    [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 101, y: 50, width: 400, height: 300 } }],
+    [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 111, y: 50, width: 400, height: 300 } }],
+  ]);
+  expect(await transform(page)).toBe(selectedView);
+
+  // A descendant control keeps its own arrows, and they neither pan nor nudge.
+  await page.getByRole('button', { name: 'Fit', exact: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  await page.clock.runFor(32);
+  expect(await transform(page)).toBe(selectedView);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
+});
+
+test('at most four previews stay mounted and the interacted frame keeps its slot', async ({
+  page,
+}) => {
+  await openCrowdedBoard(page, 6);
+  const live = await mountedPreviews(page);
+  expect(live).toHaveLength(4);
+
+  // Interact drives one frame, so it holds a slot wherever the board is looking.
+  const board = page.getByTestId('canvas-board');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await board.focus();
+  await page.keyboard.press('Enter');
+  await expect(board).toHaveAttribute('data-board-mode', 'interact');
+
+  // Pan the interacted frame clear off the top of the board, leaving plenty of
+  // other visible frames to compete for the four slots.
+  await wheel(page, 400, 300, 330, { deltaX: 0 });
+  await page.clock.runFor(200);
+  const boardBox = await box(board);
+  const frameA = await box(frame(page, 'A'));
+  expect(frameA.y + frameA.height).toBeLessThanOrEqual(boardBox.y);
+
+  const panned = await mountedPreviews(page);
+  expect(panned).toHaveLength(4);
+  expect(panned).toContain('a');
+});
+
+test('Interact gives the pointer to the preview and two Escapes undo mode then selection', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const header = frame(page, 'A').locator('[data-frame-header]');
+  await header.focus();
+  // Enter picks the frame, and Enter on the frame already picked interacts.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  const board = page.getByTestId('canvas-board');
+  await expect(board).toHaveAttribute('data-board-mode', 'interact');
+  // Spec §4: the hit-test flip is committed on the frame after the mode change,
+  // so both frames' overlays are still there until that frame paints.
+  expect(await page.locator('[data-canvas-input-overlay]').count()).toBe(2);
+  await page.clock.runFor(32);
+  await expect(page.locator('[data-canvas-input-overlay]')).toHaveCount(0);
+
+  const preview = await box(page.locator('[data-harness-preview="a"]'));
+  await page.mouse.move(preview.x + preview.width / 2, preview.y + preview.height / 2);
+  await page.mouse.down();
+  await page.clock.runFor(32);
+  expect(await page.evaluate(() => window.boardHarness.previewClicks)).toEqual(['a']);
+  expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(false);
+  await page.mouse.up();
+
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
+    'a',
+  ]);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.interaction().selectedFrameIds))
+    .toEqual([]);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('the public focusFrame entry point centers acknowledged geometry and takes board focus', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.focusFrame('b'));
+  await page.clock.runFor(32);
+  await expect(page.getByTestId('canvas-board')).toBeFocused();
+  const board = await box(page.getByTestId('canvas-board'));
+  const focused = await box(frame(page, 'B'));
+  expect(focused.width).toBeCloseTo(400, 1);
+  expect(focused.x + 200).toBeCloseTo(board.x + board.width / 2, 1);
+  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2, 1);
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('double-clicking a header or Select overlay enters Interact without arranging', async ({
+  page,
+}) => {
+  for (const target of ['[data-frame-header]', '[data-canvas-input-overlay]']) {
+    await openBoard(page);
+    await frame(page, 'A').locator(target).dblclick();
+    await expect(page.getByTestId('canvas-board')).toHaveAttribute('data-board-mode', 'interact');
+    expect(await page.evaluate(() => window.boardHarness.interaction())).toEqual({
+      mode: 'interact',
+      selectedFrameIds: ['a'],
+      interactedFrameId: 'a',
+    });
+    expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+  }
+});
+
+test('Escape on the mode control exits Interact and the frame offers a keyboard return', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const board = page.getByTestId('canvas-board');
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  const back = page.getByRole('button', { name: 'Return to Select', exact: true });
+  await expect(back).toBeVisible();
+  await back.focus();
+  await page.keyboard.press('Enter');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await expect(board).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
+    'a',
+  ]);
+
+  // A renderer input/editor has its own Escape and arrow shortcuts.
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  for (const tag of ['input', 'div']) {
+    await board.evaluate((root, tag) => {
+      const editor = document.createElement(tag);
+      editor.id = 'board-editor';
+      if (tag === 'div') editor.contentEditable = 'true';
+      root.append(editor);
+      editor.focus();
+    }, tag);
+    const before = await transform(page);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('ArrowRight');
+    await expect(board).toHaveAttribute('data-board-mode', 'interact');
+    expect(await transform(page)).toBe(before);
+    await page.locator('#board-editor').evaluate((editor) => editor.remove());
+  }
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+declare global {
+  interface Window {
+    boardGuestReady: boolean;
+  }
+}
+
+test('a building slot blooms and only a ready guest crossfades, with reduced motion immediate', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.boardGuestReady = false;
+    Object.defineProperty(window, 'droidControl', {
+      value: {
+        canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
+        canvasPreviewBind: async (guestId: number, canvasId: string) =>
+          guestId === 41 && canvasId === 'cv_board',
+        canvasPreviewCapture: async () => ({
+          ok: false,
+          error: { code: 'capture_unavailable', message: 'No capture in the DOM harness.' },
+        }),
+      },
+    });
+    const create = document.createElement.bind(document);
+    Object.defineProperty(document, 'createElement', {
+      value: (tag: string) => {
+        const guest = create(tag);
+        if (tag !== 'webview') return guest;
+        let identity = {};
+        let sent = false;
+        Object.assign(guest, {
+          getWebContentsId: () => 41,
+          executeJavaScript: async (script: string) => {
+            if (script.startsWith('globalThis.__droidexCanvasPreview.start(')) {
+              identity = JSON.parse(script.slice(script.indexOf('(') + 1, -1));
+              return 'started';
+            }
+            const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
+            if (events.length > 0) sent = true;
+            return JSON.stringify({ ...identity, events, dropped: 0 });
+          },
+        });
+        queueMicrotask(() => guest.dispatchEvent(new Event('dom-ready')));
+        return guest;
+      },
+    });
+  });
+  for (const motion of ['no-preference', 'reduce'] as const) {
+    await openBoard(page, 14, motion);
+    await page.goto(`${url}?preview=guest&building=1`);
+    await page.clock.runFor(240);
+    const design = frame(page, 'A');
+    await expect(design.getByText('Building', { exact: true })).toBeVisible();
+    await expect(page.locator('webview')).toHaveCount(0);
+    expect(await design.locator('.canvas-bloom-dot').count()).toBe(motion === 'reduce' ? 0 : 5);
+    await page.evaluate(() => window.boardHarness.buildReady());
+    await expect(design.locator('[data-preview-phase="mounting"]')).toBeVisible();
+    const host = design.locator('webview').locator('..');
+    expect(await host.evaluate((node) => getComputedStyle(node).opacity)).toBe('0');
+    expect(await host.evaluate((node) => getComputedStyle(node).transitionDuration)).toBe('0s');
+    await page.evaluate(() => {
+      window.boardGuestReady = true;
+    });
+    await page.clock.runFor(100);
+    await expect(design.locator('[data-preview-phase="ready"]')).toBeVisible();
+    expect(await host.evaluate((node) => getComputedStyle(node).transitionDuration)).toBe(
+      motion === 'reduce' ? '0s' : '0.12s',
+    );
+    await page.clock.runFor(120);
+    await expect(host).toHaveCSS('opacity', '1');
+  }
+});

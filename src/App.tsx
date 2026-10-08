@@ -1089,6 +1089,7 @@ export default function App() {
                               appSessionId={activeSession.appSessionId}
                               canvasId={canvasAttachment}
                               namedCanvasId={tab.canvasId ?? undefined}
+                              frameId={tab.frameId ?? undefined}
                               isExpanded={paneExpanded}
                               onToggleExpanded={() => {
                                 setExpandedPaneAppSessionId(
