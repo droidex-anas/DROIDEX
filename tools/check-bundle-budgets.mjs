@@ -115,6 +115,19 @@ import { join } from 'node:path';
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
 //
+// Raised from 1_434_000 to 1_442_000 for Canvas design mode (05e). After
+// merging image imports and the source editor, the entry measures 1_441_307
+// against published canvas/integration a778be89e at 1_433_893: +7_414 bytes.
+// The switcher paints at first frame, and App's workspace branches, the store's
+// Design state and attachment obligations, and the composer's shared-layout
+// frame belong to that app frame. The Design home, canvases sidebar, board
+// header, chat bootstrap and attached-chats menu stay lazy.
+//
+// The attached-chats menu lives in the 360 px chat column's header (spec §4);
+// the app frame reads which canvas its board shows. The remaining 693 bytes
+// of entry headroom is deliberately tight: 05b-05d board work belongs in the
+// Canvas chunk. This reconciliation keeps the accepted limit unchanged.
+//
 // initialCssBytes raised from 101_500 to 103_200 for the Canvas source drawer.
 // The Canvas pane alone measures 100_978, already 522 under the old line before
 // the drawer, and the drawer's own chrome is ~1_350: the file list, the editor's
@@ -126,7 +139,7 @@ import { join } from 'node:path';
 // (CanvasSourcePanel ~10.7KB, its editor and Prism beyond that). The new
 // headroom is ~1KB, in line with past CSS raises.
 const BUDGETS = {
-  initialRendererJsBytes: 1_434_000,
+  initialRendererJsBytes: 1_442_000,
   initialCssBytes: 103_200,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

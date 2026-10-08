@@ -245,6 +245,7 @@ export function canvasSummary(manifest: CanvasManifest): CanvasSummary {
     name: manifest.name,
     updatedAt: manifest.updatedAt,
     designCount: manifest.designs.length,
+    attachedAppSessionIds: [...manifest.attachedAppSessionIds],
   };
 }
 

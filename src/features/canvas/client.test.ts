@@ -15,9 +15,9 @@ import {
 import { initialState, reducer } from '../../hooks/useStore';
 import { initialCanvasPaneState, reduceCanvasPane, watchedCanvasId } from './canvasState';
 import { isCanvasEvent } from './wireValidation';
-import type { ClientCommand, ServerEvent } from '../../types/bridge';
-import { CanvasClient, type CanvasTransport } from './client';
-import type { CanvasChange, CanvasCommand, CanvasFrame, CanvasSnapshot } from './protocol';
+import { CanvasClient } from './client';
+import { fakeCanvasBridge, flush } from '../../test/canvasTransport';
+import type { CanvasChange, CanvasFrame, CanvasSnapshot } from './protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const CANVAS = 'cv_01';
@@ -39,74 +39,9 @@ function change(sequence: number, frames: CanvasFrame[] = []): CanvasChange {
   return { canvasId: CANVAS, sequence, frames, removedDesignIds: [] };
 }
 
-function isCanvasCommand(command: ClientCommand): command is CanvasCommand {
-  return command.type.startsWith('canvas.');
-}
-
-/**
- * A transport the test drives directly, standing in for the bridge socket. Its
- * `reconnect` is the Bridge's own notification, which only a readmitted socket
- * fires: a first connection sends nothing, and an ordinary replay resume
- * publishes no event, so a client that waited for one would never catch up.
- */
-function fakeBridge() {
-  const sent: CanvasCommand[] = [];
-  let receive: ((event: ServerEvent) => void) | null = null;
-  let readmitted: (() => void) | null = null;
-  let connected = true;
-  const transport: CanvasTransport = {
-    sendIfConnected(command: ClientCommand) {
-      assert.ok(isCanvasCommand(command), 'the Canvas client sent a command it does not own');
-      if (!connected) return false;
-      sent.push(command);
-      return true;
-    },
-    subscribe(listener) {
-      receive = listener;
-      return () => {
-        receive = null;
-      };
-    },
-    onReconnected(listener) {
-      readmitted = listener;
-      return () => {
-        readmitted = null;
-      };
-    },
-  };
-  return {
-    sent,
-    transport,
-    reconnect(): void {
-      assert.ok(readmitted, 'the client is not watching for reconnections');
-      readmitted();
-    },
-    /** The transport refusing a command, as it does when nothing is connected. */
-    offline(): void {
-      connected = false;
-    },
-    deliver(event: ServerEvent): void {
-      assert.ok(receive, 'the client has not subscribed yet');
-      receive(event);
-    },
-    /** The last command of a kind, so a test can answer it. */
-    last(type: CanvasCommand['type']): CanvasCommand {
-      const matched = sent.filter((command) => command.type === type);
-      const command = matched.at(-1);
-      assert.ok(command, `no ${type} was sent`);
-      return command;
-    },
-    count(type: CanvasCommand['type']): number {
-      return sent.filter((command) => command.type === type).length;
-    },
-  };
-}
-
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
 /** A watched canvas seeded at `sequence`, plus the projections its listener saw. */
 async function watching(sequence: number) {
-  const bridge = fakeBridge();
+  const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
   const seen: CanvasSnapshot[] = [];
   const stop = client.subscribeCanvas(CANVAS, (snapshot) => seen.push(snapshot));
@@ -204,7 +139,7 @@ test('the last listener to leave stops the canvas and drops the projection', asy
 });
 
 test('a reported failure rejects its own request with the stable code', async () => {
-  const bridge = fakeBridge();
+  const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
   const listing = client.listCanvases();
   bridge.deliver({
@@ -289,7 +224,7 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
   });
   t.after(() => workspace.close());
-  const transport = fakeBridge();
+  const transport = fakeCanvasBridge();
   const client = new CanvasClient(transport.transport);
   const handle = createCanvasCommandHandler(
     Promise.resolve(workspace),
@@ -325,8 +260,8 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
     },
   );
   const pane = reduceCanvasPane(
-    reduceCanvasPane(initialCanvasPaneState(first.canvasId), { type: 'creating' }),
-    { type: 'created', canvasId: replay.attachedCanvasId },
+    reduceCanvasPane(initialCanvasPaneState(first.canvasId), { type: 'attaching' }),
+    { type: 'settled', canvasId: replay.attachedCanvasId },
   );
   assert.equal(cached.canvasAttachments['app-1'], current.canvasId);
   assert.equal(watchedCanvasId(pane), current.canvasId);
@@ -335,7 +270,7 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
 });
 
 test('a change that commits after a snapshot was taken is applied, not dropped', async () => {
-  const bridge = fakeBridge();
+  const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
   const seen: CanvasSnapshot[] = [];
   client.subscribeCanvas(CANVAS, (snapshot) => seen.push(snapshot));
@@ -379,7 +314,7 @@ test('a change queued behind a resync is applied onto the snapshot that answers 
 });
 
 test('a dropped subscription cannot roll back the board that replaced it', async () => {
-  const bridge = fakeBridge();
+  const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
   const stop = client.subscribeCanvas(CANVAS, () => undefined);
   const abandoned = bridge.last('canvas.subscribe').requestId;
@@ -434,7 +369,7 @@ test('a reconnected page watches its boards again and catches them up', async ()
 });
 
 test('a refused send rejects its request instead of waiting for the timeout', async () => {
-  const bridge = fakeBridge();
+  const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
   bridge.offline();
 

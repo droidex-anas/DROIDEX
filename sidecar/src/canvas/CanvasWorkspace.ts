@@ -128,9 +128,13 @@ export class CanvasWorkspace {
   }
 
   /** Explicit creation retries return the same durable identity, without reattaching. */
-  createCanvas(appSessionId: string, mutationId: string): Promise<{ canvasId: string }> {
+  createCanvas(
+    appSessionId: string,
+    mutationId: string,
+    name?: string,
+  ): Promise<{ canvasId: string }> {
     return this.commits.admit(() =>
-      this.commits.run(() => this.attachments.createCanvas(appSessionId, mutationId)),
+      this.commits.run(() => this.attachments.createCanvas(appSessionId, mutationId, name)),
     );
   }
 

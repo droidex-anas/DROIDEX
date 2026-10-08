@@ -24,6 +24,7 @@ import type {
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
+  canvasNameSchema,
   createFramesInputSchema,
   editElementInputSchema,
   removeFramesInputSchema,
@@ -32,7 +33,6 @@ import {
   writeFilesInputSchema,
 } from './schema.js';
 
-/** Bounds the correlation table, the way the Projects bridge bounds its own. */
 const MAX_PENDING_REQUESTS = 128;
 
 const UNAVAILABLE = 'Canvas storage is unavailable. Reopen DROIDEX to try again.';
@@ -83,6 +83,7 @@ const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ...session,
       mutationId: canvasIdentifierSchema,
+      name: canvasNameSchema.optional(),
     })
     .strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
@@ -159,10 +160,7 @@ type Mutation = Extract<
   }
 >;
 
-/**
- * The owner of one sidecar's Canvas dispatch: the workspace it answers from,
- * the scopes it mints, and which page is watching what.
- */
+/** Validates requests and owns their workspace, scopes and page watches. */
 class CanvasDispatch {
   private readonly watches: CanvasWatches;
   private readonly workspace: Promise<CanvasWorkspace>;
@@ -261,9 +259,11 @@ class CanvasDispatch {
       case 'canvas.attachment':
         return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
       case 'canvas.createCanvas': {
-        // Explicit Create in the pane: the canvas and the chat's attachment in
-        // one commit, with no lease behind it (spec §6).
-        const created = await workspace.createCanvas(command.appSessionId, command.mutationId);
+        const created = await workspace.createCanvas(
+          command.appSessionId,
+          command.mutationId,
+          command.name,
+        );
         return {
           kind: 'canvasCreated',
           canvasId: created.canvasId,

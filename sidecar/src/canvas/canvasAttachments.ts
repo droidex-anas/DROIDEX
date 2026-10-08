@@ -18,7 +18,11 @@ export class CanvasAttachments {
    * Leave the old canvas first: a crash between the two manifest writes must
    * leave the chat unattached, never attached twice.
    */
-  async createCanvas(appSessionId: string, mutationId: string): Promise<{ canvasId: string }> {
+  async createCanvas(
+    appSessionId: string,
+    mutationId: string,
+    name?: string,
+  ): Promise<{ canvasId: string }> {
     this.requireChat(appSessionId);
     const previous = this.heads.all().find((head) => head.creation?.mutationId === mutationId);
     if (previous) {
@@ -27,7 +31,7 @@ export class CanvasAttachments {
       return { canvasId: previous.canvasId };
     }
     await this.detachFrom(appSessionId, null);
-    const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
+    const manifest = emptyCanvasManifest(randomUUID(), name ?? this.nextCanvasName(), Date.now());
     manifest.creation = { mutationId, appSessionId };
     manifest.attachedAppSessionIds.push(appSessionId);
     await this.heads.install(manifest, this.chatGate(appSessionId));

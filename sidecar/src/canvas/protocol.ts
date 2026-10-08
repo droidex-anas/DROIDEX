@@ -164,6 +164,8 @@ export interface CanvasSummary {
   name: string;
   updatedAt: number;
   designCount: number;
+  /** The chats working on this canvas, used by Design cards and the chat menu. */
+  attachedAppSessionIds: string[];
 }
 
 // `create` answers with the canvas as well as the frames because an unattached
@@ -238,7 +240,14 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
-  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string; mutationId: string }
+  | {
+      type: 'canvas.createCanvas';
+      requestId: string;
+      appSessionId: string;
+      mutationId: string;
+      /** The provisional name the prompt gave it; storage names it otherwise. */
+      name?: string;
+    }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
   | {
