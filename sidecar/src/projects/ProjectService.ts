@@ -1035,9 +1035,11 @@ export class ProjectService {
 
   /** Drops what was queued for a stopped thread once admission has settled. */
   private async quiet(project: Project, target: string): Promise<'stopped' | 'cancelled'> {
+    // A question asked after Stop began belongs to a newer turn; leave it with its owner.
+    const askedBefore = requireThread(project, target).ask;
     await this.wakes.settle(project);
     const thread = requireThread(project, target);
-    clearAsk(project, thread);
+    if (thread.ask === askedBefore) clearAsk(project, thread);
     if (project.interrupted) {
       project.interrupted = project.interrupted.filter((id) => id !== target);
       if (!project.interrupted.length) delete project.interrupted;
@@ -1052,6 +1054,7 @@ export class ProjectService {
     if (queued) {
       delete thread.queuedSpawn;
       project.threads = project.threads.filter((candidate) => candidate !== thread);
+      project.pending = project.pending.filter((message) => message.from !== target);
       this.membership.delete(target);
       for (const step of project.plan)
         if (step.threadAppSessionId === target) delete step.threadAppSessionId;
