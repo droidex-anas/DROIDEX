@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { ClientCommand, ServerEvent, TranscriptEvent } from '../protocol.js';
 import { errMsg } from '../errors.js';
 import type { ProviderSession, ProviderVoice, ProviderVoiceEvent } from './session.js';
+import { stopVoiceWithDeadline } from './voiceStop.js';
 
 export type VoiceCommand = Extract<
   ClientCommand,
@@ -45,23 +46,6 @@ interface VoiceConversation {
   // Per speaker: the other one can finish a line in between, and an expansion
   // still belongs to the row its own speaker last wrote.
   lastFinal: Map<SpokenRole, SpokenLine>;
-}
-
-// Long enough for a healthy round trip, short enough that closing a chat
-// never feels stuck on it.
-const STOP_DEADLINE_MS = 3_000;
-
-function withDeadline(work: Promise<void> | undefined, ms: number): Promise<void> {
-  if (!work) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('Codex did not answer the request to end the conversation.'));
-    }, ms);
-    timer.unref();
-    work.then(resolve, reject).finally(() => {
-      clearTimeout(timer);
-    });
-  });
 }
 
 export class SessionVoice {
@@ -138,7 +122,7 @@ export class SessionVoice {
     try {
       // Bounded: everything after this frees the runtime, and a stop Codex
       // never answers would otherwise hold the whole close open.
-      await withDeadline(subscription.session.voice?.stop(), STOP_DEADLINE_MS);
+      await stopVoiceWithDeadline(subscription.session.voice?.stop());
     } catch (error) {
       console.warn(`Voice session cleanup failed: ${errMsg(error)}`);
     }

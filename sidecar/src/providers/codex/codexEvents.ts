@@ -271,6 +271,10 @@ export class CodexEventMapper {
     return [{ transcript: this.transcript('status', { text: mcpFailureText(failure) }) }];
   }
 
+  statusEvent(text: string): NormalizedEvent {
+    return { transcript: this.transcript('status', { text }) };
+  }
+
   errorEvent(error: unknown): NormalizedEvent {
     return {
       transcript: this.transcript('error', {

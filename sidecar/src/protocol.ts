@@ -928,8 +928,7 @@ export type ClientCommand =
       fastMode?: boolean;
       // Omitted leaves the chat's context window as it is.
       contextWindowTokens?: ContextWindowTokens;
-      // Echoed once the model/effort change settles, by
-      // `session.model_update_applied` or a `session.model_update_failed` error.
+      // Echoed by each model or autonomy settlement event, including failures.
       requestId?: string;
       autonomy?: Autonomy;
       interactionMode?: SessionInteractionMode;
@@ -1204,6 +1203,7 @@ export type ServerEvent =
   // A copied session, stored and closed; its first send resumes it.
   | { type: 'session.forked'; clientRef: string; session: SessionSummary }
   | { type: 'session.model_update_applied'; appSessionId: string; requestId: string }
+  | { type: 'session.autonomy_update_applied'; appSessionId: string; requestId: string }
   | { type: 'session.updated'; session: SessionSummary }
   | {
       type: 'session.steerWithdrawn';
