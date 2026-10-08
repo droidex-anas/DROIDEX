@@ -255,7 +255,8 @@ function verifyFreeReleaseApp(appPath, label) {
   const certificateDirectory = mkdtempSync(join(tmpdir(), 'droidex-signing-'));
   try {
     const certificatePrefix = join(certificateDirectory, 'certificate-');
-    run('/usr/bin/codesign', ['-d', '--extract-certificates', certificatePrefix, appPath]);
+    // codesign takes the prefix only attached with '='; a separate argument is read as the path.
+    run('/usr/bin/codesign', ['-d', `--extract-certificates=${certificatePrefix}`, appPath]);
     const leafPath = `${certificatePrefix}0`;
     assert(
       hashFile(leafPath, 'sha256', 'hex') === signingCertificateSha256,
