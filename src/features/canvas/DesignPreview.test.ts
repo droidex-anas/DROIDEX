@@ -121,6 +121,12 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
   let mount: (() => void | (() => void)) | undefined;
   let ready: (() => void) | undefined;
   let request: desktop.CanvasPreviewCaptureRequest | undefined;
+  let started: (() => void) | undefined;
+  // Main binds the guest to its canvas before a design runs, so the capture is
+  // only registered once the preview has actually started.
+  const running = new Promise<void>((resolve) => {
+    started = resolve;
+  });
   const guest = {
     offsetWidth: 720,
     offsetHeight: 720,
@@ -139,6 +145,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
       devicePixelRatio: 2,
       droidControl: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
+        canvasPreviewBind: () => Promise.resolve(true),
         canvasPreviewCapture: (submitted: desktop.CanvasPreviewCaptureRequest) => {
           request = submitted;
           return Promise.resolve({ ok: true, mediaType: 'image/png', bytes: new Uint8Array([1]) });
@@ -177,6 +184,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
         return {
           startPreview: ({ observer }: { observer: { onReady(): void } }) => {
             observer.onReady();
+            started?.();
             return { stop() {} };
           },
         };
@@ -202,6 +210,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
   });
   const stop = mount?.();
   try {
+    await running;
     t.mock.timers.tick(150);
     assert.ok(request, 'the ready preview registered a capture');
     assert.equal(request.width, 720);

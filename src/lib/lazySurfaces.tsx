@@ -43,6 +43,26 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/canvas/CanvasWorkspace');
     return { default: module.CanvasWorkspace };
   },
+  designHome: async () => {
+    const module = await import('../features/canvas/DesignHome');
+    return { default: module.DesignHome };
+  },
+  designSidebar: async () => {
+    const module = await import('../features/canvas/DesignSidebar');
+    return { default: module.DesignSidebar };
+  },
+  canvasHeader: async () => {
+    const module = await import('../features/canvas/CanvasHeader');
+    return { default: module.CanvasHeader };
+  },
+  attachedChatsMenu: async () => {
+    const module = await import('../features/canvas/AttachedChatsMenu');
+    return { default: module.AttachedChatsMenu };
+  },
+  canvasChatBootstrap: async () => {
+    const module = await import('../features/canvas/CanvasChatBootstrap');
+    return { default: module.CanvasChatBootstrap };
+  },
   threads: async () => {
     const module = await import('../features/projects/ThreadsWorkspace');
     return { default: module.ThreadsWorkspace };
@@ -77,6 +97,11 @@ export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
 export const LazyCanvasWorkspace = lazy(LAZY_SURFACE_LOADERS.canvas);
+export const LazyDesignHome = lazy(LAZY_SURFACE_LOADERS.designHome);
+export const LazyDesignSidebar = lazy(LAZY_SURFACE_LOADERS.designSidebar);
+export const LazyCanvasHeader = lazy(LAZY_SURFACE_LOADERS.canvasHeader);
+export const LazyAttachedChatsMenu = lazy(LAZY_SURFACE_LOADERS.attachedChatsMenu);
+export const LazyCanvasChatBootstrap = lazy(LAZY_SURFACE_LOADERS.canvasChatBootstrap);
 export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
 export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
 export const LazySideChatsWorkspace = lazy(LAZY_SURFACE_LOADERS.sideChats);

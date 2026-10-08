@@ -7,6 +7,8 @@ import type { CanvasEvent } from './protocol';
 const ERROR_CODES = new Set([
   'invalid_input',
   'revision_conflict',
+  'preset_read_only',
+  'version_mismatch',
   'invalid_source_path',
   'unsupported_import',
   'build_timeout',
@@ -27,6 +29,7 @@ const ERROR_CODES = new Set([
 const REPLY_KINDS = new Set([
   'ok',
   'summaries',
+  'assets',
   'attachment',
   'canvasCreated',
   'created',
@@ -36,6 +39,7 @@ const REPLY_KINDS = new Set([
   'undone',
   'renamed',
   'artifact',
+  'source',
 ]);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
@@ -43,6 +47,10 @@ const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_ELEMENTS = 8192;
 const MAX_BUILD_DIAGNOSTICS = 64;
 const MAX_SOURCE_FILE_BYTES = 256 * 1024;
+// What one revision's tree may hold, matching `CANVAS_LIMITS` in the sidecar's
+// schema: 64 files, each path at most 256 characters.
+const MAX_SOURCE_PATHS = 64;
+const MAX_SOURCE_PATH_LENGTH = 256;
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
   switch (value.type) {
@@ -66,6 +74,26 @@ function isReply(value: unknown): boolean {
   switch (value.kind) {
     case 'summaries':
       return list(value.summaries, isSummary);
+    case 'assets':
+      return list(
+        value.assets,
+        (asset) =>
+          record(asset) &&
+          typeof asset.assetId === 'string' &&
+          /^[0-9a-f]{64}$/.test(asset.assetId) &&
+          (asset.mediaType === 'image/png' ||
+            asset.mediaType === 'image/jpeg' ||
+            asset.mediaType === 'image/webp') &&
+          count(asset.byteLength) &&
+          asset.byteLength > 0 &&
+          asset.byteLength <= 10 * 1024 * 1024 &&
+          count(asset.width) &&
+          asset.width > 0 &&
+          asset.width <= 8192 &&
+          count(asset.height) &&
+          asset.height > 0 &&
+          asset.height <= 8192,
+      );
     case 'attachment':
       return value.canvasId === null || id(value.canvasId);
     case 'canvasCreated':
@@ -84,9 +112,27 @@ function isReply(value: unknown): boolean {
       return id(value.undoId);
     case 'artifact':
       return value.artifact === null || isArtifact(value.artifact);
+    case 'source':
+      return isSourceTree(value.files);
     default:
       return true;
   }
+}
+
+function isSourceTree(value: unknown): boolean {
+  if (!record(value)) return false;
+  const paths = Object.keys(value);
+  return (
+    paths.length <= MAX_SOURCE_PATHS &&
+    paths.every((path) => {
+      const content = value[path];
+      return (
+        boundedText(path, MAX_SOURCE_PATH_LENGTH) &&
+        typeof content === 'string' &&
+        content.length <= MAX_SOURCE_FILE_BYTES
+      );
+    })
+  );
 }
 
 function isArtifact(value: unknown): boolean {
@@ -115,8 +161,14 @@ function isSummary(value: unknown): boolean {
     id(value.canvasId) &&
     text(value.name) &&
     count(value.updatedAt) &&
-    count(value.designCount)
+    count(value.designCount) &&
+    list(value.attachedAppSessionIds, isAppSessionId)
   );
+}
+
+/** A chat identifier, bounded the way the sidecar schema bounds it. */
+function isAppSessionId(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200;
 }
 
 function isReceipt(value: unknown): boolean {

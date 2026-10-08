@@ -280,6 +280,7 @@ async function smokePackagedRuntime(architecture) {
       BRIDGE_PORT: '0',
       BRIDGE_TOKEN: bridgeToken,
       BROWSER_ASSET_TOKEN: 'release-verifier-asset-token',
+      CANVAS_ASSET_SECRET: 'release-verifier-canvas-asset-secret',
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     },
     stdio: ['pipe', 'pipe', 'pipe'],

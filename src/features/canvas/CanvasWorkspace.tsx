@@ -1,21 +1,11 @@
-// The Canvas tab of the utility pane. It shows a named canvas when Open supplies
-// one; otherwise it reads and watches the chat's attachment.
-// Opening it only ever reads: no canvas is minted and no build is started until
-// the user presses Create (spec §4, §6).
-//
-// This file owns the pane's lifecycle and the seam between the board and the
-// bridge: the board asks for a layout write and a preview artifact, and the pane
-// is what knows which chat and which canvas those belong to. Every state without
-// a board belongs to `CanvasPaneStates`.
-
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
-// The pane is the lazy entry to every Canvas surface, so its animations load
-// here rather than from the stylesheet every window parses at startup.
 import './canvasAnimations.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
-import { bridge } from '../../lib/bridge';
+import { canvasClient as canvas } from './canvasClient';
+import { canvasMessage } from './client';
+import { CanvasMenu } from './CanvasMenu';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
-import { CanvasClient } from './client';
+import { DesignPreview } from './DesignPreview';
 import {
   CanvasAction,
   CanvasEmptyState,
@@ -25,25 +15,25 @@ import {
   CanvasStatus,
 } from './CanvasPaneStates';
 import {
-  CREATE_RECOVERY_MESSAGE,
+  acknowledgeAttachment,
+  attachCanvasToChat,
+  chooseCanvasForChat,
+  owedAttachment,
+} from './canvasChats';
+import {
   initialCanvasPaneState,
-  recoveryMessage,
-  reduceCanvasPane,
   SELECT_MODE,
-  watchedCanvasId,
   type BoardInteraction,
+  openSourceFrame,
+  openSourcePanel,
+  reduceCanvasPane,
+  watchedCanvasId,
   type CanvasPaneState,
 } from './canvasState';
-import { DesignPreview } from './DesignPreview';
+import { CanvasSourceSlot } from './CanvasSourceSlot';
 import type { ArrangeFramesInput, CanvasSnapshot } from './protocol';
 
-const canvas = new CanvasClient(bridge);
-// A bound method, so every preview's artifact read keeps one identity: a fresh
-// function each render would tear down and remount every mounted guest.
 const readArtifact = canvas.readArtifact.bind(canvas);
-// A Create may finish after its tab unmounts. Keep its key until a mounted pane
-// confirms the reply, so reopening cannot offer a second Create.
-const pendingCreateMutationIds = new Map<string, string>();
 
 export function CanvasWorkspace({
   appSessionId,
@@ -68,11 +58,10 @@ export function CanvasWorkspace({
   const [state, dispatch] = useReducer(reduceCanvasPane, namedCanvasId ?? canvasId, (initialId) =>
     initialCanvasPaneState(
       initialId,
-      namedCanvasId === undefined && pendingCreateMutationIds.has(appSessionId),
+      namedCanvasId === undefined ? (owedAttachment(appSessionId)?.message ?? null) : null,
     ),
   );
   const [reopenCount, setReopenCount] = useState(0);
-  const createInFlight = useRef<string | null>(null);
   const currentTarget = useRef({ appSessionId, namedCanvasId });
   currentTarget.current = { appSessionId, namedCanvasId };
   const mounted = useRef(false);
@@ -97,8 +86,11 @@ export function CanvasWorkspace({
       dispatch({ type: 'selected', canvasId: namedCanvasId });
       return;
     }
-    if (pendingCreateMutationIds.has(appSessionId)) {
-      dispatch({ type: 'create-failed', message: CREATE_RECOVERY_MESSAGE });
+    // An attachment this chat still owes decides what the pane shows: reading
+    // the sidecar now would report the state that operation has not reached.
+    const owed = owedAttachment(appSessionId);
+    if (owed) {
+      dispatch({ type: 'attach-failed', message: owed.message });
       return;
     }
     let active = true;
@@ -108,7 +100,7 @@ export function CanvasWorkspace({
         if (active) attach(attached);
       })
       .catch((error: unknown) => {
-        if (active) dispatch({ type: 'failed', message: recoveryMessage(error) });
+        if (active) dispatch({ type: 'failed', message: canvasMessage(error) });
       });
     return () => {
       active = false;
@@ -145,53 +137,74 @@ export function CanvasWorkspace({
     boardRef.current.focusFrame(frameId);
   }, [frameId, watched, state]);
 
-  const create = () => {
-    if (createInFlight.current === appSessionId) return;
-    createInFlight.current = appSessionId;
-    const mutationId = pendingCreateMutationIds.get(appSessionId) ?? crypto.randomUUID();
-    pendingCreateMutationIds.set(appSessionId, mutationId);
-    dispatch({ type: 'creating' });
-    canvas
-      .createCanvas(appSessionId, mutationId)
-      .then(({ attachedCanvasId }) => {
+  /**
+   * Starts the canvas this chat is owed, or replays the one it already owes:
+   * `canvasChats` keeps the create mutation ID and the attach target, so Try
+   * again cannot leave a second canvas behind.
+   */
+  const attachOwed = () => {
+    dispatch({ type: 'attaching' });
+    void settle(attachCanvasToChat(canvas, appSessionId, { canvasId: null }));
+  };
+
+  /** The canvas the user chose in place of whatever this chat owed. */
+  const chooseCanvas = (chosen: string) =>
+    settle(chooseCanvasForChat(canvas, appSessionId, chosen));
+
+  const settle = (attaching: Promise<string | null>): Promise<void> =>
+    attaching.then(
+      (attached) => {
+        acknowledgeAttachment(appSessionId);
         if (!mounted.current || currentTarget.current.appSessionId !== appSessionId) return;
-        pendingCreateMutationIds.delete(appSessionId);
-        onAttachmentChange(appSessionId, attachedCanvasId);
+        onAttachmentChange(appSessionId, attached);
         if (currentTarget.current.namedCanvasId === undefined)
-          dispatch({ type: 'created', canvasId: attachedCanvasId });
-      })
-      .catch((error: unknown) => {
+          dispatch({ type: 'settled', canvasId: attached });
+      },
+      (error: unknown) => {
         if (
           mounted.current &&
           currentTarget.current.appSessionId === appSessionId &&
           currentTarget.current.namedCanvasId === undefined
         )
-          dispatch({ type: 'create-failed', message: recoveryMessage(error) });
-      })
-      .finally(() => {
-        if (createInFlight.current === appSessionId) createInFlight.current = null;
-      });
-  };
+          dispatch({ type: 'attach-failed', message: canvasMessage(error) });
+      },
+    );
 
   return (
     <div
       data-testid="canvas-workspace"
       className="relative flex h-full min-h-0 flex-col bg-droid-bg"
     >
-      <div className="absolute right-2 top-2 z-10 rounded-lg bg-droid-raised shadow-droid-sm">
-        <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
-      </div>
+      {/* Expanded, the window's top row carries the canvas name and the
+          Chat | Canvas control instead (`CanvasHeader`). */}
+      {!isExpanded && (
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-droid-raised px-1 shadow-droid-sm">
+          {watched !== null && <CanvasMenu canvasId={watched} />}
+          <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
+        </div>
+      )}
       <CanvasBody
         state={state}
         appSessionId={appSessionId}
         interaction={interaction}
         onInteractionChange={setInteraction}
         boardRef={boardRef}
-        onAttached={attach}
-        onCreate={create}
+        onChoose={chooseCanvas}
+        onAttachOwed={attachOwed}
         onRetry={() => {
           dispatch({ type: 'reopened' });
           setReopenCount((count) => count + 1);
+        }}
+        onOpenSource={(designId) => {
+          dispatch(openSourcePanel(designId));
+        }}
+      />
+      <CanvasSourceSlot
+        frame={openSourceFrame(state)}
+        canvasId={watched}
+        appSessionId={appSessionId}
+        onClose={() => {
+          dispatch({ type: 'close-source' });
         }}
       />
     </div>
@@ -204,29 +217,31 @@ function CanvasBody({
   interaction,
   onInteractionChange,
   boardRef,
-  onAttached,
-  onCreate,
+  onAttachOwed,
+  onChoose,
   onRetry,
+  onOpenSource,
 }: {
   state: CanvasPaneState;
   appSessionId: string;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
-  onAttached: (canvasId: string) => void;
-  onCreate: () => void;
+  onAttachOwed: () => void;
+  onChoose: (canvasId: string) => Promise<void>;
   onRetry: () => void;
+  onOpenSource: (designId: string) => void;
 }) {
   switch (state.status) {
     case 'opening':
       return <CanvasStatus label="Opening Canvas…" />;
-    case 'creating':
-      return <CanvasStatus label="Creating a canvas…" />;
-    case 'create-recovering':
+    case 'attaching':
+      return <CanvasStatus label="Opening a canvas for this chat…" />;
+    case 'attach-recovering':
       return (
-        <CanvasPlate title="Check canvas creation">
+        <CanvasPlate title="Check this chat's canvas">
           <CanvasNote>{state.message}</CanvasNote>
-          <CanvasAction label="Try again" onClick={onCreate} />
+          <CanvasAction label="Try again" onClick={onAttachOwed} />
         </CanvasPlate>
       );
     case 'loading':
@@ -239,15 +254,7 @@ function CanvasBody({
         </CanvasPlate>
       );
     case 'unattached':
-      return (
-        <CanvasEmptyState
-          error={state.error}
-          onCreate={onCreate}
-          onListCanvases={() => canvas.listCanvases()}
-          onAttach={(canvasId) => canvas.attachCanvas(appSessionId, canvasId)}
-          onAttached={onAttached}
-        />
-      );
+      return <CanvasEmptyState error={state.error} onCreate={onAttachOwed} onChoose={onChoose} />;
     case 'ready':
       return (
         <CanvasBoardMount
@@ -256,6 +263,7 @@ function CanvasBody({
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           boardRef={boardRef}
+          onOpenSource={onOpenSource}
         />
       );
   }
@@ -272,12 +280,14 @@ function CanvasBoardMount({
   interaction,
   onInteractionChange,
   boardRef,
+  onOpenSource,
 }: {
   appSessionId: string;
   snapshot: CanvasSnapshot;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
+  onOpenSource: (designId: string) => void;
 }) {
   const { canvasId } = snapshot;
   const arrangeFrames = useCallback(
@@ -293,6 +303,7 @@ function CanvasBoardMount({
         <CanvasBoard
           ref={boardRef}
           snapshot={snapshot}
+          onOpenSource={onOpenSource}
           onArrangeFrames={arrangeFrames}
           interaction={interaction}
           onInteractionChange={onInteractionChange}

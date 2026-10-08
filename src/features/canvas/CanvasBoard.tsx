@@ -63,6 +63,7 @@ export interface CanvasBoardProps {
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
+  onOpenSource?: (designId: string) => void;
 }
 
 export function CanvasBoard({
@@ -72,6 +73,7 @@ export function CanvasBoard({
   renderPreview,
   interaction,
   onInteractionChange,
+  onOpenSource,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -298,6 +300,7 @@ export function CanvasBoard({
               dispatch({ type: 'escape' });
               board.current?.focus({ preventScroll: true });
             }}
+            onOpenSource={onOpenSource}
             onHold={gestures.onFramePointerDown}
             onPick={(picked, additive) => {
               dispatch({ type: 'pick', designId: picked.designId, additive });

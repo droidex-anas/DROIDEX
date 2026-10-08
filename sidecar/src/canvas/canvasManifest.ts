@@ -245,6 +245,7 @@ export function canvasSummary(manifest: CanvasManifest): CanvasSummary {
     name: manifest.name,
     updatedAt: manifest.updatedAt,
     designCount: manifest.designs.length,
+    attachedAppSessionIds: [...manifest.attachedAppSessionIds],
   };
 }
 
@@ -285,6 +286,21 @@ export function recordedRevision(
   const record = findMutation(manifest, mutationId, kind, fingerprint);
   if (record?.kind !== 'write' && record?.kind !== 'edit') return null;
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
+}
+
+export function requireDesign(manifest: CanvasManifest, designId: string): PersistedDesign {
+  const design = manifest.designs.find((entry) => entry.designId === designId);
+  if (!design)
+    throw canvasError('not_found', 'That frame is not on this canvas. Use Undo if it was removed.');
+  return design;
+}
+
+export function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
+  if (design.revisionId === expected) return;
+  throw canvasError(
+    'revision_conflict',
+    'That frame has a newer revision. Read it and apply your change again.',
+  );
 }
 
 export function recordedArrange(

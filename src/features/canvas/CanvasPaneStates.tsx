@@ -1,12 +1,8 @@
-// Every Canvas pane state that is not a board: the invitation, the Create /
-// Open saved canvas empty state, the saved-canvas list, and the plate they all
-// sit on. None of it reaches the bridge — `CanvasWorkspace` owns the seam and
-// passes the two reads this list needs.
-
 import { useState, type ReactNode } from 'react';
 import { LayoutTemplate, Spinner } from '@droidex/icons';
 import { useStoreDispatch } from '../../hooks/useStore';
-import { recoveryMessage } from './canvasState';
+import { canvasClient as canvas } from './canvasClient';
+import { canvasMessage } from './client';
 import type { CanvasSummary } from './protocol';
 
 // Starting points for a canvas with nothing on it. Each one seeds the chat's
@@ -54,15 +50,11 @@ export function CanvasInvitation({ children }: { children?: ReactNode }) {
 export function CanvasEmptyState({
   error,
   onCreate,
-  onListCanvases,
-  onAttach,
-  onAttached,
+  onChoose,
 }: {
   error: string;
   onCreate: () => void;
-  onListCanvases: () => Promise<CanvasSummary[]>;
-  onAttach: (canvasId: string) => Promise<unknown>;
-  onAttached: (canvasId: string) => void;
+  onChoose: (canvasId: string) => Promise<void>;
 }) {
   const [saved, setSaved] = useState<SavedCanvases | null>(null);
 
@@ -70,8 +62,7 @@ export function CanvasEmptyState({
     return (
       <SavedCanvasList
         saved={saved}
-        onAttach={onAttach}
-        onAttached={onAttached}
+        onChoose={onChoose}
         onBack={() => {
           setSaved(null);
         }}
@@ -88,12 +79,13 @@ export function CanvasEmptyState({
           label="Open saved canvas"
           onClick={() => {
             setSaved({ status: 'loading' });
-            onListCanvases()
+            canvas
+              .listCanvases()
               .then((summaries) => {
                 setSaved({ status: 'listed', summaries });
               })
               .catch((failure: unknown) => {
-                setSaved({ status: 'failed', message: recoveryMessage(failure) });
+                setSaved({ status: 'failed', message: canvasMessage(failure) });
               });
           }}
         />
@@ -109,17 +101,14 @@ type SavedCanvases =
 
 function SavedCanvasList({
   saved,
-  onAttach,
-  onAttached,
+  onChoose,
   onBack,
 }: {
   saved: SavedCanvases;
-  onAttach: (canvasId: string) => Promise<unknown>;
-  onAttached: (canvasId: string) => void;
+  onChoose: (canvasId: string) => Promise<void>;
   onBack: () => void;
 }) {
   const [attaching, setAttaching] = useState(false);
-  const [error, setError] = useState('');
 
   return (
     <CanvasPlate title="Saved canvases">
@@ -137,15 +126,9 @@ function SavedCanvasList({
                   disabled={attaching}
                   onClick={() => {
                     setAttaching(true);
-                    setError('');
-                    onAttach(summary.canvasId)
-                      .then(() => {
-                        onAttached(summary.canvasId);
-                      })
-                      .catch((failure: unknown) => {
-                        setAttaching(false);
-                        setError(recoveryMessage(failure));
-                      });
+                    // The pane reports the outcome: a failure leaves this chat
+                    // owing that canvas, which is what its recovery replays.
+                    void onChoose(summary.canvasId);
                   }}
                   className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-droid-accent/15 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
                 >
@@ -158,7 +141,6 @@ function SavedCanvasList({
             ))}
           </ul>
         ))}
-      {error && <CanvasFailure>{error}</CanvasFailure>}
       <CanvasAction label="Back" onClick={onBack} />
     </CanvasPlate>
   );

@@ -111,6 +111,7 @@ export function createSessionManagerTestContext(
     agentProcessHost?: SessionManagerDependencies['agentProcessHost'];
     onEvent?: (event: Protocol.ServerEvent) => void;
     onSessionAvailable?: (appSessionId: string) => void;
+    canvasTurns?: NonNullable<ConstructorParameters<typeof SessionManager>[1]>['canvasTurns'];
     configuredMcpServers?: McpServerConfig[];
     createLocalMcpResource?: SessionManagerDependencies['createLocalMcpResource'];
   } = {},
@@ -190,6 +191,7 @@ export function createSessionManagerTestContext(
       dependencies,
       initialModels: INITIAL_MODELS,
       providerProbes: NO_PROVIDER_PROBES,
+      ...(options.canvasTurns ? { canvasTurns: options.canvasTurns } : {}),
       ...(options.onSessionAvailable ? { onSessionAvailable: options.onSessionAvailable } : {}),
     });
   } catch (error) {

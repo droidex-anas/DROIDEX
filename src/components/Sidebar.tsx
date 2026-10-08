@@ -1,5 +1,5 @@
 import { ACTIVITY_LABELS, canSettleSession } from '../lib/sidebarActivity';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { useDocumentVisible } from '../hooks/useDocumentVisible';
@@ -7,7 +7,8 @@ import { pickDirectory } from '../lib/desktop';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../lib/sidebarCards';
 import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
 import { SIDEBAR_WELCOME_CARD_ID, SidebarWelcomeCard } from './SidebarWelcomeCard';
-import { BrandMark } from './BrandMark';
+import { ProductSwitcher } from './ProductSwitcher';
+import { LazyDesignSidebar } from '../lib/lazySurfaces';
 import SidebarSearch from './SidebarSearch';
 import { Search, Settings } from 'lucide-react';
 import { SquarePen, MessageCirclePlus } from '@droidex/icons';
@@ -68,6 +69,8 @@ export default function Sidebar({
     shallowEqual,
   );
   const activeSession = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
+  // Design mode replaces the chat list with the canvases list (spec §4).
+  const designMode = useStoreSelector((current) => current.productMode === 'design');
   // Sidebar-local chrome state: the search palette and the unread-only filter
   // (Codex-style bell toggle) belong to the sidebar, not the root store.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -307,11 +310,11 @@ export default function Sidebar({
       {/* Empty titlebar strip so traffic lights never collide with chrome. */}
       <div data-electron-drag-region className="h-9 shrink-0" />
 
-      {/* Brand row: wordmark left; Codex-style ghost icon actions right
-          (session search palette + unread-only filter). No button chrome,
-          hover state only. */}
+      {/* Brand row: the wordmark is also the Chat | Design product switcher
+          (spec §4); Codex-style ghost icon actions right (session search
+          palette + unread-only filter). No button chrome, hover state only. */}
       <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
-        <BrandMark size={13} className="text-droid-text" />
+        <ProductSwitcher />
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => {
@@ -323,96 +326,107 @@ export default function Sidebar({
           >
             <Search className="w-4 h-4" strokeWidth={1.75} />
           </button>
-          <UnreadFilterActions
-            unreadOnly={unreadOnly}
+          {/* The unread filter reads the chat list, which Design mode replaces. */}
+          {!designMode && (
+            <UnreadFilterActions
+              unreadOnly={unreadOnly}
+              unreadCount={unreadCount}
+              onToggleUnread={() => {
+                setUnreadOnly((value) => !value);
+              }}
+              onMarkAllRead={markAllSessionsRead}
+            />
+          )}
+        </div>
+      </div>
+
+      {designMode ? (
+        <Suspense fallback={null}>
+          <LazyDesignSidebar />
+        </Suspense>
+      ) : (
+        <>
+          {/* Navigation rows sit at session-row scale so the sidebar reads as one
+          list instead of a banner above it. */}
+          <div className="px-2 pb-1.5">
+            {/* The plus overlays the row's right edge, like a session row's menu,
+            so the whole row still highlights as one target. */}
+            <div className="group relative">
+              <button
+                onClick={newChat}
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-droid-text"
+              >
+                <SquarePen className="h-4 w-4 shrink-0 text-droid-text-secondary transition-colors group-hover:text-droid-text" />
+                New chat
+              </button>
+              <button
+                data-testid="new-workspaceless-chat"
+                onClick={() => {
+                  startChat('');
+                }}
+                title="New chat without a workspace"
+                aria-label="New chat without a workspace"
+                className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-droid-text-muted transition-colors hover:text-droid-text"
+              >
+                <MessageCirclePlus className="h-4 w-4" />
+              </button>
+            </div>
+            <SidebarNavigation announcementShown={welcomeVisible} />
+          </div>
+
+          <SidebarCustomize
+            preferences={preferences}
             unreadCount={unreadCount}
-            onToggleUnread={() => {
-              setUnreadOnly((value) => !value);
-            }}
+            onChange={activity.update}
             onMarkAllRead={markAllSessionsRead}
           />
-        </div>
-      </div>
-
-      {/* Navigation rows sit at session-row scale so the sidebar reads as one
-          list instead of a banner above it. */}
-      <div className="px-2 pb-1.5">
-        {/* The plus overlays the row's right edge, like a session row's menu,
-            so the whole row still highlights as one target. */}
-        <div className="group relative">
-          <button
-            onClick={newChat}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-droid-text"
-          >
-            <SquarePen className="h-4 w-4 shrink-0 text-droid-text-secondary transition-colors group-hover:text-droid-text" />
-            New chat
-          </button>
-          <button
-            data-testid="new-workspaceless-chat"
-            onClick={() => {
-              startChat('');
-            }}
-            title="New chat without a workspace"
-            aria-label="New chat without a workspace"
-            className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-droid-text-muted transition-colors hover:text-droid-text"
-          >
-            <MessageCirclePlus className="h-4 w-4" />
-          </button>
-        </div>
-        <SidebarNavigation announcementShown={welcomeVisible} />
-      </div>
-
-      <SidebarCustomize
-        preferences={preferences}
-        unreadCount={unreadCount}
-        onChange={activity.update}
-        onMarkAllRead={markAllSessionsRead}
-      />
-      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-3">
-        {unreadOnly && unreadCount === 0 && (
-          <div className="px-3 pt-2 pb-1 text-[12px] text-droid-text-muted">
-            No unread sessions.
+          <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-3">
+            {unreadOnly && unreadCount === 0 && (
+              <div className="px-3 pt-2 pb-1 text-[12px] text-droid-text-muted">
+                No unread sessions.
+              </div>
+            )}
+            {view === 'activity' ? (
+              <SidebarActivity
+                key={preferences.limit}
+                sessions={visibleSessions}
+                activeAppSessionId={state.activeAppSessionId}
+                statusFor={statusFor}
+                renderRow={renderRow}
+                limit={preferences.limit}
+                showSettled={preferences.filter === 'settled'}
+                hiddenCount={agedOutCount}
+              />
+            ) : view === 'pull-requests' ? (
+              <SidebarPullRequests
+                key={preferences.limit}
+                sessions={visibleSessions}
+                metadata={chatMetadata}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                limit={preferences.limit}
+              />
+            ) : (
+              <SidebarWorkspaceList
+                key={preferences.limit}
+                limit={preferences.limit}
+                workspaces={workspaces}
+                chatSessions={chatSessions}
+                pinnedSessions={pinnedSessions}
+                isFiltered={unreadOnly || preferences.filter !== 'all'}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                onAddWorkspace={pickAndChat}
+                onNewChat={startChat}
+                onRemoveWorkspace={(cwd) => {
+                  dispatch({ type: 'REMOVE_WORKSPACE', cwd });
+                }}
+                onShowEarlierSessions={onShowEarlierSessions}
+              />
+            )}
           </div>
-        )}
-        {view === 'activity' ? (
-          <SidebarActivity
-            key={preferences.limit}
-            sessions={visibleSessions}
-            activeAppSessionId={state.activeAppSessionId}
-            statusFor={statusFor}
-            renderRow={renderRow}
-            limit={preferences.limit}
-            showSettled={preferences.filter === 'settled'}
-            hiddenCount={agedOutCount}
-          />
-        ) : view === 'pull-requests' ? (
-          <SidebarPullRequests
-            key={preferences.limit}
-            sessions={visibleSessions}
-            metadata={chatMetadata}
-            activeAppSessionId={state.activeAppSessionId}
-            renderRow={renderRow}
-            limit={preferences.limit}
-          />
-        ) : (
-          <SidebarWorkspaceList
-            key={preferences.limit}
-            limit={preferences.limit}
-            workspaces={workspaces}
-            chatSessions={chatSessions}
-            pinnedSessions={pinnedSessions}
-            isFiltered={unreadOnly || preferences.filter !== 'all'}
-            activeAppSessionId={state.activeAppSessionId}
-            renderRow={renderRow}
-            onAddWorkspace={pickAndChat}
-            onNewChat={startChat}
-            onRemoveWorkspace={(cwd) => {
-              dispatch({ type: 'REMOVE_WORKSPACE', cwd });
-            }}
-            onShowEarlierSessions={onShowEarlierSessions}
-          />
-        )}
-      </div>
+        </>
+      )}
 
       {/* Settings */}
       <div className="px-2 py-2 border-t border-droid-border">

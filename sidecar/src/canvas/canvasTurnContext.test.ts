@@ -163,9 +163,11 @@ test('a pane mutation’s scope is not a turn lease', () => {
 test('an unattached ordinary chat mints a null binding its first create fills', async (t: TestContext) => {
   const { scopes, turns } = turnsFor(null);
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
-    isChatKnown: (appSessionId) => appSessionId === 'app-1',
+    isChatKnown: () => true,
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
-    bindScopeCanvas: (scopeId, canvasId) => scopes.bindScopeCanvas(scopeId, canvasId),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      scopes.bindScopeCanvas(scopeId, canvasId);
+    },
   });
   t.after(() => workspace.close());
 

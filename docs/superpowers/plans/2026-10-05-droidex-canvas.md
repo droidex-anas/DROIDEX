@@ -976,12 +976,13 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 - [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
-- [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
+- [x] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
-- [ ] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
+- [x] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
   Done: All three provider canaries stay absent from app-owned surfaces while matching user text remains visible.
-- [ ] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
+- [x] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
   Done: Each provider records live scope/routing results; unavailable account access remains explicitly unverified.
+  Result: Droid, Claude Code and Codex each verified with real model turns through the production SessionManager path (13/13 conformance checks, identity stable across resume); per-provider fixtures in `reports/canvas-04d-live-smoke/`, summarized into the 12c conformance table.
 
 **Files:** Create `sidecar/src/canvas/{canvasMcpServer.ts,canvasTurnContext.ts,canvasToolPresentation.ts,canvasMcpServer.test.ts,canvasTurnContext.test.ts,canvasToolPresentation.test.ts}`. Modify `sidecar/src/{SessionManager.ts,SessionLifecycle.ts,SessionEventFlow.ts,SessionTimeline.ts,timelineTranscripts.ts,sessionTranscriptParser.ts,sessionSearch.ts,protocol.ts}`, `sidecar/src/providers/{session.ts,primaryTurn.ts,ProviderTranscriptFile.ts}`, `sidecar/src/providers/codex/{CodexProvider.ts,codexSession.ts,appServer.ts}`, `src/{types/bridge.ts,lib/promptSend.ts}`, and owning queue/send/steer callers. Extend existing `SessionManager.mcp.test.ts`, race/queued-delivery tests, native-parser tests and `providers/codex/appServer.test.ts`.
 
@@ -1150,7 +1151,7 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
   Done: Running-board transformed input, clipping, ongoing gestures and layout conflicts preserve source and mounted preview state.
 - [ ] `canvas/05d-navigator-and-toolbar`: Build virtualized `CanvasNavigator.tsx` search, `CanvasToolbar.tsx`, completed context actions and zoom readout.
   Done: Named/status-labeled controls work in empty/loading/error states and search focuses the requested frame.
-- [ ] `canvas/05e-design-mode-and-canvas-header`: Add the Chat | Design product switcher at the sidebar wordmark, the Design home (large composer, example chips, design-system picker, “Your canvases” grid), the canvases sidebar list, new-canvas-per-prompt, “New chat with this canvas” in the docked composer menu, and the expanded board's top row.
+- [x] `canvas/05e-design-mode-and-canvas-header`: Add the Chat | Design product switcher at the sidebar wordmark, the Design home (large composer, example chips, design-system picker, “Your canvases” grid), the canvases sidebar list, new-canvas-per-prompt, “New chat with this canvas” in the docked composer menu, and the expanded board's top row.
   Done: Light/dark inspection and `tests/integration/canvas.spec.ts` verify the switcher, a Design home prompt creating a new canvas and attached chat, pane transitions, real CTA input and persisted attachments.
 
 **Files:** Create `src/features/canvas/{CanvasWorkspace.tsx,CanvasBoard.tsx,DesignFrame.tsx,CanvasToolbar.tsx,CanvasNavigator.tsx,canvasState.ts,canvasGeometry.ts,canvasGeometry.test.ts,canvasState.test.ts}` and `tests/integration/canvas.spec.ts`. Modify `src/lib/{utilityPanel.ts,lazySurfaces.tsx}`, `src/components/utility/{UtilityPane.tsx,utilityToolOptions.ts}`, `src/App.tsx`, `src/hooks/{useStore.tsx,persistedUiPreferences.ts}`, `src/components/Sidebar.tsx` and their existing focused tests. Reuse Task 3 `DesignPreview.tsx`.
@@ -1196,6 +1197,20 @@ assert.deepEqual(screenToCanvas(zoomAtPoint(before, pointer, 1.6), pointer), scr
 - [ ] Build virtualized Components search/focus, useful empty/loading/error views and the compact frame toolbar. Expose only completed actions at each local milestone; Task 12 requires the complete menu. Use actual design names and statuses as accessible labels, not icon-only discoverability.
 - [ ] Add Design mode (spec §4). Turn the `BrandMark` in `Sidebar.tsx`'s brand row into a product switcher: a `bg-droid-raised` popover with Chat and Design, current one checked, keyboard-accessible, the same quiet tone as the Codex app's ChatGPT | Codex switcher. The mode is a persisted sidebar preference, not a `SessionInteractionMode`. In Design mode the sidebar lists canvases (Recent, Favorites, Libraries) and the main area shows the Design home: a large centered composer reusing the existing composer and its model/harness/autonomy controls, a design-system picker chip, example-request chips, and a “Your canvases” grid of thumbnail cards (name, last edit, attached-chat count, search). Sending from Design home creates a new canvas and a new chat attached to it in one commit, then opens the workspace with the spec §4 layout (sidebar, ~360 px docked chat column with Agent / Components / Library tabs, board) through the §4 transition: the home composer travels into the chat column's composer slot as one shared-layout animation (180–220 ms), chips and grid fade out, the prompt is the first message, and the pending frame is already placed and blooming when the board fades in. Opening a card opens that canvas with its most recent attached chat. The chat column header's attached-chats menu lists every chat on this canvas and offers “New chat with this canvas”: a fresh session with fresh context attached to the same canvas, the original chat still attached. The canvas takes a provisional name from the prompt and adopts the first design's name unless the user renamed it.
 - [ ] Give the expanded board its own top row. When the board is expanded, `UtilityPane`'s header already owns the window's top row (with `WINDOW_CONTROLS_LEAD_PX` for the traffic lights); replace its tab strip there with a small DROIDEX mark and the canvas name on the left in the same tone and weight as the chat title pill, a `Chat | Canvas` segmented control in the existing soft `bg-droid-elevated` pill style beside it, and rename/Open saved canvas as a popover off the name. Chat returns the pane to its docked width; the composer stays where it is. Zoom readout sits bottom-left and Fit plus Select/Interact bottom-right of the board. No new palette, no second brand; verify light and dark in the running app before polishing.
+Settled by 05e (landed in `src/components/ProductSwitcher.tsx`, `src/features/canvas/{DesignHome,DesignSidebar,CanvasHeader,CanvasMenu,CanvasChatBootstrap}.tsx`, `src/features/canvas/{canvasChats,canvasClient,useCanvases,useOpenCanvas}.ts`, `src/{App,components/Sidebar,components/utility/UtilityPane}.tsx`, `src/hooks/{useStore,persistedUiPreferences,storePersistence}.ts`, `src/lib/{lazySurfaces,transcriptStoreMemory}.ts`, `sidecar/src/canvas/{protocol,canvasManifest}.ts`):
+
+- The subtask grew past its original "full canvas header" title into design mode as a whole, and is named `canvas/05e-design-mode-and-canvas-header` on `thread/canvas-05e-design-mode`.
+- **The switcher lives at the sidebar wordmark, not in settings** (user decision, 2026-10-07). `ProductSwitcher` replaces `BrandMark` in the brand row and reads `DROIDEX Chat` / `DROIDEX Design`; its popover is a two-row `role="menu"` with arrow-key walking and a check mark for the current product. Design mode hides the unread filter, which reads the chat list that Design replaces.
+- **Store keys.** `productMode: 'chat' | 'design'` is a persisted sidebar preference: it is in `UI_STATE_FIELDS` and in `PersistedUiState`, and only `'design'` restores (chat is the default, so nothing else is worth keeping). `canvasChatRequest: { appSessionId: string | null; canvasId: string | null } | null` is **not** persisted: it is the in-flight attachment a design draft owes the chat it is about to create. `appSessionId: null` means the chat does not exist yet; `canvasId: null` means mint a new canvas. `SESSION_CREATED` stamps the chat onto it, `CANVAS_CHAT_SETTLED` clears it, and leaving the draft (`SET_ACTIVE_SESSION`, `START_CHAT`, returning to Chat) drops it only while `appSessionId` is still null. Archive/delete and an authoritative `SESSION_LIST` prune it like `canvasAttachments`.
+- **Every Design-home prompt is a new canvas** (user decision; no "add to current"). Entering Design mode dispatches `SET_PRODUCT_MODE` and then `START_CHAT` with `canvas: { canvasId: null }`, so the Design home *is* the new-canvas draft: folder-less (`cwd: ''`, `executionMode: 'local'`), because designing needs no repository and a worktree is a side effect nobody asked for. `attachCanvasToChat` keys the create by a retained mutation ID per chat, so a lost or failed reply retries into the same canvas instead of a second one.
+- **The 7b design-system picker slot** is `DesignSystemChip` in `DesignHome.tsx`: a single chip above the composer, today a static `Design system · DROIDEX` label stating the kit every request is pinned to. 7b replaces that one function with `DesignSystemControl`; it receives the current `DesignSystemRef` and a change callback, and owns its own popover. Nothing else in 05e reads the kit.
+- Canvas stays **out of the utility-tool picker** (05a's decision holds); `UtilityPane.tsx` does not list it. The pane gained one optional `header` prop: a tool that owns the window's top row in place of the tab strip. Only the expanded Canvas tab passes it, and Hide-pane stays beside it.
+- `CanvasHeader` is that header: DROIDEX mark, the `Canvas` wordmark that opens `CanvasMenu`, and a `Chat | Canvas` radiogroup in the soft `bg-droid-elevated` pill. `Chat` returns the pane to its docked width and leaves the composer where it is.
+- `CanvasMenu` is the picker in both widths: the wordmark is the trigger in the expanded header, and the docked board shows it in the overlay beside `AgentPaneExpand`. **"New chat with this canvas" lives there**, with the canvas name, the chats on it, New canvas and the saved canvases. It reads `canvas.list` only while open, so the pane costs no bridge round-trip to render. A chat on the canvas that this window does not hold is listed disabled rather than hidden, so the count on a card and the rows in the menu agree.
+- `CanvasSummary` gained `attachedAppSessionIds: string[]` across `sidecar/src/canvas/protocol.ts`, `canvasManifest.ts`, the renderer mirror and `wireValidation.ts` in one commit; the chat id is bounded the way the manifest bounds it (1..200). A canvas card opens through the most recently active of those chats, and starts a fresh chat on the canvas when none of them is loaded here.
+- Entry-chunk cost is +5_242 bytes (1_433_429 → 1_438_671), and `initialRendererJsBytes` is raised 1_434_000 → 1_442_000 with the accounting in `tools/check-bundle-budgets.mjs`. All of it is app frame: the switcher paints at first frame, plus App's workspace branches, the store state, and the four lazy-surface registrations that keep the Design home, canvases sidebar, board header and chat bootstrap out of the entry. No `src/features/canvas` module is in the entry chunk; 05b-05d must stay inside the Canvas chunk.
+- Verified light and dark in the running app (screenshots in `reports/canvas-05e-shots/`). Deferred to later subtasks: canvas card thumbnails wait on captured frames (5c), and `tests/integration/canvas.spec.ts` is still 05's closing item.
+
 - [ ] Add integration behavior: create a frame through the real bridge owner, click its CTA, pan/zoom and expand the pane, then confirm the CTA stays changed while its preview remains mounted. Close/reopen the pane and confirm source/geometry survive; preview-local React state may reset by contract. Start a new chat with this canvas and an ordinary new chat and assert their attachments differ as specified.
 - [ ] Run focused geometry/state/utility tests and `rtk proxy npx playwright test tests/integration/canvas.spec.ts`. Manually inspect light/dark placement with a real chat, narrow utility pane and expanded board. The working create→build→click→reload flow is milestone one, not the final release.
 
@@ -1318,9 +1333,9 @@ Settled by 06b (`canvas/06b-chart-runtime`):
   Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
 - [ ] `canvas/07b-design-system-picker`: Add the composer picker popover (search, light/dark preview toggle, presets then user kits with two swatches each, “Manage design systems” footer) and removable system/reference chips with persisted future-request selection; wire the image drop/picker path to 07d's `importCanvasImage`.
   Done: A queued request retains its pinned kit version after the user changes selection; the picker matches spec §10 and V3 in light and dark.
-- [ ] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
+- [x] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
   Done: Apply uses normal revision/CAS, preserves behavior and reports incompatible mappings without mutating the global kit.
-- [ ] `canvas/07d-image-references`: Sidecar and Electron owner for validated image import into owned content-addressed storage, offline `canvas-asset:` serving in the preview host, and kit fonts served once by the host.
+- [x] `canvas/07d-image-references`: Sidecar and Electron owner for validated image import into owned content-addressed storage, offline `canvas-asset:` serving in the preview host, and kit fonts served once by the host.
   Done: Invalid image/path inputs fail; owned images/fonts render offline without exposing private paths.
 - [ ] `canvas/07e-manage-design-systems`: Add the manage dialog from spec §10: Presets and Yours list, New from DESIGN.md or CSS/Tailwind config, Colors / Typography / Spacing & Radius / Shadows detail tabs with light/dark toggle, Export and Save a copy, unmapped-token diagnostics, through the same `readDesignSystem`/`saveDesignSystem` owner as `canvas_theme`.
   Done: A kit authored from a pasted DESIGN.md compiles the starter example with the shared primitives; presets stay read-only; web import is absent.
@@ -1351,6 +1366,14 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+Settled by 07d (`canvas/07d-image-references`):
+
+- Electron main is the file permission boundary. Its picker chooses the path, and its drop API accepts only a native `File` path obtained by preload. Main matches the extension to the PNG/JPEG/WebP content, bounds the file, decodes PNG/JPEG with `nativeImage` and WebP with `@napi-rs/canvas`, then sends the path, SHA-256 digest and dimensions over a private loopback bridge route. The sidecar opens that exact file without following its final link and refuses a changed digest; a renderer WebSocket command or agent tool cannot submit a path. Import failures return a curated code and recovery message without the private path.
+- The sidecar stores each accepted image as `canvases/<canvasId>/assets/<sha256>` with a durable metadata record and 10 MiB and 8192 × 8192 limits. Identical bytes return the same asset ID. `canvas.listAssets` recovers IDs after a lost reply or deleted source file. The durable-listing crash/reopen case was not red-run. Canvas deletion in 09d must remove these assets; chat deletion or detachment keeps them with the canvas. Composer picker/drop chips and provider multimodal attachment wiring remain owned by 07b; this branch adds no text path to a prompt.
+- `canvas-asset:<assetId>` is the source spelling. The artifact read signs each owned reference for its canvas; main also binds each generated preview frame to its canvas and refuses images owned by other canvases. Fonts are global content-addressed kit resources; any bound frame may request an installed kit font by hash. Main refuses image and font requests from unbound guests and the default session. The guest keeps its opaque origin and network-denied session.
+- Asset URLs are canvas-scoped by design, so owned image references survive guest replacement and source revisions.
+- The three 07a presets import Inter/Lora WOFF2 source and OFL notices from `presets/fonts/*.json`. The stylesheet writer replaces their kit font data URLs with content-addressed host URLs and saves each font once under the profile; no second font loader is needed.
+- Known decode limit: Electron `nativeImage` accepts a PNG missing its final CRC byte. The image is still decoded and bounded, but this is not a complete file-integrity check.
 
 Settled by 07a (`canvas/07a-design-kits`):
 
@@ -1378,9 +1401,9 @@ Settled by 07a (`canvas/07a-design-kits`):
   for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
   SIL OFL files both in the repository and the kit's virtual source files. Provenance is
   in `presets/fonts/README.md`; other scripts use the local font stack.
-  Inline fonts are accepted for 07a: 64 KB of Inter, or 115 KB of Inter plus Lora,
-  per artifact is within every current limit. 07d owns serving each immutable font
-  once through a preview-host asset URL and changing the matching `font-src`/CSS allowlist.
+  The kit source retains those data URLs; 07d's stylesheet writer now serves each
+  immutable font once through a preview-host asset URL instead of repeating 64 KB
+  of Inter, or 115 KB of Inter plus Lora, in every artifact.
 - `lucide-react` is pinned to 0.460.0, the app's existing version. The shared browser
   module graph stages its ESM files, package metadata and ISC licence alongside Recharts;
   unused Lucide CJS is absent. The flat design import allowlist includes `lucide-react`
@@ -1396,6 +1419,50 @@ Settled by 07a (`canvas/07a-design-kits`):
   and font load.
 
 
+Settled by 07c (`thread/canvas-07c-canvas-theme`):
+
+- 04b wires `listDesignSystems()` and the existing `readDesignSystem(ref)` /
+  `saveDesignSystem(system)` from `sidecar/src/canvas/designSystems.ts` directly.
+  Listing returns presets followed by each user's latest immutable version, with
+  `{ id, version, name, kind: 'preset' | 'user', swatches: { light, dark } }`;
+  each mode has `{ surface, accent }`. Missing semantic swatches are transparent.
+  The bounded summary header publishes atomically with the kit in the same version
+  file. There is no second storage tree or metadata index. Preset saves throw
+  `preset_read_only`; unavailable pinned versions throw `version_mismatch`.
+- The existing MCP apply operation calls `applyDesignSystem(workspace, scope, input)` from
+  `sidecar/src/canvas/applyDesignSystem.ts`, where input is
+  `{ designId, expectedRevisionId: string | null, system: DesignSystemRef, mutationId }`.
+  It returns `{ status: 'applied', receipt: WriteReceipt }` or
+  `{ status: 'refused', diagnostics: CanvasDiagnostic[] }`. Authorization, CAS,
+  mutation replay and build admission remain in `workspace.write`; its async
+  source validator runs after replay/CAS and before any revision is published.
+  Missing tokens report `unmapped_token` once per token with a source file/line.
+  A missing kit version reports `version_mismatch`. Ordinary scope/CAS/storage
+  failures remain `CanvasCommandError` for 04b's shared error boundary. MCP keeps
+  its receipt success envelope and payload-free code/message refusal envelope;
+  token/CSS diagnostics use `invalid_source`, missing versions use `version_mismatch`.
+- The pure extraction helper is `extractDesignSystem(files, { name, sourceCanvasId, from })`
+  from `sidecar/src/canvas/extractDesignSystem.ts`, with `from: RevisionRef`.
+  `sourceCanvasId` is required because `RevisionRef` contains only design/revision
+  IDs. Extraction is not yet an MCP operation or pane action. Its future boundary
+  must supply the authorized canvas identity, never a model-selected canvas, and
+  read the revision under the original live scope; it must not remint authority.
+  MCP-authored saves exclude provenance rather than accepting model claims.
+  The result is `{ status: 'extracted', system, diagnostics }` or
+  `{ status: 'refused', diagnostics }`. Saving the extracted draft uses the same
+  `saveDesignSystem(system)` owner. Provenance is
+  `{ sourceCanvasId, revision: from }` on the immutable kit.
+- Extraction accepts explicit global CSS tokens (`:root`, `html`, and root
+  `data-mode` light/dark selectors), primitive `.ds-*` CSS overrides and dedicated
+  modules with explicit named Button/Input/Card/Badge/Tabs/Dialog exports plus
+  their owned relative dependencies. Imported kit implementations, inline/scoped
+  token interpretations and ambiguous exports are reported instead of inferred.
+  Missing primitives use the shared implementations and base styles; required
+  tokens use the shared DROIDEX defaults with owned values overlaid in each mode,
+  not values inherited from the source canvas's selected kit.
+  Missing mode counterparts, competing values and guidance over 16 KiB are refused;
+  source-owned `DESIGN.md` guidance is never truncated. No checklist items are ticked.
+
 ## Task 8: Element selection, direct edits and source/history UI
 
 **Subtasks (one branch and PR each, merged in order):**
@@ -1404,7 +1471,7 @@ Settled by 07a (`canvas/07a-design-kits`):
   Done: Round-trip tests preserve surrounding source and reject stale, repeated or computed edits honestly.
 - [ ] `canvas/08b-element-selection`: Add bounded preview selection events, board overlays and the direct inspector with scoped composer references.
   Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
-- [ ] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
+- [x] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
   Done: Agent updates preserve the local buffer; explicit Save creates a source revision.
 - [ ] `canvas/08d-revision-history`: Add canonical revision history/diff, read-only viewing and restore through the normal commit/build path.
   Done: Restore creates a new head, retains later history and reports system version/build status.
@@ -1471,6 +1538,71 @@ Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache pa
   than publishing a partial map or failing the preview.
   This independent bound also applies at the worker reply and cache boundaries. These are
   probes, not timing assertions in unit tests.
+
+Settled by 08c (`src/features/canvas/{canvasSourceState.ts,CanvasSourcePanel.tsx,CanvasSourceEditor.tsx,CanvasSourceSlot.tsx}`
+and `canvas.readSource`):
+
+- The drawer is not CodeMirror. The repository ships `@codemirror/{state,view,commands,language,lang-markdown}`
+  for the composer, but no JavaScript, TypeScript, JSX or CSS grammar, and this plan asks for
+  explicit justification before a new grammar dependency. A CodeMirror core editor would
+  therefore show a design's `.tsx` and `.css` with no colour at all. The app's code colour is
+  `prism-react-renderer`, which already highlights TSX, CSS and JSON in the files pane, so the
+  editor is a transparent textarea laid over that highlight: the caret, selection, native undo
+  and platform keyboard behaviour come free, Cmd/Ctrl+S saves, Tab indents, and the colour is the
+  one shared theme. The Prism theme moved from `FilePreviewPane.tsx` to `src/lib/codeTheme.ts` so
+  the two surfaces cannot drift. Lines never wrap: that is what keeps the gutter, the highlight
+  and the caret on the same line as a build's diagnostics, and the textarea's own scrolling is
+  translated into the single shared scroller so the two layers cannot slide apart. The editor is
+  one 190-line file behind a lazy boundary with a six-prop contract, so swapping in CodeMirror
+  plus a grammar later is a contained change.
+- `canvasSourceState.ts` is a pure reducer and the drawer's only state. Buffers are keyed by frame
+  and then by path, so leaving a frame and coming back cannot lose an edit; only closing the
+  drawer discards them, and that asks first. A buffer holds the draft, the revision the edit began
+  from and the file as it read at that revision. `pendingWrite` is the single place a Save is
+  assembled: one write, one `expectedRevisionId`, every dirty path, and null while a conflict is
+  open or while a save is in flight.
+- A revision that lands while a buffer is dirty never replaces it. If the revision left that file
+  alone, only the buffer's base moves, because a Save naming the revision the text was typed on
+  would be refused for a change somewhere else in the tree. If the revision changed the file, the
+  buffer becomes a conflict carrying that revision's text (or null when it deleted the file) and
+  the drawer shows "Updated by agent" with Keep mine and Take theirs. Both texts are held — theirs
+  in `files`, the user's in the buffer — until the user picks. Keep mine rebases onto the
+  superseding revision so the next Save is accepted instead of rejected again; the agent's text
+  stays in its own revision either way. Text typed while a save is in flight stays dirty on top of
+  the revision that save produced.
+- Diagnostics are placed from the real build result, not re-derived. `buildDiagnostics` returns
+  nothing for a build that has not produced any yet, so a `building` frame never shows the last
+  failure as current. `placeIssues` pins a diagnostic to a file and a 1-based line only when the
+  file is one the frame actually lists: esbuild reports the pinned kit as `@droidex/design-system/...`
+  and a failure inside a generated module with no file at all, and both are listed without a place
+  rather than landing on the wrong line. `column` is esbuild's 0-based UTF-8 byte offset, so it is
+  shown in no caret and used for no mapping.
+- `canvas.readSource` is the drawer's read: the renderer had no way to read a revision's files, and
+  `CanvasWorkspace.readFiles` already existed for the agent. It is a derived read authorized like
+  `canvas.subscribe` by the page asking, bounded by `canvasIdentifierSchema` on all three
+  identifiers, it leaves the design's head alone, and `canvasFiles.readRevision` already refuses a
+  revision belonging to another design. The renderer's inbound validator bounds the reply at the
+  sidecar's own 64 files and 256-character paths.
+- `openSourcePanel(designId)` in `canvasState.ts` is the event 5d's toolbar dispatches. The drawer
+  follows its frame across every board change and closes only once that frame leaves the board, so
+  a rebuild or an arrange cannot strand it on a design that is gone. `CanvasSourceSlot` owns the
+  lazy boundary and the two bridge calls, which keeps `CanvasWorkspace.tsx` at 488 lines.
+- 08c merged `thread/canvas-05a-canvas-pane` because 08a's base has no Canvas pane: nothing could
+  import the drawer, so it could be neither seen in the running app nor measured in the bundle.
+  Until the board mounts in 5b, 05a's placeholder plate offers Source per frame; 5c and 5d replace
+  that placeholder wholesale.
+- Measured: entry 1,433,651 bytes against the 1,434,000 line, largest lazy chunk 691,095, and the
+  drawer's own chunks 10,671 (panel) and 2,822 (editor), both lazy. Prism lands in one shared
+  chunk, so the duplicate-dependency scan stays clean. CSS is 102,189, which needed
+  `initialCssBytes` raised from 101,500 to 103,200: the Canvas pane alone measures 100,978 — 522
+  under the old line before the drawer existed — and the drawer's chrome is ~1,350. Trimming its
+  one-off utilities to the shared scale recovered 42 bytes, so the raise is the honest accounting,
+  and `tools/check-bundle-budgets.mjs` carries it. `reduceCanvasPane` goes from a complexity
+  warning of 18 to 22 for the two drawer events, and `isReply` from 17 to 18 for the `source`
+  reply; both were already over the advisory line and neither is an error.
+- Deferred to 08d and later: revision comparison and the side-by-side diff a conflict could offer
+  (the drawer states both sides and keeps them, but does not draw a diff yet), creating, deleting
+  or renaming files from the drawer, and a read-only view of an older revision. Nothing autosaves.
 
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.
@@ -1551,9 +1683,9 @@ Then write to one returned variant and assert the source and other variant remai
 
 - [x] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
   Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
-- [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
+- [x] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
   Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
-- [ ] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
+- [x] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
   Done: Repeated close is harmless and reused provider handles reject old writes/events; committed source survives failures.
 
 Settled by 10a (`thread/canvas-10a-source-export`):
@@ -1580,6 +1712,20 @@ Settled by 10b (`thread/canvas-10b-image-capture`):
 - Electron main captures the already attached preview guest through `webContents.capturePage`, after reading that guest's mounted design, revision and mount generation from the trusted intermediate. It captures the guest's CSS rectangle at its device scale, refuses more than 4,096 physical pixels on either edge, 16 million pixels total or 8 MiB of PNG, refuses a display Electron reports as locked, and settles after six seconds. Guest destruction, main's watchdog, renderer abort, a resized or replaced preview and canvas-pane unmount cancel pending work. No generated code, source write or agent turn participates in capture.
 - `captureCanvasImage(canvasId, ref, signal)` is the renderer operation over that Electron boundary. A ready preview populates a 32 MiB bounded thumbnail cache keyed by canvas, design and revision; `canvasThumbnailRead` exposes its exact-revision read through the preload bridge. `exportCanvasImage` sends captured PNG bytes to the OS save dialog and writes only its selected path. Unavailable capture returns `capture_unavailable`; a save failure returns `storage_failed`. The kit starter and a transparent design captured in the real Electron host; the starter's 720×720 CSS capture at 2× produced a 1,440×1,440 PNG in 56.02 ms in the final full arm64 smoke.
 - This base (`84480d9a`) has no Canvas board/context actions, artifact card or `canvas_inspect` MCP tool yet. Their controls and model screenshot delivery remain with Tasks 05, 06a and 04 respectively; the capture API and cache read are available for those owners. Task 10's checkbox stays open, as source export and lifecycle recovery are separate subtasks.
+
+Settled by 10c (builds/shutdown):
+
+- Shutdown refuses new Canvas commands, revokes turn scopes before session-file reconciliation settles, and starts Canvas cleanup without waiting for sessions or automation persistence.
+- Abandoning a compile cancels cooperatively, then uses bounded compiler termination; replacement work never reuses the abandoned child.
+- Build close starts compiler termination before draining storage, still waits for its runs, and publishes no late ready outcome.
+- Concurrent compiler termination joins one promise that settles on child exit, including the controlled grace-kill path. The worker flushes `stopped` before exiting.
+- Failing-first regressions cover held reconciliation/session cleanup, abandoned child ownership, held artifact storage, and acknowledgement versus exit. Storage exclusion, watches, and commit-queue recovery belong to the parallel 10c thread; no Task 10 checkbox is completed here.
+
+Settled by 10c (storage/bridge):
+
+- Physical Canvas roots have one atomic writer lease, including linked roots across profiles; live writers are refused before loading or cleanup, and close, failed open and confirmed process death release ownership.
+- Last-pane unsubscribe/page loss cancels pane-only queued and running builds; a live turn on that canvas retains its accepted work, and other panes or canvases keep theirs. Pending subscriptions revalidate their own identity after storage opens, so unsubscribe cannot resurrect a watch or rebuild.
+- Closing the commit queue rejects queued and new callers without waiting for active I/O, while still awaiting admitted staging and durable writes. Single commit ownership, flush-before-publish and publication-time CAS remain unchanged.
 
 ## Task 11: Motion, accessibility and measured performance
 

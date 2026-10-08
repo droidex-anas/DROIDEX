@@ -80,6 +80,7 @@ import {
   offersContextWindow,
 } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
+import { DesignComposerFrame } from './composer/DesignComposerFrame';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
@@ -194,6 +195,14 @@ const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
+
+/**
+ * Whether this composer is the one Design mode moves between its home and the
+ * canvas workspace: the live one, never a background tile's (spec §4).
+ */
+function travelsWithDesign(state: AppState, appSessionId: string | null): boolean {
+  return state.productMode === 'design' && appSessionId === state.activeAppSessionId;
+}
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'steer';
@@ -287,6 +296,7 @@ export default function PromptInput({
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
       composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
+      designComposer: travelsWithDesign(current, appSessionId),
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -2054,7 +2064,8 @@ export default function PromptInput({
   );
 
   return (
-    <div
+    <DesignComposerFrame
+      travels={state.designComposer}
       className={`w-full min-w-0 shrink-0 ${compact ? 'px-3 pb-3 pt-2' : 'px-6 pb-5 pt-2'}`}
       // The transcript keeps its own 24px padding inside the panel inset; the
       // composer must too, or its centre drifts 12px off the transcript's.
@@ -2553,6 +2564,6 @@ export default function PromptInput({
             />
           </Suspense>
         )}
-    </div>
+    </DesignComposerFrame>
   );
 }

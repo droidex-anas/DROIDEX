@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  CREATE_RECOVERY_MESSAGE,
   initialCanvasPaneState,
-  reduceBoardInteraction,
+  openSourceFrame,
+  openSourcePanel,
   reduceCanvasPane,
+  reduceBoardInteraction,
   SELECT_MODE,
-  watchedCanvasId,
   type BoardInteraction,
   type BoardInteractionEvent,
+  watchedCanvasId,
   type CanvasPaneState,
 } from './canvasState';
 import type { CanvasFrame, CanvasSnapshot } from './protocol';
@@ -47,19 +48,19 @@ test('opening the pane only reads: nothing but an explicit Create attaches a can
   assert.deepEqual(unattached, { status: 'unattached', error: '' });
   assert.equal(watchedCanvasId(unattached), null);
 
-  const creating = reduceCanvasPane(unattached, { type: 'creating' });
-  assert.equal(creating.status, 'creating');
+  const creating = reduceCanvasPane(unattached, { type: 'attaching' });
+  assert.equal(creating.status, 'attaching');
   assert.equal(watchedCanvasId(creating), null);
   assert.equal(
-    watchedCanvasId(reduceCanvasPane(creating, { type: 'created', canvasId: 'canvas-1' })),
+    watchedCanvasId(reduceCanvasPane(creating, { type: 'settled', canvasId: 'canvas-1' })),
     'canvas-1',
   );
 });
 
-test('reopening a pane with an unsettled Create keeps recovery ahead of cached attachment', () => {
-  assert.deepEqual(initialCanvasPaneState('canvas-old', true), {
-    status: 'create-recovering',
-    message: CREATE_RECOVERY_MESSAGE,
+test('reopening a pane with an unsettled attachment keeps recovery ahead of the cache', () => {
+  assert.deepEqual(initialCanvasPaneState('canvas-old', 'Canvas creation may still be running.'), {
+    status: 'attach-recovering',
+    message: 'Canvas creation may still be running.',
   });
 });
 
@@ -102,6 +103,7 @@ test('snapshots move the projection forward only', () => {
     status: 'ready',
     canvasId: 'canvas-1',
     snapshot: snapshot(4, ['Pricing']),
+    sourceDesignId: null,
   });
 
   // A resync answers with a snapshot taken before the changes already applied.
@@ -141,16 +143,16 @@ test('a failed Create stays in recovery until the same request is retried', () =
   const failed = apply(
     initialCanvasPaneState(null),
     { type: 'attached', canvasId: null },
-    { type: 'creating' },
-    { type: 'create-failed', message: 'DROIDEX is not connected.' },
+    { type: 'attaching' },
+    { type: 'attach-failed', message: 'DROIDEX is not connected.' },
   );
-  assert.deepEqual(failed, { status: 'create-recovering', message: 'DROIDEX is not connected.' });
+  assert.deepEqual(failed, { status: 'attach-recovering', message: 'DROIDEX is not connected.' });
 
   // A read can race an unsettled Create; it cannot re-offer the Create button.
   assert.equal(reduceCanvasPane(failed, { type: 'attached', canvasId: null }), failed);
   assert.equal(reduceCanvasPane(failed, { type: 'attached', canvasId: 'canvas-7' }), failed);
 
-  const retried = apply(failed, { type: 'creating' }, { type: 'created', canvasId: 'canvas-7' });
+  const retried = apply(failed, { type: 'attaching' }, { type: 'settled', canvasId: 'canvas-7' });
   assert.deepEqual(retried, {
     status: 'loading',
     canvasId: 'canvas-7',
@@ -169,7 +171,34 @@ test('a failed read offers a retry that starts the pane over', () => {
   assert.deepEqual(reduceCanvasPane(failed, { type: 'reopened' }), { status: 'opening' });
 });
 
-// ── The board's mode and selection ───────────────────────────────────
+test('the source drawer follows its frame and closes when the frame is gone', () => {
+  const ready = apply(initialCanvasPaneState('canvas-1'), {
+    type: 'snapshot',
+    snapshot: snapshot(4, ['Pricing', 'Hey']),
+  });
+  assert.equal(openSourceFrame(ready), null);
+
+  const open = reduceCanvasPane(ready, openSourcePanel('design-1'));
+  assert.equal(openSourceFrame(open)?.name, 'Hey');
+
+  // A change on the board leaves the drawer on its own frame.
+  const moved = reduceCanvasPane(open, {
+    type: 'snapshot',
+    snapshot: snapshot(5, ['Pricing', 'Hi']),
+  });
+  assert.equal(openSourceFrame(moved)?.name, 'Hi');
+
+  // The frame leaving the board closes the drawer rather than showing nothing.
+  const removed = reduceCanvasPane(moved, { type: 'snapshot', snapshot: snapshot(6, ['Pricing']) });
+  assert.equal(openSourceFrame(removed), null);
+
+  assert.equal(openSourceFrame(reduceCanvasPane(open, { type: 'close-source' })), null);
+  // A pane with no board has no drawer to open.
+  assert.equal(
+    reduceCanvasPane({ status: 'opening' }, openSourcePanel('design-1')).status,
+    'opening',
+  );
+});
 
 function pick(state: BoardInteraction, ...events: BoardInteractionEvent[]): BoardInteraction {
   return events.reduce(reduceBoardInteraction, state);

@@ -148,11 +148,15 @@ const UI_STATE_STORAGE_KEY = 'droid-ui-state-v2';
 
 export type MainView = 'session' | 'pull-requests' | 'automations' | 'projects';
 
+// The product the sidebar is showing: chats, or canvases and the Design home.
+export type ProductMode = 'chat' | 'design';
+
 interface PersistedUiState {
   activeAppSessionId: string | null;
   rightPanelOpen: boolean;
   utilityPanels: Record<string, UtilityPanelState>;
   sidebarCollapsed: boolean;
+  productMode?: ProductMode;
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
@@ -348,6 +352,7 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       utilityPanels: sanitizeUtilityPanels(parsed.utilityPanels),
       sidebarCollapsed:
         typeof parsed.sidebarCollapsed === 'boolean' ? parsed.sidebarCollapsed : undefined,
+      productMode: parsed.productMode === 'design' ? 'design' : undefined,
       specMode: typeof parsed.specMode === 'boolean' ? parsed.specMode : undefined,
       missionControlMode:
         typeof parsed.missionControlMode === 'boolean' ? parsed.missionControlMode : undefined,
@@ -373,6 +378,7 @@ export interface PersistedUiStateSource {
   rightPanelOpen: boolean;
   utilityPanels: Record<string, UtilityPanelState>;
   sidebarCollapsed: boolean;
+  productMode: ProductMode;
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
@@ -390,6 +396,7 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     rightPanelOpen: state.rightPanelOpen,
     utilityPanels: persistUtilityPanels(state.utilityPanels),
     sidebarCollapsed: state.sidebarCollapsed,
+    productMode: state.productMode,
     specMode: state.specMode,
     missionControlMode: state.missionControlMode,
     browsers: persistBrowsers(state.browsers),

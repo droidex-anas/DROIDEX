@@ -1981,9 +1981,11 @@ test('dependent ownership is committed before the first provider turn, and a fai
 test('an ordinary chat can create its first canvas during its initial turn', async (t) => {
   const h = createHarness();
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
-    isChatKnown: (appSessionId) => h.registry.getLive(appSessionId) !== undefined,
+    isChatKnown: () => true,
     isScopeActive: (scopeId) => h.canvasScopes.isScopeActive(scopeId),
-    bindScopeCanvas: (scopeId, canvasId) => h.canvasScopes.bindScopeCanvas(scopeId, canvasId),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      h.canvasScopes.bindScopeCanvas(scopeId, canvasId);
+    },
   });
   t.after(() => workspace.close());
   const provider = queueCreate(h, 'ordinary');

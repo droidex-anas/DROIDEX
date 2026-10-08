@@ -554,6 +554,8 @@ test('a building slot blooms and only a ready guest crossfades, with reduced mot
     Object.defineProperty(window, 'droidControl', {
       value: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
+        canvasPreviewBind: async (guestId: number, canvasId: string) =>
+          guestId === 41 && canvasId === 'cv_board',
         canvasPreviewCapture: async () => ({
           ok: false,
           error: { code: 'capture_unavailable', message: 'No capture in the DOM harness.' },

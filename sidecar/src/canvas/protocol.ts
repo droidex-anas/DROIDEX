@@ -14,6 +14,7 @@ import type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
+  SourceFiles,
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
@@ -123,6 +124,15 @@ export interface PreviewArtifact {
   html: string;
 }
 
+/** An image copied into one canvas; no private path crosses this contract. */
+export interface OwnedAsset {
+  assetId: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
 export interface CanvasFrame {
   designId: string;
   name: string;
@@ -154,6 +164,8 @@ export interface CanvasSummary {
   name: string;
   updatedAt: number;
   designCount: number;
+  /** The chats working on this canvas, used by Design cards and the chat menu. */
+  attachedAppSessionIds: string[];
 }
 
 // `create` answers with the canvas as well as the frames because an unattached
@@ -174,6 +186,8 @@ export interface WriteReceipt {
 export type CanvasErrorCode =
   | 'invalid_input'
   | 'revision_conflict'
+  | 'preset_read_only'
+  | 'version_mismatch'
   | 'invalid_source_path'
   | 'unsupported_import'
   | 'build_timeout'
@@ -204,6 +218,7 @@ export interface CanvasError {
 
 export type CanvasCommand =
   | { type: 'canvas.list'; requestId: string }
+  | { type: 'canvas.listAssets'; requestId: string; canvasId: string }
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
@@ -216,7 +231,23 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
-  | { type: 'canvas.createCanvas'; requestId: string; appSessionId: string; mutationId: string }
+  // A source read, authorized like `canvas.subscribe` by the page asking: the
+  // source drawer is the explicit place to read a revision's files (spec §9).
+  | {
+      type: 'canvas.readSource';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    }
+  | {
+      type: 'canvas.createCanvas';
+      requestId: string;
+      appSessionId: string;
+      mutationId: string;
+      /** The provisional name the prompt gave it; storage names it otherwise. */
+      name?: string;
+    }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
   | {
@@ -273,6 +304,7 @@ export type CanvasCommand =
 export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
+  | { kind: 'assets'; assets: OwnedAsset[] }
   | { kind: 'attachment'; canvasId: string | null }
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
@@ -281,7 +313,8 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
-  | { kind: 'artifact'; artifact: PreviewArtifact | null };
+  | { kind: 'artifact'; artifact: PreviewArtifact | null }
+  | { kind: 'source'; files: SourceFiles };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

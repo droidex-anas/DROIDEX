@@ -48,6 +48,7 @@ export interface DesignFrameProps {
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
+  onOpenSource?: (designId: string) => void;
 }
 
 export function DesignFrame({
@@ -67,6 +68,7 @@ export function DesignFrame({
   onPick,
   onInteract,
   onExitInteract,
+  onOpenSource,
 }: DesignFrameProps) {
   return (
     <div
@@ -129,6 +131,23 @@ export function DesignFrame({
           />
         )}
       </div>
+
+      {onOpenSource && (
+        <button
+          type="button"
+          aria-label={`Source of ${frame.name}`}
+          className="absolute left-0 top-full rounded-lg bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-secondary hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/30"
+          style={{ transform: `scale(${String(1 / scale)})`, transformOrigin: '0 0' }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={() => {
+            onOpenSource(frame.designId);
+          }}
+        >
+          Source
+        </button>
+      )}
 
       {interacted && (
         <button
