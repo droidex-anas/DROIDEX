@@ -1,6 +1,8 @@
 // The composer consumes a seed once by comparing ids, so two seeds created in
 // the same millisecond must still differ: the id is a monotonic sequence rather
 // than a timestamp.
+import type { QueuedPrompt } from '../hooks/useStore';
+
 let seedSequence = 0;
 
 export type ComposerSeed = ReturnType<typeof createComposerSeed>;
@@ -16,15 +18,19 @@ export function createComposerSeed(
     draftTileId = null,
     send = false,
     focus = true,
+    prompt,
   }: {
     appSessionId?: string | null;
     draftTileId?: string | null;
     send?: boolean;
     focus?: boolean;
+    // A whole prompt to restore with its chips and replies, e.g. a steer the
+    // user took back.
+    prompt?: QueuedPrompt | undefined;
   } = {},
 ) {
   seedSequence += 1;
-  return { text, id: seedSequence, replace, appSessionId, draftTileId, send, focus };
+  return { text, id: seedSequence, replace, appSessionId, draftTileId, send, focus, prompt };
 }
 
 /**

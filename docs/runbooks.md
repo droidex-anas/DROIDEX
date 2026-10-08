@@ -73,7 +73,9 @@ These runbooks cover local development and release triage for DROIDEX.
 1. Confirm the source version is final and the release branch checks are green.
 2. Confirm the protected `macos-release` GitHub environment contains the public
    Sentry DSN and Sparkle private key documented in
-   `docs/deployment-observability.md`.
+   `docs/deployment-observability.md`, and the signing certificate from the
+   [one-time self-signed certificate setup](releasing.md#one-time-free-signing-setup),
+   which keeps macOS permissions across updates.
 3. Build both architectures with `DROIDEX_UNSIGNED_RELEASE_BUILD=1`, download
    the last three releases' ZIPs as delta bases, generate the two signed
    appcasts and their Sparkle deltas, and write `SHA256SUMS`.
@@ -95,7 +97,7 @@ These runbooks cover local development and release triage for DROIDEX.
 8. For subsequent releases, complete the Sparkle N-1-to-N update smoke before
    treating the release as operationally ready.
 
-The ad-hoc-signed first-launch recovery is: open System Settings, choose Privacy &
+The free release's first-launch recovery is: open System Settings, choose Privacy &
 Security, find the blocked DROIDEX notice, choose Open Anyway, and confirm. Do
 not advise users to disable Gatekeeper globally.
 

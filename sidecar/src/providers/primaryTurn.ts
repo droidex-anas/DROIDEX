@@ -38,6 +38,8 @@ export interface PrimaryTurnRequest {
   // a turn of its own, which the chat showed only as pending. The turn adds
   // the row itself.
   announce?: true;
+  // Retained when a refused steer starts its own turn so its pending row can reconcile.
+  steerId?: string;
   // A message from another chat stops here once its sender may no longer send
   // it, even after the transcript row is written.
   stillAllowed?: () => boolean;
@@ -48,7 +50,7 @@ export async function runPrimaryTurn(
   liveSession: LiveSession,
   request: PrimaryTurnRequest,
 ): Promise<void> {
-  const { prompt, mentions, delivery, notice, announce, stillAllowed } = request;
+  const { prompt, mentions, delivery, notice, announce, steerId, stillAllowed } = request;
   const appSessionId = liveSession.summary.appSessionId;
   const providerSession = liveSession.session;
   const isCurrent = () =>
@@ -87,7 +89,7 @@ export async function runPrimaryTurn(
   if (notice) d.timeline.appendStatus(appSessionId, notice);
   else {
     const writing = announce
-      ? d.timeline.announcePrompt(appSessionId, prompt)
+      ? d.timeline.announcePrompt(appSessionId, prompt, false, steerId)
       : d.timeline.recordPrompt(appSessionId, prompt);
     if (writing) await writing;
   }
