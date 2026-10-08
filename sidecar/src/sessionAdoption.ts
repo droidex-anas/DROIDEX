@@ -10,18 +10,9 @@ import { errMsg } from './errors.js';
 import type { SessionLifecycle } from './SessionLifecycle.js';
 import { adoptedSessionFacts, retirableSessions } from './sessionRuntimeRetirement.js';
 
-const TURN_INTERRUPTED =
-  'The agent runtime restarted and this turn did not continue. Send a message to resume.';
-const SESSION_UNAVAILABLE =
-  'The agent runtime restarted and could not reconnect this session. Reopen it to continue.';
+export const TURN_INTERRUPTED = 'The agent runtime restarted and this turn did not continue.';
+const SESSION_UNAVAILABLE = 'This session could not reconnect. Reopen it to continue.';
 const CHILD_INTERRUPTED = 'The agent runtime restarted and this child agent did not continue.';
-
-const ACTIVE_PHASES = new Set<SessionPhase>([
-  'running',
-  'planning',
-  'initializing',
-  'orchestrator_turn',
-]);
 
 export interface SessionAdoptionDependencies {
   journal: LiveRuntimeJournal;
@@ -125,7 +116,8 @@ export class SessionAdoption {
 
   private async adoptSession(identity: LiveSessionIdentity): Promise<void> {
     const historical = this.dependencies.registry.getCanonicalSummary(identity.appSessionId);
-    const wasActive = identity.streaming || ACTIVE_PHASES.has(identity.phase);
+    // Settled turns retain their phase; only the journal's streaming flag means unfinished work.
+    const wasActive = identity.streaming;
     try {
       const resumed = await this.dependencies.lifecycle.resume(identity.appSessionId);
       if (!resumed) {
@@ -138,7 +130,7 @@ export class SessionAdoption {
         identity,
         historical,
         true,
-        reconnected ? TURN_INTERRUPTED : SESSION_UNAVAILABLE,
+        reconnected ? 'Send a message to resume.' : SESSION_UNAVAILABLE,
       );
     } catch (error) {
       await this.markSessionInterrupted(
@@ -156,22 +148,26 @@ export class SessionAdoption {
     wasActive: boolean,
     reason: string,
   ): Promise<void> {
+    const prefix = wasActive ? TURN_INTERRUPTED : 'The agent runtime restarted.';
+    const interruptReason = `${prefix} ${reason}`;
     const { registry } = this.dependencies;
     const live = registry.getLive(identity.appSessionId);
     if (live) {
-      registry.updateSummary(identity.appSessionId, interruption(live.summary, wasActive, reason), {
-        touchActivity: false,
-      });
+      registry.updateSummary(
+        identity.appSessionId,
+        interruption(live.summary, wasActive, interruptReason),
+        { touchActivity: false },
+      );
     } else {
       const base = historical ?? syntheticSummary(identity);
       await this.dependencies.persistSummaries([
-        { ...base, ...interruption(base, wasActive, reason) },
+        { ...base, ...interruption(base, wasActive, interruptReason) },
       ]);
       // The chat was opened while this was stored, and speaks for itself now.
       if (registry.getLive(identity.appSessionId)) return;
     }
-    this.interrupted.push({ appSessionId: identity.appSessionId, reason });
-    this.dependencies.appendStatus(identity.appSessionId, reason);
+    this.interrupted.push({ appSessionId: identity.appSessionId, reason: interruptReason });
+    this.dependencies.appendStatus(identity.appSessionId, interruptReason);
   }
 
   private markChildInterrupted(identity: LiveChildIdentity): void {

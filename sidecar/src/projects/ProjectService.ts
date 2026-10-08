@@ -1,5 +1,6 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { SteeredReportDelivery } from '../SessionLifecycle.js';
+import { TURN_INTERRUPTED } from '../sessionAdoption.js';
 import { ProjectWakeQueue, unreadThreadNote, wakePrompt } from './ProjectWakeQueue.js';
 import {
   clearAsk,
@@ -1178,7 +1179,11 @@ export class ProjectService {
       for (const thread of project.threads) {
         if (!thread.ownerAppSessionId || thread.queuedSpawn) continue;
         const session = this.sessions.get(thread.appSessionId);
-        if (session?.interruptReason && !session.streaming && session.phase === 'paused')
+        if (
+          session?.interruptReason?.startsWith(TURN_INTERRUPTED) &&
+          !session.streaming &&
+          session.phase === 'paused'
+        )
           this.restartRecovery.add(thread.appSessionId);
       }
       this.refillRestartRecovery(project);

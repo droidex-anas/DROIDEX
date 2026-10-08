@@ -196,9 +196,11 @@ export class ProjectWakeQueue {
     if (this.closed || !this.started || this.scheduled) return;
     this.scheduled = setImmediate(() => {
       this.scheduled = undefined;
-      for (const project of this.projects) {
+      for (const project of [...this.projects]) {
         const next = this.nextDelivery(project);
         if (!next || (next.mode !== 'steer' && this.running() >= MAX_ACTIVE)) continue;
+        this.projects.delete(project);
+        this.projects.add(project);
         const work = this.deliver(project, next.target, next.mode === 'steer')
           .catch((error: unknown) => {
             this.fail(project, error);

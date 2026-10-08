@@ -210,24 +210,33 @@ test('a report refused before handoff stays unchanged and delivers once after av
 });
 
 test('completed callbacks free the global limit of two accepted project turns', async (t) => {
-  const states = [project('one'), project('two'), project('three')];
-  states.forEach((item, index) => {
-    item.pending[0].to = `main-${String(index)}`;
+  const states = [project('first'), project('second'), project('third')];
+  states.forEach((item) => {
+    item.pending[0].to = item.id;
   });
+  states[0].pending.push(message('first-backlog', 'first-next'));
+  const firstFinished = deferred<void>();
   const finished = deferred<void>();
-  let calls = 0;
-  const queue = wakeQueue(t, async () => {
-    calls += 1;
-    return { status: 'accepted', settled: finished.promise };
+  t.after(() => {
+    firstFinished.resolve();
+    finished.resolve();
   });
-  states.forEach((item) => queue.kick(item));
-  await tick();
-  await tick();
-  assert.equal(calls, 2);
-  finished.resolve();
-  await tick();
-  await tick();
-  assert.equal(calls, 3);
+  const order: string[] = [];
+  const queue = wakeQueue(t, async (target) => {
+    order.push(target);
+    return {
+      status: 'accepted',
+      settled: target === 'first' ? firstFinished.promise : finished.promise,
+    };
+  });
+  queue.start(states);
+  await drain();
+  assert.equal(order.length, 2);
+  assert.deepEqual(order, ['first', 'second']);
+  firstFinished.resolve();
+  await drain();
+  assert.equal(order.length, 3);
+  assert.deepEqual(order, ['first', 'second', 'third']);
 });
 
 test('explicit resume rechecks both target and capacity busy markers', async (t) => {

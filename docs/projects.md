@@ -55,11 +55,12 @@ are never capped.
 
 **After a restart.** DROIDEX loads the transcripts first. Waiting messages and
 queued threads are kept. A thread cut off mid-turn gets one "continue" from
-DROIDEX unless a message for it is already waiting. An in-flight delivery that
-held only reports leaves identified, durable replies unread. Reports without
-a reply identity or retained reply text return to the pending queue, including
-failed, stopped and empty turns. Any other in-flight delivery holds the project
-for review, and Resume discards it.
+DROIDEX unless a message for it is already waiting. Finished threads whose
+runtimes were idle receive no continuation, and finished projects stay done.
+An in-flight delivery that held only reports leaves identified, durable replies
+unread. Reports without a reply identity or retained reply text return to the
+pending queue, including failed, stopped and empty turns. Any other in-flight
+delivery holds the project for review, and Resume discards it.
 A ledger that cannot be read is reported and left untouched.
 
 | Tool | Changes now | Later effect |
@@ -385,12 +386,13 @@ They start when capacity opens, after resumes that can be admitted. A resume
 blocked by its own project's delivery does not hold up other projects' spawns.
 That project's spawns wait until its delivery claim clears and its pending
 resumes go first, including resumes parked on busy or capacity markers.
-Reports and due reminders can steer into a busy owner's turn without starting a
-competing turn. Stop waits for admissions; steered handoffs settle without
-waiting for provider acknowledgement. An unread reply remains discoverable
-through `thread_list` and the next wake even if Stop loses the push. Interrupted
-threads receive one restart continuation only when they have no instruction
-already queued, including when the inbox is full.
+Projects take turns admitting deliveries, so one project's backlog cannot
+starve another project. Reports and due reminders can steer into a busy owner's
+turn without starting a competing turn. Stop waits for admissions; steered
+handoffs settle without waiting for provider acknowledgement. An unread reply
+remains discoverable through `thread_list` and the next wake even if Stop loses
+the push. Interrupted threads receive one restart continuation only when they
+have no instruction already queued, including when the inbox is full.
 
 A report refused before steer handoff returns unchanged to the ledger. A
 scheduled turn whose outcome is unknown holds the project for review. A
