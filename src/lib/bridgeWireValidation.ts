@@ -231,6 +231,7 @@ export function isServerEvent(value: unknown): value is ServerEvent {
             )))
       );
     case 'session.model_update_applied':
+    case 'session.autonomy_update_applied':
       return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
     case 'browser.closed':
