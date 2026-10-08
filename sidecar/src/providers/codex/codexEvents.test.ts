@@ -7,9 +7,11 @@ import { join } from 'node:path';
 import type { AppServerClient } from './appServer.js';
 import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
-import type { PermissionOutcome } from '../../protocol.js';
+import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import { CodexSession } from './codexSession.js';
+import { SessionInteractions } from '../../SessionInteractions.js';
+import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
 const FAILED = {
@@ -161,6 +163,7 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
     },
     (id) => mapper.toolDetail(id),
     () => false,
+    () => false,
   );
   const approve = handlers.get('item/fileChange/requestApproval');
   assert.ok(approve);
@@ -245,7 +248,74 @@ test('thread start, resume and every turn carry the requested service tier inclu
   );
 });
 
-test('edits-only checks workspace paths and keeps the running turn permission snapshot', async () => {
+test('running Codex approvals follow current autonomy and settle eligible pending requests', async (t) => {
+  const emitted: ServerEvent[] = [];
+  const live = { summary: sessionSummary({ appSessionId: 'app-1', provider: 'codex' }) };
+  const interactions = new SessionInteractions({
+    getLiveSession: () => live,
+    updateSummary: (_id, patch) => Object.assign(live.summary, patch),
+    setProviderSpecMode: async () => undefined,
+    emit: (event) => emitted.push(event),
+    emitError: (error) => assert.fail(error.message),
+  });
+  const methods: string[] = [];
+  const { client, notifications, requests } = fakeClient((method, params) => {
+    methods.push(method);
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'turn/start') {
+      assert.equal(params.approvalPolicy, 'untrusted');
+      return { turn: { id: 'turn-1' } };
+    }
+    return undefined;
+  });
+  const session = new CodexSession({
+    appSessionId: 'app-1',
+    client,
+    cwd: '/tmp',
+    autonomy: 'low',
+    model: {},
+    interactions: interactions.interactionsFor({ id: 'app-1' }),
+  });
+  await session.open();
+  const stream = session.stream('search');
+  t.after(async () => {
+    await stream.return(undefined);
+    await session.close();
+  });
+  const first = stream.next();
+  notifications.get('item/started')?.({
+    threadId: 'thread-1',
+    item: { type: 'commandExecution', id: 'exec', command: 'rg --files', status: 'inProgress' },
+  });
+  await first;
+  const approve = requests.get('item/commandExecution/requestApproval');
+  assert.ok(approve);
+  const request = { threadId: 'thread-1', turnId: 'turn-1', itemId: 'exec', command: 'rg --files' };
+  const pending = approve(request);
+  assert.equal(emitted.at(-1)?.type, 'approval.requested');
+  await session.setAutonomy('medium');
+  assert.equal(interactions.hasPendingApproval('app-1'), true);
+  await session.setAutonomy('high');
+  assert.equal(interactions.hasPendingApproval('app-1'), false);
+  assert.deepEqual(await pending, { decision: 'accept' });
+  assert.equal(emitted.at(-1)?.type, 'interaction.cancelled');
+  const count = emitted.length;
+  assert.deepEqual(await approve(request), { decision: 'accept' });
+  assert.equal(emitted.length, count, 'high autonomy must not reach the user');
+  for (const autonomy of ['low', 'medium'] as const) {
+    await session.setAutonomy(autonomy);
+    const answer = approve(request);
+    const event = emitted.at(-1);
+    assert.equal(event?.type, 'approval.requested');
+    if (event?.type !== 'approval.requested') throw new Error('Missing approval');
+    await interactions.respondToApproval('app-1', event.request.requestId, 'refuse');
+    assert.deepEqual(await answer, { decision: 'decline' });
+  }
+  assert.equal(methods.filter((method) => method === 'turn/start').length, 1);
+  assert.equal(methods.includes('turn/interrupt'), false);
+});
+
+test('edits-only checks workspace paths and follows current approval autonomy', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'codex-permissions-'));
   const cwd = join(directory, 'workspace');
   mkdirSync(cwd);
@@ -304,8 +374,6 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
     };
     assert.deepEqual(await approval('src/new.ts'), { decision: 'accept' });
     await first;
-    await session.setAutonomy('off');
-    assert.deepEqual(await approval('still-this-turn.ts'), { decision: 'accept' });
     for (const path of [
       '../outside',
       '.git/config',
@@ -325,7 +393,9 @@ test('edits-only checks workspace paths and keeps the running turn permission sn
       }),
       { decision: 'cancel' },
     );
-    assert.equal(asked, 9);
+    await session.setAutonomy('off');
+    assert.deepEqual(await approval('still-this-turn.ts'), { decision: 'cancel' });
+    assert.equal(asked, 10);
     await stream.return(undefined);
     const nextStarted = new Promise<void>((resolve) => {
       markStarted = resolve;

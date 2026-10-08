@@ -1,6 +1,6 @@
 // One `codex app-server` process per DROIDEX session, holding one thread. Turns
-// run on that thread; model, effort and autonomy ride on each `turn/start`,
-// which Codex applies to that turn and the ones after it.
+// run on that thread; model, effort and sandbox ride on each `turn/start`.
+// Approval requests follow the session's current autonomy even mid-turn.
 import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
@@ -66,7 +66,6 @@ export class CodexSession implements ProviderSession {
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
   private autonomy: Autonomy;
-  private turnAutonomy?: Autonomy;
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
@@ -238,7 +237,6 @@ export class CodexSession implements ProviderSession {
     const turn = new TurnStream();
     this.mapper.beginTurn();
     this.turn = turn;
-    this.turnAutonomy = this.autonomy;
     this.pendingInterrupt = false;
     this.interruptedTurnId = undefined;
     try {
@@ -262,7 +260,6 @@ export class CodexSession implements ProviderSession {
       if (this.turn === turn) {
         this.prompts.cancel();
         this.turn = undefined;
-        this.turnAutonomy = undefined;
         this.turnId = undefined;
       }
       this.pendingInterrupt = false;
@@ -272,17 +269,12 @@ export class CodexSession implements ProviderSession {
   // A typed turn takes the autonomy on its own `turn/start`. A turn Codex
   // starts for a spoken request has none, so the thread is told as well:
   // otherwise a chat turned down to ask-first would still act unattended when
-  // spoken to. This one does not swallow: the caller declines to publish a
-  // level the thread never took, and the session keeps the one it still has.
+  // spoken to. Approvals use the new level as soon as the update succeeds;
+  // the running turn keeps its sandbox until the next turn.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    const previous = this.autonomy;
+    await this.applyThreadSettings(autonomy);
     this.autonomy = autonomy;
-    try {
-      await this.applyThreadSettings();
-    } catch (error) {
-      this.autonomy = previous;
-      throw error;
-    }
+    this.prompts.approvePending();
   }
 
   async setModel(settings: ProviderModelSettings): Promise<void> {
@@ -322,11 +314,11 @@ export class CodexSession implements ProviderSession {
   // sandbox travel together, the way `turn/start` sends them, because half an
   // autonomy level is worse than none: an unsandboxed turn that never asks, or
   // a sandboxed one that cannot ask for the escalation it needs.
-  private async applyThreadSettings(): Promise<void> {
+  private async applyThreadSettings(autonomy = this.autonomy): Promise<void> {
     const threadId = this.threadId;
     if (!threadId) return;
     const { reasoningEffort } = this.model;
-    const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
+    const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
     // A cleared pin means the thread's own model, which is what the mapper and
     // `turn/start` already read it as. Omitting it would leave the thread on
     // the model the chat no longer names.
@@ -553,11 +545,14 @@ export class CodexSession implements ProviderSession {
       (itemId) => this.mapper.toolDetail(itemId),
       (request) =>
         !this.hasClosed &&
-        this.turnAutonomy === 'low' &&
-        this.turnId !== undefined &&
-        request.threadId === this.threadId &&
-        request.turnId === this.turnId &&
-        canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
+        (codexAutonomy(this.autonomy).approvalPolicy === 'never' ||
+          (this.autonomy === 'low' &&
+            request.grantRoot == null &&
+            this.turnId !== undefined &&
+            request.threadId === this.threadId &&
+            request.turnId === this.turnId &&
+            canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)))),
+      () => !this.hasClosed && codexAutonomy(this.autonomy).approvalPolicy === 'never',
     );
     // Codex can ask for things this build has no card for. They are refused at
     // the transport, and the chat says so: a silent refusal reads as the turn

@@ -112,6 +112,7 @@ export class SessionInteractions {
     ) {
       return 'proceed_once';
     }
+    let unsubscribe: (() => void) | undefined;
     return await new Promise<PermissionOutcome>((resolve) => {
       const { request, signature } = approval;
       const canAlwaysAllow = request.canAlwaysAllow && Boolean(signature);
@@ -140,7 +141,29 @@ export class SessionInteractions {
         type: 'approval.requested',
         request: { ...request, canAlwaysAllow },
       });
-    });
+      if (liveSession && scope) {
+        const pending = scope.pendingPermissions.get(request.requestId);
+        unsubscribe = approval.onAutoApprove?.(() => {
+          if (
+            !pending ||
+            pending.responding ||
+            scope.pendingPermissions.get(request.requestId) !== pending ||
+            this.dependencies.getLiveSession(sessionId) !== liveSession ||
+            liveSession.closePromise
+          )
+            return;
+          scope.pendingPermissions.delete(request.requestId);
+          pending.resolve('proceed_once');
+          this.dependencies.emit({
+            type: 'interaction.cancelled',
+            appSessionId: liveSession.summary.appSessionId,
+            requestId: request.requestId,
+          });
+          if (!this.hasPending(liveSession.summary.appSessionId))
+            this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
+        });
+      }
+    }).finally(() => unsubscribe?.());
   }
 
   private askQuestion(

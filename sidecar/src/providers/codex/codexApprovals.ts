@@ -123,6 +123,7 @@ async function decideApproval(
   appSessionId: string,
   interactions: ProviderInteractions,
   approval: CodexApproval,
+  onAutoApprove: (approve: () => void) => () => void,
 ): Promise<ApprovalDecision> {
   const outcome = await interactions.requestApproval({
     request: {
@@ -136,6 +137,7 @@ async function decideApproval(
       raw: approval.raw,
     },
     confirmationType: approval.kind,
+    onAutoApprove,
     ...(approval.signature ? { signature: approval.signature } : {}),
   });
   return approvalDecision(outcome);
@@ -185,6 +187,7 @@ async function answerQuestions(
 // waiter behind, under the next turn.
 export class OpenPrompts {
   private open = 0;
+  private readonly pendingApprovals = new Set<() => void>();
 
   constructor(
     private readonly appSessionId: string,
@@ -196,14 +199,16 @@ export class OpenPrompts {
     client: Pick<AppServerClient, 'onRequest'>,
     fileDetail: (itemId: string) => FileChangeDetail | undefined,
     canApproveEdits: (request: FileChangeApproval) => boolean,
+    canApproveCommands: () => boolean,
   ): void {
     client.onRequest('item/commandExecution/requestApproval', (params) =>
-      this.decide(commandApproval(params as CommandApproval)),
+      this.decide(commandApproval(params as CommandApproval), canApproveCommands),
     );
     client.onRequest('item/fileChange/requestApproval', async (params) => {
       const request = params as FileChangeApproval;
-      if (request.grantRoot == null && canApproveEdits(request)) return { decision: 'accept' };
-      return this.decide(fileChangeApproval(request, fileDetail(request.itemId)));
+      return this.decide(fileChangeApproval(request, fileDetail(request.itemId)), () =>
+        canApproveEdits(request),
+      );
     });
     client.onRequest('item/tool/requestUserInput', async (params) => {
       const { questions } = params as { questions: RequestedQuestion[] };
@@ -215,10 +220,27 @@ export class OpenPrompts {
     if (this.open > 0) this.interactions.cancelPending();
   }
 
-  private async decide(approval: CodexApproval): Promise<{ decision: ApprovalDecision }> {
+  approvePending(): void {
+    for (const approve of this.pendingApprovals) approve();
+  }
+
+  private async decide(
+    approval: CodexApproval,
+    canApprove: () => boolean,
+  ): Promise<{ decision: ApprovalDecision }> {
+    if (this.interactions.isActive() && canApprove()) return { decision: 'accept' };
     return {
       decision: await this.ask(() =>
-        decideApproval(this.appSessionId, this.interactions, approval),
+        decideApproval(this.appSessionId, this.interactions, approval, (approve) => {
+          const tryApprove = () => {
+            if (this.interactions.isActive() && canApprove()) approve();
+          };
+          this.pendingApprovals.add(tryApprove);
+          tryApprove();
+          return () => {
+            this.pendingApprovals.delete(tryApprove);
+          };
+        }),
       ),
     };
   }

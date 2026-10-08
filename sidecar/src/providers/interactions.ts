@@ -16,6 +16,8 @@ export interface ProviderApprovalRequest {
   // The MCP server and tool, when the request is for one. The policies for
   // DROIDEX's own servers approve their tools by the chat's autonomy.
   mcpTool?: { serverName: string; toolName: string };
+  // Subscribe to policy changes that allow this exact request; return cleanup.
+  onAutoApprove?: (approve: () => void) => () => void;
 }
 
 export interface ProviderQuestionAnswers {
