@@ -105,10 +105,11 @@ export function useThreadSignals(threadIds: readonly string[]): ThreadSignals {
       attention: (id) => sessionAttention(id, live.pendingPermissions, live.pendingQuestions),
       asking: (id) => {
         const permission = live.pendingPermissions[id]?.[0];
-        const asked =
-          permission?.detail ||
-          permission?.title ||
-          live.pendingQuestions[id]?.[0]?.questions[0]?.question;
+        const asked = [
+          permission?.detail,
+          permission?.title,
+          live.pendingQuestions[id]?.[0]?.questions[0]?.question,
+        ].find((text) => text?.trim());
         return asked?.trim().split('\n')[0];
       },
       digests,

@@ -25,6 +25,8 @@ export function ThreadList({
   startedAt,
   done,
   held,
+  leadStopped = false,
+  onResume,
   now,
   error,
   activeAppSessionId,
@@ -37,8 +39,11 @@ export function ThreadList({
   cwd?: string;
   startedAt?: number;
   done?: ProjectDone;
-  /** Coordination is held, so nothing waiting will move on its own. */
+  /** The project is paused, so nothing waiting will move on its own. */
   held: boolean;
+  /** The user stopped the lead; its threads keep working and reports wait for it. */
+  leadStopped?: boolean;
+  onResume?: () => void;
   now: number;
   error: string;
   activeAppSessionId?: string | null;
@@ -72,10 +77,27 @@ export function ThreadList({
           {timeline && (
             <p className="mt-0.5 text-[12px] leading-5 text-droid-text-muted">{timeline}</p>
           )}
-          {held && (
-            <p className="mt-1 text-[13px] leading-5 text-droid-text-secondary">
-              Coordination is held. Resume it in Projects.
-            </p>
+          {held ? (
+            <div className="mt-2 flex items-center gap-3">
+              <p className="min-w-0 flex-1 text-[13px] leading-5 text-droid-text-secondary">
+                Paused. Work and queued messages are kept.
+              </p>
+              {onResume && (
+                <button
+                  type="button"
+                  onClick={onResume}
+                  className="shrink-0 rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
+                >
+                  Resume
+                </button>
+              )}
+            </div>
+          ) : (
+            leadStopped && (
+              <p className="mt-1 text-[13px] leading-5 text-droid-text-secondary">
+                Lead stopped. The team keeps working; reports wait until you message it.
+              </p>
+            )
           )}
           {done && (
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-droid-border px-3 py-2.5">

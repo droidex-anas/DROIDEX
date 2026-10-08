@@ -51,7 +51,7 @@ export function ProjectThreads({
           <p className="flex-1 text-[12px] leading-5 text-droid-text-secondary">
             {project.uncertain > 0
               ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
-              : 'Coordination is held: reports and queued messages wait until this project resumes.'}
+              : 'Paused. Work and queued messages are kept; Resume continues them.'}
           </p>
           <button
             type="button"

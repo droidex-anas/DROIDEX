@@ -138,6 +138,8 @@ function threadRow(
         awaitingReply: thread.waiting && project.paused,
       })
     : 'ready';
+  if (thread.state === 'approval' && status !== 'approval') status = 'approval';
+  if (thread.state === 'rate-limited') status = 'failed';
   if (thread.state === 'queued') status = 'queued';
   else if (thread.state === 'waiting' && status !== 'approval' && status !== 'input')
     status = 'waiting';
@@ -146,7 +148,13 @@ function threadRow(
     appSessionId: thread.appSessionId,
     title: thread.title,
     status,
-    detail: threadDetail(thread, status, live, digest, asking?.(thread.appSessionId)),
+    detail: threadDetail(
+      thread,
+      status,
+      live,
+      digest,
+      asking?.(thread.appSessionId) ?? thread.approval?.summary,
+    ),
     live,
     updatedAt: session?.updatedAt ?? 0,
     depth,
@@ -167,6 +175,10 @@ function threadDetail(
   const position =
     thread.wait && thread.wait.kind !== 'turn' ? ordinal(thread.wait.position) : undefined;
   if (status === 'queued') return join('Queued', position);
+  if (thread.state === 'rate-limited')
+    return thread.resetsAt
+      ? `Rate limited · send again after ${clockTime(thread.resetsAt)}`
+      : 'Rate limited · send again later';
   if (status === 'waiting') {
     if (thread.wait?.kind === 'slot') return join('Waiting for a slot', position);
     return thread.waiting ? 'Waiting for an answer' : 'Waiting';
@@ -188,6 +200,12 @@ const BLOCKED: readonly ThreadRow['status'][] = [
   'failed',
   'interrupted',
 ];
+
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+
+function clockTime(ts: number): string {
+  return clockFormat.format(ts);
+}
 
 function join(lead: string, snippet: string | undefined): string {
   return snippet === undefined || snippet === '' ? lead : `${lead} · ${snippet}`;
