@@ -7,7 +7,8 @@ import type { TestContext } from 'node:test';
 import { promisify } from 'node:util';
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { ProjectWakeQueue } from '../projects/ProjectWakeQueue.js';
-import { ProjectService, type ProjectPort } from '../projects/ProjectService.js';
+import { ProjectService } from '../projects/ProjectService.js';
+import type { ProjectPort } from '../projects/sessions.js';
 import type { ProjectPersistence } from '../projects/store.js';
 import type { Project, ThreadInput, ThreadMessage } from '../projects/types.js';
 import type {

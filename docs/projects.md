@@ -135,6 +135,8 @@ deletes it, so it would leave its threads nothing to report to. With `false` it
 starts an ordinary sidebar chat that belongs to no project, reports nowhere and
 wakes nobody; [Session tools](session-tools.md) describes that kind.
 
+Session-tool approval cards show a human action title and a short detail; a
+spawn names the thread and the first line of its task, rather than its full brief.
 Starting a thread asks the user unless the chat runs at High, and one "Always
 allow" covers only the kind of chat it was given for. The other thread tools
 never ask: they read, retune or move text between conversations DROIDEX already
@@ -268,9 +270,10 @@ plan first and then start a thread for each step. `thread_spawn` takes the step
 it carries, so starting the work links the step to its conversation. The lead
 owns every step’s state: `planned`, `doing`, `review`, `done` or `blocked`,
 independently of whether its linked thread is running. Step ids stay stable
-when steps move; pass the existing `id` when renaming a step. The plan holds at
-most 60 steps, is stored in the project ledger, and appears above the threads
-wherever the project is read.
+when steps move; pass the existing `id` when renaming a step. A new explicit
+`id` creates a step, including in the first plan; omitted ids are generated.
+The plan holds at most 60 steps, is stored in the project ledger, and appears
+above the threads wherever the project is read.
 
 `plan_set` also takes an optional `brief` (at most 2,000 characters): the
 agreed goal, scope, out of scope, done criteria and authority. `project_read`
@@ -330,8 +333,9 @@ is still starting, taking back any worktree already cut for it.
 
 Thread reports lead with the conclusion and what was or was not changed, then
 the few findings that matter with numbers, a link to the full write-up and
-honest caveats. Implementers also name branch, commits and checks. Write-ups
-live in `reports/<step>/` in the thread’s worktree, never `/tmp`.
+honest caveats. Implementers also name branch, commits and checks. If a task
+produces a long write-up, it lives in `reports/<step>/` in the thread’s worktree,
+never `/tmp`. Short or workspace-free tasks need only the final report.
 
 A settled turn of a thread reports to the chat that started it however it ended:
 an excerpt of its final primary reply, the error that failed it, that it was
@@ -421,9 +425,11 @@ refused, and every project held. Membership is persisted before a new session
 receives its first task.
 
 The wake queue writes its claim before dispatch. A steered report settles when
-`session.steer(text)` is called, and never returns to the queue afterward.
+`session.steer(text)` is called. A definitive `false` restores the batch with
+its message and reply ids and parks it until that turn settles, then uses ordinary
+delivery. An `unconfirmed` outcome stays settled and is never replayed.
 Confirmed consumption clears unread only for the reply that report carries;
-a failed, uncertain or missing acknowledgement does not change settlement.
+an uncertain or missing acknowledgement leaves it unread.
 An idle owner's scheduled turn keeps its existing receipt:
 **Accepted** means the provider acknowledged its prompt. Its concurrency slot stays
 held until that turn settles, except while the turn waits on a question routed
@@ -450,9 +456,9 @@ remains discoverable through `thread_list` and the next wake even if Stop loses
 the push. Interrupted threads receive one restart continuation only when they
 have no instruction already queued, including when the inbox is full.
 
-A report refused before steer handoff returns unchanged to the ledger. A
-scheduled turn whose outcome is unknown holds the project for review. A
-withdrawal before dispatch, by Stop, a hold or a question its thread stopped
+A report refused before handoff or definitively refused by the provider returns
+unchanged to the ledger. A scheduled turn whose outcome is unknown holds the
+project for review. A withdrawal before dispatch, by Stop, a hold or a question its thread stopped
 asking, returns messages to the queue, less the withdrawn question. After a
 restart, reports in a sending claim with an identified, durable reply are
 dropped: their replies remain unread. Reports without a reply identity or
@@ -482,9 +488,16 @@ note and any time trigger remain.
 
 ## Ownership in code
 
-`ProjectService` owns the project graph: membership, plans, durable to-dos, their
-next-due timer, holds and the thread
-tools that act on them. `ProjectTurns` reads each settled turn of a project
+`ProjectService` owns project membership, plans, holds and tool authority.
+`ProjectInbox` owns retained reports, restart continuations, approval notices
+and idle wakes; interruption identities discovered while held live in the ledger.
+`ThreadLaunches` owns queued launch order and binding and reuses a bound provider
+for the original task after restart. `ProjectReads` owns snapshots, transcript
+reads and reply-specific unread acknowledgement. Stored steer message ids keep
+mid-turn instructions inside their turn when a transcript is replayed.
+`ProjectTodos` owns durable
+follow-ups and their next-due timer; `ProjectHolds` owns hold generations and the
+pause/resume interruption race. `ProjectTurns` reads each settled turn of a project
 conversation, routes a thread's question to the chat that started it and writes
 the bounded report. `ProjectActivity` keeps a bounded final reply and the last
 error of a turn, opening the turn on the streaming flag or the first event the

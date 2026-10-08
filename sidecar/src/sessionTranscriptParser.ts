@@ -25,6 +25,9 @@ import { parseStoredNotice } from './sessionNotices.js';
 const MAX_TEXT_CHARS = 12_000;
 const MAX_APP_ANSWER_CHARS = 256_000;
 
+// Droid persists caller-supplied message ids; native writers use the same marker.
+export const STEER_MESSAGE_PREFIX = 'droidex-steer-';
+
 export function isLlmOnlyMessage(message: unknown): boolean {
   return objectValue(message)?.visibility === 'llm_only';
 }
@@ -300,7 +303,11 @@ export function parseSessionLineEvents(
       messageRole === 'assistant'
         ? assistantBlockEvent(base, index, block, forkPointId, fullText)
         : nonAssistantBlockEvent(base, index, block, messageRole, textOnly);
-    if (parsed) events.push(parsed);
+    if (parsed) {
+      if (parsed.author === 'user' && line.id?.startsWith(STEER_MESSAGE_PREFIX))
+        parsed.steered = true;
+      events.push(parsed);
+    }
   });
   return events;
 }

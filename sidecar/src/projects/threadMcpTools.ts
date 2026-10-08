@@ -128,7 +128,7 @@ const planInput = z.object({
           .min(1)
           .max(200)
           .optional()
-          .describe('Existing step id; retain it when renaming or reordering.'),
+          .describe('Step id; a new id creates a step. Retain it when renaming or reordering.'),
         title: z
           .string()
           .trim()
@@ -443,7 +443,7 @@ export function threadTools(appSessionId: () => string) {
         const read = input.full
           ? await projects.readFull(appSessionId(), input.threadId)
           : projects.read(appSessionId(), input.threadId, input.replies);
-        await projects.markRead(appSessionId(), read.threadId);
+        await projects.markRead(appSessionId(), read.threadId, read.replyId);
         return jsonResult({
           ok: true,
           ...read,

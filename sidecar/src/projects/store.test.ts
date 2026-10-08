@@ -11,6 +11,7 @@ import {
   harness,
   input,
   interruptedSummary,
+  wakeProject,
   summary,
 } from '../testing/projectServiceHarness.js';
 import { ProjectService } from './ProjectService.js';
@@ -416,16 +417,22 @@ test('a queued task bound before dispatch survives restart and starts exactly on
 
   const recovered = await harness(t, await store.load(), false);
   recovered.sessions.set(main, summary(main));
-  recovered.sessions.set(queued.appSessionId, { ...boundSession });
+  // Restart adoption restores the provider idle, even if the abandoned turn later starts.
+  recovered.sessions.set(queued.appSessionId, {
+    ...boundSession,
+    streaming: false,
+    phase: 'paused',
+  });
   recovered.projects.historyReady();
   await drain();
   recovered.projects.capacityChanged();
   recovered.projects.sessionAvailable(queued.appSessionId);
   await drain();
   const launches = recovered.launched.filter(({ title }) => title === 'Queued work');
-  assert.equal(launches.length, 1);
-  assert.ok(launches[0].prompt.includes(input.prompt));
-  assert.equal(recovered.sent.filter(({ id }) => id === queued.appSessionId).length, 0);
+  assert.equal(launches.length, 0, 'recovery must reuse the bound provider');
+  const deliveries = recovered.sent.filter(({ id }) => id === queued.appSessionId);
+  assert.equal(deliveries.length, 1);
+  assert.ok(deliveries[0].prompt.includes(input.prompt));
   assert.equal(recovered.sessions.get(queued.appSessionId)?.streaming, true);
   await store.save(recovered.state.saved);
   const thread = (await store.load())[0]?.threads.find(
@@ -450,4 +457,34 @@ test('accepting a queued spawn immediately clears the durable project completion
   assert.ok(
     saved?.threads.find((thread) => thread.appSessionId === queued.appSessionId)?.queuedSpawn,
   );
+});
+
+test('held restart interruptions survive a second restart with failed idle adoption', async (t) => {
+  const saved = wakeProject();
+  saved.paused = true;
+  saved.pending = [];
+  const first = await harness(t, [saved], false);
+  first.sessions.set('main', summary('main'));
+  first.sessions.set('worker', interruptedSummary('worker'));
+  first.projects.historyReady();
+  await drain();
+  const disk = structuredClone(first.state.saved);
+  first.projects.close();
+  const second = await harness(t, disk, false);
+  second.sessions.set('main', summary('main'));
+  second.sessions.set('worker', {
+    ...summary('worker'),
+    phase: 'paused',
+    interruptReason: 'Idle adoption failed',
+  });
+  second.projects.historyReady();
+  await drain();
+  assert.deepEqual(second.state.saved[0].interrupted, ['worker']);
+  assert.equal(second.sent.length, 0);
+  await second.projects.setPaused(saved.id, false);
+  await drain();
+  assert.equal(second.sent.filter((item) => item.id === 'worker').length, 1);
+  await second.finish('worker');
+  await drain();
+  assert.equal(second.sent.filter((item) => item.id === 'worker').length, 1);
 });

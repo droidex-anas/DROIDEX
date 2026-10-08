@@ -244,8 +244,7 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
             assert.equal(first.done, false);
             first = await waiting.next();
           }
-          for (const text of ['  /command', 'please /broken-skill', 'please\n/command'])
-            assert.equal(await runtime.steer(droid, text), false);
+          for (const text of ['  /command']) assert.equal(await runtime.steer(droid, text), false);
           const pending = runtime.steer(
             droid,
             ending === 'stop' || ending === 'close' ? 'held' : ending,

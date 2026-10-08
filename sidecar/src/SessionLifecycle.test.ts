@@ -16,6 +16,9 @@ import {
   harness as projectHarness,
   drain,
   input as projectInput,
+  summary as projectSummary,
+  wakeProject,
+  queuedThread,
 } from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
@@ -2452,4 +2455,73 @@ test('a report refused during a context relaunch never joins the typed prompt qu
   assert.deepEqual(settlements, ['stale']);
   assert.deepEqual(replacement.prompts, []);
   await h.lifecycle.closeAll();
+});
+
+test('a definitive report steer refusal restores its ids until the owner settles', async (t) => {
+  const project = await projectHarness(t);
+  const { main } = await project.root();
+  const child = await project.projects.spawn(main, { ...projectInput, title: 'Listing' });
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, main);
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, main);
+  let attempts = 0;
+  live.session.steer = async () => {
+    attempts += 1;
+    return false;
+  };
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
+  await project.streaming(main, true);
+  await project.finish(child.appSessionId, 'I ran `ls /` and listed the folders.');
+  await drain();
+  const pending = structuredClone(project.state.saved[0].pending);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].replyId, project.state.saved[0].threads[1].replyId);
+  assert.equal(project.state.saved[0].threads[1].unread, true);
+  project.projects.capacityChanged();
+  await drain();
+  assert.equal(attempts, 1);
+  assert.deepEqual(project.state.saved[0].pending, pending);
+  turn.resolve();
+  await live.turnPromise;
+  await project.streaming(main, false);
+  await drain();
+  assert.equal(provider.prompts.length, 2);
+  assert.match(provider.prompts[1], /I ran `ls \/`/);
+  assert.equal(project.state.saved[0].pending.length, 0);
+  assert.equal(project.state.saved[0].threads[1].unread, undefined);
+});
+
+test('recovering a bound queued thread uses its adopted provider for the original task', async (t) => {
+  const saved = wakeProject();
+  saved.pending = [];
+  saved.threads[1] = queuedThread('worker', 1);
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, 'adopted-provider');
+  await h.lifecycle.createAutomatic(createCommand(''), 'worker');
+  const adopted = requireLive(h, 'worker');
+  h.registry.updateSummary('worker', { phase: 'paused', streaming: false });
+  const project = await projectHarness(t, [saved], false);
+  project.sessions.set('main', projectSummary('main'));
+  project.port.get = (id) => h.registry.getCanonicalSummary(id) ?? project.sessions.get(id);
+  project.port.isLive = (id) => h.registry.getLive(id) !== undefined;
+  project.port.deliver = async (...args) => {
+    const receipt = await h.lifecycle.deliverScheduled(...args);
+    if (receipt.status === 'accepted') await project.streaming('worker', true);
+    return receipt;
+  };
+  project.sessions.set('worker', { ...adopted.summary });
+  project.projects.historyReady();
+  await drain();
+  assert.equal(project.launched.length, 0, 'no second provider is created');
+  assert.equal(requireLive(h, 'worker'), adopted);
+  assert.equal(h.lifecycle.runtimeLoad().live, 1);
+  assert.equal(provider.prompts.length, 1);
+  assert.match(provider.prompts[0], /Build the feature/);
+  assert.equal(project.state.saved[0].threads[1].queuedSpawn, undefined);
 });

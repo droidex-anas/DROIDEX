@@ -7,7 +7,7 @@ import type {
 import { convertNotificationToStreamMessage } from '@factory/droid-sdk';
 import { automationToolDisplayTitle } from './automations/permissionPolicy.js';
 import { mcpGrantSignature } from './mcpGrant.js';
-import { sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
+import { sessionsToolDisplay } from './sessionsMcpPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
 import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
@@ -549,15 +549,15 @@ export function classifyPermission(
       const serverName =
         typeof c.serverName === 'string' && c.serverName ? c.serverName : splitServer;
       const toolName = splitTool;
-      const droidexTitle =
-        automationToolDisplayTitle(serverName, toolName) ??
-        sessionsToolDisplayTitle(serverName, toolName);
+      const input = primaryToolInput(params);
+      const display = sessionsToolDisplay(serverName, toolName, input);
+      const droidexTitle = display?.title ?? automationToolDisplayTitle(serverName, toolName);
       if (droidexTitle) title = droidexTitle;
       else if (toolName && serverName) title = `${serverName} · ${toolName}`;
       else if (toolName) title = toolName;
       else if (serverName) title = `${serverName} tool`;
       else title = 'External tool';
-      detail = mcpToolDetail(c, primaryToolInput(params));
+      detail = display?.detail ?? mcpToolDetail(c, input);
       break;
     }
     default:

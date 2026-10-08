@@ -1,9 +1,69 @@
+import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { SteeredReportDelivery } from '../SessionLifecycle.js';
 import { randomUUID } from 'node:crypto';
 import type { SessionManager } from '../SessionManager.js';
-import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
-import type { ProjectPort } from './ProjectService.js';
-import type { ThreadInput, ThreadSettings } from './types.js';
+import type {
+  PermissionRequest,
+  ProviderStatus,
+  ServerEvent,
+  SessionSummary,
+  TranscriptEvent,
+} from '../protocol.js';
+import type { RuntimeLoad, ThreadInput, ThreadSettings } from './types.js';
+
+export interface ProjectPort {
+  transcriptTail(appSessionId: string, limit: number): Promise<TranscriptEvent[]>;
+  runtimeLoad(): RuntimeLoad;
+  makeRoom(appSessionId: string): Promise<boolean>;
+  get(appSessionId: string): SessionSummary | undefined;
+  /** What each provider can run right now, so a spawn cannot name a model that is not there. */
+  catalog(): Promise<ProviderStatus[]>;
+  /** Null means capacity refused the start; undefined means the open was withdrawn. */
+  create(
+    input: ThreadInput,
+    bind: (session: SessionSummary) => Promise<void>,
+    clientRef?: string,
+    appSessionId?: string,
+    start?: 'user' | 'automatic',
+  ): Promise<SessionSummary | null | undefined>;
+  deliver(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+  ): Promise<AutomationDeliveryReceipt>;
+  interrupt(appSessionId: string): Promise<void>;
+  /** Whether a question routed to an owner is still waiting on its thread. */
+  isAsking(appSessionId: string, requestId: string): boolean;
+  /** Whether the conversation is waiting on a permission request. */
+  awaitingApproval(appSessionId: string): boolean;
+  pendingApproval(appSessionId: string, requestId?: string): PermissionRequest | undefined;
+  approveFor(
+    source: string,
+    target: string,
+    requestId: string,
+    decision: 'allow' | 'deny',
+  ): Promise<boolean>;
+  /** Whether its runtime is open; an idle one is released to save memory. */
+  isLive(appSessionId: string): boolean;
+  /** Retunes a live thread, the way the composer's own controls do. */
+  configure(appSessionId: string, settings: ThreadSettings): Promise<void>;
+  /** Hands a prompt to the turn a chat is running, as the user's Steer does, or,
+      when `now`, stops that turn so the prompt runs next. False when no turn took it. */
+  steer(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now: boolean,
+    delivery?: SteeredReportDelivery,
+  ): Promise<boolean>;
+  rename(appSessionId: string, title: string): Promise<void>;
+  /** Answers a question a thread is blocked on; false when it was already settled. */
+  answer(
+    appSessionId: string,
+    requestId: string,
+    answers: { index: number; question: string; answer: string }[],
+  ): boolean;
+}
 
 interface Launch {
   bind: (session: SessionSummary) => Promise<void>;

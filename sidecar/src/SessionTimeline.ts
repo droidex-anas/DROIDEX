@@ -332,8 +332,8 @@ export class SessionTimeline {
   }
 
   // The renderer already showed the prompt; only persist it here.
-  recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
-    return this.transcripts.recordPrompt(appSessionId, prompt);
+  recordPrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
+    return this.transcripts.recordPrompt(appSessionId, prompt, steered);
   }
 
   append(event: TranscriptEvent): void {
@@ -509,7 +509,7 @@ export class SessionTimeline {
       ...userPromptDisplay(prompt),
       ...(steered ? { steered: true } : {}),
     });
-    return this.recordPrompt(appSessionId, prompt);
+    return this.recordPrompt(appSessionId, prompt, steered);
   }
 
   // A status row that is only true right now — a CLI booting, a turn stopping

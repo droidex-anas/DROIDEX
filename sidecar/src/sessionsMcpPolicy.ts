@@ -54,8 +54,42 @@ const ALWAYS_ALLOWED = new Set([
   'session_read',
 ]);
 
-export function sessionsToolDisplayTitle(serverName: string, toolName: string): string | null {
-  return TOOL_TITLES.get(sessionsTool(serverName, toolName)) ?? null;
+/** Human approval text for DROIDEX tools; task context stays out of the card. */
+export function sessionsToolDisplay(
+  serverName: string,
+  toolName: string,
+  input: Record<string, unknown>,
+): { title: string; detail: string } | null {
+  const name = sessionsTool(serverName, toolName);
+  const title = TOOL_TITLES.get(name);
+  if (!title) return null;
+  const firstLine = (key: string) =>
+    typeof input[key] === 'string' ? input[key].trim().split(/\r?\n/, 1)[0].slice(0, 200) : '';
+  if (name === 'thread_spawn') {
+    const kind = input.reportBack === false ? 'chat' : 'thread';
+    const task = firstLine('title');
+    return {
+      title: task ? `Start ${kind} "${task}"` : `Start a DROIDEX ${kind}`,
+      detail: firstLine('prompt'),
+    };
+  }
+  if (name === 'plan_set') {
+    const count = Array.isArray(input.steps) ? input.steps.length : 0;
+    return {
+      title,
+      detail: [firstLine('title'), `${String(count)} ${count === 1 ? 'step' : 'steps'}`]
+        .filter(Boolean)
+        .join(' · '),
+    };
+  }
+  const detail =
+    firstLine('text') ||
+    firstLine('outcome') ||
+    firstLine('note') ||
+    firstLine('threadId') ||
+    firstLine('sessionId') ||
+    firstLine('id');
+  return { title, detail };
 }
 
 export function shouldAutoApproveSessionsTool(

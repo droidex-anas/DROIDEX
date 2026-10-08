@@ -114,7 +114,7 @@ export interface SessionPrompt {
 /** Acceptance settles handoff; acknowledgement only clears the reply's unread flag. */
 export interface SteeredReportDelivery {
   accepted: () => void;
-  declined: (reason: 'stale') => void;
+  declined: (reason: 'stale' | 'refused') => void;
   acknowledged?: () => void;
 }
 
@@ -828,9 +828,14 @@ export class SessionLifecycle {
       this.updateQueuedSends(liveSession);
     }
     prompt.delivery?.accepted();
-    const delivered = await session.steer(prompt.text, prompt.mentions).catch(() => false);
+    const delivered = await session
+      .steer(prompt.text, prompt.mentions)
+      .catch(() => (prompt.delivery ? ('unconfirmed' as const) : false));
     const held = removePrompt(liveSession.steers, prompt);
-    if (!delivered) return !held;
+    if (delivered === false) {
+      prompt.delivery?.declined('refused');
+      return !held;
+    }
     if (!isCurrent()) return true;
     // Send now may have queued it again just as the harness delivered it. It
     // leaves the queue at once, so a turn settling while the row is written

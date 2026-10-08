@@ -1,7 +1,7 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
-import type { ProjectPort } from './ProjectService.js';
+import type { ProjectPort } from './sessions.js';
 import type { Project, ProjectThread, ThreadMessage, ThreadWait } from './types.js';
-import { wakePrompt } from './projectMessages.js';
+import { wakePrompt, isAsked, isOwnerUpdate, batch } from './projectMessages.js';
 
 const MAX_ACTIVE = 2;
 
@@ -92,35 +92,39 @@ export class ProjectWakeQueue {
     if (project.paused || project.delivery || this.pumping.has(project.id)) return;
     const hasSlot = this.running() < MAX_ACTIVE;
     let waiting: { target: string; mode: 'steer' | 'resume' | 'live' } | undefined;
-    const messages = [...project.pending].sort(
-      (a, b) =>
-        Number(this.isSleepingLead(project, b.to)) - Number(this.isSleepingLead(project, a.to)),
-    );
-    for (const message of messages) {
-      const target = message.to;
-      if (
-        (isLead(project, target) && (project.leadStopped ?? project.leadFailed)) ||
-        project.threads.find((thread) => thread.appSessionId === target)?.queuedSpawn ||
-        this.busyTargets.has(target) ||
-        this.capacityWaiting.has(target)
-      )
-        continue;
-      const live = this.sessions.isLive(target);
-      const steering =
-        live &&
-        this.sessions.get(target)?.streaming === true &&
-        project.pending.some((item) => item.to === target && isOwnerUpdate(project, item));
-      if (steering) return { target, mode: 'steer' as const };
-      if (this.active.has(target)) continue;
-      const next = { target, mode: live ? ('live' as const) : ('resume' as const) };
-      if (hasSlot || isLead(project, target)) return next;
-      if (!waiting || next.mode === 'resume') waiting = next;
+    const candidates = new Map<string, { target: string; ownerUpdate: boolean }>();
+    for (const message of project.pending) {
+      const candidate = candidates.get(message.to);
+      const ownerUpdate = isOwnerUpdate(project, message);
+      if (candidate) candidate.ownerUpdate ||= ownerUpdate;
+      else candidates.set(message.to, { target: message.to, ownerUpdate });
+    }
+    const threads = new Map(project.threads.map((thread) => [thread.appSessionId, thread]));
+    const eligible = [...candidates.values()]
+      .flatMap(({ target, ownerUpdate }) => {
+        const thread = threads.get(target);
+        const lead = thread !== undefined && !thread.ownerAppSessionId;
+        if (
+          (lead && (project.leadStopped ?? project.leadFailed)) ||
+          thread?.queuedSpawn ||
+          this.busyTargets.has(target) ||
+          this.capacityWaiting.has(target)
+        )
+          return [];
+        const live = this.sessions.isLive(target);
+        const streaming = this.sessions.get(target)?.streaming === true;
+        let mode: 'steer' | 'live' | 'resume' = live ? 'live' : 'resume';
+        if (live && streaming && ownerUpdate) mode = 'steer';
+        if (mode !== 'steer' && this.active.has(target)) return [];
+        return [{ target, mode, lead, sleepingLead: lead && !streaming }];
+      })
+      .sort((a, b) => Number(b.sleepingLead) - Number(a.sleepingLead));
+    for (const candidate of eligible) {
+      if (candidate.mode === 'steer' || hasSlot || candidate.lead) return candidate;
+      if (!waiting || (waiting.mode !== 'resume' && candidate.mode === 'resume'))
+        waiting = candidate;
     }
     return waiting;
-  }
-
-  private isSleepingLead(project: Project, target: string): boolean {
-    return isLead(project, target) && !this.sessions.get(target)?.streaming;
   }
 
   targetGuard(appSessionId: string): () => boolean {
@@ -373,6 +377,7 @@ export class ProjectWakeQueue {
           message.approvalId);
     const stillAsked = () => messages.every(relevant);
     let receipt: AutomationDeliveryReceipt;
+    let handedOff = false;
     try {
       await this.save();
       const prompt = wakePrompt(project, target, messages);
@@ -380,6 +385,8 @@ export class ProjectWakeQueue {
       if (steering) {
         await this.sessions.steer(target, prompt, current, false, {
           accepted: () => {
+            if (handedOff) return;
+            handedOff = true;
             for (const message of messages) this.acceptedMessages.add(message);
             delete project.delivery;
           },
@@ -389,7 +396,19 @@ export class ProjectWakeQueue {
             // save already holds projects and publishes persistence failures.
             void this.save().catch(() => undefined);
           },
-          declined: () => undefined,
+          declined: (reason) => {
+            if (reason !== 'refused' || !handedOff || this.closed) return;
+            handedOff = false;
+            for (const message of messages) this.acceptedMessages.delete(message);
+            project.pending.unshift(...messages.filter(relevant));
+            this.recent.get(project.id)?.pop();
+            this.park(target, 'target', capacityRevision, targetRevision);
+            void this.save()
+              .then(() => {
+                this.kick(project);
+              })
+              .catch(() => undefined);
+          },
         });
         receipt = current() ? { status: 'busy', retryOn: 'target' } : { status: 'cancelled' };
       } else receipt = await this.sessions.deliver(target, prompt, current);
@@ -399,7 +418,7 @@ export class ProjectWakeQueue {
         error: error instanceof Error ? error.message : String(error),
       };
     }
-    // A handoff cleared this claim synchronously; nothing can restore it.
+    // The handoff callbacks own settlement, including definitive refusal recovery.
     if (project.delivery !== claim) {
       await this.save();
       return;
@@ -452,15 +471,6 @@ export class ProjectWakeQueue {
   }
 }
 
-/** A question is still asked only while its thread waits on that same question. */
-function isAsked(project: Project, message: ThreadMessage): boolean {
-  if (message.kind !== 'question') return true;
-  return project.threads.some(
-    (thread) =>
-      thread.appSessionId === message.from && thread.ask?.requestId === message.questionId,
-  );
-}
-
 function isLead(project: Project, target: string): boolean {
   return project.threads.some(
     (thread) => thread.appSessionId === target && !thread.ownerAppSessionId,
@@ -473,26 +483,4 @@ function loopLimit(project: Project): number {
 
 function isAskingOwner(project: Project, appSessionId: string): boolean {
   return project.threads.some((thread) => thread.appSessionId === appSessionId && thread.ask);
-}
-
-function isOwnerUpdate(project: Project, message: ThreadMessage): boolean {
-  if (message.kind === 'approval' || message.kind === 'idle') return isLead(project, message.to);
-  if (message.kind === 'message')
-    return project.todos.some((todo) => todo.id === message.id && todo.due);
-  return project.threads.some(
-    (thread) => thread.appSessionId === message.from && thread.ownerAppSessionId === message.to,
-  );
-}
-
-function batch(project: Project, to: string, steering: boolean): ThreadMessage[] {
-  const messages: ThreadMessage[] = [];
-  let characters = 0;
-  for (const message of project.pending) {
-    if (message.to !== to || (steering && !isOwnerUpdate(project, message))) continue;
-    if (messages.length && characters + message.text.length > 12_000) break;
-    messages.push(message);
-    characters += message.text.length;
-    if (messages.length === 8) break;
-  }
-  return messages;
 }

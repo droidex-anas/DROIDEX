@@ -72,7 +72,7 @@ export function transcriptEnding(events: readonly TranscriptEvent[]): Transcript
   let turn: ThreadTurn = { text: '' };
   let last: TranscriptEnding['last'];
   for (const event of events) {
-    if (event.role !== 'primary') continue;
+    if (event.role !== 'primary' || (event.author === 'user' && event.steered)) continue;
     if (event.author === 'user') {
       turn = { text: '' };
       last = 'prompt';
@@ -105,7 +105,7 @@ export function latestSettledReply(events: readonly TranscriptEvent[], running: 
   let turn: ThreadTurn = { text: '' };
   let hasPrompt = false;
   for (const event of events) {
-    if (event.role !== 'primary') continue;
+    if (event.role !== 'primary' || (event.author === 'user' && event.steered)) continue;
     if (event.author === 'user') {
       if (hasPrompt) turns.push(turn.text);
       hasPrompt = true;

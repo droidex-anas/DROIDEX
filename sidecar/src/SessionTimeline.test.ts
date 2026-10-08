@@ -587,6 +587,10 @@ test('an open session reads its own transcript before the history index knows th
     tail.map((event) => event.text),
     ['Port the client.', 'Ported it to v3.'],
   );
+  await harness.timeline.announcePrompt('claude-live', 'Check the next path.', true);
+  const steeredTail = await harness.timeline.tail('claude-live', 10);
+  assert.equal(steeredTail.at(-1)?.text, 'Check the next path.');
+  assert.equal(steeredTail.at(-1)?.steered, true, 'a replayed steer stays inside its turn');
 });
 
 test('an open Droid session reads the file its runtime writes before the index knows it', async (t) => {

@@ -72,3 +72,37 @@ export function wakePrompt(
     ...lines,
   ].join('\n');
 }
+
+/** A question is still asked only while its thread waits on that same question. */
+export function isAsked(project: Project, message: ThreadMessage): boolean {
+  if (message.kind !== 'question') return true;
+  return project.threads.some(
+    (thread) =>
+      thread.appSessionId === message.from && thread.ask?.requestId === message.questionId,
+  );
+}
+
+export function isOwnerUpdate(project: Project, message: ThreadMessage): boolean {
+  if (message.kind === 'approval' || message.kind === 'idle')
+    return project.threads.some(
+      (thread) => thread.appSessionId === message.to && !thread.ownerAppSessionId,
+    );
+  if (message.kind === 'message')
+    return project.todos.some((todo) => todo.id === message.id && todo.due);
+  return project.threads.some(
+    (thread) => thread.appSessionId === message.from && thread.ownerAppSessionId === message.to,
+  );
+}
+
+export function batch(project: Project, to: string, steering: boolean): ThreadMessage[] {
+  const messages: ThreadMessage[] = [];
+  let characters = 0;
+  for (const message of project.pending) {
+    if (message.to !== to || (steering && !isOwnerUpdate(project, message))) continue;
+    if (messages.length && characters + message.text.length > 12_000) break;
+    messages.push(message);
+    characters += message.text.length;
+    if (messages.length === 8) break;
+  }
+  return messages;
+}

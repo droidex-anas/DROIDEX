@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   SESSIONS_MCP_SERVER_NAME,
   sessionsGrantScope,
+  sessionsToolDisplay,
   shouldAutoApproveSessionsTool,
 } from './sessionsMcpPolicy.js';
 
@@ -94,4 +95,34 @@ test('one Always allow covers only the spawn kind, the one chat, or the exact ma
   assert.equal(scope('session_mark', { mark: 'archived', sessionIds: [7] }), '');
   // Reading changes nothing, so its grant is the whole tool, as it always was.
   assert.equal(scope('session_read', { sessionId: 'chat-a' }), undefined);
+});
+
+test('session-tool approval cards show the task first line instead of the raw brief', () => {
+  const input = {
+    title: 'Writer',
+    reportBack: true,
+    prompt: 'Write the report.\nPrivate task context and long brief.',
+  };
+  for (const name of [
+    'thread_spawn',
+    'droidex_sessions___thread_spawn',
+    'mcp__droidex-sessions__thread_spawn',
+  ]) {
+    assert.deepEqual(sessionsToolDisplay(SESSIONS_MCP_SERVER_NAME, name, input), {
+      title: 'Start thread "Writer"',
+      detail: 'Write the report.',
+    });
+  }
+  assert.deepEqual(
+    sessionsToolDisplay(SESSIONS_MCP_SERVER_NAME, 'plan_set', {
+      title: 'Launch',
+      brief: 'Raw brief',
+      steps: [{ title: 'Write' }],
+    }),
+    {
+      title: 'Update the DROIDEX project plan',
+      detail: 'Launch · 1 step',
+    },
+  );
+  assert.equal(sessionsToolDisplay('external', 'thread_spawn', input), null);
 });

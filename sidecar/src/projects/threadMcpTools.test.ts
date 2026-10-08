@@ -219,6 +219,10 @@ test('thread_spawn reports a real queued start with its position and a matching-
   const first = await call(main, 'thread_spawn', { ...input, reportBack: true, title: 'Parser' });
   assert.equal(first.delivery, 'started');
   assert.equal(first.state, 'working');
+  assert.match(
+    h.launched[1]?.prompt ?? '',
+    /If you produce a long write-up, save it under reports\/<step>\//,
+  );
   await h.finish(String(first.threadId), 'Ready');
   await drain();
   h.state.capacity = 'busy';
@@ -404,6 +408,7 @@ test('thread_read full returns the settled transcript reply whole while a new tu
     ],
     ['user', [{ type: 'text', text: 'New task' }]],
     ['assistant', [{ type: 'text', text: 'Unsettled partial reply' }]],
+    ['user', [{ type: 'text', text: 'Check another path' }]],
   ] as const;
   h.transcripts.set(
     'worker00-alpha',
@@ -412,7 +417,11 @@ test('thread_read full returns the settled transcript reply whole while a new tu
         'worker00-alpha',
         'provider',
         'primary',
-        { type: 'message', id: String(index), message: { role, content: [...content] } },
+        {
+          type: 'message',
+          id: index === 5 ? 'droidex-steer-mid-turn' : String(index),
+          message: { role, content: [...content] },
+        },
         { fullText: true },
       ),
     ),
@@ -421,6 +430,12 @@ test('thread_read full returns the settled transcript reply whole while a new tu
   const read = await call('lead0000-main', 'thread_read', { threadId: 'worker00-a', full: true });
   assert.deepEqual(read.replies, [full]);
   assert.equal(read.state, 'working');
+  await h.streaming('worker00-alpha', false);
+  const settled = await call('lead0000-main', 'thread_read', {
+    threadId: 'worker00-a',
+    full: true,
+  });
+  assert.deepEqual(settled.replies, ['Unsettled partial reply']);
   assert.equal(h.state.saved[0]?.threads[1]?.unread, undefined);
   assert.equal(h.sent.length, 0);
   assert.equal(h.launched.length, 0);
@@ -656,4 +671,71 @@ test('thread_send cannot claim a start when Stop cancels its admission', async (
   assert.equal(result.ok, false);
   assert.match(String(result.error), /cancelled before it started/);
   assert.ok(!h.sent.some((message) => message.id === child.appSessionId));
+});
+
+test('a full read acknowledges the reply it returned when a newer reply arrives before markRead', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.threads[1].replyId = 'observed-reply';
+  saved.threads[1].unread = true;
+  const h = await harness(t, [saved], false);
+  h.sessions.set('worker00-alpha', summary('worker00-alpha'));
+  h.transcripts.set('worker00-alpha', [
+    {
+      id: 'answer',
+      appSessionId: 'worker00-alpha',
+      sourceSessionId: 'provider',
+      role: 'primary',
+      ts: 1,
+      kind: 'text',
+      text: 'First reply',
+    },
+  ]);
+  const markRead = h.projects.markRead.bind(h.projects);
+  t.mock.method(h.projects, 'markRead', async (...args: Parameters<typeof markRead>) => {
+    await h.streaming('worker00-alpha', true);
+    await h.finish('worker00-alpha', 'New unseen reply');
+    await markRead(...args);
+  });
+  registerProjectService(Promise.resolve(h.projects));
+  const read = await call('lead0000-main', 'thread_read', {
+    threadId: 'worker00-alpha',
+    full: true,
+  });
+  assert.deepEqual(read.replies, ['First reply']);
+  assert.equal(h.state.saved[0].threads[1].reply, 'New unseen reply');
+  assert.equal(h.state.saved[0].threads[1].unread, true);
+  assert.equal(h.projects.listThreads('lead0000-main').threads[0].unread, true);
+});
+
+test('a first plan can name its step ids and mix new explicit ids with generated ones', async (t) => {
+  const h = await harness(t, [], false);
+  const { main } = await h.root();
+  registerProjectService(Promise.resolve(h.projects));
+  const first = await call(main, 'plan_set', { steps: [{ id: 'write', title: 'Write' }] });
+  assert.equal(first.ok, true);
+  const next = await call(main, 'plan_set', {
+    steps: [
+      { id: 'write', title: 'Revise', state: 'doing' },
+      { title: 'Check' },
+      { id: '1', title: 'Ship' },
+    ],
+  });
+  assert.equal(next.ok, true);
+  const plan = h.state.saved[0].plan;
+  assert.deepEqual(
+    plan.map((step) => step.id),
+    ['write', '2', '1'],
+  );
+  assert.equal(plan[0].title, 'Revise');
+  assert.equal(
+    (
+      await call(main, 'plan_set', {
+        steps: [
+          { id: 'write', title: 'A' },
+          { id: 'write', title: 'B' },
+        ],
+      })
+    ).ok,
+    false,
+  );
 });

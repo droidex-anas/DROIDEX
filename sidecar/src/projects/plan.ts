@@ -9,6 +9,7 @@ export function planFromSteps(
   lastStepId = 0,
 ): ProjectStep[] {
   const used = new Set<string>();
+  const reserved = new Set(steps.flatMap((step) => (step.id ? [step.id] : [])));
   let nextId = Math.max(lastStepId, ...previous.map((step) => Number(step.id) || 0));
   return steps.map((step) => {
     if (step.threadAppSessionId && !isMember(step.threadAppSessionId))
@@ -16,8 +17,12 @@ export function planFromSteps(
     const existing = step.id
       ? previous.find((candidate) => candidate.id === step.id)
       : previous.find((candidate) => candidate.title === step.title && !used.has(candidate.id));
-    if (step.id && !existing) throw new Error(`No plan step has id "${step.id}".`);
-    const id = existing?.id ?? String(++nextId);
+    let id = step.id ?? existing?.id;
+    if (!id) {
+      do {
+        id = String(++nextId);
+      } while (reserved.has(id) || used.has(id));
+    }
     if (used.has(id)) throw new Error(`Plan step id "${id}" appears more than once.`);
     used.add(id);
     return {

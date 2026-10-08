@@ -7,6 +7,7 @@ import {
   type DroidStreamEvent,
 } from '@factory/droid-sdk';
 import { extractNotification } from './normalize.js';
+import { STEER_MESSAGE_PREFIX } from './sessionTranscriptParser.js';
 
 // Notices of Droid working on its loop. A busy working state counts too; an
 // error does not, since a loop can fail before it takes up a steer.
@@ -51,11 +52,11 @@ export class DroidTurn {
     this.tracker = new StreamStateTracker({ sessionId, startedAt: Date.now() });
   }
 
-  steer(client: DroidClient, text: string): Promise<boolean> {
-    // Embedded slash commands can fail without a delivery or discard notice.
-    if (!this.acceptingSteers || this.interrupting || /(^|\s)\//.test(text))
+  steer(client: Pick<DroidClient, 'addUserMessage'>, text: string): Promise<boolean> {
+    // Leading slash commands can fail without a delivery or discard notice.
+    if (!this.acceptingSteers || this.interrupting || /^\s*\//.test(text))
       return Promise.resolve(false);
-    const messageId = randomUUID();
+    const messageId = `${STEER_MESSAGE_PREFIX}${randomUUID()}`;
     const delivered = new Promise<boolean>((resolve) => this.deliveries.set(messageId, resolve));
     void client.addUserMessage({ text, messageId }).catch(() => {
       this.settle(messageId, false);
