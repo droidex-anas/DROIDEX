@@ -37,6 +37,7 @@ export interface SessionForksDependencies {
   readTranscript: (appSessionId: string) => Promise<string>;
   // The settings owner's model change: it reaches the provider as well as the stored row.
   updateModel: (appSessionId: string, settings: ProviderModelSettings) => Promise<boolean>;
+  isCloseRequested: (appSessionId: string) => boolean;
   isShutdownStarted: () => boolean;
   create: (command: SessionCreateCommand, branch: SessionBranch) => Promise<void>;
   send: (appSessionId: string, text: string) => Promise<void>;
@@ -81,8 +82,11 @@ export class SessionForks {
     // or a send that fails is that chat's error, not a failed fork.
     if (!copy) return;
     try {
+      if (this.d.isCloseRequested(copy.providerSessionId)) return;
       if (command.modelId && !(await this.applyPickedModel(copy.providerSessionId, command)))
         return;
+      // The renderer can close the announced copy while its model is being applied.
+      if (this.d.isCloseRequested(copy.providerSessionId)) return;
       const request = command.prompt?.trim();
       if (request)
         await this.d.send(copy.providerSessionId, firstMessage(command.lineage, request));

@@ -1837,6 +1837,20 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   );
 });
 
+test('closing a chat before any runtime opens refuses later sends and resumes', async (t) => {
+  const harness = createHarness([summary('unopened-copy', 'provider-copy')]);
+  t.after(() => harness.lifecycle.closeAll());
+  const provider = queueLoad(harness, 'provider-copy');
+
+  await harness.lifecycle.close('provider-copy');
+  await harness.lifecycle.send('unopened-copy', 'Do not reopen');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), false);
+
+  assert.equal(harness.registry.getLive('unopened-copy'), undefined);
+  assert.equal(harness.runtime.loadCalls.length, 0);
+  assert.deepEqual(provider.prompts, []);
+});
+
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {
   const indexed = createHarness([
     summary('app-permissions', 'provider-permissions', { autonomy: 'low' }),

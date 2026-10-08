@@ -226,6 +226,9 @@ export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
+  // Native forks are announced before their first resume. A close in that gap
+  // must survive until the fork and any later sends try to open the runtime.
+  private readonly closedBeforeOpen = new Set<string>();
   // How often each chat was stopped or discarded. A prompt that was accepted
   // but has not started its turn compares the count it was accepted at, so a
   // Stop takes it back even while there is no runtime to interrupt.
@@ -239,6 +242,10 @@ export class SessionLifecycle {
   >();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
+
+  isCloseRequested(appSessionId: string): boolean {
+    return this.closedBeforeOpen.has(this.chatKey(appSessionId));
+  }
   // A branch is a session opened from another session's transcript: its goal
   // stays the user's request while the model's first prompt carries the source.
   async create(command: SessionCreateCommand, branch?: SessionBranch): Promise<void> {
@@ -403,6 +410,7 @@ export class SessionLifecycle {
       await closing;
       if (d.isShutdownStarted()) return false;
     }
+    if (this.isCloseRequested(appSessionId)) return false;
     const pending = this.resumeOperations.get(appSessionId);
     if (pending) return pending;
 
@@ -441,7 +449,8 @@ export class SessionLifecycle {
 
     const requireCurrentResume = (): void => {
       this.requireOpenAdmission();
-      if (this.canceledResumes.has(appSessionId)) throw new OpenAdmissionClosedError();
+      if (this.canceledResumes.has(appSessionId) || this.isCloseRequested(appSessionId))
+        throw new OpenAdmissionClosedError();
       if (
         historical &&
         d.registry.getCanonicalSummary(appSessionId)?.providerSessionId !==
@@ -928,6 +937,7 @@ export class SessionLifecycle {
     if (pendingResume) this.canceledResumes.add(appSessionId);
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession) {
+      if (mode === 'discard-pending') this.closedBeforeOpen.add(appSessionId);
       await pendingResume;
       return;
     }

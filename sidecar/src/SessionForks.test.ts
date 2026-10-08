@@ -19,6 +19,7 @@ import { readProviderTranscript } from './providers/ProviderTranscriptFile.js';
 import type { SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import type { SessionSummaryPatch } from './SessionRegistry.js';
+import type { SessionForksDependencies } from './SessionForks.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
@@ -110,6 +111,10 @@ function harness(
     provider?: 'droid' | 'claude' | 'codex';
     providerInstance?: Provider;
     send?: (appSessionId: string, text: string) => Promise<void>;
+    updateModel?: SessionForksDependencies['updateModel'];
+    isCloseRequested?: (appSessionId: string) => boolean;
+    releaseCopy?: () => Promise<void>;
+    onEvent?: (event: ServerEvent) => void;
     contextWindowTokens?: 1000000;
     duringFork?: (stored: Map<string, SessionSummary>) => void;
   } = {},
@@ -148,7 +153,7 @@ function harness(
         fork: (source) => {
           forkSources.push(source);
           options.duringFork?.(stored);
-          return Promise.resolve({ providerSessionId: 'copy' });
+          return Promise.resolve({ providerSessionId: 'copy', release: options.releaseCopy });
         },
       },
     registry: {
@@ -199,8 +204,9 @@ function harness(
           modelId: settings.modelId ?? found.modelId,
           reasoningEffort: settings.reasoningEffort ?? undefined,
         });
-      return Promise.resolve(true);
+      return options.updateModel?.(appSessionId, settings) ?? Promise.resolve(true);
     },
+    isCloseRequested: (appSessionId) => options.isCloseRequested?.(appSessionId) ?? false,
     isShutdownStarted: () => false,
     create: (command, branch) => {
       created.push({ command, branch });
@@ -213,6 +219,7 @@ function harness(
     emit: (event) => {
       order.push(event.type);
       events.push(event);
+      options.onEvent?.(event);
     },
     emitError: (error) => errors.push(error),
   });
@@ -311,6 +318,49 @@ test('a same-harness side chat takes its question as the first message after the
   const [kept] = unchanged.events;
   if (kept.type !== 'session.forked') return assert.fail('expected session.forked');
   assert.equal(kept.session.contextWindowTokens, 1000000);
+});
+
+test('closing a native side chat before its first prompt releases the copy without sending', async (t) => {
+  for (const closeAt of ['model', 'forked'] as const) {
+    let closed = false;
+    let releases = 0;
+    const h = harness(t, {
+      isCloseRequested: (appSessionId) => appSessionId === 'copy' && closed,
+      onEvent: (event) => {
+        if (event.type === 'session.forked' && closeAt === 'forked') closed = true;
+      },
+      updateModel: () => {
+        if (closeAt === 'model') closed = true;
+        return Promise.resolve(true);
+      },
+      releaseCopy: () => {
+        releases += 1;
+        return Promise.resolve();
+      },
+    });
+
+    await h.forks.fork({
+      type: 'session.fork',
+      clientRef: 'closed-side',
+      appSessionId: 'source',
+      lineage: 'side',
+      title: 'Side chat',
+      prompt: 'Do not send this question',
+      modelId: 'claude-sonnet',
+    });
+
+    assert.deepEqual(h.errors, []);
+    assert.equal(h.events[0]?.type, 'session.forked');
+    assert.equal(
+      h.order.some((step) => step.startsWith('model ')),
+      closeAt === 'model',
+    );
+    assert.equal(
+      h.order.some((step) => step.startsWith('send ')),
+      false,
+    );
+    assert.equal(releases, 1);
+  }
 });
 
 test('a fork that cannot run is refused with its client ref and copies nothing', async (t) => {
