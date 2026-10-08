@@ -7,6 +7,7 @@ import {
   collectTurnFiles,
   isCancellationArtifact,
   isCompactionCompleteStatus,
+  isSteeredPrompt,
   startsTurn,
   type BuildFeedOptions,
   type FeedItem,
@@ -370,6 +371,19 @@ export function groupTurns(
   changes = false,
 ): FeedItem[] {
   const out: FeedItem[] = [];
+  // While the turn runs, everything after the user's last real prompt is live,
+  // including the work before a steer they sent into it.
+  let liveFrom = items.length;
+  if (pending) {
+    liveFrom = 0;
+    for (let k = items.length - 1; k >= 0; k -= 1) {
+      const item = items[k];
+      if (isTurnBoundary(item) && !(item.type === 'message' && isSteeredPrompt(item.event))) {
+        liveFrom = k + 1;
+        break;
+      }
+    }
+  }
   let i = 0;
   while (i < items.length) {
     if (isTurnBoundary(items[i])) {
@@ -377,13 +391,13 @@ export function groupTurns(
       i++;
       continue;
     }
+    const runStart = i;
     const run: FeedItem[] = [];
     while (i < items.length && !isTurnBoundary(items[i])) {
       run.push(items[i]);
       i++;
     }
-    const isLastRun = i >= items.length;
-    if (isLastRun && pending) {
+    if (pending && runStart >= liveFrom) {
       out.push(...run);
     } else {
       out.push(...collapseRun(run, specContent));
