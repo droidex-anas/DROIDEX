@@ -11,9 +11,16 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
-import type { CanvasDiagnostic, DesignSystemRef, SourceElement } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import { canvasError } from './canvasError.js';
+import type { CanvasDiagnostic, DesignSystemRef, ElementEdit, SourceElement } from './protocol.js';
+import {
+  CANVAS_LIMITS,
+  sourceElementSchema,
+  sourceFilesSchema,
+  type SourceFiles,
+} from './schema.js';
 
 export interface CompileInput {
   designId: string;
@@ -31,7 +38,7 @@ export interface CompiledDesign {
   html: string;
   /** Warnings that accompany a usable artifact; errors arrive as a rejection. */
   diagnostics: CanvasDiagnostic[];
-  /** Empty until Task 8 adds the source instrumentation that fills it. */
+  /** Revision-scoped sites mapped to canonical source for selection and edits. */
   elements: SourceElement[];
 }
 
@@ -71,11 +78,23 @@ export class CompilerUnavailableError extends Error {
 
 export type CompilerRequest =
   | { type: 'compile'; requestId: number; input: CompileInput }
+  | {
+      type: 'edit';
+      requestId: number;
+      files: SourceFiles;
+      elements: SourceElement[];
+      edit: ElementEdit;
+      designSystem: DesignSystemRef;
+    }
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
+type EditFailureCode = 'stale_reference' | 'ambiguous_element' | 'invalid_source' | 'invalid_edit';
+
 export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
+  | { requestId: number; status: 'edited'; files: SourceFiles }
+  | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
   | {
@@ -92,6 +111,12 @@ interface PendingCompile {
   release(): void;
 }
 
+interface PendingEdit {
+  resolve(files: SourceFiles): void;
+  reject(error: Error): void;
+  release(): void;
+}
+
 // The only two things a user can do about a compiler that cannot answer, and
 // the only text safe to show: a worker's own failure carries module paths.
 // `canvasBuildFailures.ts` picks between them by the reason, never by matching.
@@ -99,16 +124,13 @@ export const COMPILER_UNAVAILABLE = 'The Canvas compiler is unavailable; restart
 export const RUNTIME_UNAVAILABLE =
   'The design compiler is not installed correctly. Reinstall DROIDEX.';
 
-// How long a shutdown may take before the thread is ended anyway. This is
-// cleanup, not the build deadline Task 3b owns.
-const SHUTDOWN_GRACE_MS = 2_000;
-
 export class CompilerWorker {
   private compiler: ChildProcess | null = null;
   private readonly pending = new Map<number, PendingCompile>();
-  private shutdownAck: (() => void) | null = null;
+  private readonly pendingEdits = new Map<number, PendingEdit>();
+  private retiring: Promise<void> | null = null;
+  private termination: Promise<void> | null = null;
   private nextRequestId = 1;
-  private terminated = false;
 
   /**
    * Compiles one revision. Rejects with `CompileFailedError` when the source is
@@ -116,9 +138,10 @@ export class CompilerWorker {
    * `CompilerUnavailableError` when the worker dies under the call.
    */
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
-    if (this.terminated)
+    if (this.termination !== null)
       return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
+    if (this.retiring !== null) return this.retiring.then(() => this.compile(input, signal));
 
     const requestId = this.nextRequestId++;
     const compiler = this.liveCompiler();
@@ -143,37 +166,59 @@ export class CompilerWorker {
     });
   }
 
-  /** Final: every in-flight compile rejects and no later compile is accepted. */
-  async terminate(): Promise<void> {
-    if (this.terminated) return;
-    this.terminated = true;
-    const compiler = this.compiler;
-    this.compiler = null;
-    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-    if (!compiler) return;
-    // The compiler owns esbuild's service process, so it gets the turn it needs
-    // to stop that service while it can still reap it.
-    await this.awaitShutdown(compiler);
-    compiler.kill();
+  /** Applies one literal edit in the parser-owning process. */
+  edit(
+    files: SourceFiles,
+    elements: SourceElement[],
+    edit: ElementEdit,
+    designSystem: DesignSystemRef,
+    signal: AbortSignal,
+  ): Promise<SourceFiles> {
+    if (this.termination !== null)
+      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    if (signal.aborted) return Promise.reject(new CompileCancelledError());
+    if (this.retiring !== null)
+      return this.retiring.then(() => this.edit(files, elements, edit, designSystem, signal));
+    const requestId = this.nextRequestId++;
+    const compiler = this.liveCompiler();
+    return new Promise<SourceFiles>((resolve, reject) => {
+      const onAbort = (): void => {
+        this.settleEdit(requestId, () => {
+          reject(new CompileCancelledError());
+        });
+        compiler.send({ type: 'cancel', requestId } satisfies CompilerRequest);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.pendingEdits.set(requestId, {
+        resolve,
+        reject,
+        release: () => {
+          signal.removeEventListener('abort', onAbort);
+        },
+      });
+      compiler.send({
+        type: 'edit',
+        requestId,
+        files,
+        elements,
+        edit,
+        designSystem,
+      } satisfies CompilerRequest);
+    });
   }
 
-  private awaitShutdown(compiler: ChildProcess): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const finish = (): void => {
-        clearTimeout(grace);
-        this.shutdownAck = null;
-        resolve();
-      };
-      const grace = setTimeout(finish, SHUTDOWN_GRACE_MS);
-      grace.unref();
-      this.shutdownAck = finish;
-      // A compiler that is already gone cannot answer, and neither can one that
-      // dies while stopping.
-      compiler.once('exit', finish);
-      compiler.once('error', finish);
-      const requestId = this.nextRequestId++;
-      compiler.send({ type: 'shutdown', requestId } satisfies CompilerRequest);
-    });
+  /** Final: rejects all compiles, refuses new ones, and awaits the owned child's exit. */
+  terminate(): Promise<void> {
+    if (this.termination !== null) return this.termination;
+    const compiler = this.compiler;
+    this.compiler = null;
+    this.termination =
+      this.retiring ??
+      (compiler === null
+        ? Promise.resolve()
+        : terminateCompilerProcess(compiler, this.nextRequestId++));
+    this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    return this.termination;
   }
 
   /**
@@ -197,7 +242,6 @@ export class CompilerWorker {
       // the process is ended, and the next build forks a replacement.
       if (response === null) {
         this.loseCompiler(compiler, new Error('The compiler sent a reply it does not define.'));
-        compiler.kill();
         return;
       }
       this.receive(response);
@@ -206,15 +250,39 @@ export class CompilerWorker {
       this.loseCompiler(compiler, error);
     });
     compiler.on('exit', (code) => {
-      this.loseCompiler(compiler, new Error(`The compiler exited with code ${String(code)}.`));
+      if (this.compiler !== compiler || this.retiring !== null) return;
+      this.compiler = null;
+      console.error(
+        'Canvas compiler lost:',
+        new Error(`The compiler exited with code ${String(code)}.`),
+      );
+      this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     });
     this.compiler = compiler;
     return compiler;
   }
 
   private receive(response: CompilerResponse): void {
-    if (response.status === 'stopped') {
-      this.shutdownAck?.();
+    if (response.status === 'stopped') return;
+    if (this.pendingEdits.has(response.requestId)) {
+      this.settleEdit(response.requestId, (call) => {
+        switch (response.status) {
+          case 'edited':
+            call.resolve(response.files);
+            return;
+          case 'edit_failed':
+            call.reject(canvasError(response.code, response.message));
+            return;
+          case 'cancelled':
+            call.reject(new CompileCancelledError());
+            return;
+          case 'unavailable':
+            call.reject(new CompilerUnavailableError(response.reason, response.message));
+            return;
+          default:
+            call.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+        }
+      });
       return;
     }
     this.settle(response.requestId, (call) => {
@@ -233,16 +301,23 @@ export class CompilerWorker {
           // boundary, which never carries a path (spec §8).
           call.reject(new CompilerUnavailableError(response.reason, response.message));
           return;
+        default:
+          call.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
       }
     });
   }
 
   /** The cause goes to the sidecar log; the caller learns only what to do. */
   private loseCompiler(compiler: ChildProcess, cause: Error): void {
-    if (this.compiler !== compiler) return;
-    this.compiler = null;
+    if (this.compiler !== compiler || this.retiring !== null) return;
     console.error('Canvas compiler lost:', cause);
+    const ending = terminateCompilerProcess(compiler, this.nextRequestId++);
+    this.retiring = ending;
     this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    void ending.then(() => {
+      if (this.compiler === compiler) this.compiler = null;
+      if (this.retiring === ending) this.retiring = null;
+    });
   }
 
   private failAll(error: Error): void {
@@ -251,6 +326,10 @@ export class CompilerWorker {
         call.reject(error);
       });
     }
+    for (const requestId of [...this.pendingEdits.keys()])
+      this.settleEdit(requestId, (call) => {
+        call.reject(error);
+      });
   }
 
   /** Settles a request exactly once; a later answer for it is dropped. */
@@ -261,11 +340,25 @@ export class CompilerWorker {
     call.release();
     finish(call);
   }
+
+  private settleEdit(requestId: number, finish: (call: PendingEdit) => void): void {
+    const call = this.pendingEdits.get(requestId);
+    if (!call) return;
+    this.pendingEdits.delete(requestId);
+    call.release();
+    finish(call);
+  }
 }
 
 const UNAVAILABLE_REASONS: readonly CompilerUnavailableReason[] = [
   'damaged-runtime',
   'lost-compiler',
+];
+const EDIT_FAILURE_CODES: readonly EditFailureCode[] = [
+  'stale_reference',
+  'ambiguous_element',
+  'invalid_source',
+  'invalid_edit',
 ];
 
 /**
@@ -285,8 +378,12 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
     message: text,
     design,
     diagnostics,
+    files,
+    code,
   } = message as Record<string, unknown>;
   if (typeof requestId !== 'number') return null;
+  const edit = editResponse(requestId, status, files, code, text);
+  if (edit !== undefined) return edit;
   switch (status) {
     case 'cancelled':
     case 'stopped':
@@ -306,6 +403,24 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
   }
 }
 
+function editResponse(
+  requestId: number,
+  status: unknown,
+  files: unknown,
+  code: unknown,
+  message: unknown,
+): Extract<CompilerResponse, { status: 'edited' | 'edit_failed' }> | null | undefined {
+  if (status === 'edited') {
+    const parsed = sourceFilesSchema.safeParse(files);
+    return parsed.success ? { requestId, status, files: parsed.data } : null;
+  }
+  if (status === 'edit_failed')
+    return typeof message === 'string' && EDIT_FAILURE_CODES.includes(code as EditFailureCode)
+      ? { requestId, status, code: code as EditFailureCode, message }
+      : null;
+  return undefined;
+}
+
 function isCompiledDesign(design: unknown): design is CompiledDesign {
   if (typeof design !== 'object' || design === null) return false;
   const { artifactId, html, diagnostics, elements } = design as Record<string, unknown>;
@@ -313,7 +428,9 @@ function isCompiledDesign(design: unknown): design is CompiledDesign {
     typeof artifactId === 'string' &&
     typeof html === 'string' &&
     Array.isArray(diagnostics) &&
-    Array.isArray(elements)
+    Array.isArray(elements) &&
+    elements.length <= CANVAS_LIMITS.maxSourceElements &&
+    elements.every((element) => sourceElementSchema.safeParse(element).success)
   );
 }
 
@@ -334,6 +451,7 @@ function compilerEnv(): NodeJS.ProcessEnv {
   // own loader through `execArgv`.
   delete env.NODE_PATH;
   delete env.NODE_OPTIONS;
+  delete env.CANVAS_EXPORT_TOKEN;
   return env;
 }
 

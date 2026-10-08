@@ -9,6 +9,7 @@ import type {
   CanvasChange,
   CanvasCommand,
   CanvasErrorCode,
+  FrameRect,
   CanvasEvent,
   CanvasReply,
   CanvasSnapshot,
@@ -16,6 +17,9 @@ import type {
   CreateFramesInput,
   CreateFramesResult,
   PreviewArtifact,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
   WriteFilesInput,
   WriteReceipt,
 } from './protocol';
@@ -47,6 +51,7 @@ class CanvasRequestError extends Error {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
+    readonly currentRect?: FrameRect,
   ) {
     super(message);
     this.name = 'CanvasRequestError';
@@ -69,18 +74,10 @@ interface CanvasBoard {
   snapshot: CanvasSnapshot | null;
   /** The one snapshot request in flight. */
   loading: Promise<CanvasSnapshot> | null;
-  /**
-   * Changes that arrived while a snapshot was in flight. A snapshot is taken
-   * before they commit, so they cannot simply be dropped. The newest are kept:
-   * once the oldest is no longer contiguous with the snapshot, the gap itself
-   * asks for another one.
-   */
+  // Changes arriving behind a snapshot wait for it. A gap in the bounded
+  // queue requests another snapshot instead of silently losing changes.
   queued: CanvasChange[];
-  /**
-   * Bumped when this board is dropped or its connection is replaced. A request
-   * in flight compares it after every await and abandons a board it no longer
-   * belongs to.
-   */
+  // Dropping or reconnecting the board invalidates every request in flight.
   generation: number;
   listeners: Set<(snapshot: CanvasSnapshot) => void>;
 }
@@ -106,10 +103,7 @@ export class CanvasClient {
     );
   }
 
-  /**
-   * A new canvas, attached to this chat. `name` is the provisional name a
-   * Design prompt gives it (spec §4); storage names it without one.
-   */
+  /** Creates and attaches a canvas; `name` overrides storage's provisional name. */
   async createCanvas(
     appSessionId: string,
     mutationId: string,
@@ -191,6 +185,51 @@ export class CanvasClient {
     return reply(event, 'arranged').change;
   }
 
+  async removeFrames(
+    appSessionId: string,
+    canvasId: string,
+    input: RemoveFramesInput,
+  ): Promise<string> {
+    const event = await this.request({
+      type: 'canvas.remove',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'removed').undoId;
+  }
+
+  async undoRemoval(
+    appSessionId: string,
+    canvasId: string,
+    input: UndoRemovalInput,
+  ): Promise<CanvasChange> {
+    const event = await this.request({
+      type: 'canvas.undoRemoval',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'undone').change;
+  }
+
+  async renameFrame(
+    appSessionId: string,
+    canvasId: string,
+    input: RenameFrameInput,
+  ): Promise<CanvasChange> {
+    const event = await this.request({
+      type: 'canvas.renameFrame',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'renamed').change;
+  }
+
   /**
    * The document one built revision produced, or null once the derived cache has
    * lost it. A `ready` frame asks for its own revision and a `failed` frame for
@@ -211,11 +250,7 @@ export class CanvasClient {
     return reply(event, 'artifact').artifact;
   }
 
-  /**
-   * Watches the canvas list. The sidecar broadcasts `canvas.summaries` after
-   * every command that changes it, and a reconnected page is re-read, so a
-   * visible list stays current without a polling loop.
-   */
+  /** Watches summary broadcasts and re-reads the list after reconnecting. */
   subscribeSummaries(listener: (summaries: CanvasSummary[]) => void): () => void {
     this.listen();
     this.summaryListeners.add(listener);
@@ -229,11 +264,8 @@ export class CanvasClient {
     return this.boards.get(canvasId)?.snapshot ?? null;
   }
 
-  /**
-   * Watches a canvas. The listener runs when the first snapshot lands and after
-   * every change applied to it. The last listener to leave stops the sidecar
-   * from sending that canvas at all.
-   */
+  // Delivers the first snapshot and subsequent changes. The last listener
+  // leaving removes the sidecar watch.
   subscribeCanvas(canvasId: string, listener: (snapshot: CanvasSnapshot) => void): () => void {
     let board = this.boards.get(canvasId);
     if (!board) {
@@ -324,13 +356,8 @@ export class CanvasClient {
     for (const listener of board.listeners) listener(snapshot);
   }
 
-  /**
-   * Starts listening on the transport. The sidecar drops a reconnecting page's
-   * watches, and this client may have missed changes while the socket was down,
-   * so every board it holds and every visible list starts again. A replay
-   * resume publishes no event of its own, which is why this comes from the
-   * transport rather than from a connection event.
-   */
+  // A replay resume emits no connection event, so the transport owns recovery.
+  // Re-read boards and lists because the sidecar drops disconnected watches.
   private listen(): void {
     if (this.listening) return;
     this.listening = true;
@@ -381,7 +408,10 @@ export class CanvasClient {
     const waiter = this.answer(event.requestId);
     if (!waiter) return;
     if (event.ok) waiter.settle(event);
-    else waiter.fail(new CanvasRequestError(event.error.code, event.error.message));
+    else
+      waiter.fail(
+        new CanvasRequestError(event.error.code, event.error.message, event.error.currentRect),
+      );
   }
 
   private answer(id: string): Waiter | null {

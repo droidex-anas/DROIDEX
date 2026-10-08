@@ -128,6 +128,12 @@ const invokeContract = [
     'save-attachment',
     { name: 'notes.pdf', dataUrl: 'data:application/pdf;base64,Zg==' },
   ],
+  [
+    'canvasImageSave',
+    ['cv_01', 'dsg_01', 'rev_01', 'design', new Uint8Array([1, 2, 3])],
+    'canvas-image-save',
+    { canvasId: 'cv_01', designId: 'dsg_01', revisionId: 'rev_01', suggestedName: 'design' },
+  ],
   ['setAutomaticDiagnostics', [false], 'diagnostics-preference-set', { enabled: false }],
   ['setHardwareAcceleration', [false], 'hardware-acceleration-preference-set', { enabled: false }],
   ['downloadAppUpdate', [], 'app-download-update', undefined],

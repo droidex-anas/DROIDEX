@@ -148,7 +148,7 @@ function fixture(
     mkdirSync(dirname(join(path, entry)), { recursive: true });
     writeFileSync(join(path, entry), contents);
   };
-  writeFileSync(join(path, 'manifest.json'), `${JSON.stringify({ binary, files })}\n`);
+  writeFileSync(join(path, 'manifest.json'), `${JSON.stringify({ binary, files, notices: [] })}\n`);
   if (binary === 'binary') {
     write('binary', '#!/bin/sh\n');
     chmodSync(join(path, 'binary'), 0o755);

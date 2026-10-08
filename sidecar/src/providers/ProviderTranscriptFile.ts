@@ -42,6 +42,8 @@ type ContentBlock =
       input: unknown;
       pollsChildSessionId?: string;
       interrupted?: true;
+      canvasActivity?: TranscriptEvent['canvasActivity'];
+      canvasOccurrenceId?: string;
     }
   | {
       type: 'tool_result';
@@ -51,6 +53,7 @@ type ContentBlock =
       is_error?: boolean;
       pollsChildSessionId?: string;
       interrupted?: true;
+      canvasActivity?: TranscriptEvent['canvasActivity'];
     };
 
 interface PendingMessage {
@@ -389,6 +392,9 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
       input: event.toolArgs,
       ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
       ...(event.interrupted ? { interrupted: true } : {}),
+      ...(event.canvasActivity
+        ? { canvasActivity: event.canvasActivity, canvasOccurrenceId: event.id }
+        : {}),
     };
   }
   if (!event.text) return null;
@@ -407,6 +413,7 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
     ...(event.isError ? { is_error: true } : {}),
     ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
     ...(event.interrupted ? { interrupted: true } : {}),
+    ...(event.canvasActivity ? { canvasActivity: event.canvasActivity } : {}),
   };
 }
 

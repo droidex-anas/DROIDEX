@@ -1,4 +1,5 @@
-import type { CanvasCommand, CanvasEvent } from './canvas/protocol.js';
+import type { CanvasCommand, CanvasEvent, CanvasTurnContext } from './canvas/protocol.js';
+import type { CanvasActivity } from './canvas/canvasToolPresentation.js';
 import type { ProjectCommand, ProjectEvent } from './projects/types.js';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
@@ -227,6 +228,9 @@ export interface TranscriptEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
+  // Safe Canvas tool snapshot. Tool-call merges prefer the latest activity,
+  // but missing or untargeted snapshots cannot replace a targeted activity.
+  canvasActivity?: CanvasActivity;
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already
   // tracking: polling that agent for output, or stopping it. The same tool
@@ -819,6 +823,10 @@ export type ClientCommand =
       // the renderer chose for its own row. Absent, a send while a turn runs
       // waits for the turn to end.
       steerId?: string;
+      // What the Canvas pane had selected when this prompt was composed. It
+      // travels beside the text and is never concatenated into it (spec §9);
+      // the turn that runs this prompt mints its lease from it.
+      canvasContext?: CanvasTurnContext;
     }
   // Stops the running turn so a steer the model has not taken in yet goes first.
   | { type: 'session.sendNow'; appSessionId: string; steerId: string }

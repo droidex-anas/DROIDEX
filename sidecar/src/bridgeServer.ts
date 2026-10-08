@@ -11,9 +11,12 @@ import { pipeline } from 'node:stream/promises';
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
+import { CanvasCommandError } from './canvas/canvasError.js';
+import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
 import { resolveBrowserAssetPath } from './browser/browserPaths.js';
+import { serveCanvasSourceExport } from './canvas/canvasExport.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeResetMessage,
@@ -59,6 +62,7 @@ export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
   assetToken: string;
+  canvasExportToken?: string;
   // `pageId` identifies the renderer page the command came from, when it sent
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
@@ -82,6 +86,7 @@ export function startBridgeServer(options: {
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
+    if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
     if (serveBrowserAsset(req, res, options.assetToken)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
@@ -315,16 +320,14 @@ export function startBridgeServer(options: {
         assertValidSteerId(parsed);
         assertValidInteractionResponse(parsed);
         assertValidChatPreferences(parsed);
+        if ('canvasContext' in parsed) assertCanvasTurnContext(parsed.canvasContext);
       }
       const command = parsed as ClientCommand;
       if (command.type === 'voice.start' || command.type === 'voice.stop')
         await runVoiceCommand(command, pageId);
       else await options.onCommand(command, pageId);
     } catch (err) {
-      sendDirectWire(ws, {
-        type: 'error',
-        message: err instanceof Error ? err.message : String(err),
-      });
+      sendDirectWire(ws, { type: 'error', ...commandFailure(err) });
     }
   }
 
@@ -536,6 +539,13 @@ export function startBridgeServer(options: {
     onPageGone,
     close,
   };
+}
+
+/** A Canvas rejection keeps its stable code (spec §8); anything else is plain. */
+function commandFailure(error: unknown): { code?: string; message: string } {
+  if (error instanceof CanvasCommandError)
+    return { code: `canvas.${error.code}`, message: error.message };
+  return { message: error instanceof Error ? error.message : String(error) };
 }
 
 // Optional on a send; Send now names the steer it is for.

@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bridge } from './bridge';
-import { exportSessionMarkdown, setBackgroundWork, setHistoryIndexingIdle } from './commands';
+import {
+  exportSessionMarkdown,
+  sendToSession,
+  setBackgroundWork,
+  setHistoryIndexingIdle,
+} from './commands';
 import type { ClientCommand, ServerEvent } from '../types/bridge';
 
 // Drives the bridge singleton with an in-memory double; exportSessionMarkdown
-// only touches sendIfConnected and subscribe.
+// only touches sendIfConnected and subscribe, and a send uses the ordered lane.
 function fakeBridge(): {
   sent: ClientCommand[];
   emit: (event: ServerEvent) => void;
@@ -13,8 +18,12 @@ function fakeBridge(): {
 } {
   const listeners = new Set<(event: ServerEvent) => void>();
   const sent: ClientCommand[] = [];
+  const originalSend = bridge.send.bind(bridge);
   const originalSendIfConnected = bridge.sendIfConnected.bind(bridge);
   const originalSubscribe = bridge.subscribe.bind(bridge);
+  bridge.send = (command: ClientCommand): void => {
+    sent.push(command);
+  };
   bridge.sendIfConnected = (command: ClientCommand): boolean => {
     sent.push(command);
     return true;
@@ -31,6 +40,7 @@ function fakeBridge(): {
       for (const listener of [...listeners]) listener(event);
     },
     restore: () => {
+      bridge.send = originalSend;
       bridge.sendIfConnected = originalSendIfConnected;
       bridge.subscribe = originalSubscribe;
     },
@@ -128,6 +138,31 @@ test('exportSessionMarkdown rejects only on its own unsupported-command error, w
       assert.equal((error as { code?: unknown }).code, 'bridge.unsupported_command');
       return true;
     });
+  } finally {
+    fake.restore();
+  }
+});
+
+test('a send carries the pinned Canvas references beside the text, and omits them when none', () => {
+  const fake = fakeBridge();
+  const canvasContext = {
+    designs: [{ designId: 'dsg_hey', revisionId: 'rev_01' }],
+    elements: [],
+    designSystem: { id: 'droidex', version: 1, mode: 'light' as const },
+  };
+  try {
+    sendToSession('app-1', 'restyle this', { steerId: 'steer-1', canvasContext });
+    sendToSession('app-1', 'and this');
+    assert.deepEqual(fake.sent, [
+      {
+        type: 'session.send',
+        appSessionId: 'app-1',
+        text: 'restyle this',
+        steerId: 'steer-1',
+        canvasContext,
+      },
+      { type: 'session.send', appSessionId: 'app-1', text: 'and this' },
+    ]);
   } finally {
     fake.restore();
   }

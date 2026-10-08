@@ -7,16 +7,13 @@
 // workspace and build registry over it, and the compiler under the test's hand.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
-import {
-  CanvasBuilds,
-  type BuildDeadline,
-  type BuildTarget,
-  type CanvasBuildHost,
-} from '../canvas/CanvasBuilds.js';
+import { CanvasBuilds, type BuildDeadline } from '../canvas/CanvasBuilds.js';
+import type { BuildTarget, CanvasBuildHost } from '../canvas/canvasBuildHost.js';
 import {
   COMPILER_UNAVAILABLE,
   CompileCancelledError,
@@ -27,17 +24,23 @@ import {
   type CompileInput,
 } from '../canvas/compiler.js';
 import type { DesignCompiler } from '../canvas/canvasCompilerProcesses.js';
-import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
+import {
+  CanvasFiles,
+  REVISION_METADATA_VERSION,
+  type CanvasFileSystem,
+} from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import type {
   CanvasBuildState,
   CanvasChange,
+  CanvasDiagnostic,
   CanvasFrame,
   CanvasScope,
+  SourceElement,
   WriteReceipt,
 } from '../canvas/protocol.js';
-import { deferred, observedFileSystem } from './canvasStorageSupport.js';
+import { deferred, observedFileSystem, writeInput } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */
 export const COMPILE_FAILED = 'The design did not compile.';
@@ -52,8 +55,8 @@ export interface HeldCompile {
   signal: AbortSignal;
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
-  ready(artifactId: string): void;
-  failed(code: string): void;
+  ready(artifactId: string, elements?: SourceElement[], diagnostics?: CanvasDiagnostic[]): void;
+  failed(code: string, details?: Omit<CanvasDiagnostic, 'code'>): void;
   unavailable(): void;
   /** The compiler refused the runtime the app staged, which no restart fixes. */
   damagedRuntime(): void;
@@ -139,16 +142,16 @@ class FakeCompiler implements DesignCompiler {
         input,
         signal,
         client: this,
-        ready: (artifactId) => {
+        ready: (artifactId, elements = [], diagnostics = []) => {
           resolve({
             artifactId,
             html: `<html>${input.revisionId}</html>`,
-            diagnostics: [],
-            elements: [],
+            diagnostics,
+            elements,
           });
         },
-        failed: (code) => {
-          reject(new CompileFailedError([{ code, message: COMPILE_FAILED }]));
+        failed: (code, details = { message: COMPILE_FAILED }) => {
+          reject(new CompileFailedError([{ code, ...details }]));
         },
         unavailable: () => {
           reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
@@ -206,6 +209,7 @@ export function standIn(builds: CanvasBuilds) {
         name: designId,
         rect: { x: 0, y: 0, width: 720, height: 720 },
         layoutVersion: 0,
+        manifestVersion: 0,
         revisionId,
         designSystem,
         build: builds.stateOf(canvasId, designId),
@@ -219,7 +223,8 @@ export function standIn(builds: CanvasBuilds) {
     commitBuild: async (canvasId, designId, publish) => {
       // The workspace publishes nothing for a design its head has lost.
       if (!buildTarget(canvasId, designId)) return;
-      if (!(await publish())) return;
+      const committedBuild = await publish();
+      if (!committedBuild?.isCurrent()) return;
       committed.push(`${canvasId}/${designId}:${builds.stateOf(canvasId, designId).status}`);
       for (const waiter of [...waiters]) waiter();
     },
@@ -270,25 +275,6 @@ export function holdBuildOutput() {
     },
     reached: reached.promise,
     release: released.resolve,
-  };
-}
-
-/** Fails the next manifest rename once, after the test arms it. */
-export function failNextManifestWrite() {
-  let armed = false;
-  const failed = deferred();
-  const fs = observedFileSystem((operation, path) => {
-    if (!armed || operation !== 'rename' || !path.endsWith('manifest.json')) return;
-    armed = false;
-    failed.resolve();
-    throw new Error('disk full');
-  });
-  return {
-    fs,
-    arm: (): void => {
-      armed = true;
-    },
-    failed: failed.promise,
   };
 }
 
@@ -361,9 +347,40 @@ export interface BoardOptions {
   fs?: CanvasFileSystem;
 }
 
+/** A loaded build host with owned scratch storage and registry cleanup. */
+export async function buildHost(
+  t: TestContext,
+  builds: CanvasBuilds,
+  revisions: readonly { canvasId: string; designId: string; revisionId: string }[] = [],
+) {
+  t.after(() => builds.close());
+  const files = new CanvasFiles((await storage(t)).root);
+  await files.createRoot();
+  const canvas = standIn(builds);
+  for (const { canvasId, designId, revisionId } of revisions) {
+    await files.publishRevision(
+      canvasId,
+      {
+        version: REVISION_METADATA_VERSION,
+        designId,
+        revisionId,
+        parentRevisionId: null,
+        designSystem,
+        createdAt: 1_767_225_600_000,
+      },
+      new Map([['main.tsx', 'export default () => null']]),
+    );
+    canvas.revisions.set(`${canvasId}/${designId}`, revisionId);
+  }
+  await builds.load(canvas.host, files, []);
+  return { ...canvas, files };
+}
+
 /** A real workspace over scratch storage, with the compiler under test control. */
 export async function board(t: TestContext, options: BoardOptions = {}): Promise<Board> {
   const store = options.store ?? (await storage(t));
+  // Reusing storage models a restart, not a second concurrent writer.
+  for (const close of store.closing.splice(0)) await close();
   const root = store.root;
   const fleet = new CompilerFleet();
   const deadlines = fakeDeadlines();
@@ -456,13 +473,15 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     },
     write: (designId, expected, text) =>
       under((scope) =>
-        workspace.write(scope, {
-          mutationId: `write-${designId}-${text}`,
-          designId,
-          expectedRevisionId: expected,
-          files: { 'main.tsx': text },
-          deletedPaths: [],
-        }),
+        workspace.write(
+          scope,
+          writeInput(
+            `write-${designId}-${createHash('sha256').update(text).digest('hex').slice(0, 16)}`,
+            designId,
+            expected,
+            { 'main.tsx': text },
+          ),
+        ),
       ),
     reported: (designId, status) => {
       // From here on: a design reaches the same state more than once.
@@ -478,4 +497,16 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
       });
     },
   };
+}
+
+/** A loaded stand-in host with its compiler fleet and deadlines under test control. */
+export async function controlledBuildHost(
+  t: TestContext,
+  revisions: Parameters<typeof buildHost>[2] = [],
+) {
+  const fleet = new CompilerFleet();
+  const deadlines = fakeDeadlines();
+  const builds = new CanvasBuilds({ compiler: fleet.client, deadline: deadlines.deadline });
+  const canvas = await buildHost(t, builds, revisions);
+  return { canvas, builds, fleet, deadlines };
 }

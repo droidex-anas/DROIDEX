@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { SourceMap } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
 import {
@@ -14,10 +15,16 @@ import {
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
+import { CompilerProcesses } from './canvasCompilerProcesses.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { CHART_DESIGN } from './fixtures/chart.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
+import { applyElementEdit } from './sourceElements.js';
 import type { SourceFiles } from './schema.js';
+import { mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
 
 // One real worker for every case that only reads its answer; the cases that
 // end a worker's life own their own.
@@ -54,7 +61,11 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   const design = await compile(STATEFUL_DESIGN);
 
   assert.deepEqual(design.diagnostics, []);
-  assert.deepEqual(design.elements, []);
+  assert.equal(design.elements.length, 1);
+  assert.equal(design.elements[0]?.tagName, 'p');
+  assert.equal(design.elements[0]?.editability, 'shared');
+  for (const element of design.elements)
+    assert.equal(design.html.split(element.elementId).length - 1, 1);
   assert.match(design.artifactId, /^[0-9a-f]{64}$/);
   assert.ok(design.html.includes('id="canvas-root"'), 'the document mounts into a root element');
   assert.ok(design.html.includes('data-mode="dark"'), 'the document carries the pinned mode');
@@ -62,6 +73,74 @@ test('compiles stateful React with a relative module, a stylesheet and the kit',
   assert.ok(design.html.includes('letter-spacing: 0.04em'), "the design's own CSS is included");
   assert.ok(design.html.includes("[data-mode='dark']"), 'the kit tokens are included');
   assert.ok(design.html.includes('--ds-accent'), 'the kit tokens carry semantic names');
+});
+
+test('a design above the selection limit still compiles with an honest diagnostic', async () => {
+  const source = `export default function Dense(){ return <main>${'<i/>'.repeat(8193)}</main> }`;
+  const design = await compile({ 'main.tsx': source });
+  assert.match(design.html, /id="canvas-root"/);
+  assert.deepEqual(design.elements, []);
+  assert.deepEqual(
+    design.diagnostics.map((entry) => entry.code),
+    ['selection_unavailable'],
+  );
+  assert.match(design.diagnostics[0]?.message ?? '', /8,192/);
+});
+
+test('direct edits compile through the worker and its map points to canonical source', async () => {
+  const cases: { source: string; change: ElementEdit['change']; rendered: string }[] = [
+    { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
+    {
+      source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
+      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      rendered: 'var(--ds-accent)',
+    },
+    {
+      source: '<img src="canvas-asset:before" />',
+      change: { kind: 'image', assetId: 'after' },
+      rendered: 'canvas-asset:after',
+    },
+  ];
+  for (const fixture of cases) {
+    const files = { 'main.tsx': `export default function App(){\n  return ${fixture.source};\n}` };
+    const original = await compile(files);
+    const element = original.elements[0];
+    assert.ok(element);
+    const changed = applyElementEdit(files, original.elements, {
+      element: {
+        designId: 'design',
+        revisionId: compileInput(files).revisionId,
+        elementId: element.elementId,
+        instancePath: '0',
+      },
+      change: fixture.change,
+    });
+    const rebuilt = await compile(changed);
+    assert.ok(rebuilt.html.includes(fixture.rendered));
+    for (const site of rebuilt.elements)
+      assert.equal(rebuilt.html.split(site.elementId).length - 1, 1);
+    const script = original.html.slice(
+      original.html.indexOf('<script>') + '<script>\n'.length,
+      original.html.indexOf('</script>'),
+    );
+    const encoded = script.split('base64,')[1];
+    assert.ok(encoded);
+    const payload = JSON.parse(Buffer.from(encoded.trim(), 'base64').toString());
+    assert.ok(payload.sources.includes('main.tsx'));
+    assert.ok(
+      payload.sources.every(
+        (path: string) => !path.includes('node_modules') && !path.includes(tmpdir()),
+      ),
+    );
+    const lines = script.split('\n');
+    const line = lines.findIndex((text) => text.includes(element.elementId));
+    const column = lines[line]?.indexOf(element.elementId);
+    assert.ok(column !== undefined && column >= 0);
+    const entry = new SourceMap(payload).findEntry(line, column);
+    assert.ok('originalSource' in entry);
+    assert.equal(entry.originalSource, 'main.tsx');
+    assert.equal(entry.originalLine, 1);
+  }
 });
 
 test('the compiled document is self-contained', async () => {
@@ -89,13 +168,50 @@ test('Tailwind emits exactly the utilities the source spells out', async () => {
   assert.equal(/\.grid \{/.test(html), false, 'an unused utility is not emitted');
 });
 
-test("the kit's own example compiles", async () => {
-  const example = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
-  assert.ok(example, 'the kit ships a starter example');
-  const design = await compile({ 'main.tsx': example });
+test('every kit starter compiles in both pinned modes with offline fonts', async () => {
+  for (const kit of [
+    DROIDEX_DESIGN_SYSTEM,
+    OPENAI_INSPIRED_DESIGN_SYSTEM,
+    CLAUDE_INSPIRED_DESIGN_SYSTEM,
+  ]) {
+    const example = kit.examples['Hey.tsx'];
+    assert.ok(example);
+    for (const mode of ['light', 'dark'] as const) {
+      const input = {
+        ...compileInput({ 'main.tsx': example }),
+        designSystem: { id: kit.id, version: kit.version, mode },
+      };
+      const design = await shared.compile(input, new AbortController().signal);
+      assert.deepEqual(design.diagnostics, []);
+      assert.ok(design.html.includes("You're all set"));
+      assert.ok(design.html.includes('data-mode="' + mode + '"'));
+      assert.match(design.html, /data:font\/woff2;base64,/);
+      assert.doesNotMatch(design.html, /url\(\s*['"]?https?:/);
+    }
+  }
+});
+
+test('a named Lucide import adds only the used icon code', async () => {
+  const base = await compile({
+    'main.tsx': 'export default function Hey() { return <p>Hey</p>; }',
+  });
+  const icon = await compile({
+    'main.tsx':
+      "import { Activity } from 'lucide-react'; export default function Hey() { return <Activity aria-label='Activity' />; }",
+  });
+  const addedBytes = Buffer.byteLength(icon.html) - Buffer.byteLength(base.html);
+  assert.ok(
+    addedBytes > 0 && addedBytes < 10_000,
+    'one icon adds under 10 KiB, not the full catalog: ' + addedBytes,
+  );
+});
+
+test('an allowed chart import compiles into a self-contained document', async () => {
+  const design = await compile(CHART_DESIGN);
 
   assert.deepEqual(design.diagnostics, []);
-  assert.ok(design.html.includes("You're all set"), 'the example renders its own states');
+  assert.match(design.html, /Weekly visits/);
+  assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
 });
 
 test('identical input names one artifact and a change names another', async () => {
@@ -139,7 +255,13 @@ export default function Hey() {
   assert.equal(diagnostic?.code, 'unsupported_import');
   assert.equal(diagnostic?.file, 'main.tsx');
   assert.equal(diagnostic?.line, 1);
-  for (const supported of ['react', 'react-dom/client', '@droidex/design-system']) {
+  for (const supported of [
+    'react',
+    'react-dom/client',
+    'lucide-react',
+    'recharts',
+    '@droidex/design-system',
+  ]) {
     assert.ok(diagnostic?.message.includes(supported), `names ${supported}`);
   }
 });
@@ -151,6 +273,8 @@ test('an import that leaves the design is refused', async () => {
     ['https://cdn.example.com/widget.js', 'unsupported_import'],
     ['node:fs', 'unsupported_import'],
     ['fs', 'unsupported_import'],
+    ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
+    ['recharts/es6/index.js', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
 
@@ -221,6 +345,158 @@ test('terminating rejects every in-flight compile and accepts no more', async ()
   );
 });
 
+test('concurrent termination waits for child exit, not a stopped acknowledgement', async (t) => {
+  const children = mockCompilerProcesses(t);
+  const worker = new CompilerWorker();
+  const controllers = [new AbortController(), new AbortController()];
+  const rejected = controllers.map((controller) =>
+    assert.rejects(
+      worker.compile(compileInput(STATEFUL_DESIGN), controller.signal),
+      CompilerUnavailableError,
+    ),
+  );
+  const first = worker.terminate();
+  const child = children[0];
+  assert.ok(child);
+  const second = worker.terminate();
+  const completed = [false, false];
+  const ending = [first, second].map((promise, index) =>
+    promise.then(() => {
+      completed[index] = true;
+    }),
+  );
+
+  await Promise.all(rejected);
+  await assert.rejects(
+    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+    CompilerUnavailableError,
+  );
+  for (const controller of controllers) controller.abort();
+  assert.deepEqual(
+    child.requests.map((request) => request.type),
+    ['compile', 'compile', 'shutdown'],
+  );
+  const shutdown = child.requests.find((request) => request.type === 'shutdown');
+  assert.ok(shutdown);
+  child.emit('message', { requestId: shutdown.requestId, status: 'stopped' });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(completed, [false, false], 'every caller remains pending until exit');
+  assert.equal(first, second, 'termination callers share one promise');
+  assert.deepEqual(child.signals, [], 'an acknowledged shutdown can exit gracefully');
+  child.exit();
+  await Promise.all(ending);
+  assert.deepEqual(completed, [true, true]);
+  assert.equal(worker.terminate(), first);
+  t.mock.timers.tick(2_000);
+  assert.deepEqual(child.signals, [], 'exit clears the shutdown grace timer');
+});
+
+for (const failure of ['IPC error', 'malformed reply'] as const) {
+  test(`a live compiler ${failure} retains ownership through close and kill until exit`, async (t) => {
+    t.mock.method(console, 'error', () => undefined);
+    const children = mockCompilerProcesses(t);
+    const worker = new CompilerWorker();
+    const rejected = assert.rejects(
+      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+      CompilerUnavailableError,
+    );
+    const child = children[0];
+    assert.ok(child);
+    Object.defineProperty(child, 'pid', { value: 1234 });
+    if (failure === 'IPC error') child.emit('error', new Error('IPC failed with a live process'));
+    else child.emit('message', { status: 'not-a-compiler-reply' });
+    await rejected;
+    const replacement = worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
+    const refused = assert.rejects(replacement, CompilerUnavailableError);
+    let closed = false;
+    const closing = worker.terminate().then(() => {
+      closed = true;
+    });
+    child.emit('close', 1, null);
+    t.mock.timers.tick(2_000);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(children.length, 1, 'replacement work must not fork over the living child');
+    assert.equal(closed, false, 'neither IPC failure, close, nor SIGKILL proves physical exit');
+    assert.deepEqual(child.signals, ['SIGKILL']);
+    child.exit();
+    await Promise.all([closing, refused]);
+    assert.equal(closed, true);
+    assert.equal(children.length, 1, 'shutdown invalidates the replacement waiting for exit');
+  });
+}
+
+test('a failed spawn close settles concurrent termination and the process drain', async (t) => {
+  const children = mockCompilerProcesses(t);
+  const processes = new CompilerProcesses();
+  const slot = { compiler: null };
+  const worker = processes.of(slot);
+  const rejected = assert.rejects(
+    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+    CompilerUnavailableError,
+  );
+  const child = children[0];
+  assert.ok(child);
+  Object.defineProperty(child, 'pid', { value: undefined });
+
+  const first = worker.terminate();
+  const second = worker.terminate();
+  processes.end(slot);
+  const completed = [false, false, false];
+  const ending = [first, second, processes.drain()].map((promise, index) =>
+    promise.then(() => {
+      completed[index] = true;
+    }),
+  );
+  await rejected;
+
+  child.emit('error', Object.assign(new Error('spawn failed'), { code: 'EAGAIN' }));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(completed, [false, false, false], 'spawn failure still awaits close');
+
+  child.emit('close', -11, null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual([...completed], [true, true, true], 'no child exists to emit an exit');
+  await Promise.all(ending);
+  t.mock.timers.tick(2_000);
+  assert.deepEqual(child.signals, [], 'failed-spawn close clears the shutdown grace timer');
+});
+
+test('the shutdown grace kills the compiler but waits for its exit', async (t) => {
+  const children = mockCompilerProcesses(t);
+  const worker = new CompilerWorker();
+  const rejected = assert.rejects(
+    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+    CompilerUnavailableError,
+  );
+  let completed = false;
+  const ending = worker.terminate().then(() => {
+    completed = true;
+  });
+  const child = children[0];
+  assert.ok(child);
+  Object.defineProperty(child, 'pid', { value: 1_234 });
+  await rejected;
+
+  t.mock.timers.tick(1_999);
+  assert.deepEqual(child.signals, [], 'the compiler gets its full cleanup grace');
+  t.mock.timers.tick(1);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(child.killed, true);
+  assert.equal(completed, false, 'sending a kill signal is not a child exit');
+  assert.deepEqual(child.signals, ['SIGKILL']);
+  child.emit('error', new Error('The IPC channel closed during shutdown.'));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(completed, false, 'an IPC error is not a child exit');
+  child.emit('close', null, null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(completed, false, "a live child's close is not a child exit");
+
+  child.exit();
+  await ending;
+  assert.equal(completed, true);
+});
+
 test('a runtime the app owns but cannot vouch for compiles nothing', async (t) => {
   // Both cases would otherwise compile: the checkout's own node_modules sits
   // beside this fixture, where node looks next, and esbuild falls back to its
@@ -240,7 +516,7 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     mkdirSync(runtime);
     writeFileSync(
       join(runtime, 'manifest.json'),
-      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files })}\n`,
+      `${JSON.stringify({ binary: 'node_modules/@esbuild/absent/bin/esbuild', files, notices: [] })}\n`,
     );
 
     const worker = new CompilerWorker();
@@ -289,6 +565,8 @@ test('a reply the protocol does not define is not an answer', () => {
     requestId: 2,
     status: 'stopped',
   });
+  const edited = { requestId: 3, status: 'edited', files: { 'main.tsx': '<h1>Changed</h1>' } };
+  assert.deepEqual(compilerResponse(edited), edited);
 
   for (const malformed of [
     null,
@@ -303,6 +581,8 @@ test('a reply the protocol does not define is not an answer', () => {
     { requestId: 1, status: 'ready' },
     { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
     { requestId: 1, status: 'failed' },
+    { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
+    { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
   ]) {
     assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));
   }

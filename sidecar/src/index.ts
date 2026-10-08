@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { CanvasBuilds } from './canvas/CanvasBuilds.js';
 import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { ProjectService } from './projects/ProjectService.js';
 import { ProjectStore } from './projects/store.js';
@@ -15,12 +16,14 @@ import {
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
-import { shutdownSidecar } from './shutdown.js';
+import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
+import type { ClientCommand } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
 const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
+const CANVAS_EXPORT_TOKEN = process.env.CANVAS_EXPORT_TOKEN;
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
@@ -30,6 +33,7 @@ const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
+  canvasExportToken: CANVAS_EXPORT_TOKEN,
   onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
@@ -43,6 +47,15 @@ const server = startBridgeServer({
   getSnapshot: () => manager.runtimeSnapshot(),
 });
 
+// Canvas leases live beside the workspace that checks them: the pane registers
+// one per mutation request, and each turn's lease is registered here.
+const canvasScopes = new CanvasScopes();
+let canvasWorkspace: CanvasWorkspace | undefined;
+const canvasTurns = new CanvasTurns(
+  canvasScopes,
+  (appSessionId) => canvasWorkspace?.attachedCanvasId(appSessionId) ?? null,
+);
+
 const manager = new SessionManager(
   (event) => {
     projectSessions.observe(event);
@@ -55,6 +68,8 @@ const manager = new SessionManager(
     server.broadcast(event);
   },
   {
+    canvasTurns,
+    canvasWorkspace: () => canvasReady,
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);
@@ -102,9 +117,6 @@ function reportProjectError(error: unknown): void {
   });
 }
 
-// Canvas leases live beside the workspace that checks them: the pane registers
-// one per mutation request, and Task 4 registers each turn's lease here.
-const canvasScopes = new CanvasScopes();
 // Builds are projected into every frame the workspace hands out, so the
 // registry exists before the workspace that reads it.
 const canvasBuilds = new CanvasBuilds();
@@ -113,10 +125,13 @@ const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
   bindScopeCanvas: (scopeId, canvasId) => {
     canvasScopes.bindScopeCanvas(scopeId, canvasId);
   },
-  isChatKnown: (appSessionId) =>
+  isChatKnown: (appSessionId): boolean =>
     manager.sessionSummary(appSessionId)?.appSessionId === appSessionId,
 }).then((workspace) => {
   if (shuttingDown) void workspace.close();
+  // A turn's lease reads the chat's attachment from here; until Canvas storage
+  // opens, every chat reads as unattached.
+  canvasWorkspace = workspace;
   return workspace;
 });
 void canvasReady.catch((error: unknown) => {
@@ -126,7 +141,8 @@ void canvasReady.catch((error: unknown) => {
     message: `Canvas storage did not open, so no board is available until DROIDEX restarts: ${error instanceof Error ? error.message : String(error)}`,
   });
 });
-const handleCanvasCommand = createCanvasCommandHandler(
+const canvasAdmission = new AbortController();
+const dispatchCanvasCommand = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
@@ -135,6 +151,17 @@ const handleCanvasCommand = createCanvasCommandHandler(
   },
   (listener) => server.onPageGone(listener),
 );
+async function handleCanvasCommand(
+  command: ClientCommand,
+  pageId: string | null,
+): Promise<boolean> {
+  const rejection = canvasShutdownReply(command, canvasAdmission.signal);
+  if (rejection) {
+    server.broadcast(rejection);
+    return true;
+  }
+  return dispatchCanvasCommand(command, pageId);
+}
 
 automationManager = configureAutomationManager({
   dataDir: droidexUserDataDir(),
@@ -195,10 +222,12 @@ async function shutdown(): Promise<void> {
   const forceExit = setTimeout(() => process.exit(1), 5_000);
   forceExit.unref();
   try {
-    // Sessions close first so the automation store records their final run state
-    // before it flushes. Bridge close is bounded and flushes its ordered queue
-    // after shutdown.
+    // Sessions and Canvas invalidate before either cleanup is awaited.
+    // Automation persistence still follows the sessions' final run state.
     await shutdownSidecar({
+      closeCanvasAdmission: () => {
+        canvasAdmission.abort();
+      },
       shutdownSessions: () => manager.shutdown(),
       shutdownAutomations: async () => {
         try {
@@ -208,14 +237,8 @@ async function shutdown(): Promise<void> {
           await service?.flush();
         }
       },
-      // After the sessions, because an agent's Canvas mutation runs under one.
-      shutdownCanvas: async () => {
-        // Builds first: a settling build still reports its outcome through the
-        // workspace, which then waits for that commit before it closes.
-        await canvasBuilds.close();
-        const workspace = await canvasReady.catch(() => undefined);
-        await workspace?.close();
-      },
+      shutdownCanvas: () =>
+        shutdownCanvas(canvasBuilds, canvasScopes, canvasReady, canvasWorkspace),
       disableMetrics: () => {
         hotPathMetrics.disable();
       },

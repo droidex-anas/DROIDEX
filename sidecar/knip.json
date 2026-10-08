@@ -11,10 +11,13 @@
   "ignoreBinaries": ["open"],
   "ignoreDependencies": [
     "esbuild",
+    "lucide-react",
     "postcss",
     "postcss-value-parser",
     "react",
     "react-dom",
+    "react-is",
+    "recharts",
     "tailwindcss"
   ]
 }

@@ -40,6 +40,18 @@ export async function bounded<T>(
   }
 }
 
+/** Brings the app window forward, so pointer input has somewhere to land. */
+export async function focusHost(app: ElectronApplication): Promise<void> {
+  await bounded(
+    app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      window.show();
+      window.focus();
+    }),
+    'focus host window',
+  );
+}
+
 /** A loopback listener that counts everything that reaches it. */
 export interface NetworkListener {
   url: string;

@@ -1597,7 +1597,12 @@ export default function PromptInput({
       try {
         if (targetChildSessionId)
           sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
-        else sendToSession(activeSession.appSessionId, composed, responseFormat, mentions, steerId);
+        else
+          sendToSession(activeSession.appSessionId, composed, {
+            responseFormat,
+            mentions,
+            steerId,
+          });
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();

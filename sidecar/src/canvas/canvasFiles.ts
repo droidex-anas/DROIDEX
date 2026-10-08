@@ -58,6 +58,11 @@ const revisionMetadataSchema = z
 
 type RevisionMetadata = z.infer<typeof revisionMetadataSchema>;
 
+export interface SavedRevision {
+  files: Map<string, string>;
+  designSystem: RevisionMetadata['designSystem'];
+}
+
 /** A revision to publish: its file list is whatever tree is handed over with it. */
 export type NewRevision = Omit<RevisionMetadata, 'files'>;
 
@@ -300,6 +305,11 @@ export class CanvasFiles {
    * which of the two its own context makes it.
    */
   async readRevision(canvasId: string, ref: RevisionRef): Promise<Map<string, string>> {
+    return (await this.readRevisionDetails(canvasId, ref)).files;
+  }
+
+  /** The source and the kit ref committed with that exact immutable revision. */
+  async readRevisionDetails(canvasId: string, ref: RevisionRef): Promise<SavedRevision> {
     const revision = this.revisionPath(canvasId, ref.revisionId);
     const checked = new Set<string>();
     let metadata: RevisionMetadata;
@@ -322,7 +332,7 @@ export class CanvasFiles {
         await this.refuseLinkedPath(target, checked);
         files.set(path, await this.readText(target));
       }
-      return files;
+      return { files, designSystem: metadata.designSystem };
     } catch (error) {
       throw storageFailure(REVISION_RECOVERY, error);
     }

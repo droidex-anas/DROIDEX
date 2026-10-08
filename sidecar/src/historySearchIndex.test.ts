@@ -4,9 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test, { type TestContext } from 'node:test';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { HistorySearchIndex } from './historySearchIndex.js';
 import { sqliteFts5UnavailableSkipReason } from './historySearchSchema.js';
+import { SessionEventFlow } from './SessionEventFlow.js';
+import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { ClaudeEventMapper } from './providers/claude/claudeEvents.js';
 import type { SearchableSessionFileEntry } from './sessionFileCache.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
@@ -142,6 +146,88 @@ function rowIds(db: DatabaseSync, providerSessionId: string): number[] {
     .all(providerSessionId)
     .map((row) => Number(row['rowid']));
 }
+
+test(
+  'indexed search excludes Canvas assistant error bodies but retains user-authored text',
+  needsFts5,
+  async (t) => {
+    const { directory, db } = searchDatabase(t);
+    const previous = process.env.DROIDEX_USER_DATA_DIR;
+    process.env.DROIDEX_USER_DATA_DIR = directory;
+    t.after(() => {
+      if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+      else process.env.DROIDEX_USER_DATA_DIR = previous;
+    });
+    const summary = sessionSummary({ appSessionId: 'claude-search', provider: 'claude' });
+    const file = new ProviderTranscriptFile(summary.appSessionId, () => summary);
+    const flow = new SessionEventFlow({
+      appendTranscript: (event) => {
+        void file.append(event);
+      },
+      flushTranscript: () => undefined,
+      applySideEffects: () => undefined,
+      resolveChildScope: () => undefined,
+      recordUsage: () => undefined,
+    });
+    const canary = 'CANVAS_INTERNAL_GUIDANCE_7E4B';
+    await file.appendPrompt('Port the client.');
+    const mapper = new ClaudeEventMapper(summary.appSessionId);
+    for (const message of [
+      {
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: { content: [{ type: 'text', text: 'Ported it to v3.' }] },
+      },
+      {
+        type: 'assistant',
+        parent_tool_use_id: null,
+        error: 'unknown',
+        message: {
+          content: [
+            { type: 'text', text: `Tool failed: ${canary}` },
+            {
+              type: 'tool_use',
+              id: 'canvas-error',
+              name: 'mcp__droidex-canvas__canvas_write',
+              input: { designId: 'design-1', source: canary },
+            },
+          ],
+        },
+      },
+    ]) {
+      for (const event of mapper.map(message as SDKMessage))
+        flow.apply(summary.appSessionId, summary.appSessionId, 'primary', event);
+    }
+    await file.flush();
+    const stat = statSync(file.path);
+    const entry: SearchableSessionFileEntry = {
+      providerSessionId: summary.appSessionId,
+      path: file.path,
+      birthtimeMs: stat.birthtimeMs,
+      mtimeMs: stat.mtimeMs,
+      sizeBytes: stat.size,
+      summary,
+    };
+    const index = new HistorySearchIndex(db);
+    assert.equal((await index.indexSlice(entry)).complete, true);
+    assert.deepEqual(index.search(canary), []);
+    assert.equal(index.search('Ported it')[0]?.matches[0]?.author, 'assistant');
+    assert.equal(index.search('Port the client')[0]?.matches[0]?.author, 'user');
+
+    await file.appendPrompt(`Please show ${canary}`);
+    const appended = statSync(file.path);
+    assert.equal(
+      (await index.indexSlice({ ...entry, mtimeMs: appended.mtimeMs, sizeBytes: appended.size }))
+        .complete,
+      true,
+    );
+    unlinkSync(file.path);
+    const matches = index.search(canary)[0]?.matches;
+    assert.equal(matches?.length, 1);
+    assert.equal(matches?.[0]?.author, 'user');
+    assert.equal(matches?.[0]?.snippet, `Please show ${canary}`);
+  },
+);
 
 test(
   'indexed search survives raw-file removal and preserves aliases and substring behavior',
