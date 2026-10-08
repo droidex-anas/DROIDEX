@@ -37,6 +37,8 @@ export interface ThreadGroup {
 export interface ThreadSignals {
   sessions: Partial<Record<string, SessionSummary>>;
   attention: (appSessionId: string) => SessionAttentionKind | null;
+  /** What a blocked thread is asking for, in one line, when it is asking. */
+  asking?: (appSessionId: string) => string | undefined;
   digests: Partial<Record<string, ActivityDigest>>;
 }
 
@@ -121,7 +123,7 @@ function needsUser(status: ThreadRow['status']): boolean {
 function threadRow(
   thread: ProjectThread,
   project: ProjectView,
-  { sessions, attention, digests }: ThreadSignals,
+  { sessions, attention, asking, digests }: ThreadSignals,
   depth: number,
 ): ThreadRow {
   const session = sessions[thread.appSessionId];
@@ -144,7 +146,7 @@ function threadRow(
     appSessionId: thread.appSessionId,
     title: thread.title,
     status,
-    detail: threadDetail(thread, status, live, digest),
+    detail: threadDetail(thread, status, live, digest, asking?.(thread.appSessionId)),
     live,
     updatedAt: session?.updatedAt ?? 0,
     depth,
@@ -160,6 +162,7 @@ function threadDetail(
   status: ThreadRow['status'],
   live: boolean,
   digest: ActivityDigest | undefined,
+  asked: string | undefined,
 ): string {
   const position =
     thread.wait && thread.wait.kind !== 'turn' ? ordinal(thread.wait.position) : undefined;
@@ -170,7 +173,7 @@ function threadDetail(
   }
   // What it wants from the user comes first, even mid-turn: a thread can be
   // generating and still be stopped on an approval.
-  if (BLOCKED.includes(status)) return join(ACTIVITY_LABELS[status], digest?.snippet);
+  if (BLOCKED.includes(status)) return join(ACTIVITY_LABELS[status], asked ?? digest?.snippet);
   if (live) return digest?.activity ?? 'Working';
   if (thread.waiting) return join('Asked the chat that started it', digest?.snippet);
   return digest?.snippet ?? ACTIVITY_LABELS[status];
