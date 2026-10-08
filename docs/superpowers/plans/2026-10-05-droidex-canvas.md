@@ -1143,11 +1143,11 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/05a-canvas-pane-and-empty-state`: Add the Canvas pane surface without a utility-picker entry, one programmatic open path `openCanvas({ appSessionId, canvasId, frameId? })`, `CanvasWorkspace.tsx` shell, the all-frames-deleted empty state and atomic attachment bootstrap.
+- [x] `canvas/05a-canvas-pane-and-empty-state`: Add the Canvas pane surface without a utility-picker entry, one programmatic open path `openCanvas({ appSessionId, canvasId, frameId? })`, `CanvasWorkspace.tsx` shell, the all-frames-deleted empty state and atomic attachment bootstrap.
   Done: `canvasState.ts` snapshot/change subscriptions reconcile state; opening the pane creates no design or compiler; Canvas never appears in the utility picker.
-- [ ] `canvas/05b-board-geometry-and-gestures`: Implement `canvasGeometry.ts` and tests plus `CanvasBoard.tsx` pan/zoom/fit, pointer capture and transient frame dragging.
+- [x] `canvas/05b-board-geometry-and-gestures`: Implement `canvasGeometry.ts` and tests plus `CanvasBoard.tsx` pan/zoom/fit, pointer capture and transient frame dragging.
   Done: Zoom anchors correctly; drag commits once on release and cancellation restores acknowledged geometry.
-- [ ] `canvas/05c-frames-selection-previews`: Implement `DesignFrame.tsx`, Select/Interact, Escape/Enter, multiselect/align/nudge/resize and four live slots with placeholders using `DesignPreview`.
+- [x] `canvas/05c-frames-selection-previews`: Implement `DesignFrame.tsx`, Select/Interact, Escape/Enter, multiselect/align/nudge/resize and four live slots with placeholders using `DesignPreview`.
   Done: Running-board transformed input, clipping, ongoing gestures and layout conflicts preserve source and mounted preview state.
 - [ ] `canvas/05d-navigator-and-toolbar`: Build virtualized `CanvasNavigator.tsx` search, `CanvasToolbar.tsx`, completed context actions and zoom readout.
   Done: Named/status-labeled controls work in empty/loading/error states and search focuses the requested frame.
@@ -1731,7 +1731,7 @@ Settled by 10c (storage/bridge):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/11a-canvas-motion`: Implement feature-local motion tokens and truthful bloom, ready reveal and actor presence from real events.
+- [x] `canvas/11a-canvas-motion`: Implement feature-local motion tokens and truthful bloom, ready reveal and actor presence from real events.
   Done: Busy animation stops offscreen, hidden, settled and under reduced motion; direct input stays immediate.
 - [ ] `canvas/11b-keyboard-and-identity`: Preserve mounted frame identity and add roving focus, restoration and concise accessible status announcements.
   Done: Pane/inspector transitions retain state and text inputs keep ordinary editing shortcuts.
