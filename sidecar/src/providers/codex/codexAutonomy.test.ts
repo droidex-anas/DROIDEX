@@ -392,6 +392,53 @@ test('Codex keeps voice live and contains old-policy spoken turns arriving after
   }
 });
 
+test('Codex contains a late spoken turn independently of a running Low typed turn', async (t) => {
+  const interrupted: unknown[] = [];
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'turn/interrupt') interrupted.push(params.turnId);
+    if (method === 'turn/start') {
+      assert.equal(params.approvalPolicy, 'untrusted');
+      notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'typed-turn' } });
+      notifications.get('item/agentMessage/delta')?.({
+        threadId: 'thread-1',
+        itemId: 'typed-answer',
+        delta: 'Working',
+      });
+      return { turn: { id: 'typed-turn' } };
+    }
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+  const events = session.stream('typed work');
+  t.after(() => events.return(undefined));
+  assert.equal((await events.next()).value?.transcript?.text, 'Working');
+  await session.setAutonomy('high');
+  await session.setAutonomy('off');
+  assert.deepEqual(interrupted, [], 'the typed turn still uses its callback-enforced Low policy');
+
+  for (let notification = 0; notification < 2; notification += 1)
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'late-spoken' } });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(interrupted, ['late-spoken'], 'containment must target the spoken turn itself');
+  assert.equal(session.voice.isLive(), true);
+  assert.equal(session.isClosed, false);
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'late-spoken', status: 'interrupted' },
+  });
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  let typedCompleted = false;
+  for await (const event of events) if (event.done) typedCompleted = true;
+  assert.equal(typedCompleted, true, 'the typed turn must finish normally');
+  assert.deepEqual(interrupted, ['late-spoken']);
+});
+
 test('Codex recovery keeps voice live and interrupts only callback-bypassing turns', async (t) => {
   for (const recovery of ['refused downgrade', 'obsolete grant'] as const) {
     await t.test(recovery, async (t) => {

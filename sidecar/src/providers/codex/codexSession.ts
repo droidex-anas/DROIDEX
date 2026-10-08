@@ -127,15 +127,15 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.permissions = new SessionAutonomy(input.autonomy, {
       write: () => {
-        const stopping = this.stopUnenforceableTurn();
+        const stopping = this.stopUnenforceableTurns();
         // The queued writer reports failure even if another settings write delays it.
         void stopping.catch(() => undefined);
         return this.changeThreadSettings(async () => {
           await stopping;
-          await this.stopUnenforceableTurn();
+          await this.stopUnenforceableTurns();
           const autonomy = this.permissions.latestAutonomy;
           await this.applyThreadSettings(autonomy);
-          await this.stopUnenforceableTurn();
+          await this.stopUnenforceableTurns();
           return autonomy;
         });
       },
@@ -143,7 +143,7 @@ export class CodexSession implements ProviderSession {
       isUnsafe: () =>
         AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
         AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
-      interrupt: () => this.stopUnenforceableTurn(),
+      interrupt: () => this.stopUnenforceableTurns(),
       close: () => this.close(),
       requireOpen: () => {
         if (this.hasClosed) throw new Error('This Codex session is closed.');
@@ -339,12 +339,22 @@ export class CodexSession implements ProviderSession {
     return this.permissions.set(autonomy);
   }
 
-  private async stopUnenforceableTurn(): Promise<void> {
+  private async stopUnenforceableTurns(): Promise<void> {
     if (this.turnStarted) await this.turnStarted;
     this.permissions.requireOpen();
-    const runningAutonomy = this.turnAutonomy ?? this.delegatedAutonomyCeiling;
+    if (this.turnId) await this.stopUnenforceableTurn(this.turnId, this.turnAutonomy);
+    if (this.delegatedTurnId)
+      await this.stopUnenforceableTurn(this.delegatedTurnId, this.delegatedAutonomyCeiling);
+  }
+
+  private async stopUnenforceableTurn(
+    turnId: string,
+    runningAutonomy: Autonomy | undefined,
+  ): Promise<void> {
+    this.permissions.requireOpen();
     const latest = this.permissions.latestAutonomy;
     if (
+      turnId === this.stoppedTurnId ||
       runningAutonomy === undefined ||
       AUTONOMY_LEVELS.indexOf(runningAutonomy) <= AUTONOMY_LEVELS.indexOf(latest) ||
       codexAutonomy(runningAutonomy).approvalPolicy === 'untrusted'
@@ -352,14 +362,13 @@ export class CodexSession implements ProviderSession {
       return;
     // Thread settings cannot revoke a turn whose tools bypass host callbacks.
     try {
-      const turnId = this.turnId ?? this.delegatedTurnId;
-      if (turnId === undefined || turnId === this.stoppedTurnId) return;
+      this.prompts.cancel();
       this.deliver([
         this.mapper.statusEvent(
           `Stopped the turn to apply ${latest}: Codex keeps a turn's permissions until it ends`,
         ),
       ]);
-      await this.interrupt();
+      await this.interruptTurn(turnId);
       this.permissions.requireOpen();
     } catch (error) {
       await this.close();
@@ -597,7 +606,7 @@ export class CodexSession implements ProviderSession {
       if (turnId !== this.failedTurnId) this.failedTurnId = undefined;
     }
     if (turnId && isNewTurn) {
-      void this.stopUnenforceableTurn().catch((error: unknown) => {
+      void this.stopUnenforceableTurns().catch((error: unknown) => {
         this.deliver([this.mapper.errorEvent(error)]);
       });
     }
