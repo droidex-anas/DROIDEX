@@ -1,6 +1,9 @@
 export const HISTORY_PERSISTENCE_DEGRADED_MESSAGE =
   'History durability is degraded. Live work continues; settlement will retry.';
 
+export const HISTORY_UNAVAILABLE_MESSAGE =
+  'History reads and writes are unavailable. Quit DROIDEX, repair storage or restore a backup, then restart.';
+
 export const HISTORY_SEARCH_UNAVAILABLE_MESSAGE =
   'History search is not available on this device. Session titles can still be found.';
 

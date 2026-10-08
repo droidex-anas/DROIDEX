@@ -99,21 +99,36 @@ The ad-hoc-signed first-launch recovery is: open System Settings, choose Privacy
 Security, find the blocked DROIDEX notice, choose Open Anyway, and confirm. Do
 not advise users to disable Gatekeeper globally.
 
-## Local child-session index has an incompatible schema
+## Canonical history cannot open or has an incompatible schema
 
-The local index uses one canonical schema and has no migration or compatibility fallback. If startup reports an incompatible child-session index:
+If startup cannot open or validate canonical history, the sidecar stays running
+with history reads and writes disabled. It does not publish an empty replacement
+catalog. A persistent history banner and an error toast report the failure even
+when the renderer connects after startup. After repairing storage, restart
+DROIDEX to reopen history.
 
 1. Quit DROIDEX.
-2. Remove only the local derived index files:
-   ```bash
-   rm -f "$HOME/.factory/droidex/session-index.sqlite"
-   rm -f "$HOME/.factory/droidex/session-index.sqlite-wal"
-   rm -f "$HOME/.factory/droidex/session-index.sqlite-shm"
-   ```
-3. Restart DROIDEX. The sidecar rebuilds the index from current local Factory session history.
+2. Back up the history directory, including SQLite WAL/SHM files. The default is
+   `~/.factory/droidex`; an explicit `DROIDEX_HISTORY_DIR` selects another location.
+3. Check directory access, available disk space, and the reported SQLite error.
+   For an incompatible schema or damaged database, use a supported repair or
+   restore a known-good backup while DROIDEX is stopped.
+4. Restart DROIDEX and confirm history loads.
 
-These commands do not remove raw Factory session history. Do not delete the broader `~/.factory` directory.
-Do not remove `index.sqlite`; that filename remains reserved for older app/worktree schemas.
+`session-index.sqlite` contains canonical DROIDEX sessions, child relationships,
+metadata, and settings. **Do not delete it as derived state.** Provider transcripts
+cannot reconstruct those records. `session-search.sqlite` also retains the last
+admitted summaries of owned chats whose transcripts are unavailable. Back it up
+with its WAL/SHM files before rebuilding search; missing transcripts cannot
+reconstruct those summaries.
+
+Missing or inaccessible provider transcripts do not remove previously admitted
+owned chats or DROIDEX notices. The catalog retains their DROIDEX titles;
+resuming reports an unavailable transcript until the file is accessible again.
+A header-only restoration keeps the last admitted summary until a completed
+conversation can be read again. Missing files stop search indexing until they
+return; delete/archive tombstones remain in renderer storage so retention cannot
+make hidden chats reappear.
 
 ## Verify child navigation without Factory authentication
 

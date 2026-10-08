@@ -1,6 +1,6 @@
 import type { ServerEvent } from '../types/bridge';
 
-type HistoryPersistenceHealth = 'ok' | 'degraded';
+type HistoryPersistenceHealth = 'ok' | 'degraded' | 'unavailable';
 type HistorySearchHealth = 'ok' | 'unavailable';
 
 export interface HistoryHealthSnapshot {
@@ -20,7 +20,9 @@ function emit(): void {
 export function isHistoryStatusError(event: ServerEvent): boolean {
   return (
     event.type === 'error' &&
-    (event.code === 'history.persistence_degraded' || event.code === 'history.search_unavailable')
+    (event.code === 'history.persistence_degraded' ||
+      event.code === 'history.search_unavailable' ||
+      event.code === 'history.unavailable')
   );
 }
 
@@ -31,8 +33,14 @@ export function applyHistoryServerEvent(event: ServerEvent): void {
     emit();
     return;
   }
+  if (event.type === 'error' && event.code === 'history.unavailable') {
+    if (persistence === 'unavailable') return;
+    persistence = 'unavailable';
+    emit();
+    return;
+  }
   if (event.type === 'error' && event.code === 'history.persistence_degraded') {
-    if (persistence === 'degraded') return;
+    if (persistence !== 'ok') return;
     persistence = 'degraded';
     emit();
     return;
@@ -50,7 +58,7 @@ export function applyHistoryServerEvent(event: ServerEvent): void {
 }
 
 export function getHistoryHealth(): HistoryHealthSnapshot {
-  return { persistence, search };
+  return { persistence, search: persistence === 'unavailable' ? 'unavailable' : search };
 }
 
 export function subscribeHistoryHealth(listener: () => void): () => void {

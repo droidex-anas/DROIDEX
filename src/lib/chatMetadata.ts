@@ -35,7 +35,7 @@ export interface ChatMetadata {
 export type ChatMetadataMap = Record<string, ChatMetadata>;
 
 const CHAT_METADATA_STORAGE_KEY = 'droid-chat-metadata';
-// Bounds so a corrupt or ever-growing payload cannot bloat storage.
+// Bound expendable preferences; tombstones must outlive retained history rows.
 const MAX_TRACKED_CHATS = 1000;
 export const MAX_CHAT_TITLE_LENGTH = 200;
 export const MAX_CHAT_PULL_REQUESTS = 10;
@@ -75,18 +75,18 @@ function sanitizeMetadata(value: unknown): ChatMetadata | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-// Automatic PR links are expendable before names/pins; hidden-chat tombstones
-// remain the last entries evicted. Both storage loading and writes use this rule.
+// Automatic PR links are expendable before names/pins. Both loading and writes
+// preserve tombstones because the sidecar cannot see renderer-only deletion.
 function metadataRetentionPriority(meta: ChatMetadata): number {
-  if (meta.archivedAt !== undefined || meta.deletedAt !== undefined) return 2;
+  if (isChatHidden(meta)) return 2;
   return meta.displayTitle !== undefined || meta.pinnedAt !== undefined ? 1 : 0;
 }
 
 function capMetadataEntries(entries: [string, ChatMetadata][]): [string, ChatMetadata][] {
   if (entries.length <= MAX_TRACKED_CHATS) return entries;
-  const byEvictionOrder = [...entries].sort(
-    (a, b) => metadataRetentionPriority(a[1]) - metadataRetentionPriority(b[1]),
-  );
+  const byEvictionOrder = entries
+    .filter(([, meta]) => !isChatHidden(meta))
+    .sort((a, b) => metadataRetentionPriority(a[1]) - metadataRetentionPriority(b[1]));
   const dropped = new Set(
     byEvictionOrder.slice(0, entries.length - MAX_TRACKED_CHATS).map(([id]) => id),
   );
@@ -105,7 +105,7 @@ export function loadChatMetadata(): ChatMetadataMap {
       if (meta) entries.push([appSessionId, meta]);
     }
     // Storage order is recency (writes reinsert the touched id last); the cap
-    // drops the oldest entries, tombstones last.
+    // drops the oldest preferences while preserving every tombstone.
     return Object.fromEntries(capMetadataEntries(entries));
   } catch {
     return {};
@@ -195,9 +195,8 @@ function withMetadata(
     meta.deletedAt !== undefined ||
     (meta.pullRequests?.length ?? 0) > 0;
   const next = hasContent ? { ...rest, [appSessionId]: meta } : rest;
-  // The same bound loadChatMetadata enforces on read, applied here so runtime
-  // updates cannot grow storage past it between restarts. The touched id is
-  // reinserted last, so insertion order is recency and the oldest drop first.
+  // Apply the load-time preference cap while keeping tombstones. Reinserting
+  // the touched id makes insertion order the eviction order for preferences.
   return Object.fromEntries(capMetadataEntries(Object.entries(next)));
 }
 

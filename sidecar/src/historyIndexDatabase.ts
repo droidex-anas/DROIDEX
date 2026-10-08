@@ -92,6 +92,7 @@ export class HistoryIndexDatabase {
     const result = this.sessionFiles.reconcileChanges();
     const removed = [
       ...result.removedProviderSessionIds,
+      ...this.sessionFiles.unavailableProviderSessionIds,
       ...result.upserts
         .filter((entry) => entry.summary === null)
         .map((entry) => entry.providerSessionId),
@@ -108,6 +109,8 @@ export class HistoryIndexDatabase {
   reconcileSessionFilePaths(changes: SessionFileChange[]): SessionFileReconciliation {
     this.assertOpen();
     const result = this.sessionFiles.reconcilePathChanges(changes);
+    const unavailable = this.sessionFiles.unavailableProviderSessionIds;
+    for (const providerSessionId of unavailable) this.removeQueued(providerSessionId);
     const searchIndex = this.searchIndex;
     if (!searchIndex) return result;
     if (!this.hasPlannedAll) {
@@ -119,6 +122,7 @@ export class HistoryIndexDatabase {
     const searchable = result.upserts.filter(isSearchableEntry);
     const removed = [
       ...result.removedProviderSessionIds,
+      ...unavailable,
       ...result.upserts
         .filter((entry) => entry.summary === null)
         .map((entry) => entry.providerSessionId),
@@ -315,6 +319,18 @@ export class HistoryIndexDatabase {
       }
     } catch (error) {
       if (this.closed || activeQueueEntry.superseded) return;
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'ENOENT' &&
+        this.sessionFiles.retainsSummary(entry.providerSessionId)
+      ) {
+        // A missed watcher deletion must stop retries without losing the catalog row.
+        this.reconcileSessionFilePaths([
+          { providerSessionId: entry.providerSessionId, path: entry.path },
+        ]);
+        if (this.activeQueueEntry?.superseded) return;
+      }
       queue.set(entry.providerSessionId, entry);
       const failures = (this.retryFailures.get(entry.providerSessionId) ?? 0) + 1;
       this.retryFailures.set(entry.providerSessionId, failures);
@@ -422,7 +438,7 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   try {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA busy_timeout = 5000');
-    const sessionFiles = createHistorySessionFileCache(db);
+    const sessionFiles = createHistorySessionFileCache(db, canonicalDb);
     try {
       return {
         db,

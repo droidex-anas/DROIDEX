@@ -12,6 +12,7 @@ import {
   HISTORY_INDEXING_INCOMPLETE_MESSAGE,
   HISTORY_PERSISTENCE_DEGRADED_MESSAGE,
   HISTORY_SEARCH_UNAVAILABLE_MESSAGE,
+  HISTORY_UNAVAILABLE_MESSAGE,
 } from './historyStatusCopy';
 
 afterEach(() => {
@@ -41,6 +42,15 @@ test('persistence degradation is sticky until recovery and does not re-emit whil
   applyHistoryServerEvent({ type: 'history.persistenceRecovered' });
   assert.deepEqual(getHistoryHealth(), { persistence: 'ok', search: 'ok' });
   assert.equal(seen.length, 2);
+  applyHistoryServerEvent({ type: 'error', code: 'history.unavailable', message: 'cannot open' });
+  applyHistoryServerEvent({
+    type: 'error',
+    code: 'history.persistence_degraded',
+    message: 'failed',
+  });
+  assert.deepEqual(getHistoryHealth(), { persistence: 'unavailable', search: 'unavailable' });
+  applyHistoryServerEvent({ type: 'history.persistenceRecovered' });
+  assert.deepEqual(getHistoryHealth(), { persistence: 'ok', search: 'ok' });
   stop();
 });
 
@@ -91,6 +101,7 @@ test('only history status errors are status, and their copy never fabricates pro
     HISTORY_PERSISTENCE_DEGRADED_MESSAGE,
     HISTORY_SEARCH_UNAVAILABLE_MESSAGE,
     HISTORY_INDEXING_INCOMPLETE_MESSAGE,
+    HISTORY_UNAVAILABLE_MESSAGE,
   ]) {
     assert.doesNotMatch(message, /\d+\s*%/);
     assert.doesNotMatch(message, /ETA/i);

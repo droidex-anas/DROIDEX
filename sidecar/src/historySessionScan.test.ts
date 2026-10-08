@@ -20,7 +20,8 @@ process.env.HOME = home;
 // developer's environment would aim this suite at their real session files.
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { HistoryIndex, createHistorySessionFileCache } = await import('./history.js');
+const { HistoryIndex, SESSION_INDEX_FILENAME, createHistorySessionFileCache } =
+  await import('./history.js');
 const { parseFullSessionTranscript, SessionTranscriptReader } =
   await import('./sessionTranscript.js');
 const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
@@ -229,8 +230,11 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   // Reconcile files as restart does, then exercise the child pane's real loader.
   const db = new DatabaseSync(':memory:');
   const index = new HistoryIndex();
+  const canonical = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
+    readOnly: true,
+  });
   try {
-    const cache = createHistorySessionFileCache(db);
+    const cache = createHistorySessionFileCache(db, canonical);
     cache.reconcileChanges();
     index.replaceSessionFileSnapshot(cache.snapshot());
     for (const childSessionId of ['child-a', 'child-b']) {
@@ -273,6 +277,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     );
   } finally {
     timeline.releaseTranscript(appSessionId);
+    canonical.close();
     index.close();
     db.close();
   }

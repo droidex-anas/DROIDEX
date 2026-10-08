@@ -527,7 +527,7 @@ test('empty reset generations cannot replace a valid resume cursor', async () =>
   assert.deepEqual(seenTypes(), ['connection']);
 });
 
-test('unflushed persistence in a snapshot is reported rather than treated as durable', async () => {
+test('snapshot storage failures reach clients without an earlier error event', async () => {
   const { socket, seen, seenTypes } = await startBridge();
   socket.message(
     snapshotMessage('generation-9', 8, 'generation_changed', {
@@ -552,6 +552,21 @@ test('unflushed persistence in a snapshot is reported rather than treated as dur
     seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
     ['history.unflushed_work'],
   );
+  socket.message(
+    snapshotMessage('generation-10', 0, 'generation_changed', {
+      persistence: {
+        durable: false,
+        hadUnflushedWork: false,
+        unavailableReason: 'Cannot open history.',
+      },
+    }),
+  );
+  const unavailable = seen.find(
+    (event) => event.type === 'error' && event.code === 'history.unavailable',
+  );
+  assert.ok(unavailable);
+  assert.equal(unavailable.type, 'error');
+  if (unavailable.type === 'error') assert.match(unavailable.message, /Cannot open history/);
 });
 
 function required<T>(value: T | undefined): T {

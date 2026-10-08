@@ -228,6 +228,16 @@ test('server errors route to toasts and connection state by code and recoverabil
       null,
     ],
     [{ type: 'history.persistenceRecovered' }, undefined, null],
+    [
+      {
+        type: 'error',
+        code: 'history.unavailable',
+        message: 'Repair history.',
+        recoverable: false,
+      },
+      'Repair history.',
+      null,
+    ],
   ];
   for (const [event, toast, action] of cases) {
     const label = 'code' in event ? String(event.code) : event.type;

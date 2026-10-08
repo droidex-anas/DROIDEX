@@ -81,6 +81,9 @@ export interface SerializedHistoryWorkerError {
   name: string;
   message: string;
   stack?: string;
+  code?: string;
+  errcode?: number;
+  errstr?: string;
 }
 
 export interface HistoryWorkerEnvelope {
@@ -109,11 +112,15 @@ export function eventMetadata(event: TranscriptEvent): PersistedEventMetadata {
 
 export function serializeHistoryWorkerError(error: unknown): SerializedHistoryWorkerError {
   if (error instanceof Error) {
-    return {
+    const serialized: SerializedHistoryWorkerError = {
       name: error.name,
       message: error.message,
-      ...(error.stack ? { stack: error.stack } : {}),
     };
+    if (error.stack) serialized.stack = error.stack;
+    if ('code' in error && typeof error.code === 'string') serialized.code = error.code;
+    if ('errcode' in error && typeof error.errcode === 'number') serialized.errcode = error.errcode;
+    if ('errstr' in error && typeof error.errstr === 'string') serialized.errstr = error.errstr;
+    return serialized;
   }
   return { name: 'Error', message: String(error) };
 }
@@ -122,8 +129,11 @@ export function historyWorkerError(error: SerializedHistoryWorkerError): Error {
   if (error.name === 'HistorySearchUnavailableError') {
     return new HistorySearchUnavailableError();
   }
-  const resolved = new Error(error.message);
+  const resolved: Error & SerializedHistoryWorkerError = new Error(error.message);
   resolved.name = error.name;
   if (error.stack) resolved.stack = error.stack;
+  if (error.code !== undefined) resolved.code = error.code;
+  if (error.errcode !== undefined) resolved.errcode = error.errcode;
+  if (error.errstr !== undefined) resolved.errstr = error.errstr;
   return resolved;
 }

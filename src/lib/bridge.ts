@@ -304,6 +304,15 @@ function eventsFromSnapshot(message: BridgeSnapshotMessage): ServerEvent[] {
       processes: message.snapshot.processes,
     },
   ];
+  const unavailableReason = message.snapshot.persistence.unavailableReason;
+  if (unavailableReason !== undefined) {
+    events.push({
+      type: 'error',
+      code: 'history.unavailable',
+      message: `Canonical history could not open: ${unavailableReason} History reads and writes are disabled. Quit DROIDEX, repair storage or restore a backup, then restart. Do not delete the canonical database.`,
+      recoverable: false,
+    });
+  }
   for (const session of message.snapshot.sessions) {
     events.push({ type: 'session.updated', session });
   }

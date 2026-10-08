@@ -208,7 +208,7 @@ test('chat metadata round-trips through localStorage and loads sanitize corrupt 
   assert.deepEqual(loadStored('[1,2]'), {});
 });
 
-test('loadChatMetadata caps the payload at MAX_TRACKED_CHATS, evicting old preferences before tombstones', () => {
+test('loadChatMetadata caps preferences without evicting hidden-chat tombstones', () => {
   const pins: Record<string, { pinnedAt: number }> = {};
   for (let i = 0; i < 1001; i += 1) pins[`s${String(i)}`] = { pinnedAt: i };
   const loaded = loadStored(pins);
@@ -234,9 +234,14 @@ test('loadChatMetadata caps the payload at MAX_TRACKED_CHATS, evicting old prefe
   assert.equal(kept.s1, undefined);
   assert.equal(kept['old-archive']?.archivedAt, 1);
   assert.equal(kept['old-delete']?.deletedAt, 2);
+
+  const tombstones = Object.fromEntries(
+    Array.from({ length: 1001 }, (_, index) => [`hidden-${index}`, { deletedAt: index }]),
+  );
+  assert.deepEqual(loadStored(tombstones), tombstones);
 });
 
-test('runtime updates cap the map at MAX_TRACKED_CHATS, dropping the oldest and evicting tombstones last', () => {
+test('runtime updates cap preferences without evicting hidden-chat tombstones', () => {
   // The load-time cap alone left a gap: metadata created after startup grew
   // the map (and the stored payload) past the bound until the next restart.
   let map: ChatMetadataMap = {};
@@ -268,6 +273,15 @@ test('runtime updates cap the map at MAX_TRACKED_CHATS, dropping the oldest and 
   assert.equal(map.s1, undefined);
   assert.equal(map['hidden-1']?.archivedAt, 2000);
   assert.equal(map['hidden-2']?.deletedAt, 2001);
+
+  const tombstones: ChatMetadataMap = Object.fromEntries(
+    Array.from({ length: 1000 }, (_, index) => [`hidden-${index}`, { deletedAt: index }]),
+  );
+  const archived = archiveChat(tombstones, 'old-archive', 2003);
+  assert.ok(archived);
+  assert.equal(Object.keys(archived).length, 1001);
+  assert.deepEqual(archived['hidden-0'], tombstones['hidden-0']);
+  assert.equal(archived['old-archive']?.archivedAt, 2003);
 
   // One more preference entry still evicts a pin, never the tombstones.
   map = pinChat(map, 's1001', 2002) ?? {};

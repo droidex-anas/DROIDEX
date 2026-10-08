@@ -1211,6 +1211,7 @@ export interface PersistenceRecovery {
   durable: boolean;
   hadUnflushedWork: boolean;
   message?: string;
+  unavailableReason?: string;
 }
 
 export interface InterruptedSessionRecord {

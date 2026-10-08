@@ -143,6 +143,7 @@ import {
 import {
   archiveChat,
   deleteChat,
+  isChatHidden,
   loadChatMetadata,
   linkChatsPullRequest,
   type ChatPullRequest,
@@ -1826,11 +1827,9 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_LIST': {
       const incoming = new Set(action.sessions.map((m) => m.appSessionId));
-      // Every list is a fresh scan of what exists, so it is authoritative for
-      // the rows the previous listing confirmed: drop confirmed rows it no
-      // longer reports (deleted outside the app, or pruned from a hydrated
-      // snapshot). Rows added locally this run are not confirmed yet and
-      // survive.
+      // The catalog retains admitted owned chats with unavailable transcripts.
+      // Only an omitted catalog record can prune a confirmed row; locally
+      // added rows survive until their first catalog listing.
       const confirmed = new Set(state.listConfirmedSessionIds);
       const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
       const map: Record<string, SessionSummary> = {};
@@ -1869,11 +1868,12 @@ function reduceAction(state: AppState, action: Action): AppState {
         state.activeAppSessionId !== null && mapById[state.activeAppSessionId] !== undefined
           ? state.activeAppSessionId
           : null;
-      // Prune pin/archive metadata for the same confirmed-gone rows so
-      // localStorage does not accumulate orphans. Metadata for rows added
-      // locally this run (not yet list-confirmed) survives.
+      // Catalog omission cannot prove a hidden chat will never return.
+      // Keep its renderer-only tombstone; prune only orphaned preferences.
       let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(isConfirmedGone);
+      const orphaned = Object.keys(chatMetadata).filter(
+        (id) => isConfirmedGone(id) && !isChatHidden(chatMetadata[id]),
+      );
       if (orphaned.length > 0) {
         const drop = new Set(orphaned);
         chatMetadata = Object.fromEntries(
@@ -2786,6 +2786,7 @@ function reduceAction(state: AppState, action: Action): AppState {
 
 /* ── Bridge event adapter ── */
 export function toastMessageForEvent(ev: ServerEvent): string | undefined {
+  if (ev.type === 'error' && ev.code === 'history.unavailable') return ev.message;
   if (isHistoryStatusError(ev)) return undefined;
   if (
     ev.type === 'error' &&
@@ -3128,6 +3129,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bridgeActionBatcherRef.current = batcher;
     const unsub = bridge.subscribeBatch((events, fromSnapshot) => {
       const actions: Action[] = fromSnapshot ? [{ type: 'BRIDGE_SNAPSHOT' }] : [];
+      if (fromSnapshot) applyHistoryServerEvent({ type: 'history.persistenceRecovered' });
       for (const ev of events) {
         // Verbose per-event logging runs on every streaming token and eagerly
         // deep-clones + redacts the whole event, so keep it to dev builds only;

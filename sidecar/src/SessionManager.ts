@@ -880,6 +880,11 @@ export class SessionManager {
     void this.emitProviderStatus();
     void this.providerProbes.refresh();
     const recovery = this.history.persistenceRecovery?.();
+    if (recovery?.unavailableReason !== undefined) {
+      this.emit(
+        serverEventForHistoryStatus({ state: 'unavailable', message: recovery.unavailableReason }),
+      );
+    }
     if (recovery?.hadUnflushedWork) {
       this.emit({
         type: 'error',
@@ -893,11 +898,15 @@ export class SessionManager {
   }
 
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
-    await this.adoption.adopt();
-    const persistence = this.history.persistenceRecovery?.() ?? {
+    let persistence = this.history.persistenceRecovery?.() ?? {
       durable: true,
       hadUnflushedWork: false,
     };
+    // Adoption needs canonical history; its failure must not hide storage health.
+    if (persistence.unavailableReason === undefined) {
+      await this.adoption.adopt();
+      persistence = this.history.persistenceRecovery?.() ?? persistence;
+    }
     return buildRuntimeSnapshot({
       runtime: this.runtime.status(),
       sessions: this.registry.liveSessionsSnapshot().map((live) => ({ ...live.summary })),
