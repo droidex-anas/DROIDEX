@@ -164,7 +164,7 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo } from '../types/bridge';
+import type { Autonomy, SkillInfo, ProviderMention } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import {
   promptWithSideChatReplies,
@@ -1882,19 +1882,30 @@ export default function PromptInput({
       ...p.files.filter((path) => !current.includes(path)),
     ]);
     // Without saved rows, a returned prompt's skills and catalog mentions still
-    // bring their chips back by name.
+    // bring their chips back, a mention by its full identity.
     const rowKeys = new Set(p.rowKeys);
-    const mentioned = new Set(p.mentions?.map((mention) => mention.name));
+    const mentionKey = (mention: ProviderMention) =>
+      `${mention.kind}:${mention.name}:${mention.path ?? ''}`;
+    const mentioned = new Set(p.mentions?.map(mentionKey));
     const added =
       rowKeys.size > 0
         ? catalog.filter((row) => rowKeys.has(catalogRowKey(row)))
         : [
             ...invocableSkills.filter((skill) => p.skills.includes(skill.name)),
-            ...catalog.filter((row) => mentioned.has(row.name)),
+            ...catalog.filter((row) => {
+              const mention = mentionsForRows(composerProvider, [row]).at(0);
+              return mention !== undefined && mentioned.has(mentionKey(mention));
+            }),
           ];
     setActiveSkills((current) => {
       const have = new Set(current.map(catalogRowKey));
-      return [...current, ...added.filter((row) => !have.has(catalogRowKey(row)))];
+      const next = [...current];
+      for (const row of added) {
+        if (have.has(catalogRowKey(row))) continue;
+        have.add(catalogRowKey(row));
+        next.push(row);
+      }
+      return next;
     });
     for (const reply of p.sideChatReplies ?? []) {
       dispatch({

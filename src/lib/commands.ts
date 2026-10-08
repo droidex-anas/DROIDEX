@@ -1,5 +1,5 @@
 import { bridge } from './bridge';
-import { hasConnectedAgentTransport, subscribeRuntimeHealth } from './runtimeHealth';
+import { getRuntimeHealth, subscribeRuntimeHealth } from './runtimeHealth';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
@@ -238,7 +238,7 @@ export const withdrawSteer = (
     // The answer may be lost with the socket; the chat then decides from what
     // the sidecar lists once it is back.
     stopWatchingHealth = subscribeRuntimeHealth(() => {
-      if (hasConnectedAgentTransport()) return;
+      if (getRuntimeHealth().transport === 'connected') return;
       stopWatchingHealth();
       stopListening();
       resolve({ withdrawn: false, lost: true });
