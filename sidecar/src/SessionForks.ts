@@ -49,12 +49,9 @@ export interface SessionForksDependencies {
   }) => void;
 }
 
-// Copies a session into a new one. On the source's own provider the provider
-// copies its conversation and the copy is stored closed, to be resumed by its
-// first send. Another provider cannot read that conversation, and a turn in
-// progress cannot be copied, so then the copy is a new session whose first
-// prompt carries the source transcript. Either way a `prompt` is the copy's
-// first message.
+// Copies a session into a new one. Native copies are stored closed and resumed
+// by their first send. Cross-provider branches, streaming sources and Codex
+// side chats instead create a session whose first prompt carries the transcript.
 export class SessionForks {
   constructor(private readonly d: SessionForksDependencies) {}
 
@@ -68,10 +65,13 @@ export class SessionForks {
         forkedAt: Date.now(),
       };
       const provider = command.provider ?? source.provider;
-      if (provider === source.provider && !this.isStreaming(source)) {
+      // Codex's native fork starts a temporary app-server, then resumes in a
+      // second one. A side chat creates once with the source transcript instead.
+      const isCodexSideChat = command.lineage === 'side' && provider === 'codex';
+      if (provider === source.provider && !this.isStreaming(source) && !isCodexSideChat) {
         copiedAppSessionId = await this.copyNatively(command, source, lineage);
       } else {
-        await this.branchAcross(command, source, provider, lineage);
+        await this.branchFromTranscript(command, source, provider, lineage);
       }
     } catch (error) {
       this.d.emitError({
@@ -182,7 +182,7 @@ export class SessionForks {
     return appSessionId;
   }
 
-  private async branchAcross(
+  private async branchFromTranscript(
     command: SessionForkCommand,
     source: SessionSummary,
     provider: ProviderKind,

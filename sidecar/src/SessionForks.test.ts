@@ -27,12 +27,25 @@ test.after(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function storeDroidTranscript(providerSessionId: string, assistantText: string): void {
-  const dir = join(home, '.factory', 'sessions', '2026', '06');
+function storeTranscript(
+  providerSessionId: string,
+  assistantText: string,
+  provider: 'droid' | 'codex' = 'droid',
+): void {
+  const dir =
+    provider === 'droid'
+      ? join(home, '.factory', 'sessions', '2026', '06')
+      : join(home, 'Library', 'Application Support', 'DROIDEX', 'provider-sessions');
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${providerSessionId}.jsonl`);
   const lines = [
-    { type: 'session_start', id: providerSessionId, cwd: home, sessionTitle: 'Source chat' },
+    {
+      type: 'session_start',
+      id: providerSessionId,
+      provider,
+      cwd: home,
+      sessionTitle: 'Source chat',
+    },
     {
       type: 'message',
       id: 'a1',
@@ -84,7 +97,7 @@ function harness(
   t: TestContext,
   options: {
     streaming?: boolean;
-    provider?: 'droid' | 'claude';
+    provider?: 'droid' | 'claude' | 'codex';
     contextWindowTokens?: 1000000;
     duringFork?: (stored: Map<string, SessionSummary>) => void;
   } = {},
@@ -302,7 +315,7 @@ test('a fork that cannot run is refused with its client ref and copies nothing',
 
 test('a side chat on a chat with a turn in progress branches from its stored transcript', async (t) => {
   const h = harness(t, { streaming: true });
-  storeDroidTranscript('source', 'Step one moves the schema.');
+  storeTranscript('source', 'Step one moves the schema.');
 
   await h.forks.fork({
     type: 'session.fork',
@@ -327,6 +340,37 @@ test('a side chat on a chat with a turn in progress branches from its stored tra
   assert.equal(branch.lineage.kind, 'side');
   assert.equal(branch.lineage.sourceAppSessionId, 'source');
   assert.match(branch.prompt, /Is step one safe\?/);
+  assert.match(branch.prompt, /Step one moves the schema\./);
+});
+
+test('a settled Codex side chat creates from the transcript without a native fork', async (t) => {
+  const h = harness(t, { provider: 'codex' });
+  storeTranscript('source', 'Step one moves the schema.', 'codex');
+
+  await h.forks.fork({
+    type: 'session.fork',
+    clientRef: 'ref-codex-side',
+    appSessionId: 'source',
+    lineage: 'side',
+    title: 'Side chat',
+    prompt: 'Is step one safe?',
+    modelId: 'codex-model',
+    reasoningEffort: 'medium',
+  });
+
+  assert.deepEqual(h.forkSources, []);
+  assert.deepEqual(h.errors, []);
+  assert.equal(h.created.length, 1);
+  const [{ command, branch }] = h.created;
+  assert.equal(command.clientRef, 'ref-codex-side');
+  assert.equal(command.provider, 'codex');
+  assert.equal(command.cwd, '/repo');
+  assert.equal(command.autonomy, 'medium');
+  assert.equal(command.modelId, 'codex-model');
+  assert.equal(command.reasoningEffort, 'medium');
+  assert.equal(branch.lineage.kind, 'side');
+  assert.equal(branch.lineage.sourceAppSessionId, 'source');
+  assert.ok(branch.prompt.includes(formatSideChatPrompt('Is step one safe?')));
   assert.match(branch.prompt, /Step one moves the schema\./);
 });
 
