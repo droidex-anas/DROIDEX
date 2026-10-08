@@ -800,9 +800,8 @@ export class SessionLifecycle {
     const session = liveSession.session;
     if (!session.withdrawSteer) return undefined;
     const withdrawn = await session.withdrawSteer(steerId).catch(() => false);
-    const current = this.dependencies.registry.getLive(appSessionId);
-    if (current !== liveSession || current.session !== session || current.closeMode || !withdrawn)
-      return undefined;
+    if (!withdrawn) return undefined;
+    // Harness confirmation reclaims this prompt even if its runtime closed meanwhile.
     this.rememberSteerOutcome(liveSession, prompt, 'withdrawn');
     return prompt;
   }

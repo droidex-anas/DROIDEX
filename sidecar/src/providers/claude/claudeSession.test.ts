@@ -161,6 +161,51 @@ test('a confirmed withdrawal wins over concurrent turn finalization', async () =
   }
 });
 
+test('a withdrawal re-ask waits for the shared cancellation receipt', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-withdrawal-reask-'));
+  const executable = join(directory, 'fake-cli.mjs');
+  writeFileSync(executable, steerCli);
+  chmodSync(executable, 0o755);
+  const session = new ClaudeSession({
+    appSessionId: randomUUID(),
+    executable,
+    cwd: directory,
+    autonomy: 'low',
+    interactionMode: 'auto',
+    models: [],
+    mcpServers: {},
+    interactions: {
+      requestApproval: () => Promise.reject(new Error('unused')),
+      requestQuestion: () => Promise.reject(new Error('unused')),
+      isActive: () => true,
+      cancelPending: () => undefined,
+    },
+  });
+  try {
+    const turn = session.stream('first');
+    await turn.next();
+    const steerId = randomUUID();
+    const delivery = session.steer('held', undefined, steerId);
+    const withdrawing = session.withdrawSteer(steerId);
+    await session.setModel({ modelId: 'wait-for-cancellation' });
+    let reaskSettled = false;
+    const reasking = session.withdrawSteer(steerId).then((outcome) => {
+      reaskSettled = true;
+      return outcome;
+    });
+    await session.setModel({ modelId: 'wait-for-cancellation' });
+    assert.equal(reaskSettled, false);
+    await session.setModel({ modelId: 'release-cancellation' });
+
+    assert.deepEqual(await Promise.all([withdrawing, reasking]), [true, true]);
+    assert.equal(await delivery, 'withdrawn');
+    await turn.return(undefined);
+  } finally {
+    await session.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('a lifecycle-confirmed withdrawal survives shutdown before its control reply', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'claude-withdrawal-shutdown-'));
   const executable = join(directory, 'fake-cli.mjs');

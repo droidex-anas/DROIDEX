@@ -389,9 +389,9 @@ export class ClaudeSession implements ProviderSession {
 
   async withdrawSteer(uuid: string): Promise<boolean> {
     const pending = this.steerDeliveries.get(uuid);
-    // Only one caller can reclaim the prompt while cancellation is in flight.
-    if (!pending || pending.withdrawalRequested || this.isClosed) return false;
+    if (!pending || this.isClosed) return false;
     pending.withdrawalRequested = true;
+    // Re-asks and turn finalization share the same cancellation receipt.
     pending.cancellation ??= this.query.cancelAsyncMessage(uuid).catch(() => false);
     const cancelled = await pending.cancellation;
     delete pending.cancellation;

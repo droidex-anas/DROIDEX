@@ -786,7 +786,7 @@ test('withdrawal requires harness confirmation, including during Send now, and n
   const withdrawing = claude.withdrawSteer('held');
   const overlapping = claude.withdrawSteer('held');
   confirmCancellation(true);
-  assert.deepEqual(await Promise.all([withdrawing, overlapping]), [true, false]);
+  assert.deepEqual(await Promise.all([withdrawing, overlapping]), [true, true]);
   assert.equal(await delivery, 'withdrawn');
 
   for (const provider of ['droid', 'codex', 'claude'] as const) {
@@ -863,6 +863,56 @@ test('withdrawal requires harness confirmation, including during Send now, and n
       false,
     );
   }
+});
+
+test('a confirmed withdrawal returns the prompt and records its receipt while closing', async () => {
+  const closeGate = turnGate();
+  const h = createHarness([], undefined, { stopVoiceSession: () => closeGate.promise });
+  const backend = queueCreate(h, 'closing-withdrawal');
+  const turn = backend.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await backend.waitForPrompts(1);
+  const live = requireLive(h, 'closing-withdrawal');
+  const text = 'Give this full prompt back\nwith its second line';
+  const mentions: ProviderMention[] = [{ kind: 'skill', name: 'review', path: '/skills/review' }];
+  const handedOver = turnGate();
+  let settleDelivery: (outcome: boolean | 'withdrawn') => void = () => undefined;
+  live.session.steer = () =>
+    new Promise((resolve) => {
+      settleDelivery = resolve;
+      handedOver.resolve();
+    });
+  let confirmCancellation: (confirmed: boolean) => void = () => undefined;
+  live.session.withdrawSteer = () =>
+    new Promise((resolve) => {
+      confirmCancellation = resolve;
+    });
+  const sending = h.lifecycle.send('closing-withdrawal', text, mentions, 'held');
+  await handedOver.promise;
+  const withdrawing = h.lifecycle.withdrawSteer('closing-withdrawal', 'held');
+  const closing = h.lifecycle.close('closing-withdrawal');
+  try {
+    confirmCancellation(true);
+    const prompt = await withdrawing;
+    assert.equal(prompt?.text, text);
+    assert.deepEqual(prompt?.mentions, mentions);
+    assert.deepEqual(await h.lifecycle.withdrawSteer('closing-withdrawal', 'held'), {
+      text,
+      mentions,
+    });
+  } finally {
+    settleDelivery('withdrawn');
+    await sending;
+    turn.resolve();
+    await live.turnPromise;
+    closeGate.resolve();
+    await closing;
+  }
+  assert.deepEqual(backend.prompts, ['first']);
+  assert.equal(
+    h.calls.some((call) => call.method === 'appendSteer'),
+    false,
+  );
 });
 
 test('withdrawal retries replay full queued and harness receipts, never a delivered prompt', async () => {
