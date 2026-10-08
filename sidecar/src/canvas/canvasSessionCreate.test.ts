@@ -72,6 +72,13 @@ for (const target of ['new', 'saved'] as const) {
     assert.ok(publication?.canvasId);
     assert.equal(publication.prompts, 0);
     assert.deepEqual(projectBindings, ['design']);
+    const createdEvent = h.events.find((event) => event.type === 'session.created');
+    assert.ok(createdEvent?.type === 'session.created');
+    assert.equal(createdEvent.session.sessionPurpose, 'design');
+    assert.equal(
+      h.history.summaryPatchesAndHidden().patches.get('design-chat')?.sessionPurpose,
+      'design',
+    );
     await provider.waitForPrompts(1);
     const canvasId = workspace.attachedCanvasId('design-chat');
     assert.ok(canvasId);
@@ -94,6 +101,14 @@ for (const target of ['new', 'saved'] as const) {
       assert.equal(workspace.attachedCanvasId('design-chat'), canvasId);
     }
     gate.resolve();
+    await h.waitForIdle();
+    h.fixture.seedHistorySummaries([createdEvent.session]);
+    writeProviderConversation(h.home, 'design-chat', 'Design chat');
+    await h.handle({ type: 'session.close', appSessionId: 'design-chat' });
+    await h.handle({ type: 'session.resume', appSessionId: 'design-chat' });
+    const reopened = h.events.findLast((event) => event.type === 'session.created');
+    assert.ok(reopened?.type === 'session.created');
+    assert.equal(reopened.session.sessionPurpose, 'design');
   });
 }
 

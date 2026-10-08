@@ -789,7 +789,7 @@ export type ClientCommand =
   | {
       type: 'session.create';
       clientRef: string;
-      // Commit this attachment before publication and the first turn.
+      // Establishes Design purpose; commit attachment before publication and the first turn.
       canvas?: { canvasId: string | null; name?: string; mutationId: string };
       cwd?: string;
       title: string;

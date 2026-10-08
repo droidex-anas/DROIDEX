@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { ClaudeSession } from './claudeSession.js';
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 
 // Speak the SDK control protocol without launching an authenticated CLI or a turn.
 const fakeCli = String.raw`#!/usr/bin/env node
@@ -74,3 +75,46 @@ for (const fastMode of [undefined, true]) {
     }
   });
 }
+
+test('Design guidance uses Claude native system append on creation and resume', async () => {
+  for (const resume of [false, true]) {
+    const directory = mkdtempSync(join(tmpdir(), 'claude-design-session-'));
+    const executable = join(directory, 'fake-cli.mjs');
+    writeFileSync(executable, fakeCli);
+    chmodSync(executable, 0o755);
+    const session = new ClaudeSession({
+      appSessionId: randomUUID(),
+      executable,
+      cwd: directory,
+      autonomy: 'low',
+      interactionMode: 'auto',
+      sessionPurpose: 'design',
+      resume,
+      models: [],
+      mcpServers: {},
+      interactions: {
+        requestApproval: () => Promise.reject(new Error('unused')),
+        requestQuestion: () => Promise.reject(new Error('unused')),
+        isActive: () => true,
+        cancelPending: () => undefined,
+      },
+    });
+    try {
+      await session.start();
+      await session.setModel({ modelId: 'another-model' });
+      const args: string[] = JSON.parse(readFileSync(join(directory, 'launch.json'), 'utf8'));
+      const controls: { subtype: string; appendSystemPrompt?: string; systemPrompt?: string[] }[] =
+        readFileSync(join(directory, 'controls.jsonl'), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line));
+      const initialize = controls.find((control) => control.subtype === 'initialize');
+      assert.equal(initialize?.appendSystemPrompt, DESIGN_SESSION_GUIDANCE);
+      assert.equal(initialize?.systemPrompt, undefined);
+      assert.equal(args.includes(`--resume=${session.providerSessionId}`), resume);
+    } finally {
+      await session.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});

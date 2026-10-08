@@ -1,15 +1,12 @@
-import { once } from 'node:events';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { SdkMcpServer, tool, type McpServerConfig } from '@factory/droid-sdk';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CanvasMcpServer } from './canvasMcpTransport.js';
+import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { applyDesignSystem } from './applyDesignSystem.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
+import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
+import type { SessionPurpose } from '../protocol.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
 import type { CanvasScope } from './protocol.js';
@@ -107,6 +104,7 @@ export function createCanvasMcpServer(
   workspace: () => Promise<CanvasWorkspace>,
   turns: Pick<CanvasTurns, 'activeScope' | 'requireScope'>,
   getAppSessionId: () => string,
+  purpose?: SessionPurpose,
 ) {
   const dispatch = async (
     input: unknown,
@@ -233,7 +231,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_write',
-      'Submit complete changed files for a named frame using the scopeId from this turn’s canvas_read and its current revisionId. Preserve unrelated frames and reuse mutationId and scopeId on retry.',
+      'Submit complete changed React/TSX files (the canvas compiles them with Tailwind available; a plain HTML document is not a frame) for a named frame using the scopeId from this turn’s canvas_read and its current revisionId. Preserve unrelated frames and reuse mutationId and scopeId on retry.',
       writeSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
@@ -355,112 +353,14 @@ export function createCanvasMcpServer(
         ),
     ),
   ];
-  return new CanvasMcpServer({
-    name: CANVAS_MCP_SERVER_NAME,
-    version: '1.0.0',
-    tools: tools.map(validateCanvasTool),
-  });
-}
-
-// The SDK's HTTP layer strips unknown arguments and formats Zod failures before
-// our handler runs. Dispatch raw arguments here; retain SDK tool objects for Codex.
-class CanvasMcpServer extends SdkMcpServer {
-  private listener: ReturnType<typeof createServer> | null = null;
-  private endpoint: McpServerConfig | null = null;
-
-  override get config(): McpServerConfig | null {
-    return this.endpoint;
-  }
-
-  override async start(): Promise<McpServerConfig> {
-    if (this.endpoint) return this.endpoint;
-    const listener = createServer((request, response) => {
-      void this.serve(request, response);
-    });
-    this.listener = listener;
-    listener.listen(0, '127.0.0.1');
-    await once(listener, 'listening');
-    if (this.listener !== listener) throw canvasError('scope_expired', EXPIRED_TURN);
-    const address = listener.address();
-    if (!address || typeof address === 'string')
-      throw new Error('Canvas MCP listener is unavailable.');
-    this.endpoint = {
-      type: 'http',
-      name: this.name,
-      url: `http://127.0.0.1:${String(address.port)}/mcp`,
-      headers: [],
-    };
-    return this.endpoint;
-  }
-
-  override async close(): Promise<void> {
-    const listener = this.listener;
-    this.listener = null;
-    this.endpoint = null;
-    if (!listener) return;
-    listener.closeAllConnections();
-    listener.close();
-    await once(listener, 'close');
-  }
-
-  private async serve(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    if (request.url !== '/mcp') {
-      response.writeHead(404).end();
-      return;
-    }
-    if (request.method !== 'POST') {
-      response.writeHead(405).end();
-      return;
-    }
-    const server = new McpServer(
-      { name: this.name, version: this.version },
-      { capabilities: { tools: {} } },
-    );
-    server.server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: this.tools.map((entry) => ({
-        name: entry.name,
-        description: entry.description,
-        inputSchema: zodToJsonSchema(z.object(entry.inputSchema ?? {}).strict(), {
-          target: 'jsonSchema7',
-          $refStrategy: 'none',
-        }),
-      })),
-    }));
-    server.server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
-      const entry = this.tools.find((candidate) => candidate.name === params.name);
-      if (!entry) throw canvasError('invalid_input', 'Unknown Canvas tool.');
-      const result = await entry.handler(params.arguments ?? {});
-      return typeof result === 'string' ? { content: [{ type: 'text', text: result }] } : result;
-    });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    response.on('close', () => {
-      void transport.close();
-      void server.close();
-    });
-    try {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) {
-        const bytes: unknown = chunk;
-        if (typeof bytes !== 'string' && !(bytes instanceof Uint8Array))
-          throw new Error('Invalid HTTP body chunk.');
-        chunks.push(Buffer.from(bytes));
-      }
-      const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      await server.connect(transport);
-      await transport.handleRequest(request, response, body);
-    } catch {
-      if (!response.headersSent)
-        response.writeHead(400, { 'content-type': 'application/json' }).end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: null,
-            error: { code: -32600, message: 'Invalid Canvas MCP request.' },
-          }),
-        );
-      await transport.close();
-      await server.close();
-    }
-  }
+  return new CanvasMcpServer(
+    {
+      name: CANVAS_MCP_SERVER_NAME,
+      version: '1.0.0',
+      tools: tools.map(validateCanvasTool),
+    },
+    purpose === 'design' ? DESIGN_CANVAS_MCP_INSTRUCTIONS : undefined,
+  );
 }
 
 function toolFailure(error: unknown): CanvasCommandError {

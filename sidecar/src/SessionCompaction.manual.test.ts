@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import { SessionCompaction } from './SessionCompaction.js';
@@ -43,7 +44,7 @@ class TestRegistry {
     );
   }
 
-  resolveSummary(id: string): SessionSummary | undefined {
+  getCanonicalSummary(id: string): SessionSummary | undefined {
     const live = this.getLive(id);
     if (live) return live.summary;
     return (
@@ -53,6 +54,10 @@ class TestRegistry {
           summary.providerSessionId === id || summary.compactedFromProviderSessionIds?.includes(id),
       )
     );
+  }
+
+  hasPersistedSession(id: string): boolean {
+    return this.historical.has(id);
   }
 
   updateSummary(id: string, patch: SessionSummaryPatch): SessionSummary | undefined {
@@ -70,7 +75,7 @@ class TestRegistry {
     const error = this.nextReplaceError;
     delete this.nextReplaceError;
     if (error) throw error;
-    const summary = this.resolveSummary(id);
+    const summary = this.getCanonicalSummary(id);
     if (!summary) return undefined;
     const previousProviderSessionId = summary.providerSessionId ?? summary.appSessionId;
     const updated: SessionSummary = {
@@ -236,6 +241,33 @@ test('provider adoption retries cleanly after a partial first adoption', async (
   assert.equal(
     h.errors.some((error) => error.message.includes('first persistence failed')),
     true,
+  );
+});
+
+test('Design compaction keeps native guidance on live replacement and historical loading', async () => {
+  const liveHarness = createHarness();
+  const { live, session } = addLive(liveHarness);
+  live.summary.sessionPurpose = 'design';
+  session.nextCompactResult = { newSessionId: 'design-compacted', removedCount: 1 };
+  await liveHarness.compaction.compact(live.summary.appSessionId);
+  assert.equal(
+    liveHarness.runtime.loadCalls.at(-1)?.handlers.systemPromptAppend,
+    DESIGN_SESSION_GUIDANCE,
+  );
+  assert.equal(live.summary.sessionPurpose, 'design');
+
+  const historicalHarness = createHarness();
+  addHistorical(
+    historicalHarness,
+    new FakeFactorySession('provider-history', {}, historicalHarness.calls),
+  );
+  const historical = historicalHarness.registry.getCanonicalSummary('app-history');
+  assert.ok(historical);
+  historical.sessionPurpose = 'design';
+  await historicalHarness.compaction.compact(historical.appSessionId);
+  assert.equal(
+    historicalHarness.runtime.loadCalls.at(-1)?.handlers.systemPromptAppend,
+    DESIGN_SESSION_GUIDANCE,
   );
 });
 
@@ -441,6 +473,35 @@ function addHistorical(h: ReturnType<typeof createHarness>, temporary: FakeFacto
   h.runtime.loadQueue.set('provider-history', [temporary]);
 }
 
+for (const invalidation of ['close', 'replacement'] as const) {
+  test(`historical provider loading cannot compact after ${invalidation}`, async () => {
+    const h = createHarness();
+    const temporary = new FakeFactorySession('provider-history', {}, h.calls);
+    addHistorical(h, temporary);
+    const historical = h.registry.getCanonicalSummary('app-history');
+    assert.ok(historical);
+    const gate = h.runtime.deferNextLoad();
+    let admitted = true;
+    const compacting = h.compaction.compact('app-history', undefined, () => admitted);
+    await h.runtime.waitForLoad('provider-history');
+    if (invalidation === 'close') admitted = false;
+    else historical.providerSessionId = 'provider-replacement';
+    gate.resolve();
+    await compacting;
+
+    assert.equal(
+      h.calls.some((call) => call.target === 'provider' && call.method === 'compactSession'),
+      false,
+    );
+    assert.equal(closeCount(h.calls, 'provider-history'), 1);
+    assert.equal(
+      h.registry.getCanonicalSummary('app-history')?.providerSessionId,
+      invalidation === 'close' ? 'provider-history' : 'provider-replacement',
+    );
+    assert.deepEqual(h.errors, []);
+  });
+}
+
 test('historical compaction uses a temporary provider without live side effects, and a failed identity write is fatal', async () => {
   const h = createHarness();
   const temporary = new FakeFactorySession('provider-history', {}, h.calls);
@@ -450,7 +511,10 @@ test('historical compaction uses a temporary provider without live side effects,
   assert.deepEqual(await h.compaction.compact('provider-history', 'keep decisions'), {
     kind: 'ready-to-settle',
   });
-  assert.equal(h.registry.resolveSummary('app-history')?.providerSessionId, 'provider-history-2');
+  assert.equal(
+    h.registry.getCanonicalSummary('app-history')?.providerSessionId,
+    'provider-history-2',
+  );
   assert.equal(closeCount(h.calls, 'provider-history'), 1);
   assert.deepEqual([h.statuses, h.refreshed, h.preserved], [[], [], []]);
   assert.deepEqual(temporary.settings, []);
@@ -473,7 +537,7 @@ test('historical compaction uses a temporary provider without live side effects,
     true,
   );
   assert.equal(
-    unsaved.registry.resolveSummary('app-history')?.providerSessionId,
+    unsaved.registry.getCanonicalSummary('app-history')?.providerSessionId,
     'provider-history',
   );
   assert.equal(closeCount(unsaved.calls, 'provider-history'), 1);
@@ -502,7 +566,10 @@ test('historical noop is quiet and failure is recoverable; both keep the identit
   );
 
   for (const h of [noop, failed]) {
-    assert.equal(h.registry.resolveSummary('app-history')?.providerSessionId, 'provider-history');
+    assert.equal(
+      h.registry.getCanonicalSummary('app-history')?.providerSessionId,
+      'provider-history',
+    );
     assert.equal(closeCount(h.calls, 'provider-history'), 1);
   }
 });

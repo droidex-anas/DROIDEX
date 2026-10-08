@@ -65,6 +65,7 @@ export class CodexProvider implements Provider {
     reasoningEffort,
     fastMode,
     autonomy,
+    sessionPurpose,
     inAppMcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Codex mints the thread id, so DROIDEX's own identity is minted here and
@@ -73,6 +74,7 @@ export class CodexProvider implements Provider {
       appSessionId: randomUUID(),
       cwd,
       autonomy,
+      sessionPurpose,
       model: {
         ...(modelId ? { modelId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
@@ -92,6 +94,7 @@ export class CodexProvider implements Provider {
       reasoningEffort,
       fastMode,
       autonomy,
+      sessionPurpose,
       resumeId,
       inAppMcpServers,
     }: ProviderResumeInput,
@@ -103,6 +106,7 @@ export class CodexProvider implements Provider {
         appSessionId: providerSessionId,
         cwd: cwd ?? tmpdir(),
         autonomy: autonomy ?? 'off',
+        sessionPurpose,
         model: {
           ...(modelId ? { modelId } : {}),
           ...(reasoningEffort ? { reasoningEffort } : {}),

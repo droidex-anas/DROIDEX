@@ -672,6 +672,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
+      whenSessionHistoryReady: () => this.sessionFiles.whenBootReconciled(),
       beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -771,6 +772,7 @@ export class SessionManager {
       resume: (id) => this.lifecycle.resume(id),
     });
     this.adoption = new SessionAdoption({
+      whenSessionHistoryReady: () => this.sessionFiles.whenBootReconciled(),
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
       registry: this.registry,
       lifecycle: this.lifecycle,
@@ -1460,7 +1462,12 @@ export class SessionManager {
     // run has nobody watching, and only an ordinary chat may call them, so no
     // other session carries their schemas.
     const managesChats = attended && (ref.purpose === undefined || ref.purpose === 'chat');
-    const canvas = createCanvasMcpServer(this.canvasWorkspace, this.canvasTurns, () => ref.id);
+    const canvas = createCanvasMcpServer(
+      this.canvasWorkspace,
+      this.canvasTurns,
+      () => ref.id,
+      ref.purpose,
+    );
     if (kind === 'codex') {
       const inAppServers = [
         ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),
@@ -1752,11 +1759,17 @@ export class SessionManager {
     requestedAppSessionId: string,
     customInstructions?: string,
   ): Promise<void> {
+    const isAdmitted = this.lifecycle.captureCloseAdmission(requestedAppSessionId);
+    if (!this.registry.getLive(requestedAppSessionId)) {
+      await this.sessionFiles.whenBootReconciled();
+    }
+    if (!isAdmitted(requestedAppSessionId)) return;
     const previousLiveSession = this.registry.getLive(requestedAppSessionId);
     const appSessionId =
       previousLiveSession?.summary.appSessionId ??
-      this.registry.resolveSummary(requestedAppSessionId)?.appSessionId ??
+      this.registry.getCanonicalSummary(requestedAppSessionId)?.appSessionId ??
       requestedAppSessionId;
+    if (!isAdmitted(appSessionId)) return;
     if (
       previousLiveSession?.createAdmission &&
       !previousLiveSession.createAdmission.canChangeProvider()
@@ -1780,7 +1793,10 @@ export class SessionManager {
     }
     let readyToSettle = false;
     try {
-      const result = await this.compaction.compact(appSessionId, customInstructions);
+      const result = await this.compaction.compact(appSessionId, customInstructions, () =>
+        isAdmitted(appSessionId),
+      );
+      if (!isAdmitted(appSessionId)) return;
       if (result.kind === 'close-and-resume') {
         const closeFailure = await this.closeForPermanentCompactionRecovery(result.appSessionId);
         this.context.preserveUsage(result.appSessionId, result.carryover);
@@ -1802,9 +1818,9 @@ export class SessionManager {
       }
       readyToSettle = true;
     } finally {
-      if (readyToSettle) {
+      if (readyToSettle && previousLiveSession) {
         await this.lifecycle.settleAfterCompaction(appSessionId, previousLiveSession);
-      } else {
+      } else if (!readyToSettle && isAdmitted(appSessionId)) {
         this.onSessionAvailable?.(appSessionId);
       }
     }

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import { ContextStatsAccuracy } from '@factory/droid-sdk';
 
 import type * as Protocol from './protocol.js';
+import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
+import type { HistoricalSummaryFilter } from './history.js';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { canvasRoot, deferred, quietBuilds } from './testing/canvasStorageSupport.js';
@@ -12,6 +16,7 @@ import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
 import {
   chatCommand,
   createSessionManagerTestContext,
+  historicalSummary,
   notifyDaemonCompaction,
   sessionUpdates,
   type SessionCreateInput,
@@ -141,6 +146,124 @@ function syncsSummary(calls: RecordedCall[], appSessionId: string, providerSessi
       ),
   );
 }
+
+for (const outcome of ['compact', 'close', 'shutdown'] as const) {
+  test(`historical Design compaction waits for canonical history and honors ${outcome}`, async (t) => {
+    const h = createSessionManagerTestContext();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let reconciled = false;
+    const listHistorical = h.history.listHistoricalSessions.bind(h.history);
+    t.mock.method(h.history, 'listHistoricalSessions', (options?: HistoricalSummaryFilter) =>
+      reconciled ? listHistorical(options) : [],
+    );
+    t.mock.method(h.history, 'reconcileSessionFiles', async () => {
+      started();
+      await held;
+      reconciled = true;
+      return 1;
+    });
+    const appSessionId = 'design-app';
+    const providerSessionId = 'design-native-before';
+    const nextProviderSessionId = 'design-native-after';
+    const temporary = new FakeFactorySession(providerSessionId, {}, h.calls);
+    temporary.nextCompactResult = { newSessionId: nextProviderSessionId, removedCount: 1 };
+    h.runtime.loadQueue.set(providerSessionId, [temporary]);
+    try {
+      h.fixture.seedHistorySummaries([
+        { ...historicalSummary(appSessionId, providerSessionId), sessionPurpose: 'design' },
+      ]);
+      writeProviderConversation(h.home, providerSessionId, 'Design before');
+      writeProviderConversation(h.home, nextProviderSessionId, 'Design after');
+      const listing = h.handle({ type: 'sessions.list' });
+      await entered;
+      const compacting = h.handle({ type: 'session.compact', appSessionId: providerSessionId });
+      assert.equal(h.runtime.loadCalls.length, 0);
+      let stopping = Promise.resolve();
+      if (outcome === 'close') stopping = h.handle({ type: 'session.close', appSessionId });
+      if (outcome === 'shutdown') stopping = h.shutdown();
+      release();
+      await Promise.all([listing, compacting, stopping]);
+      const stored = h.history.summaryPatchesAndHidden().patches.get(appSessionId);
+      assert.equal(stored?.sessionPurpose, 'design');
+      if (outcome === 'compact') {
+        assert.equal(h.runtime.loadCalls.length, 1);
+        assert.equal(h.runtime.loadCalls[0]?.sessionId, providerSessionId);
+        assert.equal(h.runtime.loadCalls[0]?.handlers.systemPromptAppend, DESIGN_SESSION_GUIDANCE);
+        assert.equal(stored?.providerSessionId, nextProviderSessionId);
+        assert.equal(callCount(h.calls, 'cleanup', 'session.close', providerSessionId), 1);
+      } else {
+        assert.equal(h.runtime.loadCalls.length, 0);
+        assert.equal(stored?.providerSessionId, providerSessionId);
+      }
+      assert.deepEqual(errorMessages(h), []);
+    } finally {
+      release();
+      await h.dispose();
+    }
+  });
+}
+
+test('incomplete app-owned Design history refuses compaction without changing its binding', async () => {
+  const h = createSessionManagerTestContext();
+  const appSessionId = 'incomplete-design-app';
+  const providerSessionId = 'incomplete-design-native';
+  try {
+    h.fixture.seedHistorySummaries([
+      { ...historicalSummary(appSessionId, providerSessionId), sessionPurpose: 'design' },
+    ]);
+    writeProviderConversation(h.home, providerSessionId, 'Incomplete design');
+    writeFileSync(
+      path.join(h.home, '.factory', 'sessions', `${providerSessionId}.jsonl`),
+      JSON.stringify({ type: 'session_start', sessionId: providerSessionId, cwd: '/workspace' }) +
+        '\n',
+    );
+    const before = h.history.summaryPatchesAndHidden().patches.get(appSessionId);
+
+    await h.handle({ type: 'session.compact', appSessionId });
+
+    assert.equal(h.runtime.loadCalls.length, 0);
+    assert.match(errorMessages(h, true)[0] ?? '', /missing or incomplete/);
+    assert.deepEqual(h.history.summaryPatchesAndHidden().patches.get(appSessionId), before);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a historical compaction load cannot settle a runtime opened while it waited', async () => {
+  const available: string[] = [];
+  const h = createSessionManagerTestContext({
+    onSessionAvailable: (appSessionId) => available.push(appSessionId),
+  });
+  const appSessionId = 'reopened-design-app';
+  const providerSessionId = 'reopened-design-native';
+  try {
+    h.fixture.seedHistorySummaries([
+      { ...historicalSummary(appSessionId, providerSessionId), sessionPurpose: 'design' },
+    ]);
+    writeProviderConversation(h.home, providerSessionId, 'Reopened design');
+    const gate = h.runtime.deferNextLoad();
+    const compacting = h.handle({ type: 'session.compact', appSessionId });
+    await h.runtime.waitForLoad(providerSessionId);
+    await h.handle({ type: 'session.resume', appSessionId });
+    const notificationsBeforeRelease = available.length;
+    gate.resolve();
+    await compacting;
+
+    assert.equal(callCount(h.calls, 'provider', 'compactSession', providerSessionId), 0);
+    assert.equal(callCount(h.calls, 'cleanup', 'session.close', providerSessionId), 1);
+    assert.equal(available.length, notificationsBeforeRelease);
+    assert.deepEqual(errorMessages(h), []);
+  } finally {
+    await h.dispose();
+  }
+});
 
 test('create arms daemon compaction, and its notifications stream before an active turn settles', async () => {
   const h = createSessionManagerTestContext();

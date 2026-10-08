@@ -106,6 +106,11 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     return summary ? copySummary(summary) : undefined;
   }
 
+  hasPersistedSession(id: string): boolean {
+    this.ensureHistoricalSummaries();
+    return this.historicalPatches.has(id);
+  }
+
   resolveSummary(id: string): SessionSummary | undefined {
     const summary = this.resolveCanonicalSummary(id);
     return summary ? this.project(summary) : undefined;
@@ -119,15 +124,10 @@ export class SessionRegistry<TLive extends RegisteredSession> {
     return filterSessionListSummaries(projected, options, (summary) => this.isAppOwned(summary));
   }
 
-  // A session DROIDEX ran has a persisted app-session row (or is live right
-  // now); the patch overlay carries exactly those rows keyed by both
-  // identities. Anything else is a session file another Droid client wrote.
+  // The patch overlay has already resolved each summary's stable app identity.
   private isAppOwned(summary: SessionSummary): boolean {
     return (
-      this.sessions.has(summary.appSessionId) ||
-      this.historicalPatches.has(summary.appSessionId) ||
-      (summary.providerSessionId !== undefined &&
-        this.historicalPatches.has(summary.providerSessionId))
+      this.sessions.has(summary.appSessionId) || this.hasPersistedSession(summary.appSessionId)
     );
   }
 

@@ -58,7 +58,8 @@ function createHarness(
   const compaction = new SessionCompaction({
     registry: {
       getLive: () => undefined,
-      resolveSummary: () => undefined,
+      getCanonicalSummary: () => undefined,
+      hasPersistedSession: () => false,
       replaceProvider: async () => undefined,
       updateSummary: () => undefined,
     },

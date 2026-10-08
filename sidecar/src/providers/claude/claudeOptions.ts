@@ -11,6 +11,7 @@ import {
   claudePermissionMode,
 } from './claudePermissions.js';
 import { claudeCanvasHook } from './claudeCanvasHook.js';
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 
 export function sessionOptions(
   input: ClaudeSessionInput,
@@ -34,7 +35,11 @@ export function sessionOptions(
       fastMode: input.fastMode ?? false,
     },
     ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
-    systemPrompt: { type: 'preset', preset: 'claude_code' },
+    systemPrompt: {
+      type: 'preset',
+      preset: 'claude_code',
+      ...(input.sessionPurpose === 'design' ? { append: DESIGN_SESSION_GUIDANCE } : {}),
+    },
     // 'project' is what loads the repository's CLAUDE.md.
     settingSources: ['user', 'project', 'local'],
     includePartialMessages: true,

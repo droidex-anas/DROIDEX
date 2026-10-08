@@ -105,6 +105,7 @@ function createHarness(
   let provider: Provider = new DroidProvider(runtime, () => undefined);
   let projection: Partial<SessionSummary> = {};
   let waitForSettings = (): Promise<void> => Promise.resolve();
+  let waitForHistory = (): Promise<void> => Promise.resolve();
   let applyPending: (appSessionId: string) => Promise<boolean> = () => Promise.resolve(true);
   let enableAutoCompaction = (): Promise<boolean> => Promise.resolve(true);
   let compactionLimit = (): Promise<number> => Promise.resolve(800);
@@ -157,6 +158,7 @@ function createHarness(
   const canvasScopes = new CanvasScopes();
   const canvasTurns = new CanvasTurns(canvasScopes, attachedCanvasId);
   const lifecycle = new SessionLifecycle({
+    whenSessionHistoryReady: () => waitForHistory(),
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => provider,
@@ -305,6 +307,9 @@ function createHarness(
     },
     setSettingsWait: (wait: () => Promise<void>) => {
       waitForSettings = wait;
+    },
+    setHistoryWait: (wait: () => Promise<void>) => {
+      waitForHistory = wait;
     },
     setPendingApply: (action: (appSessionId: string) => Promise<boolean>) => {
       applyPending = action;
@@ -1086,6 +1091,34 @@ test('create and resume abandon in-flight opens when shutdown admission closes',
   );
 });
 
+test('close cancels a cold provider-id resume when readiness reveals its stable app identity', async () => {
+  const historical: SessionSummary[] = [];
+  const h = createHarness(historical);
+  let release: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.setHistoryWait(() => ready);
+  queueLoad(h, 'design-native');
+  const resume = h.lifecycle.resume('design-native');
+  assert.equal(h.runtime.loadCalls.length, 0);
+  const closing = h.lifecycle.close('design-app');
+  historical.push(summary('design-app', 'design-native', { sessionPurpose: 'design' }));
+  release();
+  await closing;
+  assert.equal(await resume, false);
+  assert.equal(h.runtime.loadCalls.length, 0);
+  assert.equal(h.registry.getLive('design-app'), undefined);
+  assert.equal(
+    h.events.some((event) => event.type === 'session.created'),
+    false,
+  );
+  assert.equal(
+    h.calls.some((call) => call.method === 'mcp.start'),
+    false,
+  );
+});
+
 test('failed process cleanup preserves the provider and allows closing to retry', async () => {
   const h = createHarness([summary('owned')]);
   queueLoad(h, 'owned');
@@ -1604,7 +1637,7 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
 });
 
 test('scheduled historical resumes honor the runtime cap without restricting live targets', async () => {
-  const summaries = Array.from({ length: 9 }, (_, index) => summary(`bounded-${index}`));
+  const summaries = Array.from({ length: 10 }, (_, index) => summary(`bounded-${index}`));
   const harness = createHarness(summaries);
   for (let index = 0; index < 8; index += 1) {
     queueLoad(harness, `bounded-${index}`);
@@ -1624,15 +1657,28 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   if (live.status === 'accepted') await live.settled;
   await harness.lifecycle.close('bounded-0');
   const provider = queueLoad(harness, 'bounded-8');
-  const receipt = await harness.lifecycle.deliverScheduled(
-    'bounded-8',
-    'capacity freed',
-    () => true,
-  );
-  assert.equal(receipt.status, 'accepted');
-  if (receipt.status === 'accepted') await receipt.settled;
-  assert.deepEqual(provider.prompts, ['capacity freed']);
-  await harness.lifecycle.closeAll();
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  harness.setHistoryWait(() => held);
+  const delivery = harness.lifecycle.deliverScheduled('bounded-8', 'capacity freed', () => true);
+  const extra = harness.lifecycle.deliverScheduled('bounded-9', 'must wait', () => true);
+  release();
+  try {
+    assert.deepEqual(await extra, { status: 'busy', retryOn: 'capacity' });
+    const receipt = await delivery;
+    assert.equal(receipt.status, 'accepted');
+    if (receipt.status === 'accepted') await receipt.settled;
+    assert.deepEqual(provider.prompts, ['capacity freed']);
+    assert.equal(
+      harness.runtime.loadCalls.some((call) => call.sessionId === 'bounded-9'),
+      false,
+    );
+  } finally {
+    release();
+    await harness.lifecycle.closeAll();
+  }
 });
 
 test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {

@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 import type * as Protocol from './protocol.js';
+import type { SessionFileWatcherOptions } from './sessionFileWatcher.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { deferred } from './testing/canvasStorageSupport.js';
@@ -566,7 +567,18 @@ test('shutdown is single-flight and finalizers continue after failure', async ()
 
 test('shutdown revokes turn scopes before held session-file reconciliation settles', async (t) => {
   const turns = new CanvasTurns(new CanvasScopes(), () => null);
-  const h = createSessionManagerTestContext({ canvasTurns: turns });
+  const watchers: SessionFileWatcherOptions[] = [];
+  const h = createSessionManagerTestContext({
+    canvasTurns: turns,
+    startSessionFileWatcher: (options) => {
+      watchers.push(options);
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => undefined,
+      };
+    },
+  });
   const reconcile = deferred();
   const reached = deferred();
   const stream = h.runtime.deferNextCreateStream('provider-1');
@@ -575,12 +587,14 @@ test('shutdown revokes turn scopes before held session-file reconciliation settl
     await h.provider.waitForPrompts('provider-1', 1);
     const scope = turns.activeScope('provider-1');
     assert.ok(scope);
+    await h.handle({ type: 'sessions.list' });
     t.mock.method(h.history, 'reconcileSessionFiles', async () => {
       reached.resolve();
       await reconcile.promise;
       return 0;
     });
-    const listing = h.handle({ type: 'sessions.list' });
+    assert.ok(watchers[0]);
+    watchers[0].onExternalChange(null);
     await reached.promise;
     const closing = h.shutdown();
     try {
@@ -588,7 +602,7 @@ test('shutdown revokes turn scopes before held session-file reconciliation settl
     } finally {
       reconcile.resolve();
       stream.resolve();
-      await Promise.all([listing, closing]);
+      await closing;
     }
   } finally {
     reconcile.resolve();
