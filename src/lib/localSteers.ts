@@ -17,7 +17,8 @@ const prompts = new Map<string, { appSessionId: string; prompt: QueuedPrompt }>(
 const withdrawing = new Set<string>();
 // Take-backs whose answer was lost with the connection, by chat. What the
 // sidecar lists afterwards settles them.
-const unanswered = new Map<string, Set<string>>();
+// Each keeps the text the chat last listed, for a reload that lost the prompt.
+const unanswered = new Map<string, Map<string, string>>();
 const listeners = new Set<() => void>();
 const EMPTY: readonly LocalSteer[] = [];
 
@@ -80,21 +81,25 @@ export function takeSteerPrompt(steerId: string): QueuedPrompt | undefined {
   return saved?.prompt;
 }
 
-export function markSteerWithdrawalUnanswered(appSessionId: string, steerId: string): void {
-  unanswered.set(appSessionId, new Set([...(unanswered.get(appSessionId) ?? []), steerId]));
+export function markSteerWithdrawalUnanswered(
+  appSessionId: string,
+  steerId: string,
+  listedText: string,
+): void {
+  unanswered.set(appSessionId, new Map(unanswered.get(appSessionId)).set(steerId, listedText));
   emit();
 }
 
-const NONE: ReadonlySet<string> = new Set();
+const NONE: ReadonlyMap<string, string> = new Map();
 
-export function unansweredWithdrawalsOf(appSessionId: string): ReadonlySet<string> {
+export function unansweredWithdrawalsOf(appSessionId: string): ReadonlyMap<string, string> {
   return unanswered.get(appSessionId) ?? NONE;
 }
 
 export function settleUnansweredWithdrawal(appSessionId: string, steerId: string): void {
   const ids = unanswered.get(appSessionId);
   if (!ids?.has(steerId)) return;
-  const rest = new Set(ids);
+  const rest = new Map(ids);
   rest.delete(steerId);
   if (rest.size > 0) unanswered.set(appSessionId, rest);
   else unanswered.delete(appSessionId);

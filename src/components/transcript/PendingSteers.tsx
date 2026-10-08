@@ -94,13 +94,13 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
     );
     // A take-back whose answer was lost: delivered means the agent has it;
     // gone from the list without a delivered row means it was taken back.
-    for (const steerId of unanswered) {
+    for (const [steerId, listedText] of unanswered) {
       if (delivered.has(steerId)) {
         endSteerWithdrawal(steerId);
         settleUnansweredWithdrawal(appSessionId, steerId);
       } else if (!listedIds.has(steerId)) {
         settleUnansweredWithdrawal(appSessionId, steerId);
-        restore(steerId);
+        restore(steerId, listedText);
       }
     }
   }, [appSessionId, listed, live, local, transcript, unanswered]);
@@ -134,7 +134,7 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
       if ('lost' in result) {
         // The answer went with the connection; what the sidecar lists once it
         // is back says what happened. A second click may ask again.
-        markSteerWithdrawalUnanswered(appSessionId, steer.id);
+        markSteerWithdrawalUnanswered(appSessionId, steer.id, steer.text);
         endSteerWithdrawal(steer.id);
         return;
       }
