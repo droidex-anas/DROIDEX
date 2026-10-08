@@ -1909,7 +1909,8 @@ export default function PromptInput({
   // The seed effect above runs before this declaration in source order, so it
   // reaches the restore through a ref.
   restoreRef.current = (prompt) => {
-    if (input.trim() || attachedFiles.length > 0) appendPromptToComposer(prompt);
+    if (input.trim() || attachedFiles.length > 0 || activeSkills.length > 0)
+      appendPromptToComposer(prompt);
     else restorePromptToComposer(prompt);
   };
 
