@@ -121,6 +121,7 @@ export class ClaudeSession implements ProviderSession {
       () => {
         this.requireOpen();
       },
+      () => this.interrupt(),
     );
     this.mapper = new ClaudeEventMapper(input.appSessionId, input.modelId, input.models);
     this.closed = new Promise((resolve) => {
@@ -241,15 +242,17 @@ export class ClaudeSession implements ProviderSession {
       await this.waitUntilInitialized();
       const notice = this.permissions.takeNotice();
       if (notice) yield this.mapper.statusEvent(notice);
-      this.prompts.push({
-        type: 'user',
-        uuid: turnId,
-        session_id: this.providerSessionId,
-        parent_tool_use_id: null,
-        message: { role: 'user', content: prompt },
+      await this.permissions.startTurn(this.query, () => {
+        this.prompts.push({
+          type: 'user',
+          uuid: turnId,
+          session_id: this.providerSessionId,
+          parent_tool_use_id: null,
+          message: { role: 'user', content: prompt },
+        });
+        this.steerable = !isSlashCommand(prompt);
+        this.discardUntilResult = false;
       });
-      this.steerable = !isSlashCommand(prompt);
-      this.discardUntilResult = false;
       for (;;) {
         const next = await turnQueue.next();
         // An exhausted stream is a failure, unless Stop closed it on a turn

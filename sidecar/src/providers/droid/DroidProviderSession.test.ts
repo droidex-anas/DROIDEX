@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  AutonomyLevel,
   DroidClient,
   DroidSession,
   InitializeSessionResultSchema,
@@ -23,7 +24,9 @@ function droidOn(modelId: string) {
   const listeners = new Set<RawListener>();
   const cli = {
     turn: (): unknown => undefined,
-    onSettingsWrite: (): void => undefined,
+    onSettingsWrite: (settings: Parameters<FactorySession['updateSettings']>[0]): unknown =>
+      void settings,
+    onInterrupt: (): void => undefined,
     notify(notification: Record<string, unknown>): void {
       for (const listener of listeners)
         listener({ method: 'droid.session_notification', params: { notification } });
@@ -31,14 +34,17 @@ function droidOn(modelId: string) {
   };
   const droid = {
     sessionId: 'droid-1',
-    initResult: { settings: { modelId } },
+    initResult: { settings: { modelId, autonomyLevel: AutonomyLevel.Off } },
     onNotification(listener: RawListener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    updateSettings() {
-      cli.onSettingsWrite();
-      return Promise.resolve({});
+    async updateSettings(settings: Parameters<FactorySession['updateSettings']>[0]) {
+      await cli.onSettingsWrite(settings);
+      return {};
+    },
+    async interrupt() {
+      cli.onInterrupt();
     },
     async *stream() {
       await cli.turn();
@@ -76,6 +82,76 @@ async function turnEvents(turn: AsyncGenerator<NormalizedEvent>): Promise<Normal
 
 const switches = (events: NormalizedEvent[]) =>
   events.flatMap((event) => (event.harnessModelSwitch ? [event.harnessModelSwitch] : []));
+
+test('Droid interrupts a failed native revocation and retries before starting any new turn', async () => {
+  const { cli, session } = droidOn('model');
+  let nativeLevel = AutonomyLevel.Off;
+  let refuseRevocation = false;
+  let interrupts = 0;
+  let turns = 0;
+  cli.onSettingsWrite = async (settings) => {
+    if (settings.autonomyLevel === AutonomyLevel.Off && refuseRevocation)
+      throw new Error('refused');
+    nativeLevel = settings.autonomyLevel ?? nativeLevel;
+  };
+  let releaseTurn = () => {};
+  const running = new Promise<void>((resolve) => {
+    releaseTurn = resolve;
+  });
+  let markStarted = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  cli.turn = () => {
+    turns += 1;
+    markStarted();
+    return running;
+  };
+  cli.onInterrupt = () => {
+    interrupts += 1;
+    releaseTurn();
+  };
+  await session.setAutonomy('high');
+  const turn = turnEvents(session.stream('go'));
+  await started;
+  refuseRevocation = true;
+  await assert.rejects(session.setAutonomy('off'), /refused/);
+  await turn;
+  assert.equal(interrupts, 1);
+  assert.equal(nativeLevel, AutonomyLevel.High);
+  assert.equal(session.autonomy, 'off');
+  await assert.rejects(turnEvents(session.stream('blocked')), /refused/);
+  assert.equal(turns, 1);
+  refuseRevocation = false;
+  cli.turn = () => {
+    turns += 1;
+    assert.equal(nativeLevel, AutonomyLevel.Off);
+  };
+  await turnEvents(session.stream('recovered'));
+  assert.equal(turns, 2);
+
+  let acceptGrant = () => {};
+  const grant = new Promise<void>((resolve) => {
+    acceptGrant = resolve;
+  });
+  const grantStarted = new Promise<void>((resolve) => {
+    cli.onSettingsWrite = async (settings) => {
+      if (settings.autonomyLevel === AutonomyLevel.High) {
+        resolve();
+        await grant;
+      }
+      nativeLevel = settings.autonomyLevel ?? nativeLevel;
+    };
+  });
+  const raised = session.setAutonomy('high');
+  await grantStarted;
+  const revoked = session.setAutonomy('off');
+  acceptGrant();
+  await raised;
+  assert.equal(nativeLevel, AutonomyLevel.Off);
+  await revoked;
+  assert.equal(session.autonomy, 'off');
+});
 
 test('a switch Droid makes on the usage limit is reported once, and never for our own write', async () => {
   const { cli, session } = droidOn('opus-5-5');

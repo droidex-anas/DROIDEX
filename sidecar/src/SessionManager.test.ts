@@ -600,7 +600,12 @@ function updateAutonomy(
   appSessionId: string,
   autonomy: Protocol.Autonomy,
 ): Promise<void> {
-  return h.handle({ type: 'session.updateSettings', appSessionId, autonomy });
+  return h.handle({
+    type: 'session.updateSettings',
+    appSessionId,
+    autonomy,
+    requestId: `autonomy-${autonomy}`,
+  });
 }
 
 function assertAutonomyError(error: ErrorEvent | undefined, message: RegExp): void {
@@ -631,6 +636,15 @@ test('live autonomy update writes the provider first and publishes the confirmed
     await h.waitForIdle();
     assert.equal(settings.length, writesBefore);
     assert.equal(errorEvents(h.events).length, 1);
+    assert.deepEqual(
+      h.events.filter((event) => event.type === 'session.autonomy_update_applied'),
+      Array.from({ length: 2 }, () => ({
+        type: 'session.autonomy_update_applied',
+        appSessionId: 'provider-1',
+        requestId: 'autonomy-high',
+      })),
+    );
+    assert.equal(errorEvents(h.events)[0]?.requestId, 'autonomy-high');
   } finally {
     await h.dispose();
   }
@@ -686,6 +700,13 @@ test('a provider rejection is a recoverable coded error that keeps the confirmed
     assert.equal(errors.length, 1);
     assertAutonomyError(errors[0], /Could not change autonomy/);
     assert.equal(errors[0]?.appSessionId, 'provider-1');
+    assert.equal(errors[0]?.requestId, 'autonomy-medium');
+    assert.ok(
+      h.events.some(
+        (event) =>
+          event.type === 'session.autonomy_update_applied' && event.requestId === 'autonomy-high',
+      ),
+    );
     assert.equal(
       sessionUpdates(h.events, 'provider-1').some((summary) => summary.autonomy === 'medium'),
       false,
@@ -724,6 +745,7 @@ test('an autonomy update dropped by a close settles the caller and publishes not
     const errors = errorEvents(h.events);
     assert.equal(errors.length, 1);
     assertAutonomyError(errors[0], /interrupted/);
+    assert.equal(errors[0]?.requestId, 'autonomy-high');
   } finally {
     await h.dispose();
   }

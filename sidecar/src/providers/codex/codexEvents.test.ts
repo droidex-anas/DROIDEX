@@ -253,6 +253,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
   symlinkSync(directory, join(cwd, 'escape'));
   symlinkSync(join(directory, 'missing'), join(cwd, 'dangling'));
   const starts: Record<string, unknown>[] = [];
+  const interrupted: unknown[] = [];
   const settingsWrites: Record<string, unknown>[] = [];
   let nativeSettings: Record<string, unknown> | undefined;
   let nextSettingsWrite:
@@ -279,6 +280,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
   let turnNumber = 0;
   let markStarted: () => void = () => undefined;
   const { client, notifications, requests } = fakeClient((method, params) => {
+    if (method === 'turn/interrupt') interrupted.push(params.turnId);
     if (method === 'thread/settings/update') {
       settingsWrites.push(params);
       const write = nextSettingsWrite;
@@ -302,6 +304,8 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     asked += 1;
     return 'cancel';
   });
+  const voiceEvents: string[] = [];
+  const unsubscribeVoice = session.voice.onEvent((event) => voiceEvents.push(event.kind));
   try {
     await session.open('thread-1');
     assert.equal(starts[0]?.approvalPolicy, 'untrusted');
@@ -399,6 +403,8 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
       { decision: 'accept' },
     );
     assert.equal(asked, asksBeforeFullAccess);
+    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+    assert.equal(session.voice.isLive(), true);
     const downgrade = deferSettings();
     const lowered = session.setAutonomy('off');
     const downgradeRefusal = assert.rejects(lowered, /refused/);
@@ -407,6 +413,10 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     await downgrade.started;
     downgrade.reject(new Error('refused'));
     await downgradeRefusal;
+    assert.deepEqual(interrupted, ['turn-1']);
+    assert.equal(session.voice.isLive(), false);
+    assert.deepEqual(voiceEvents, ['closed']);
+    assert.equal(nativeSettings?.approvalPolicy, 'never');
     assert.deepEqual(await approval('failed-supervised.ts'), { decision: 'cancel' });
     await session.setModel({ reasoningEffort: 'high' });
     assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
@@ -416,19 +426,44 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     await pendingEscalation.started;
     const queuedDowngrade = deferSettings();
     const laterRevoke = session.setAutonomy('off');
+    const staleGrantRefusal = assert.rejects(earlierRaise, /refused/);
+    const laterRevokeRefusal = assert.rejects(laterRevoke, /refused/);
     pendingEscalation.resolve();
-    await earlierRaise;
-    assert.deepEqual(await approval('revoked-before-escalation-ack.ts'), { decision: 'cancel' });
     await queuedDowngrade.started;
-    queuedDowngrade.resolve();
-    await laterRevoke;
+    assert.deepEqual(await approval('revoked-before-escalation-ack.ts'), { decision: 'cancel' });
+    // The old grant repairs native permissions before its own settlement.
+    const queuedRetry = deferSettings();
+    queuedDowngrade.reject(new Error('refused'));
+    await staleGrantRefusal;
+    await queuedRetry.started;
+    queuedRetry.reject(new Error('refused'));
+    await laterRevokeRefusal;
+    assert.equal(session.autonomy, 'off');
+    assert.equal(nativeSettings?.approvalPolicy, 'never');
+    assert.deepEqual(interrupted, ['turn-1', 'turn-1', 'turn-1']);
     await stream.return(undefined);
+
+    const failedRetry = deferSettings();
+    const blocked = session.stream('must not start');
+    const blockedTurn = blocked.next();
+    const blockedRefusal = assert.rejects(blockedTurn, /refused/);
+    await failedRetry.started;
+    assert.equal(starts.length, 2);
+    failedRetry.reject(new Error('refused'));
+    await blockedRefusal;
+    assert.equal(starts.length, 2);
     const nextStarted = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
+    const recovered = deferSettings();
     const second = session.stream('next');
     const next = second.next();
+    await recovered.started;
+    assert.equal(starts.length, 2);
+    recovered.resolve();
     await nextStarted;
+    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
+    assert.deepEqual(nativeSettings?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
     assert.equal(starts[2]?.approvalPolicy, 'untrusted');
     assert.deepEqual(starts[2]?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
     notifications.get('turn/completed')?.({
@@ -438,6 +473,7 @@ test('running Codex approvals grant only confirmed escalations, keep failed down
     await next;
     await second.return(undefined);
   } finally {
+    unsubscribeVoice();
     await session.close();
     rmSync(directory, { recursive: true, force: true });
   }

@@ -1104,7 +1104,9 @@ export class SessionManager {
         // Permission decisions cannot wait for a model change to finish the turn.
         await Promise.all([
           this.updatePrimaryModel(cmd),
-          cmd.autonomy !== undefined ? this.setAutonomy(cmd.appSessionId, cmd.autonomy) : undefined,
+          cmd.autonomy !== undefined
+            ? this.setAutonomy(cmd.appSessionId, cmd.autonomy, cmd.requestId)
+            : undefined,
         ]);
         if (cmd.interactionMode !== undefined) {
           await this.setInteractionMode(cmd.appSessionId, cmd.interactionMode);
@@ -1869,9 +1871,9 @@ export class SessionManager {
     });
   }
 
-  private setAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
+  private setAutonomy(appSessionId: string, autonomy: Autonomy, requestId?: string): Promise<void> {
     const tail = this.autonomyMutationTails.get(appSessionId);
-    const applied = this.applyAutonomy(appSessionId, autonomy);
+    const applied = this.applyAutonomy(appSessionId, autonomy, requestId);
     const next = tail ? Promise.all([tail, applied]).then(() => undefined) : applied;
     this.autonomyMutationTails.set(appSessionId, next);
     return next.finally(() => {
@@ -1884,11 +1886,16 @@ export class SessionManager {
     });
   }
 
-  private async applyAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
+  private async applyAutonomy(
+    appSessionId: string,
+    autonomy: Autonomy,
+    requestId: string = randomUUID(),
+  ): Promise<void> {
     const liveSession = this.registry.getLive(appSessionId);
     if (!liveSession) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: 'Autonomy can only be changed on a live session.',
         recoverable: true,
@@ -1899,6 +1906,7 @@ export class SessionManager {
     if (!nextAutonomy) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: `Unsupported autonomy level: ${autonomy}`,
         recoverable: true,
@@ -1908,57 +1916,43 @@ export class SessionManager {
     if (
       liveSession.summary.autonomy === nextAutonomy &&
       !this.autonomyMutationTails.has(appSessionId)
-    )
+    ) {
+      this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
       return;
+    }
     const session = liveSession.session;
     const publishAutonomy = () => {
       if (liveSession.summary.autonomy === session.autonomy) return;
-      try {
-        this.registry.updateSummary(appSessionId, { autonomy: session.autonomy });
-      } catch (err) {
-        this.emitError({
-          code: 'session.autonomy_update_failed',
-          appSessionId,
-          message: `Could not record the autonomy change: ${errMsg(err)}`,
-          recoverable: true,
-        });
-      }
+      this.registry.updateSummary(appSessionId, { autonomy: session.autonomy });
     };
     try {
       const applied = session.setAutonomy(nextAutonomy);
       // Save revocations before the native acknowledgement, including refusals.
+      try {
+        publishAutonomy();
+      } finally {
+        await applied;
+      }
+      // Native acknowledgements belong only to the runtime that received them.
+      if (
+        this.shutdownPromise ||
+        this.registry.getLive(appSessionId) !== liveSession ||
+        liveSession.session !== session ||
+        hasSessionCloseStarted(liveSession)
+      ) {
+        throw new Error('Autonomy change was interrupted by a session restart or close.');
+      }
       publishAutonomy();
-      await applied;
+      this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
     } catch (err) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: `Could not change autonomy: ${errMsg(err)}`,
         recoverable: true,
       });
-      return;
     }
-    // The provider accepted the change, but the session may have closed or its
-    // provider session may have been swapped (compaction/resume) while the
-    // request was in flight. Publish only when the captured session is still
-    // the live one so a stale settlement cannot clobber its replacement.
-    if (
-      this.shutdownPromise ||
-      this.registry.getLive(appSessionId) !== liveSession ||
-      liveSession.session !== session ||
-      hasSessionCloseStarted(liveSession)
-    ) {
-      // Dropping the confirmation silently would leave the caller's pending
-      // state spinning forever; settle it with a recoverable error instead.
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: 'Autonomy change was interrupted by a session restart or close.',
-        recoverable: true,
-      });
-      return;
-    }
-    publishAutonomy();
   }
 
   private async setInteractionMode(

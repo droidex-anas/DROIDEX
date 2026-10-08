@@ -2496,16 +2496,19 @@ export default function PromptInput({
                 align="start"
                 scope="session"
                 provider={activeSession.provider}
-                value={state.pendingAutonomy ?? activeSession.autonomy}
+                value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
                 pending={state.pendingAutonomy !== undefined}
                 onSelect={(level) => {
+                  const requestId = newClientRef();
                   dispatch({
                     type: 'AUTONOMY_UPDATE_REQUESTED',
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                   updateSessionSettings({
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                 }}

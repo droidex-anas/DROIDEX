@@ -33,6 +33,8 @@ type DroidProcessRuntime = Pick<
 
 // The turn settles only once the billing read behind its refusal has answered.
 const REFUSAL_READ_TIMEOUT_MS = 10_000;
+const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+const NATIVE_AUTONOMY_LEVELS = AUTONOMY_LEVELS.map(mapAutonomy);
 
 export class DroidProviderSession implements ProviderSession {
   readonly provider = 'droid' as const;
@@ -46,6 +48,7 @@ export class DroidProviderSession implements ProviderSession {
   private limitDetail: string | undefined;
   private readonly stopListening: () => void;
   private requestedAutonomy: Autonomy;
+  private nativeAutonomy: FactorySession['initResult']['settings']['autonomyLevel'];
   private autonomyChanges: Promise<void> = Promise.resolve();
 
   constructor(
@@ -57,6 +60,7 @@ export class DroidProviderSession implements ProviderSession {
     private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
   ) {
     this.requestedAutonomy = permissions.autonomy;
+    this.nativeAutonomy = droid.initResult.settings.autonomyLevel;
     this.modelId = droid.initResult.settings.modelId;
     // Listened to for the session's life: a switch Droid reports between turns
     // is still the model the next turn runs on.
@@ -92,6 +96,15 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+    await this.autonomyChanges;
+    // Native modes above the selection bypass the local approval callback.
+    while (this.needsNativeDowngrade()) {
+      const applied = this.autonomyChanges.then(async () => {
+        await this.applyAutonomy(this.autonomy);
+      });
+      this.autonomyChanges = applied.catch(() => undefined);
+      await applied;
+    }
     // The raw listener hears each notification before the stream yields it. A
     // switch waits until Droid says the usage limit caused it, or a turn reaches
     // its result; one not yet reported when a turn fails goes with the next.
@@ -162,20 +175,46 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    const levels: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
     this.requestedAutonomy = autonomy;
     // Off and edits-only share native Off, so callbacks own their distinction.
-    if (levels.indexOf(autonomy) < levels.indexOf(this.permissions.autonomy))
+    if (AUTONOMY_LEVELS.indexOf(autonomy) < AUTONOMY_LEVELS.indexOf(this.permissions.autonomy))
       this.permissions.autonomy = autonomy;
     const applied = this.autonomyChanges.then(async () => {
-      await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
+      const appliedAutonomy = await this.applyAutonomy(autonomy);
       this.permissions.autonomy =
-        levels.indexOf(autonomy) < levels.indexOf(this.requestedAutonomy)
-          ? autonomy
+        AUTONOMY_LEVELS.indexOf(appliedAutonomy) < AUTONOMY_LEVELS.indexOf(this.requestedAutonomy)
+          ? appliedAutonomy
           : this.requestedAutonomy;
     });
     this.autonomyChanges = applied.catch(() => undefined);
     await applied;
+  }
+
+  private needsNativeDowngrade(): boolean {
+    return (
+      this.nativeAutonomy === undefined ||
+      NATIVE_AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
+        NATIVE_AUTONOMY_LEVELS.indexOf(mapAutonomy(this.autonomy))
+    );
+  }
+
+  private async applyAutonomy(autonomy: Autonomy): Promise<Autonomy> {
+    try {
+      let appliedAutonomy: Autonomy;
+      do {
+        await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
+        this.nativeAutonomy = mapAutonomy(autonomy);
+        appliedAutonomy = autonomy;
+        autonomy = this.requestedAutonomy;
+      } while (
+        NATIVE_AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
+        NATIVE_AUTONOMY_LEVELS.indexOf(mapAutonomy(this.requestedAutonomy))
+      );
+      return appliedAutonomy;
+    } catch (error) {
+      if (this.needsNativeDowngrade()) await this.interrupt();
+      throw error;
+    }
   }
 
   get autonomy(): Autonomy {

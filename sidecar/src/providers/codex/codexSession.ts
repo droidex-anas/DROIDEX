@@ -51,6 +51,8 @@ interface ThreadResponse {
   model: string;
 }
 
+const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+
 export class CodexSession implements ProviderSession {
   readonly provider = 'codex' as const;
   readonly providerSessionId: string;
@@ -67,6 +69,7 @@ export class CodexSession implements ProviderSession {
   private readonly cwd: string;
   private currentAutonomy: Autonomy;
   private requestedAutonomy: Autonomy;
+  private nativeAutonomy: Autonomy;
   private settingsChanges: Promise<void> = Promise.resolve();
   private model: ProviderModelSettings;
   private threadId?: string;
@@ -112,6 +115,7 @@ export class CodexSession implements ProviderSession {
     this.cwd = input.cwd;
     this.currentAutonomy = input.autonomy;
     this.requestedAutonomy = input.autonomy;
+    this.nativeAutonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.voice = new CodexVoice(
@@ -247,6 +251,11 @@ export class CodexSession implements ProviderSession {
     this.pendingInterrupt = false;
     this.interruptedTurnId = undefined;
     try {
+      await this.settingsChanges;
+      // A failed revocation must be repaired before another turn can bypass callbacks.
+      while (AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) > AUTONOMY_LEVELS.indexOf(this.autonomy))
+        await this.changeThreadSettings(() => this.applyThreadSettings());
+      if (this.hasClosed) throw new Error('This Codex session is closed.');
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
         turnStartParams(threadId, prompt, mentions, {
@@ -277,14 +286,15 @@ export class CodexSession implements ProviderSession {
   // turn keeps its native sandbox, but callbacks use the safer selection.
   // Thread settings also cover turns Codex starts itself for spoken requests.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    const levels: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
     this.requestedAutonomy = autonomy;
-    if (levels.indexOf(autonomy) < levels.indexOf(this.autonomy)) this.currentAutonomy = autonomy;
+    if (AUTONOMY_LEVELS.indexOf(autonomy) < AUTONOMY_LEVELS.indexOf(this.autonomy))
+      this.currentAutonomy = autonomy;
     await this.changeThreadSettings(async () => {
       await this.applyThreadSettings(autonomy);
       this.currentAutonomy =
-        levels.indexOf(autonomy) < levels.indexOf(this.requestedAutonomy)
-          ? autonomy
+        AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) <
+        AUTONOMY_LEVELS.indexOf(this.requestedAutonomy)
+          ? this.nativeAutonomy
           : this.requestedAutonomy;
     });
   }
@@ -342,7 +352,6 @@ export class CodexSession implements ProviderSession {
     const threadId = this.threadId;
     if (!threadId) return;
     const { reasoningEffort } = this.model;
-    const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
     // A cleared pin means the thread's own model, which is what the mapper and
     // `turn/start` already read it as. Omitting it would leave the thread on
     // the model the chat no longer names.
@@ -350,13 +359,30 @@ export class CodexSession implements ProviderSession {
     // `null` is how the thread is told to go back to the model's own effort;
     // leaving the field out keeps whatever it had.
     const effort = reasoningEffort ?? (this.effortCleared ? null : undefined);
-    await this.client.request('thread/settings/update', {
-      threadId,
-      approvalPolicy,
-      sandboxPolicy: codexSandboxPolicy(sandbox),
-      ...(model ? { model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-    });
+    try {
+      do {
+        const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
+        await this.client.request('thread/settings/update', {
+          threadId,
+          approvalPolicy,
+          sandboxPolicy: codexSandboxPolicy(sandbox),
+          ...(model ? { model } : {}),
+          ...(effort !== undefined ? { effort } : {}),
+        });
+        this.nativeAutonomy = autonomy;
+        // An older grant may acknowledge after revocation was requested.
+        autonomy = this.requestedAutonomy;
+      } while (
+        AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
+        AUTONOMY_LEVELS.indexOf(this.requestedAutonomy)
+      );
+    } catch (error) {
+      if (AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) > AUTONOMY_LEVELS.indexOf(this.autonomy)) {
+        // Voice can hand off further turns without going through stream().
+        await Promise.all([this.interrupt(), this.voice.stop()]);
+      }
+      throw error;
+    }
   }
 
   // For the paths whose own work does not depend on this landing: the model

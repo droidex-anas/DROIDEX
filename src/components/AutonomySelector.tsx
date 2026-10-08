@@ -131,7 +131,8 @@ export default function AutonomySelector({
               value={value}
               provider={provider}
               onSelect={(level) => {
-                if (level !== value) onSelect(level);
+                // Reselecting the confirmed level can revoke a different pending grant.
+                if (pending || level !== value) onSelect(level);
                 setOpen(false);
               }}
             />
