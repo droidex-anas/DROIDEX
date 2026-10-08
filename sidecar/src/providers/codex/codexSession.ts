@@ -93,6 +93,9 @@ export class CodexSession implements ProviderSession {
   // Steers waiting to send or held by the running turn, until Codex reports
   // delivery or the turn ends without them.
   private readonly steers = new Map<string, (delivered: boolean) => void>();
+  // Echoes wait for queued output and acknowledge in send order, even after
+  // turn completion releases this.turn.
+  private readonly steerEchoes = new Map<(delivered: boolean) => void, boolean | undefined>();
   private steerTail: Promise<void> = Promise.resolve();
   // A thread's MCP servers start before its first turn, so a notice about one
   // has no transcript to land in yet and waits for the turn that follows.
@@ -266,7 +269,7 @@ export class CodexSession implements ProviderSession {
       if (this.heldNotices.length > 0) turn.push(this.heldNotices.splice(0));
       yield* turn.drain();
     } finally {
-      turn.finish();
+      turn.discard();
       // Settlement may already have let go, and a later turn may already own
       // these; only the turn that set them takes them away.
       if (this.turn === turn) {
@@ -415,6 +418,11 @@ export class CodexSession implements ProviderSession {
     this.steerTail = Promise.resolve();
   }
 
+  private settleSteerEchoes(delivered: boolean): void {
+    for (const [resolve, ready] of this.steerEchoes) resolve(ready ?? delivered);
+    this.steerEchoes.clear();
+  }
+
   async interrupt(): Promise<void> {
     if (!this.threadId) return;
     this.prompts.cancel();
@@ -450,7 +458,9 @@ export class CodexSession implements ProviderSession {
 
   close(): Promise<void> {
     this.resolveClosed();
+    this.turn?.discard();
     this.dropSteers();
+    this.settleSteerEchoes(false);
     this.prompts.cancel();
     this.catalog?.close();
     return (this.closePromise ??= this.client.close());
@@ -587,6 +597,8 @@ export class CodexSession implements ProviderSession {
       // settlement here would start the next prompt on a client that is gone.
       this.delegatedTurnId = undefined;
       this.dropSteers();
+      // Codex already echoed these; process death must not resend them on resume.
+      this.settleSteerEchoes(true);
       // A turn still in flight when the process goes away has failed, however
       // the process ended; an idle chat only records a death that was abnormal.
       this.turn?.fail(error);
@@ -631,11 +643,26 @@ export class CodexSession implements ProviderSession {
     });
   }
 
-  // The echo of a steered message is the moment the model took it in.
   private settleDeliveredSteer(params: unknown): void {
     if (!isObject(params) || !isObject(params.item)) return;
     const { type, clientId } = params.item;
-    if (type === 'userMessage' && typeof clientId === 'string') this.settleSteer(clientId, true);
+    if (type !== 'userMessage' || typeof clientId !== 'string') return;
+    const resolve = this.steers.get(clientId);
+    if (!resolve) return;
+    // The echo survives turn settlement, but its row must follow queued output.
+    this.steers.delete(clientId);
+    const settle = (delivered: boolean) => {
+      if (!this.steerEchoes.has(resolve)) return;
+      this.steerEchoes.set(resolve, delivered);
+      for (const [acknowledge, ready] of this.steerEchoes) {
+        if (ready === undefined) break;
+        this.steerEchoes.delete(acknowledge);
+        acknowledge(ready);
+      }
+    };
+    this.steerEchoes.set(resolve, undefined);
+    if (this.turn) this.turn.push([settle]);
+    else settle(true);
   }
 
   private settle(turn: CodexTurn): void {

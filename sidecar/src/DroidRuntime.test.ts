@@ -163,8 +163,9 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
       async () => {
         const stream = start();
         await readText(stream, 'main');
-        assert.equal(await runtime.steer(droid, 'late'), true);
+        const delivered = runtime.steer(droid, 'late');
         await readText(stream, 'tail');
+        assert.equal(await delivered, true);
         assert.equal(events.filter((event) => event.type === 'user').length, 1);
         assert.ok(
           events.some((event) => event.type === 'tool_result' && event.toolName === 'Task'),
@@ -187,8 +188,9 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
       async () => {
         const stream = start();
         await readText(stream, 'main');
-        assert.equal(await runtime.steer(droid, 'idle-gap'), true);
+        const delivered = runtime.steer(droid, 'idle-gap');
         await readText(stream, 'tail');
+        assert.equal(await delivered, true);
         await finish(stream);
         assert.equal(events.at(-1)?.type, 'result');
       },
@@ -197,8 +199,9 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
     await t.test('RPC rejection cannot override confirmed delivery', async () => {
       const stream = start();
       await readText(stream, 'main');
-      assert.equal(await runtime.steer(droid, 'delivered-rejected'), true);
+      const delivered = runtime.steer(droid, 'delivered-rejected');
       await readText(stream, 'tail');
+      assert.equal(await delivered, true);
       await finish(stream);
     });
 
