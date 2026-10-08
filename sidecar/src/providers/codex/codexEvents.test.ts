@@ -139,6 +139,15 @@ test('Codex steers wait for delivery and the RPC reply, and a new turn starts a 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1, 'an early delivery must still wait for the RPC reply');
 
+  notifications.get('error')?.({
+    threadId: 'thread-1',
+    error: { message: 'Turn failed' },
+    willRetry: false,
+  });
+  void session.steer('after failure');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(steers.length, 1, 'a reset must invalidate its target');
+
   notifications.get('turn/completed')?.({
     threadId: 'thread-1',
     turn: { id: 'turn-1', status: 'completed' },
@@ -165,6 +174,52 @@ test('Codex steers wait for delivery and the RPC reply, and a new turn starts a 
     item: { type: 'userMessage', clientId: steers[2].clientUserMessageId },
   });
   assert.equal(await fourth, true);
+});
+
+test('a refused Stop reopens steering only when no Stop was accepted for that turn', async (t) => {
+  let releaseTurn: (response: { turn: { id: string } }) => void = () => undefined;
+  const turnStart = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseTurn = resolve;
+  });
+  let interrupts = 0;
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return turnStart;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    if (method === 'turn/interrupt') {
+      interrupts += 1;
+      if (interrupts === 1 || interrupts === 3) throw new Error('Stop refused');
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  const first = events.next();
+  await session.interrupt();
+  releaseTurn({ turn: { id: 'turn-1' } });
+  await first;
+
+  assert.equal(
+    await session.steer('after refusal'),
+    true,
+    'a refused early Stop restores steering',
+  );
+
+  await session.interrupt();
+  await assert.rejects(session.interrupt(), /Stop refused/);
+  assert.equal(
+    await session.steer('after duplicate'),
+    false,
+    'the accepted Stop still owns the turn',
+  );
+  await events.return(undefined);
 });
 
 test('Codex approvals retain file diffs and questions retain answer arrays', async () => {

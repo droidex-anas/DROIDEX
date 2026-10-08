@@ -75,7 +75,8 @@ export class CodexSession implements ProviderSession {
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
   // to name it with yet.
   private pendingInterrupt = false;
-  private interruptedTurnId?: string;
+  private interruption?: { turnId: string; interrupts: number };
+  private failedTurnId?: string;
   // A turn Codex started by itself, for a request spoken to a voice
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
@@ -125,7 +126,13 @@ export class CodexSession implements ProviderSession {
       threadId: () => this.threadId,
       turnId: () => {
         const turnId = this.turnId ?? this.delegatedTurnId;
-        return this.pendingInterrupt || turnId === this.interruptedTurnId ? undefined : turnId;
+        if (
+          this.pendingInterrupt ||
+          turnId === this.interruption?.turnId ||
+          turnId === this.failedTurnId
+        )
+          return undefined;
+        return turnId;
       },
       isLive: () => !this.hasClosed && input.interactions.isActive(),
       prompts: this.prompts,
@@ -241,7 +248,8 @@ export class CodexSession implements ProviderSession {
     this.turn = turn;
     this.turnAutonomy = this.autonomy;
     this.pendingInterrupt = false;
-    this.interruptedTurnId = undefined;
+    this.interruption = undefined;
+    this.failedTurnId = undefined;
     try {
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
@@ -367,7 +375,8 @@ export class CodexSession implements ProviderSession {
       !turnId ||
       this.hasClosed ||
       this.pendingInterrupt ||
-      turnId === this.interruptedTurnId
+      turnId === this.interruption?.turnId ||
+      turnId === this.failedTurnId
     )
       return Promise.resolve(false);
     const clientUserMessageId = randomUUID();
@@ -378,7 +387,7 @@ export class CodexSession implements ProviderSession {
       if (!this.steers.has(clientUserMessageId)) return;
       // A Stop can arrive while this steer waits. A sent steer can still be
       // delivered before the turn ends, but an unsent one stays withdrawn.
-      if (turnId === this.interruptedTurnId) {
+      if (turnId === this.interruption?.turnId) {
         this.settleSteer(clientUserMessageId, false);
         return;
       }
@@ -430,13 +439,17 @@ export class CodexSession implements ProviderSession {
     await this.interruptTurn(this.turnId);
   }
 
-  // A refused interrupt leaves the turn running, so steering into it reopens.
   private async interruptTurn(turnId: string): Promise<void> {
-    this.interruptedTurnId = turnId;
+    if (this.interruption?.turnId !== turnId) this.interruption = { turnId, interrupts: 0 };
+    const interruption = this.interruption;
+    // Pending and accepted Stops both block the turn; only a refusal releases its own claim.
+    interruption.interrupts += 1;
     try {
-      await this.sendInterrupt(turnId);
+      await this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
     } catch (error) {
-      if (this.interruptedTurnId === turnId) this.interruptedTurnId = undefined;
+      interruption.interrupts -= 1;
+      if (this.interruption === interruption && interruption.interrupts === 0)
+        this.interruption = undefined;
       throw error;
     }
   }
@@ -478,7 +491,8 @@ export class CodexSession implements ProviderSession {
   private setDelegatedTurn(turnId: string | undefined, end?: DelegatedTurnEnd): void {
     const was = this.delegatedTurnId !== undefined;
     this.delegatedTurnId = turnId;
-    if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
+    if (turnId && turnId !== this.interruption?.turnId) this.interruption = undefined;
+    if (turnId && turnId !== this.failedTurnId) this.failedTurnId = undefined;
     const running = turnId !== undefined;
     if (running === was) return;
     for (const listener of this.delegatedListeners) listener(running, end);
@@ -562,6 +576,8 @@ export class CodexSession implements ProviderSession {
       this.deliver([this.mapper.errorEvent(failure.error)]);
       // A retrying error is a hiccup the turn recovers from on its own.
       if (failure.willRetry) return;
+      // Resetting the queue must not let another steer reuse the failed turn.
+      this.failedTurnId = this.turnId ?? this.delegatedTurnId;
       this.dropSteers();
       this.turn?.fail(failure.error);
     });
@@ -607,19 +623,12 @@ export class CodexSession implements ProviderSession {
     this.turnId = turnId;
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
-    // Stopped before it had an id: its tool calls are refused from now on, as
-    // for any other stopped turn.
-    this.interruptedTurnId = turnId;
     // Nobody is waiting on this one, so a refused stop is reported in the turn
     // it belongs to — never in whichever turn happens to be open by then.
     const turn = this.turn;
-    void this.sendInterrupt(turnId).catch((error: unknown) => {
+    void this.interruptTurn(turnId).catch((error: unknown) => {
       if (this.turn === turn) turn?.push([this.mapper.errorEvent(error)]);
     });
-  }
-
-  private sendInterrupt(turnId: string): Promise<unknown> {
-    return this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
   }
 
   // The echo of a steered message is the moment the model took it in.
