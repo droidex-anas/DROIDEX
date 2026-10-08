@@ -3,6 +3,7 @@ import { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { wakePrompt } from './projectMessages.js';
 import {
   clearAsk,
+  removeThread,
   ProjectTurns,
   requireThread,
   resolveThreadId,
@@ -693,11 +694,9 @@ export class ProjectService {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
     const cleared = await acknowledgeReply(
-      [...this.projects.values()],
-      project,
       requireThread(project, target),
       replyId,
-      (snapshots) => this.save(undefined, snapshots),
+      () => this.save(),
       () => !this.closed && this.membership.get(target) === project,
     );
     if (cleared) this.emit({ type: 'projects.snapshot', projects: this.list() });
@@ -1044,8 +1043,9 @@ export class ProjectService {
       project.interrupted = project.interrupted.filter((id) => id !== target);
       if (!project.interrupted.length) delete project.interrupted;
     }
-    // A stopped thread stays stopped: no continuation after a restart either.
-    thread.stopped = true;
+    // A stopped thread stays stopped, with no continuation after a restart, unless
+    // a newer turn started while Stop settled.
+    if (!this.sessions.get(target)?.streaming) thread.stopped = true;
     this.inbox.forgetRecovery(target, project);
     const queued = thread.queuedSpawn;
     const checkoutOwner = queued?.workspace
@@ -1053,8 +1053,7 @@ export class ProjectService {
       : undefined;
     if (queued) {
       delete thread.queuedSpawn;
-      project.threads = project.threads.filter((candidate) => candidate !== thread);
-      project.pending = project.pending.filter((message) => message.from !== target);
+      removeThread(project, thread);
       this.membership.delete(target);
       for (const step of project.plan)
         if (step.threadAppSessionId === target) delete step.threadAppSessionId;

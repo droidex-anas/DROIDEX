@@ -304,6 +304,14 @@ function ordinal(position: number): string {
  * it off the queue: an owner woken to answer a question its thread no longer
  * holds would send the answer to a thread waiting for nothing.
  */
+/** Takes a thread out of its project with every message to or from it, so the ledger never names it. */
+export function removeThread(project: Project, thread: ProjectThread): void {
+  project.threads = project.threads.filter((candidate) => candidate !== thread);
+  project.pending = project.pending.filter(
+    (message) => message.from !== thread.appSessionId && message.to !== thread.appSessionId,
+  );
+}
+
 export function clearAsk(project: Project, thread: ProjectThread): boolean {
   if (!thread.ask && !thread.waiting) return false;
   delete thread.ask;

@@ -316,31 +316,21 @@ export class ProjectReads {
   }
 }
 
-/** Persists acknowledgement of precisely the reply the caller observed. */
+/** Clears the unread flag of precisely the reply the caller observed, and saves it. */
 export async function acknowledgeReply(
-  projects: Project[],
-  project: Project,
   thread: ProjectThread,
   replyId: string | undefined,
-  persist: (projects: Project[]) => Promise<void>,
+  persist: () => Promise<void>,
   isCurrent: () => boolean,
 ): Promise<boolean> {
   if (!thread.unread || thread.replyId !== replyId) return false;
-  const snapshots = projects.map((item) =>
-    item === project
-      ? {
-          ...item,
-          threads: item.threads.map((candidate) => {
-            if (candidate !== thread) return candidate;
-            const read = { ...candidate };
-            delete read.unread;
-            return read;
-          }),
-        }
-      : item,
-  );
-  await persist(snapshots);
-  if (!isCurrent() || !project.threads.includes(thread) || thread.replyId !== replyId) return false;
+  // Cleared before the save, so a save running alongside cannot write it back.
   delete thread.unread;
-  return true;
+  try {
+    await persist();
+  } catch (error) {
+    if (thread.replyId === replyId) thread.unread = true;
+    throw error;
+  }
+  return isCurrent();
 }

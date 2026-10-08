@@ -10,6 +10,7 @@ import {
   type ThreadCheckout,
 } from './threadStart.js';
 import { failureReport } from './projectMessages.js';
+import { removeThread } from './projectTurns.js';
 import { LEDGER_LIMITS } from './store.js';
 
 interface ThreadLaunchInput extends ThreadInput {
@@ -71,7 +72,7 @@ export class ThreadLaunches {
       if (!isCurrent()) throw new Error('Project launch was cancelled.');
       return thread;
     } catch (error) {
-      project.threads = project.threads.filter((candidate) => candidate !== thread);
+      removeThread(project, thread);
       this.membership.delete(thread.appSessionId);
       await this.persist(project);
       throw error;
@@ -153,7 +154,7 @@ export class ThreadLaunches {
         return true;
       }
       if (!wasQueued) {
-        project.threads = project.threads.filter((candidate) => candidate !== thread);
+        removeThread(project, thread);
         this.membership.delete(thread.appSessionId);
       }
       throw error;
