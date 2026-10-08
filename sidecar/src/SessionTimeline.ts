@@ -494,7 +494,12 @@ export class SessionTimeline {
   // it in, into the running turn (steered) or as a turn of its own. It is
   // stored the way an ordinary prompt is and shown the way its replay will
   // read, so a restored chat sees the two as one row.
-  announcePrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
+  announcePrompt(
+    appSessionId: string,
+    prompt: string,
+    steered = false,
+    steerId?: string,
+  ): void | Promise<void> {
     const ts = this.clock();
     this.streaming.flushSource(appSessionId, appSessionId);
     this.emitRecordedEvent({
@@ -507,6 +512,7 @@ export class SessionTimeline {
       author: 'user',
       ...userPromptDisplay(prompt),
       ...(steered ? { steered: true } : {}),
+      ...(steerId ? { steerId } : {}),
     });
     return this.recordPrompt(appSessionId, prompt);
   }

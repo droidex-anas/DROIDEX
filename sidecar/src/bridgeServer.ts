@@ -446,12 +446,23 @@ export function startBridgeServer(options: {
   };
 }
 
-// Optional on a send; Send now names the steer it is for.
+// Optional on a send; queue actions name the steer they are for.
 function assertValidSteerId(command: object): void {
-  const required = 'type' in command && command.type === 'session.sendNow';
+  const withdrawing = 'type' in command && command.type === 'session.withdrawSteer';
+  const required = withdrawing || ('type' in command && command.type === 'session.sendNow');
   if (!required && !('steerId' in command)) return;
   const steerId = 'steerId' in command ? command.steerId : undefined;
   if (typeof steerId !== 'string' || !steerId) throw new Error('Invalid steer id.');
+  if (withdrawing) {
+    if (
+      !('appSessionId' in command) ||
+      typeof command.appSessionId !== 'string' ||
+      !command.appSessionId
+    )
+      throw new Error('Invalid app session id.');
+    if (!('requestId' in command) || typeof command.requestId !== 'string' || !command.requestId)
+      throw new Error('Invalid withdrawal request id.');
+  }
 }
 
 function assertValidChatPreferences(command: object): void {
