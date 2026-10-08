@@ -1,8 +1,9 @@
 import { CanvasMcpServer } from './canvasMcpTransport.js';
-import { tool, type DroidTool } from '@factory/droid-sdk';
+import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
+import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import { DESIGN_SESSION_GUIDANCE } from './designSessionGuidance.js';
 import type { SessionPurpose } from '../protocol.js';
@@ -24,8 +25,20 @@ import {
 } from './designSystems.js';
 
 const authoredSystemSchema = designSystemSchema.omit({ provenance: true });
-const scopeIdSchema = z.string().min(1).max(200);
-const scopeShape = { scopeId: scopeIdSchema.optional() };
+const scopeIdSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .describe(
+    'The exact scopeId returned by this turn’s canvas_read. Never invent an ID or reuse one from an earlier turn.',
+  );
+const scopeShape = {
+  scopeId: scopeIdSchema
+    .optional()
+    .describe(
+      'Omit scopeId to begin the turn. Only supply a scopeId this turn’s canvas_read returned to keep reading that lease’s pinned references.',
+    ),
+};
 const mutationScopeShape = { scopeId: scopeIdSchema };
 const scopeArgumentSchema = z.object(scopeShape).passthrough();
 const pageSchema = z.number().int().min(0).max(100_000);
@@ -103,9 +116,10 @@ export function createCanvasMcpServer(
     try {
       const appSessionId = getAppSessionId();
       const { scopeId } = scopeArgumentSchema.parse(input);
-      const scope = scopeId ? turns.requireScope(scopeId) : turns.activeScope(appSessionId);
-      if (scope?.origin !== 'turn' || scope.appSessionId !== appSessionId)
-        throw canvasError('scope_expired', EXPIRED_TURN);
+      const scope = scopeId
+        ? turns.requireScope(scopeId, appSessionId)
+        : turns.activeScope(appSessionId);
+      if (scope?.origin !== 'turn') throw canvasError('scope_expired', EXPIRED_TURN);
       const value = await handler(scope);
       // Successful mutations have already crossed their owner's publication gate.
       if (completion === 'read') turns.requireScope(scope.scopeId);
@@ -141,7 +155,7 @@ export function createCanvasMcpServer(
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn with canvas_read to get its scopeId, attached canvas and pinned references. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, submit complete working files, then inspect the result. Preserve unrelated frames and cite revision IDs when updating existing work.',
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, submit complete working files, then inspect the result. Preserve unrelated frames and cite revision IDs when updating existing work.',
       readSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -236,7 +250,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_inspect',
-      'Inspect a design build and its diagnostics before revising it. Screenshot and element capture report when no agent capture is available.',
+      'Inspect a design build and its diagnostics before revising it. Omit scopeId to read the active turn, or use only a scopeId this turn’s canvas_read returned. Screenshot and element capture report when no agent capture is available.',
       inspectSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -281,9 +295,13 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_theme',
-      'List or read versioned design systems on demand. Save and apply require the scopeId from this turn’s canvas_read; reuse that scopeId and mutationId on retry. Apply to a named design at its current revision.',
+      'List or read versioned design systems on demand: omit scopeId to use the active turn, or use only a scopeId this turn’s canvas_read returned. Save and apply require that returned scopeId; reuse it and mutationId on retry. Apply to a named design at its current revision. Never invent a scopeId.',
       {
-        ...scopeShape,
+        scopeId: scopeIdSchema
+          .optional()
+          .describe(
+            'Required for save and apply: use this turn’s canvas_read scopeId. For list and read, omit it to use the active turn, or use only a scopeId this turn’s canvas_read returned.',
+          ),
         operation: z.enum(['list', 'read', 'save', 'apply']),
         offset: pageSchema.optional(),
         limit: z.number().int().min(1).max(32).optional(),
@@ -339,53 +357,14 @@ export function createCanvasMcpServer(
     {
       name: CANVAS_MCP_SERVER_NAME,
       version: '1.0.0',
-      tools: tools.map(catchValidation),
+      tools: tools.map(validateCanvasTool),
     },
     purpose === 'design' ? DESIGN_SESSION_GUIDANCE : undefined,
   );
-}
-
-export function invalidCanvasArguments(error: z.ZodError): CanvasCommandError {
-  const issue = error.issues[0];
-  if (
-    issue.path[0] === 'scopeId' &&
-    issue.code === 'invalid_type' &&
-    issue.received === 'undefined'
-  )
-    return canvasError('scope_expired', EXPIRED_TURN);
-  const sourcePath = issue.path.includes('files') || issue.path.includes('deletedPaths');
-  const safeMessage = ['custom', 'too_small', 'too_big'].includes(issue.code)
-    ? issue.message
-    : 'Invalid Canvas input. Check the tool schema and retry.';
-  return canvasError(sourcePath ? 'invalid_source_path' : 'invalid_input', safeMessage);
 }
 
 function toolFailure(error: unknown): CanvasCommandError {
   if (error instanceof CanvasCommandError) return error;
   if (error instanceof z.ZodError) return invalidCanvasArguments(error);
   return canvasError('storage_failed', 'Canvas could not finish that request. Retry it.');
-}
-
-function catchValidation(entry: DroidTool): DroidTool {
-  const schema = z.object(entry.inputSchema ?? {}).strict();
-  return {
-    ...entry,
-    async handler(input) {
-      try {
-        return await entry.handler(schema.parse(input));
-      } catch (error) {
-        if (!(error instanceof z.ZodError)) throw error;
-        const failure = invalidCanvasArguments(error);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ ok: false, code: failure.code, message: failure.message }),
-            },
-          ],
-        };
-      }
-    },
-  };
 }

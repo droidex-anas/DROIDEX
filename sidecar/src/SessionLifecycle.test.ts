@@ -1251,11 +1251,11 @@ test('closeAll expires Canvas leases before process cleanup, even when a kill fa
   h.setShutdownStarted(true);
   const closing = h.lifecycle.closeAll();
   await killing;
-  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'invalid_input' });
 
   releaseKill();
   await assert.rejects(closing, /kill failed/);
-  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
+  assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'invalid_input' });
   h.setProcessKiller(() => Promise.resolve());
   second.resolve();
   await h.lifecycle.close('shutdown-lease');
@@ -2080,7 +2080,7 @@ test('Stop and provider replacement end a turn’s Canvas authority before they 
   await h.lifecycle.send('authority', 'queued', undefined, undefined, pinned('dsg_queued'));
   const replacement = queueLoad(h, 'authority');
   const closing = h.lifecycle.close('authority', 'preserve-pending');
-  assert.throws(() => h.canvasTurns.requireScope(replaced.scopeId), { code: 'scope_expired' });
+  assert.throws(() => h.canvasTurns.requireScope(replaced.scopeId), { code: 'invalid_input' });
   third.resolve();
   await Promise.all([closing, running]);
   await replacement.waitForPrompts(1);
