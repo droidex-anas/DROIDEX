@@ -29,7 +29,7 @@ export function isHistorySearchUnavailableError(error: unknown): boolean {
 
 const SQLITE_FTS5_UNAVAILABLE_REASON = 'SQLite FTS5 is unavailable on this host';
 
-export function sqliteSupportsFts5(): boolean {
+function sqliteSupportsFts5(): boolean {
   const db = new DatabaseSync(':memory:');
   try {
     probeFts5(db);
