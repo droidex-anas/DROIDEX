@@ -916,3 +916,26 @@ test('Stop during an in-flight project Resume keeps the lead stopped', async (t)
   await resuming;
   assert.equal(h.projects.list()[0].leadStopped, true);
 });
+
+test('a reminder finished while its scheduled delivery was in flight does not come back', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const worker = await h.projects.spawn(main, input);
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  await h.finish(worker.appSessionId, 'Implemented the parser.');
+  const todo = await h.projects.addTodo(main, { text: 'Review it', after: worker.appSessionId });
+  await drain();
+  await h.projects.doneTodo(main, todo.id);
+  await h.streaming(main, true);
+  h.state.gate = undefined;
+  gate.resolve();
+  await drain();
+  await h.finish(main);
+  await drain();
+  const toLead = [...h.sent, ...h.steered]
+    .filter(({ id }) => id === main)
+    .map(({ prompt }) => prompt);
+  assert.ok(toLead.some((prompt) => prompt.includes('Implemented the parser.')));
+  assert.ok(toLead.every((prompt) => !prompt.includes('Reminder')));
+});

@@ -74,6 +74,11 @@ export class ProjectTodos {
       throw new Error('No open to-do has that id in this project.');
     project.todos = project.todos.filter((todo) => todo.id !== id);
     project.pending = project.pending.filter((message) => message.id !== id);
+    // A reminder already claimed by a delivery leaves that batch too, so a
+    // refused or busy delivery cannot put it back.
+    const claimed = project.delivery?.messages;
+    const index = claimed?.findIndex((message) => message.id === id) ?? -1;
+    if (index >= 0) claimed?.splice(index, 1);
     await this.persist();
   }
 
