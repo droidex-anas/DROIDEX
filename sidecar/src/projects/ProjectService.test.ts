@@ -939,3 +939,30 @@ test('a reminder finished while its scheduled delivery was in flight does not co
   assert.ok(toLead.some((prompt) => prompt.includes('Implemented the parser.')));
   assert.ok(toLead.every((prompt) => !prompt.includes('Reminder')));
 });
+
+test('finishing the only claimed reminder settles its delivery and plan ids like 1.1 save', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const h = await harness(t);
+  const { id, main } = await h.root();
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  const todo = await h.projects.addTodo(main, { text: 'Check in', inMinutes: 1 });
+  t.mock.timers.tick(60_000);
+  await drain();
+  const claimed = h.state.saved.find((candidate) => candidate.id === id)?.delivery;
+  assert.deepEqual(
+    claimed?.messages.map((message) => message.id),
+    [todo.id],
+  );
+  await h.projects.doneTodo(main, todo.id);
+  // An emptied claim would fail the store's validation and pause every project.
+  assert.equal(h.state.saved.find((candidate) => candidate.id === id)?.delivery, undefined);
+  await h.projects.setPlan(main, [{ id: '1.1', title: 'First part' }]);
+  h.state.gate = undefined;
+  gate.resolve();
+  await drain();
+  const saved = h.state.saved.find((candidate) => candidate.id === id);
+  assert.equal(saved?.paused, false);
+  assert.equal(saved?.delivery, undefined);
+  assert.equal(saved?.plan[0]?.id, '1.1');
+});

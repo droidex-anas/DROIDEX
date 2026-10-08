@@ -501,7 +501,8 @@ export class ProjectService {
     );
     project.lastStepId = Math.max(
       project.lastStepId ?? 0,
-      ...project.plan.map((step) => Number(step.id) || 0),
+      // Only whole-number ids advance the counter; a lead may name steps "1.1".
+      ...project.plan.map((step) => (Number.isSafeInteger(Number(step.id)) ? Number(step.id) : 0)),
     );
     if (brief !== undefined) project.brief = brief;
     if (project.plan.some((step) => step.state !== 'done')) delete project.done;

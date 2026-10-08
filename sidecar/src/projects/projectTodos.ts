@@ -79,6 +79,8 @@ export class ProjectTodos {
     const claimed = project.delivery?.messages;
     const index = claimed?.findIndex((message) => message.id === id) ?? -1;
     if (index >= 0) claimed?.splice(index, 1);
+    // A claim with nothing left in it is settled.
+    if (claimed?.length === 0) delete project.delivery;
     await this.persist();
   }
 
