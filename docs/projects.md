@@ -34,8 +34,10 @@ is handed over just as the lead's turn is stopped, the thread stays unread.
 So after a stop, a restart or a compaction,
 the lead calls `thread_list` and reads the unread threads; every wake also
 lists them, apart from the reports themselves. Being unread does not wake
-anyone by itself. Resume wakes the lead with a short reminder to read unread
-threads even when no report or other message is waiting.
+anyone by itself. Resume lifts the hold, then queues a short reminder when no
+message is already waiting for the lead and the inbox has room. Reminders and
+wakes list at most 20 unread thread titles and count the rest. A full inbox
+never blocks Resume; unread threads remain discoverable through `thread_list`.
 
 **What wakes the lead.** A report, a thread's question, a thread's failure, a
 due to-do, the last working thread going idle (with how it ended), a message
@@ -53,9 +55,11 @@ are never capped.
 
 **After a restart.** DROIDEX loads the transcripts first. Waiting messages and
 queued threads are kept. A thread cut off mid-turn gets one "continue" from
-DROIDEX unless a message for it is already waiting. A delivery that was in
-flight is dropped if it held only reports (their threads stay unread); any
-other in-flight delivery holds the project for review, and Resume discards it.
+DROIDEX unless a message for it is already waiting. An in-flight delivery that
+held only reports leaves identified, durable replies unread. Reports without
+a reply identity or retained reply text return to the pending queue, including
+failed, stopped and empty turns. Any other in-flight delivery holds the project
+for review, and Resume discards it.
 A ledger that cannot be read is reported and left untouched.
 
 | Tool | Changes now | Later effect |
@@ -182,8 +186,9 @@ returns runtime load (`live`: in use, running or starting, including reserved
 opens and resumes; `limit`: automatic runtime limit) and the lead's open to-dos. A main chat
 reaches all other threads in its project; a thread lists only its direct children.
 `thread_read` returns the same wait reason and runtime load with the full reply
-readout and clears unread. Neither tool starts or resumes a runtime, even when
-capacity is full, a thread is stopped or the project is held.
+readout and clears unread only after saving succeeds. A failed save returns an
+error and keeps the thread unread. Neither tool starts or resumes a runtime,
+even when capacity is full, a thread is stopped or the project is held.
 
 Every thread-id argument accepts the full id or a unique prefix of at least
 eight characters within that scope, including `workspaceOf`, plan links and
@@ -391,9 +396,11 @@ A report refused before steer handoff returns unchanged to the ledger. A
 scheduled turn whose outcome is unknown holds the project for review. A
 withdrawal before dispatch, by Stop, a hold or a question its thread stopped
 asking, returns messages to the queue, less the withdrawn question. After a
-restart, a sending claim made entirely of reports is dropped: their durable
-replies remain unread. Other claims caught mid-flight hold the project;
-the others carry on, delivering what the restart left queued once session
+restart, reports in a sending claim with an identified, durable reply are
+dropped: their replies remain unread. Reports without a reply identity or
+retained reply text return to pending and remain in compact `thread_list` until
+delivered. Other claims caught mid-flight hold the project; the others carry
+on, delivering what the restart left queued once session
 history has loaded. No delivery goes out before that, because until
 then a thread reads as an unknown session. Projects shows a held project with a
 Resume control, and the Threads panel says to resume it there. Resuming discards
@@ -409,8 +416,10 @@ until the user resumes the project in Projects, and a spawn that was already und
 is refused. So is a chat's first spawn, though no project exists yet for the
 Stop to hold.
 
-Malformed ledgers fail visibly and are left untouched. A ledger without `todos`
-loads with an empty list; a thread without `queuedSpawn` has no queued launch.
+Malformed ledgers fail visibly and are left untouched. String `owedReport`
+values load as `{ text }`; saves use that object shape, optionally with a reply
+identity. A ledger without `todos` loads with an empty list; a thread without
+`queuedSpawn` has no queued launch.
 If a to-do's `after` thread has left the project, only that link is removed; the
 note and any time trigger remain.
 

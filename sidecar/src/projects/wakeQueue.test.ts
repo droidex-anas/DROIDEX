@@ -465,6 +465,38 @@ test('a lost report push survives restart as unread and appears in the next wake
   await recovered.finish(main);
 });
 
+test('restart retains report-only sending claims for failed, stopped and empty turns without replies', async (t) => {
+  for (const [phase, text] of [
+    ['failed', 'It failed before finishing.\nModel provider refused the request.'],
+    ['paused', 'It was stopped before it finished.'],
+    ['running', 'It ended its turn without a reply.'],
+  ] as const) {
+    const saved = project();
+    saved.paused = true;
+    const report = { ...message('report'), text };
+    saved.delivery = { state: 'sending', messages: [report] };
+    saved.pending = [];
+    const h = await harness(t, [saved], false);
+    h.sessions.set('main', summary('main'));
+    h.sessions.set('worker', { ...summary('worker'), phase });
+    assert.deepEqual(h.projects.read('main', 'worker').replies, []);
+    assert.deepEqual(h.state.saved[0]?.pending, [report]);
+    assert.equal(h.state.saved[0]?.delivery, undefined);
+    assert.equal(h.projects.listThreads('main').threads[0]?.threadId, 'worker');
+    h.projects.historyReady();
+    await drain();
+    assert.equal(h.sent.length, 0, 'recovery respects the hold');
+    await h.projects.setPaused(saved.id, false);
+    await drain();
+    assert.equal(h.sent.length, 1);
+    assert.ok(h.sent[0].prompt.includes(text));
+    assert.deepEqual(h.state.saved[0]?.pending, []);
+    await h.finish('main');
+    await drain();
+    assert.equal(h.sent.length, 1, 'the recovered report is delivered once');
+  }
+});
+
 test('restart drains reports, queued starts and interrupted threads only after history is ready', async (t) => {
   const h = await harness(t, [], false);
   const { main } = await h.root();

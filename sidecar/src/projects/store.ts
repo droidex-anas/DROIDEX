@@ -149,7 +149,11 @@ const project = z
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
-          owedReport: z.object({ text, replyId: id.optional() }).strict().optional(),
+          owedReport: z
+            .union([text, z.object({ text, replyId: id.optional() }).strict()])
+            // Main ledgers store report text alone; runtime state uses one shape.
+            .transform((report) => (typeof report === 'string' ? { text: report } : report))
+            .optional(),
           unread: z.literal(true).optional(),
           waiting: z.boolean(),
           queuedSpawn: z

@@ -1,6 +1,6 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { SteeredReportDelivery } from '../SessionLifecycle.js';
-import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
+import { ProjectWakeQueue, unreadThreadNote, wakePrompt } from './ProjectWakeQueue.js';
 import {
   clearAsk,
   ProjectTurns,
@@ -242,13 +242,17 @@ export class ProjectService {
     for (const project of saved) {
       project.launching = 0;
       if (project.delivery) {
-        // Replies are durable before reports queue; unread survives a lost push.
         if (
           project.delivery.state === 'sending' &&
           project.delivery.messages.every((message) => message.kind === 'result')
-        )
+        ) {
+          // Unread recovers durable replies; reports without one still need delivery.
+          const reports = project.delivery.messages.filter(
+            (message) => !message.replyId || !requireThread(project, message.from).reply,
+          );
+          project.pending.unshift(...reports);
           delete project.delivery;
-        else {
+        } else {
           project.delivery.state = 'uncertain';
           project.paused = true;
           delete project.leadStopped;
@@ -770,8 +774,7 @@ export class ProjectService {
     const project = this.controlledProject(source, target);
     const thread = requireThread(project, target);
     if (!thread.unread) return;
-    delete thread.unread;
-    await this.save();
+    await this.save(undefined, thread);
   }
 
   listThreads(source: string, all = false) {
@@ -1054,27 +1057,24 @@ export class ProjectService {
         throw new Error('Review the uncertain delivery before resuming without replay.');
       delete project.delivery;
     }
-    if (project.paused && !paused) {
-      const unread = project.threads.filter((thread) => thread.unread);
-      const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
-      if (
-        unread.length &&
-        lead &&
-        !project.pending.some((message) => message.to === lead.appSessionId)
-      )
-        this.enqueue(project, {
-          from: lead.appSessionId,
-          to: lead.appSessionId,
-          kind: 'message',
-          text: `Unread threads: ${unread.map((thread) => thread.title).join(', ')}. Read them with thread_read.`,
-        });
-    }
+    const wasPaused = project.paused;
     this.wakes.invalidate(project);
     if (paused) this.noteHold(project);
     project.paused = paused;
     delete project.leadStopped;
     delete project.leadFailed;
     if (!paused) delete project.error;
+    if (wasPaused && !paused && !inboxFull(project)) {
+      const note = unreadThreadNote(project);
+      const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+      if (note && lead && !project.pending.some((message) => message.to === lead.appSessionId))
+        this.enqueue(project, {
+          from: lead.appSessionId,
+          to: lead.appSessionId,
+          kind: 'message',
+          text: note,
+        });
+    }
     await this.save();
     this.wakes.kick(project);
   }
@@ -1548,9 +1548,24 @@ export class ProjectService {
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 
-  private async save(affectedProject?: Project): Promise<void> {
-    const projects = [...this.projects.values()];
+  private async save(affectedProject?: Project, readThread?: ProjectThread): Promise<void> {
+    let projects = [...this.projects.values()];
     fitLedger(projects, (appSessionId) => this.sessions.get(appSessionId)?.updatedAt ?? 0);
+    const readProject = readThread ? this.membership.get(readThread.appSessionId) : undefined;
+    const readReplyId = readThread?.replyId;
+    if (readThread)
+      projects = projects.map((project) => {
+        if (project !== readProject) return project;
+        return {
+          ...project,
+          threads: project.threads.map((thread) => {
+            if (thread !== readThread) return thread;
+            const saved = { ...thread };
+            delete saved.unread;
+            return saved;
+          }),
+        };
+      });
     try {
       await this.store.save(projects);
     } catch (error) {
@@ -1558,6 +1573,14 @@ export class ProjectService {
       else for (const project of this.projects.values()) this.fail(project, error);
       throw error;
     }
+    // A failed save or a reply arriving during it must keep the live unread flag.
+    if (
+      !this.closed &&
+      readThread &&
+      this.membership.get(readThread.appSessionId) === readProject &&
+      readThread.replyId === readReplyId
+    )
+      delete readThread.unread;
     this.armTodoTimer();
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }

@@ -201,6 +201,51 @@ test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do lin
   assert.deepEqual((await store.load())[0]?.todos, [{ id: 'todo', text: 'Review' }]);
 });
 
+test('a main-shaped ledger loads string owed reports and saves the canonical report shape', async (t) => {
+  const path = await ledgerPath(t);
+  const saved = {
+    id: 'project',
+    title: 'Example',
+    paused: true,
+    leadStopped: true,
+    launching: 0,
+    threads: [
+      { appSessionId: 'main', title: 'Main', reply: '', waiting: false },
+      {
+        appSessionId: 'worker',
+        ownerAppSessionId: 'main',
+        title: 'Worker',
+        reply: 'Latest reply',
+        earlierReplies: ['Earlier reply'],
+        owedReport: 'Report waiting for inbox room',
+        waiting: false,
+      },
+    ],
+    pending: [{ id: 'note', from: 'main', to: 'worker', kind: 'message', text: 'Continue' }],
+    delivery: {
+      state: 'uncertain',
+      messages: [{ id: 'report', from: 'worker', to: 'main', kind: 'result', text: 'Done' }],
+    },
+  };
+  await writeFile(path, JSON.stringify([saved]));
+  const store = new ProjectStore(path);
+  const loaded = await store.load();
+  assert.deepEqual(loaded, [
+    {
+      ...saved,
+      plan: [],
+      todos: [],
+      threads: [
+        saved.threads[0],
+        { ...saved.threads[1], owedReport: { text: saved.threads[1].owedReport } },
+      ],
+    },
+  ]);
+  await store.save(loaded);
+  assert.deepEqual(await new ProjectStore(path).load(), loaded);
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), loaded);
+});
+
 test('workspace-free spawns persist at either capacity and a failed spawn holds only its project', async (t) => {
   const store = new ProjectStore(await ledgerPath(t));
   const h = await harness(t, [], false);
