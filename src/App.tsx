@@ -84,6 +84,7 @@ import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
 import { useBackgroundWorkTier } from './hooks/useBackgroundWorkTier';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { sideChatPanel } from './lib/sideChats';
+import { useCloseSideChat } from './components/sidechats/useCloseSideChat';
 import {
   bindLazySurfaceIntent,
   scheduleIdleLazyWarmup,
@@ -277,6 +278,7 @@ export default function App() {
   const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
   const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
+  const sideChatClose = useCloseSideChat();
   // A late busy-check must not restore a dialog in a hidden or replaced pane.
   const visibleUtilityPanelRef = useRef(showUtilityPane ? utilityPanel : null);
   visibleUtilityPanelRef.current = showUtilityPane ? utilityPanel : null;
@@ -855,6 +857,7 @@ export default function App() {
             {/* Holds the chat column's place while it floats, so the pane stays
                 anchored on the right as it widens. */}
             {browserExpanded && <div className="min-w-0 flex-1" />}
+            {sideChatClose.dialog}
 
             <AnimatePresence initial={false}>
               {showUtilityPane && (
@@ -929,6 +932,13 @@ export default function App() {
                             // rather than silently doing nothing.
                             armCloseConfirm();
                           });
+                        return;
+                      }
+                      // The tab's Close is the side chat's own Close; hiding
+                      // the tab alone would bring the same chat back on the
+                      // next `/btw`. Minimize is the way to put it away.
+                      if (tab.tool === 'side') {
+                        sideChatClose.requestClose(activeSession.appSessionId);
                         return;
                       }
                       if (isExpandableTool(tab.tool)) setExpandedPaneAppSessionId(null);

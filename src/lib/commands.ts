@@ -245,6 +245,11 @@ export const interruptSession = (appSessionId: string) => {
   bridge.send({ type: 'session.interrupt', appSessionId });
 };
 
+// Stops the session's runtime for good: its turn, processes and provider.
+export const closeSession = (appSessionId: string) => {
+  bridge.send({ type: 'session.close', appSessionId });
+};
+
 export const compactSession = (appSessionId: string, customInstructions?: string) => {
   bridge.send({ type: 'session.compact', appSessionId, customInstructions });
 };
