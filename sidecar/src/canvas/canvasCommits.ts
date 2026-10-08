@@ -16,10 +16,17 @@ export interface Committed<T> {
   change?: CanvasChange;
 }
 
+/** Cancels queued work and fences only the durable operation that starts. */
+export interface CanvasCommitOwner {
+  readonly signal: AbortSignal;
+  readonly isCurrent: () => boolean;
+  commit<T>(operation: () => Promise<T>): Promise<T>;
+}
+
 export class CanvasCommits {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly admitted = new Set<Promise<void>>();
-  private readonly queued = new Set<(error: unknown) => void>();
+  private readonly queued = new Set<(error: Error) => void>();
   private closing = false;
 
   constructor(private readonly changes: CanvasChangeFeed) {}
@@ -35,12 +42,28 @@ export class CanvasCommits {
   }
 
   /** One commit at a time; a failed commit never poisons the queue. */
-  run<T>(work: () => Promise<T>): Promise<T> {
+  run<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (this.closing) return Promise.reject(canvasError('storage_failed', CLOSING));
+    const cancelled = () =>
+      canvasError('scope_expired', 'The session closed before its first turn.');
+    if (signal?.aborted) return Promise.reject(cancelled());
     return new Promise<T>((resolve, reject) => {
-      this.queued.add(reject);
+      const release = (): void => {
+        this.queued.delete(refuse);
+        signal?.removeEventListener('abort', abort);
+      };
+      const refuse = (error: Error): void => {
+        release();
+        reject(error);
+      };
+      const abort = (): void => {
+        refuse(cancelled());
+      };
+      this.queued.add(refuse);
+      signal?.addEventListener('abort', abort, { once: true });
       const next = this.queue.then(() => {
-        this.queued.delete(reject);
+        release();
+        if (signal?.aborted) throw cancelled();
         this.requireOpen();
         return work();
       });

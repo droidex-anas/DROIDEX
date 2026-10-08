@@ -610,6 +610,41 @@ test('a malformed pinned Canvas context is refused with its stable code and noth
   assert.equal(command.text, 'hi');
 });
 
+test('session creation validates Canvas intent before admitting the command', async (t) => {
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(t, async (command) => {
+    commands.push(command);
+  });
+  const { socket } = await connect(t, harness);
+  for (const canvas of [
+    null,
+    { canvasId: null },
+    { canvasId: '../outside', mutationId: 'm' },
+    { canvasId: null, mutationId: 'x'.repeat(129) },
+    { canvasId: null, mutationId: 'm', name: 'x'.repeat(121) },
+    { canvasId: null, mutationId: 'm', name: 'bad\u0000name' },
+  ]) {
+    const received = new Promise<string>((resolve) =>
+      socket.once('message', (raw) => resolve(String(raw))),
+    );
+    socket.send(JSON.stringify({ type: 'session.create', clientRef: 'design', canvas }));
+    const refusal = JSON.parse(await received);
+    assert.equal(refusal.type, 'error');
+    assert.equal(refusal.code, 'canvas.invalid_input');
+  }
+  assert.equal(commands.length, 0);
+  socket.send(
+    JSON.stringify({
+      type: 'session.create',
+      canvas: { canvasId: null, mutationId: 'create-1', name: ' Pricing ' },
+    }),
+  );
+  await waitFor(() => commands.length === 1);
+  const [command] = commands;
+  assert.ok(command.type === 'session.create');
+  assert.deepEqual(command.canvas, { canvasId: null, mutationId: 'create-1', name: 'Pricing' });
+});
+
 function socketOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     socket.once('open', () => resolve());

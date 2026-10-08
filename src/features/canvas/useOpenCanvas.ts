@@ -3,7 +3,7 @@
 //
 // `openCanvas` shows an existing canvas through a chat already attached to it.
 // `startCanvasChat` drafts a fresh chat for a canvas: its first message creates
-// the session, and `CanvasChatBootstrap` attaches it once that session exists.
+// the session with its canvas intent; `CanvasChatBootstrap` opens the attached pane.
 
 import { useCallback } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';

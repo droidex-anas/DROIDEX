@@ -326,6 +326,29 @@ queued commits and new mutations immediately, independently of active I/O.
 It still waits for admitted staging and active durable writes before releasing
 the lease; a failed open releases it too.
 
+A Design draft sends its canvas intent and durable create mutation ID in
+`session.create`. The sidecar composes project membership and Canvas attachment
+in `beforeFirstTurn`, after registering the chat and before `session.created`
+or the first prompt. New canvases and saved-canvas attachments share this path;
+a failed attachment fails the session open and releases its runtime. The first
+turn therefore leases the committed attachment. Resume publication, typed sends,
+voice starts and delegated turns wait on the same pending create; compaction
+cannot replace its provisional provider. Every admission rechecks the captured
+runtime before applying results. Admission applies the latest pending delegated
+state before typed work starts; delegated notifications cannot settle a running
+typed turn or advance its queue.
+Closing cancels that create before cleanup. The Canvas queue releases cancelled
+work that has not started, independently of unrelated writes. Canvas checks the
+captured runtime generation before each attachment write, and close drains only
+this create's started commit before a replacement can register. A write still
+draining after five seconds emits an actionable diagnostic; its fence never
+times out. Already-published boards remain durable.
+The renderer keeps unsent `canvasDraft` separate from submitted
+`canvasChatRequests`, which only track
+chats whose panes need opening. The lazy bootstrap reads the committed attachment
+and opens the pane. Explicit pane creation and
+attaching an existing chat remain Canvas bridge actions with durable replay.
+
 The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
 remove watches synchronously. Removing the last pane watching a canvas cancels
 its queued and running builds through `cancelCanvas` only when `CanvasScopes`

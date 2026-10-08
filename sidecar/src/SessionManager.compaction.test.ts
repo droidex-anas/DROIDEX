@@ -6,6 +6,9 @@ import { ContextStatsAccuracy } from '@factory/droid-sdk';
 import type * as Protocol from './protocol.js';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
+import { canvasRoot, deferred, quietBuilds } from './testing/canvasStorageSupport.js';
+import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
 import {
   chatCommand,
   createSessionManagerTestContext,
@@ -18,6 +21,80 @@ import {
 // Compaction through the facade: daemon arming, the provider swap a compaction
 // can cause, and the work queued behind it. SessionCompaction owns the
 // adoption and retune rules.
+
+test('manual compaction cannot replace a provisional create while resume and send wait', async (t) => {
+  const binding = deferred();
+  const entered = deferred();
+  const h = createSessionManagerTestContext({
+    beforeFirstTurn: (session, clientRef, canvas, admission) =>
+      prepareSessionFirstTurn(
+        session,
+        { clientRef, canvas },
+        {
+          beforeFirstTurn: async () => {
+            entered.resolve();
+            await binding.promise;
+          },
+        },
+        Promise.resolve(workspace),
+        (event) => h.events.push(event),
+        admission,
+      ),
+  });
+  t.after(() => h.dispose());
+  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
+    isChatKnown: () => true,
+    isScopeActive: () => false,
+    bindScopeCanvas: () => undefined,
+  });
+  t.after(() => workspace.close());
+  const creating = h.create(
+    chatCommand('provisional', {
+      goal: '',
+      canvas: { canvasId: null, mutationId: 'provisional-canvas' },
+    }),
+  );
+  await entered.promise;
+  const original = h.provider.session('provider-1');
+  original.nextCompactResult = { newSessionId: 'provider-2', removedCount: 1 };
+  h.runtime.loadQueue.set('provider-2', [new FakeFactorySession('provider-2', {}, h.calls)]);
+  const resuming = h.handle({ type: 'session.resume', appSessionId: 'provider-1' });
+  const sending = h.handle({
+    type: 'session.send',
+    appSessionId: 'provider-1',
+    text: 'Waiting prompt',
+  });
+  try {
+    await h.handle({ type: 'session.compact', appSessionId: 'provider-1' });
+    assert.equal(callCount(h.calls, 'provider', 'compactSession', 'provider-1'), 0);
+    assert.ok(
+      h.events.some(
+        (event) => event.type === 'event.appended' && /still opening/.test(event.event.text ?? ''),
+      ),
+    );
+    assert.equal(
+      h.events.some((event) => event.type === 'session.created'),
+      false,
+    );
+    binding.resolve();
+    await Promise.all([creating, resuming, sending]);
+    assert.deepEqual(original.prompts, ['Waiting prompt']);
+    assert.equal(
+      h.events.some((event) => event.type === 'session.closed'),
+      false,
+    );
+    assert.equal(
+      h.events.some((event) => event.type === 'error' && event.code === 'session.create_failed'),
+      false,
+    );
+    assert.equal(workspace.listCanvases().length, 1);
+    const created = h.events.find((event) => event.type === 'session.created');
+    assert.equal(created?.session.providerSessionId, 'provider-1');
+  } finally {
+    binding.resolve();
+    await Promise.all([creating, resuming, sending]);
+  }
+});
 
 async function createChat(
   h: SessionManagerTestContext,

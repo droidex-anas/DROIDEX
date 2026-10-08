@@ -69,6 +69,14 @@ export const canvasNameSchema = z
       .max(CANVAS_LIMITS.maxFrameNameLength, FRAME_NAME_MESSAGE),
   );
 
+export const sessionCanvasIntentSchema = z
+  .object({
+    canvasId: canvasIdentifierSchema.nullable(),
+    name: canvasNameSchema.optional(),
+    mutationId: canvasIdentifierSchema,
+  })
+  .strict();
+
 const versionSchema = z.number().int().nonnegative();
 
 export const designSystemRefSchema = z
