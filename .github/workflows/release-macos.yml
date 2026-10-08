@@ -16,6 +16,8 @@ env:
   CI: true
   NODE_VERSION: '22'
   RELEASE_REPOSITORY: droidex-anas/droidex-releases
+  DROIDEX_ALLOW_AD_HOC_RELEASE: ${{ vars.DROIDEX_ALLOW_AD_HOC_RELEASE }}
+  DROIDEX_SIGNING_CERT_SHA256: ${{ vars.DROIDEX_SIGNING_CERT_SHA256 }}
 
 jobs:
   release:
@@ -75,8 +77,19 @@ jobs:
           DROIDEX_SIGNING_CERT_PASSWORD: ${{ secrets.DROIDEX_SIGNING_CERT_PASSWORD }}
         run: |
           if test -z "$DROIDEX_SIGNING_CERT_P12_BASE64" || test -z "$DROIDEX_SIGNING_CERT_PASSWORD"; then
-            echo "::warning::DROIDEX signing certificate secrets are incomplete or absent; using ad-hoc signing. macOS permissions may be requested again after updates."
+            # An accidental secret deletion must not change the identity that owns macOS permissions.
+            if test "$DROIDEX_ALLOW_AD_HOC_RELEASE" != 'true'; then
+              echo "::error::Signing secrets are missing or incomplete. Restore both secrets or explicitly set DROIDEX_ALLOW_AD_HOC_RELEASE=true."
+              echo "Release blocked: signing secrets are missing or incomplete; ad-hoc signing was not authorized." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            echo "::warning::Explicitly opted into an ad-hoc release. macOS permissions may be requested again after updates."
+            echo "Ad-hoc release explicitly authorized by DROIDEX_ALLOW_AD_HOC_RELEASE=true. macOS permissions may be requested again after updates." >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          if [[ ! "$DROIDEX_SIGNING_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Set repository variable DROIDEX_SIGNING_CERT_SHA256 to the existing certificate's lowercase SHA-256 fingerprint."
+            exit 1
           fi
           umask 077
           CERTIFICATE_PATH="$RUNNER_TEMP/droidex-signing.p12"
@@ -88,6 +101,11 @@ jobs:
           openssl pkcs12 -in "$CERTIFICATE_PATH" -clcerts -nokeys \
             -passin env:DROIDEX_SIGNING_CERT_PASSWORD |
             openssl x509 -out "$PUBLIC_CERTIFICATE_PATH"
+          CERTIFICATE_SHA256="$(openssl x509 -in "$PUBLIC_CERTIFICATE_PATH" -outform DER | shasum -a 256 | awk '{print $1}')"
+          if test "$CERTIFICATE_SHA256" != "$DROIDEX_SIGNING_CERT_SHA256"; then
+            echo "::error::Signing certificate does not match DROIDEX_SIGNING_CERT_SHA256. Restore the pinned certificate; replacing it resets macOS permissions."
+            exit 1
+          fi
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -102,6 +120,7 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F '"DROIDEX Self-Signed"'
           echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "DROIDEX_SELF_SIGNED_IDENTITY=DROIDEX Self-Signed" >> "$GITHUB_ENV"
+          echo "Stable self-signed release using pinned certificate SHA-256: $CERTIFICATE_SHA256. Artifact verification also checks its designated requirement." >> "$GITHUB_STEP_SUMMARY"
           rm "$CERTIFICATE_PATH"
 
       - name: Build macOS artifacts

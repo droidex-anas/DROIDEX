@@ -86,10 +86,11 @@ does not publish a release.
 
 ## 3. What the pipeline publishes
 
-The website build uses a stable self-signed certificate when configured, or an
-ad-hoc signature when its secrets are absent. Neither is notarized or requires
-an Apple Developer Program subscription. Users still approve the first launch
-in Privacy & Security; Sparkle EdDSA signing stays unchanged.
+The website build requires a stable self-signed certificate and its pinned
+public SHA-256 fingerprint. An ad-hoc release requires an explicit opt-in.
+Neither is notarized or requires an Apple Developer Program subscription.
+Users still approve the first launch in Privacy & Security; Sparkle EdDSA
+signing stays unchanged.
 
 ### One-time free signing setup
 
@@ -101,22 +102,49 @@ bash tools/create-self-signed-signing-cert.sh /secure/path/droidex-signing
 
 The script creates a 10-year RSA certificate named `DROIDEX Self-Signed` with
 the code-signing extended key usage, prompts for a nonempty export password,
-and writes `droidex-signing.p12` plus its public `certificate.pem`. It prints
-the password-protected .p12 as one base64 line and never uploads anything or
-changes your Keychain. Treat that output as private. Add these secrets to the
-source repository's protected `macos-release` environment:
+and writes `droidex-signing.p12`, `droidex-signing.p12.base64`, and `password`
+with mode `0600` in a mode `0700` directory, plus the public `certificate.pem`
+and `certificate.sha256`. It never prints credentials, uploads anything, or
+changes your Keychain. Run the exact `gh secret set ... < file` commands it
+prints from the source checkout to set these secrets in the protected
+`macos-release` environment:
 
-- `DROIDEX_SIGNING_CERT_P12_BASE64`: the printed base64 line.
-- `DROIDEX_SIGNING_CERT_PASSWORD`: the password you entered.
+- `DROIDEX_SIGNING_CERT_P12_BASE64`: stdin from `droidex-signing.p12.base64`.
+- `DROIDEX_SIGNING_CERT_PASSWORD`: stdin from `password`.
+
+The script also prints the public fingerprint, which is safe to commit, and
+the command to pin it in repository variable `DROIDEX_SIGNING_CERT_SHA256`.
+Use that variable as the release pin: exactly 64 lowercase hex digits, without
+colons, hashing the DER certificate. For an existing signing certificate,
+derive the pin from its backed-up public `certificate.pem`; do not regenerate it:
+
+```bash
+openssl x509 -in /secure/path/droidex-signing/certificate.pem -outform DER |
+  shasum -a 256 | awk '{print $1}' > /secure/path/droidex-signing/certificate.sha256
+gh variable set DROIDEX_SIGNING_CERT_SHA256 < /secure/path/droidex-signing/certificate.sha256
+```
+
+Keep all credential files outside the checkout. After uploading, remove the
+base64 and plaintext password files.
 
 Back up the .p12 and password securely and reuse them for every release. CI
 imports it into a temporary Keychain and trusts it only for code signing on
 the disposable runner. The build uses `DROIDEX_SELF_SIGNED_IDENTITY` and
-`CSC_KEYCHAIN`; verification rejects ad-hoc signing or a per-build cdhash
-designated requirement when that identity is configured. Missing either secret
-warns and keeps the ad-hoc build; invalid configured credentials fail the job.
+`CSC_KEYCHAIN`. CI checks the imported certificate against the pin before
+trusting it. Verification checks the signing leaf of every staged, ZIP, and DMG
+app against the same pin and requires the designated requirement to bind
+`app.droidex` to that leaf. A missing or invalid pin, replacement certificate,
+or invalid configured credentials fails the job. Restore the original
+certificate rather than changing the pin to make a failed release pass.
 Free releases keep hardened runtime off and retain the Electron and microphone
 entitlements. No Apple notarization is attempted.
+
+Missing or incomplete signing secrets block publication. Only set repository
+variable `DROIDEX_ALLOW_AD_HOC_RELEASE=true` when deliberately publishing an
+ad-hoc release without complete signing secrets; remove it afterward. The job
+summary records the selected signing mode and warns that ad-hoc updates may
+require macOS permissions again. Manual ad-hoc verification requires the same
+explicit environment variable. Invalid complete credentials never fall back.
 
 Users re-grant macOS permissions once after installing the first self-signed
 build. Later updates retain the certificate-based identity; replacing the
@@ -128,7 +156,8 @@ the preflight checks those disclosures.
 The automated workflow executes the equivalent of these local commands:
 
 ```bash
-# CI exports CSC_KEYCHAIN and DROIDEX_SELF_SIGNED_IDENTITY after importing the certificate.
+# CI exports CSC_KEYCHAIN and DROIDEX_SELF_SIGNED_IDENTITY after checking the pin.
+# Manual verification also requires DROIDEX_SIGNING_CERT_SHA256 from the repository variable.
 DROIDEX_UNSIGNED_RELEASE_BUILD=1 npm run dist:mac
 
 # The last three published ZIPs, one directory per tag, as Sparkle delta bases.

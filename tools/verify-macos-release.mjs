@@ -17,6 +17,7 @@ import { parse as parseYaml } from 'yaml';
 const releaseDirectory = resolve(process.argv[2] || 'release');
 const requireSignedArtifacts = process.argv.includes('--signed');
 const selfSignedIdentity = process.env.DROIDEX_SELF_SIGNED_IDENTITY;
+const signingCertificateSha256 = process.env.DROIDEX_SIGNING_CERT_SHA256;
 const writeChecksums = process.argv.includes('--write-checksums');
 const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
 const appName = 'DROIDEX.app';
@@ -237,20 +238,41 @@ function verifyFreeReleaseApp(appPath, label) {
   assert(signature.includes('TeamIdentifier=not set'), `${label} unexpectedly has an Apple team`);
   if (signature.includes('Signature=adhoc')) {
     assert(!selfSignedIdentity, `${label} is ad-hoc signed despite a configured stable identity`);
+    assert(
+      process.env.DROIDEX_ALLOW_AD_HOC_RELEASE === 'true',
+      `${label} is ad-hoc signed without explicit DROIDEX_ALLOW_AD_HOC_RELEASE=true`,
+    );
     return;
   }
   assert(
     signature.split('\n').includes(`Authority=${selfSignedIdentity || 'DROIDEX Self-Signed'}`),
     `${label} does not use the self-signed release identity`,
   );
-  const requirement = signature.match(/^designated => (.+)$/m)?.[1];
   assert(
-    requirement &&
-      requirement.includes('identifier "app.droidex"') &&
-      /\b(?:anchor|certificate)\b/.test(requirement) &&
-      !/\bcdhash\b/.test(requirement),
-    `${label} must have a certificate-based designated requirement, not a per-build cdhash`,
+    /^[0-9a-f]{64}$/.test(signingCertificateSha256 ?? ''),
+    'DROIDEX_SIGNING_CERT_SHA256 must pin the existing release certificate with 64 lowercase hex digits',
   );
+  const certificateDirectory = mkdtempSync(join(tmpdir(), 'droidex-signing-'));
+  try {
+    const certificatePrefix = join(certificateDirectory, 'certificate-');
+    run('/usr/bin/codesign', ['-d', '--extract-certificates', certificatePrefix, appPath]);
+    const leafPath = `${certificatePrefix}0`;
+    assert(
+      hashFile(leafPath, 'sha256', 'hex') === signingCertificateSha256,
+      `${label} signing leaf does not match DROIDEX_SIGNING_CERT_SHA256; restore the pinned certificate`,
+    );
+    const requirement = signature.match(/^designated => (.+)$/m)?.[1];
+    const requirementLeafSha1 = requirement?.match(
+      /^identifier "app\.droidex" and certificate leaf = H"([0-9a-fA-F]{40})"$/,
+    )?.[1];
+    // macOS requirements use SHA-1; derive it only from the leaf already checked against the SHA-256 pin.
+    assert(
+      requirementLeafSha1?.toLowerCase() === hashFile(leafPath, 'sha1', 'hex'),
+      `${label} designated requirement must bind app.droidex to the pinned signing leaf`,
+    );
+  } finally {
+    rmSync(certificateDirectory, { recursive: true, force: true });
+  }
 }
 
 function verifyDistributedApp(appPath, architecture, label) {
