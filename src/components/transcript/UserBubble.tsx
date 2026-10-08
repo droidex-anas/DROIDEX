@@ -90,6 +90,7 @@ export function UserBubble({
   event,
   onOpenReviewFile,
   onSendNow,
+  onWithdraw,
 }: {
   event: Pick<
     TranscriptEvent,
@@ -100,6 +101,7 @@ export function UserBubble({
   onOpenReviewFile?: OpenReviewFileHandler;
   // Set on a steer the model has not taken in yet.
   onSendNow?: () => void;
+  onWithdraw?: (() => void) | undefined;
 }) {
   const browserRefs = event.browserRefs ?? [];
   // A replayed message has no files metadata, only the composed text it was sent
@@ -163,7 +165,12 @@ export function UserBubble({
           {/* The pending preview of a first message has no ts, and no actions yet;
               a pending steer has actions but no time. */}
           {message.text && (event.ts !== undefined || onSendNow) ? (
-            <PromptActions text={message.text} ts={event.ts} onSendNow={onSendNow} />
+            <PromptActions
+              text={message.text}
+              ts={event.ts}
+              onSendNow={onSendNow}
+              onWithdraw={onWithdraw}
+            />
           ) : null}
         </div>
       )}

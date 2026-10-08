@@ -1,9 +1,10 @@
 import { Suspense, useEffect, useSyncExternalStore } from 'react';
 import { threadReports } from '../../features/projects/threadNotices';
-import { useStoreSelector } from '../../hooks/useStore';
-import { sendSteerNow } from '../../lib/commands';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { sendSteerNow, withdrawSteer } from '../../lib/commands';
 import { dropLocalSteers, localSteersOf, subscribeLocalSteers } from '../../lib/localSteers';
 import { sessionIsLive } from '../../lib/sessions';
+import { toast } from '../../lib/toast';
 import { ThreadReportNotice } from '../chat';
 import { PromptActions } from './ResponseActions';
 import { UserBubble } from './UserBubble';
@@ -19,6 +20,7 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
       ? state.sessions[appSessionId].pendingSteers
       : undefined,
   );
+  const dispatch = useStoreDispatch();
   const local = useSyncExternalStore(subscribeLocalSteers, () => localSteersOf(appSessionId));
   const live = useStoreSelector(
     (state) =>
@@ -56,6 +58,17 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
     const sendNow = () => {
       sendSteerNow(appSessionId, steer.id);
     };
+    // Only once the harness confirms the model cannot see it does the text go
+    // back to the composer; otherwise it would arrive twice.
+    const withdraw = async () => {
+      const { withdrawn } = await withdrawSteer(appSessionId, steer.id).catch(() => ({
+        withdrawn: false,
+      }));
+      if (withdrawn)
+        dispatch({ type: 'SEED_COMPOSER', text: steer.text, appSessionId, focus: true });
+      else toast.info('The agent already has this message.');
+    };
+    const canWithdraw = 'canWithdraw' in steer && steer.canWithdraw;
     const reports = threadReports(steer.text);
     return (
       <div key={steer.id} className="prompt-enter mx-auto min-w-0 max-w-2xl pb-2 pt-2">
@@ -70,7 +83,17 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
             />
           </div>
         ) : (
-          <UserBubble event={{ text: steer.text }} onSendNow={sendNow} />
+          <UserBubble
+            event={{ text: steer.text }}
+            onSendNow={sendNow}
+            onWithdraw={
+              canWithdraw
+                ? () => {
+                    void withdraw();
+                  }
+                : undefined
+            }
+          />
         )}
       </div>
     );

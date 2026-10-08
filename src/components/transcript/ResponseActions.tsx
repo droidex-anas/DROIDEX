@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowUp, Check } from 'lucide-react';
+import { ArrowUp, Check, X } from 'lucide-react';
 import { Copy, GitFork } from '@droidex/icons';
 import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
 import { HoverTooltip } from '../HoverTooltip';
@@ -94,16 +94,31 @@ export function PromptActions({
   text,
   ts,
   onSendNow,
+  onWithdraw,
 }: {
   text: string;
   ts?: number | undefined;
   onSendNow?: (() => void) | undefined;
+  /** Takes a steer back into the composer, where the harness can still drop it. */
+  onWithdraw?: (() => void) | undefined;
 }) {
   return (
     <div className="absolute right-0 top-full mt-0.5 flex h-7 items-center">
       <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0">
         {ts !== undefined ? <PromptTime ts={ts} /> : null}
         <CopyButton text={text} label="Copy prompt" />
+        {onWithdraw ? (
+          <HoverTooltip label="Edit before sending">
+            <button
+              type="button"
+              aria-label="Take back to edit"
+              onClick={onWithdraw}
+              className={buttonClass}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </HoverTooltip>
+        ) : null}
         {onSendNow ? (
           <HoverTooltip label="Send now">
             <button type="button" aria-label="Send now" onClick={onSendNow} className={buttonClass}>
