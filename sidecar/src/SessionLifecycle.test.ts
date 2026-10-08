@@ -1072,6 +1072,28 @@ test('a turn that ends while send-now is stopping it waits for the interrupt bef
   assert.deepEqual(provider.prompts, ['first', 'urgent']);
 });
 
+test('a Stop acknowledged after a newer turn started leaves that turn running', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'late-stop');
+  const first = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  const interrupt = provider.deferNextInterrupt();
+  const stopping = h.lifecycle.interrupt('late-stop');
+  first.resolve();
+  const live = requireLive(h, 'late-stop');
+  while (live.streaming) await new Promise((resolve) => setImmediate(resolve));
+  const second = provider.deferNextStream();
+  const sending = h.lifecycle.send('late-stop', 'second');
+  await provider.waitForPrompts(2);
+  interrupt.resolve();
+  await stopping;
+  assert.equal(live.streaming, true);
+  assert.equal(h.registry.getCanonicalSummary('late-stop')?.streaming, true);
+  second.resolve();
+  await sending;
+});
+
 test('a steer is pending until the harness delivers it, and one refused late still runs', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'steer');
