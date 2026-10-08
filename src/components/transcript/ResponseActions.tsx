@@ -62,7 +62,7 @@ function PromptTime({ ts }: { ts: number }) {
 }
 
 function RecentPromptTime({ ts }: { ts: number }) {
-  const now = useRelativeTimeNow();
+  const now = useRelativeTimeNow(ts + HOUR_MS);
   const ago = now - ts;
   if (ago >= HOUR_MS) return <MessageTime ts={ts} />;
   const minutes = Math.floor(ago / 60_000);

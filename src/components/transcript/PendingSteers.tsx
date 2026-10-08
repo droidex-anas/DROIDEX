@@ -1,8 +1,14 @@
-import { Suspense, useEffect, useSyncExternalStore } from 'react';
+import { Suspense, useEffect, useRef, useSyncExternalStore } from 'react';
 import { threadReports } from '../../features/projects/threadNotices';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { sendSteerNow, withdrawSteer } from '../../lib/commands';
-import { dropLocalSteers, localSteersOf, subscribeLocalSteers } from '../../lib/localSteers';
+import {
+  dropLocalSteers,
+  localSteersOf,
+  retainSteerPrompts,
+  restoreSteerToComposer,
+  subscribeLocalSteers,
+} from '../../lib/localSteers';
 import { sessionIsLive } from '../../lib/sessions';
 import { toast } from '../../lib/toast';
 import { ThreadReportNotice } from '../chat';
@@ -21,6 +27,8 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
       : undefined,
   );
   const dispatch = useStoreDispatch();
+  // One take-back per steer at a time, so a double click cannot restore it twice.
+  const withdrawing = useRef(new Set<string>());
   const local = useSyncExternalStore(subscribeLocalSteers, () => localSteersOf(appSessionId));
   const live = useStoreSelector(
     (state) =>
@@ -33,24 +41,26 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   useEffect(() => {
     if (local.length === 0) return;
     // A local steer is settled once the sidecar lists it, once the message it
-    // became lands in the transcript, or once the chat stops without either.
+    // became lands in the transcript under its id, or once the chat stops.
     const listedIds = new Set(listed?.map((steer) => steer.id));
-    const settled = new Set<string>();
     const earliest = Math.min(...local.map((steer) => steer.sentAt));
-    const delivered: string[] = [];
+    const delivered = new Set<string>();
     for (let i = (transcript?.length ?? 0) - 1; i >= 0; i -= 1) {
       const event = transcript?.[i];
       if (!event || event.ts < earliest) break;
-      if (event.author === 'user' && event.kind === 'text' && event.text)
-        delivered.push(event.text);
+      if (event.steerId) delivered.add(event.steerId);
     }
-    for (const steer of local) {
-      const match = delivered.indexOf(steer.text);
-      if (listedIds.has(steer.id) || !live || match >= 0) settled.add(steer.id);
-      if (match >= 0) delivered.splice(match, 1);
-    }
+    const settled = new Set(
+      local
+        .filter((steer) => listedIds.has(steer.id) || delivered.has(steer.id) || !live)
+        .map((steer) => steer.id),
+    );
     dropLocalSteers(appSessionId, settled);
   }, [appSessionId, listed, live, local, transcript]);
+  useEffect(() => {
+    const pending = new Set([...(listed ?? []), ...local].map((steer) => steer.id));
+    retainSteerPrompts(appSessionId, pending);
+  }, [appSessionId, listed, local]);
   const listedIds = new Set(listed?.map((steer) => steer.id));
   const steers = [...(listed ?? []), ...local.filter((steer) => !listedIds.has(steer.id))];
   if (steers.length === 0) return null;
@@ -61,12 +71,19 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
     // Only once the harness confirms the model cannot see it does the text go
     // back to the composer; otherwise it would arrive twice.
     const withdraw = async () => {
+      if (withdrawing.current.has(steer.id)) return;
+      withdrawing.current.add(steer.id);
       const { withdrawn } = await withdrawSteer(appSessionId, steer.id).catch(() => ({
         withdrawn: false,
       }));
-      if (withdrawn)
+      withdrawing.current.delete(steer.id);
+      if (!withdrawn) {
+        toast.info('The agent already has this message.');
+        return;
+      }
+      // Its chips and replies come back with it when this window sent it.
+      if (!restoreSteerToComposer(appSessionId, steer.id))
         dispatch({ type: 'SEED_COMPOSER', text: steer.text, appSessionId, focus: true });
-      else toast.info('The agent already has this message.');
     };
     const canWithdraw = 'canWithdraw' in steer && steer.canWithdraw;
     const reports = threadReports(steer.text);

@@ -215,7 +215,7 @@ export interface SessionLifecycleDependencies {
   ) => void;
   // A steer the harness has just delivered into the running turn: the row that
   // marks where the model took it in, and what the transcript stores.
-  appendSteer: (appSessionId: string, text: string) => void | Promise<void>;
+  appendSteer: (appSessionId: string, text: string, steerId: string) => void | Promise<void>;
   catalogUpdated: (liveSession: LiveSession, items: SkillInfo[]) => void;
   emitSessionList: (closedProviderSessionId: string) => void | Promise<void>;
   settleStreaming: (appSessionId: string, sourceSessionId: string) => Promise<void>;
@@ -762,7 +762,8 @@ export class SessionLifecycle {
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
-    if (outcome !== 'withdrawn') await this.dependencies.appendSteer(appSessionId, prompt.text);
+    if (outcome !== 'withdrawn')
+      await this.dependencies.appendSteer(appSessionId, prompt.text, steerId);
     if (
       this.dependencies.registry.getLive(appSessionId) === liveSession &&
       liveSession.session === session
@@ -1582,6 +1583,7 @@ export class SessionLifecycle {
         ...(delivery ? { delivery } : {}),
         ...(prompt.notice ? { notice: prompt.notice } : {}),
         ...(prompt.steerId || prompt.announce ? { announce: true as const } : {}),
+        ...(prompt.steerId ? { steerId: prompt.steerId } : {}),
         ...(prompt.isCurrent ? { stillAllowed: prompt.isCurrent } : {}),
       });
       await turn;

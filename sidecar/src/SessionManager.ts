@@ -754,7 +754,8 @@ export class SessionManager {
       appendError: (appSessionId, message, details) => {
         this.timeline.appendError(appSessionId, message, details);
       },
-      appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
+      appendSteer: (appSessionId, text, steerId) =>
+        this.timeline.announcePrompt(appSessionId, text, true, steerId),
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
         this.emit({

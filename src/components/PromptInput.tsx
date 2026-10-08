@@ -113,7 +113,7 @@ import {
   visibleSessionTarget,
   type VisibleSessionTarget,
 } from '../lib/childSessions';
-import { addLocalSteer, dropLocalSteers } from '../lib/localSteers';
+import { addLocalSteer, dropLocalSteers, registerComposer } from '../lib/localSteers';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
 import {
@@ -1732,11 +1732,19 @@ export default function PromptInput({
       // A steer shows as pending at once, until the sidecar's own list of
       // pending steers takes over.
       if (steerId)
-        addLocalSteer(activeSession.appSessionId, {
-          id: steerId,
-          text: composed,
-          sentAt: Date.now(),
-        });
+        addLocalSteer(
+          activeSession.appSessionId,
+          { id: steerId, text: composed, sentAt: Date.now() },
+          {
+            id: steerId,
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+          },
+        );
       else
         dispatch({
           type: 'SESSION_TRANSCRIPT',
@@ -1791,10 +1799,10 @@ export default function PromptInput({
     if (showTurnStarting) startTurnStarting();
 
     const committed = await commitPrimaryPromptAfterBaseline({
-      // A steer joins a turn whose baseline was taken when it started; a new
-      // one would only hold the steer back.
+      // A steer the turn cannot take runs as the next turn and needs its own
+      // baseline; its bubble already shows, so the wait no longer delays it.
       waitForBaseline: () =>
-        workingDirectory && !steerId
+        workingDirectory
           ? markGitTurnStart(workingDirectory, activeSession.appSessionId)
           : Promise.resolve(),
       canCommit: () => !updateInterruptedSubmit(),
@@ -1817,7 +1825,7 @@ export default function PromptInput({
     appUpdateInstallResult,
   });
 
-  const editQueuedInComposer = (p: QueuedPrompt) => {
+  const restorePromptToComposer = (p: QueuedPrompt) => {
     if (!activeSession) return;
     // The queued prompt carries its own files; drop anything pasted after it
     // was queued so it doesn't ride along on the edited prompt, and delete
@@ -1851,9 +1859,26 @@ export default function PromptInput({
         reply,
       });
     }
-    dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
     requestAnimationFrame(() => editorRef.current?.focus());
   };
+
+  const editQueuedInComposer = (p: QueuedPrompt) => {
+    if (!activeSession) return;
+    restorePromptToComposer(p);
+    dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
+  };
+
+  // A steer taken back returns here with its chips and replies. The latest
+  // render's restore is always the one called.
+  const restoreRef = useRef(restorePromptToComposer);
+  restoreRef.current = restorePromptToComposer;
+  const composerSessionId = activeSession?.appSessionId;
+  useEffect(() => {
+    if (!composerSessionId) return;
+    return registerComposer(composerSessionId, (prompt) => {
+      restoreRef.current(prompt);
+    });
+  }, [composerSessionId]);
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)

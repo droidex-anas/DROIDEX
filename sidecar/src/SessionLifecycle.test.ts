@@ -18,6 +18,8 @@ import { runPrimaryTurn } from './providers/primaryTurn.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
+import { ClaudeSession } from './providers/claude/claudeSession.js';
+import { MessageQueue } from './providers/claude/claudeMessages.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   SessionLifecycle,
@@ -270,7 +272,8 @@ function createHarness(
     emitError: (error) => recordEvent({ type: 'error', ...error }),
     appendProgress: (appSessionId, text) => record('protocol', 'progress', appSessionId, text),
     appendError: (appSessionId, message) => record('protocol', 'error', appSessionId, message),
-    appendSteer: (appSessionId, text) => record('protocol', 'appendSteer', appSessionId, text),
+    appendSteer: (appSessionId, text, steerId) =>
+      record('protocol', 'appendSteer', appSessionId, text, steerId),
     catalogUpdated: () => undefined,
     emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
     ...overrides,
@@ -750,6 +753,41 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
 });
 
 test('withdrawal requires harness confirmation, including during Send now, and never resends', async () => {
+  let cancelAsyncMessage = () => Promise.resolve(false);
+  // Exercise Claude's cancellation owner without its constructor launching a CLI.
+  const claude = Object.create(ClaudeSession.prototype) as ClaudeSession;
+  Object.assign(claude, {
+    abort: new AbortController(),
+    initialized: Promise.resolve(),
+    activeTurnId: 'turn',
+    steerable: true,
+    steerDeliveries: new Map<string, unknown>(),
+    prompts: new MessageQueue<unknown>(),
+    query: {
+      cancelAsyncMessage: () => cancelAsyncMessage(),
+      interrupt: () => Promise.resolve({ cancelled: ['held'] }),
+    },
+  });
+  for (const cancellation of [false, new Error('cancel rejected')]) {
+    cancelAsyncMessage = () =>
+      cancellation instanceof Error ? Promise.reject(cancellation) : Promise.resolve(cancellation);
+    const delivery = claude.steer('held', undefined, 'held');
+    assert.equal(await claude.withdrawSteer('held'), false);
+    await claude.interrupt();
+    assert.equal(await delivery, false);
+  }
+  let confirmCancellation: (cancelled: boolean) => void = () => undefined;
+  const confirmation = new Promise<boolean>((resolve) => {
+    confirmCancellation = resolve;
+  });
+  cancelAsyncMessage = () => confirmation;
+  const delivery = claude.steer('held', undefined, 'held');
+  const withdrawing = claude.withdrawSteer('held');
+  const overlapping = claude.withdrawSteer('held');
+  confirmCancellation(true);
+  assert.deepEqual(await Promise.all([withdrawing, overlapping]), [true, false]);
+  assert.equal(await delivery, 'withdrawn');
+
   for (const provider of ['droid', 'codex', 'claude'] as const) {
     const h = createHarness();
     const backend = queueCreate(h, provider);
@@ -965,7 +1003,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   assert.deepEqual(pendingSteers(), []);
   assert.deepEqual(
     h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
-    [['steer', 'delivered']],
+    [['steer', 'delivered', 'steer-1']],
   );
 
   // A refusal that lands after the turn settled still runs as the next turn.

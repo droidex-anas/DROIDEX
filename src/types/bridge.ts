@@ -304,6 +304,8 @@ export interface TranscriptEvent {
   // Side-chat answers the user attached to this prompt.
   sideChatReplies?: string[];
   steered?: boolean;
+  // Links the delivered user row to its pending steer, including ordinary-turn fallback.
+  steerId?: string;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;
   compactType?: 'auto' | 'manual';
