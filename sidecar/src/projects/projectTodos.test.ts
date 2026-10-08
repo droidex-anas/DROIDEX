@@ -52,12 +52,16 @@ test('finishing the only claimed reminder settles its delivery and plan ids like
   assert.equal(saved?.plan[0]?.id, '1.1');
 });
 
-test('a step named Infinity does not stall numbering, and a reminder finished during preparation is not sent', async (t) => {
+test('odd plan ids do not stall numbering, and a reminder finished during preparation is not sent', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const h = await harness(t);
   const { main } = await h.root();
-  await h.projects.setPlan(main, [{ id: 'Infinity', title: 'Odd id' }]);
-  await h.projects.setPlan(main, [{ id: 'Infinity', title: 'Odd id' }, { title: 'Next' }]);
+  const odd = [
+    { id: 'Infinity', title: 'Odd id' },
+    { id: '9007199254740991', title: 'Huge id' },
+  ];
+  await h.projects.setPlan(main, odd);
+  await h.projects.setPlan(main, [...odd, { title: 'Next' }, { title: 'After' }]);
   const worker = await h.projects.spawn(main, input);
   const gate = deferred();
   h.state.gate = gate.promise;

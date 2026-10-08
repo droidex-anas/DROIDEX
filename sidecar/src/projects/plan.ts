@@ -52,8 +52,7 @@ export function findPlanStep(plan: readonly ProjectStep[], step: string): Projec
   return found;
 }
 
-/** A step id's place in the numbering when it is a whole number, else 0. */
+/** A step id's place in the numbering when it is a whole number up to a million, else 0. */
 export function stepNumber(id: string): number {
-  const value = Number(id);
-  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  return /^[1-9]\d{0,5}$/.test(id) ? Number(id) : 0;
 }
