@@ -3,6 +3,7 @@
 // the clients watching that canvas. Authority here comes from the chat's
 // attachment, not from an agent turn's lease (spec §6).
 
+import { CanvasWatches } from './canvasWatches.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ServerEvent } from '../protocol.js';
@@ -18,6 +19,7 @@ import type {
   CanvasEvent,
   CanvasReply,
   OwnedAsset,
+  PreviewArtifact,
 } from './protocol.js';
 import {
   arrangeFramesInputSchema,
@@ -35,7 +37,7 @@ const MAX_PENDING_REQUESTS = 128;
 
 const UNAVAILABLE = 'Canvas storage is unavailable. Reopen DROIDEX to try again.';
 const NO_PAGE = 'Canvas needs a renderer page ID. Reload DROIDEX.';
-const PAGE_GONE = 'That DROIDEX page is no longer connected.';
+const WATCH_ENDED = 'That Canvas pane is no longer subscribed.';
 
 // A requestId correlates one reply and nothing else, so it shares the canvas
 // identifier rule and the renderer validator can hold the same bound. An
@@ -142,63 +144,11 @@ type Mutation = Extract<
 >;
 
 /**
- * One renderer page's watch set. The set's own identity is the page's lifetime:
- * a caller that awaits captures this before the await and hands it back after,
- * which is how a watch cannot be installed for a page that went away in between.
- */
-interface PageWatches {
-  pageId: string;
-  open: Set<string>;
-}
-
-/**
- * Which canvases each renderer page is watching. A change on a canvas no page
- * has open is never broadcast, and one page closing its pane cannot silence
- * another page that still has the same canvas open.
- */
-class CanvasWatches {
-  private readonly byPage = new Map<string, Set<string>>();
-
-  /** The page's live watch set, which only `forget` ever replaces. */
-  live(pageId: string): PageWatches {
-    const open = this.byPage.get(pageId) ?? new Set<string>();
-    this.byPage.set(pageId, open);
-    return { pageId, open };
-  }
-
-  /** False when that page is already gone, so nothing was installed. */
-  watch(page: PageWatches, canvasId: string): boolean {
-    if (!this.isLive(page)) return false;
-    page.open.add(canvasId);
-    return true;
-  }
-
-  /** By page ID, because unsubscribing awaits nothing and needs no token. */
-  unwatch(pageId: string, canvasId: string): void {
-    this.byPage.get(pageId)?.delete(canvasId);
-  }
-
-  /** A page that reloaded or closed holds nothing; its watches go with it. */
-  forget(pageId: string): void {
-    this.byPage.delete(pageId);
-  }
-
-  isWatched(canvasId: string): boolean {
-    for (const open of this.byPage.values()) if (open.has(canvasId)) return true;
-    return false;
-  }
-
-  private isLive(page: PageWatches): boolean {
-    return this.byPage.get(page.pageId) === page.open;
-  }
-}
-
-/**
  * The owner of one sidecar's Canvas dispatch: the workspace it answers from,
  * the scopes it mints, and which page is watching what.
  */
 class CanvasDispatch {
-  private readonly watches = new CanvasWatches();
+  private readonly watches: CanvasWatches;
   private readonly workspace: Promise<CanvasWorkspace>;
 
   constructor(
@@ -212,6 +162,7 @@ class CanvasDispatch {
     private readonly emit: (event: ServerEvent) => void,
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
+    this.watches = new CanvasWatches(builds, scopes);
     onPageGone((pageId) => {
       this.watches.forget(pageId);
     });
@@ -237,6 +188,7 @@ class CanvasDispatch {
     try {
       if (command.type === 'canvas.subscribe' || command.type === 'canvas.unsubscribe')
         return await this.watch(command, pageId);
+      if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
       const workspace = await this.workspace;
       const reply = await this.answer(workspace, command);
       if (CHANGES_SUMMARIES.has(command.type))
@@ -249,10 +201,8 @@ class CanvasDispatch {
 
   /**
    * Starts or stops watching one canvas. A page identity is required, as
-   * `voice.start` already requires one. Subscribing captures the page before it
-   * awaits the workspace, because a watch installed for a page that went away
-   * during that await would never be released. Unsubscribing awaits nothing, so
-   * a client can still drop a watch while Canvas storage is unavailable.
+   * `voice.start` already requires one. Subscribing captures its own identity
+   * before awaiting storage; unsubscribe or page loss invalidates it immediately.
    */
   private async watch(
     command: Extract<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
@@ -268,11 +218,9 @@ class CanvasDispatch {
         reply: { kind: 'ok' },
       };
     }
-    const page = this.watches.live(pageId);
+    const watch = this.watches.begin(pageId, command.canvasId);
     const workspace = await this.workspace;
-    // The watch goes in first: a page that went away while Canvas storage
-    // opened is handed no projection and has no work scheduled for it.
-    if (!this.watches.watch(page, command.canvasId)) throw canvasError('scope_expired', PAGE_GONE);
+    if (!this.watches.watch(watch)) throw canvasError('scope_expired', WATCH_ENDED);
     // Opening a canvas is when its derived build cache is recovered, so the
     // projection below already reports the frames that are building again, and
     // the client that holds it is exactly the one watching for what extends it.
@@ -283,7 +231,10 @@ class CanvasDispatch {
 
   private async answer(
     workspace: CanvasWorkspace,
-    command: Exclude<CanvasCommand, { type: `canvas.${'subscribe' | 'unsubscribe'}` }>,
+    command: Exclude<
+      CanvasCommand,
+      { type: `canvas.${'subscribe' | 'unsubscribe' | 'readArtifact'}` }
+    >,
   ): Promise<CanvasReply> {
     switch (command.type) {
       case 'canvas.list':
@@ -305,29 +256,31 @@ class CanvasDispatch {
       case 'canvas.detach':
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
-      case 'canvas.readArtifact': {
-        // A derived read: the frame the renderer holds already names the revision
-        // the manifest vouches for, and a cache that has lost it answers null so
-        // the pane can ask for a rebuild.
-        const artifact = await this.builds.readArtifact(
-          command.canvasId,
-          command.designId,
-          command.revisionId,
-        );
-        if (artifact === null) return { kind: 'artifact', artifact: null };
-        const html = resolveCanvasAssetReferences(
-          artifact.html,
-          command.canvasId,
-          this.assets.secret,
-        );
-        return {
-          kind: 'artifact',
-          artifact: { html, artifactId: createHash('sha256').update(html).digest('hex') },
-        };
-      }
       default:
         return this.mutate(workspace, command);
     }
+  }
+
+  private async readArtifact(
+    command: Extract<CanvasCommand, { type: 'canvas.readArtifact' }>,
+  ): Promise<CanvasEvent> {
+    const canRebuild = this.watches.rebuildAuthority(command.canvasId, command.designId);
+    await this.workspace;
+    const artifact = await this.builds.readArtifact(
+      command.canvasId,
+      command.designId,
+      command.revisionId,
+      canRebuild,
+    );
+    return {
+      type: 'canvas.result',
+      requestId: command.requestId,
+      ok: true,
+      reply: {
+        kind: 'artifact',
+        artifact: artifact && signAssetUrls(artifact, command.canvasId, this.assets.secret),
+      },
+    };
   }
 
   /**
@@ -488,6 +441,19 @@ function rejection(value: Record<string, unknown>, error: z.ZodError): ServerEve
 
 function failure(requestId: string, error: CanvasError): CanvasEvent {
   return { type: 'canvas.result', requestId, ok: false, error };
+}
+
+/**
+ * Owned-asset URLs are signed for the reader, so the artifact ID has to follow
+ * the signed document the guest will actually load.
+ */
+function signAssetUrls(
+  artifact: PreviewArtifact,
+  canvasId: string,
+  secret: string,
+): PreviewArtifact {
+  const html = resolveCanvasAssetReferences(artifact.html, canvasId, secret);
+  return { html, artifactId: createHash('sha256').update(html).digest('hex') };
 }
 
 /** A CanvasError passes through; anything else is storage damage we own. */

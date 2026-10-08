@@ -4,60 +4,16 @@
 // what makes a target selectable at all.
 
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import {
+  APP,
   canvasCommandHandler,
+  EDITABLE,
+  editableElement,
   errorOf,
-  frameHarness,
   okReply,
-  TEST_APP_SESSION as APP,
-  TEST_PAGE as PAGE,
-  type Harness,
-  writeInput,
-} from '../testing/canvasStorageSupport.js';
-import { CanvasBuilds } from './CanvasBuilds.js';
-import type { ElementRef } from './protocol.js';
-
-const EDITABLE =
-  'export default function Hey(){return <h1 style={{color:"var(--ds-fg)"}}>Hey</h1>}';
-
-async function editableElement(
-  t: TestContext,
-): Promise<{ canvas: Harness; canvasId: string; element: ElementRef }> {
-  const builds = new CanvasBuilds();
-  t.after(() => builds.close());
-  const { canvas, canvasId, designId } = await frameHarness(t, { builds });
-  const ready = new Promise<void>((resolve, reject) => {
-    const unsubscribe = canvas.workspace.changes.subscribe((change) => {
-      const build = change.frames.find((frame) => frame.designId === designId)?.build;
-      if (!build || build.status === 'pending' || build.status === 'building') return;
-      unsubscribe();
-      if (build.status === 'ready') resolve();
-      else reject(new Error(`initial build ended as ${build.status}`));
-    });
-  });
-  await canvas.handle({
-    type: 'canvas.write',
-    requestId: 'req-edit-source',
-    appSessionId: APP,
-    canvasId,
-    input: writeInput('m-edit-source', designId, null, { 'main.tsx': EDITABLE }),
-  });
-  const written = okReply(canvas, 'req-edit-source');
-  assert.ok(written.kind === 'written');
-  await ready;
-  const build = builds.stateOf(canvasId, designId);
-  assert.ok(build.status === 'ready');
-  const [site] = build.elements;
-  assert.ok(site);
-  const element: ElementRef = {
-    designId,
-    revisionId: written.receipt.revisionId,
-    elementId: site.elementId,
-    instancePath: '0',
-  };
-  return { canvas, canvasId, element };
-}
+  PAGE,
+} from '../testing/canvasBridgeSupport.js';
 
 test('a direct element edit commits a new revision and rejects untrusted targets', async (t) => {
   const { canvas, canvasId, element } = await editableElement(t);

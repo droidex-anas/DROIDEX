@@ -1,30 +1,92 @@
-// Shared setup for the Canvas storage suites: a real scratch root, the bridge
-// handler over one workspace, and the filesystem seam wrapped with one hook so
-// a test can pause or fail exactly the call it cares about.
+// Shared setup for the Canvas storage suites: a real scratch root, and the
+// filesystem seam wrapped with one hook so a test can pause or fail exactly the
+// call it cares about.
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { TestContext } from 'node:test';
-import type { ServerEvent } from '../protocol.js';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
-import { listCanvasAssets } from '../canvas/canvasAssets.js';
-import { createCanvasCommandHandler } from '../canvas/canvasBridge.js';
-import { nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
-import { CanvasScopes } from '../canvas/canvasScopes.js';
-import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
+import { CanvasWorkspace, type CanvasWorkspaceDeps } from '../canvas/CanvasWorkspace.js';
+import type { CanvasScope } from '../canvas/protocol.js';
+import { CanvasFiles, nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
-import type { CanvasError, CanvasEvent, CanvasReply, WriteFilesInput } from '../canvas/protocol.js';
+import type { WriteFilesInput, CreateFramesInput } from '../canvas/protocol.js';
 import {
   canvasManifestSchema,
+  mutationFingerprint,
   CANVAS_MUTATION_RETENTION,
   emptyCanvasManifest,
   type CanvasManifest,
   type PersistedDesign,
   type PersistedMutation,
 } from '../canvas/canvasManifest.js';
+
+const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+
+/** A valid 1x1 PNG, and the asset ID the content-addressed store gives it. */
+export const CANVAS_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+  'base64',
+);
+export const CANVAS_PNG_ASSET_ID = createHash('sha256').update(CANVAS_PNG).digest('hex');
+
+export function scopeFor(
+  canvasId: string | null,
+  allowedDesignIds: string[] | 'canvas' = 'canvas',
+  scopeId = 'scope-1',
+): CanvasScope {
+  return {
+    origin: 'turn',
+    scopeId,
+    appSessionId: 'app-1',
+    generation: 1,
+    canvasId,
+    context: { designs: [], elements: [], designSystem },
+    allowedDesignIds,
+  };
+}
+
+interface WorkspaceOptions {
+  fs?: CanvasFileSystem;
+  isScopeActive?: (scopeId: string) => boolean;
+  bindScopeCanvas?: (scopeId: string, canvasId: string) => void;
+}
+
+export async function openWorkspace(t: TestContext, options: WorkspaceOptions = {}) {
+  const root = await canvasRoot(t);
+  const boundCanvasIds: string[] = [];
+  const deps: CanvasWorkspaceDeps = {
+    isScopeActive: options.isScopeActive ?? (() => true),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      if (options.bindScopeCanvas) options.bindScopeCanvas(scopeId, canvasId);
+      boundCanvasIds.push(canvasId);
+    },
+    fs: options.fs,
+  };
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), deps);
+  t.after(() => workspace.close());
+  return { root, deps, workspace, boundCanvasIds };
+}
+
+/** One canvas holding one reserved 720×720 frame named Hey. */
+export async function withFrame(t: TestContext, options: WorkspaceOptions = {}) {
+  const context = await openWorkspace(t, options);
+  const { canvasId } = await context.workspace.createCanvas('app-1');
+  const scope = scopeFor(canvasId);
+  const created = await context.workspace.create(scope, {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  });
+  const frame = created.frames[0];
+  assert.ok(frame);
+  assert.deepEqual(frame.rect, { x: 0, y: 0, width: 720, height: 720 });
+  assert.equal(frame.layoutVersion, 0);
+  assert.equal(frame.revisionId, null);
+  return { ...context, canvasId, scope, designId: frame.designId };
+}
 
 /** A real Canvas root directory, removed after the test. */
 export async function canvasRoot(t: TestContext): Promise<string> {
@@ -46,182 +108,6 @@ export function quietBuilds(): CanvasBuilds {
     }),
     deadline: () => () => undefined,
   });
-}
-
-/** A valid 1x1 PNG, and the asset ID the content-addressed store gives it. */
-export const CANVAS_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
-  'base64',
-);
-export const CANVAS_PNG_ASSET_ID = createHash('sha256').update(CANVAS_PNG).digest('hex');
-
-/** The asset secret the storage suites sign their preview URLs with. */
-export const TEST_CANVAS_ASSET_SECRET = 'test-canvas-secret';
-
-/** The renderer page a storage suite's commands arrive from by default. */
-export const TEST_PAGE = 'page-1';
-
-export interface CanvasCommandHandler {
-  /** Dispatches one command, from `TEST_PAGE` unless another page is named. */
-  handle: (command: unknown, pageId?: string | null) => Promise<boolean>;
-  /** Reports a renderer page's socket closing, the way the bridge server does. */
-  pageGone: (pageId: string) => void;
-}
-
-/**
- * The bridge handler over one workspace, collecting the events it emits.
- * Assets are read from the real store under `root`; without one the handler
- * answers `canvas.listAssets` as an empty canvas.
- */
-export function canvasCommandHandler(options: {
-  ready: Promise<CanvasWorkspace>;
-  scopes: CanvasScopes;
-  builds: CanvasBuilds;
-  events: ServerEvent[];
-  root?: string;
-}): CanvasCommandHandler {
-  const listeners = new Set<(pageId: string) => void>();
-  const { root } = options;
-  const handle = createCanvasCommandHandler(
-    options.ready,
-    options.scopes,
-    options.builds,
-    {
-      secret: TEST_CANVAS_ASSET_SECRET,
-      list: (canvasId) =>
-        root === undefined ? Promise.resolve([]) : listCanvasAssets(root, canvasId),
-    },
-    (event) => options.events.push(event),
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
-  return {
-    handle: (command, pageId = TEST_PAGE) => handle(command, pageId),
-    pageGone: (pageId) => {
-      for (const listener of listeners) listener(pageId);
-    },
-  };
-}
-
-/** The chat and the renderer page a Canvas bridge suite's commands come from. */
-export const TEST_APP_SESSION = 'app-1';
-/** One design system every fixture frame is created with. */
-export const TEST_DESIGN_SYSTEM = { id: 'droidex', version: 1, mode: 'light' } as const;
-/** The trivial design a fixture frame's source starts as. */
-export const TEST_DESIGN_SOURCE = 'export default function Hey(){return <h1>Hey</h1>}';
-
-export interface Harness extends CanvasCommandHandler {
-  root: string;
-  workspace: CanvasWorkspace;
-  scopes: CanvasScopes;
-  builds: CanvasBuilds;
-  events: ServerEvent[];
-}
-
-export async function harness(
-  t: TestContext,
-  options: { root?: string; fs?: CanvasFileSystem; builds?: CanvasBuilds } = {},
-): Promise<Harness> {
-  const directory = options.root ?? (await canvasRoot(t));
-  const scopes = new CanvasScopes();
-  const events: ServerEvent[] = [];
-  const builds = options.builds ?? quietBuilds();
-  const workspace = await CanvasWorkspace.open(directory, builds, {
-    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
-    bindScopeCanvas: (scopeId, canvasId) => {
-      scopes.bindScopeCanvas(scopeId, canvasId);
-    },
-    fs: options.fs,
-  });
-  t.after(() => workspace.close());
-  return {
-    root: directory,
-    workspace,
-    scopes,
-    builds,
-    events,
-    ...canvasCommandHandler({
-      ready: Promise.resolve(workspace),
-      scopes,
-      builds,
-      events,
-      root: directory,
-    }),
-  };
-}
-
-/** The event answering one request, which every command produces exactly one of. */
-export function answer(harnessed: Harness, requestId: string): CanvasEvent {
-  const matched = harnessed.events.filter(
-    (event): event is CanvasEvent =>
-      (event.type === 'canvas.result' || event.type === 'canvas.snapshot') &&
-      event.requestId === requestId,
-  );
-  assert.equal(matched.length, 1, `expected one answer for ${requestId}`);
-  const [only] = matched;
-  assert.ok(only);
-  return only;
-}
-
-export function okReply(harnessed: Harness, requestId: string): CanvasReply {
-  const event = answer(harnessed, requestId);
-  assert.ok(event.type === 'canvas.result' && event.ok, `expected ${requestId} to succeed`);
-  return event.reply;
-}
-
-export function errorOf(harnessed: Harness, requestId: string): CanvasError {
-  const event = answer(harnessed, requestId);
-  assert.ok(event.type === 'canvas.result' && !event.ok, `expected ${requestId} to fail`);
-  return event.error;
-}
-
-/** Creates the chat's canvas the way the pane's Create button does. */
-export async function createCanvas(
-  harnessed: Harness,
-  requestId = 'req-create-canvas',
-): Promise<string> {
-  assert.equal(
-    await harnessed.handle({
-      type: 'canvas.createCanvas',
-      requestId,
-      appSessionId: TEST_APP_SESSION,
-    }),
-    true,
-  );
-  const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
-  return reply.canvasId;
-}
-
-export async function createFrame(
-  harnessed: Harness,
-  canvasId: string,
-  requestId = 'req-create-frame',
-): Promise<string> {
-  await harnessed.handle({
-    type: 'canvas.create',
-    requestId,
-    appSessionId: TEST_APP_SESSION,
-    canvasId,
-    input: {
-      mutationId: 'm-create',
-      frames: [{ name: 'Hey', width: 720, height: 720, designSystem: TEST_DESIGN_SYSTEM }],
-    },
-  });
-  const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'created');
-  const [frame] = reply.created.frames;
-  assert.ok(frame);
-  return frame.designId;
-}
-
-export async function frameHarness(t: TestContext, options: Parameters<typeof harness>[1] = {}) {
-  const canvas = await harness(t, options);
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
-  return { canvas, canvasId, designId };
 }
 
 export function writeInput(
@@ -304,6 +190,58 @@ export function terminateAtManifestRename(side: 'before' | 'after') {
   };
 }
 
+/** Holds a manifest write before publication or before its final directory flush. */
+export function holdManifestWrite(stage: 'prepared' | 'published') {
+  let armed = false;
+  let renamed = false;
+  const reached = deferred();
+  const released = deferred();
+  const hold = async (): Promise<void> => {
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  };
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      renamed = true;
+      return;
+    }
+    if (operation !== 'open') return;
+    if (stage === 'prepared' && path.endsWith('.tmp')) await hold();
+    if (stage === 'published' && renamed) await hold();
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+    reached: reached.promise,
+    release: released.resolve,
+  };
+}
+
+/** Makes the next manifest visible, but refuses every subsequent directory flush. */
+export function stopFlushingAfterManifestRename() {
+  let armed = false;
+  let renamed = false;
+  const fs = observedFileSystem((operation, path) => {
+    if (!armed) return;
+    if (operation === 'rename' && path.endsWith('manifest.json')) {
+      renamed = true;
+      return;
+    }
+    if (renamed && operation === 'open' && !basename(path).includes('.'))
+      throw new Error('the volume stopped flushing');
+  });
+  return {
+    fs,
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
 /** The lease the filler receipts in `ledgerAtCapacity` belong to. */
 const LEDGER_FILLER_SCOPE_ID = 'scope-filler';
 
@@ -335,4 +273,73 @@ export function ledgerAtCapacity(
     });
   }
   return canvasManifestSchema.parse(manifest);
+}
+
+export async function reopenWorkspace(t: TestContext, root: string, deps: CanvasWorkspaceDeps) {
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), deps);
+  t.after(() => workspace.close());
+  return workspace;
+}
+
+/** The one 720x720 frame named Hey that most create cases reserve. */
+export function createInput(mutationId: string): CreateFramesInput {
+  return { mutationId, frames: [{ name: 'Hey', width: 720, height: 720, designSystem }] };
+}
+
+/** A full ledger whose receipts still belong to a live lease. */
+export async function workspaceAtReceiptCapacity(t: TestContext) {
+  const root = await canvasRoot(t);
+  const canvasId = 'cv_full';
+  const design = {
+    designId: 'dsg_hey',
+    name: 'Hey',
+    rect: { x: 0, y: 0, width: 720, height: 720 },
+    layoutVersion: 0,
+    manifestVersion: 0,
+    revisionId: null,
+    lastWorkingRevisionId: null,
+    designSystem,
+  };
+  const input = createInput('create-hey');
+  const files = new CanvasFiles(root);
+  await files.createRoot();
+  await files.writeManifest(
+    ledgerAtCapacity(canvasId, 'app-1', design, {
+      kind: 'create',
+      mutationId: input.mutationId,
+      scopeId: 'scope-1',
+      fingerprint: mutationFingerprint(input),
+      designs: [design],
+    }),
+    () => undefined,
+  );
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
+    isScopeActive: () => true,
+    bindScopeCanvas: () => undefined,
+  });
+  t.after(() => workspace.close());
+  const scope = scopeFor(canvasId);
+
+  return { workspace, canvasId, design, input, scope };
+}
+
+/** Holds only manifest staging, after artifact and outcome storage have completed. */
+export function holdBuildManifest() {
+  const reached = deferred();
+  const released = deferred();
+  let armed = false;
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!armed || operation !== 'open' || !path.includes('/manifest.json.')) return;
+    armed = false;
+    reached.resolve();
+    await released.promise;
+  });
+  return {
+    fs,
+    reached: reached.promise,
+    release: released.resolve,
+    arm: () => {
+      armed = true;
+    },
+  };
 }

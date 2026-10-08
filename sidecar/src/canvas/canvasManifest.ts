@@ -282,6 +282,13 @@ export function recordedRevision(
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
 }
 
+export function requireDesign(manifest: CanvasManifest, designId: string): PersistedDesign {
+  const design = manifest.designs.find((entry) => entry.designId === designId);
+  if (!design)
+    throw canvasError('not_found', 'That frame is not on this canvas. Use Undo if it was removed.');
+  return design;
+}
+
 export function requireExpectedRevision(design: PersistedDesign, expected: string | null): void {
   if (design.revisionId === expected) return;
   throw canvasError(
