@@ -54,8 +54,15 @@ function eventAfter(events: TranscriptEvent[], index: number): TranscriptEvent |
   return index + 1 < events.length ? events[index + 1] : undefined;
 }
 
+// Codex's own retry progress, and nothing else: a failure that merely starts
+// with the word must keep its own row.
 function isReconnectNotice(event: TranscriptEvent): boolean {
-  return /^(error:\s*)?reconnecting\b/i.test(event.text?.trim() ?? '');
+  return (
+    event.kind === 'error' &&
+    /^(error:\s*)?reconnecting\.{3}\s*(\d+\/\d+|waiting for network)\s*$/i.test(
+      event.text?.trim() ?? '',
+    )
+  );
 }
 
 /* ── Feed model ── */
@@ -154,7 +161,11 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'generated_image' && b.type === 'generated_image') {
     return a.event === b.event && a.result === b.result;
   }
-  // message | status | error | diff | child session each carry one event.
+  // A folded retry row can gain an attempt while keeping its latest event.
+  if (a.type === 'error' && b.type === 'error') {
+    return a.event === b.event && a.attempts === b.attempts;
+  }
+  // message | status | diff | child session each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }
 
