@@ -29,13 +29,16 @@ const STARTING = { ...FAILED, status: 'starting', error: null };
 function fakeClient(request: (method: string, params: Record<string, unknown>) => unknown) {
   const notifications = new Map<string, (params: unknown) => void>();
   const requests = new Map<string, (params: unknown) => Promise<unknown>>();
+  let onClose: (error: Error, cleanExit: boolean) => void = () => undefined;
   const client = {
     onNotification: (method: string, handler: (params: unknown) => void) =>
       notifications.set(method, handler),
     onRequest: (method: string, handler: (params: unknown) => Promise<unknown>) =>
       requests.set(method, handler),
     onUnsupportedRequest: () => undefined,
-    onClose: () => undefined,
+    onClose: (listener: typeof onClose) => {
+      onClose = listener;
+    },
     notify: () => undefined,
     close: async () => undefined,
     request: async (method: string, params: Record<string, unknown>) => {
@@ -44,7 +47,7 @@ function fakeClient(request: (method: string, params: Record<string, unknown>) =
       return (await request(method, params)) ?? { data: [], nextCursor: null };
     },
   } as unknown as AppServerClient;
-  return { client, notifications, requests };
+  return { client, notifications, requests, endProcess: (error: Error) => onClose(error, false) };
 }
 
 function codexSession(
@@ -241,6 +244,105 @@ test('a delegated turn completing preserves the active typed turn steer queue', 
     turn: { id: 'typed-turn', status: 'completed' },
   });
   await nextEvent;
+});
+
+test('process closure preserves a steer echoed while the turn start reply is outstanding', async (t) => {
+  let releaseStart: (response: { turn: { id: string } }) => void = () => undefined;
+  const startReply = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseStart = resolve;
+  });
+  const { client, notifications, endProcess } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return startReply;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  const events = session.stream('hello');
+  const firstEvent = events.next();
+  t.after(async () => {
+    releaseStart({ turn: { id: 'typed-turn' } });
+    await session.close();
+    await Promise.allSettled([firstEvent]);
+    await events.return(undefined);
+  });
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn' },
+  });
+  const delivered = session.steer('follow up');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'pending');
+
+  const failure = new Error('Codex process exited');
+  endProcess(failure);
+  assert.equal(await delivered, true, 'an echoed steer must not be resent after resume');
+  releaseStart({ turn: { id: 'typed-turn' } });
+  await assert.rejects(firstEvent, failure);
+});
+
+test('a delegated steer waits for an earlier typed echo awaiting the turn start reply', async (t) => {
+  let releaseStart: (response: { turn: { id: string } }) => void = () => undefined;
+  const startReply = new Promise<{ turn: { id: string } }>((resolve) => {
+    releaseStart = resolve;
+  });
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return startReply;
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  const events = session.stream('hello');
+  const firstEvent = events.next();
+  t.after(async () => {
+    releaseStart({ turn: { id: 'typed-turn' } });
+    await session.close();
+    await firstEvent;
+    await events.return(undefined);
+  });
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn' },
+  });
+  const acknowledgements: { text: string; delivered: boolean }[] = [];
+  const first = session.steer('first').then((delivered) => {
+    acknowledgements.push({ text: 'first', delivered });
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'typed-turn', status: 'completed' },
+  });
+  notifications.get('turn/started')?.({
+    threadId: 'thread-1',
+    turn: { id: 'delegated-turn' },
+  });
+  const second = session.steer('second').then((delivered) => {
+    acknowledgements.push({ text: 'second', delivered });
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(acknowledgements, [], 'the delegated echo must wait for the typed echo');
+
+  releaseStart({ turn: { id: 'typed-turn' } });
+  await firstEvent;
+  await Promise.all([first, second]);
+  assert.deepEqual(acknowledgements, [
+    { text: 'first', delivered: true },
+    { text: 'second', delivered: true },
+  ]);
 });
 
 test('close discards a queued Codex steer echo after its turn completes', async (t) => {
