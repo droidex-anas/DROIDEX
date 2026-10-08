@@ -221,7 +221,9 @@ export interface SessionLifecycleDependencies {
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
-  private readonly canceledResumes = new Set<string>();
+  private pendingResumeReadiness = 0;
+  private closeGeneration = 0;
+  private readonly closedAt = new Map<string, number>();
   // How often each chat was stopped or discarded. A prompt that was accepted
   // but has not started its turn compares the count it was accepted at, so a
   // Stop takes it back even while there is no runtime to interrupt.
@@ -393,41 +395,56 @@ export class SessionLifecycle {
 
   async resume(requestedAppSessionId: string): Promise<boolean> {
     const d = this.dependencies;
-    const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
-    const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
-    const liveSession = d.registry.getLive(appSessionId);
-    const closing = liveSession?.providerClosePromise ?? liveSession?.closePromise;
-    if (closing) {
-      await closing;
-      if (d.isShutdownStarted()) return false;
+    const isAdmitted = this.captureCloseAdmission(requestedAppSessionId);
+    let operation: Promise<boolean> | undefined;
+    let transferredReservation = false;
+    this.pendingResumeReadiness += 1;
+    try {
+      // Resolve the stable identity only after the native history overlay is ready.
+      await d.whenSessionHistoryReady();
+      if (!isAdmitted(requestedAppSessionId)) return false;
+      const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
+      const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
+      if (!isAdmitted(appSessionId)) return false;
+      const liveSession = d.registry.getLive(appSessionId);
+      const closing = liveSession?.providerClosePromise ?? liveSession?.closePromise;
+      if (closing) {
+        await closing;
+        if (!isAdmitted(appSessionId)) return false;
+      }
+      const pending = this.resumeOperations.get(appSessionId);
+      if (pending) {
+        operation = pending;
+      } else {
+        const opened = this.resumeOnce(requestedAppSessionId, appSessionId, isAdmitted).finally(
+          () => {
+            if (this.resumeOperations.get(appSessionId) !== opened) return;
+            this.resumeOperations.delete(appSessionId);
+            // Registering a runtime already announced the session; failed or
+            // cancelled opens hand their reserved scheduled capacity back here.
+            if (!d.registry.getLive(appSessionId)) d.onScheduledCapacityChanged?.();
+          },
+        );
+        this.resumeOperations.set(appSessionId, opened);
+        transferredReservation = true;
+        operation = opened;
+      }
+    } finally {
+      this.pendingResumeReadiness -= 1;
+      if (!transferredReservation) d.onScheduledCapacityChanged?.();
     }
-    const pending = this.resumeOperations.get(appSessionId);
-    if (pending) return pending;
-
-    const operation = this.resumeOnce(requestedAppSessionId, appSessionId).finally(() => {
-      if (this.resumeOperations.get(appSessionId) !== operation) return;
-      this.resumeOperations.delete(appSessionId);
-      this.canceledResumes.delete(appSessionId);
-      // A resume that produced a runtime spent the slot it was holding, and
-      // registering it already announced the session. One that failed or was
-      // cancelled hands the slot back silently, so say so.
-      if (!d.registry.getLive(appSessionId)) d.onScheduledCapacityChanged?.();
-    });
-    this.resumeOperations.set(appSessionId, operation);
     return operation;
   }
 
-  private async resumeOnce(requestedAppSessionId: string, resumeKey: string): Promise<boolean> {
+  private async resumeOnce(
+    requestedAppSessionId: string,
+    appSessionId: string,
+    isAdmitted: (appSessionId: string) => boolean,
+  ): Promise<boolean> {
     const d = this.dependencies;
-    // Native file summaries need the app-owned metadata overlay before a
-    // provider can reopen; otherwise registration would overwrite that metadata.
-    await d.whenSessionHistoryReady();
-    if (d.isShutdownStarted() || this.canceledResumes.has(resumeKey)) return false;
+    if (!isAdmitted(appSessionId)) return false;
     d.ensureConnected();
-    const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
-    const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
-    // Reconciliation may have discovered the stable identity for a provider id.
-    if (appSessionId !== resumeKey) return this.resume(appSessionId);
+    const historical = d.registry.getCanonicalSummary(appSessionId);
     const providerSessionId = historical?.providerSessionId ?? requestedAppSessionId;
     const existing = d.registry.getLive(appSessionId);
     if (existing) {
@@ -445,7 +462,7 @@ export class SessionLifecycle {
 
     const requireCurrentResume = (): void => {
       this.requireOpenAdmission();
-      if (this.canceledResumes.has(appSessionId)) throw new OpenAdmissionClosedError();
+      if (!isAdmitted(appSessionId)) throw new OpenAdmissionClosedError();
       if (
         historical &&
         d.registry.getCanonicalSummary(appSessionId)?.providerSessionId !==
@@ -627,7 +644,9 @@ export class SessionLifecycle {
       {
         dependencies: this.dependencies,
         canResume: () =>
-          this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
+          this.dependencies.registry.liveSessionsSnapshot().length +
+            this.resumeOperations.size +
+            this.pendingResumeReadiness <
           MAX_SCHEDULED_SESSION_RUNTIMES,
         resume: (id) => this.resume(id),
         start: (id, text, delivery) =>
@@ -925,13 +944,13 @@ export class SessionLifecycle {
   async close(requestedId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
     // A resume in flight is filed under the chat's own id.
     const appSessionId = this.chatKey(requestedId);
+    this.closedAt.set(appSessionId, ++this.closeGeneration);
     // Closing a chat for good takes back whatever was about to be sent to it.
     if (mode === 'discard-pending') {
       this.noteStop(appSessionId);
       this.relaunches.delete(appSessionId);
     }
     const pendingResume = this.resumeOperations.get(appSessionId);
-    if (pendingResume) this.canceledResumes.add(appSessionId);
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession) {
       await pendingResume;
@@ -1571,6 +1590,15 @@ export class SessionLifecycle {
 
   private stopCount(id: string): number {
     return this.stops.get(this.chatKey(id)) ?? 0;
+  }
+
+  // A close can arrive while reconciliation has not yet exposed the stable id.
+  captureCloseAdmission(requestedId: string): (appSessionId: string) => boolean {
+    const generation = this.closeGeneration;
+    return (appSessionId) =>
+      !this.dependencies.isShutdownStarted() &&
+      (this.closedAt.get(requestedId) ?? 0) <= generation &&
+      (this.closedAt.get(appSessionId) ?? 0) <= generation;
   }
 
   private noteStop(id: string): void {

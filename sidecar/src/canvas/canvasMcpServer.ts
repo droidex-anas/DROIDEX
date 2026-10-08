@@ -5,7 +5,7 @@ import { applyDesignSystem } from './applyDesignSystem.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
-import { DESIGN_SESSION_GUIDANCE } from './designSessionGuidance.js';
+import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
 import type { SessionPurpose } from '../protocol.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
@@ -359,7 +359,7 @@ export function createCanvasMcpServer(
       version: '1.0.0',
       tools: tools.map(validateCanvasTool),
     },
-    purpose === 'design' ? DESIGN_SESSION_GUIDANCE : undefined,
+    purpose === 'design' ? DESIGN_CANVAS_MCP_INSTRUCTIONS : undefined,
   );
 }
 

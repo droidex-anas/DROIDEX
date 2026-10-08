@@ -29,7 +29,7 @@ export type CompactionExecutionResult =
 export interface SessionCompactionExecutionDependencies {
   registry: Pick<
     SessionRegistry<LiveSession>,
-    'getLive' | 'resolveSummary' | 'replaceProvider' | 'updateSummary'
+    'getLive' | 'getCanonicalSummary' | 'hasPersistedSession' | 'replaceProvider' | 'updateSummary'
   >;
   context: Pick<SessionContext, 'refresh' | 'preserveUsage' | 'recordCompaction'>;
   timeline: Pick<SessionTimeline, 'appendCompaction' | 'appendStatus'>;
@@ -54,11 +54,13 @@ export class SessionCompactionExecution {
 
   async compact(
     appSessionId: string,
-    customInstructions?: string,
+    customInstructions: string | undefined,
+    isAdmitted: () => boolean,
   ): Promise<CompactionExecutionResult> {
+    if (!isAdmitted()) return { kind: 'ready-to-settle' };
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (liveSession) return this.compactLiveSession(liveSession, customInstructions);
-    await this.compactHistoricalSession(appSessionId, customInstructions);
+    await this.compactHistoricalSession(appSessionId, customInstructions, isAdmitted);
     return { kind: 'ready-to-settle' };
   }
 
@@ -259,20 +261,35 @@ export class SessionCompactionExecution {
   private async compactHistoricalSession(
     requestedAppSessionId: string,
     customInstructions: string | undefined,
+    isAdmitted: () => boolean,
   ): Promise<void> {
-    const historical = this.dependencies.registry.resolveSummary(requestedAppSessionId);
+    const historical = this.dependencies.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
     const oldProviderSessionId = historical?.providerSessionId ?? requestedAppSessionId;
+    const isCurrent = (): boolean =>
+      isAdmitted() &&
+      !this.dependencies.registry.getLive(appSessionId) &&
+      (!historical ||
+        this.dependencies.registry.getCanonicalSummary(appSessionId)?.providerSessionId ===
+          oldProviderSessionId);
     let session: FactorySession | undefined;
     try {
+      if (!historical && this.dependencies.registry.hasPersistedSession(requestedAppSessionId)) {
+        throw new Error(
+          "This chat's provider conversation is missing or incomplete, so it cannot be compacted safely. " +
+            'Start a new chat; for an existing canvas, choose New chat with this canvas.',
+        );
+      }
       session = await this.dependencies.runtime.loadSession(oldProviderSessionId, {
         ...(historical?.sessionPurpose === 'design'
           ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
           : {}),
       });
+      if (!isCurrent()) return;
       const result: unknown = await session.compactSession(
         customInstructions ? { customInstructions } : {},
       );
+      if (!isCurrent()) return;
       const providerSessionId =
         result !== null &&
         typeof result === 'object' &&
@@ -284,6 +301,7 @@ export class SessionCompactionExecution {
       if (providerSessionId !== oldProviderSessionId && historical)
         await this.persistHistoricalProvider(appSessionId, providerSessionId);
     } catch (error) {
+      if (!isCurrent()) return;
       this.dependencies.emitError({
         providerSessionId: oldProviderSessionId,
         appSessionId,

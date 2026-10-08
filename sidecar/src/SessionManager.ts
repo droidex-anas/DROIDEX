@@ -1764,11 +1764,17 @@ export class SessionManager {
     requestedAppSessionId: string,
     customInstructions?: string,
   ): Promise<void> {
+    const isAdmitted = this.lifecycle.captureCloseAdmission(requestedAppSessionId);
+    if (!this.registry.getLive(requestedAppSessionId)) {
+      await this.sessionFiles.whenBootReconciled();
+    }
+    if (!isAdmitted(requestedAppSessionId)) return;
     const previousLiveSession = this.registry.getLive(requestedAppSessionId);
     const appSessionId =
       previousLiveSession?.summary.appSessionId ??
-      this.registry.resolveSummary(requestedAppSessionId)?.appSessionId ??
+      this.registry.getCanonicalSummary(requestedAppSessionId)?.appSessionId ??
       requestedAppSessionId;
+    if (!isAdmitted(appSessionId)) return;
     if (
       previousLiveSession?.streaming ||
       previousLiveSession?.compacting ||
@@ -1782,7 +1788,10 @@ export class SessionManager {
     }
     let readyToSettle = false;
     try {
-      const result = await this.compaction.compact(appSessionId, customInstructions);
+      const result = await this.compaction.compact(appSessionId, customInstructions, () =>
+        isAdmitted(appSessionId),
+      );
+      if (!isAdmitted(appSessionId)) return;
       if (result.kind === 'close-and-resume') {
         const closeFailure = await this.closeForPermanentCompactionRecovery(result.appSessionId);
         this.context.preserveUsage(result.appSessionId, result.carryover);
@@ -1804,9 +1813,9 @@ export class SessionManager {
       }
       readyToSettle = true;
     } finally {
-      if (readyToSettle) {
+      if (readyToSettle && previousLiveSession) {
         await this.lifecycle.settleAfterCompaction(appSessionId, previousLiveSession);
-      } else {
+      } else if (!readyToSettle && isAdmitted(appSessionId)) {
         this.onSessionAvailable?.(appSessionId);
       }
     }

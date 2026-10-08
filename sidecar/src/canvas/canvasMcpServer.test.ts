@@ -14,7 +14,10 @@ import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
-import { DESIGN_SESSION_GUIDANCE } from './designSessionGuidance.js';
+import {
+  DESIGN_CANVAS_MCP_INSTRUCTIONS,
+  DESIGN_SESSION_GUIDANCE,
+} from './designSessionGuidance.js';
 
 type Reply = {
   ok: boolean;
@@ -69,7 +72,7 @@ test('six Canvas tools are discoverable and an inactive chat cannot read', async
   assert.equal((await h.call('canvas_read', {})).code, 'scope_expired');
 });
 
-test('MCP initialization carries Design guidance only for a Design session', async (t) => {
+test('MCP initialization carries tool discovery guidance only for a Design session', async (t) => {
   const h = await harness(t);
   for (const purpose of ['chat', 'design'] as const) {
     const server = createCanvasMcpServer(
@@ -105,10 +108,14 @@ test('MCP initialization carries Design guidance only for a Design session', asy
         .find((line) => line.startsWith('data: '))
         ?.slice(6) ?? text;
     const result = JSON.parse(payload).result;
-    assert.equal(result?.instructions, purpose === 'design' ? DESIGN_SESSION_GUIDANCE : undefined);
+    assert.equal(
+      result?.instructions,
+      purpose === 'design' ? DESIGN_CANVAS_MCP_INSTRUCTIONS : undefined,
+    );
     if (purpose === 'design') {
       assert.match(result.instructions, /complete working React\/TSX files/);
       assert.match(result.instructions, /Tailwind available; a plain HTML document is not a frame/);
+      assert.equal(result.instructions.includes(DESIGN_SESSION_GUIDANCE), false);
     }
     const write = server.tools.find((entry) => entry.name === 'canvas_write');
     assert.ok(write);

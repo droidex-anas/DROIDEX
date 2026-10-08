@@ -254,8 +254,9 @@ export class SessionCompaction {
   async compact(
     appSessionId: string,
     customInstructions?: string,
+    isAdmitted: () => boolean = () => !this.dependencies.isShutdownStarted(),
   ): Promise<CompactionExecutionResult> {
-    return this.execution.compact(appSessionId, customInstructions);
+    return this.execution.compact(appSessionId, customInstructions, isAdmitted);
   }
 
   clearAll(): void {

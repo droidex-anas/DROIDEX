@@ -329,11 +329,14 @@ the lease; a failed open releases it too.
 A Design draft sends its canvas intent and durable create mutation ID in
 `session.create`. Canvas intent establishes `sessionPurpose: 'design'` before
 the provider and per-session tools start. Purpose is stored in the session
-summary and restored on resume and provider replacement. Resume and startup
-adoption wait for boot history reconciliation before reading canonical metadata,
-so native-file classification cannot overwrite the app-owned purpose. An app-owned
-chat with a missing or incomplete provider conversation refuses resume with recovery
-instructions and retains its metadata; it is never reopened as a fabricated Chat.
+summary and restored on resume and provider replacement. Resume, historical
+compaction and startup adoption wait for boot history reconciliation before reading
+canonical metadata, so native-file classification cannot overwrite the app-owned
+purpose. A close during readiness cancels admission even before the stable identity
+is available; pending readiness still reserves scheduled runtime capacity. An
+app-owned chat with a missing or incomplete provider conversation refuses resume
+or compaction with recovery instructions and retains its metadata; it is never
+reopened as a fabricated Chat.
 Design sessions run
 in the user's project folder, with that folder framed as read-only context
 unless the user explicitly requests repository edits.
@@ -389,8 +392,10 @@ borrow a later turn's authority. Named leases expire when their turn or provider
 `designSessionGuidance.ts` owns the concise Design brief. Droid receives it
 through process-local `exec --append-system-prompt`, Claude through the
 `claude_code` preset's system-prompt append, and Codex through native thread
-developer instructions on start and resume. The Canvas MCP initialize result
-also carries the brief for Design sessions. Codex dynamic tools do not initialize
+developer instructions on start and resume, appended to the effective configured
+developer instructions for that project. The Canvas MCP initialize result carries
+only concise tool discovery and scope recovery instructions for Design sessions.
+Codex dynamic tools do not initialize
 MCP; Droid's measured MCP path did not demonstrate instruction delivery, so each
 provider's native channel owns framing. Framing is never injected into user prompts,
 normalized conversation events, or DROIDEX history/export; model-generated quotations
