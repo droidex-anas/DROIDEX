@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CanvasBuilds } from './canvas/CanvasBuilds.js';
-import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { CanvasScope } from './canvas/protocol.js';
 import type { ServerEvent } from './protocol.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
+import { canvasCommandHandler } from './testing/canvasBridgeSupport.js';
 import { board, CompilerFleet, fakeDeadlines, storage } from './testing/canvasBuildSupport.js';
 import { deferred, observedFileSystem } from './testing/canvasStorageSupport.js';
 
@@ -149,13 +149,13 @@ test('shutdown refuses an admitted pane arrange before build storage drains', as
   (await fleet.compile(2)).ready('held-outcome');
   await outcomeReached.promise;
   const events: ServerEvent[] = [];
-  const dispatch = createCanvasCommandHandler(
+  const { handle: dispatch } = canvasCommandHandler({
     ready,
     scopes,
     builds,
-    (event) => events.push(event),
-    () => () => undefined,
-  );
+    events,
+    root: store.root,
+  });
   const mutation = dispatch(
     {
       type: 'canvas.arrange',

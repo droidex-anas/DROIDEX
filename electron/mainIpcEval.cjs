@@ -142,6 +142,7 @@ function createGuestSessionStub() {
   const calls = { proxy: 0 };
   const guestSession = {
     protocol: { handle() {} },
+    webRequest: { onBeforeRequest() {} },
     setProxy() {
       calls.proxy += 1;
       return proxy.promise;

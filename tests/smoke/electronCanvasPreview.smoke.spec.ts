@@ -26,6 +26,7 @@ import {
   mountPreviewGuest,
   mountZoomedPreview,
 } from './canvasPreviewHost';
+import { runCanvasAssetsSmoke } from './canvasAssetsSmoke';
 import {
   bounded,
   focusHost,
@@ -103,6 +104,11 @@ async function drainGuest(page: Page, instance: PreviewInstance) {
 function newInstance(designId: string): PreviewInstance {
   return { nonce: previewNonce(), designId, revisionId: `rev_${designId}`, generation: 1 };
 }
+
+test(
+  '[C4 assets] a canvas image and kit font render inside the offline guest',
+  runCanvasAssetsSmoke,
+);
 
 test('[C4] the production host runs a compiled design and refuses every spoof', async () => {
   await withNetworkListener(async ({ url: networkUrl, attempts }) => {

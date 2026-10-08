@@ -14,6 +14,8 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import type { CanvasEvent, CanvasReply } from '../../sidecar/src/canvas/protocol';
+import { BRIDGE_PROTOCOL_VERSION, type ServerWireMessage } from '../../sidecar/src/protocol';
 
 const PREVIEW_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; worker-src 'none'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
@@ -37,6 +39,59 @@ export async function bounded<T>(
     ]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export async function withCanvasBridge(
+  page: Page,
+  use: (send: (command: Record<string, unknown>) => Promise<CanvasReply>) => Promise<void>,
+): Promise<void> {
+  const { port, token } = await page.evaluate(() => window.droidControl!.bridgeInfo());
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${String(port)}?token=${token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}&pageId=asset-smoke`,
+  );
+  try {
+    await bounded(
+      new Promise<void>((resolve, reject) => {
+        socket.addEventListener('open', () => resolve(), { once: true });
+        socket.addEventListener('error', () => reject(new Error('Canvas bridge did not open')), {
+          once: true,
+        });
+      }),
+      'canvas bridge open',
+      15_000,
+    );
+    let sequence = 0;
+    const send = async (command: Record<string, unknown>): Promise<CanvasReply> => {
+      const requestId = `asset-smoke-${String(++sequence)}`;
+      const response = bounded(
+        new Promise<CanvasEvent>((resolve) => {
+          const receive = (message: MessageEvent) => {
+            const wire = JSON.parse(String(message.data)) as ServerWireMessage;
+            if (wire.type !== 'events.batch') return;
+            const found = wire.events
+              .map((entry) => entry.event)
+              .find(
+                (event): event is CanvasEvent =>
+                  'requestId' in event && event.requestId === requestId,
+              );
+            if (!found) return;
+            socket.removeEventListener('message', receive);
+            resolve(found);
+          };
+          socket.addEventListener('message', receive);
+        }),
+        requestId,
+        15_000,
+      );
+      socket.send(JSON.stringify({ ...command, requestId }));
+      const event = await response;
+      assert.ok(event.type === 'canvas.result' && event.ok, `Canvas command ${requestId} failed`);
+      return event.reply;
+    };
+    await use(send);
+  } finally {
+    socket.close();
   }
 }
 
@@ -168,6 +223,7 @@ function descendants(rootPid: number): number[] {
 
 export async function withCanvasHost(
   run: (app: ElectronApplication, page: Page) => Promise<void>,
+  options: { realSidecar?: boolean } = {},
 ): Promise<void> {
   const smokeHome = mkdtempSync(path.join(tmpdir(), 'droidex-canvas-smoke-'));
   const environment = { ...process.env };
@@ -184,7 +240,9 @@ export async function withCanvasHost(
         HOME: smokeHome,
         DROIDEX_USER_DATA_DIR: path.join(smokeHome, 'profile'),
         ELECTRON_START_URL: 'data:text/html,Canvas%20smoke%20bootstrap',
-        SIDECAR_ENTRY: path.resolve('sidecar/test-fixtures/childSessionsSidecar.mjs'),
+        ...(options.realSidecar
+          ? {}
+          : { SIDECAR_ENTRY: path.resolve('sidecar/test-fixtures/childSessionsSidecar.mjs') }),
         CHILD_SESSIONS_SMOKE_LOG: path.join(smokeHome, 'commands.jsonl'),
         BRIDGE_PORT: '0',
         NODE_BIN: process.execPath,

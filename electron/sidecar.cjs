@@ -12,6 +12,7 @@ const DEFAULT_RESTART_BACKOFF_MS = 250;
 const DEFAULT_MAX_RESTART_BACKOFF_MS = 5_000;
 
 function createSidecarSupervisor(options) {
+  const canvasAssetSecret = crypto.randomBytes(32).toString('hex');
   const spawnProcess = options.spawnProcess || spawn;
   const output = options.stdout || process.stdout;
   const errorOutput = options.stderr || process.stderr;
@@ -139,6 +140,7 @@ function createSidecarSupervisor(options) {
       BRIDGE_PORT: process.env.BRIDGE_PORT || '0',
       BRIDGE_TOKEN: token,
       BROWSER_ASSET_TOKEN: assetToken,
+      CANVAS_ASSET_SECRET: canvasAssetSecret,
       CANVAS_EXPORT_TOKEN: canvasExportToken,
       DROIDEX_USER_DATA_DIR: options.userData(),
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
@@ -373,6 +375,7 @@ function createSidecarSupervisor(options) {
   return {
     start,
     getBridgeInfo,
+    canvasAssetSecret: () => canvasAssetSecret,
     canvasExportToken: () => canvasExportToken,
     stop,
     snapshot,

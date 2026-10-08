@@ -16,6 +16,7 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  OwnedAsset,
   PreviewArtifact,
   RemoveFramesInput,
   RenameFrameInput,
@@ -93,6 +94,12 @@ export class CanvasClient {
   listCanvases(): Promise<CanvasSummary[]> {
     return this.request({ type: 'canvas.list', requestId: requestId() }).then(
       (event) => reply(event, 'summaries').summaries,
+    );
+  }
+
+  listAssets(canvasId: string): Promise<OwnedAsset[]> {
+    return this.request({ type: 'canvas.listAssets', requestId: requestId(), canvasId }).then(
+      (event) => reply(event, 'assets').assets,
     );
   }
 
