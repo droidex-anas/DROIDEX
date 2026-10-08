@@ -397,7 +397,7 @@ export class ClaudeSession implements ProviderSession {
     delete pending.cancellation;
     // A failed withdrawal must not claim a later Stop or Send now cancellation.
     if (!cancelled) delete pending.withdrawalRequested;
-    if (this.abort.signal.aborted) return false;
+    if (this.abort.signal.aborted) return pending.outcome === 'withdrawn';
     if (cancelled) this.settleCancelledSteer(uuid);
     return pending.outcome === 'withdrawn';
   }

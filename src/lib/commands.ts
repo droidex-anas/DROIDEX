@@ -217,7 +217,7 @@ export const withdrawSteer = (
   steerId: string,
 ): Promise<{ withdrawn: boolean; lost?: true; text?: string; mentions?: ProviderMention[] }> => {
   const requestId = newClientRef();
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     let stopWatchingHealth: () => void = () => undefined;
     const stopListening = bridge.subscribe((event) => {
       if (
@@ -235,8 +235,7 @@ export const withdrawSteer = (
         ...(event.mentions ? { mentions: event.mentions } : {}),
       });
     });
-    // The answer may be lost with the socket; the chat then decides from what
-    // the sidecar lists once it is back.
+    // A lost answer must be requested again once the bridge reconnects.
     stopWatchingHealth = subscribeRuntimeHealth(() => {
       if (getRuntimeHealth().transport === 'connected') return;
       stopWatchingHealth();
@@ -248,7 +247,7 @@ export const withdrawSteer = (
     ) {
       stopWatchingHealth();
       stopListening();
-      reject(new Error('Reconnect to DROIDEX before withdrawing a steer.'));
+      resolve({ withdrawn: false, lost: true });
     }
   });
 };

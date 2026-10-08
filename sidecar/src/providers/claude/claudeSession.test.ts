@@ -59,6 +59,12 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       cancelled: index === cancellations.length - 1,
     }));
   }
+  if (request.subtype === 'set_model' && request.model === 'confirm-withdrawal') {
+    process.stdout.write(JSON.stringify({
+      type: 'command_lifecycle', state: 'cancelled',
+      command_uuid: cancellations[0].request.message_uuid,
+    }) + '\n');
+  }
   reply(message, { models: [], commands: [] });
 });
 `;
@@ -149,6 +155,44 @@ test('a confirmed withdrawal wins over concurrent turn finalization', async () =
     assert.equal(await withdrawing, true);
     assert.equal(await delivery, 'withdrawn');
     await ending;
+  } finally {
+    await session.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a lifecycle-confirmed withdrawal survives shutdown before its control reply', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-withdrawal-shutdown-'));
+  const executable = join(directory, 'fake-cli.mjs');
+  writeFileSync(executable, steerCli);
+  chmodSync(executable, 0o755);
+  const session = new ClaudeSession({
+    appSessionId: randomUUID(),
+    executable,
+    cwd: directory,
+    autonomy: 'low',
+    interactionMode: 'auto',
+    models: [],
+    mcpServers: {},
+    interactions: {
+      requestApproval: () => Promise.reject(new Error('unused')),
+      requestQuestion: () => Promise.reject(new Error('unused')),
+      isActive: () => true,
+      cancelPending: () => undefined,
+    },
+  });
+  try {
+    const turn = session.stream('first');
+    await turn.next();
+    const steerId = randomUUID();
+    const delivery = session.steer('held', undefined, steerId);
+    const withdrawing = session.withdrawSteer(steerId);
+    await session.setModel({ modelId: 'wait-for-cancellation' });
+    await session.setModel({ modelId: 'confirm-withdrawal' });
+    assert.equal(await delivery, 'withdrawn');
+    await session.close();
+    assert.equal(await withdrawing, true);
+    await turn.return(undefined);
   } finally {
     await session.close();
     rmSync(directory, { recursive: true, force: true });

@@ -50,6 +50,7 @@ import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+const MAX_RECENT_STEER_OUTCOMES = 64;
 // How long a settled turn waits for Send now's interrupt. A harness that never
 // answers it must not leave the chat busy for good.
 const SEND_NOW_INTERRUPT_WAIT_MS = 5_000;
@@ -224,6 +225,10 @@ export interface SessionLifecycleDependencies {
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
+  private readonly steerOutcomes = new WeakMap<
+    LiveSession,
+    Map<string, Pick<SessionPrompt, 'text' | 'mentions'> | 'delivered'>
+  >();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
   // How often each chat was stopped or discarded. A prompt that was accepted
@@ -759,6 +764,11 @@ export class SessionLifecycle {
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
+    this.rememberSteerOutcome(
+      liveSession,
+      prompt,
+      outcome === 'withdrawn' ? 'withdrawn' : 'delivered',
+    );
     if (outcome !== 'withdrawn')
       await this.dependencies.appendSteer(appSessionId, prompt.text, steerId);
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
@@ -777,9 +787,13 @@ export class SessionLifecycle {
     const prompt = [...liveSession.steers, ...liveSession.pendingSends].find(
       (pending) => pending.steerId === steerId,
     );
-    if (!prompt) return undefined;
+    if (!prompt) {
+      const outcome = this.steerOutcomes.get(liveSession)?.get(steerId);
+      return outcome === 'delivered' ? undefined : outcome;
+    }
     if (!liveSession.steers.includes(prompt)) {
       removePrompt(liveSession.pendingSends, prompt);
+      this.rememberSteerOutcome(liveSession, prompt, 'withdrawn');
       this.updateQueuedSends(liveSession);
       return prompt;
     }
@@ -787,9 +801,35 @@ export class SessionLifecycle {
     if (!session.withdrawSteer) return undefined;
     const withdrawn = await session.withdrawSteer(steerId).catch(() => false);
     const current = this.dependencies.registry.getLive(appSessionId);
-    return current === liveSession && current.session === session && !current.closeMode && withdrawn
-      ? prompt
-      : undefined;
+    if (current !== liveSession || current.session !== session || current.closeMode || !withdrawn)
+      return undefined;
+    this.rememberSteerOutcome(liveSession, prompt, 'withdrawn');
+    return prompt;
+  }
+
+  // A lost bridge answer can be requested again without guessing from the pending list.
+  private rememberSteerOutcome(
+    liveSession: LiveSession,
+    prompt: SessionPrompt,
+    outcome: 'withdrawn' | 'delivered',
+  ): void {
+    if (!prompt.steerId) return;
+    let outcomes = this.steerOutcomes.get(liveSession);
+    if (!outcomes) {
+      outcomes = new Map();
+      this.steerOutcomes.set(liveSession, outcomes);
+    }
+    outcomes.delete(prompt.steerId);
+    outcomes.set(
+      prompt.steerId,
+      outcome === 'withdrawn'
+        ? { text: prompt.text, ...(prompt.mentions ? { mentions: prompt.mentions } : {}) }
+        : 'delivered',
+    );
+    if (outcomes.size > MAX_RECENT_STEER_OUTCOMES) {
+      const oldest = outcomes.keys().next().value;
+      if (oldest !== undefined) outcomes.delete(oldest);
+    }
   }
 
   // Stops the running turn so this steer runs next. The interrupt drops every
@@ -1567,6 +1607,7 @@ export class SessionLifecycle {
     const stableAppSessionId = liveSession.summary.appSessionId;
     let turn: Promise<void> | undefined;
     try {
+      this.rememberSteerOutcome(liveSession, prompt, 'delivered');
       liveSession.streaming = true;
       // Persist resumed activity immediately so the chat stays near the top
       // even if the app closes mid-turn. The renderer suppresses unread while

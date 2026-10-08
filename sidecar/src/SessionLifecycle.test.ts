@@ -8,6 +8,7 @@ import type { HistoricalSession } from './history.js';
 import type {
   FactoryDefaultSettings,
   PermissionOutcome,
+  ProviderMention,
   ServerEvent,
   SessionSummary,
   TranscriptEvent,
@@ -862,6 +863,49 @@ test('withdrawal requires harness confirmation, including during Send now, and n
       false,
     );
   }
+});
+
+test('withdrawal retries replay full queued and harness receipts, never a delivered prompt', async () => {
+  const h = createHarness();
+  const backend = queueCreate(h, 'receipts');
+  const turn = backend.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await backend.waitForPrompts(1);
+  const live = requireLive(h, 'receipts');
+  const text = 'Full prompt\n'.repeat(300);
+  const mentions: ProviderMention[] = [{ kind: 'skill', name: 'review', path: '/skills/review' }];
+  const expected = { text, mentions };
+
+  live.compacting = true;
+  await h.lifecycle.send('receipts', text, mentions, 'queued');
+  assert.ok(await h.lifecycle.withdrawSteer('receipts', 'queued'));
+  assert.deepEqual(await h.lifecycle.withdrawSteer('receipts', 'queued'), expected);
+  live.compacting = false;
+
+  const handedOver = turnGate();
+  let confirm: () => void = () => undefined;
+  live.session.steer = () =>
+    new Promise((resolve) => {
+      confirm = () => resolve('withdrawn');
+      handedOver.resolve();
+    });
+  live.session.withdrawSteer = async () => {
+    confirm();
+    return true;
+  };
+  const sending = h.lifecycle.send('receipts', text, mentions, 'held');
+  await handedOver.promise;
+  assert.ok(await h.lifecycle.withdrawSteer('receipts', 'held'));
+  await sending;
+  assert.deepEqual(await h.lifecycle.withdrawSteer('receipts', 'held'), expected);
+
+  live.session.steer = async () => true;
+  await h.lifecycle.send('receipts', 'delivered', undefined, 'delivered');
+  assert.equal(await h.lifecycle.withdrawSteer('receipts', 'delivered'), undefined);
+  assert.deepEqual(h.registry.getCanonicalSummary('receipts')?.pendingSteers, []);
+  turn.resolve();
+  await live.turnPromise;
+  assert.deepEqual(backend.prompts, ['first']);
 });
 
 test('a prompt from another chat steers the running turn without waiting for it', async () => {

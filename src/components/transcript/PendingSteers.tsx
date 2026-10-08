@@ -7,13 +7,11 @@ import {
   dropLocalSteers,
   endSteerWithdrawal,
   localSteersOf,
-  markSteerWithdrawalUnanswered,
   retainSteerPrompts,
-  settleUnansweredWithdrawal,
   subscribeLocalSteers,
   takeSteerPrompt,
-  unansweredWithdrawalsOf,
 } from '../../lib/localSteers';
+import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
 import { sessionIsLive } from '../../lib/sessions';
 import { toast } from '../../lib/toast';
 import type { ProviderMention, TranscriptEvent } from '../../types/bridge';
@@ -39,9 +37,9 @@ function deliveredSteerIds(transcript: readonly TranscriptEvent[] | undefined): 
 
 // The steers the sidecar lists as not taken in by the model yet, below the
 // transcript in the order they were sent, plus one this window just sent and
-// the sidecar has not listed yet. Each can be sent now. The user's own is their
-// bubble; a message from another chat is the notice it becomes once the model
-// takes it in, by the same rule the transcript row uses.
+// the sidecar has not listed yet. Listed steers can be sent now. The user's own
+// is their bubble; a message from another chat is the notice it becomes once
+// the model takes it in, by the same rule the transcript row uses.
 export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   const listed = useStoreSelector((state) =>
     Object.hasOwn(state.sessions, appSessionId)
@@ -50,9 +48,6 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   );
   const dispatch = useStoreDispatch();
   const local = useSyncExternalStore(subscribeLocalSteers, () => localSteersOf(appSessionId));
-  const unanswered = useSyncExternalStore(subscribeLocalSteers, () =>
-    unansweredWithdrawalsOf(appSessionId),
-  );
   const live = useStoreSelector(
     (state) =>
       Object.hasOwn(state.sessions, appSessionId) && sessionIsLive(state.sessions[appSessionId]),
@@ -60,7 +55,7 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   // Read only while something here waits on it, so streaming text does not
   // re-render this.
   const transcript = useStoreSelector((state) =>
-    local.length > 0 || unanswered.size > 0 ? state.transcripts[appSessionId] : undefined,
+    local.length > 0 ? state.transcripts[appSessionId] : undefined,
   );
 
   // A taken-back steer always returns as a whole prompt, so the composer only
@@ -79,7 +74,7 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   };
 
   useEffect(() => {
-    if (local.length === 0 && unanswered.size === 0) return;
+    if (local.length === 0) return;
     const listedIds = new Set(listed?.map((steer) => steer.id));
     const delivered = deliveredSteerIds(transcript);
     // A local steer is settled once the sidecar lists it, once the message it
@@ -92,18 +87,7 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
           .map((steer) => steer.id),
       ),
     );
-    // A take-back whose answer was lost: delivered means the agent has it;
-    // gone from the list without a delivered row means it was taken back.
-    for (const [steerId, listedText] of unanswered) {
-      if (delivered.has(steerId)) {
-        endSteerWithdrawal(steerId);
-        settleUnansweredWithdrawal(appSessionId, steerId);
-      } else if (!listedIds.has(steerId)) {
-        settleUnansweredWithdrawal(appSessionId, steerId);
-        restore(steerId, listedText);
-      }
-    }
-  }, [appSessionId, listed, live, local, transcript, unanswered]);
+  }, [appSessionId, listed, live, local, transcript]);
 
   useEffect(() => {
     const pending = new Set([...(listed ?? []), ...local].map((steer) => steer.id));
@@ -114,34 +98,49 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   const steers = [...(listed ?? []), ...local.filter((steer) => !listedIds.has(steer.id))];
   if (steers.length === 0) return null;
   return steers.map((steer) => {
-    const sendNow = () => {
-      sendSteerNow(appSessionId, steer.id);
-    };
+    const isListed = listedIds.has(steer.id);
+    const sendNow = isListed
+      ? () => {
+          sendSteerNow(appSessionId, steer.id);
+        }
+      : undefined;
     // Only once the harness confirms the model cannot see it does the text go
     // back to the composer; otherwise it would arrive twice.
     const withdraw = async () => {
       // One take-back per steer at a time, so a double click cannot restore it twice.
       if (!beginSteerWithdrawal(steer.id)) return;
-      const result: Awaited<ReturnType<typeof withdrawSteer>> = await withdrawSteer(
-        appSessionId,
-        steer.id,
-      ).catch(() => ({ withdrawn: false }));
-      if (result.withdrawn) {
-        // The sidecar's text is the whole prompt; the listed one is shortened.
-        restore(steer.id, result.text ?? steer.text, result.mentions);
-        return;
-      }
-      if ('lost' in result) {
-        // The answer went with the connection; what the sidecar lists once it
-        // is back says what happened. A second click may ask again.
-        markSteerWithdrawalUnanswered(appSessionId, steer.id, steer.text);
+      for (;;) {
+        // Observe reconnect before sending, so even a quick disconnect/reconnect is retained.
+        let stopWatching: () => void = () => undefined;
+        const reconnected = new Promise<void>((resolve) => {
+          let connected = getRuntimeHealth().transport === 'connected';
+          stopWatching = subscribeRuntimeHealth(() => {
+            const nextConnected = getRuntimeHealth().transport === 'connected';
+            if (!connected && nextConnected) {
+              stopWatching();
+              resolve();
+            }
+            connected = nextConnected;
+          });
+        });
+        const result = await withdrawSteer(appSessionId, steer.id);
+        if ('lost' in result) {
+          // Keep the prompt marked across chat switches and retry once per reconnect.
+          await reconnected;
+          continue;
+        }
+        stopWatching();
+        if (result.withdrawn) {
+          // The sidecar's text is the whole prompt; the listed one is shortened.
+          restore(steer.id, result.text ?? steer.text, result.mentions);
+          return;
+        }
         endSteerWithdrawal(steer.id);
+        toast.info('The agent already has this message.');
         return;
       }
-      endSteerWithdrawal(steer.id);
-      toast.info('The agent already has this message.');
     };
-    const canWithdraw = 'canWithdraw' in steer && steer.canWithdraw;
+    const canWithdraw = isListed && 'canWithdraw' in steer && steer.canWithdraw;
     const onWithdraw = canWithdraw
       ? () => {
           void withdraw();

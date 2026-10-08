@@ -15,10 +15,6 @@ const steers = new Map<string, readonly LocalSteer[]>();
 const prompts = new Map<string, { appSessionId: string; prompt: QueuedPrompt }>();
 // Steers being taken back keep their saved prompt until the answer arrives.
 const withdrawing = new Set<string>();
-// Take-backs whose answer was lost with the connection, by chat. What the
-// sidecar lists afterwards settles them.
-// Each keeps the text the chat last listed, for a reload that lost the prompt.
-const unanswered = new Map<string, Map<string, string>>();
 const listeners = new Set<() => void>();
 const EMPTY: readonly LocalSteer[] = [];
 
@@ -44,12 +40,7 @@ export function dropLocalSteers(appSessionId: string, ids: ReadonlySet<string>):
 // Keeps a chat's saved prompts only for steers still pending in it.
 export function retainSteerPrompts(appSessionId: string, pending: ReadonlySet<string>): void {
   for (const [id, saved] of prompts)
-    if (
-      saved.appSessionId === appSessionId &&
-      !pending.has(id) &&
-      !withdrawing.has(id) &&
-      !unanswered.get(appSessionId)?.has(id)
-    )
+    if (saved.appSessionId === appSessionId && !pending.has(id) && !withdrawing.has(id))
       prompts.delete(id);
 }
 
@@ -78,29 +69,4 @@ export function takeSteerPrompt(steerId: string): QueuedPrompt | undefined {
   const saved = prompts.get(steerId);
   prompts.delete(steerId);
   return saved?.prompt;
-}
-
-export function markSteerWithdrawalUnanswered(
-  appSessionId: string,
-  steerId: string,
-  listedText: string,
-): void {
-  unanswered.set(appSessionId, new Map(unanswered.get(appSessionId)).set(steerId, listedText));
-  emit();
-}
-
-const NONE: ReadonlyMap<string, string> = new Map();
-
-export function unansweredWithdrawalsOf(appSessionId: string): ReadonlyMap<string, string> {
-  return unanswered.get(appSessionId) ?? NONE;
-}
-
-export function settleUnansweredWithdrawal(appSessionId: string, steerId: string): void {
-  const ids = unanswered.get(appSessionId);
-  if (!ids?.has(steerId)) return;
-  const rest = new Map(ids);
-  rest.delete(steerId);
-  if (rest.size > 0) unanswered.set(appSessionId, rest);
-  else unanswered.delete(appSessionId);
-  emit();
 }
