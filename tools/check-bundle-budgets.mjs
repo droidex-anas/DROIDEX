@@ -138,8 +138,15 @@ import { join } from 'node:path';
 // because everything the drawer loads is in the lazy Canvas chunks
 // (CanvasSourcePanel ~10.7KB, its editor and Prism beyond that). The new
 // headroom is ~1KB, in line with past CSS raises.
+//
+// Lowered from 1_442_000 to 1_388_000 for the Canvas entry bundle diet.
+// The entry measured 1_441_899 before and 1_348_029 after moving the Sentry
+// renderer SDK behind the automatic-diagnostics preference. The local session
+// log and app context stay eager; no first-frame Chat surface moved. Canvas
+// feature modules remain outside the entry. The 39_971 bytes of headroom cover
+// the remaining Canvas slices without carrying an optional SDK at startup.
 const BUDGETS = {
-  initialRendererJsBytes: 1_442_000,
+  initialRendererJsBytes: 1_388_000,
   initialCssBytes: 103_200,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
