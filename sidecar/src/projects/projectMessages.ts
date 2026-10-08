@@ -118,3 +118,7 @@ export function batch(project: Project, to: string, steering: boolean): ThreadMe
   }
   return messages;
 }
+
+export function inboxFull(project: Project): boolean {
+  return project.pending.length + (project.delivery?.messages.length ?? 0) >= LEDGER_LIMITS.inbox;
+}

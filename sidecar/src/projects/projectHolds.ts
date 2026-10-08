@@ -1,7 +1,8 @@
 import type { Project } from './types.js';
 import type { ProjectPort } from './sessions.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import { inboxFull, type ProjectInbox } from './projectInbox.js';
+import type { ProjectInbox } from './projectInbox.js';
+import { inboxFull } from './projectMessages.js';
 import { unreadThreadNote } from './projectMessages.js';
 
 /** Owns hold generations and the pause/resume race against interruption. */

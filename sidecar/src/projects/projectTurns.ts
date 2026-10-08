@@ -1,10 +1,9 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import { failureReport, questionText } from './projectMessages.js';
+import { failureReport, inboxFull, questionText } from './projectMessages.js';
 import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
 import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
-import { inboxFull } from './projectInbox.js';
 import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
 
 export type ThreadState =

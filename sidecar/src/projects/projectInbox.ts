@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { TURN_INTERRUPTED } from '../sessionAdoption.js';
 import type { ProjectPort } from './sessions.js';
 import { requireThread } from './projectTurns.js';
-import { questionText } from './projectMessages.js';
+import { inboxFull, questionText } from './projectMessages.js';
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, ThreadMessage } from './types.js';
 
@@ -303,10 +303,6 @@ export class ProjectInbox {
 }
 
 /** The inbox counts what a delivery has claimed, so its limit holds while that delivery is out. */
-export function inboxFull(project: Project): boolean {
-  return project.pending.length + (project.delivery?.messages.length ?? 0) >= LEDGER_LIMITS.inbox;
-}
-
 export function requireMessageText(text: string): void {
   if (!text.trim() || text.length > LEDGER_LIMITS.text)
     throw new Error(`Thread messages must contain 1 to ${String(LEDGER_LIMITS.text)} characters.`);
