@@ -183,7 +183,7 @@ test('asset listing round trips through the renderer boundary and rejects a refu
     width: 1,
     height: 1,
   });
-  const bridge = fakeBridge();
+  const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
   const handle = createCanvasCommandHandler(
     Promise.resolve(workspace),
