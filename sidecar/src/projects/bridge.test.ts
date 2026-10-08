@@ -186,3 +186,21 @@ test('Resume after a held restart continues interrupted threads once, honoring q
   assert.equal(restored.sent.filter(({ id }) => id !== main).length, 2);
   assert.equal(restored.state.saved[0]?.pending.length, 0);
 });
+
+test('a thread stopped after a held restart stays stopped on Resume', async (t) => {
+  const original = await harness(t);
+  const { id, main } = await original.root();
+  const worker = await original.projects.spawn(main, input);
+  await original.projects.setPaused(id, true);
+  original.projects.close();
+
+  const restored = await harness(t, original.state.saved, false);
+  restored.sessions.set(main, summary(main));
+  restored.sessions.set(worker.appSessionId, interruptedSummary(worker.appSessionId));
+  restored.projects.historyReady();
+  await drain();
+  await restored.projects.stop(main, worker.appSessionId);
+  await restored.projects.setPaused(id, false);
+  await drain();
+  assert.equal(restored.sent.filter(({ id }) => id === worker.appSessionId).length, 0);
+});

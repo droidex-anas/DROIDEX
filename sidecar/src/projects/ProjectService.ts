@@ -1273,6 +1273,8 @@ export class ProjectService {
     await this.wakes.settle(project);
     const thread = requireThread(project, target);
     clearAsk(project, thread);
+    // A stopped thread stays stopped: no continuation after a restart either.
+    this.restartRecovery.delete(target);
     const queued = thread.queuedSpawn;
     const checkoutOwner = queued?.workspace
       ? this.requireSession(thread.ownerAppSessionId ?? '')
