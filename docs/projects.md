@@ -125,7 +125,8 @@ working, queued, waiting, failed or still owe an unseen report. The remaining
 threads are counted in one line; pass `all: true` to list them too. Each row
 includes its full id, title, owner id, state, wait reason, a one-line preview of
 up to 120 characters of its latest reply and its queued message count. It also
-returns runtime load (`live` and `limit`) and the lead's open to-dos. A main chat
+returns runtime load (`live`: in use, running or starting, including reserved
+opens and resumes; `limit`: automatic runtime limit) and the lead's open to-dos. A main chat
 reaches all other threads in its project; a thread lists only its direct children.
 `thread_read` returns the same wait reason and runtime load with the full reply
 readout. Both tools only observe: they never start or resume a runtime, even
@@ -316,8 +317,12 @@ Messages arriving during admission stay queued independently of that claim.
 Automatic runtime opens and resumes share a limit of 12, including opens still
 in flight. Queued spawns keep their original task, checkout reservation and
 position in the ledger; checkout instructions are added only when launching.
+Workspace-free launches omit `cwd`; launch persistence failures hold only the
+affected project.
 They start when capacity opens, after resumes that can be admitted. A resume
 blocked by its own project's delivery does not hold up other projects' spawns.
+That project's spawns wait until its delivery claim clears and its pending
+resumes go first, including resumes parked on busy or capacity markers.
 Reports and due reminders can steer into a busy owner's turn without starting a
 competing turn. Stop waits for admissions, independently of report consumption;
 the provider's acknowledgement settles an in-flight report even if Stop races

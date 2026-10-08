@@ -4,7 +4,9 @@ import type { ThreadState } from './projectTurns.js';
 import type { ThreadCheckout } from './threadStart.js';
 
 export interface RuntimeLoad {
+  /** Runtimes in use (running or starting), including reserved opens and resumes. */
   live: number;
+  /** Limit for automatic runtime opens and resumes. */
   limit: number;
 }
 

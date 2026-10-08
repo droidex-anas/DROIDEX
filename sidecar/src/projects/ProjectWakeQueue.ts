@@ -74,6 +74,14 @@ export class ProjectWakeQueue {
     return [...this.projects].some((project) => this.nextDelivery(project)?.mode === 'resume');
   }
 
+  private hasPendingResume(project: Project): boolean {
+    return project.pending.some(
+      (message) =>
+        !this.sessions.isLive(message.to) &&
+        !project.threads.some((thread) => thread.appSessionId === message.to && thread.queuedSpawn),
+    );
+  }
+
   private nextDelivery(project: Project) {
     if (project.paused || project.delivery || this.pumping.has(project.id)) return;
     const hasSlot = this.running() < MAX_ACTIVE;
@@ -222,7 +230,9 @@ export class ProjectWakeQueue {
       this.hasWaitingResume()
     )
       return;
-    const next = this.waitingStarts().find(({ project }) => !project.paused);
+    const next = this.waitingStarts().find(
+      ({ project }) => !project.paused && !project.delivery && !this.hasPendingResume(project),
+    );
     if (!next) return;
     const isCurrent = this.guard(next.project);
     const capacityRevision = this.capacityRevision;

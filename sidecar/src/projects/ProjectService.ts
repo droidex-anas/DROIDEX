@@ -398,7 +398,7 @@ export class ProjectService {
         return await work;
       } finally {
         this.launches.delete(work);
-        if (this.settleAdoption(project)) await this.save();
+        if (this.settleAdoption(project)) await this.save(project);
       }
     } finally {
       this.spawnsUnderWay.delete(spawn);
@@ -468,7 +468,7 @@ export class ProjectService {
       const isCurrent = () => guard() && !spawn.stopped;
       const thread = await this.enqueueThread(
         project,
-        { ...input, title, cwd, workspace },
+        { ...input, title, ...(cwd ? { cwd } : {}), workspace },
         spawn.source,
         isCurrent,
       );
@@ -491,7 +491,7 @@ export class ProjectService {
     if (step) {
       step.threadAppSessionId = appSessionId;
       delete step.state;
-      await this.save();
+      await this.save(project);
     }
     const status = this.threadStatus(project, requireThread(project, appSessionId));
     const reuse = scopedThreads(project, spawn.source).find((thread) => {
@@ -1287,13 +1287,13 @@ export class ProjectService {
     project.threads.push(thread);
     this.membership.set(thread.appSessionId, project);
     try {
-      await this.save();
+      await this.save(project);
       if (!isCurrent()) throw new Error('Project launch was cancelled.');
       return thread;
     } catch (error) {
       project.threads = project.threads.filter((candidate) => candidate !== thread);
       this.membership.delete(thread.appSessionId);
-      await this.save();
+      await this.save(project);
       throw error;
     }
   }
@@ -1311,7 +1311,7 @@ export class ProjectService {
     const { input, workspace } = queued;
     project.launching += 1;
     try {
-      await this.save();
+      await this.save(project);
       if (!isCurrent()) throw new Error('Project launch was cancelled.');
       const session = await this.sessions.create(
         { ...input, prompt: `${THREAD_BRIEF}\n\nTask:\n${threadPrompt(input.prompt, workspace)}` },
@@ -1341,7 +1341,7 @@ export class ProjectService {
     } finally {
       if (thread.queuedSpawn) thread.queuedSpawn.phase = 'queued';
       project.launching -= 1;
-      await this.save();
+      await this.save(project);
     }
   }
 
@@ -1356,7 +1356,7 @@ export class ProjectService {
     });
     if (!isCurrent()) throw new Error('Project launch was cancelled.');
     delete thread.queuedSpawn;
-    await this.save();
+    await this.save(project);
     if (!isCurrent()) throw new Error('Project launch was cancelled.');
   }
 
@@ -1521,13 +1521,14 @@ export class ProjectService {
     this.emit({ type: 'projects.snapshot', projects: this.list() });
   }
 
-  private async save(): Promise<void> {
+  private async save(affectedProject?: Project): Promise<void> {
     const projects = [...this.projects.values()];
     fitLedger(projects, (appSessionId) => this.sessions.get(appSessionId)?.updatedAt ?? 0);
     try {
       await this.store.save(projects);
     } catch (error) {
-      for (const project of this.projects.values()) this.fail(project, error);
+      if (affectedProject) this.fail(affectedProject, error);
+      else for (const project of this.projects.values()) this.fail(project, error);
       throw error;
     }
     this.armTodoTimer();

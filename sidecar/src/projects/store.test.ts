@@ -6,6 +6,7 @@ import test, { type TestContext } from 'node:test';
 import { fitLedger, LEDGER_LIMITS, ProjectStore, threadInputSchema } from './store.js';
 import type { Project } from './types.js';
 import { drain, harness, input, summary } from '../testing/projectServiceHarness.js';
+import { ProjectService } from './ProjectService.js';
 
 /** The ledger path in a scratch directory removed after the test. */
 async function ledgerPath(t: TestContext): Promise<string> {
@@ -198,6 +199,51 @@ test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do lin
     JSON.stringify([{ ...saved, todos: [{ id: 'todo', text: 'Review', after: 'gone' }] }]),
   );
   assert.deepEqual((await store.load())[0]?.todos, [{ id: 'todo', text: 'Review' }]);
+});
+
+test('workspace-free spawns persist at either capacity and a failed spawn holds only its project', async (t) => {
+  const store = new ProjectStore(await ledgerPath(t));
+  const h = await harness(t, [], false);
+  h.projects.close();
+  h.sessions.set('free', { ...summary('free'), cwd: '' });
+  h.sessions.set('other', summary('other'));
+  const projects = await ProjectService.open(h.port, store, () => undefined);
+  t.after(() => projects.close());
+  await projects.setPlan('free', [{ title: 'Build' }]);
+  await projects.setPlan('other', [{ title: 'Unrelated work' }]);
+
+  const started = await projects.spawn('free', { ...input, title: 'Started' });
+  assert.equal(started.delivery, 'started');
+  assert.equal(Object.hasOwn(h.launched[0], 'cwd'), false);
+  h.state.capacity = 'busy';
+  const queued = await projects.spawn('free', { ...input, title: 'Queued' });
+  assert.equal(queued.delivery, 'queued');
+  const loaded = await store.load();
+  const saved = loaded
+    .flatMap((project) => project.threads)
+    .find((thread) => thread.appSessionId === queued.appSessionId);
+  assert.ok(saved?.queuedSpawn);
+  assert.equal(Object.hasOwn(saved.queuedSpawn.input, 'cwd'), false);
+  assert.ok(loaded.every((project) => !project.paused));
+
+  const write = store.save.bind(store);
+  t.mock.method(store, 'save', async (value: Project[]) => {
+    if (value.some((project) => project.threads.some((thread) => thread.title === 'Refused')))
+      throw new Error('Write refused');
+    await write(value);
+  });
+  await assert.rejects(projects.spawn('free', { ...input, title: 'Refused' }), /Write refused/);
+  const afterFailure = await store.load();
+  const failed = afterFailure.find((project) => project.threads[0]?.appSessionId === 'free');
+  const unrelated = afterFailure.find((project) => project.threads[0]?.appSessionId === 'other');
+  assert.equal(failed?.paused, true);
+  assert.match(failed?.error ?? '', /Write refused/);
+  assert.equal(unrelated?.paused, false);
+  assert.equal(unrelated?.error, undefined);
+  assert.equal(
+    failed?.threads.some((thread) => thread.title === 'Refused'),
+    false,
+  );
 });
 
 test('a maximal queued task with checkout instructions survives a ledger reload intact', async (t) => {

@@ -577,6 +577,50 @@ test('a resume behind its own report claim does not block another project from s
   assert.deepEqual(startedBeforeConsumption, ['worker']);
 });
 
+test('a queued spawn waits for its own project resumes hidden by a report claim', async (t) => {
+  const state = project();
+  const consumed = deferred<AutomationDeliveryReceipt>();
+  const order: string[] = [];
+  const queue = wakeQueue(
+    t,
+    async (target) => {
+      order.push(target);
+      return { status: 'accepted', settled: Promise.resolve() };
+    },
+    {
+      sessions: {
+        get: (id) => (id === 'main' ? sessionSummary({ streaming: true }) : undefined),
+        isLive: (id) => id === 'main',
+        deliverReport: () => consumed.promise,
+      },
+      launch: async (_project, thread) => {
+        order.push(thread.appSessionId);
+        delete thread.queuedSpawn;
+        return true;
+      },
+    },
+  );
+  queue.kick(state);
+  await drain();
+  assert.ok(state.delivery);
+  state.threads.push({
+    appSessionId: 'queued',
+    ownerAppSessionId: 'main',
+    title: 'Queued',
+    reply: '',
+    waiting: false,
+    queuedSpawn: { phase: 'queued', input, order: 1 },
+  });
+  state.pending.push({ id: 'resume', from: 'main', to: 'worker', kind: 'message', text: 'Go' });
+  queue.capacityChanged([state]);
+  await drain();
+  const beforeConsumption = [...order];
+  consumed.resolve({ status: 'accepted', settled: Promise.resolve() });
+  await drain();
+  assert.deepEqual(beforeConsumption, []);
+  assert.deepEqual(order, ['worker', 'queued']);
+});
+
 test('a busy streaming recipient retries only after availability changes', async (t) => {
   const state = project();
   const pending = structuredClone(state.pending);
