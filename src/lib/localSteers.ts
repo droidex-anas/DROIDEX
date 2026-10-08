@@ -15,6 +15,8 @@ const steers = new Map<string, readonly LocalSteer[]>();
 const prompts = new Map<string, { appSessionId: string; prompt: QueuedPrompt }>();
 // Each chat's composer, which a taken-back steer returns to.
 const composers = new Map<string, (prompt: QueuedPrompt) => void>();
+// Steers being taken back keep their saved prompt until the answer arrives.
+const withdrawing = new Set<string>();
 const listeners = new Set<() => void>();
 const EMPTY: readonly LocalSteer[] = [];
 
@@ -41,7 +43,19 @@ export function dropLocalSteers(appSessionId: string, ids: ReadonlySet<string>):
 // Keeps a chat's saved prompts only for steers still pending in it.
 export function retainSteerPrompts(appSessionId: string, pending: ReadonlySet<string>): void {
   for (const [id, saved] of prompts)
-    if (saved.appSessionId === appSessionId && !pending.has(id)) prompts.delete(id);
+    if (saved.appSessionId === appSessionId && !pending.has(id) && !withdrawing.has(id))
+      prompts.delete(id);
+}
+
+// Returns false when this steer is already being taken back.
+export function beginSteerWithdrawal(steerId: string): boolean {
+  if (withdrawing.has(steerId)) return false;
+  withdrawing.add(steerId);
+  return true;
+}
+
+export function endSteerWithdrawal(steerId: string): void {
+  withdrawing.delete(steerId);
 }
 
 export function localSteersOf(appSessionId: string): readonly LocalSteer[] {

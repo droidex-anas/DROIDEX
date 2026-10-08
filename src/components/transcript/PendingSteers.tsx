@@ -1,9 +1,11 @@
-import { Suspense, useEffect, useRef, useSyncExternalStore } from 'react';
+import { Suspense, useEffect, useSyncExternalStore } from 'react';
 import { threadReports } from '../../features/projects/threadNotices';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { sendSteerNow, withdrawSteer } from '../../lib/commands';
 import {
+  beginSteerWithdrawal,
   dropLocalSteers,
+  endSteerWithdrawal,
   localSteersOf,
   retainSteerPrompts,
   restoreSteerToComposer,
@@ -19,6 +21,9 @@ import { UserBubble } from './UserBubble';
 // transcript in the order they were sent. Each can be sent now. The user's own
 // is their bubble; a message from another chat is the notice it becomes once
 // the model takes it in, by the same rule the transcript row uses.
+// How far back a delivered steer's row is looked for.
+const RECENT_EVENTS = 500;
+
 // A steer this window just sent shows at once, before the sidecar lists it.
 export function PendingSteers({ appSessionId }: { appSessionId: string }) {
   const listed = useStoreSelector((state) =>
@@ -27,8 +32,6 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
       : undefined,
   );
   const dispatch = useStoreDispatch();
-  // One take-back per steer at a time, so a double click cannot restore it twice.
-  const withdrawing = useRef(new Set<string>());
   const local = useSyncExternalStore(subscribeLocalSteers, () => localSteersOf(appSessionId));
   const live = useStoreSelector(
     (state) =>
@@ -43,12 +46,13 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
     // A local steer is settled once the sidecar lists it, once the message it
     // became lands in the transcript under its id, or once the chat stops.
     const listedIds = new Set(listed?.map((steer) => steer.id));
-    const earliest = Math.min(...local.map((steer) => steer.sentAt));
     const delivered = new Set<string>();
-    for (let i = (transcript?.length ?? 0) - 1; i >= 0; i -= 1) {
-      const event = transcript?.[i];
-      if (!event || event.ts < earliest) break;
-      if (event.steerId) delivered.add(event.steerId);
+    // Late output can carry older timestamps than the steer that followed it,
+    // so the scan covers the recent tail rather than stopping at the first.
+    const tail = transcript ?? [];
+    for (let i = tail.length - 1; i >= Math.max(0, tail.length - RECENT_EVENTS); i -= 1) {
+      const id = tail[i]?.steerId;
+      if (id) delivered.add(id);
     }
     const settled = new Set(
       local
@@ -71,18 +75,20 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
     // Only once the harness confirms the model cannot see it does the text go
     // back to the composer; otherwise it would arrive twice.
     const withdraw = async () => {
-      if (withdrawing.current.has(steer.id)) return;
-      withdrawing.current.add(steer.id);
+      // One take-back per steer at a time, so a double click cannot restore it twice.
+      if (!beginSteerWithdrawal(steer.id)) return;
       const { withdrawn } = await withdrawSteer(appSessionId, steer.id).catch(() => ({
         withdrawn: false,
       }));
-      withdrawing.current.delete(steer.id);
       if (!withdrawn) {
+        endSteerWithdrawal(steer.id);
         toast.info('The agent already has this message.');
         return;
       }
       // Its chips and replies come back with it when this window sent it.
-      if (!restoreSteerToComposer(appSessionId, steer.id))
+      const restored = restoreSteerToComposer(appSessionId, steer.id);
+      endSteerWithdrawal(steer.id);
+      if (!restored)
         dispatch({ type: 'SEED_COMPOSER', text: steer.text, appSessionId, focus: true });
     };
     const canWithdraw = 'canWithdraw' in steer && steer.canWithdraw;

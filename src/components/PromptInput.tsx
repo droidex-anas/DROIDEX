@@ -1872,13 +1872,26 @@ export default function PromptInput({
   // render's restore is always the one called.
   const restoreRef = useRef(restorePromptToComposer);
   restoreRef.current = restorePromptToComposer;
+  // A send still preparing its attachments owns them; the steer waits for it.
+  const pendingRestore = useRef<QueuedPrompt | null>(null);
   const composerSessionId = activeSession?.appSessionId;
   useEffect(() => {
     if (!composerSessionId) return;
     return registerComposer(composerSessionId, (prompt) => {
+      if (submittingRef.current) {
+        pendingRestore.current = prompt;
+        seedWaiting.current = true;
+        return;
+      }
       restoreRef.current(prompt);
     });
   }, [composerSessionId]);
+  useEffect(() => {
+    const prompt = pendingRestore.current;
+    if (!prompt || submittingRef.current) return;
+    pendingRestore.current = null;
+    restoreRef.current(prompt);
+  }, [submitSettled]);
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)
