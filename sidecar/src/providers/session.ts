@@ -72,6 +72,8 @@ export interface ProviderForkSource {
 export interface ProviderForkHandle {
   providerSessionId: string;
   resumeId?: string;
+  // Releases a provisional fork client if resume did not take ownership.
+  release?: () => Promise<void>;
   // Source fork points the copy knows by another id, for a provider that
   // renames messages as it copies them.
   forkPointRenames?: ReadonlyMap<string, string>;
@@ -200,7 +202,8 @@ export interface Provider {
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
   // Copies a settled conversation into a new, independent one the provider can
-  // resume. Nothing is opened; the caller resumes the copy.
+  // resume. The caller releases any provisional client after the first send,
+  // or when the copy fails or stays unopened.
   fork(source: ProviderForkSource): Promise<ProviderForkHandle>;
   // Reads the account's usage with no session to go through. Claude Code and
   // Codex start a short-lived process for it, which `signal` ends.
