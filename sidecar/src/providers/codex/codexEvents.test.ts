@@ -718,3 +718,61 @@ test('Codex contains a downgrade during turn start and closes if interruption fa
     await session.close();
   }
 });
+
+test('Codex retires a runtime whose voice stop stalls containment', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let releaseStop = () => {};
+  const heldStop = new Promise<void>((resolve) => {
+    releaseStop = resolve;
+  });
+  let markStopping = () => {};
+  const stopping = new Promise<void>((resolve) => {
+    markStopping = resolve;
+  });
+  let closes = 0;
+  let turns = 0;
+  const { client, notifications } = fakeClient((method) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'thread/realtime/stop') {
+      markStopping();
+      return heldStop;
+    }
+    if (method === 'turn/interrupt')
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-1',
+        turn: { id: 'spoken-1', status: 'interrupted' },
+      });
+    if (method === 'turn/start') turns += 1;
+  });
+  client.close = async () => {
+    closes += 1;
+  };
+  const session = codexSession(client, 'app-1');
+  try {
+    await session.open();
+    await session.setAutonomy('high');
+    await session.voice.start({ sdp: 'offer', attempt: 'voice-1' });
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+    const off = session.setAutonomy('off');
+    await stopping;
+    const queued = Promise.allSettled([
+      off,
+      session.setModel({ modelId: 'updated' }),
+      session.stream('next prompt').next(),
+    ]);
+    t.mock.timers.tick(3_000);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(session.isClosed, true);
+    assert.equal(closes, 1);
+    assert.equal(session.autonomy, 'off');
+    for (const result of await queued) {
+      assert.equal(result.status, 'rejected');
+      if (result.status === 'rejected') assert.match(result.reason.message, /closed/);
+    }
+    assert.equal(turns, 0);
+    await session.closed;
+  } finally {
+    releaseStop();
+    await session.close();
+  }
+});

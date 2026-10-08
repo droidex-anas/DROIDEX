@@ -30,6 +30,7 @@ import {
 } from './codexEvents.js';
 import { CodexToolBridge } from './codexTools.js';
 import { SessionAutonomy } from '../sessionAutonomy.js';
+import { stopVoiceWithDeadline } from '../voiceStop.js';
 import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
 
@@ -140,7 +141,7 @@ export class CodexSession implements ProviderSession {
       interrupt: async () => {
         if (this.turnStarted) await this.turnStarted;
         this.permissions.requireOpen();
-        await Promise.all([this.interrupt(), this.voice.stop()]);
+        await Promise.all([this.interrupt(), stopVoiceWithDeadline(this.voice.stop())]);
       },
       close: () => this.close(),
       requireOpen: () => {
@@ -346,7 +347,7 @@ export class CodexSession implements ProviderSession {
           `Stopped the turn to apply ${latest}: Codex keeps a turn's permissions until it ends`,
         ),
       ]);
-      await Promise.all([this.interrupt(), this.voice.stop()]);
+      await Promise.all([this.interrupt(), stopVoiceWithDeadline(this.voice.stop())]);
       this.permissions.requireOpen();
     } catch (error) {
       await this.close();
