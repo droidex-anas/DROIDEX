@@ -3,21 +3,21 @@ import { formatDuration } from '../usage/usageCopy';
 import type { ThreadCounts, ThreadRow } from './threadBoard';
 import type { ProjectDone } from './types';
 
-// The panel's greeting, which changes through the day; the lines under it have the facts.
+// The panel's headline: one plain line for where the project stands. The lines
+// under it carry the facts.
 
 type Mood = 'attention' | 'done' | 'working' | 'waiting' | 'settled' | 'empty';
 
-const LINES: Record<Mood, readonly string[]> = {
-  attention: ['Your turn.', 'Someone needs a word.', 'One call to make.', 'A thread is holding.'],
-  done: ['Goal reached.', 'All done.', 'Finished.'],
-  working: ['Heads down.', 'Work in flight.', 'The team has it.', 'Wheels turning.'],
-  waiting: ['Work is waiting.'],
-  settled: ['All quiet.', 'Nothing pending.', 'Bench is clear.', 'Everything landed.'],
-  empty: ['No threads yet.', 'Nothing running.', 'An empty bench.'],
+const LINES: Record<Mood, string> = {
+  attention: 'Something needs an answer.',
+  done: 'Goal reached.',
+  working: 'The team is working.',
+  waiting: 'Work is waiting for a slot.',
+  settled: 'All quiet.',
+  empty: 'No threads yet.',
 };
 
 const MINUTE = 60_000;
-const HOUR = 3_600_000;
 
 function elapsed(ms: number): string {
   return ms < MINUTE ? 'under a minute' : formatDuration(ms);
@@ -26,12 +26,9 @@ function elapsed(ms: number): string {
 export function threadGreeting(
   rows: readonly ThreadRow[],
   counts: ThreadCounts,
-  now: number,
   done?: ProjectDone,
 ): string {
-  const lines = LINES[mood(rows, counts, done)];
-  // Stable within the hour, so the line never flickers while the panel updates.
-  return lines[Math.floor(now / HOUR) % lines.length];
+  return LINES[mood(rows, counts, done)];
 }
 
 function mood(rows: readonly ThreadRow[], counts: ThreadCounts, done?: ProjectDone): Mood {

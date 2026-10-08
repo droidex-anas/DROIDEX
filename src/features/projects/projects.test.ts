@@ -253,6 +253,6 @@ test('queued spawns and slot waits show their published positions rather than Re
   );
   assert.equal(threadCounts(rows).idle, 0);
   const pulse = projectPulse(snapshot, rows, undefined);
-  assert.match(pulse.summary, /Waiting for a free slot/);
+  assert.match(pulse.summary, /Waiting for a slot/);
   assert.doesNotMatch(pulse.summary, /idle/);
 });
