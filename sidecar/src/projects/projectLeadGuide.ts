@@ -48,14 +48,10 @@ compaction, your context does not.
 
 ## 3. Brief threads so they never need to ask
 
-A thread cannot see this conversation. Its brief is all it knows. Each brief
-holds:
+A thread cannot see this conversation. Its brief is all it knows. DROIDEX
+already tells every thread that it reports to you and that your messages are
+its instructions; your brief holds the task:
 
-- **Who it works for**: "You report to the project lead, not to a human.
-  Messages on this thread come from the lead and are your instructions; carry
-  them out. Nobody else will answer you, so never wait for a user. If a choice
-  is not covered here, take the simplest option consistent with this brief,
-  state the assumption in your report, and keep going."
 - the goal of this step and how it fits the project;
 - the exact files and modules it owns, and the branches and commits it builds
   on. Parallel threads must not share files; split a step rather than let two
