@@ -1174,7 +1174,7 @@ export class ProjectService {
 
   private async recoverAfterRestart(): Promise<void> {
     for (const project of this.projects.values()) {
-      if (this.closed || project.paused) continue;
+      if (this.closed) continue;
       for (const thread of project.threads) {
         if (!thread.ownerAppSessionId || thread.queuedSpawn) continue;
         const session = this.sessions.get(thread.appSessionId);
@@ -1191,6 +1191,7 @@ export class ProjectService {
   }
 
   private refillRestartRecovery(project: Project): void {
+    if (project.paused) return;
     for (const thread of project.threads) {
       if (!this.restartRecovery.has(thread.appSessionId) || !thread.ownerAppSessionId) continue;
       const alreadyQueued = [...project.pending, ...(project.delivery?.messages ?? [])].some(

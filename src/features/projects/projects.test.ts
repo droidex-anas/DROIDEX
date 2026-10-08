@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  deferred,
+  drain,
+  harness,
+  input,
+} from '../../../sidecar/src/testing/projectServiceHarness';
 import { adaptEvent, initialState, reducer, type AppState } from '../../hooks/useStore';
 import { isServerEvent } from '../../lib/bridgeWireValidation';
 import type { SessionSummary } from '../../types/bridge';
@@ -7,6 +15,7 @@ import type { ProjectView } from './types';
 import { projectPulse } from './projectBoard';
 import { leadRow, threadCounts, threadGroups, threadRows } from './threadBoard';
 import { threadReports } from './threadNotices';
+import { ThreadDetail } from './ThreadDetail';
 
 const project: ProjectView = {
   id: 'project',
@@ -255,4 +264,60 @@ test('queued spawns and slot waits show their published positions rather than Re
   const pulse = projectPulse(snapshot, rows, undefined);
   assert.match(pulse.summary, /Waiting for a free slot/);
   assert.doesNotMatch(pulse.summary, /idle/);
+});
+
+test('opening spawns publish queued rows and disable Open until their session is registered', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const opening = deferred();
+  const create = h.port.create;
+  h.port.create = async (...args) => {
+    await opening.promise;
+    return create(...args);
+  };
+  const spawning = h.projects.spawn(main, input);
+  t.after(async () => {
+    opening.resolve();
+    await Promise.allSettled([spawning]);
+  });
+  await drain();
+
+  const rows = () => {
+    const snapshot = h.events.findLast((event) => event.type === 'projects.snapshot');
+    assert.ok(snapshot?.type === 'projects.snapshot');
+    return threadRows(snapshot.projects[0], {
+      sessions: Object.fromEntries(h.sessions),
+      attention: () => null,
+      digests: {},
+    });
+  };
+  const [unregistered] = rows();
+  assert.ok(unregistered);
+  assert.equal(h.sessions.has(unregistered.appSessionId), false);
+  assert.equal(unregistered.status, 'queued');
+  assert.equal(unregistered.live, false);
+  const render = (row: typeof unregistered) =>
+    renderToStaticMarkup(
+      createElement(ThreadDetail, {
+        row,
+        transcript: undefined,
+        historyError: '',
+        toolActivity: { density: 'compact', inlineDiffs: false },
+        onBack: () => undefined,
+        onOpenInChat: () => undefined,
+      }),
+    );
+  const waiting = render(unregistered);
+  assert.match(waiting, /<button[^>]*disabled=""[^>]*>Open/);
+  assert.doesNotMatch(waiting, /Loading this thread/);
+
+  opening.resolve();
+  const started = await spawning;
+  const [registered] = rows();
+  assert.equal(started.appSessionId, unregistered.appSessionId);
+  assert.equal(h.sessions.has(registered.appSessionId), true);
+  assert.equal(registered.status, 'working');
+  const ready = render(registered);
+  assert.doesNotMatch(ready, /disabled=""/);
+  assert.match(ready, /Loading this thread/);
 });

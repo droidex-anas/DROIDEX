@@ -297,7 +297,7 @@ export function threadState(
   session: SessionSummary | undefined,
   wait?: ThreadWait,
 ): ThreadState {
-  if (wait?.kind === 'start') return 'queued';
+  if (thread.queuedSpawn) return 'queued';
   if (wait?.kind === 'slot') return 'waiting';
   if (thread.ask) return 'waiting';
   if (session?.streaming) return 'working';

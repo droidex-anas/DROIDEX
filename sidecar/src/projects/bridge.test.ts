@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { createProjectCommandHandler } from './bridge.js';
-import { drain, harness, summary } from '../testing/projectServiceHarness.js';
+import {
+  drain,
+  harness,
+  input,
+  interruptedSummary,
+  summary,
+} from '../testing/projectServiceHarness.js';
 import { LEDGER_LIMITS } from './store.js';
 import type { Project } from './types.js';
 
@@ -136,4 +142,47 @@ test('Resume bounds its recovery reminder for 70 unread threads with maximal tit
   assert.equal(h.sent.length, 1);
   assert.match(h.sent[0].prompt, /and 50 more/);
   assert.ok(!h.sent[0].prompt.includes(threads[20].title));
+});
+
+test('Resume after a held restart continues interrupted threads once, honoring queued instructions', async (t) => {
+  const original = await harness(t);
+  const { id, main } = await original.root();
+  const worker = await original.projects.spawn(main, input);
+  const instructed = await original.projects.spawn(main, { ...input, title: 'Tests' });
+  await original.projects.setPaused(id, true);
+  await original.projects.send(main, instructed.appSessionId, 'Finish the tests.');
+  original.projects.close();
+
+  const restored = await harness(t, original.state.saved, false);
+  restored.sessions.set(main, summary(main));
+  for (const thread of [worker, instructed])
+    restored.sessions.set(thread.appSessionId, interruptedSummary(thread.appSessionId));
+  restored.projects.historyReady();
+  await drain();
+  assert.equal(restored.sent.length, 0);
+  assert.equal(restored.state.saved[0]?.pending.length, 1, 'recovery waits for Resume');
+
+  const replies: ServerEvent[] = [];
+  const handle = createProjectCommandHandler(Promise.resolve(restored.projects), (event) =>
+    replies.push(event),
+  );
+  await handle({ type: 'project.pause', requestId: 'resume', projectId: id, paused: false });
+  await drain();
+  assert.deepEqual(replies, [
+    { type: 'project.result', requestId: 'resume', projectId: id, ok: true },
+  ]);
+  assert.equal(restored.sent.length, 2);
+  const continuation = restored.sent.find(({ id }) => id === worker.appSessionId);
+  assert.match(continuation?.prompt ?? '', /DROIDEX restarted while you were working/);
+  const instruction = restored.sent.find(({ id }) => id === instructed.appSessionId);
+  assert.match(instruction?.prompt ?? '', /Finish the tests\./);
+  assert.doesNotMatch(instruction?.prompt ?? '', /DROIDEX restarted/);
+
+  await restored.finish(worker.appSessionId);
+  await restored.finish(instructed.appSessionId);
+  await restored.projects.setPaused(id, true);
+  await restored.projects.setPaused(id, false);
+  await drain();
+  assert.equal(restored.sent.filter(({ id }) => id !== main).length, 2);
+  assert.equal(restored.state.saved[0]?.pending.length, 0);
 });
