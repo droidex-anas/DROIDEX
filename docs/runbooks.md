@@ -118,9 +118,10 @@ DROIDEX to reopen history.
 `session-index.sqlite` contains canonical DROIDEX sessions, child relationships,
 metadata, and settings. **Do not delete it as derived state.** Provider transcripts
 cannot reconstruct those records. `session-search.sqlite` also retains the last
-admitted summaries of owned chats whose transcripts are unavailable. Back it up
-with its WAL/SHM files before rebuilding search; missing transcripts cannot
-reconstruct those summaries.
+admitted summaries of owned chats whose transcripts are unavailable. Corruption
+fails without deleting search storage. Quit DROIDEX, back it up with its WAL/SHM
+files, then repair it or restore a known-good backup; deleting it to force a
+rebuild loses summaries that missing transcripts cannot reconstruct.
 
 Missing or inaccessible provider transcripts do not remove previously admitted
 owned chats or DROIDEX notices. The catalog retains their DROIDEX titles;

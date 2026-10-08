@@ -1,4 +1,3 @@
-import { rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -420,16 +419,14 @@ function openDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   } catch (error) {
     // Missing FTS5 is a host capability gap, not a corrupt derived file.
     if (isHistorySearchUnavailableError(error) || !isDatabaseCorruption(error)) throw error;
-    removeDerivedStorage(path);
-    try {
-      return createDerivedStorage(path, canonicalDb);
-    } catch (rebuildError) {
-      throw new Error(
-        `History search index is corrupt and could not be rebuilt. Quit DROIDEX, delete ${path} ` +
-          `and its -wal/-shm files, then restart. Raw session history is unaffected.`,
-        { cause: rebuildError },
-      );
-    }
+    // This file also holds admitted summaries that missing transcripts cannot
+    // reconstruct. Preserve it for repair instead of deleting it to rebuild FTS.
+    throw new Error(
+      `History search storage is corrupt. Quit DROIDEX, back up ${path} and its -wal/-shm files, ` +
+        'then repair the database or restore a known-good backup. Storage was preserved because ' +
+        'missing transcripts cannot reconstruct retained chat summaries.',
+      { cause: error },
+    );
   }
 }
 
@@ -462,12 +459,6 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
       // Preserve the initialization failure.
     }
     throw error;
-  }
-}
-
-function removeDerivedStorage(path: string): void {
-  for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
-    rmSync(candidate, { force: true });
   }
 }
 

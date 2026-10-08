@@ -83,12 +83,12 @@ function metadataRetentionPriority(meta: ChatMetadata): number {
 }
 
 function capMetadataEntries(entries: [string, ChatMetadata][]): [string, ChatMetadata][] {
-  if (entries.length <= MAX_TRACKED_CHATS) return entries;
-  const byEvictionOrder = entries
-    .filter(([, meta]) => !isChatHidden(meta))
-    .sort((a, b) => metadataRetentionPriority(a[1]) - metadataRetentionPriority(b[1]));
+  const byEvictionOrder = entries.filter(([, meta]) => !isChatHidden(meta));
+  // Hidden entries cannot be evicted, so they must not consume the preference budget.
+  if (byEvictionOrder.length <= MAX_TRACKED_CHATS) return entries;
+  byEvictionOrder.sort((a, b) => metadataRetentionPriority(a[1]) - metadataRetentionPriority(b[1]));
   const dropped = new Set(
-    byEvictionOrder.slice(0, entries.length - MAX_TRACKED_CHATS).map(([id]) => id),
+    byEvictionOrder.slice(0, byEvictionOrder.length - MAX_TRACKED_CHATS).map(([id]) => id),
   );
   return entries.filter(([id]) => !dropped.has(id));
 }
@@ -358,17 +358,20 @@ export function linkChatsPullRequest(
       },
     ];
   });
+  let visibleCount = entries.filter(([, meta]) => !isChatHidden(meta)).length;
   for (const id of targets) {
     if (Object.hasOwn(map, id)) continue;
-    if (entries.length >= MAX_TRACKED_CHATS) {
+    if (visibleCount >= MAX_TRACKED_CHATS) {
       // Opening a chat gives its links priority over passive discovery. Never
       // evict names, pins, or tombstones, and never churn the cache on polling.
       if (id !== activeAppSessionId) continue;
       const expendable = entries.findIndex(([, meta]) => metadataRetentionPriority(meta) === 0);
       if (expendable < 0) continue;
       entries.splice(expendable, 1);
+      visibleCount -= 1;
     }
     entries.push([id, { pullRequests: [pr] }]);
+    visibleCount += 1;
     changed = true;
   }
   return changed ? Object.fromEntries(entries) : null;
