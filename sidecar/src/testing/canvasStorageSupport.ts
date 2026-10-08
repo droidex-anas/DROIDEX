@@ -3,6 +3,7 @@
 // call it cares about.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -24,6 +25,13 @@ import {
 } from '../canvas/canvasManifest.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+
+/** A valid 1x1 PNG, and the asset ID the content-addressed store gives it. */
+export const CANVAS_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+  'base64',
+);
+export const CANVAS_PNG_ASSET_ID = createHash('sha256').update(CANVAS_PNG).digest('hex');
 
 export function scopeFor(
   canvasId: string | null,

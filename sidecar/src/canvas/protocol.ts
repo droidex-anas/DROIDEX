@@ -6,6 +6,7 @@
 import type {
   ArrangeFramesInput,
   CanvasTurnContext,
+  CreateCanvasResult,
   CreateFramesInput,
   DesignSystemRef,
   EditElementInput,
@@ -13,6 +14,7 @@ import type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
+  SourceFiles,
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
@@ -20,6 +22,7 @@ import type {
 export type {
   ArrangeFramesInput,
   CanvasTurnContext,
+  CreateCanvasResult,
   CreateFramesInput,
   DesignRef,
   DesignSystemRef,
@@ -121,6 +124,15 @@ export interface PreviewArtifact {
   html: string;
 }
 
+/** An image copied into one canvas; no private path crosses this contract. */
+export interface OwnedAsset {
+  assetId: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
 export interface CanvasFrame {
   designId: string;
   name: string;
@@ -152,8 +164,7 @@ export interface CanvasSummary {
   name: string;
   updatedAt: number;
   designCount: number;
-  // The chats working on this canvas. Design mode counts them on a canvas card
-  // and opens a card through the most recent one (spec §4).
+  /** The chats working on this canvas, used by Design cards and the chat menu. */
   attachedAppSessionIds: string[];
 }
 
@@ -207,6 +218,7 @@ export interface CanvasError {
 
 export type CanvasCommand =
   | { type: 'canvas.list'; requestId: string }
+  | { type: 'canvas.listAssets'; requestId: string; canvasId: string }
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
@@ -214,6 +226,15 @@ export type CanvasCommand =
   // artifact is a projection of a canvas any renderer page may watch.
   | {
       type: 'canvas.readArtifact';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    }
+  // A source read, authorized like `canvas.subscribe` by the page asking: the
+  // source drawer is the explicit place to read a revision's files (spec §9).
+  | {
+      type: 'canvas.readSource';
       requestId: string;
       canvasId: string;
       designId: string;
@@ -283,14 +304,17 @@ export type CanvasCommand =
 export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
+  | { kind: 'assets'; assets: OwnedAsset[] }
   | { kind: 'attachment'; canvasId: string | null }
+  | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
-  | { kind: 'artifact'; artifact: PreviewArtifact | null };
+  | { kind: 'artifact'; artifact: PreviewArtifact | null }
+  | { kind: 'source'; files: SourceFiles };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

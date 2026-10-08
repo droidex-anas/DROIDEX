@@ -4,7 +4,8 @@
 // the user presses Create (spec §4, §6).
 //
 // The board, frames, gestures, navigator and toolbar mount in the body below
-// (Tasks 5b–5e); this file owns the pane's lifecycle and its empty state.
+// (Tasks 5b–5e); this file owns the pane's lifecycle, its empty state, and the
+// slot the source drawer fills (Task 8c).
 
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { LayoutTemplate, Spinner } from '@droidex/icons';
@@ -21,11 +22,14 @@ import {
 } from './canvasChats';
 import {
   initialCanvasPaneState,
+  openSourceFrame,
+  openSourcePanel,
   reduceCanvasPane,
   watchedCanvasId,
   type CanvasPaneState,
 } from './canvasState';
-import type { CanvasSummary } from './protocol';
+import { CanvasSourceSlot } from './CanvasSourceSlot';
+import type { CanvasFrame, CanvasSummary } from './protocol';
 
 export function CanvasWorkspace({
   appSessionId,
@@ -118,7 +122,7 @@ export function CanvasWorkspace({
   const chooseCanvas = (chosen: string) =>
     settle(chooseCanvasForChat(canvas, appSessionId, chosen));
 
-  const settle = (attaching: Promise<string>): Promise<void> =>
+  const settle = (attaching: Promise<string | null>): Promise<void> =>
     attaching.then(
       (attached) => {
         acknowledgeAttachment(appSessionId);
@@ -158,6 +162,17 @@ export function CanvasWorkspace({
           dispatch({ type: 'reopened' });
           setReopenCount((count) => count + 1);
         }}
+        onOpenSource={(designId) => {
+          dispatch(openSourcePanel(designId));
+        }}
+      />
+      <CanvasSourceSlot
+        frame={openSourceFrame(state)}
+        canvasId={watched}
+        appSessionId={appSessionId}
+        onClose={() => {
+          dispatch({ type: 'close-source' });
+        }}
       />
     </div>
   );
@@ -168,11 +183,13 @@ function CanvasBody({
   onAttachOwed,
   onChoose,
   onRetry,
+  onOpenSource,
 }: {
   state: CanvasPaneState;
   onAttachOwed: () => void;
   onChoose: (canvasId: string) => Promise<void>;
   onRetry: () => void;
+  onOpenSource: (designId: string) => void;
 }) {
   switch (state.status) {
     case 'opening':
@@ -198,24 +215,47 @@ function CanvasBody({
     case 'unattached':
       return <CanvasEmptyState error={state.error} onCreate={onAttachOwed} onChoose={onChoose} />;
     case 'ready':
-      return <CanvasBoardMount frameCount={state.snapshot.frames.length} />;
+      return <CanvasBoardMount frames={state.snapshot.frames} onOpenSource={onOpenSource} />;
   }
 }
 
 /**
  * Where `CanvasBoard` mounts in 5b. Until then the pane states what the
- * snapshot subscription is holding rather than drawing a board that is not here.
+ * snapshot subscription is holding rather than drawing a board that is not here,
+ * and each frame offers the Source action the toolbar takes over in 5d.
  */
-function CanvasBoardMount({ frameCount }: { frameCount: number }) {
+function CanvasBoardMount({
+  frames,
+  onOpenSource,
+}: {
+  frames: readonly CanvasFrame[];
+  onOpenSource: (designId: string) => void;
+}) {
   return (
     <div data-canvas-board className="min-h-0 flex-1">
-      {frameCount === 0 ? (
+      {frames.length === 0 ? (
         <CanvasInvitation />
       ) : (
-        <CanvasPlate title={`${designCountLabel(frameCount)} on this canvas`}>
+        <CanvasPlate title={`${designCountLabel(frames.length)} on this canvas`}>
           <CanvasNote>
             Ask your agent in the composer to change one of them, or to design something new.
           </CanvasNote>
+          <ul className="-mx-1.5 flex flex-col gap-0.5">
+            {frames.map((frame) => (
+              <li key={frame.designId}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenSource(frame.designId);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                >
+                  <span className="min-w-0 truncate">{frame.name}</span>
+                  <span className="shrink-0 text-[11px] text-droid-text-muted">Source</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </CanvasPlate>
       )}
     </div>

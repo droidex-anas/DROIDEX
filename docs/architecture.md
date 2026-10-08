@@ -380,9 +380,10 @@ returns build diagnostics; screenshot and element capture report
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
 crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
-the privileged `droidex-canvas-preview` scheme, the single URL it serves, the
-restrictive CSP it serves it under, the trusted intermediate document, and the
-registry of guests main attached. `electron/main.cjs` sets `webviewTag` on the
+the privileged `droidex-canvas-preview` scheme, the one guest document, its
+restrictive CSP, the trusted intermediate and the registry of guests main
+attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
+and content-addressed kit fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
 app window alone and installs `will-attach-webview` before that window loads
 anything, so renderer content can only ever attach the owned source, with any
 requested preload deleted and Node, nested Node and nested guests off.
@@ -443,6 +444,32 @@ replace one literal AST range; computed/shared sites require an agent edit and s
 references require reselection. `canvas.editElement` validates the request and pinned kit
 tokens before committing through the workspace's revision compare-and-swap. Image edits
 remain unavailable until the asset store can verify ownership.
+
+The source drawer keeps drafts and save operations in the feature-local
+`canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the
+pane retains them. Deliberate Close discards the entire canvas source lifetime;
+a late save callback can settle only its captured lifetime and operation.
+
+A transport failure keeps the exact write and mutation ID for **Try that save
+again**, even after typing, a frame switch or a head update. A server refusal
+uses the client's typed error contract and releases that request for a new
+save. New typing remains unsaved after replay. A historical receipt proves its
+write committed; it never replaces a newer head already read by the drawer.
+Compare exposes the competing source as read-only text in a focusable scroller.
+
+For image imports, preload passes a native dropped `File` path or main opens its
+own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPEG
+with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
+dimension limit. Its private loopback route sends the
+selected path with a digest and decoded dimensions to the sidecar; the sidecar
+rejects a changed file and stores accepted bytes by hash under the canvas. Each
+asset has a durable metadata record, and `canvas.listAssets` recovers its ID
+even when the import reply or original file is lost.
+`canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
+when an artifact is read. Main binds each preview's generated frame to its
+canvas and refuses asset requests from another canvas, an unbound guest or the
+default session. Kit WOFF2 data is stored once under the profile and referenced
+from generated CSS through the same preview scheme.
 
 ### Electron main gauges
 

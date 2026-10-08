@@ -164,10 +164,9 @@ test('a crashed Canvas writer leaves a lease that a new workspace can safely rec
       `import { CanvasWorkspace } from './src/canvas/CanvasWorkspace.ts';
        import { quietBuilds } from './src/testing/canvasStorageSupport.ts';
        const workspace = await CanvasWorkspace.open(process.argv[1], quietBuilds(), {
-         isChatKnown: () => true,
-         isScopeActive: () => true, bindScopeCanvas: () => {}
+         isChatKnown: () => true, isScopeActive: () => true, bindScopeCanvas: () => {}
        });
-       const snapshot = await workspace.createCanvas('crashed-chat', 'explicit-crashed-chat');
+       const snapshot = await workspace.createCanvas('crashed-chat', 'create-crashed');
        process.on('message', () => {});
        process.send(snapshot.canvasId);`,
       root,
@@ -195,7 +194,7 @@ test('a crashed Canvas writer leaves a lease that a new workspace can safely rec
   });
   try {
     assert.equal(reopened.attachedCanvasId('crashed-chat'), canvasId);
-    await reopened.createCanvas('replacement-chat', 'explicit-replacement-chat');
+    await reopened.createCanvas('replacement-chat', 'create-replacement');
   } finally {
     await reopened.close();
   }
@@ -829,16 +828,16 @@ test('close rejects queued and new mutations before an admitted durable write se
   const hold = holdManifestWrite('published');
   const { root, deps, workspace } = await openWorkspace(t, { fs: hold.fs });
   hold.arm();
-  const active = workspace.createCanvas('active-chat', 'explicit-active-chat');
+  const active = workspace.createCanvas('active-chat', 'create-active');
   await hold.reached;
   const rejected: string[] = [];
-  const queued = workspace.createCanvas('queued-chat', 'explicit-queued-chat');
+  const queued = workspace.createCanvas('queued-chat', 'create-queued');
   void queued.catch(() => rejected.push('queued'));
   let closed = false;
   const closing = workspace.close().then(() => {
     closed = true;
   });
-  const late = workspace.createCanvas('late-chat', 'explicit-late-chat');
+  const late = workspace.createCanvas('late-chat', 'create-late');
   void late.catch(() => rejected.push('new'));
   try {
     await new Promise<void>((resolve) => setImmediate(resolve));

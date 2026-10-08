@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { CanvasBuilds } from './canvas/CanvasBuilds.js';
+import { listCanvasAssets } from './canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
@@ -23,6 +24,7 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
 const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
+const CANVAS_ASSET_SECRET = requiredSecret('CANVAS_ASSET_SECRET');
 const CANVAS_EXPORT_TOKEN = process.env.CANVAS_EXPORT_TOKEN;
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
@@ -33,6 +35,10 @@ const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   assetToken: ASSET_TOKEN,
+  canvasImages: {
+    secret: CANVAS_ASSET_SECRET,
+    importImage: async (request) => (await canvasReady).importCanvasImage(request),
+  },
   canvasExportToken: CANVAS_EXPORT_TOKEN,
   onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
@@ -120,12 +126,14 @@ function reportProjectError(error: unknown): void {
 // Builds are projected into every frame the workspace hands out, so the
 // registry exists before the workspace that reads it.
 const canvasBuilds = new CanvasBuilds();
-const canvasReady = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
+// Annotated because the manager's Canvas accessor reads this promise while
+// `isChatKnown` below reads the manager, which TypeScript cannot infer through.
+const canvasReady: Promise<CanvasWorkspace> = CanvasWorkspace.open(canvasDir(), canvasBuilds, {
   isScopeActive: (scopeId) => canvasScopes.isScopeActive(scopeId),
   bindScopeCanvas: (scopeId, canvasId) => {
     canvasScopes.bindScopeCanvas(scopeId, canvasId);
   },
-  isChatKnown: (appSessionId): boolean =>
+  isChatKnown: (appSessionId) =>
     manager.sessionSummary(appSessionId)?.appSessionId === appSessionId,
 }).then((workspace) => {
   if (shuttingDown) void workspace.close();
@@ -146,6 +154,10 @@ const dispatchCanvasCommand = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
+  {
+    secret: CANVAS_ASSET_SECRET,
+    list: (canvasId) => listCanvasAssets(canvasDir(), canvasId),
+  },
   (event) => {
     server.broadcast(event);
   },
@@ -252,7 +264,9 @@ async function shutdown(): Promise<void> {
   process.exit();
 }
 
-function requiredSecret(name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN'): string {
+function requiredSecret(
+  name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN' | 'CANVAS_ASSET_SECRET',
+): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

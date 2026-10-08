@@ -1982,8 +1982,10 @@ test('an ordinary chat can create its first canvas during its initial turn', asy
   const h = createHarness();
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
     isChatKnown: () => true,
-    isScopeActive: (id) => h.canvasScopes.isScopeActive(id),
-    bindScopeCanvas: (id, canvasId) => h.canvasScopes.bindScopeCanvas(id, canvasId),
+    isScopeActive: (scopeId) => h.canvasScopes.isScopeActive(scopeId),
+    bindScopeCanvas: (scopeId, canvasId) => {
+      h.canvasScopes.bindScopeCanvas(scopeId, canvasId);
+    },
   });
   t.after(() => workspace.close());
   const provider = queueCreate(h, 'ordinary');

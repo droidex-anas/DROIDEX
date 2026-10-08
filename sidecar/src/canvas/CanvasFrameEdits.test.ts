@@ -30,7 +30,7 @@ async function opened(t: TestContext, builds = quietBuilds(), fs?: CanvasFileSys
     await builds.close();
     await workspace.close();
   });
-  const canvasId = (await workspace.createCanvas('app-1', 'explicit-app-1')).canvasId;
+  const canvasId = (await workspace.createCanvas('app-1', 'create-app-1-canvas')).canvasId;
   const scope: CanvasScope = {
     origin: 'user',
     scopeId: 'user-1',

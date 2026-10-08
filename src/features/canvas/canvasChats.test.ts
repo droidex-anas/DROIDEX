@@ -38,12 +38,23 @@ function lastAttach(bridge: Bridge) {
   return command;
 }
 
-function answer(bridge: Bridge, requestId: string, canvasId: string): void {
+function answer(
+  bridge: Bridge,
+  requestId: string,
+  canvasId: string,
+  attachedCanvasId: string | null = canvasId,
+): void {
+  const command = bridge.sent.find((sent) => sent.requestId === requestId);
+  assert.ok(command);
+
   bridge.deliver({
     type: 'canvas.result',
     requestId,
     ok: true,
-    reply: { kind: 'attachment', canvasId },
+    reply:
+      command.type === 'canvas.createCanvas'
+        ? { kind: 'canvasCreated', canvasId, attachedCanvasId }
+        : { kind: 'attachment', canvasId },
   });
 }
 
@@ -106,6 +117,31 @@ test('a create that failed retries under its own mutation id, so it cannot mint 
   assert.equal(await retried, 'canvas-a');
   acknowledgeAttachment('session-a');
   assert.equal(owedAttachment('session-a'), null);
+});
+
+test('a retried create settles the current attachment after its chat moves or detaches', async () => {
+  for (const attachedCanvasId of ['canvas-current', null]) {
+    const bridge = fakeCanvasBridge();
+    const client = new CanvasClient(bridge.transport);
+    const lost = attachCanvasToChat(client, 'session-a', { canvasId: null });
+    const first = lastCreate(bridge);
+    refuse(bridge, first.requestId, 'Canvas reply was lost.');
+    await assert.rejects(lost);
+
+    const retried = attachCanvasToChat(client, 'session-a', { canvasId: null });
+    const replay = lastCreate(bridge);
+    assert.equal(replay.mutationId, first.mutationId);
+    answer(bridge, replay.requestId, 'canvas-created', attachedCanvasId);
+    assert.equal(await retried, attachedCanvasId);
+    assert.equal(
+      await attachCanvasToChat(client, 'session-a', { canvasId: null }),
+      attachedCanvasId,
+    );
+    assert.equal(owedAttachment('session-a'), null);
+    assert.equal(bridge.count('canvas.createCanvas'), 2);
+    assert.equal(bridge.count('canvas.attach'), 0);
+    acknowledgeAttachment('session-a');
+  }
 });
 
 test('callers that join an unfinished create share it instead of minting another', async () => {

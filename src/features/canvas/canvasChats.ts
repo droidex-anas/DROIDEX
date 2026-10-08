@@ -24,9 +24,9 @@ interface OwedAttachment {
   /** Retained across every replay, so the sidecar commits it at most once. */
   mutationId: string;
   /** The one request in flight; concurrent callers join it. */
-  running: Promise<string> | null;
+  running: Promise<string | null> | null;
   /** The canvas it produced, held until a caller acknowledges the result. */
-  settled: string | null;
+  settled: { canvasId: string | null } | null;
   /** Why the last attempt did not finish, for the pane's recovery. */
   message: string;
 }
@@ -44,10 +44,10 @@ export function attachCanvasToChat(
   client: CanvasClient,
   appSessionId: string,
   intent: { canvasId: string | null; name?: string | null },
-): Promise<string> {
+): Promise<string | null> {
   const existing = owed.get(appSessionId);
   if (existing) {
-    if (existing.settled !== null) return Promise.resolve(existing.settled);
+    if (existing.settled !== null) return Promise.resolve(existing.settled.canvasId);
     if (existing.running) return existing.running;
   }
   const operation: OwedAttachment = existing ?? {
@@ -62,7 +62,7 @@ export function attachCanvasToChat(
   const running = commit(client, appSessionId, operation).then(
     (canvasId) => {
       operation.running = null;
-      operation.settled = canvasId;
+      operation.settled = { canvasId };
       return canvasId;
     },
     (error: unknown) => {
@@ -79,13 +79,15 @@ async function commit(
   client: CanvasClient,
   appSessionId: string,
   operation: OwedAttachment,
-): Promise<string> {
+): Promise<string | null> {
   const { canvasId } = operation;
   if (canvasId !== null) {
     await client.attachCanvas(appSessionId, canvasId);
     return canvasId;
   }
-  return client.createCanvas(appSessionId, operation.mutationId, operation.name);
+  const receipt = await client.createCanvas(appSessionId, operation.mutationId, operation.name);
+  // A retried Create may outlive a move or detach; only the current attachment reaches the UI.
+  return receipt.attachedCanvasId;
 }
 
 /**
@@ -121,7 +123,7 @@ export function chooseCanvasForChat(
   client: CanvasClient,
   appSessionId: string,
   canvasId: string,
-): Promise<string> {
+): Promise<string | null> {
   owed.delete(appSessionId);
   return attachCanvasToChat(client, appSessionId, { canvasId });
 }

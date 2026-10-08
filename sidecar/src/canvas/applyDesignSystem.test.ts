@@ -24,7 +24,7 @@ async function design(
     await workspace.close();
     await builds.close();
   });
-  const { canvasId } = await workspace.createCanvas('app-theme', 'explicit-app-theme');
+  const { canvasId } = await workspace.createCanvas('app-theme', 'create-theme-canvas');
   const scope: CanvasScope = {
     origin: 'user',
     scopeId: 'user-theme',

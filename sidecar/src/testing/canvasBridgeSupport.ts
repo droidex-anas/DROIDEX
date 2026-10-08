@@ -3,6 +3,7 @@ import type { TestContext } from 'node:test';
 import type { ServerEvent } from '../protocol.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
+import { listCanvasAssets } from '../canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../canvas/canvasBridge.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
@@ -14,7 +15,6 @@ import type {
   CanvasError,
   CanvasScope,
   ElementRef,
-  WriteReceipt,
 } from '../canvas/protocol.js';
 import { CompilerFleet, fakeDeadlines } from './canvasBuildSupport.js';
 import {
@@ -31,6 +31,50 @@ export const PAGE = 'page-1';
 export const EDITABLE =
   'export default function Hey(){return <h1 style={{color:"var(--ds-fg)"}}>Hey</h1>}';
 export const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
+/** The chats these suites act as; any other identity reads as a closed chat. */
+const KNOWN_CHATS = new Set([APP, 'agent-1', 'app-2']);
+
+/** The asset secret the Canvas suites sign their preview URLs with. */
+export const ASSET_SECRET = 'test-canvas-secret';
+
+/**
+ * One bridge handler over a workspace, collecting the events it emits. Owned
+ * assets are read from the real store under `root`, so a listing reply is the
+ * store's answer rather than a fixture's.
+ */
+export function canvasCommandHandler(options: {
+  ready: Promise<CanvasWorkspace>;
+  scopes: CanvasScopes;
+  builds: CanvasBuilds;
+  events: ServerEvent[];
+  root: string;
+}) {
+  const listeners = new Set<(pageId: string) => void>();
+  const handle = createCanvasCommandHandler(
+    options.ready,
+    options.scopes,
+    options.builds,
+    {
+      secret: ASSET_SECRET,
+      list: (canvasId) => listCanvasAssets(options.root, canvasId),
+    },
+    (event) => {
+      options.events.push(event);
+    },
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  );
+  return {
+    listeners,
+    handle: (command: unknown, pageId: string | null = PAGE) => handle(command, pageId),
+    /** Reports a renderer page's socket closing, the way the bridge server does. */
+    pageGone: (pageId: string) => {
+      for (const listener of listeners) listener(pageId);
+    },
+  };
+}
 
 export interface Harness {
   root: string;
@@ -57,37 +101,21 @@ export async function harness(
   const scopes = new CanvasScopes();
   const events: ServerEvent[] = [];
   workspace = await CanvasWorkspace.open(directory, builds, {
-    isChatKnown: (id) => id === APP || id === 'app-2' || id === 'agent-1',
+    isChatKnown: (appSessionId) => KNOWN_CHATS.has(appSessionId),
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: (scopeId, canvasId) => {
       scopes.bindScopeCanvas(scopeId, canvasId);
     },
     ...(options.fs ? { fs: options.fs } : {}),
   });
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    Promise.resolve(workspace),
-    scopes,
-    builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
-  return {
-    root: directory,
-    workspace,
+  const { handle, pageGone } = canvasCommandHandler({
+    ready: Promise.resolve(workspace),
     scopes,
     builds,
     events,
-    handle: (command, pageId = PAGE) => handle(command, pageId),
-    pageGone: (pageId) => {
-      for (const listener of listeners) listener(pageId);
-    },
-  };
+    root: directory,
+  });
+  return { root: directory, workspace, scopes, builds, events, handle, pageGone };
 }
 
 export async function buildingCanvas(t: TestContext, fs?: CanvasFileSystem) {
@@ -148,7 +176,7 @@ export async function createCanvas(
     true,
   );
   const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
+  assert.ok(reply.kind === 'canvasCreated');
   return reply.canvasId;
 }
 
@@ -180,7 +208,7 @@ export async function writeFrame(
   canvasId: string,
   designId: string,
   appSessionId = APP,
-): Promise<WriteReceipt> {
+): Promise<void> {
   const requestId = `req-write-${designId}`;
   await canvas.handle({
     type: 'canvas.write',
@@ -195,9 +223,7 @@ export async function writeFrame(
       deletedPaths: [],
     },
   });
-  const written = okReply(canvas, requestId);
-  assert.ok(written.kind === 'written');
-  return written.receipt;
+  assert.equal(okReply(canvas, requestId).kind, 'written');
 }
 
 export async function frameHarness(t: TestContext, options: Parameters<typeof harness>[1] = {}) {
@@ -334,19 +360,13 @@ export async function pendingWorkspaceHandler(t: TestContext) {
   builds.cancelCanvas(canvasId);
   const opening = deferred();
   const events: ServerEvent[] = [];
-  const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
-    opening.promise.then(() => canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => {
-      events.push(event);
-    },
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  );
+  const { handle, listeners } = canvasCommandHandler({
+    ready: opening.promise.then(() => canvas.workspace),
+    scopes: canvas.scopes,
+    builds: canvas.builds,
+    events,
+    root: canvas.root,
+  });
 
   return { builds, canvas, canvasId, designId, events, listeners, handle, opening };
 }
@@ -395,80 +415,4 @@ export async function watchedArtifact(t: TestContext, fs: CanvasFileSystem) {
   const before = canvas.builds.stateOf(canvasId, designId);
   assert.ok(before.status === 'ready');
   return { canvas, canvasId, designId, before };
-}
-
-export async function occupiedRemovedFrame(t: TestContext) {
-  const canvas = await harness(t);
-  const canvasId = await createCanvas(canvas);
-  const originalId = await createFrame(canvas, canvasId);
-  await canvas.handle({
-    type: 'canvas.create',
-    requestId: 'req-other',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-other',
-      frames: [{ name: 'Other', width: 720, height: 720, designSystem }],
-    },
-  });
-  const other = okReply(canvas, 'req-other');
-  assert.ok(other.kind === 'created');
-  const otherId = other.created.frames[0]?.designId;
-  assert.ok(otherId);
-  const occupied = canvas.workspace.snapshot(canvasId).frames[0]?.rect;
-  assert.ok(occupied);
-  await canvas.handle({
-    type: 'canvas.remove',
-    requestId: 'req-remove',
-    appSessionId: APP,
-    canvasId,
-    input: { mutationId: 'm-remove', designIds: [originalId] },
-  });
-  const removed = okReply(canvas, 'req-remove');
-  assert.ok(removed.kind === 'removed');
-  await canvas.handle({
-    type: 'canvas.arrange',
-    requestId: 'req-occupy',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-occupy',
-      frames: [{ designId: otherId, expectedLayoutVersion: 0, rect: occupied }],
-    },
-  });
-  return { canvas, canvasId, undoId: removed.undoId, occupied };
-}
-
-export async function pausedCanvasCreate(t: TestContext) {
-  const reached = deferred();
-  const release = deferred();
-  let hold = true;
-  const fs = observedFileSystem(async (operation, path) => {
-    if (!hold || operation !== 'rename' || !path.endsWith('manifest.json')) return;
-    hold = false;
-    reached.resolve();
-    await release.promise;
-  });
-  const canvas = await harness(t, { fs });
-  return { canvas, reached: reached.promise, release: release.resolve };
-}
-
-export function unavailableWorkspaceHandler(t: TestContext) {
-  const unhandled: unknown[] = [];
-  const capture = (reason: unknown): void => {
-    unhandled.push(reason);
-  };
-  process.on('unhandledRejection', capture);
-  t.after(() => void process.off('unhandledRejection', capture));
-  const events: ServerEvent[] = [];
-  const handle = createCanvasCommandHandler(
-    Promise.reject(new Error('canvases directory is read-only')),
-    new CanvasScopes(),
-    quietBuilds(),
-    (event) => {
-      events.push(event);
-    },
-    () => () => undefined,
-  );
-  return { events, handle, unhandled };
 }

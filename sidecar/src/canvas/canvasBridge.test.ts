@@ -1,35 +1,35 @@
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
+import { readdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
+import type { ServerEvent } from '../protocol.js';
 import {
   frameHarness,
-  unavailableWorkspaceHandler,
-  occupiedRemovedFrame,
-  pausedCanvasCreate,
   turnScope,
-  editableElement,
   pauseAtSource,
-  holdArtifactRead,
-  EDITABLE,
-  pendingWorkspaceHandler,
-  activeTurnBuilds,
-  watchedArtifact,
+  canvasCommandHandler,
   APP,
   PAGE,
   HEY,
   designSystem,
   harness,
-  buildingCanvas,
-  readyFrames,
   answer,
   okReply,
   errorOf,
   createCanvas,
   createFrame,
-  writeFrame,
 } from '../testing/canvasBridgeSupport.js';
-import { observedFileSystem, writeInput } from '../testing/canvasStorageSupport.js';
-import { createCanvasCommandHandler } from './canvasBridge.js';
+import {
+  deferred,
+  CANVAS_PNG,
+  CANVAS_PNG_ASSET_ID,
+  canvasRoot,
+  observedFileSystem,
+  quietBuilds,
+  writeInput,
+} from '../testing/canvasStorageSupport.js';
+import { importCanvasImage } from './canvasAssets.js';
+import { CanvasScopes } from './canvasScopes.js';
 
 test('a Create carries the provisional name its prompt gave the canvas', async (t) => {
   const canvas = await harness(t);
@@ -50,31 +50,119 @@ test('a Create carries the provisional name its prompt gave the canvas', async (
 });
 
 test('a lost Create reply replays its durable canvas while the first commit is in flight', async (t) => {
-  const { canvas, reached, release } = await pausedCanvasCreate(t);
-  const command = {
+  const reached = deferred();
+  const release = deferred();
+  let hold = true;
+  const fs = observedFileSystem(async (operation, path) => {
+    if (!hold || operation !== 'rename' || !path.endsWith('manifest.json')) return;
+    hold = false;
+    reached.resolve();
+    await release.promise;
+  });
+  const canvas = await harness(t, { fs });
+  const first = canvas.handle({
     type: 'canvas.createCanvas',
+    requestId: 'first',
     appSessionId: APP,
     mutationId: 'same-create',
-  };
-  const first = canvas.handle({ ...command, requestId: 'first' });
-  await reached;
-  const retry = canvas.handle({ ...command, requestId: 'retry' });
-  release();
+  });
+  await reached.promise;
+  const retry = canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'retry',
+    appSessionId: APP,
+    mutationId: 'same-create',
+  });
+  release.resolve();
   await Promise.all([first, retry]);
 
   const firstReply = okReply(canvas, 'first');
   const replay = okReply(canvas, 'retry');
   assert.deepEqual(replay, firstReply);
-  assert.ok(firstReply.kind === 'attachment');
+  assert.ok(firstReply.kind === 'canvasCreated');
   assert.deepEqual(
     canvas.workspace.listCanvases().map((item) => item.canvasId),
     [firstReply.canvasId],
   );
   assert.equal(canvas.workspace.attachedCanvasId(APP), firstReply.canvasId);
+  // One canvas directory, beside the workspace's own writer-lease file.
+  assert.deepEqual(
+    (await readdir(canvas.root)).filter((name) => !name.startsWith('.')),
+    [firstReply.canvasId],
+  );
   assert.deepEqual((await readdir(canvas.root)).sort(), [
     '.writer-lease.sqlite',
     firstReply.canvasId,
   ]);
+});
+
+test('a replayed Create reports its canvas and the chat’s current attachment separately', async (t) => {
+  const canvas = await harness(t);
+  const ids: string[] = [];
+  for (const mutationId of ['create-A', 'create-B']) {
+    await canvas.handle({
+      type: 'canvas.createCanvas',
+      requestId: mutationId,
+      appSessionId: APP,
+      mutationId,
+    });
+    const created = okReply(canvas, mutationId);
+    assert.ok('canvasId' in created && created.canvasId !== null);
+    ids.push(created.canvasId);
+  }
+  const [firstCanvasId, currentCanvasId] = ids;
+  assert.ok(firstCanvasId && currentCanvasId);
+
+  await canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'replay-A',
+    appSessionId: APP,
+    mutationId: 'create-A',
+  });
+
+  assert.deepEqual(okReply(canvas, 'replay-A'), {
+    kind: 'canvasCreated',
+    canvasId: firstCanvasId,
+    attachedCanvasId: currentCanvasId,
+  });
+  assert.equal(canvas.workspace.attachedCanvasId(APP), currentCanvasId);
+  assert.equal(canvas.workspace.listCanvases().length, 2);
+});
+
+test('a replayed Create reports a detached chat without creating or reattaching a canvas', async (t) => {
+  const canvas = await harness(t);
+  await canvas.handle({
+    type: 'canvas.createCanvas',
+    requestId: 'first-create',
+    appSessionId: APP,
+    mutationId: 'detached-create',
+  });
+  const created = okReply(canvas, 'first-create');
+  assert.ok('canvasId' in created && created.canvasId !== null);
+  await canvas.handle({ type: 'canvas.detach', requestId: 'detach', appSessionId: APP });
+  assert.deepEqual(okReply(canvas, 'detach'), { kind: 'attachment', canvasId: null });
+
+  for (const requestId of ['retry-create', 'first-create']) {
+    canvas.events.length = 0;
+    await canvas.handle({
+      type: 'canvas.createCanvas',
+      requestId,
+      appSessionId: APP,
+      mutationId: 'detached-create',
+    });
+    const replay = okReply(canvas, requestId);
+    assert.ok('canvasId' in replay);
+    const attachedCanvasId =
+      'attachedCanvasId' in replay ? replay.attachedCanvasId : replay.canvasId;
+    assert.equal(attachedCanvasId, null);
+    assert.deepEqual(replay, {
+      kind: 'canvasCreated',
+      canvasId: created.canvasId,
+      attachedCanvasId: null,
+    });
+  }
+  assert.equal(canvas.workspace.attachedCanvasId(APP), null);
+  assert.equal(canvas.workspace.listCanvases().length, 1);
 });
 
 test('attachment mutations refuse a chat the sidecar does not know', async (t) => {
@@ -139,90 +227,6 @@ test('a correlated create, write and arrange answer their own requests', async (
   assert.ok(canvas.events.some((event) => event.type === 'canvas.summaries'));
 });
 
-test('a direct element edit commits a new revision and rejects untrusted targets', async (t) => {
-  const { canvas, canvasId, element } = await editableElement(t);
-  const edit = async (requestId: string, change: object, selected = element) => {
-    await canvas.handle({
-      type: 'canvas.editElement',
-      requestId,
-      appSessionId: APP,
-      canvasId,
-      input: { mutationId: requestId, edit: { element: selected, change } },
-    });
-  };
-
-  await edit('req-bad-token', { kind: 'token', property: 'color', token: '--not-a-kit-token' });
-  assert.equal(errorOf(canvas, 'req-bad-token').code, 'invalid_edit');
-  await edit('req-image', { kind: 'image', assetId: 'not_owned' });
-  assert.equal(errorOf(canvas, 'req-image').code, 'unsupported_edit');
-  await edit(
-    'req-unknown',
-    { kind: 'text', value: 'Changed' },
-    { ...element, elementId: 'unknown' },
-  );
-  assert.equal(errorOf(canvas, 'req-unknown').code, 'stale_reference');
-  await edit(
-    'req-malformed',
-    { kind: 'text', value: 'Changed' },
-    { ...element, elementId: '../bad' },
-  );
-  assert.equal(errorOf(canvas, 'req-malformed').code, 'invalid_input');
-  assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], EDITABLE);
-
-  await edit('req-edit-valid', { kind: 'token', property: 'color', token: '--ds-accent' });
-  const changed = okReply(canvas, 'req-edit-valid');
-  assert.ok(changed.kind === 'written');
-  assert.notEqual(changed.receipt.revisionId, element.revisionId);
-  assert.match(
-    (await canvas.workspace.readFiles(canvasId, changed.receipt))['main.tsx'] ?? '',
-    /var\(--ds-accent\)/,
-  );
-  await edit('req-old-revision', { kind: 'text', value: 'Again' });
-  assert.equal(errorOf(canvas, 'req-old-revision').code, 'stale_revision');
-});
-
-test('a retried element edit returns its original receipt through a new handler', async (t) => {
-  const { canvas, canvasId, element } = await editableElement(t);
-
-  const command = {
-    type: 'canvas.editElement',
-    requestId: 'req-edit-first',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'm-edit-retry',
-      edit: { element, change: { kind: 'text', value: 'Welcome' } },
-    },
-  };
-  await canvas.handle(command);
-  const first = okReply(canvas, 'req-edit-first');
-  assert.ok(first.kind === 'written');
-
-  const replay = createCanvasCommandHandler(
-    Promise.resolve(canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => canvas.events.push(event),
-    () => () => {},
-  );
-  await replay({ ...command, requestId: 'req-edit-retry' }, PAGE);
-  const retried = okReply(canvas, 'req-edit-retry');
-  assert.deepEqual(retried, first);
-  await replay(
-    {
-      ...command,
-      requestId: 'req-edit-reused',
-      input: {
-        ...command.input,
-        edit: { ...command.input.edit, change: { kind: 'text', value: 'Other' } },
-      },
-    },
-    PAGE,
-  );
-  assert.equal(errorOf(canvas, 'req-edit-reused').code, 'invalid_input');
-  assert.equal(canvas.workspace.snapshot(canvasId).sequence, first.receipt.sequence);
-});
-
 test('pane rename, remove and Undo route through one attached canvas', async (t) => {
   const { canvas, canvasId, designId } = await frameHarness(t);
   const version = canvas.workspace.snapshot(canvasId).frames[0]?.manifestVersion;
@@ -261,13 +265,50 @@ test('pane rename, remove and Undo route through one attached canvas', async (t)
 });
 
 test('an Undo layout conflict carries the current occupant rect through the bridge', async (t) => {
-  const { canvas, canvasId, undoId, occupied } = await occupiedRemovedFrame(t);
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const originalId = await createFrame(canvas, canvasId);
+  await canvas.handle({
+    type: 'canvas.create',
+    requestId: 'req-other',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-other',
+      frames: [{ name: 'Other', width: 720, height: 720, designSystem }],
+    },
+  });
+  const other = okReply(canvas, 'req-other');
+  assert.ok(other.kind === 'created');
+  const otherId = other.created.frames[0]?.designId;
+  assert.ok(otherId);
+  const occupied = canvas.workspace.snapshot(canvasId).frames[0]?.rect;
+  assert.ok(occupied);
+  await canvas.handle({
+    type: 'canvas.remove',
+    requestId: 'req-remove',
+    appSessionId: APP,
+    canvasId,
+    input: { mutationId: 'm-remove', designIds: [originalId] },
+  });
+  const removed = okReply(canvas, 'req-remove');
+  assert.ok(removed.kind === 'removed');
+  await canvas.handle({
+    type: 'canvas.arrange',
+    requestId: 'req-occupy',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-occupy',
+      frames: [{ designId: otherId, expectedLayoutVersion: 0, rect: occupied }],
+    },
+  });
   await canvas.handle({
     type: 'canvas.undoRemoval',
     requestId: 'req-undo',
     appSessionId: APP,
     canvasId,
-    input: { mutationId: 'm-undo', undoId },
+    input: { mutationId: 'm-undo', undoId: removed.undoId },
   });
   assert.deepEqual(errorOf(canvas, 'req-undo').currentRect, occupied);
   assert.equal(errorOf(canvas, 'req-undo').code, 'layout_conflict');
@@ -365,7 +406,15 @@ test('the bridge creates a seeded adjacent frame and refuses a seed outside its 
   const canvas = await harness(t);
   const sourceCanvasId = await createCanvas(canvas);
   const designId = await createFrame(canvas, sourceCanvasId);
-  const written = await writeFrame(canvas, sourceCanvasId, designId);
+  await canvas.handle({
+    type: 'canvas.write',
+    requestId: 'req-seed-source',
+    appSessionId: APP,
+    canvasId: sourceCanvasId,
+    input: writeInput('seed-source', designId, null, { 'main.tsx': HEY }),
+  });
+  const written = okReply(canvas, 'req-seed-source');
+  assert.ok(written.kind === 'written');
   const input = {
     mutationId: 'seeded-variant',
     placeBeside: { designId },
@@ -378,7 +427,7 @@ test('the bridge creates a seeded adjacent frame and refuses a seed outside its 
         seed: {
           kind: 'revision',
           canvasId: sourceCanvasId,
-          revision: { designId, revisionId: written.revisionId },
+          revision: { designId, revisionId: written.receipt.revisionId },
         },
       },
     ],
@@ -393,7 +442,7 @@ test('the bridge creates a seeded adjacent frame and refuses a seed outside its 
   const created = okReply(canvas, 'req-seeded');
   assert.ok(created.kind === 'created');
   assert.deepEqual(created.created.frames[0]?.rect, { x: 0, y: 800, width: 720, height: 720 });
-  const canvasId = (await canvas.workspace.createCanvas(APP, 'explicit-app-1')).canvasId;
+  const canvasId = (await canvas.workspace.createCanvas(APP, 'create-foreign-canvas')).canvasId;
   await canvas.handle({
     type: 'canvas.create',
     requestId: 'req-foreign-seed',
@@ -431,6 +480,106 @@ test('reading an artifact is a derived read with no cache miss to report', async
   assert.deepEqual(okReply(canvas, 'req-no-page'), { kind: 'artifact', artifact: null });
   await canvas.handle({ type: 'canvas.readArtifact', requestId: 'req-bad', canvasId, designId });
   assert.equal(errorOf(canvas, 'req-bad').code, 'invalid_input');
+});
+
+test('reading source answers one revision’s tree and refuses another design’s', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+  await canvas.handle({
+    type: 'canvas.create',
+    requestId: 'req-other-frame',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-create-other',
+      frames: [{ name: 'Cards', width: 720, height: 720, designSystem }],
+    },
+  });
+  const created = okReply(canvas, 'req-other-frame');
+  assert.ok(created.kind === 'created');
+  const other = created.created.frames[0]?.designId ?? '';
+
+  await canvas.handle({
+    type: 'canvas.write',
+    requestId: 'req-write-source',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-write-source',
+      designId,
+      expectedRevisionId: null,
+      files: { 'main.tsx': HEY },
+      deletedPaths: [],
+    },
+  });
+  const written = okReply(canvas, 'req-write-source');
+  assert.ok(written.kind === 'written');
+  const { revisionId } = written.receipt;
+
+  // The source drawer's read: the complete tree, with the head left alone.
+  await canvas.handle({
+    type: 'canvas.readSource',
+    requestId: 'req-source',
+    canvasId,
+    designId,
+    revisionId,
+  });
+  const read = okReply(canvas, 'req-source');
+  assert.ok(read.kind === 'source');
+  // A null-prototype tree, so a source path can never reach an inherited member.
+  assert.deepEqual(Object.entries(read.files), [['main.tsx', HEY]]);
+
+  // A revision named with another design cannot be read through it.
+  await canvas.handle({
+    type: 'canvas.readSource',
+    requestId: 'req-source-wrong',
+    canvasId,
+    designId: other,
+    revisionId,
+  });
+  assert.equal(errorOf(canvas, 'req-source-wrong').code, 'invalid_input');
+
+  await canvas.handle({
+    type: 'canvas.readSource',
+    requestId: 'req-source-missing',
+    canvasId,
+    designId,
+    revisionId: 'rev_missing',
+  });
+  assert.equal(errorOf(canvas, 'req-source-missing').code, 'invalid_input');
+});
+
+test('a lost image import reply is recovered by listing that canvas after the source is gone', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  const chosen = join(canvas.root, 'chosen.png');
+  await writeFile(chosen, CANVAS_PNG);
+  await importCanvasImage(canvas.root, {
+    canvasId,
+    filePath: chosen,
+    digest: CANVAS_PNG_ASSET_ID,
+    width: 1,
+    height: 1,
+  });
+  await unlink(chosen);
+
+  assert.equal(
+    await canvas.handle({ type: 'canvas.listAssets', requestId: 'assets', canvasId }),
+    true,
+  );
+  assert.deepEqual(okReply(canvas, 'assets'), {
+    kind: 'assets',
+    assets: [
+      {
+        assetId: CANVAS_PNG_ASSET_ID,
+        mediaType: 'image/png',
+        byteLength: CANVAS_PNG.length,
+        width: 1,
+        height: 1,
+      },
+    ],
+  });
 });
 
 test('one request identity cannot carry two different requests', async (t) => {
@@ -531,7 +680,6 @@ test('a command that is not Canvas is left to the next handler', async (t) => {
   assert.equal(reported.code, 'canvas.invalid_input');
 });
 
-/** A filesystem that holds the next write of one source file open until released. */
 test('a chat that detaches while its write is staging does not commit it', async (t) => {
   const paused = pauseAtSource('main.tsx');
   const { canvas, canvasId, designId } = await frameHarness(t, { fs: paused.fs });
@@ -593,7 +741,22 @@ test('a request identity cannot revive a revoked turn lease', async (t) => {
 });
 
 test('a workspace that failed to open answers every command the same way', async (t) => {
-  const { events, handle, unhandled } = unavailableWorkspaceHandler(t);
+  const unhandled: unknown[] = [];
+  const capture = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', capture);
+  t.after(() => void process.off('unhandledRejection', capture));
+
+  const root = await canvasRoot(t);
+  const events: ServerEvent[] = [];
+  const { handle } = canvasCommandHandler({
+    ready: Promise.reject(new Error('canvases directory is read-only')),
+    scopes: new CanvasScopes(),
+    builds: quietBuilds(),
+    events,
+    root,
+  });
   // Two event-loop turns: an unhandled rejection is reported after the
   // microtask queue drains, so a missing handler would already have fired.
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -606,221 +769,6 @@ test('a workspace that failed to open answers every command the same way', async
   assert.match(reply.error.message, /Canvas storage is unavailable/);
   assert.deepEqual(unhandled, []);
 });
-
-test('one page unsubscribing leaves another page watching the same canvas', async (t) => {
-  const canvas = await harness(t);
-  const canvasId = await createCanvas(canvas);
-  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-1', canvasId }, 'page-1');
-  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-2', canvasId }, 'page-2');
-  await canvas.handle(
-    { type: 'canvas.unsubscribe', requestId: 'req-unwatch-1', canvasId },
-    'page-1',
-  );
-
-  const changed = async (mutationId: string, name: string): Promise<number> => {
-    const agent = turnScope(canvasId, `turn-${mutationId}`);
-    canvas.scopes.register(agent);
-    await canvas.workspace.create(agent, {
-      mutationId,
-      frames: [{ name, width: 720, height: 720, designSystem }],
-    });
-    canvas.scopes.revoke(agent.scopeId);
-    return canvas.events.filter((event) => event.type === 'canvas.change').length;
-  };
-
-  assert.equal(await changed('m-one', 'One'), 1);
-  // The page that is gone holds nothing, and the last watcher ends the broadcast.
-  canvas.pageGone('page-2');
-  assert.equal(await changed('m-two', 'Two'), 1);
-
-  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch-3', canvasId }, null);
-  assert.equal(errorOf(canvas, 'req-watch-3').code, 'invalid_input');
-});
-
-for (const leaving of ['unsubscribe', 'page-gone'] as const) {
-  test(`the last pane ${leaving} cancels running and queued builds without stopping another canvas`, async (t) => {
-    const canvas = await buildingCanvas(t);
-    const { fleet, builds } = canvas;
-    const canvasId = await createCanvas(canvas);
-    const ids = await Promise.all(
-      ['one', 'two', 'three'].map((name) => createFrame(canvas, canvasId, `req-frame-${name}`)),
-    );
-    await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
-    for (const designId of ids) await writeFrame(canvas, canvasId, designId);
-    const first = await fleet.compile(1);
-    const second = await fleet.compile(2);
-    const other = await canvas.workspace.createCanvas('app-2', 'explicit-app-2');
-    const otherTurn = canvas.turns.beginTurn('app-2', undefined);
-    t.after(() => otherTurn.revoke());
-    await canvas.handle(
-      { type: 'canvas.subscribe', requestId: 'req-watch-other', canvasId: other.canvasId },
-      'page-2',
-    );
-    const otherDesign = await createFrame(canvas, other.canvasId, 'req-other-frame', 'app-2');
-    await writeFrame(canvas, other.canvasId, otherDesign, 'app-2');
-    await canvas.handle(
-      { type: 'canvas.subscribe', requestId: 'req-watch-shared', canvasId },
-      'page-3',
-    );
-    if (leaving === 'unsubscribe')
-      await canvas.handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId });
-    else canvas.pageGone(PAGE);
-    assert.equal(first.signal.aborted, false, 'the other pane still wants this build');
-    assert.equal(second.signal.aborted, false);
-    if (leaving === 'unsubscribe')
-      await canvas.handle(
-        { type: 'canvas.unsubscribe', requestId: 'req-unwatch-last', canvasId },
-        'page-3',
-      );
-    else canvas.pageGone('page-3');
-
-    assert.equal(first.signal.aborted, true);
-    assert.equal(second.signal.aborted, true);
-    const continuing = await fleet.compile(3);
-    assert.equal(continuing.input.designId, otherDesign);
-    assert.equal(continuing.signal.aborted, false);
-    assert.deepEqual(
-      ids.map((id) => builds.stateOf(canvasId, id).status),
-      ['cancelled', 'cancelled', 'cancelled'],
-    );
-    first.ready('late-one');
-    second.ready('late-two');
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.equal(fleet.held.length, 3, 'only the other canvas entered compilation');
-    assert.equal(
-      canvas.events.some(
-        (event) =>
-          event.type === 'canvas.change' &&
-          event.change.frames.some((frame) => frame.build.status === 'ready'),
-      ),
-      false,
-    );
-    assert.ok(answer(canvas, 'req-watch-other').type === 'canvas.snapshot');
-    await builds.close();
-  });
-
-  test(`an active turn keeps running and queued builds after the last pane ${leaving}`, async (t) => {
-    const { canvas, canvasId, scope, ids } = await activeTurnBuilds(t);
-    const first = await canvas.fleet.compile(1);
-    const second = await canvas.fleet.compile(2);
-    if (leaving === 'unsubscribe')
-      await canvas.handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId });
-    else canvas.pageGone(PAGE);
-
-    assert.equal(canvas.scopes.isScopeActive(scope.scopeId), true);
-    assert.equal(first.signal.aborted, false);
-    assert.equal(second.signal.aborted, false);
-    assert.deepEqual(
-      ids.map((id) => canvas.builds.stateOf(canvasId, id).status),
-      ['building', 'building', 'pending'],
-    );
-    canvas.events.length = 0;
-    const ready = readyFrames(canvas, canvasId, ids);
-    first.ready('artifact-one');
-    second.ready('artifact-two');
-    const third = await canvas.fleet.compile(3);
-    assert.equal(third.input.designId, ids[2]);
-    assert.equal(third.signal.aborted, false);
-    third.ready('artifact-three');
-    await ready;
-    assert.deepEqual(
-      ids.map((id) => canvas.builds.stateOf(canvasId, id).status),
-      ['ready', 'ready', 'ready'],
-    );
-    assert.deepEqual(
-      canvas.events.filter((event) => event.type === 'canvas.change'),
-      [],
-    );
-  });
-}
-
-for (const owner of [
-  'live pane',
-  'unsubscribe',
-  'page-gone',
-  'other pane',
-  'active turn',
-  'revoked turn',
-  'replacement turn',
-  'replacement pane',
-  'turn for another design',
-] as const) {
-  test(`artifact cache recovery rechecks ${owner} authority after reading`, async (t) => {
-    const held = holdArtifactRead();
-    const { canvas, canvasId, designId, before } = await watchedArtifact(t, held.fs);
-    if (owner === 'other pane')
-      await canvas.handle(
-        { type: 'canvas.subscribe', requestId: 'req-other-watch', canvasId },
-        'other-page',
-      );
-    const context =
-      owner === 'turn for another design'
-        ? {
-            designs: [
-              {
-                designId: await createFrame(canvas, canvasId, 'req-other-frame'),
-                revisionId: null,
-              },
-            ],
-            elements: [],
-            designSystem,
-          }
-        : undefined;
-    const turn = owner.includes('turn') ? canvas.turns.beginTurn(APP, context) : undefined;
-    t.after(() => turn?.revoke());
-    held.arm();
-    const reading = canvas.handle({
-      type: 'canvas.readArtifact',
-      requestId: 'req-artifact',
-      canvasId,
-      designId,
-      revisionId: before.revisionId,
-    });
-    await held.reached;
-    try {
-      if (owner === 'page-gone') canvas.pageGone(PAGE);
-      else if (owner !== 'live pane')
-        await canvas.handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId });
-      if (owner === 'revoked turn') turn?.revoke();
-      if (owner === 'replacement turn') {
-        canvas.turns.endSession(APP);
-        const replacement = canvas.turns.beginTurn(APP, undefined);
-        t.after(() => replacement.revoke());
-      }
-      if (owner === 'replacement pane')
-        await canvas.handle({
-          type: 'canvas.subscribe',
-          requestId: 'req-replacement-watch',
-          canvasId,
-        });
-    } finally {
-      held.release();
-      await reading;
-    }
-
-    assert.deepEqual(okReply(canvas, 'req-artifact'), { kind: 'artifact', artifact: null });
-    if (!['live pane', 'other pane', 'active turn'].includes(owner)) {
-      assert.deepEqual(canvas.builds.stateOf(canvasId, designId), before);
-      assert.equal(canvas.fleet.held.length, 1, 'the abandoned read admitted no rebuild');
-      return;
-    }
-    assert.equal(canvas.builds.stateOf(canvasId, designId).status, 'building');
-    const rebuilding = await canvas.fleet.compile(2);
-    assert.equal(rebuilding.signal.aborted, false);
-    assert.equal(rebuilding.input.generation, before.generation + 1);
-    const recovered = readyFrames(canvas, canvasId, [designId]);
-    rebuilding.ready('artifact-rebuilt');
-    await recovered;
-    assert.deepEqual(canvas.builds.stateOf(canvasId, designId), {
-      status: 'ready',
-      revisionId: before.revisionId,
-      artifactId: 'artifact-rebuilt',
-      elements: [],
-      diagnostics: [],
-      generation: before.generation + 1,
-    });
-  });
-}
 
 test('a change listener that throws loses its change, not the commit', async (t) => {
   const canvas = await harness(t);
@@ -837,49 +785,3 @@ test('a change listener that throws loses its change, not the commit', async (t)
   assert.equal(seen.length, 1);
   assert.equal(canvas.events.filter((event) => event.type === 'canvas.change').length, 1);
 });
-
-for (const leaving of ['page-gone', 'unsubscribe'] as const) {
-  test(
-    leaving === 'page-gone'
-      ? 'a page that goes away while the workspace opens installs no watch'
-      : 'a pending subscribe cancelled by unsubscribe installs no watch or rebuild',
-    async (t) => {
-      const { builds, canvas, canvasId, designId, events, listeners, handle, opening } =
-        await pendingWorkspaceHandler(t);
-      assert.equal(builds.stateOf(canvasId, designId).status, 'cancelled');
-      const subscribing = handle(
-        { type: 'canvas.subscribe', requestId: 'req-late', canvasId },
-        PAGE,
-      );
-      // The pane leaves before Canvas storage finishes opening.
-      if (leaving === 'page-gone') for (const listener of listeners) listener(PAGE);
-      else await handle({ type: 'canvas.unsubscribe', requestId: 'req-unwatch', canvasId }, PAGE);
-      opening.resolve();
-      await subscribing;
-
-      const answer = events.find(
-        (event) => event.type === 'canvas.result' && event.requestId === 'req-late',
-      );
-      assert.ok(answer?.type === 'canvas.result' && !answer.ok);
-      assert.equal(answer.error.code, 'scope_expired');
-      assert.equal(
-        builds.stateOf(canvasId, designId).status,
-        'cancelled',
-        'a refused subscription scheduled no build',
-      );
-
-      // Nothing is watching, so a later change is not broadcast to anyone.
-      const agent = turnScope(canvasId, 'turn-after-page-gone');
-      canvas.scopes.register(agent);
-      await canvas.workspace.create(agent, {
-        mutationId: 'm-after-page-gone',
-        frames: [{ name: 'Quiet', width: 720, height: 720, designSystem }],
-      });
-      canvas.scopes.revoke(agent.scopeId);
-      assert.deepEqual(
-        events.filter((event) => event.type === 'canvas.change'),
-        [],
-      );
-    },
-  );
-}

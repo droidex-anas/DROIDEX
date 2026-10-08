@@ -408,7 +408,11 @@ function artifactOf(
     ['a sha256 artifact id', /^[0-9a-f]{64}$/.test(artifactId)],
     ['the preview root', html.includes('id="canvas-root"')],
     ['the example content', html.includes(content)],
-    ['the offline font', html.includes('data:font/woff2;base64,')],
+    [
+      'the hosted offline font',
+      /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/.test(html) &&
+        !html.includes('data:font/woff2;base64,'),
+    ],
     ['the kit tokens', html.includes('--ds-accent')],
     ['Tailwind preflight', html.includes('box-sizing: border-box')],
     ['the bundled React', html.includes('useState')],

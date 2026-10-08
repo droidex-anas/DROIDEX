@@ -115,28 +115,32 @@ import { join } from 'node:path';
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
 //
-// Raised from 1_434_000 to 1_442_000 for Canvas design mode (05e). Measured by
-// bundling this branch's base at a441e551 (1_433_429 bytes of entry plus its
-// eager imports) and this head the same way: 1_440_000, so **+6_571**. All of
-// it is app frame: the Chat | Design switcher in the sidebar's brand row
-// (~1.4KB) paints at first frame, so it cannot be lazy without flashing the
-// wordmark; App's workspace branches and the store's design-mode state, canvas
-// obligations and Chat return target are ~4.1KB; the composer's shared-layout
-// frame for the Design home-to-workspace move is ~0.6KB; and ~0.6KB is the four
-// lazy-surface registrations, which is what keeps the Design home, the canvases
-// sidebar, the board header and the chat bootstrap out of the entry. No
-// `src/features/canvas` module is in the entry chunk or its eager closure,
-// confirmed from Rollup module metadata.
+// Raised from 1_434_000 to 1_442_000 for Canvas design mode (05e). After
+// merging image imports and the source editor, the entry measures 1_441_307
+// against published canvas/integration a778be89e at 1_433_893: +7_414 bytes.
+// The switcher paints at first frame, and App's workspace branches, the store's
+// Design state and attachment obligations, and the composer's shared-layout
+// frame belong to that app frame. The Design home, canvases sidebar, board
+// header, chat bootstrap and attached-chats menu stay lazy.
 //
-// Moving the attached-chats menu into the chat column's header (spec §4) took
-// the entry to 1_440_856, **+856**: the header reads which canvas the chat's
-// board shows, and the menu itself is a fifth lazy surface. The remaining 1_144
-// bytes of headroom is deliberately tight: 05b-05d are board work that belongs
-// wholly in the Canvas chunk, so the next entry-chunk growth has to be argued
-// here.
+// The attached-chats menu lives in the 360 px chat column's header (spec §4);
+// the app frame reads which canvas its board shows. The remaining 693 bytes
+// of entry headroom is deliberately tight: 05b-05d board work belongs in the
+// Canvas chunk. This reconciliation keeps the accepted limit unchanged.
+//
+// initialCssBytes raised from 101_500 to 103_200 for the Canvas source drawer.
+// The Canvas pane alone measures 100_978, already 522 under the old line before
+// the drawer, and the drawer's own chrome is ~1_350: the file list, the editor's
+// gutter and overlay metrics, the conflict and discard bars, and the build-issue
+// list. Trimming its one-off utilities to the shared scale recovered only 42
+// bytes, and the panel's layout is what the rest buys. The merged CSS measures
+// 102_189. The entry JS of 1_433_651 stays under its own 1_434_000 line,
+// because everything the drawer loads is in the lazy Canvas chunks
+// (CanvasSourcePanel ~10.7KB, its editor and Prism beyond that). The new
+// headroom is ~1KB, in line with past CSS raises.
 const BUDGETS = {
   initialRendererJsBytes: 1_442_000,
-  initialCssBytes: 101_500,
+  initialCssBytes: 103_200,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

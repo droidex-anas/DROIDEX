@@ -1,6 +1,5 @@
-// The renderer's half of the Canvas bridge: correlated requests, and the
-// feature-local projection of each canvas a caller is watching. The sidecar
-// owns canonical state; nothing here is stored in the root store.
+// Correlated Canvas requests and feature-local board projections.
+// Canonical state stays in the sidecar.
 
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import { applyCanvasChange } from './applyCanvasChange';
@@ -14,11 +13,14 @@ import type {
   CanvasReply,
   CanvasSnapshot,
   CanvasSummary,
+  CreateCanvasResult,
   CreateFramesInput,
   CreateFramesResult,
+  OwnedAsset,
   PreviewArtifact,
   RemoveFramesInput,
   RenameFrameInput,
+  SourceFiles,
   UndoRemovalInput,
   WriteFilesInput,
   WriteReceipt,
@@ -47,7 +49,7 @@ export function canvasMessage(error: unknown): string {
 }
 
 /** A failure the sidecar reported, with the stable code from spec §8. */
-class CanvasRequestError extends Error {
+export class CanvasRequestError extends Error {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
@@ -96,6 +98,12 @@ export class CanvasClient {
     );
   }
 
+  listAssets(canvasId: string): Promise<OwnedAsset[]> {
+    return this.request({ type: 'canvas.listAssets', requestId: requestId(), canvasId }).then(
+      (event) => reply(event, 'assets').assets,
+    );
+  }
+
   /** The canvas this chat works on, or null while it is unattached (spec §6). */
   attachedCanvasId(appSessionId: string): Promise<string | null> {
     return this.request({ type: 'canvas.attachment', requestId: requestId(), appSessionId }).then(
@@ -103,12 +111,12 @@ export class CanvasClient {
     );
   }
 
-  /** Creates and attaches a canvas; `name` overrides storage's provisional name. */
+  /** The Create receipt and this chat's attachment at the time it settled. */
   async createCanvas(
     appSessionId: string,
     mutationId: string,
     name: string | null = null,
-  ): Promise<string> {
+  ): Promise<CreateCanvasResult> {
     const event = await this.request({
       type: 'canvas.createCanvas',
       requestId: requestId(),
@@ -116,9 +124,7 @@ export class CanvasClient {
       mutationId,
       ...(name === null ? {} : { name }),
     });
-    const canvasId = reply(event, 'attachment').canvasId;
-    if (canvasId === null) throw wrongReply();
-    return canvasId;
+    return reply(event, 'canvasCreated');
   }
 
   async attachCanvas(appSessionId: string, canvasId: string): Promise<void> {
@@ -230,11 +236,7 @@ export class CanvasClient {
     return reply(event, 'renamed').change;
   }
 
-  /**
-   * The document one built revision produced, or null once the derived cache has
-   * lost it. A `ready` frame asks for its own revision and a `failed` frame for
-   * its `lastWorkingRevisionId`; both are read the same way.
-   */
+  // Ready frames read their revision; failed frames read lastWorkingRevisionId.
   async readArtifact(
     canvasId: string,
     designId: string,
@@ -259,6 +261,18 @@ export class CanvasClient {
     };
   }
 
+  /** Reads immutable source without moving the design's head. */
+  async readSource(canvasId: string, designId: string, revisionId: string): Promise<SourceFiles> {
+    const event = await this.request({
+      type: 'canvas.readSource',
+      requestId: requestId(),
+      canvasId,
+      designId,
+      revisionId,
+    });
+    return reply(event, 'source').files;
+  }
+
   /** This client's projection of a canvas, once its snapshot has landed. */
   snapshotOf(canvasId: string): CanvasSnapshot | null {
     return this.boards.get(canvasId)?.snapshot ?? null;
@@ -278,8 +292,7 @@ export class CanvasClient {
     return () => {
       if (!watching.listeners.delete(listener) || watching.listeners.size > 0) return;
       if (this.boards.get(canvasId) === watching) this.boards.delete(canvasId);
-      // Abandons whatever this board had in flight, so a late answer cannot
-      // reach the board a later subscribe puts in its place.
+      // Late answers cannot reach a board installed by a later subscribe.
       watching.generation += 1;
       watching.loading = null;
       watching.queued = [];
@@ -303,11 +316,7 @@ export class CanvasClient {
     return loading;
   }
 
-  /**
-   * Takes snapshots until the board is current. A snapshot is taken before the
-   * changes queued behind it commit, so the queue is drained onto it, and a gap
-   * the queue still shows means another snapshot is owed.
-   */
+  // Apply queued changes to each snapshot; any remaining gap needs another read.
   private async reload(
     board: CanvasBoard,
     canvasId: string,
@@ -320,8 +329,7 @@ export class CanvasClient {
         canvasId,
       });
       if (event.type !== 'canvas.snapshot') throw wrongReply();
-      // This board was dropped, replaced or reconnected while the request was
-      // in flight, so its answer belongs to nothing.
+      // A replaced or reconnected board cannot receive this request's answer.
       if (board.generation !== generation) return event.snapshot;
       const current = board.snapshot;
       // An answer behind the projection would roll it back; ask again instead.
@@ -380,10 +388,7 @@ export class CanvasClient {
         fail(new Error('The runtime did not answer that Canvas request.'));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(command.requestId, { settle, fail, timeout });
-      // A mutation must not be replayed from the transport's offline queue: it
-      // carries a revision the runtime may have moved past by the time a queue
-      // drains. A refused send becomes this request's rejection, so the caller
-      // hears about it now instead of waiting out the timeout above.
+      // Offline mutations may already be stale when a queue drains. Reject now.
       if (this.transport.sendIfConnected(command)) return;
       this.pending.delete(command.requestId);
       clearTimeout(timeout);
@@ -451,8 +456,7 @@ export class CanvasClient {
       (summaries) => {
         this.publishSummaries(summaries);
       },
-      // A list that could not be re-read leaves the last one on screen; the
-      // next change to any canvas broadcasts a fresh one anyway.
+      // Keep the last list on failure; the next Canvas change broadcasts a fresh one.
       () => undefined,
     );
   }
@@ -475,10 +479,7 @@ function requestId(): string {
   return crypto.randomUUID();
 }
 
-/**
- * The reply the sidecar answers this command with. TypeScript cannot narrow a
- * union by a generic discriminant, so the kind is checked and then asserted.
- */
+// TypeScript needs a narrow assertion after checking the generic reply kind.
 function reply<K extends CanvasReply['kind']>(
   event: ReplyEvent,
   kind: K,
