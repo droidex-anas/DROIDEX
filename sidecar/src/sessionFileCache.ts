@@ -66,6 +66,7 @@ export interface SessionFileReconciliation {
   changed: number;
   upserts: SessionFileCacheEntry[];
   removedProviderSessionIds: string[];
+  searchUnavailableReason?: string;
 }
 
 export interface SessionFileSnapshot {

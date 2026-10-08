@@ -127,7 +127,7 @@ export function serializeHistoryWorkerError(error: unknown): SerializedHistoryWo
 
 export function historyWorkerError(error: SerializedHistoryWorkerError): Error {
   if (error.name === 'HistorySearchUnavailableError') {
-    return new HistorySearchUnavailableError();
+    return new HistorySearchUnavailableError(error.message);
   }
   const resolved: Error & SerializedHistoryWorkerError = new Error(error.message);
   resolved.name = error.name;

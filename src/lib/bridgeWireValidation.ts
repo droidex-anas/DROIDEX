@@ -120,7 +120,8 @@ function persistenceRecovery(value: unknown): value is PersistenceRecovery {
     typeof value.durable === 'boolean' &&
     typeof value.hadUnflushedWork === 'boolean' &&
     isOptionalString(value.message) &&
-    isOptionalString(value.unavailableReason)
+    isOptionalString(value.unavailableReason) &&
+    isOptionalString(value.searchUnavailableReason)
   );
 }
 

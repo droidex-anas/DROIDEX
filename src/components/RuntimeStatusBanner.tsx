@@ -28,7 +28,8 @@ export default function RuntimeStatusBanner() {
   if (history.persistence === 'unavailable') persistenceMessage = HISTORY_UNAVAILABLE_MESSAGE;
   else if (history.persistence === 'degraded')
     persistenceMessage = HISTORY_PERSISTENCE_DEGRADED_MESSAGE;
-  if (!runtimeMessage && !persistenceMessage) return null;
+  const searchMessage = history.searchUnavailableMessage;
+  if (!runtimeMessage && !persistenceMessage && !searchMessage) return null;
   const runtimeIcon = health.lifecycle === 'recovery-required' ? AlertTriangle : RefreshCw;
   const runtimeAccent =
     health.lifecycle === 'recovery-required' ? 'text-droid-orange' : 'text-droid-accent';
@@ -44,6 +45,14 @@ export default function RuntimeStatusBanner() {
           accent="text-droid-orange"
           message={persistenceMessage}
           testId="history-persistence-banner"
+        />
+      ) : null}
+      {searchMessage ? (
+        <StatusBannerRow
+          icon={AlertTriangle}
+          accent="text-droid-orange"
+          message={searchMessage}
+          testId="history-search-banner"
         />
       ) : null}
     </>
@@ -65,7 +74,7 @@ function StatusBannerRow({
     <div
       role="status"
       data-testid={testId}
-      className="shrink-0 flex items-center gap-2 pr-4 h-8 border-b border-droid-border bg-droid-elevated/60 text-[12px]"
+      className="shrink-0 flex items-center gap-2 pr-4 py-1 min-h-8 border-b border-droid-border bg-droid-elevated/60 text-[12px]"
       style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
     >
       {createElement(icon, { className: `w-3.5 h-3.5 ${accent}` })}

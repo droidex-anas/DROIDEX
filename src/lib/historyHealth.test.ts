@@ -61,7 +61,11 @@ test('search unavailability is sticky until a successful search reply', () => {
     message: 'FTS5 missing',
     recoverable: false,
   });
-  assert.deepEqual(getHistoryHealth(), { persistence: 'ok', search: 'unavailable' });
+  assert.deepEqual(getHistoryHealth(), {
+    persistence: 'ok',
+    search: 'unavailable',
+    searchUnavailableMessage: 'FTS5 missing',
+  });
   applyHistoryServerEvent({
     type: 'sessions.searchResults',
     requestId: 'req-1',

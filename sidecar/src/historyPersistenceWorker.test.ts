@@ -293,6 +293,10 @@ test('missing FTS5 degrades search without affecting canonical persistence', asy
   await persistence.flush();
   assert.equal(countEvents(dbPath), 1);
 
+  assert.equal(await persistence.reconcileSessionFiles(), 0);
+  assert.deepEqual(statuses, ['search_unavailable']);
+  assert.match(persistence.persistenceRecovery().searchUnavailableReason ?? '', /FTS5/);
+
   await assert.rejects(persistence.searchSessions('needle'), (error: unknown) =>
     isHistorySearchUnavailableError(error),
   );

@@ -885,6 +885,14 @@ export class SessionManager {
         serverEventForHistoryStatus({ state: 'unavailable', message: recovery.unavailableReason }),
       );
     }
+    if (recovery?.searchUnavailableReason !== undefined) {
+      this.emit(
+        serverEventForHistoryStatus({
+          state: 'search_unavailable',
+          message: recovery.searchUnavailableReason,
+        }),
+      );
+    }
     if (recovery?.hadUnflushedWork) {
       this.emit({
         type: 'error',

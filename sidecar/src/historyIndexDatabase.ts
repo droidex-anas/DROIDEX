@@ -98,7 +98,8 @@ export class HistoryIndexDatabase {
     ];
     for (const providerSessionId of removed) this.removeQueued(providerSessionId);
     const searchIndex = this.searchIndex;
-    if (!searchIndex) return result;
+    if (!searchIndex)
+      return { ...result, searchUnavailableReason: this.searchUnavailable?.message };
     const plan = searchIndex.reconcileEntries(this.sessionFiles.searchableEntries());
     this.hasPlannedAll = true;
     this.enqueueEntries(plan.pendingEntries, false);
@@ -111,7 +112,8 @@ export class HistoryIndexDatabase {
     const unavailable = this.sessionFiles.unavailableProviderSessionIds;
     for (const providerSessionId of unavailable) this.removeQueued(providerSessionId);
     const searchIndex = this.searchIndex;
-    if (!searchIndex) return result;
+    if (!searchIndex)
+      return { ...result, searchUnavailableReason: this.searchUnavailable?.message };
     if (!this.hasPlannedAll) {
       const plan = searchIndex.reconcileEntries(this.sessionFiles.searchableEntries());
       this.hasPlannedAll = true;
@@ -421,12 +423,7 @@ function openDerivedStorage(path: string, canonicalDb: DatabaseSync) {
     if (isHistorySearchUnavailableError(error) || !isDatabaseCorruption(error)) throw error;
     // This file also holds admitted summaries that missing transcripts cannot
     // reconstruct. Preserve it for repair instead of deleting it to rebuild FTS.
-    throw new Error(
-      `History search storage is corrupt. Quit DROIDEX, back up ${path} and its -wal/-shm files, ` +
-        'then repair the database or restore a known-good backup. Storage was preserved because ' +
-        'missing transcripts cannot reconstruct retained chat summaries.',
-      { cause: error },
-    );
+    throw new Error(corruptSearchStorageMessage(path), { cause: error });
   }
 }
 
@@ -444,12 +441,17 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
         searchUnavailable: null,
       };
     } catch (error) {
-      if (!isHistorySearchUnavailableError(error)) throw error;
+      if (!isHistorySearchUnavailableError(error) && !isDatabaseCorruption(error)) throw error;
+      // Readable summaries must stay available even when FTS cannot initialize;
+      // deleting this shared file would lose chats whose transcripts are missing.
+      const searchUnavailable = isHistorySearchUnavailableError(error)
+        ? error
+        : new HistorySearchUnavailableError(corruptSearchStorageMessage(path), { cause: error });
       return {
         db,
         sessionFiles,
         searchIndex: null,
-        searchUnavailable: new HistorySearchUnavailableError(),
+        searchUnavailable,
       };
     }
   } catch (error) {
@@ -460,6 +462,14 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
     }
     throw error;
   }
+}
+
+function corruptSearchStorageMessage(path: string): string {
+  return (
+    `History search storage is corrupt. Quit DROIDEX, back up ${path} and its -wal/-shm files, ` +
+    'then repair the database or restore a known-good backup. Storage was preserved because ' +
+    'missing transcripts cannot reconstruct retained chat summaries.'
+  );
 }
 
 function isDatabaseCorruption(error: unknown): boolean {

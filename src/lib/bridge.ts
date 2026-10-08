@@ -313,6 +313,15 @@ function eventsFromSnapshot(message: BridgeSnapshotMessage): ServerEvent[] {
       recoverable: false,
     });
   }
+  const searchUnavailableReason = message.snapshot.persistence.searchUnavailableReason;
+  if (searchUnavailableReason !== undefined) {
+    events.push({
+      type: 'error',
+      code: 'history.search_unavailable',
+      message: `History search is unavailable: ${searchUnavailableReason} Canonical session history is unaffected.`,
+      recoverable: false,
+    });
+  }
   for (const session of message.snapshot.sessions) {
     events.push({ type: 'session.updated', session });
   }

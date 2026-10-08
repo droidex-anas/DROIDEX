@@ -2786,7 +2786,11 @@ function reduceAction(state: AppState, action: Action): AppState {
 
 /* ── Bridge event adapter ── */
 export function toastMessageForEvent(ev: ServerEvent): string | undefined {
-  if (ev.type === 'error' && ev.code === 'history.unavailable') return ev.message;
+  if (
+    ev.type === 'error' &&
+    (ev.code === 'history.unavailable' || ev.code === 'history.search_unavailable')
+  )
+    return ev.message;
   if (isHistoryStatusError(ev)) return undefined;
   if (
     ev.type === 'error' &&

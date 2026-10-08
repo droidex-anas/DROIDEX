@@ -44,12 +44,24 @@ test('persistence degradation renders a durable banner that clears on recovery',
   assert.equal(renderToStaticMarkup(createElement(RuntimeStatusBanner)), '');
 });
 
-test('search unavailability does not open a global banner', () => {
+test('search unavailability renders repair instructions without marking persistence unavailable', () => {
+  const message =
+    'Search storage is corrupt. Quit DROIDEX, back up storage, then repair or restore.';
   applyHistoryServerEvent({
     type: 'error',
     code: 'history.search_unavailable',
-    message: 'FTS5 missing',
+    message,
     recoverable: false,
+  });
+  const unavailable = renderToStaticMarkup(createElement(RuntimeStatusBanner));
+  assert.ok(unavailable.includes('data-testid="history-search-banner"'));
+  assert.ok(unavailable.includes(message));
+  assert.ok(!unavailable.includes('data-testid="history-persistence-banner"'));
+  applyHistoryServerEvent({
+    type: 'sessions.searchResults',
+    requestId: 'recovered',
+    results: [],
+    indexingIncomplete: false,
   });
   assert.equal(renderToStaticMarkup(createElement(RuntimeStatusBanner)), '');
 });

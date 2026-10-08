@@ -16,7 +16,10 @@ import test, { type TestContext } from 'node:test';
 
 import { HistoryIndexDatabase } from './historyIndexDatabase.js';
 import { SESSION_SEARCH_INDEX_FILENAME } from './history.js';
-import { sqliteFts5UnavailableSkipReason } from './historySearchSchema.js';
+import {
+  HistorySearchUnavailableError,
+  sqliteFts5UnavailableSkipReason,
+} from './historySearchSchema.js';
 
 const needsFts5 = { skip: sqliteFts5UnavailableSkipReason() };
 
@@ -296,6 +299,7 @@ test('search initialization corruption preserves an owned summary whose transcri
   database.reconcileSessionFiles();
   assert.deepEqual(database.sessionFileSnapshot(), retained);
   await database.close();
+  const persisted = JSON.parse(JSON.stringify(retained));
 
   const exec = DatabaseSync.prototype.exec;
   const corruption = t.mock.method(
@@ -306,13 +310,35 @@ test('search initialization corruption preserves an owned summary whose transcri
       return exec.call(this, sql);
     },
   );
-  assert.throws(() => new HistoryIndexDatabase(dbPath), /corrupt/);
-  corruption.mock.restore();
+  const degraded = new HistoryIndexDatabase(dbPath);
+  try {
+    const reconciliation = degraded.reconcileSessionFiles();
+    assert.match(reconciliation.searchUnavailableReason ?? '', /Quit DROIDEX, back up/);
+    assert.match(reconciliation.searchUnavailableReason ?? '', /repair the database or restore/);
+    assert.deepEqual(degraded.sessionFileSnapshot(), persisted);
+    assert.match(
+      degraded.reconcileSessionFilePaths([{ providerSessionId: 'owned-provider', path }])
+        .searchUnavailableReason ?? '',
+      /corrupt/,
+    );
+    assert.deepEqual(degraded.sessionFileSnapshot(), persisted);
+    assert.throws(
+      () => degraded.search('retained'),
+      (error: unknown) =>
+        error instanceof HistorySearchUnavailableError &&
+        /Quit DROIDEX, back up/.test(error.message),
+    );
+    degraded.setIdle(true);
+    assert.equal(degraded.isIndexingIncomplete(), false);
+  } finally {
+    await degraded.close();
+    corruption.mock.restore();
+  }
 
   const restarted = new HistoryIndexDatabase(dbPath);
   try {
     restarted.reconcileSessionFiles();
-    assert.deepEqual(restarted.sessionFileSnapshot(), JSON.parse(JSON.stringify(retained)));
+    assert.deepEqual(restarted.sessionFileSnapshot(), persisted);
   } finally {
     await restarted.close();
   }

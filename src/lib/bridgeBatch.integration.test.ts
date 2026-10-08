@@ -567,6 +567,24 @@ test('snapshot storage failures reach clients without an earlier error event', a
   assert.ok(unavailable);
   assert.equal(unavailable.type, 'error');
   if (unavailable.type === 'error') assert.match(unavailable.message, /Cannot open history/);
+  const repairInstructions =
+    'Search storage is corrupt. Quit DROIDEX, back up storage, then repair.';
+  socket.message(
+    snapshotMessage('generation-11', 0, 'generation_changed', {
+      persistence: {
+        durable: true,
+        hadUnflushedWork: false,
+        searchUnavailableReason: repairInstructions,
+      },
+    }),
+  );
+  const searchUnavailable = seen.find(
+    (event) => event.type === 'error' && event.code === 'history.search_unavailable',
+  );
+  assert.ok(searchUnavailable);
+  if (searchUnavailable.type === 'error') {
+    assert.ok(searchUnavailable.message.includes(repairInstructions));
+  }
 });
 
 function required<T>(value: T | undefined): T {

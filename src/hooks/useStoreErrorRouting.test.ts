@@ -224,7 +224,7 @@ test('server errors route to toasts and connection state by code and recoverabil
         message: 'No search.',
         recoverable: false,
       },
-      undefined,
+      'No search.',
       null,
     ],
     [{ type: 'history.persistenceRecovered' }, undefined, null],

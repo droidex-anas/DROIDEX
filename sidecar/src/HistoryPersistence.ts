@@ -25,7 +25,10 @@ import {
   persistenceChildKey,
   persistenceChildKeyPrefix,
 } from './historyPersistenceQueueValues.js';
-import { isHistorySearchUnavailableError } from './historySearchSchema.js';
+import {
+  HistorySearchUnavailableError,
+  isHistorySearchUnavailableError,
+} from './historySearchSchema.js';
 import { PersistenceDirtyMarker, persistenceDirtyMarkerPath } from './persistenceDirtyMarker.js';
 import type {
   HistorySearchReply,
@@ -155,6 +158,7 @@ export class HistoryPersistence {
 
   persistenceRecovery(): PersistenceRecovery {
     const recovery = this.dirtyMarker.recovery();
+    if (this.searchUnavailable) recovery.searchUnavailableReason = this.searchUnavailable.message;
     if (!this.startupError) return recovery;
     return { ...recovery, durable: false, unavailableReason: this.startupError.message };
   }
@@ -385,6 +389,9 @@ export class HistoryPersistence {
   }
 
   private async applySearchReconciliation(result: SessionFileReconciliation): Promise<number> {
+    if (result.searchUnavailableReason !== undefined) {
+      this.noteSearchUnavailable(new HistorySearchUnavailableError(result.searchUnavailableReason));
+    }
     let changed = result.changed;
     if (!this.core.applySessionFileReconciliation(result)) {
       const snapshot = await this.getSearchClient().sessionFileSnapshot();

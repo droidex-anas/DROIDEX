@@ -6,12 +6,13 @@ type HistorySearchHealth = 'ok' | 'unavailable';
 export interface HistoryHealthSnapshot {
   persistence: HistoryPersistenceHealth;
   search: HistorySearchHealth;
+  searchUnavailableMessage?: string;
 }
 
 const listeners = new Set<() => void>();
 
 let persistence: HistoryPersistenceHealth = 'ok';
-let search: HistorySearchHealth = 'ok';
+let searchUnavailableMessage: string | undefined;
 
 function emit(): void {
   for (const listener of listeners) listener();
@@ -46,19 +47,26 @@ export function applyHistoryServerEvent(event: ServerEvent): void {
     return;
   }
   if (event.type === 'error' && event.code === 'history.search_unavailable') {
-    if (search === 'unavailable') return;
-    search = 'unavailable';
+    if (searchUnavailableMessage === event.message) return;
+    searchUnavailableMessage = event.message;
     emit();
     return;
   }
-  if (event.type === 'sessions.searchResults' && search === 'unavailable') {
-    search = 'ok';
+  if (event.type === 'sessions.searchResults' && searchUnavailableMessage !== undefined) {
+    searchUnavailableMessage = undefined;
     emit();
   }
 }
 
 export function getHistoryHealth(): HistoryHealthSnapshot {
-  return { persistence, search: persistence === 'unavailable' ? 'unavailable' : search };
+  return {
+    persistence,
+    search:
+      persistence === 'unavailable' || searchUnavailableMessage !== undefined
+        ? 'unavailable'
+        : 'ok',
+    ...(searchUnavailableMessage !== undefined ? { searchUnavailableMessage } : {}),
+  };
 }
 
 export function subscribeHistoryHealth(listener: () => void): () => void {
@@ -70,6 +78,6 @@ export function subscribeHistoryHealth(listener: () => void): () => void {
 
 export function resetHistoryHealthForTests(): void {
   persistence = 'ok';
-  search = 'ok';
+  searchUnavailableMessage = undefined;
   emit();
 }
