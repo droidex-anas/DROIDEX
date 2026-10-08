@@ -261,11 +261,11 @@ jobs:
 
       - name: Remove release signing certificate and keychain
         if: always()
+        timeout-minutes: 2
         run: |
-          if test -f "$RUNNER_TEMP/droidex-signing.pem"; then
-            sudo security remove-trusted-cert -d "$RUNNER_TEMP/droidex-signing.pem" ||
-              echo "::warning::Could not remove the runner's code-signing trust entry."
-          fi
+          # Removing the admin trust setting waits for a password dialog no one can
+          # answer, so it hung the job and lost its logs. The runner is discarded
+          # after the job, and deleting the keychain removes the signing identity.
           if test -f "$RUNNER_TEMP/droidex-signing.keychain-db"; then
             security delete-keychain "$RUNNER_TEMP/droidex-signing.keychain-db" ||
               echo "::warning::Could not delete the runner's temporary signing keychain."
