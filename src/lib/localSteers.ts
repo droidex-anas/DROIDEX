@@ -13,8 +13,6 @@ const steers = new Map<string, readonly LocalSteer[]>();
 // What the composer held for each steer, kept until the steer is delivered or
 // taken back, so taking it back restores its chips and replies too.
 const prompts = new Map<string, { appSessionId: string; prompt: QueuedPrompt }>();
-// Each chat's composer, which a taken-back steer returns to.
-const composers = new Map<string, (prompt: QueuedPrompt) => void>();
 // Steers being taken back keep their saved prompt until the answer arrives.
 const withdrawing = new Set<string>();
 const listeners = new Set<() => void>();
@@ -67,23 +65,9 @@ export function subscribeLocalSteers(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-export function registerComposer(
-  appSessionId: string,
-  restore: (prompt: QueuedPrompt) => void,
-): () => void {
-  composers.set(appSessionId, restore);
-  return () => {
-    if (composers.get(appSessionId) === restore) composers.delete(appSessionId);
-  };
-}
-
-// Returns false when nothing could take the prompt back, so the caller can
-// fall back to seeding the text alone.
-export function restoreSteerToComposer(appSessionId: string, steerId: string): boolean {
+// Hands over a steer's saved prompt once, for the composer to restore.
+export function takeSteerPrompt(steerId: string): QueuedPrompt | undefined {
   const saved = prompts.get(steerId);
-  const restore = composers.get(appSessionId);
-  if (!saved || !restore) return false;
   prompts.delete(steerId);
-  restore(saved.prompt);
-  return true;
+  return saved?.prompt;
 }

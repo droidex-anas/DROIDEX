@@ -113,7 +113,7 @@ import {
   visibleSessionTarget,
   type VisibleSessionTarget,
 } from '../lib/childSessions';
-import { addLocalSteer, dropLocalSteers, registerComposer } from '../lib/localSteers';
+import { addLocalSteer, dropLocalSteers } from '../lib/localSteers';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
 import {
@@ -995,6 +995,7 @@ export default function PromptInput({
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
   const composerSeed = state.composerSeed;
+  const restoreRef = useRef<((prompt: QueuedPrompt) => void) | null>(null);
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
     if (submittingRef.current || seedToSend.current !== null) {
@@ -1003,6 +1004,12 @@ export default function PromptInput({
     }
     consumedComposerSeedId.current = composerSeed.id;
     setHistoryIndex(null);
+    // A taken-back steer comes back whole: its chips and replies too.
+    if (composerSeed.prompt) {
+      restoreRef.current?.(composerSeed.prompt);
+      dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
+      return;
+    }
     // Notes and suggestion cards append to an in-progress draft. A surface
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
@@ -1868,30 +1875,9 @@ export default function PromptInput({
     dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
   };
 
-  // A steer taken back returns here with its chips and replies. The latest
-  // render's restore is always the one called.
-  const restoreRef = useRef(restorePromptToComposer);
+  // The seed effect above runs before this declaration in source order, so it
+  // reaches the restore through a ref.
   restoreRef.current = restorePromptToComposer;
-  // A send still preparing its attachments owns them; the steer waits for it.
-  const pendingRestore = useRef<QueuedPrompt | null>(null);
-  const composerSessionId = activeSession?.appSessionId;
-  useEffect(() => {
-    if (!composerSessionId) return;
-    return registerComposer(composerSessionId, (prompt) => {
-      if (submittingRef.current) {
-        pendingRestore.current = prompt;
-        seedWaiting.current = true;
-        return;
-      }
-      restoreRef.current(prompt);
-    });
-  }, [composerSessionId]);
-  useEffect(() => {
-    const prompt = pendingRestore.current;
-    if (!prompt || submittingRef.current) return;
-    pendingRestore.current = null;
-    restoreRef.current(prompt);
-  }, [submitSettled]);
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)

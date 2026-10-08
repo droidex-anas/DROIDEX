@@ -8,7 +8,7 @@ import {
   endSteerWithdrawal,
   localSteersOf,
   retainSteerPrompts,
-  restoreSteerToComposer,
+  takeSteerPrompt,
   subscribeLocalSteers,
 } from '../../lib/localSteers';
 import { sessionIsLive } from '../../lib/sessions';
@@ -85,11 +85,17 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
         toast.info('The agent already has this message.');
         return;
       }
-      // Its chips and replies come back with it when this window sent it.
-      const restored = restoreSteerToComposer(appSessionId, steer.id);
+      // Its chips and replies come back with it when this window sent it. The
+      // seed waits for that chat's composer, and for any send it is making.
+      const prompt = takeSteerPrompt(steer.id);
       endSteerWithdrawal(steer.id);
-      if (!restored)
-        dispatch({ type: 'SEED_COMPOSER', text: steer.text, appSessionId, focus: true });
+      dispatch({
+        type: 'SEED_COMPOSER',
+        text: steer.text,
+        appSessionId,
+        focus: true,
+        ...(prompt ? { prompt } : {}),
+      });
     };
     const canWithdraw = 'canWithdraw' in steer && steer.canWithdraw;
     const reports = threadReports(steer.text);
