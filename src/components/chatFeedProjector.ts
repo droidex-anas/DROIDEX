@@ -351,8 +351,11 @@ function safeTurnStart(
 
   let boundary = enclosingUserTurn(events, earliest);
   const changedEvent = events.at(firstChangedIndex);
+  // A new prompt settles the turn before it, which then folds; a steer joins
+  // the current turn and leaves the one before untouched.
   if (
     changedEvent?.author === 'user' &&
+    !changedEvent.steered &&
     previous.visibleTranscript[firstChangedIndex] !== changedEvent
   ) {
     boundary = enclosingUserTurn(events, Math.max(0, boundary - 1));
