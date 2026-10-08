@@ -1,3 +1,4 @@
+import type { SteeredReportDelivery } from './SessionLifecycle.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
@@ -203,6 +204,7 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
+  onUserPrompt?: (appSessionId: string) => void;
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -681,6 +683,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
+      onUserPrompt: options.onUserPrompt,
       beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -805,7 +808,7 @@ export class SessionManager {
     this.adoption = new SessionAdoption({
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
       registry: this.registry,
-      lifecycle: this.lifecycle,
+      lifecycle: { resume: (id) => this.lifecycle.resume(id, true) },
       liveChildren: () =>
         this.childSessions.liveChildSummaries().map((child) => ({
           parentAppSessionId: child.parentAppSessionId,
@@ -879,8 +882,9 @@ export class SessionManager {
    * Resolves once session history knows every stored conversation. Call it
    * after startSessionFileServing, since it starts that work itself otherwise.
    */
-  whenSessionHistoryReady(): Promise<void> {
-    return this.sessionFiles.whenBootReconciled();
+  async whenSessionHistoryReady(): Promise<void> {
+    await this.sessionFiles.whenBootReconciled();
+    await this.adoption.adopt();
   }
 
   connect(apiKey?: string): void {
@@ -1274,12 +1278,28 @@ export class SessionManager {
     }
   }
 
+  automaticRuntimeLoad(): { live: number; limit: number } {
+    return this.lifecycle.runtimeLoad();
+  }
+
+  makeAutomaticRuntimeRoom(appSessionId: string): Promise<boolean> {
+    return this.lifecycle.makeAutomaticRuntimeRoom(appSessionId);
+  }
+
+  createAutomaticSession(
+    command: Extract<ClientCommand, { type: 'session.create' }>,
+    appSessionId?: string,
+  ): Promise<boolean> {
+    return this.lifecycle.createAutomatic(command, appSessionId);
+  }
+
   deliverScheduledMessage(
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
+    wakingProjectLead = false,
   ): Promise<AutomationDeliveryReceipt> {
-    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent);
+    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent, wakingProjectLead);
   }
 
   steerRunningTurn(
@@ -1287,8 +1307,9 @@ export class SessionManager {
     prompt: string,
     isCurrent: () => boolean,
     now = false,
+    delivery?: SteeredReportDelivery,
   ): Promise<boolean> {
-    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now);
+    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now, delivery);
   }
 
   async automationSessionContext(appSessionId: string): Promise<{
@@ -1317,6 +1338,10 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  transcriptTail(appSessionId: string, limit: number, fullText = false) {
+    return this.timeline.tail(appSessionId, limit, fullText);
+  }
+
   /** Whether a question a conversation was asked is still waiting for an answer. */
   isQuestionPending(appSessionId: string, requestId: string): boolean {
     return this.interactions.isQuestionPending(appSessionId, requestId);
@@ -1325,6 +1350,14 @@ export class SessionManager {
   /** Whether this conversation is stopped on a permission request only the user can answer. */
   isApprovalPending(appSessionId: string): boolean {
     return this.interactions.hasPendingApproval(appSessionId);
+  }
+
+  pendingApproval(appSessionId: string, requestId?: string) {
+    return this.interactions.pendingApproval(appSessionId, requestId);
+  }
+
+  approveFor(source: string, target: string, requestId: string, decision: 'allow' | 'deny') {
+    return this.interactions.approveFor(source, target, requestId, decision);
   }
 
   /** Whether this conversation is open right now, rather than merely known. */

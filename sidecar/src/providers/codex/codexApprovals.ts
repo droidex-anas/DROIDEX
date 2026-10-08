@@ -1,7 +1,12 @@
 // How DROIDEX's autonomy levels and approval cards meet Codex's approval
 // protocol: the sandbox a thread and a turn run under, the decision sent back
 // for an approval request, and the answers sent back for a mid-turn question.
-import type { Autonomy, PermissionKind, PermissionOutcome } from '../../protocol.js';
+import type {
+  Autonomy,
+  PermissionKind,
+  PermissionOutcome,
+  SessionSummary,
+} from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import type { AppServerClient } from './appServer.js';
 
@@ -61,6 +66,7 @@ export interface CodexApproval {
   // ineligible for one.
   signature?: string;
   raw: CommandApproval | FileChangeApproval;
+  canApproveFor?: (actor: SessionSummary) => boolean;
 }
 
 interface CommandApproval {
@@ -139,6 +145,7 @@ async function decideApproval(
     },
     confirmationType: approval.kind,
     ...(approval.signature ? { signature: approval.signature } : {}),
+    ...(approval.canApproveFor ? { canApproveFor: approval.canApproveFor } : {}),
   });
   return approvalDecision(outcome);
 }
@@ -198,6 +205,7 @@ export class OpenPrompts {
     client: Pick<AppServerClient, 'onRequest'>,
     fileDetail: (itemId: string) => FileChangeDetail | undefined,
     canAutoApprove: (approval: CodexApproval) => boolean,
+    ownerCanApproveEdits: (request: FileChangeApproval, actor: SessionSummary) => boolean,
   ): void {
     client.onRequest('item/commandExecution/requestApproval', (params) => {
       const approval = commandApproval(params as CommandApproval);
@@ -206,7 +214,10 @@ export class OpenPrompts {
     });
     client.onRequest('item/fileChange/requestApproval', async (params) => {
       const request = params as FileChangeApproval;
-      const approval = fileChangeApproval(request, fileDetail(request.itemId));
+      const approval: CodexApproval = {
+        ...fileChangeApproval(request, fileDetail(request.itemId)),
+        canApproveFor: (actor) => request.grantRoot == null && ownerCanApproveEdits(request, actor),
+      };
       if (canAutoApprove(approval)) return { decision: 'accept' };
       return this.decide(approval);
     });

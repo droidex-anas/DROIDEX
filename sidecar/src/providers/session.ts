@@ -17,6 +17,8 @@ import type { ProviderKind } from './providerKind.js';
 import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
+  // A queued thread already owns its application identity before the provider opens.
+  appSessionId?: string;
   cwd: string;
   interactionMode: SessionInteractionMode;
   autonomy: Autonomy;
@@ -142,6 +144,9 @@ export type DelegatedTurnEnd =
   | { status: 'completed' | 'interrupted' }
   | { status: 'failed'; error: Error };
 
+/** Only false permits replay; withdrawal and uncertainty settle without it. */
+export type SteerOutcome = boolean | 'withdrawn' | 'unconfirmed';
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Local approval policy: revocations apply immediately, grants after acceptance.
@@ -177,12 +182,13 @@ export interface ProviderSession {
   onDelegatedTurn?(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void;
   // Hands a prompt to the running turn, which the harness delivers at its own
   // next step. True confirms delivery; false requeues it; 'withdrawn' settles
-  // it without delivery or requeue. The id also names provider cancellation.
+  // it without delivery or requeue. 'unconfirmed' prevents uncertain replay.
+  // The id also names provider cancellation.
   steer(
     text: string,
     mentions: ProviderMention[] | undefined,
     steerId: string,
-  ): Promise<boolean | 'withdrawn'>;
+  ): Promise<SteerOutcome>;
   // True only after the harness confirms the model can no longer take it in.
   withdrawSteer?(steerId: string): Promise<boolean>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.

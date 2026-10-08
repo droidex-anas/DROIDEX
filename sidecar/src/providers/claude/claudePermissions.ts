@@ -11,7 +11,7 @@ import type {
 
 import { mcpGrantSignature } from '../../mcpGrant.js';
 import type { Autonomy, PermissionKind, SessionQuestion } from '../../protocol.js';
-import { SESSIONS_MCP_SERVER_NAME } from '../../sessionsMcpPolicy.js';
+import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplay } from '../../sessionsMcpPolicy.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
 export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
@@ -150,6 +150,7 @@ async function approveTool(
   const kind = permissionKind(toolName);
   const mcp = kind === 'mcp' ? mcpTarget(toolName) : undefined;
   const signature = permissionSignature(kind, mcp, input);
+  const display = mcp ? sessionsToolDisplay(mcp.serverName, mcp.toolName, input) : null;
   const canAlwaysAllow = Boolean(signature) && !options.suppressAlwaysAllowRule;
   const outcome = await interactions.requestApproval({
     request: {
@@ -157,12 +158,20 @@ async function approveTool(
       requestId: nextInteractionRequestId(),
       kind,
       canAlwaysAllow,
-      title: options.title ?? options.description ?? options.displayName ?? toolName,
-      detail: describeInput(input),
+      title:
+        display?.title ?? options.title ?? options.description ?? options.displayName ?? toolName,
+      detail: display?.detail ?? describeInput(input),
       raw: { toolName, input },
     },
     confirmationType: CONFIRMATION_TYPES[kind],
     signal: options.signal,
+    canApproveFor: (actor) =>
+      actor.provider === 'claude' &&
+      !options.blockedPath &&
+      !options.defaultToNo &&
+      input.dangerouslyDisableSandbox !== true &&
+      ((actor.autonomy !== 'off' && ['edit', 'create'].includes(kind)) ||
+        (actor.autonomy === 'high' && kind === 'exec')),
     ...(signature ? { signature } : {}),
     ...(mcp ? { mcpTool: mcp } : {}),
   });

@@ -4,7 +4,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import { automationToolDisplayTitle } from '../../automations/permissionPolicy.js';
 import { mcpGrantSignature } from '../../mcpGrant.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
-import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplayTitle } from '../../sessionsMcpPolicy.js';
+import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplay } from '../../sessionsMcpPolicy.js';
 import { objectValue } from '../../values.js';
 import type { OpenPrompts } from './codexApprovals.js';
 
@@ -103,6 +103,7 @@ export class CodexToolBridge {
       return reply('This DROIDEX turn is no longer active.', false);
     const { serverName, tool, input } = found;
     const signature = mcpGrantSignature(serverName, tool.name, input);
+    const display = sessionsToolDisplay(serverName, tool.name, input);
     const outcome = await this.session.prompts.ask(() =>
       this.session.interactions.requestApproval({
         request: {
@@ -110,11 +111,8 @@ export class CodexToolBridge {
           requestId: nextInteractionRequestId(),
           kind: 'mcp',
           canAlwaysAllow: Boolean(signature),
-          title:
-            sessionsToolDisplayTitle(serverName, tool.name) ??
-            automationToolDisplayTitle(serverName, tool.name) ??
-            tool.name,
-          detail: JSON.stringify(input),
+          title: display?.title ?? automationToolDisplayTitle(serverName, tool.name) ?? tool.name,
+          detail: display?.detail ?? JSON.stringify(input),
           raw: { toolName: `mcp__${serverName}__${tool.name}`, input },
         },
         confirmationType: 'mcp_tool',

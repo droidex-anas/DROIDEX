@@ -4,6 +4,7 @@ import test from 'node:test';
 import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
+import type { SteerOutcome } from '../session.js';
 import { codexSession, fakeClient } from './codexTestSupport.js';
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
@@ -74,8 +75,8 @@ test('Codex steers wait for delivery and the RPC reply, and a new turn starts a 
   await session.open();
   notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
 
-  const first = session.steer('first');
-  const second = session.steer('second');
+  const first = session.steer('first', undefined, 'first');
+  const second = session.steer('second', undefined, 'second');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1, 'the second request must wait for the first steer');
   assert.equal(steers[0].expectedTurnId, 'turn-1');
@@ -93,7 +94,7 @@ test('Codex steers wait for delivery and the RPC reply, and a new turn starts a 
     error: { message: 'Turn failed' },
     willRetry: false,
   });
-  void session.steer('after failure');
+  void session.steer('after failure', undefined, 'after failure');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1, 'a reset must invalidate its target');
 
@@ -103,8 +104,8 @@ test('Codex steers wait for delivery and the RPC reply, and a new turn starts a 
   });
   assert.equal(await second, false, 'a queued steer must not follow a replacement turn');
   notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-2' } });
-  const third = session.steer('third');
-  const fourth = session.steer('fourth');
+  const third = session.steer('third', undefined, 'third');
+  const fourth = session.steer('fourth', undefined, 'fourth');
   await new Promise((resolve) => setImmediate(resolve));
   // The first steer's reply never came; it named turn-1 and cannot hold turn-2 back.
   assert.equal(steers.length, 2, 'a new turn must not wait for a reply from the last one');
@@ -151,7 +152,7 @@ test('a delegated turn completing preserves the active typed turn steer queue', 
   });
   await firstEvent;
 
-  const first = session.steer('first');
+  const first = session.steer('first', undefined, 'first');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1);
   assert.equal(steers[0].expectedTurnId, 'typed-turn');
@@ -163,7 +164,7 @@ test('a delegated turn completing preserves the active typed turn steer queue', 
     threadId: 'thread-1',
     turn: { id: 'delegated-turn', status: 'completed' },
   });
-  const second = session.steer('second');
+  const second = session.steer('second', undefined, 'second');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1, 'delegated completion must not release the typed queue');
 
@@ -222,7 +223,7 @@ test('process closure preserves a steer echoed while the turn start reply is out
     threadId: 'thread-1',
     turn: { id: 'typed-turn' },
   });
-  const delivered = session.steer('follow up');
+  const delivered = session.steer('follow up', undefined, 'follow up');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'pending');
 
@@ -263,8 +264,8 @@ test('a delegated steer waits for an earlier typed echo awaiting the turn start 
     threadId: 'thread-1',
     turn: { id: 'typed-turn' },
   });
-  const acknowledgements: { text: string; delivered: boolean }[] = [];
-  const first = session.steer('first').then((delivered) => {
+  const acknowledgements: { text: string; delivered: SteerOutcome }[] = [];
+  const first = session.steer('first', undefined, 'first').then((delivered) => {
     acknowledgements.push({ text: 'first', delivered });
   });
   await new Promise((resolve) => setImmediate(resolve));
@@ -276,7 +277,7 @@ test('a delegated steer waits for an earlier typed echo awaiting the turn start 
     threadId: 'thread-1',
     turn: { id: 'delegated-turn' },
   });
-  const second = session.steer('second').then((delivered) => {
+  const second = session.steer('second', undefined, 'second').then((delivered) => {
     acknowledgements.push({ text: 'second', delivered });
   });
   await new Promise((resolve) => setImmediate(resolve));
@@ -316,7 +317,7 @@ test('close discards a queued Codex steer echo after its turn completes', async 
   const events = session.stream('hello');
   t.after(() => events.return(undefined));
   assert.equal((await events.next()).value?.transcript?.text, 'before the steer');
-  const delivered = session.steer('follow up');
+  const delivered = session.steer('follow up', undefined, 'follow up');
   await new Promise((resolve) => setImmediate(resolve));
   notifications.get('turn/completed')?.({
     threadId: 'thread-1',
@@ -325,7 +326,39 @@ test('close discards a queued Codex steer echo after its turn completes', async 
   assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'pending');
 
   await session.close();
-  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), false);
+  assert.equal(await Promise.race([delivered, Promise.resolve('pending')]), 'unconfirmed');
+});
+
+test('close before consuming a Codex steer echo leaves delivery unconfirmed', async (t) => {
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') {
+      notifications.get('item/agentMessage/delta')?.({
+        threadId: 'thread-1',
+        itemId: 'message-1',
+        delta: 'before the steer',
+      });
+      return { turn: { id: 'turn-1' } };
+    }
+    if (method === 'turn/steer') {
+      notifications.get('item/started')?.({
+        threadId: 'thread-1',
+        item: { type: 'userMessage', clientId: params.clientUserMessageId },
+      });
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  t.after(() => session.close());
+  await session.open();
+  const events = session.stream('hello');
+  t.after(() => events.return(undefined));
+  await events.next();
+  const delivered = session.steer('follow up', undefined, 'follow up');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await session.close();
+  assert.equal(await delivered, 'unconfirmed');
 });
 
 test('a delegated turn starting preserves the typed turn accepted Stop', async (t) => {
@@ -360,7 +393,7 @@ test('a delegated turn starting preserves the typed turn accepted Stop', async (
     threadId: 'thread-1',
     turn: { id: 'delegated-turn' },
   });
-  assert.equal(await session.steer('after Stop'), false);
+  assert.equal(await session.steer('after Stop', undefined, 'after Stop'), false);
   assert.equal(steers.length, 0, 'the accepted typed Stop must still block steering');
 });
 
@@ -385,8 +418,8 @@ test('a delegated turn fatal error preserves the typed stream and steer queue', 
   });
   await firstEvent;
 
-  const first = session.steer('first');
-  const second = session.steer('second');
+  const first = session.steer('first', undefined, 'first');
+  const second = session.steer('second', undefined, 'second');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 1);
   notifications.get('turn/started')?.({
@@ -461,7 +494,7 @@ test('a refused Stop reopens steering only when no Stop was accepted for that tu
   const next = events.next();
 
   assert.equal(
-    await session.steer('after refusal'),
+    await session.steer('after refusal', undefined, 'after refusal'),
     true,
     'a refused early Stop restores steering',
   );
@@ -469,7 +502,7 @@ test('a refused Stop reopens steering only when no Stop was accepted for that tu
   await session.interrupt();
   await assert.rejects(session.interrupt(), /Stop refused/);
   assert.equal(
-    await session.steer('after duplicate'),
+    await session.steer('after duplicate', undefined, 'after duplicate'),
     false,
     'the accepted Stop still owns the turn',
   );
@@ -531,6 +564,7 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
       },
     },
     (id) => mapper.toolDetail(id),
+    () => false,
     () => false,
   );
   const approve = handlers.get('item/fileChange/requestApproval');

@@ -63,6 +63,7 @@ flowchart LR
 - Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal.
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
+- Provider `steer(text, mentions, steerId)` resolves `true` for confirmed consumption, `false` for definitive refusal and report recovery or user-prompt requeue, `withdrawn` for confirmed take-back, or `unconfirmed` when consumption or cancellation cannot be established. Unconfirmed handoffs never replay.
 - `session.withdrawSteer` carries `appSessionId`, `steerId`, and a `requestId`; `session.steerWithdrawn` echoes those identities with `withdrawn` and, on success, the full prompt text and mentions. True means the model cannot see the prompt: app-owned queued prompts are removed immediately; Claude harness-held steers require `cancelAsyncMessage` confirmation or a matching cancelled lifecycle frame. That confirmation survives provider shutdown. Codex and Droid harness-held steers return false. Lifecycle retains the latest 64 withdrawn or delivered outcomes per live session so repeated requests replay the receipt. The renderer keeps a lost withdrawal marked and retries once per bridge reconnect; it never infers withdrawal from the pending list. Pending summary rows publish `canWithdraw`; only listed steers offer Send now or take-back. Send now retains harness ownership until settlement even while the prompt also waits in `pendingSends`. Confirmed withdrawal settles the original steer without delivery or fallback requeue.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
@@ -96,8 +97,11 @@ membership durably before the first goal can execute. `SessionLifecycle`
 remains the sole runtime owner.
 
 Thinking and tool output are never forwarded in a report. Busy recipients wait
-for session availability or capacity events. Interrupted delivery is retained
-as uncertain and requires review, rather than being silently replayed.
+for session availability or capacity events. A steered report settles at the
+provider call and never replays; unread replies survive lost pushes. Scheduled
+turns retain their provider acceptance receipt. On restart, sending claims made
+entirely of reports are dropped with their replies unread; other claims require
+review.
 Permission requests stay with the human. A thread's own question goes to the
 chat that started it, and the human can still answer it in the thread.
 

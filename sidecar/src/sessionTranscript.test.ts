@@ -285,6 +285,8 @@ test('a single message larger than MAX_SESSION_BYTES still parses in the reader'
   assert.equal(texts.length, 2);
   assert.match(texts[0]?.text ?? '', /^z+/);
   assert.equal(texts[1]?.text, 'tail');
+  const full = new SessionTranscriptReader('app', 'provider', path, 'primary', true);
+  assert.equal(full.windowBackward(100, 0).events[0]?.text, huge);
 });
 
 test('readSessionRawWindow tail window drops the partial first line', () => {

@@ -3,7 +3,7 @@ import { isAbsolute } from 'node:path';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy } from '../../protocol.js';
 import type { ProviderMention } from '../catalog.js';
-import type { ProviderModelSettings } from '../session.js';
+import type { ProviderModelSettings, SteerOutcome } from '../session.js';
 import { codexAutonomy, codexSandboxPolicy } from './codexApprovals.js';
 
 export interface TurnSettings {
@@ -62,11 +62,11 @@ export function turnInput(prompt: string, mentions: ProviderMention[] = []) {
 // handlers and drained by the streaming turn. Events outside a turn have no
 // transcript to land in and are dropped.
 export class TurnStream {
-  private readonly queued: (NormalizedEvent | ((delivered: boolean) => void))[] = [];
+  private readonly queued: (NormalizedEvent | ((delivered: SteerOutcome) => void))[] = [];
   private waiting?: () => void;
   private settlement?: Error | 'done';
 
-  push(events: (NormalizedEvent | ((delivered: boolean) => void))[]): void {
+  push(events: (NormalizedEvent | ((delivered: SteerOutcome) => void))[]): void {
     this.queued.push(...events);
     this.wake();
   }
@@ -78,10 +78,10 @@ export class TurnStream {
     this.wake();
   }
 
-  // A consumer that leaves early cannot deliver echoes it never reached.
+  // Echoes reached Codex, but a departing consumer cannot acknowledge them.
   discard(): void {
     for (const entry of this.queued) {
-      if (typeof entry === 'function') entry(false);
+      if (typeof entry === 'function') entry('unconfirmed');
     }
     this.queued.length = 0;
     this.finish();

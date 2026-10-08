@@ -261,7 +261,7 @@ export function buildResumedProviderSummary(
   return {
     ...historical,
     appSessionId,
-    providerSessionId: appSessionId,
+    providerSessionId: historical.providerSessionId ?? appSessionId,
     phase: historical.phase === 'running' ? 'paused' : historical.phase,
     streaming: false,
     queuedSends: 0,

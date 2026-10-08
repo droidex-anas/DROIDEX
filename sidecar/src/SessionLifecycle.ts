@@ -47,9 +47,14 @@ import {
 } from './providers/droid/droidLaunch.js';
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
-import type { DelegatedTurnEnd, Provider, ProviderSession } from './providers/session.js';
+import type {
+  DelegatedTurnEnd,
+  Provider,
+  ProviderSession,
+  SteerOutcome,
+} from './providers/session.js';
 
-const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
+const MAX_AUTOMATIC_SESSION_RUNTIMES = 20;
 const MAX_RECENT_STEER_OUTCOMES = 64;
 // How long a settled turn waits for Send now's interrupt. A harness that never
 // answers it must not leave the chat busy for good.
@@ -98,7 +103,7 @@ export interface SessionPrompt {
   mentions?: ProviderMention[];
   // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
   notice?: string;
-  // Set on a prompt sent as a steer. It is listed as pending until the model
+  // A typed steer is listed as pending until the model
   // takes it in, whether the harness holds it or it waits on the queue.
   steerId?: string;
   // When it was sent, relative to the chat's other prompts.
@@ -109,6 +114,14 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
+  delivery?: SteeredReportDelivery;
+}
+
+/** Acceptance settles handoff; acknowledgement only clears the reply's unread flag. */
+export interface SteeredReportDelivery {
+  accepted: () => void;
+  declined: (reason: 'stale' | 'refused') => void;
+  acknowledged?: () => void;
 }
 
 interface LiveTurnState {
@@ -154,6 +167,7 @@ export interface LiveSession extends LiveTurnState {
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionLifecycleDependencies {
+  onUserPrompt?: (appSessionId: string) => void;
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
   // A scheduled runtime slot was released without a session closing.
@@ -225,6 +239,7 @@ export interface SessionLifecycleDependencies {
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
+  private automaticCreates = 0;
   private readonly steerOutcomes = new WeakMap<
     LiveSession,
     Map<string, Pick<SessionPrompt, 'text' | 'mentions'> | 'delivered'>
@@ -259,13 +274,59 @@ export class SessionLifecycle {
   isCloseRequested(appSessionId: string): boolean {
     return this.forkOpens.get(this.chatKey(appSessionId)) === 'closed';
   }
-  // A branch is a session opened from another session's transcript: its goal
-  // stays the user's request while the model's first prompt carries the source.
-  async create(command: SessionCreateCommand, branch?: SessionBranch): Promise<void> {
+  // Provisional opens stop counting once registration turns them into live runtimes.
+  runtimeLoad(): { live: number; limit: number } {
+    const registry = this.dependencies.registry;
+    const opening = [...this.resumeOperations.keys()].filter((id) => !registry.getLive(id)).length;
+    return {
+      live: registry.liveCount + this.automaticCreates + opening,
+      limit: MAX_AUTOMATIC_SESSION_RUNTIMES,
+    };
+  }
+
+  private canStartAutomaticRuntime(): boolean {
+    return this.runtimeLoad().live < MAX_AUTOMATIC_SESSION_RUNTIMES;
+  }
+
+  async createAutomatic(command: SessionCreateCommand, appSessionId?: string): Promise<boolean> {
+    if (!this.canStartAutomaticRuntime()) return false;
+    this.automaticCreates += 1;
+    let reserved = true;
+    const release = () => {
+      if (!reserved) return;
+      reserved = false;
+      this.automaticCreates -= 1;
+    };
+    try {
+      await this.create(command, undefined, appSessionId, release);
+      return true;
+    } finally {
+      release();
+      this.dependencies.onScheduledCapacityChanged?.();
+    }
+  }
+
+  async makeAutomaticRuntimeRoom(appSessionId: string): Promise<boolean> {
+    if (!this.canStartAutomaticRuntime())
+      await this.dependencies.releaseRuntimeForCapacity(appSessionId);
+    return this.canStartAutomaticRuntime();
+  }
+
+  // A branch keeps the user's goal while its first prompt carries the source transcript.
+  async create(
+    command: SessionCreateCommand,
+    branch?: SessionBranch,
+    requestedAppSessionId?: string,
+    releaseCreateReservation?: () => void,
+  ): Promise<void> {
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
-    const ref = { id: '', clientRef: command.clientRef, purpose: command.sessionPurpose };
+    const ref = {
+      id: requestedAppSessionId ?? '',
+      clientRef: command.clientRef,
+      purpose: command.sessionPurpose,
+    };
     let pendingMcpServers: LocalMcpResource[] = [];
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
@@ -307,6 +368,7 @@ export class SessionLifecycle {
       const mcp = await d.startLocalMcpServers(ref, kind, appCwd);
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.create({
+        appSessionId: requestedAppSessionId,
         cwd: runtimeCwd,
         interactionMode,
         autonomy,
@@ -346,7 +408,7 @@ export class SessionLifecycle {
         ));
       this.requireOpenAdmission();
 
-      const appSessionId = providerSession.providerSessionId;
+      const appSessionId = requestedAppSessionId ?? providerSession.providerSessionId;
       const maxContextTokens =
         kind === 'droid' ? d.maxContextTokensForModel(primary.modelId) : undefined;
       const created = buildCreatedSessionSummary({
@@ -363,6 +425,7 @@ export class SessionLifecycle {
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),
       });
+      created.providerSessionId = providerSession.providerSessionId;
       const summary = branch ? { ...created, lineage: branch.lineage } : created;
       if (branch) d.recordLineage(appSessionId, branch.lineage);
       ref.id = appSessionId;
@@ -372,6 +435,7 @@ export class SessionLifecycle {
       this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, () => {
         this.requireOpenAdmission();
+        releaseCreateReservation?.();
       });
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
@@ -413,7 +477,7 @@ export class SessionLifecycle {
     }
   }
 
-  async resume(requestedAppSessionId: string): Promise<boolean> {
+  async resume(requestedAppSessionId: string, automatic = false): Promise<boolean> {
     const d = this.dependencies;
     const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
@@ -426,6 +490,8 @@ export class SessionLifecycle {
     if (this.isCloseRequested(appSessionId)) return false;
     const pending = this.resumeOperations.get(appSessionId);
     if (pending) return pending;
+    if (automatic && !d.registry.getLive(appSessionId) && !this.canStartAutomaticRuntime())
+      return false;
 
     const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
       if (this.resumeOperations.get(appSessionId) !== operation) return;
@@ -635,15 +701,16 @@ export class SessionLifecycle {
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
+    wakingProjectLead = false,
   ): Promise<AutomationDeliveryReceipt> {
+    // Lead wakes bypass the soft cap so workers waiting on the lead cannot deadlock.
+    const automatic = !wakingProjectLead;
     return deliverScheduledMessage(
       {
         dependencies: this.dependencies,
-        canResume: () =>
-          this.dependencies.registry.liveSessionsSnapshot().length + this.resumeOperations.size <
-          MAX_SCHEDULED_SESSION_RUNTIMES,
+        canResume: () => !automatic || this.canStartAutomaticRuntime(),
         makeRoom: (id) => this.dependencies.releaseRuntimeForCapacity(id),
-        resume: (id) => this.resume(id),
+        resume: (id) => this.resume(id, automatic),
         start: (id, text, delivery) =>
           this.driveInBackground(id, { ...sessionPrompt(text), announce: true }, delivery),
       },
@@ -662,25 +729,38 @@ export class SessionLifecycle {
    * `isCurrent` turning false withdraws it: this resolves false while the chat
    * has not taken it, and one that went on behind the turn is dropped there.
    * `now` sends it as Send now does: the turn stops and the prompt runs next.
+   * A delivery report settles at the provider call and never joins that queue.
    */
   async steerRunningTurn(
     appSessionId: string,
     text: string,
     isCurrent: () => boolean,
     now = false,
+    delivery?: SteeredReportDelivery,
   ): Promise<boolean> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
+    if (delivery && (!liveSession || !this.canReceiveReport(liveSession) || !isCurrent())) {
+      delivery.declined('stale');
+      return false;
+    }
     if (!liveSession || liveSession.closeMode) return false;
     if (!liveSession.streaming && !liveSession.compacting && !liveSession.autoCompacting)
       return false;
     const steerId = randomUUID();
-    const prompt = { ...sessionPrompt(text, undefined, steerId), isCurrent };
-    const admitted = await this.admitPrompt(appSessionId, prompt);
+    const prompt = { ...sessionPrompt(text, undefined, steerId), isCurrent, delivery };
+    // Reports stay with their sender while the chat is unavailable; they never
+    // resume a runtime or join a typed prompt's relaunch queue.
+    const admitted = delivery
+      ? { liveSession, stops: this.stopCount(appSessionId) }
+      : await this.admitPrompt(appSessionId, prompt);
     if (admitted === 'held') return true;
     if (!admitted) return false;
     // A Stop or the caller's guard can change between admission and this line.
-    if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) return false;
-    if (now) {
+    if (this.stopCount(appSessionId) !== admitted.stops || !isCurrent()) {
+      delivery?.declined('stale');
+      return false;
+    }
+    if (now && !delivery) {
       // A runtime replaced during admission would carry the prompt off with it.
       if (this.dependencies.registry.getLive(appSessionId) !== admitted.liveSession) return false;
       admitted.liveSession.pendingSends.push(prompt);
@@ -715,6 +795,7 @@ export class SessionLifecycle {
     if (!admitted || admitted === 'held') return;
     // A Stop can land between admission and this line.
     if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
+    this.dependencies.onUserPrompt?.(requestedAppSessionId);
     await this.handOver(requestedAppSessionId, admitted, prompt);
   }
 
@@ -727,7 +808,7 @@ export class SessionLifecycle {
   ): Promise<void> {
     const { liveSession } = admitted;
     if (prompt.steerId) {
-      if (await this.steer(liveSession, prompt)) return;
+      if ((await this.steer(liveSession, prompt)) || prompt.delivery) return;
       // A Stop, a new runtime, or its sender withdrawing it since it was sent
       // takes it back.
       if (
@@ -747,35 +828,61 @@ export class SessionLifecycle {
     await this.drive(liveSession.summary.appSessionId, prompt);
   }
 
-  // Hands a steer to the running turn and waits for the harness to deliver it.
-  // True when that settles it: the model took it in, or a Stop or Send now
-  // took it back first. False when the turn could not take it.
+  // Reports settle at handoff and never enter the typed-message queues.
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const appSessionId = liveSession.summary.appSessionId;
     const session = liveSession.session;
     const steerId = prompt.steerId;
+    const stops = this.stopCount(appSessionId);
+    const turn = liveSession.turnPromise;
+    const delegatedTurns = liveSession.delegatedTurns;
+    const isCurrent = () =>
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      liveSession.turnPromise === turn &&
+      liveSession.delegatedTurns === delegatedTurns &&
+      this.stopCount(appSessionId) === stops &&
+      !isWithdrawn(prompt);
     if (
       !steerId ||
+      !isCurrent() ||
       !liveSession.streaming ||
       liveSession.compacting ||
       liveSession.autoCompacting ||
       liveSession.interrupting ||
-      liveSession.interruptingToSend
-    )
+      liveSession.interruptingToSend ||
+      (prompt.delivery && !this.canReceiveReport(liveSession))
+    ) {
+      prompt.delivery?.declined('stale');
       return false;
-    liveSession.steers.push(prompt);
-    this.updateQueuedSends(liveSession);
-    const outcome = await session.steer(prompt.text, prompt.mentions, steerId).catch(() => false);
+    }
+    if (!prompt.delivery) {
+      liveSession.steers.push(prompt);
+      this.updateQueuedSends(liveSession);
+    }
+    let outcome: SteerOutcome;
+    prompt.delivery?.accepted();
+    try {
+      outcome = await session.steer(prompt.text, prompt.mentions, steerId);
+    } catch {
+      outcome = prompt.delivery ? 'unconfirmed' : false;
+    }
+    if (outcome === false && prompt.delivery) {
+      prompt.delivery.declined('refused');
+      return true;
+    }
     // Compaction can replace the provider while this live session still owns the steer.
     if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return true;
     const held = removePrompt(liveSession.steers, prompt);
-    if (!outcome) {
+    if (outcome === false) {
       if (liveSession.pendingSends.includes(prompt)) {
         this.updateQueuedSends(liveSession);
         return true;
       }
       return !held;
     }
+    if (prompt.delivery && !isCurrent()) return true;
+    if (this.stopCount(appSessionId) !== stops || isWithdrawn(prompt)) return true;
     // Send now may have queued it again just as the harness delivered it. It
     // leaves the queue at once, so a turn settling while the row is written
     // cannot send it a second time; the list is published after the row, since
@@ -786,9 +893,14 @@ export class SessionLifecycle {
       prompt,
       outcome === 'withdrawn' ? 'withdrawn' : 'delivered',
     );
+    if (outcome === true) prompt.delivery?.acknowledged?.();
     if (outcome !== 'withdrawn')
       await this.dependencies.appendSteer(appSessionId, prompt.text, steerId);
-    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
+    if (
+      prompt.delivery
+        ? isCurrent()
+        : this.dependencies.registry.getLive(appSessionId) === liveSession
+    )
       this.updateQueuedSends(liveSession);
     return true;
   }
@@ -829,7 +941,7 @@ export class SessionLifecycle {
     prompt: SessionPrompt,
     outcome: 'withdrawn' | 'delivered',
   ): void {
-    if (!prompt.steerId) return;
+    if (prompt.delivery || !prompt.steerId) return;
     let outcomes = this.steerOutcomes.get(liveSession);
     if (!outcomes) {
       outcomes = new Map();
@@ -917,7 +1029,10 @@ export class SessionLifecycle {
     const stops = this.stopCount(id);
     const liveSession = await this.prepareToSend(id);
     if (this.stopCount(id) !== stops || isWithdrawn(prompt)) return undefined;
-    if (!liveSession) return this.waitForRelaunch(id, prompt) ? 'held' : undefined;
+    if (!liveSession) {
+      if (this.waitForRelaunch(id, prompt)) return 'held';
+      return undefined;
+    }
     return { liveSession, stops };
   }
 
@@ -1023,7 +1138,9 @@ export class SessionLifecycle {
     // Closing a chat for good takes back whatever was about to be sent to it.
     if (mode === 'discard-pending') {
       this.noteStop(appSessionId);
+      const relaunch = this.relaunches.get(appSessionId);
       this.relaunches.delete(appSessionId);
+      relaunch?.waiting.splice(0);
     }
     const pendingResume = this.resumeOperations.get(appSessionId);
     if (pendingResume) this.canceledResumes.add(appSessionId);
@@ -1606,6 +1723,7 @@ export class SessionLifecycle {
     }
     // Its sender withdrew it while it waited, so what was queued behind it runs instead.
     if (isWithdrawn(prompt)) {
+      delivery?.declined('stale');
       const next = liveSession.pendingSends.shift();
       if (next === undefined) return;
       this.updateQueuedSends(liveSession);
@@ -1640,6 +1758,7 @@ export class SessionLifecycle {
       d.registry.updateSummary(stableAppSessionId, {
         phase: liveSession.summary.sessionPurpose === 'mission-control' ? 'planning' : 'running',
         streaming: true,
+        interruptReason: undefined,
         ...queueSummary(liveSession),
       });
       turn = liveSession.turnPromise = d.runPrimaryTurn(liveSession, {
@@ -1653,6 +1772,7 @@ export class SessionLifecycle {
       });
       await turn;
     } finally {
+      delivery?.declined('unknown');
       // This turn's rows are all in. One the provider started meanwhile, and
       // still running, keeps the source open; one that ended left it to us,
       // unless the next typed turn it started already owns the source.
@@ -1690,7 +1810,7 @@ export class SessionLifecycle {
       // until the runtime can actually be released.
       await liveSession.providerClosePromise.catch(() => undefined);
     }
-    if (d.isShutdownStarted() || this.shouldDiscardPendingSends(liveSession)) {
+    if (d.isShutdownStarted() || liveSession.closeMode === 'discard-pending') {
       liveSession.pendingSends = [];
     } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
       const queued = liveSession.pendingSends.splice(0);
@@ -1739,8 +1859,18 @@ export class SessionLifecycle {
     );
   }
 
-  private shouldDiscardPendingSends(liveSession: LiveSession): boolean {
-    return liveSession.closeMode === 'discard-pending';
+  private canReceiveReport(liveSession: LiveSession): boolean {
+    return (
+      !this.dependencies.isShutdownStarted() &&
+      liveSession.streaming &&
+      !liveSession.session.isClosed &&
+      !liveSession.closeMode &&
+      !liveSession.compacting &&
+      !liveSession.autoCompacting &&
+      !liveSession.interrupting &&
+      !liveSession.interruptingToSend &&
+      !this.relaunches.has(liveSession.summary.appSessionId)
+    );
   }
 
   // A chat whose context window changed runs on a new process. The runtime is
@@ -1798,11 +1928,13 @@ export class SessionLifecycle {
     else await this.runTurn(liveSession, first);
   }
 
-  // True when the chat is relaunching and the prompt now waits for it.
+  // A relaunch queues typed prompts; reports stay pending with their sender.
   private waitForRelaunch(id: string, prompt: SessionPrompt): boolean {
     const relaunch = this.relaunches.get(this.chatKey(id));
-    relaunch?.waiting.push(prompt);
-    return relaunch !== undefined;
+    if (!relaunch) return false;
+    if (prompt.delivery) prompt.delivery.declined('stale');
+    else relaunch.waiting.push(prompt);
+    return true;
   }
 
   private stopCount(id: string): number {
@@ -1821,7 +1953,7 @@ export class SessionLifecycle {
 
   private async redeliverQueuedSends(appSessionId: string, queued: SessionPrompt[]): Promise<void> {
     for (const prompt of queued) {
-      if (this.dependencies.isShutdownStarted()) return;
+      if (this.dependencies.isShutdownStarted()) continue;
       try {
         await this.sendPrompt(appSessionId, prompt);
       } catch (error) {

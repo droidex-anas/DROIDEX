@@ -13,10 +13,13 @@ const id = z.string().min(1).max(200);
 export const LEDGER_LIMITS = {
   /** A project's or a thread's title. */
   title: 120,
+  brief: 2_000,
   planSteps: 60,
   stepTitle: 200,
   stepMilestone: 80,
   stepNote: 400,
+  todos: 40,
+  todoText: 400,
   /** What a finished project achieved, in the lead's words. */
   outcome: 600,
   /** A message, a thread's final reply, and each earlier reply kept. */
@@ -63,15 +66,18 @@ const message = z
     id,
     from: id,
     to: id,
-    kind: z.enum(['result', 'question', 'message']),
+    kind: z.enum(['result', 'question', 'approval', 'idle', 'message']),
     text,
     questionId: id.optional(),
+    approvalId: id.optional(),
+    replyId: id.optional(),
   })
   .strict();
 
 const ask = z
   .object({
     requestId: id,
+    notified: z.literal(true).optional(),
     questions: z
       .array(
         z
@@ -94,6 +100,8 @@ const project = z
     paused: z.boolean(),
     leadStopped: z.literal(true).optional(),
     leadFailed: z.literal(true).optional(),
+    interrupted: z.array(id).optional(),
+    wakePending: z.enum(['team-idle', 'resume']).optional(),
     startedAt: z.number().int().min(0).optional(),
     done: z
       .object({
@@ -103,6 +111,8 @@ const project = z
       .strict()
       .optional(),
     launching: z.number().int().min(0),
+    lastStepId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    brief: z.string().max(LEDGER_LIMITS.brief).optional(),
     plan: z
       .array(
         z
@@ -110,7 +120,7 @@ const project = z
             id,
             title: z.string().min(1).max(LEDGER_LIMITS.stepTitle),
             milestone: z.string().max(LEDGER_LIMITS.stepMilestone).optional(),
-            state: z.enum(['planned', 'doing', 'done', 'blocked']).optional(),
+            state: z.enum(['planned', 'doing', 'review', 'done', 'blocked']).optional(),
             threadAppSessionId: id.optional(),
             note: z.string().max(LEDGER_LIMITS.stepNote).optional(),
           })
@@ -118,6 +128,22 @@ const project = z
       )
       .max(LEDGER_LIMITS.planSteps)
       .optional(),
+    todos: z
+      .array(
+        z
+          .object({
+            id,
+            text: z.string().trim().min(1).max(LEDGER_LIMITS.todoText),
+            after: id.optional(),
+            dueAt: z.number().int().min(0).max(8_640_000_000_000_000).optional(),
+            due: z.literal(true).optional(),
+            notified: z.literal(true).optional(),
+          })
+          .strict(),
+      )
+      .max(LEDGER_LIMITS.todos)
+      // Ledgers written before to-dos existed have none.
+      .default([]),
     threads: z.array(
       z
         .object({
@@ -126,11 +152,41 @@ const project = z
           ownerAppSessionId: id.optional(),
           title: z.string().max(LEDGER_LIMITS.title),
           reply: text,
+          replyId: id.optional(),
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
-          owedReport: text.optional(),
+          owedReport: z
+            .union([text, z.object({ text, replyId: id.optional() }).strict()])
+            // Main ledgers store report text alone; runtime state uses one shape.
+            .transform((report) => (typeof report === 'string' ? { text: report } : report))
+            .optional(),
+          owedLeadAlert: z.literal(true).optional(),
+          unread: z.literal(true).optional(),
           waiting: z.boolean(),
+          stopped: z.literal(true).optional(),
+          queuedSpawn: z
+            .object({
+              phase: z.enum(['queued', 'opening', 'failed']),
+              input: threadInputSchema,
+              order: z.number().int().min(0),
+              workspace: z
+                .union([
+                  z
+                    .object({ cwd: threadInputSchema.shape.cwd.unwrap(), joined: z.literal(true) })
+                    .strict(),
+                  z
+                    .object({
+                      cwd: threadInputSchema.shape.cwd.unwrap(),
+                      branch: z.string(),
+                      base: z.string(),
+                    })
+                    .strict(),
+                ])
+                .optional(),
+            })
+            .strict()
+            .optional(),
         })
         .strict(),
     ),
@@ -208,10 +264,10 @@ export class ProjectStore implements ProjectPersistence {
     return projects;
   }
 
-  save(projects: Project[]): Promise<void> {
+  async save(projects: Project[]): Promise<void> {
     const json = JSON.stringify(projects);
-    if (Buffer.byteLength(json) > MAX_BYTES)
-      return Promise.reject(new Error('Project ledger exceeds 8 MiB.'));
+    if (Buffer.byteLength(json) > MAX_BYTES) throw new Error('Project ledger exceeds 8 MiB.');
+    validateLedger(ledger.parse(projects).map((entry) => ({ ...entry, plan: entry.plan ?? [] })));
     // The failing caller sees the rejection; the next write can repair the ledger.
     const next = this.writing.catch(() => undefined).then(() => this.write(json));
     this.writing = next;
@@ -260,6 +316,11 @@ function validateLedger(projects: Project[]): void {
     }
     validateOwnership(item);
     validateInbox(item);
+    // A to-do is the lead's note, never worth refusing the whole ledger over:
+    // one naming a thread that has since left the project loses only that link.
+    for (const todo of item.todos)
+      if (todo.after && !item.threads.some((thread) => thread.appSessionId === todo.after))
+        delete todo.after;
   }
 }
 
@@ -281,6 +342,11 @@ function validateOwnership(project: Project): void {
 
 function validateInbox(project: Project): void {
   const ids = new Set(project.threads.map((thread) => thread.appSessionId));
+  if (
+    project.interrupted?.some((id) => !ids.has(id)) ||
+    new Set(project.interrupted).size !== (project.interrupted?.length ?? 0)
+  )
+    throw new Error('Invalid interrupted work in project ledger.');
   const messages = [...project.pending, ...(project.delivery?.messages ?? [])];
   if (messages.length > LEDGER_LIMITS.inbox)
     throw new Error(`Project inbox exceeds ${String(LEDGER_LIMITS.inbox)} messages.`);
