@@ -351,10 +351,13 @@ test('a delegated turn fatal error preserves the typed stream and steer queue', 
     error: { message: 'Spoken request failed' },
     willRetry: false,
   });
+  assert.equal((await events.next()).value?.transcript?.text, 'Spoken request failed');
   notifications.get('item/started')?.({
     threadId: 'thread-1',
     item: { type: 'userMessage', clientId: steers[0].clientUserMessageId },
   });
+  // The typed stream must consume the echo before delivery is acknowledged.
+  const nextEvent = events.next();
   assert.equal(await first, true, 'the delegated error must not drop the typed steer');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(steers.length, 2);
@@ -369,7 +372,8 @@ test('a delegated turn fatal error preserves the typed stream and steer queue', 
     threadId: 'thread-1',
     turn: { id: 'typed-turn', status: 'completed' },
   });
-  const remaining = [];
+  const next = await nextEvent;
+  const remaining = next.done ? [] : [next.value];
   for await (const event of events) remaining.push(event);
   assert.ok(
     remaining.some((event) => event.done),
