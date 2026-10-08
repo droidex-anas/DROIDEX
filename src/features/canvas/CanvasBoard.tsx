@@ -1,12 +1,8 @@
 // The board: one transformed world layer holding the frames, the keyboard
 // commands over it, and the control strip along its bottom edge.
 //
-// It owns no state of its own. The viewport belongs to `useBoardViewport`, the
-// hand's gesture and every layout write to `useBoardGestures`, mode and
-// selection to `canvasState`, which frames are live to `previewSlots`, and the
-// strip to `BoardControls`. Spec §4's Select overlay is painted by
-// `DesignFrame`; the board decides when flipping it is safe, because only it
-// knows whether a wheel gesture is still arriving.
+// The board owns preview-slot retention and when the Select overlay can flip:
+// the hit-test change waits for an active wheel gesture to finish.
 
 import {
   useCallback,
@@ -83,7 +79,7 @@ export function CanvasBoard({
 
   const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
-  const [slots, setSlots] = useState(NO_PREVIEW_SLOTS);
+  const [retainedSlots, setRetainedSlots] = useState(NO_PREVIEW_SLOTS);
   const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
@@ -162,26 +158,17 @@ export function CanvasBoard({
     dispatch({ type: 'pick', designId: focusRequest, additive: false });
   }, [dispatch, fitTo, focusRequest, frames]);
 
-  // Spec §11: at most four live previews. The request is a plain value, so the
-  // key below is the whole of it and the reducer runs exactly when it changes.
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
   const slotRequest: PreviewSlotRequest = {
-    designIds,
+    designIds: frames
+      .filter((frame) => frame.build.status === 'ready' || frame.build.status === 'failed')
+      .map((frame) => frame.designId),
     visible,
     interacted: interaction.interactedFrameId,
     selected: interaction.selectedFrameIds,
   };
-  const slotKey = [
-    designIds.join(),
-    visible.join(),
-    slotRequest.interacted,
-    interaction.selectedFrameIds.join(),
-  ].join('|');
-  const pendingSlots = useRef(slotRequest);
-  pendingSlots.current = slotRequest;
-  useEffect(() => {
-    setSlots((current) => reducePreviewSlots(current, pendingSlots.current));
-  }, [slotKey]);
+  const slots = reducePreviewSlots(retainedSlots, slotRequest);
+  if (slots !== retainedSlots) setRetainedSlots(slots);
 
   // Spec §4: the overlay's hit-test flip waits for an arriving wheel gesture to
   // go quiet and then for the frame that paints it, so it is committed before
@@ -215,21 +202,19 @@ export function CanvasBoard({
   };
 
   const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    // Spec §4: the board's keys belong to the board and to its frames' headers,
-    // which are the frames' tab stops. A control, an input or an editor inside
-    // the board keeps its own.
+    // Inputs and editors keep their shortcuts, including Escape.
+    if (isBoardEditor(event.target)) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // A gesture consumes the first Escape before mode or selection changes.
+      if (!gestures.cancel()) dispatch({ type: 'escape' });
+      return;
+    }
+    // Other board commands belong to the board and its frame headers.
     if (event.target !== event.currentTarget && !isFrameHeader(event.target)) return;
     if (event.key === ' ') {
       event.preventDefault();
       gestures.holdSpace(true);
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      // A gesture in flight is what Escape cancels first, which leaves the
-      // acknowledged rect as the only one the board can draw. Only an Escape
-      // with no gesture to spend on reaches the mode and the selection.
-      if (!gestures.cancel()) dispatch({ type: 'escape' });
       return;
     }
     if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
@@ -272,7 +257,6 @@ export function CanvasBoard({
       className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/10"
       style={{ cursor: gestures.cursor, touchAction: 'none' }}
       onPointerDown={gestures.onBackgroundPointerDown}
-      onPointerMove={gestures.onPointerMove}
       onPointerUp={(event) => {
         gestures.endGesture(event, true);
       }}
@@ -310,6 +294,10 @@ export function CanvasBoard({
             capturePointer={overlayCapture}
             preview={slots.live.includes(frame.designId) ? renderPreview(frame) : null}
             released={slots.released.includes(frame.designId)}
+            onExitInteract={() => {
+              dispatch({ type: 'escape' });
+              board.current?.focus({ preventScroll: true });
+            }}
             onHold={gestures.onFramePointerDown}
             onPick={(picked, additive) => {
               dispatch({ type: 'pick', designId: picked.designId, additive });
@@ -369,4 +357,12 @@ interface BoardReads {
 
 function isFrameHeader(target: EventTarget): boolean {
   return target instanceof HTMLElement && target.dataset.frameHeader !== undefined;
+}
+
+function isBoardEditor(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.closest('input, textarea, select, [role="textbox"]') !== null)
+  );
 }

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
+import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import type {
   ArrangeFramesInput,
   CanvasFrame,
@@ -22,6 +23,7 @@ interface BoardHarness {
   select: (designIds: string[]) => void;
   interaction: () => BoardInteraction;
   previewClicks: string[];
+  buildReady: () => void;
 }
 
 declare global {
@@ -67,13 +69,23 @@ const initial: CanvasSnapshot = {
       manifestVersion: 1,
       revisionId: null,
       designSystem: { id: 'droidex', version: 1, mode: scheme },
-      build: { status: 'pending', generation: 1 },
+      build: params.has('building')
+        ? { status: 'building', generation: 1 }
+        : {
+            status: 'ready',
+            generation: 1,
+            revisionId: 'rev_01',
+            artifactId: 'a'.repeat(64),
+            elements: [],
+            diagnostics: [],
+          },
     }),
   ),
 };
 const replies: { resolve: () => void; reject: (error: Error) => void }[] = [];
 const calls: ArrangeFramesInput[] = [];
 const previewClicks: string[] = [];
+const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '<p>Ready</p>' });
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
@@ -103,6 +115,21 @@ function Harness() {
     },
     interaction: () => live.current,
     previewClicks,
+    buildReady: () =>
+      setSnapshot((current) => ({
+        ...current,
+        frames: current.frames.map((frame) => ({
+          ...frame,
+          build: {
+            status: 'ready',
+            generation: 1,
+            revisionId: 'rev_01',
+            artifactId: 'a'.repeat(64),
+            elements: [],
+            diagnostics: [],
+          },
+        })),
+      })),
   };
   return (
     <div style={{ padding: 24 }}>
@@ -115,16 +142,24 @@ function Harness() {
           snapshot={snapshot}
           interaction={interaction}
           onInteractionChange={setInteraction}
-          renderPreview={(frame) => (
-            <button
-              type="button"
-              data-harness-preview={frame.designId}
-              onPointerDown={() => previewClicks.push(frame.designId)}
-              style={{ width: '100%', height: '100%' }}
-            >
-              {frame.name} preview
-            </button>
-          )}
+          renderPreview={(frame) =>
+            params.get('preview') === 'guest' ? (
+              <DesignPreview
+                canvasId={snapshot.canvasId}
+                frame={frame}
+                readArtifact={readArtifact}
+              />
+            ) : (
+              <button
+                type="button"
+                data-harness-preview={frame.designId}
+                onPointerDown={() => previewClicks.push(frame.designId)}
+                style={{ width: '100%', height: '100%' }}
+              >
+                {frame.name} preview
+              </button>
+            )
+          }
           onArrangeFrames={(input) => {
             calls.push(input);
             return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));

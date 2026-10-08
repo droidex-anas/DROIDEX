@@ -10,6 +10,9 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CanvasBoard } from './CanvasBoard';
+import { DesignFrame } from './DesignFrame';
+import { DesignPreview } from './DesignPreview';
+import { motionFor } from './canvasMotion';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
 import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
@@ -43,7 +46,12 @@ function render(snapshot: CanvasSnapshot, interaction: BoardInteraction = SELECT
       interaction,
       onInteractionChange: () => undefined,
       onArrangeFrames: () => Promise.resolve(),
-      renderPreview: () => null,
+      renderPreview: (frame) =>
+        createElement(DesignPreview, {
+          canvasId: snapshot.canvasId,
+          frame,
+          readArtifact: () => Promise.resolve(null),
+        }),
     }),
   );
 }
@@ -123,6 +131,17 @@ test('a frame with nothing built shows its real stage and never invents one', ()
   const queued = render(snapshotOf(base));
   const building = render(snapshotOf(withBuild(base, { status: 'building', generation: 2 })));
   const cancelled = render(snapshotOf(withBuild(base, { status: 'cancelled', generation: 2 })));
+  const failed = render(
+    snapshotOf(
+      withBuild(base, {
+        status: 'failed',
+        generation: 2,
+        lastWorkingRevisionId: null,
+        diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
+      }),
+    ),
+    { mode: 'interact', selectedFrameIds: [base.designId], interactedFrameId: base.designId },
+  );
 
   // A queued build is 'Queued': the wire cannot prove an agent is writing, so
   // the board does not claim it.
@@ -133,4 +152,36 @@ test('a frame with nothing built shows its real stage and never invents one', ()
   assert.match(cancelled, /This build was cancelled\./);
   assert.equal(cancelled.includes('canvas-bloom-dot'), false);
   assert.match(building, /canvas-bloom-dot/);
+  assert.match(failed, /Unexpected token/);
+});
+
+test('a slot with a building preview retains the bloom until a working revision exists', () => {
+  const building = withBuild(frame('a', ACKNOWLEDGED), { status: 'building', generation: 2 });
+  const markup = renderToStaticMarkup(
+    createElement(DesignFrame, {
+      frame: building,
+      rect: building.rect,
+      scale: 1,
+      motion: motionFor(false),
+      visible: true,
+      mode: 'select',
+      selected: false,
+      interacted: false,
+      held: false,
+      capturePointer: true,
+      released: false,
+      preview: createElement(DesignPreview, {
+        canvasId: 'cv_01',
+        frame: building,
+        readArtifact: () => Promise.resolve(null),
+      }),
+      onHold: () => undefined,
+      onPick: () => undefined,
+      onInteract: () => undefined,
+      onExitInteract: () => undefined,
+    }),
+  );
+  assert.match(markup, /canvas-bloom-dot/);
+  assert.equal(markup.includes('Building this design'), false);
+  assert.equal(markup.includes('opacity 120ms'), false);
 });

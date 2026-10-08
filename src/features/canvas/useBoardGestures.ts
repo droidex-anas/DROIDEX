@@ -20,6 +20,9 @@ import {
 import type { BoardMode } from './canvasState';
 import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
 
+/** Movement in board pixels before a frame press becomes a captured drag. */
+const FRAME_DRAG_THRESHOLD_PX = 4;
+
 /** One frame's new rect and the layout version it was read at. */
 export type FramePlacement = ArrangeFramesInput['frames'][number];
 
@@ -171,7 +174,7 @@ export function useBoardGestures({
     });
   };
 
-  const applyPointer = (pointer: Point) => {
+  const applyPointer = useCallback((pointer: Point) => {
     const active = gesture.current;
     if (active === null) return;
     if (active.kind === 'pan') {
@@ -193,20 +196,21 @@ export function useBoardGestures({
     if (stepped === null) return;
     active.drag = stepped;
     setDrag({ designId: stepped.designId, rect: stepped.rect });
-  };
+  }, []);
 
-  const takePointer = (pointerId: number) => {
+  const takePointer = () => {
     const root = board.current;
     if (!root) return null;
     root.focus({ preventScroll: true });
-    root.setPointerCapture(pointerId);
     work.current += 1;
     setLayoutError('');
     return root;
   };
 
   const startPan = (pointerId: number, pointer: Point) => {
-    if (!takePointer(pointerId)) return;
+    const root = takePointer();
+    if (!root) return;
+    root.setPointerCapture(pointerId);
     gesture.current = { kind: 'pan', pointerId, last: pointer };
     onStart();
     setPanning(true);
@@ -218,7 +222,9 @@ export function useBoardGestures({
     // Spec §4: background drag and Space-drag pan, so Shift-drag is the gesture
     // left for the rubber band on a board whose empty space pans.
     if (event.shiftKey && mode === 'select') {
-      if (!takePointer(event.pointerId)) return;
+      const root = takePointer();
+      if (!root) return;
+      root.setPointerCapture(event.pointerId);
       gesture.current = {
         kind: 'band',
         pointerId: event.pointerId,
@@ -246,7 +252,7 @@ export function useBoardGestures({
       startPan(event.pointerId, pointer);
       return;
     }
-    if (!takePointer(event.pointerId)) return;
+    if (!takePointer()) return;
     onStart();
     // The gesture starts from where the user sees the frame, which is not the
     // snapshot's rect while an earlier commit is still unacknowledged.
@@ -267,17 +273,46 @@ export function useBoardGestures({
     setDrag({ designId: frame.designId, rect });
   };
 
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const active = gesture.current;
-    if (active?.pointerId !== event.pointerId) return;
-    move.current.pointer = boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY });
-    // Spec §11: the transform updates once per animation frame, and the pointer
-    // is followed 1:1 with no easing behind the hand.
-    move.current.frame ??= requestAnimationFrame(() => {
-      move.current.frame = null;
-      if (move.current.pointer !== null) applyPointer(move.current.pointer);
-    });
-  };
+  const onPointerMove = useCallback(
+    (event: PointerEvent) => {
+      const active = gesture.current;
+      if (active?.pointerId !== event.pointerId) return;
+      const root = board.current;
+      if (!root) return;
+      const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
+      if (active.kind === 'frame' && !root.hasPointerCapture(event.pointerId)) {
+        const { origin } = active.drag;
+        if (Math.hypot(pointer.x - origin.x, pointer.y - origin.y) < FRAME_DRAG_THRESHOLD_PX)
+          return;
+        // Leave clicks on their header/overlay; only a drag belongs to the root.
+        root.setPointerCapture(event.pointerId);
+      }
+      move.current.pointer = pointer;
+      // Spec §11: the transform updates once per animation frame, and the pointer
+      // is followed 1:1 with no easing behind the hand.
+      move.current.frame ??= requestAnimationFrame(() => {
+        move.current.frame = null;
+        if (move.current.pointer !== null) applyPointer(move.current.pointer);
+      });
+    },
+    [applyPointer, board],
+  );
+
+  useEffect(() => {
+    // Until capture starts, the press can leave the board. Keep that sequence
+    // owned here so neither an outside movement nor release strands a gesture.
+    const onPointerEnd = (event: PointerEvent) => {
+      if (gesture.current?.pointerId === event.pointerId) cancelGesture();
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
+    };
+  }, [cancelGesture, onPointerMove]);
 
   const endGesture = (event: React.PointerEvent<HTMLDivElement>, released: boolean) => {
     const active = gesture.current;
@@ -287,10 +322,12 @@ export function useBoardGestures({
       return;
     }
     stopCoalescing();
-    // Release may arrive before the queued frame applies the last movement.
-    applyPointer(boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }));
-    gesture.current = null;
     const root = board.current;
+    // Release may arrive before the queued frame applies the last movement.
+    // An uncaptured frame press is a click, including any sub-threshold jitter.
+    if (active.kind !== 'frame' || root?.hasPointerCapture(event.pointerId))
+      applyPointer(boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }));
+    gesture.current = null;
     if (root?.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
     setPanning(false);
     setDrag(null);
@@ -346,7 +383,6 @@ export function useBoardGestures({
     cancel: cancelGesture,
     onBackgroundPointerDown,
     onFramePointerDown,
-    onPointerMove,
     endGesture,
     onBlur,
   };

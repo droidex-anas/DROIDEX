@@ -6,8 +6,7 @@
 // This file owns the pane's lifecycle and the seam between the board and the
 // bridge: the board asks for a layout write and a preview artifact, and the pane
 // is what knows which chat and which canvas those belong to. Every state without
-// a board belongs to `CanvasPaneStates`. The navigator and toolbar (5d) and the
-// canvas header (5e) mount beside the board.
+// a board belongs to `CanvasPaneStates`.
 
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
 // The pane is the lazy entry to every Canvas surface, so its animations load
@@ -126,10 +125,12 @@ export function CanvasWorkspace({
 
   // Mode and selection belong to the canvas on screen, so showing another one
   // starts from Select with nothing picked.
+  const [interactionCanvasId, setInteractionCanvasId] = useState(watched);
   const [interaction, setInteraction] = useState(SELECT_MODE);
-  useEffect(() => {
+  if (interactionCanvasId !== watched) {
+    setInteractionCanvasId(watched);
     setInteraction(SELECT_MODE);
-  }, [watched]);
+  }
 
   // The opener's frame is focused once the board is up, and only once per
   // target: re-running it on every snapshot would drag the viewport back while

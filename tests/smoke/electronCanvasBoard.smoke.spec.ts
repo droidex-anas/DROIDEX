@@ -458,7 +458,6 @@ test('Interact gives the pointer to the preview and two Escapes undo mode then s
   expect(await board.evaluate((root) => root.hasPointerCapture(1))).toBe(false);
   await page.mouse.up();
 
-  await header.focus();
   await page.keyboard.press('Escape');
   await expect(board).toHaveAttribute('data-board-mode', 'select');
   expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
@@ -484,4 +483,129 @@ test('the public focusFrame entry point centers acknowledged geometry and takes 
   expect(focused.x + 200).toBeCloseTo(board.x + board.width / 2, 1);
   expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2, 1);
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('double-clicking a header or Select overlay enters Interact without arranging', async ({
+  page,
+}) => {
+  for (const target of ['[data-frame-header]', '[data-canvas-input-overlay]']) {
+    await openBoard(page);
+    await frame(page, 'A').locator(target).dblclick();
+    await expect(page.getByTestId('canvas-board')).toHaveAttribute('data-board-mode', 'interact');
+    expect(await page.evaluate(() => window.boardHarness.interaction())).toEqual({
+      mode: 'interact',
+      selectedFrameIds: ['a'],
+      interactedFrameId: 'a',
+    });
+    expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+  }
+});
+
+test('Escape on the mode control exits Interact and the frame offers a keyboard return', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const board = page.getByTestId('canvas-board');
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  const back = page.getByRole('button', { name: 'Return to Select', exact: true });
+  await expect(back).toBeVisible();
+  await back.focus();
+  await page.keyboard.press('Enter');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await expect(board).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
+    'a',
+  ]);
+
+  // A renderer input/editor has its own Escape and arrow shortcuts.
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  for (const tag of ['input', 'div']) {
+    await board.evaluate((root, tag) => {
+      const editor = document.createElement(tag);
+      editor.id = 'board-editor';
+      if (tag === 'div') editor.contentEditable = 'true';
+      root.append(editor);
+      editor.focus();
+    }, tag);
+    const before = await transform(page);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('ArrowRight');
+    await expect(board).toHaveAttribute('data-board-mode', 'interact');
+    expect(await transform(page)).toBe(before);
+    await page.locator('#board-editor').evaluate((editor) => editor.remove());
+  }
+  expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+declare global {
+  interface Window {
+    boardGuestReady: boolean;
+  }
+}
+
+test('a building slot blooms and only a ready guest crossfades, with reduced motion immediate', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.boardGuestReady = false;
+    Object.defineProperty(window, 'droidControl', {
+      value: {
+        canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
+        canvasPreviewCapture: async () => ({
+          ok: false,
+          error: { code: 'capture_unavailable', message: 'No capture in the DOM harness.' },
+        }),
+      },
+    });
+    const create = document.createElement.bind(document);
+    Object.defineProperty(document, 'createElement', {
+      value: (tag: string) => {
+        const guest = create(tag);
+        if (tag !== 'webview') return guest;
+        let identity = {};
+        let sent = false;
+        Object.assign(guest, {
+          getWebContentsId: () => 41,
+          executeJavaScript: async (script: string) => {
+            if (script.startsWith('globalThis.__droidexCanvasPreview.start(')) {
+              identity = JSON.parse(script.slice(script.indexOf('(') + 1, -1));
+              return 'started';
+            }
+            const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
+            if (events.length > 0) sent = true;
+            return JSON.stringify({ ...identity, events, dropped: 0 });
+          },
+        });
+        queueMicrotask(() => guest.dispatchEvent(new Event('dom-ready')));
+        return guest;
+      },
+    });
+  });
+  for (const motion of ['no-preference', 'reduce'] as const) {
+    await openBoard(page, 14, motion);
+    await page.goto(`${url}?preview=guest&building=1`);
+    await page.clock.runFor(240);
+    const design = frame(page, 'A');
+    await expect(design.getByText('Building', { exact: true })).toBeVisible();
+    await expect(page.locator('webview')).toHaveCount(0);
+    expect(await design.locator('.canvas-bloom-dot').count()).toBe(motion === 'reduce' ? 0 : 5);
+    await page.evaluate(() => window.boardHarness.buildReady());
+    await expect(design.locator('[data-preview-phase="mounting"]')).toBeVisible();
+    const host = design.locator('webview').locator('..');
+    expect(await host.evaluate((node) => getComputedStyle(node).opacity)).toBe('0');
+    expect(await host.evaluate((node) => getComputedStyle(node).transitionDuration)).toBe('0s');
+    await page.evaluate(() => {
+      window.boardGuestReady = true;
+    });
+    await page.clock.runFor(100);
+    await expect(design.locator('[data-preview-phase="ready"]')).toBeVisible();
+    expect(await host.evaluate((node) => getComputedStyle(node).transitionDuration)).toBe(
+      motion === 'reduce' ? '0s' : '0.12s',
+    );
+    await page.clock.runFor(120);
+    await expect(host).toHaveCSS('opacity', '1');
+  }
 });

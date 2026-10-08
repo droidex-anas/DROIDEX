@@ -8,7 +8,7 @@
 // counter-scaled, because chrome that shrinks with the board is unusable on a
 // 50-frame canvas.
 
-import { useEffect, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { FrameHandle } from './canvasGeometry';
 import { activityStageOf, canvasActivity, type CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
@@ -47,6 +47,7 @@ export interface DesignFrameProps {
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
+  onExitInteract: () => void;
 }
 
 export function DesignFrame({
@@ -65,6 +66,7 @@ export function DesignFrame({
   onHold,
   onPick,
   onInteract,
+  onExitInteract,
 }: DesignFrameProps) {
   return (
     <div
@@ -127,6 +129,22 @@ export function DesignFrame({
           />
         )}
       </div>
+
+      {interacted && (
+        <button
+          type="button"
+          aria-label="Return to Select"
+          title="Return to Select (Escape)"
+          className="absolute right-0 top-full rounded-lg bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-secondary hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/30"
+          style={{ transform: `scale(${String(1 / scale)})`, transformOrigin: '100% 0' }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={onExitInteract}
+        >
+          Return to Select
+        </button>
+      )}
 
       {selected && mode === 'select' && (
         <>
@@ -302,8 +320,6 @@ function FrameBody({
 }: Pick<DesignFrameProps, 'motion' | 'visible' | 'preview' | 'released'> & {
   build: CanvasBuildState;
 }) {
-  if (preview) return <PreviewSlot motion={motion}>{preview}</PreviewSlot>;
-
   const stage = previewRevisionId(build) === null ? activityStageOf(build.status) : null;
   if (stage !== null && (stage === 'queued' || canvasActivity[stage].bloom)) {
     return (
@@ -312,35 +328,10 @@ function FrameBody({
       </div>
     );
   }
+  if (preview) return preview;
   return (
     <p className="flex h-full w-full items-center justify-center px-4 text-center text-[12px] leading-5 text-droid-text-secondary">
       {unmountedLabel(build, released)}
     </p>
-  );
-}
-
-/** Spec §11: a working preview crossfades in over the frame's own placeholder. */
-function PreviewSlot({ motion, children }: { motion: CanvasMotion; children: ReactNode }) {
-  const [shown, setShown] = useState(motion.readyMs === 0);
-  useEffect(() => {
-    if (motion.readyMs === 0) return undefined;
-    const frame = requestAnimationFrame(() => {
-      setShown(true);
-    });
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [motion.readyMs]);
-  return (
-    <div
-      className={`h-full w-full ${shown ? 'opacity-100' : 'opacity-0'}`}
-      style={
-        motion.readyMs === 0
-          ? undefined
-          : { transition: `opacity ${String(motion.readyMs)}ms ${motion.easeCss}` }
-      }
-    >
-      {children}
-    </div>
   );
 }

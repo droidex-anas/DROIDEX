@@ -172,6 +172,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
       if (name === '../../lib/desktop') return desktop;
       if (name === './captureCanvasImage') return imageCapture;
       if (name === './previewLabels') return {};
+      if (name === './useCanvasMotion') return { useCanvasMotion: () => ({ readyMs: 0 }) };
       if (name === './previewRuntime')
         return {
           startPreview: ({ observer }: { observer: { onReady(): void } }) => {
