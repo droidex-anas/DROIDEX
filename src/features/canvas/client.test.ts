@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { listCanvasAssets } from '../../../sidecar/src/canvas/canvasAssets.js';
+import { createCanvasCommandHandler } from '../../../sidecar/src/canvas/canvasBridge.js';
+import { CanvasScopes } from '../../../sidecar/src/canvas/canvasScopes.js';
+import { CanvasWorkspace } from '../../../sidecar/src/canvas/CanvasWorkspace.js';
+import { canvasRoot, quietBuilds } from '../../../sidecar/src/testing/canvasStorageSupport.js';
+import { initialState, reducer } from '../../hooks/useStore';
+import { initialCanvasPaneState, reduceCanvasPane, watchedCanvasId } from './canvasState';
+import { isCanvasEvent } from './wireValidation';
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import { CanvasClient, type CanvasTransport } from './client';
 import type { CanvasChange, CanvasCommand, CanvasFrame, CanvasSnapshot } from './protocol';
@@ -211,6 +219,61 @@ test('a reported failure rejects its own request with the stable code', async ()
     reply: { kind: 'arranged', change: change(6, [frame('hey')]) },
   });
   assert.equal((await mutating).sequence, 6);
+});
+
+test('a replayed Create keeps the current attachment in the bridge reply, pane and renderer cache', async (t) => {
+  const scopes = new CanvasScopes();
+  const builds = quietBuilds();
+  const root = await canvasRoot(t);
+  const workspace = await CanvasWorkspace.open(root, builds, {
+    isChatKnown: (id) => id === 'app-1',
+    isScopeActive: (id) => scopes.isScopeActive(id),
+    bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
+  });
+  t.after(() => workspace.close());
+  const transport = fakeBridge();
+  const client = new CanvasClient(transport.transport);
+  const handle = createCanvasCommandHandler(
+    Promise.resolve(workspace),
+    scopes,
+    builds,
+    { secret: 'test-canvas-secret', list: (canvasId) => listCanvasAssets(root, canvasId) },
+    (event) => {
+      if (!event.type.startsWith('canvas.')) return;
+      const serialized: Record<string, unknown> = JSON.parse(JSON.stringify(event));
+      assert.ok(isCanvasEvent(serialized));
+      transport.deliver(serialized);
+    },
+    () => () => {},
+  );
+  for (const mutationId of ['create-A', 'create-B']) {
+    const creating = client.createCanvas('app-1', mutationId);
+    await handle(transport.last('canvas.createCanvas'), 'page-1');
+    await creating;
+  }
+  const [first, current] = workspace.listCanvases();
+  assert.ok(first && current);
+  const replaying = client.createCanvas('app-1', 'create-A');
+  await handle(transport.last('canvas.createCanvas'), 'page-1');
+  const replay = await replaying;
+  assert.equal(replay.attachedCanvasId, current.canvasId);
+  assert.equal(replay.canvasId, first.canvasId);
+  const cached = reducer(
+    { ...initialState, canvasAttachments: { 'app-1': first.canvasId } },
+    {
+      type: 'SET_CANVAS_ATTACHMENT',
+      appSessionId: 'app-1',
+      canvasId: replay.attachedCanvasId,
+    },
+  );
+  const pane = reduceCanvasPane(
+    reduceCanvasPane(initialCanvasPaneState(first.canvasId), { type: 'creating' }),
+    { type: 'created', canvasId: replay.attachedCanvasId },
+  );
+  assert.equal(cached.canvasAttachments['app-1'], current.canvasId);
+  assert.equal(watchedCanvasId(pane), current.canvasId);
+  assert.equal(workspace.attachedCanvasId('app-1'), current.canvasId);
+  assert.equal(workspace.listCanvases().length, 2);
 });
 
 test('a change that commits after a snapshot was taken is applied, not dropped', async () => {

@@ -1158,6 +1158,24 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
 **Interfaces:** `CanvasWorkspace` consumes `{ appSessionId: string; canvasId: string | null; isExpanded: boolean }` plus focused bridge callbacks using the existing connection pattern. `applyCanvasChange(snapshot: CanvasSnapshot, change: CanvasChange): CanvasSnapshot` updates the feature-local projection. Geometry exports `screenToCanvas(viewport: Viewport, point: Point): Point`, `zoomAtPoint(viewport: Viewport, point: Point, scale: number): Viewport` and `fitFrames(rects: FrameRect[], viewportSize: Point): Viewport`, with `Point = { x: number; y: number }` and `Viewport = { x: number; y: number; scale: number }`. Frame/source ownership remains in Task 2.
 
 - [ ] Add the Canvas pane as a lazy, expandable singleton surface that is never listed in the utility picker; the only way in is `openCanvas({ appSessionId, canvasId, frameId? })`, called by the artifact card, the agent's first artifact in a chat, and Design mode. Keep only attachment IDs/pane preferences in shared state; viewport/selection/inspector state belong to the Canvas feature. A canvas whose frames were all deleted presents the empty state (“Ask your agent to design something” plus example requests). Bootstrap an empty canvas/attachment atomically on explicit Create or the first `canvas_create`, following the unattached-chat sequence in spec §6: the turn's lease already exists with `canvasId: null`, the first create commits canvas, attachment and the lease's canvas binding together under the workspace commit owner, and a retry with the same mutation ID returns the same canvas and frames. Merely opening the pane does not start a compiler or create a design.
+Settled by 05a (landed in `src/features/canvas/{CanvasWorkspace.tsx,canvasState.ts}`, `src/lib/{utilityPanel.ts,lazySurfaces.tsx}`, `src/components/utility/{utilityToolOptions.ts,UtilityToolPicker.tsx}`, `src/App.tsx`, `src/hooks/useStore.tsx`):
+
+- `CanvasWorkspace` takes `onToggleExpanded` and `onAttachmentChange` beside the three props the Interfaces paragraph names. Canvas is an expandable tool, and an expandable pane with no control to expand it is dead wiring, so the pane carries the same `AgentPaneExpand` the agents and side-chat panes use until 05e gives it a header. It reaches the bridge the way the other feature clients do: one module-level `CanvasClient` over the app `bridge`, not callbacks passed from `App`, which cannot import the Canvas chunk without putting it in the entry bundle.
+- `canvasState.ts` is the pane's projection and nothing more. Change reconciliation — gaps, duplicates, out-of-order sequences and resync — already has an owner in `client.ts` (02c), which hands subscribers reconciled snapshots, so the reducer guards only what can still reach it: a snapshot for another canvas, and one whose sequence is at or behind the projection already held. `applyCanvasChange` stays `client.ts`'s to call.
+- The root store holds `canvasAttachments: Record<string, string | null>`, a missing key meaning nobody has asked. It is not persisted: the manifest owns the attachment, and a localStorage copy could point at a canvas that no longer exists. Its only job is to stop a reopened pane blinking through the empty state; the pane still reads `canvas.attachment` on every mount and the sidecar's answer wins. Deleting or archiving a chat drops its entry.
+- An authoritative `SESSION_LIST` prunes both pane and attachment cache for a removed chat. Late Canvas Open and attachment callbacks cannot recreate either entry once that list has removed the chat. `SESSION_CLOSED` retires only the runtime and keeps its pane. The sidecar checks the canonical chat registry before attachment mutations and again at the manifest commit gate; an unknown chat receives `unknown_chat` with a recovery message.
+- Explicit Create carries a client-held `mutationId`. The workspace records it with the newly committed manifest and returns that canvas on replay, including when the first reply is lost while its commit is still in flight. The Canvas chunk keeps an unsettled key across pane unmounts, and the pane offers only Retry with that key in its recovery state; an attachment read cannot re-offer Create before the outcome is known.
+- `Open saved canvas` lists real canvases through `canvas.list` and attaches with `canvas.attach`; no new bridge command was needed for 05a.
+- Canvas is **not** in the utility-tool picker (user decision, 2026-10-06; supersedes spec §4's "Add Canvas to the utility-tool picker", which the user is updating separately). It keeps the tool type, the singleton rule, the expandable pane, the lazy surface and the persisted preference, and it opens programmatically only. `useOpenCanvasPane()` in `src/features/canvas/openCanvasPane.ts` is the single exported way in; it takes `{ appSessionId, canvasId: string | null, frameId? }` and is what an artifact card's Open (06a) and the design entry point will call. Creating an artifact does not open the pane.
+- `OPEN_UTILITY_TOOL` takes an optional `appSessionId`, as `CLOSE_UTILITY_TAB` and `UPDATE_UTILITY_TAB` already did, so an opener can name the chat rather than assuming the one on screen. Its Canvas tab carries a named `canvasId` and optional `frameId` as transient targets; `canvasId: null` clears the target and reads the chat attachment. Opening canvas A while the chat is attached to B shows A without changing B's attachment. `openUtilityTool`'s retarget ids share one list. Transient targets are excluded from the raw persisted tab fields.
+- Canvas persists and restores with its chat like Review and Files (`isRestoredTool`), because a canvas reconstructs from durable state. It has no keyboard shortcut.
+- The empty state follows spec §4: "Ask your agent to design something", three example requests, then Create and Open saved canvas as secondary actions. The examples are working controls, not prose — they dispatch the existing `SEED_COMPOSER`, which seeds the chat's composer without sending, so nothing in `PromptInput.tsx` or `promptSend.ts` was touched. It is the same invitation for a chat with no canvas and for an attached canvas with no designs.
+- Nothing assumes one chat per canvas: the renderer's attachment cache is keyed by `appSessionId`, so "New chat with this canvas" leaves the original chat attached and adds a second key for the same canvasId. Nothing reads the map in the other direction.
+- Controls on the pane's card use a low-alpha accent tint, not `bg-droid-elevated`: on a dark theme `raisedSurfaceColor` resolves to the elevated rung, so an elevated fill inside a `bg-droid-raised` card leaves buttons looking like plain text. Verified in the running app in both modes.
+- Verified directly that opening the pane creates nothing: after opening Canvas on a chat with no attachment in an isolated profile, `<profile>/canvases/` is empty and the pane shows the Create / Open saved canvas state.
+- Entry-chunk cost of the registration is +1335 bytes of initial JS (1431743 → 1433078 against a 1434000 budget). 05b–05e have ~900 bytes of headroom and must stay out of the entry chunk.
+- The board, frames, gestures, navigator and toolbar are not stubbed. An attached canvas renders a `data-canvas-board` mount point that states what the snapshot holds; `CanvasBoard` replaces it in 05b.
+
 - [ ] Implement background pan, wheel/pinch zoom, Fit/focus and frame dragging with pointer capture. Use one world-to-screen transform. Clamp zoom to 0.1–4 and retain the world point under the cursor:
 
 ```ts
@@ -1422,6 +1440,71 @@ Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache pa
   than publishing a partial map or failing the preview.
   This independent bound also applies at the worker reply and cache boundaries. These are
   probes, not timing assertions in unit tests.
+
+Settled by 08c (`src/features/canvas/{canvasSourceState.ts,CanvasSourcePanel.tsx,CanvasSourceEditor.tsx,CanvasSourceSlot.tsx}`
+and `canvas.readSource`):
+
+- The drawer is not CodeMirror. The repository ships `@codemirror/{state,view,commands,language,lang-markdown}`
+  for the composer, but no JavaScript, TypeScript, JSX or CSS grammar, and this plan asks for
+  explicit justification before a new grammar dependency. A CodeMirror core editor would
+  therefore show a design's `.tsx` and `.css` with no colour at all. The app's code colour is
+  `prism-react-renderer`, which already highlights TSX, CSS and JSON in the files pane, so the
+  editor is a transparent textarea laid over that highlight: the caret, selection, native undo
+  and platform keyboard behaviour come free, Cmd/Ctrl+S saves, Tab indents, and the colour is the
+  one shared theme. The Prism theme moved from `FilePreviewPane.tsx` to `src/lib/codeTheme.ts` so
+  the two surfaces cannot drift. Lines never wrap: that is what keeps the gutter, the highlight
+  and the caret on the same line as a build's diagnostics, and the textarea's own scrolling is
+  translated into the single shared scroller so the two layers cannot slide apart. The editor is
+  one 190-line file behind a lazy boundary with a six-prop contract, so swapping in CodeMirror
+  plus a grammar later is a contained change.
+- `canvasSourceState.ts` is a pure reducer and the drawer's only state. Buffers are keyed by frame
+  and then by path, so leaving a frame and coming back cannot lose an edit; only closing the
+  drawer discards them, and that asks first. A buffer holds the draft, the revision the edit began
+  from and the file as it read at that revision. `pendingWrite` is the single place a Save is
+  assembled: one write, one `expectedRevisionId`, every dirty path, and null while a conflict is
+  open or while a save is in flight.
+- A revision that lands while a buffer is dirty never replaces it. If the revision left that file
+  alone, only the buffer's base moves, because a Save naming the revision the text was typed on
+  would be refused for a change somewhere else in the tree. If the revision changed the file, the
+  buffer becomes a conflict carrying that revision's text (or null when it deleted the file) and
+  the drawer shows "Updated by agent" with Keep mine and Take theirs. Both texts are held — theirs
+  in `files`, the user's in the buffer — until the user picks. Keep mine rebases onto the
+  superseding revision so the next Save is accepted instead of rejected again; the agent's text
+  stays in its own revision either way. Text typed while a save is in flight stays dirty on top of
+  the revision that save produced.
+- Diagnostics are placed from the real build result, not re-derived. `buildDiagnostics` returns
+  nothing for a build that has not produced any yet, so a `building` frame never shows the last
+  failure as current. `placeIssues` pins a diagnostic to a file and a 1-based line only when the
+  file is one the frame actually lists: esbuild reports the pinned kit as `@droidex/design-system/...`
+  and a failure inside a generated module with no file at all, and both are listed without a place
+  rather than landing on the wrong line. `column` is esbuild's 0-based UTF-8 byte offset, so it is
+  shown in no caret and used for no mapping.
+- `canvas.readSource` is the drawer's read: the renderer had no way to read a revision's files, and
+  `CanvasWorkspace.readFiles` already existed for the agent. It is a derived read authorized like
+  `canvas.subscribe` by the page asking, bounded by `canvasIdentifierSchema` on all three
+  identifiers, it leaves the design's head alone, and `canvasFiles.readRevision` already refuses a
+  revision belonging to another design. The renderer's inbound validator bounds the reply at the
+  sidecar's own 64 files and 256-character paths.
+- `openSourcePanel(designId)` in `canvasState.ts` is the event 5d's toolbar dispatches. The drawer
+  follows its frame across every board change and closes only once that frame leaves the board, so
+  a rebuild or an arrange cannot strand it on a design that is gone. `CanvasSourceSlot` owns the
+  lazy boundary and the two bridge calls, which keeps `CanvasWorkspace.tsx` at 488 lines.
+- 08c merged `thread/canvas-05a-canvas-pane` because 08a's base has no Canvas pane: nothing could
+  import the drawer, so it could be neither seen in the running app nor measured in the bundle.
+  Until the board mounts in 5b, 05a's placeholder plate offers Source per frame; 5c and 5d replace
+  that placeholder wholesale.
+- Measured: entry 1,433,651 bytes against the 1,434,000 line, largest lazy chunk 691,095, and the
+  drawer's own chunks 10,671 (panel) and 2,822 (editor), both lazy. Prism lands in one shared
+  chunk, so the duplicate-dependency scan stays clean. CSS is 102,189, which needed
+  `initialCssBytes` raised from 101,500 to 103,200: the Canvas pane alone measures 100,978 — 522
+  under the old line before the drawer existed — and the drawer's chrome is ~1,350. Trimming its
+  one-off utilities to the shared scale recovered 42 bytes, so the raise is the honest accounting,
+  and `tools/check-bundle-budgets.mjs` carries it. `reduceCanvasPane` goes from a complexity
+  warning of 18 to 22 for the two drawer events, and `isReply` from 17 to 18 for the `source`
+  reply; both were already over the advisory line and neither is an error.
+- Deferred to 08d and later: revision comparison and the side-by-side diff a conflict could offer
+  (the drawer states both sides and keeps them, but does not draw a diff yet), creating, deleting
+  or renaming files from the drawer, and a read-only view of an older revision. Nothing autosaves.
 
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.

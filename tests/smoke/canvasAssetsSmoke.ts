@@ -27,8 +27,9 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         const created = await send({
           type: 'canvas.createCanvas',
           appSessionId: 'asset-smoke-chat',
+          mutationId: 'create-asset-smoke',
         });
-        assert.ok(created.kind === 'attachment' && created.canvasId);
+        assert.ok(created.kind === 'canvasCreated' && created.canvasId);
         const canvasId = created.canvasId;
         const chosen = path.join(profile, 'chosen.png');
         const png = Buffer.from(
@@ -141,8 +142,9 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         const failedCanvas = await send({
           type: 'canvas.createCanvas',
           appSessionId: 'asset-storage-failure-chat',
+          mutationId: 'create-asset-storage-failure',
         });
-        assert.ok(failedCanvas.kind === 'attachment' && failedCanvas.canvasId);
+        assert.ok(failedCanvas.kind === 'canvasCreated' && failedCanvas.canvasId);
         await symlink(profile, path.join(profile, 'canvases', failedCanvas.canvasId, 'assets'));
         const storageFailure = await page.evaluate(async (id) => {
           const file = (document.getElementById('canvas-image-input') as HTMLInputElement)
@@ -355,8 +357,9 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         const second = await send({
           type: 'canvas.createCanvas',
           appSessionId: 'asset-replay-chat',
+          mutationId: 'create-asset-replay',
         });
-        assert.ok(second.kind === 'attachment' && second.canvasId);
+        assert.ok(second.kind === 'canvasCreated' && second.canvasId);
         const secondGuest = await mountPreviewGuest(page);
         assert.equal(
           await page.evaluate(
@@ -417,6 +420,9 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
           .toBe(0);
       });
     },
-    { realSidecar: true },
+    {
+      realSidecar: true,
+      savedChatIds: ['asset-smoke-chat', 'asset-storage-failure-chat', 'asset-replay-chat'],
+    },
   );
 }

@@ -32,6 +32,7 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
     fs,
+    isChatKnown: () => true,
     isScopeActive: (id) => scopes.isScopeActive(id),
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
   });

@@ -16,6 +16,7 @@ async function design(
 ) {
   const builds = quietBuilds();
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), builds, {
+    isChatKnown: () => true,
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });
@@ -23,7 +24,7 @@ async function design(
     await workspace.close();
     await builds.close();
   });
-  const { canvasId } = await workspace.createCanvas('app-theme');
+  const { canvasId } = await workspace.createCanvas('app-theme', 'create-theme-canvas');
   const scope: CanvasScope = {
     origin: 'user',
     scopeId: 'user-theme',

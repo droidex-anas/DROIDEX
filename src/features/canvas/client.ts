@@ -14,12 +14,14 @@ import type {
   CanvasReply,
   CanvasSnapshot,
   CanvasSummary,
+  CreateCanvasResult,
   CreateFramesInput,
   CreateFramesResult,
   OwnedAsset,
   PreviewArtifact,
   RemoveFramesInput,
   RenameFrameInput,
+  SourceFiles,
   UndoRemovalInput,
   WriteFilesInput,
   WriteReceipt,
@@ -41,7 +43,7 @@ export interface CanvasTransport {
 }
 
 /** A failure the sidecar reported, with the stable code from spec §8. */
-class CanvasRequestError extends Error {
+export class CanvasRequestError extends Error {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
@@ -110,16 +112,15 @@ export class CanvasClient {
     );
   }
 
-  /** Explicit Create in the pane: a new canvas, attached to this chat. */
-  async createCanvas(appSessionId: string): Promise<string> {
+  /** The Create receipt and this chat's attachment at the time it settled. */
+  async createCanvas(appSessionId: string, mutationId: string): Promise<CreateCanvasResult> {
     const event = await this.request({
       type: 'canvas.createCanvas',
       requestId: requestId(),
       appSessionId,
+      mutationId,
     });
-    const canvasId = reply(event, 'attachment').canvasId;
-    if (canvasId === null) throw wrongReply();
-    return canvasId;
+    return reply(event, 'canvasCreated');
   }
 
   async attachCanvas(appSessionId: string, canvasId: string): Promise<void> {
@@ -249,6 +250,21 @@ export class CanvasClient {
       revisionId,
     });
     return reply(event, 'artifact').artifact;
+  }
+
+  /**
+   * One revision's complete source tree, for the source drawer. Reading an older
+   * revision does not move the design's head (spec §4).
+   */
+  async readSource(canvasId: string, designId: string, revisionId: string): Promise<SourceFiles> {
+    const event = await this.request({
+      type: 'canvas.readSource',
+      requestId: requestId(),
+      canvasId,
+      designId,
+      revisionId,
+    });
+    return reply(event, 'source').files;
   }
 
   /** This client's projection of a canvas, once its snapshot has landed. */

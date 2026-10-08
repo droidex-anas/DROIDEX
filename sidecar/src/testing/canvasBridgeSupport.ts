@@ -31,6 +31,8 @@ export const PAGE = 'page-1';
 export const EDITABLE =
   'export default function Hey(){return <h1 style={{color:"var(--ds-fg)"}}>Hey</h1>}';
 export const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
+/** The chats these suites act as; any other identity reads as a closed chat. */
+const KNOWN_CHATS = new Set([APP, 'agent-1', 'app-2']);
 
 /** The asset secret the Canvas suites sign their preview URLs with. */
 export const ASSET_SECRET = 'test-canvas-secret';
@@ -99,6 +101,7 @@ export async function harness(
   const scopes = new CanvasScopes();
   const events: ServerEvent[] = [];
   workspace = await CanvasWorkspace.open(directory, builds, {
+    isChatKnown: (appSessionId) => KNOWN_CHATS.has(appSessionId),
     isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: (scopeId, canvasId) => {
       scopes.bindScopeCanvas(scopeId, canvasId);
@@ -164,11 +167,16 @@ export async function createCanvas(
   requestId = 'req-create-canvas',
 ): Promise<string> {
   assert.equal(
-    await harnessed.handle({ type: 'canvas.createCanvas', requestId, appSessionId: APP }),
+    await harnessed.handle({
+      type: 'canvas.createCanvas',
+      requestId,
+      appSessionId: APP,
+      mutationId: requestId,
+    }),
     true,
   );
   const reply = okReply(harnessed, requestId);
-  assert.ok(reply.kind === 'attachment' && reply.canvasId !== null);
+  assert.ok(reply.kind === 'canvasCreated');
   return reply.canvasId;
 }
 

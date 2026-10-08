@@ -68,7 +68,12 @@ test('shutdown closes Canvas admission and aborts builds before session cleanup 
     assert.equal(admission.signal.aborted, true, 'new pane commands are refused immediately');
     assert.deepEqual(
       canvasShutdownReply(
-        { type: 'canvas.createCanvas', requestId: 'after-close', appSessionId: 'app-1' },
+        {
+          type: 'canvas.createCanvas',
+          requestId: 'after-close',
+          appSessionId: 'app-1',
+          mutationId: 'after-close',
+        },
         admission.signal,
       ),
       {
@@ -108,13 +113,14 @@ test('shutdown refuses an admitted pane arrange before build storage drains', as
   const builds = new CanvasBuilds({ compiler: fleet.client, deadline: fakeDeadlines().deadline });
   const scopes = new CanvasScopes();
   const workspace = await CanvasWorkspace.open(store.root, builds, {
+    isChatKnown: () => true,
     isScopeActive: (id) => scopes.isScopeActive(id),
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
     fs,
   });
   const ready = Promise.resolve(workspace);
   store.closing.push(() => shutdownCanvas(builds, scopes, ready, workspace));
-  const { canvasId } = await workspace.createCanvas('app-1');
+  const { canvasId } = await workspace.createCanvas('app-1', 'create-shutdown-canvas');
   const scope: CanvasScope = {
     origin: 'user',
     scopeId: 'setup',

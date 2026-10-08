@@ -168,6 +168,10 @@ export const canvasManifestSchema = z
     // Spec §7: the manifest owns its attachment references, so an unattached
     // chat's first create commits the canvas and the attachment in one write.
     attachedAppSessionIds: z.array(appSessionIdSchema),
+    creation: z
+      .object({ mutationId: canvasIdentifierSchema, appSessionId: appSessionIdSchema })
+      .strict()
+      .nullable(),
     designs: z.array(persistedDesignSchema),
     tombstones: z.array(tombstoneSchema).max(CANVAS_TOMBSTONE_LIMIT),
     mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.unsettled),
@@ -198,6 +202,7 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     sequence: 0,
     layoutSequence: 0,
     attachedAppSessionIds: [],
+    creation: null,
     designs: [],
     tombstones: [],
     mutations: [],

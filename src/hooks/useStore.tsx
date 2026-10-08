@@ -329,6 +329,11 @@ export interface AppState {
   // UI flags
   rightPanelOpen: boolean;
   utilityPanels: Record<string, UtilityPanelState>;
+  // The canvas each chat is attached to, as the sidecar last reported it. A
+  // missing entry means nobody has asked yet. The manifest owns the attachment,
+  // so this is only what keeps a reopened Canvas pane from blinking through its
+  // empty state; everything else about a canvas is feature-local.
+  canvasAttachments: Record<string, string | null>;
   // The Review diff tab: a wide right-side pane, opened from the Context panel's
   // changes button. Scope + view mode persist; open state is per-session — we
   // track the session it was opened for so switching chats doesn't carry it over.
@@ -660,12 +665,16 @@ export type Action =
   | {
       type: 'OPEN_UTILITY_TOOL';
       tool: UtilityTool;
+      // The chat the pane belongs to, when it is not the one on screen.
+      appSessionId?: string;
       tabId?: string;
       terminalId?: string;
       cwd?: string;
       filePath?: string;
       agentId?: string;
       threadId?: string;
+      canvasId?: string | null;
+      frameId?: string | null;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -681,6 +690,7 @@ export type Action =
       threadId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
+  | { type: 'SET_CANVAS_ATTACHMENT'; appSessionId: string; canvasId: string | null }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_SCOPE'; scope: DiffScope }
   | OpenReviewAtAction
@@ -848,6 +858,7 @@ export const initialState: AppState = {
   agentProcesses: {},
   rightPanelOpen: persistedUiState.rightPanelOpen ?? true,
   utilityPanels: persistedUiState.utilityPanels ?? {},
+  canvasAttachments: {},
   sidebarCollapsed: persistedUiState.sidebarCollapsed ?? false,
   mainView: persistedUiState.mainView ?? 'session',
   tabStrip: restoredTabStrip,
@@ -1041,7 +1052,14 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
   const close = closeLiveChat(state, appSessionId);
   const closed = close ? reducer(state, close) : state;
   const tabStrip = withoutChats(closed.tabStrip, (id) => id === appSessionId);
-  return tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
+  const dropped = tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
+  // Deleting a chat removes its attachment, not its designs (spec §4). The
+  // sidecar owns that removal; this only drops the cache that pointed at it.
+  if (!(appSessionId in dropped.canvasAttachments)) return dropped;
+  const canvasAttachments = Object.fromEntries(
+    Object.entries(dropped.canvasAttachments).filter(([id]) => id !== appSessionId),
+  );
+  return { ...dropped, canvasAttachments };
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -2010,8 +2028,14 @@ export function reducer(state: AppState, action: Action): AppState {
         : { ...state, rightPanelOpen: false };
 
     case 'OPEN_UTILITY_TOOL': {
-      const appSessionId = state.activeAppSessionId;
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
       if (!appSessionId) return state;
+      if (
+        action.tool === 'canvas' &&
+        state.listConfirmedSessionIds !== null &&
+        !(appSessionId in state.sessions)
+      )
+        return state;
       const panel = openUtilityTool(
         state.utilityPanels[appSessionId],
         action.tool,
@@ -2022,6 +2046,8 @@ export function reducer(state: AppState, action: Action): AppState {
           filePath: action.filePath,
           agentId: action.agentId,
           threadId: action.threadId,
+          canvasId: action.canvasId,
+          frameId: action.frameId,
         },
       );
       return {
@@ -2102,6 +2128,16 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         rightPanelOpen: action.open ? false : state.rightPanelOpen,
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
+      };
+    }
+
+    case 'SET_CANVAS_ATTACHMENT': {
+      const { appSessionId, canvasId } = action;
+      if (state.listConfirmedSessionIds !== null && !(appSessionId in state.sessions)) return state;
+      if (state.canvasAttachments[appSessionId] === canvasId) return state;
+      return {
+        ...state,
+        canvasAttachments: { ...state.canvasAttachments, [appSessionId]: canvasId },
       };
     }
 

@@ -59,6 +59,7 @@ export async function openWorkspace(t: TestContext, options: WorkspaceOptions = 
   const root = await canvasRoot(t);
   const boundCanvasIds: string[] = [];
   const deps: CanvasWorkspaceDeps = {
+    isChatKnown: () => true,
     isScopeActive: options.isScopeActive ?? (() => true),
     bindScopeCanvas: (scopeId, canvasId) => {
       if (options.bindScopeCanvas) options.bindScopeCanvas(scopeId, canvasId);
@@ -74,7 +75,7 @@ export async function openWorkspace(t: TestContext, options: WorkspaceOptions = 
 /** One canvas holding one reserved 720×720 frame named Hey. */
 export async function withFrame(t: TestContext, options: WorkspaceOptions = {}) {
   const context = await openWorkspace(t, options);
-  const { canvasId } = await context.workspace.createCanvas('app-1');
+  const { canvasId } = await context.workspace.createCanvas('app-1', 'explicit-app-1');
   const scope = scopeFor(canvasId);
   const created = await context.workspace.create(scope, {
     mutationId: 'create-hey',
@@ -314,6 +315,7 @@ export async function workspaceAtReceiptCapacity(t: TestContext) {
     () => undefined,
   );
   const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: () => true,
     isScopeActive: () => true,
     bindScopeCanvas: () => undefined,
   });

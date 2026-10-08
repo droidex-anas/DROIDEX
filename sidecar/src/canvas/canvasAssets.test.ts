@@ -14,9 +14,14 @@ import { CanvasScopes } from './canvasScopes.js';
 test('main-attested image imports reject invalid inputs and dedupe owned bytes', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'canvas-assets-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const workspace = await CanvasWorkspace.open(root, quietBuilds(), new CanvasScopes());
+  const scopes = new CanvasScopes();
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: (appSessionId) => appSessionId === 'image-chat',
+    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
+    bindScopeCanvas: (scopeId, canvasId) => scopes.bindScopeCanvas(scopeId, canvasId),
+  });
   t.after(() => workspace.close());
-  const { canvasId } = await workspace.createCanvas('image-chat');
+  const { canvasId } = await workspace.createCanvas('image-chat', 'create-image-canvas');
   const filePath = join(root, 'chosen.png');
   await writeFile(filePath, CANVAS_PNG);
   const request = {

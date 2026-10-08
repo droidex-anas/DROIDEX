@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { CanvasBuilds } from './CanvasBuilds.js';
+import { CanvasAttachments } from './canvasAttachments.js';
 import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
 import type { BuildCommit, BuildTarget } from './canvasBuildHost.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
@@ -46,6 +47,7 @@ import type {
 } from './protocol.js';
 
 export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
+  isChatKnown: (appSessionId: string) => boolean;
   fs?: CanvasFileSystem;
 }
 
@@ -55,6 +57,7 @@ export class CanvasWorkspace {
   /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
   private readonly commits = new CanvasCommits(this.changes);
+  private readonly attachments: CanvasAttachments;
   private readonly frameEdits: CanvasFrameEdits;
   private readonly root: string;
 
@@ -64,7 +67,9 @@ export class CanvasWorkspace {
     private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
     private readonly writerLease: CanvasWriterLease,
+    isChatKnown: (appSessionId: string) => boolean,
   ) {
+    this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
     this.root = writerLease.directory;
     this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
   }
@@ -80,7 +85,14 @@ export class CanvasWorkspace {
       const files = new CanvasFiles(writerLease.directory, deps.fs);
       const heads = await CanvasHeads.load(files);
       const leases = new CanvasLeases(deps, heads);
-      const workspace = new CanvasWorkspace(files, heads, leases, builds, writerLease);
+      const workspace = new CanvasWorkspace(
+        files,
+        heads,
+        leases,
+        builds,
+        writerLease,
+        deps.isChatKnown,
+      );
       await builds.load(workspace, files, heads.all());
       return workspace;
     } catch (error) {
@@ -115,40 +127,21 @@ export class CanvasWorkspace {
     return this.heads.attachedCanvasId(appSessionId);
   }
 
-  /**
-   * A new canvas, attached in the same commit so explicit Create leaves either
-   * nothing or this chat's canvas (spec §6). The chat leaves its previous canvas
-   * first: a crash between the two writes must leave it unattached, not twice.
-   */
-  createCanvas(appSessionId: string): Promise<CanvasSnapshot> {
+  /** Explicit creation retries return the same durable identity, without reattaching. */
+  createCanvas(appSessionId: string, mutationId: string): Promise<{ canvasId: string }> {
     return this.commits.admit(() =>
-      this.commits.run(async () => {
-        await this.detachFrom(appSessionId, null);
-        const manifest = emptyCanvasManifest(randomUUID(), this.nextCanvasName(), Date.now());
-        manifest.attachedAppSessionIds.push(appSessionId);
-        await this.heads.install(manifest, this.openGate());
-        return canvasSnapshot(manifest, this.builds);
-      }),
+      this.commits.run(() => this.attachments.createCanvas(appSessionId, mutationId)),
     );
   }
 
   attach(appSessionId: string, canvasId: string): Promise<void> {
     return this.commits.admit(() =>
-      this.commits.run(async () => {
-        // Refuse an unknown canvas before detaching the chat from its current one.
-        this.canvas(canvasId);
-        await this.detachFrom(appSessionId, canvasId);
-        const next = structuredClone(this.canvas(canvasId));
-        if (next.attachedAppSessionIds.includes(appSessionId)) return;
-        next.attachedAppSessionIds.push(appSessionId);
-        next.updatedAt = Date.now();
-        await this.heads.install(next, this.openGate());
-      }),
+      this.commits.run(() => this.attachments.attach(appSessionId, canvasId)),
     );
   }
 
   detach(appSessionId: string): Promise<void> {
-    return this.commits.admit(() => this.commits.run(() => this.detachFrom(appSessionId, null)));
+    return this.commits.admit(() => this.commits.run(() => this.attachments.detach(appSessionId)));
   }
 
   create(scope: CanvasScope, input: CreateFramesInput): Promise<CreateFramesResult> {
@@ -167,6 +160,7 @@ export class CanvasWorkspace {
       // a later create under it extends that canvas instead of making another.
       const target = this.leases.pinnedCanvas(scope);
       const bootstrapping = target === null;
+      if (bootstrapping) this.attachments.requireChat(scope.appSessionId);
       const canvasId = target ?? randomUUID();
       if (!bootstrapping) {
         this.leases.requireAttachment(scope, canvasId);
@@ -193,12 +187,13 @@ export class CanvasWorkspace {
             throw canvasError('scope_expired', ATTACHED_SINCE);
           }
           this.leases.requireActive(scope);
-          next = emptyCanvasManifest(canvasId, this.nextCanvasName(), Date.now());
+          next = emptyCanvasManifest(canvasId, this.attachments.nextCanvasName(), Date.now());
           // Spec §6: the canvas, the chat's attachment and the lease's binding
           // are one commit, so a half-attached canvas never exists.
           next.attachedAppSessionIds.push(scope.appSessionId);
           beforeRename = () => {
             this.commits.requireOpen();
+            this.attachments.requireChat(scope.appSessionId);
             this.leases.requireActive(scope);
             if (this.attachedCanvasId(scope.appSessionId) !== null)
               throw canvasError('scope_expired', ATTACHED_SINCE);
@@ -430,21 +425,6 @@ export class CanvasWorkspace {
     this.writerLease.release();
   }
 
-  /** Canvas files are kept: detaching a chat only drops the reference. */
-  private async detachFrom(appSessionId: string, keep: string | null): Promise<void> {
-    const attached = this.attachedCanvasId(appSessionId);
-    if (attached !== null && attached !== keep && this.heads.isDamaged(attached))
-      throw canvasError('storage_failed', UNREADABLE_CANVAS);
-    for (const manifest of this.heads.all()) {
-      if (manifest.canvasId === keep) continue;
-      if (!manifest.attachedAppSessionIds.includes(appSessionId)) continue;
-      const next = structuredClone(manifest);
-      next.attachedAppSessionIds = next.attachedAppSessionIds.filter((id) => id !== appSessionId);
-      next.updatedAt = Date.now();
-      await this.heads.install(next, this.openGate());
-    }
-  }
-
   /**
    * The receipt this create already has, if it has one. An unattached lease
    * finds it through the attachment its first create committed, which is also
@@ -470,13 +450,6 @@ export class CanvasWorkspace {
     return recorded;
   }
 
-  /** The final check a commit with no lease behind it runs before publishing. */
-  private openGate(): () => void {
-    return () => {
-      this.commits.requireOpen();
-    };
-  }
-
   /** The final check a leased commit runs, with its replacement manifest ready. */
   private scopedGate(scope: CanvasScope, designIds: readonly string[]): () => void {
     return () => {
@@ -490,9 +463,5 @@ export class CanvasWorkspace {
     if (manifest) return manifest;
     if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
     throw canvasError('invalid_input', 'That canvas is not open.');
-  }
-
-  private nextCanvasName(): string {
-    return `Canvas ${String(this.heads.all().length + 1)}`;
   }
 }

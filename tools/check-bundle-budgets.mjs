@@ -114,9 +114,20 @@ import { join } from 'node:path';
 // tile chrome, drop zones) are ~3.9KB, too little to be worth a skeleton in the
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
+//
+// initialCssBytes raised from 101_500 to 103_200 for the Canvas source drawer.
+// The Canvas pane alone measures 100_978, already 522 under the old line before
+// the drawer, and the drawer's own chrome is ~1_350: the file list, the editor's
+// gutter and overlay metrics, the conflict and discard bars, and the build-issue
+// list. Trimming its one-off utilities to the shared scale recovered only 42
+// bytes, and the panel's layout is what the rest buys. The merged CSS measures
+// 102_189. The entry JS of 1_433_651 stays under its own 1_434_000 line,
+// because everything the drawer loads is in the lazy Canvas chunks
+// (CanvasSourcePanel ~10.7KB, its editor and Prism beyond that). The new
+// headroom is ~1KB, in line with past CSS raises.
 const BUDGETS = {
   initialRendererJsBytes: 1_434_000,
-  initialCssBytes: 101_500,
+  initialCssBytes: 103_200,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

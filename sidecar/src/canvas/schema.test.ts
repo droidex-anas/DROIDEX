@@ -17,6 +17,7 @@ import type {
   CanvasSnapshot,
   CanvasSummary,
   CanvasTurnContext,
+  CreateCanvasResult,
   CreateFramesInput,
   CreateFramesResult,
   DesignRef,
@@ -46,6 +47,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // type identity instead.
 type SidecarWire = {
   create: CreateFramesInput;
+  createCanvasResult: CreateCanvasResult;
   createResult: CreateFramesResult;
   write: WriteFilesInput;
   arrange: ArrangeFramesInput;
@@ -69,6 +71,7 @@ type SidecarWire = {
 
 type RendererWire = {
   create: Renderer.CreateFramesInput;
+  createCanvasResult: Renderer.CreateCanvasResult;
   createResult: Renderer.CreateFramesResult;
   write: Renderer.WriteFilesInput;
   arrange: Renderer.ArrangeFramesInput;
@@ -100,6 +103,7 @@ type ExactMirror = { [Key in keyof SidecarWire]: Equals<SidecarWire[Key], Render
 const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' };
 
 const wire: SidecarWire = {
+  createCanvasResult: { canvasId: 'cv_01', attachedCanvasId: 'cv_02' },
   create: {
     mutationId: 'create-hey',
     placeBeside: { designId: 'dsg_hey' },
@@ -283,6 +287,7 @@ const wire: SidecarWire = {
 test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
   const exact: ExactMirror = {
     create: true,
+    createCanvasResult: true,
     createResult: true,
     write: true,
     arrange: true,
@@ -328,6 +333,18 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       requestId: 'req_01',
       ok: true,
       reply: { kind: 'attachment', canvasId: null },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'canvasCreated', ...wire.createCanvasResult },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'canvasCreated', canvasId: 'cv_01', attachedCanvasId: null },
     },
     {
       type: 'canvas.result',

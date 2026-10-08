@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createSocket } from 'node:dgram';
 import { createServer } from 'node:http';
 import type { Socket } from 'node:net';
@@ -61,6 +61,25 @@ export async function withCanvasBridge(
       'canvas bridge open',
       15_000,
     );
+    const listed = bounded(
+      new Promise<void>((resolve) => {
+        const receive = (message: MessageEvent) => {
+          const wire = JSON.parse(String(message.data)) as ServerWireMessage;
+          if (
+            wire.type !== 'events.batch' ||
+            !wire.events.some((entry) => entry.event.type === 'sessions.list')
+          )
+            return;
+          socket.removeEventListener('message', receive);
+          resolve();
+        };
+        socket.addEventListener('message', receive);
+      }),
+      'saved Canvas chats ready',
+      15_000,
+    );
+    socket.send(JSON.stringify({ type: 'sessions.list', includePlainChats: true }));
+    await listed;
     let sequence = 0;
     const send = async (command: Record<string, unknown>): Promise<CanvasReply> => {
       const requestId = `asset-smoke-${String(++sequence)}`;
@@ -223,7 +242,7 @@ function descendants(rootPid: number): number[] {
 
 export async function withCanvasHost(
   run: (app: ElectronApplication, page: Page) => Promise<void>,
-  options: { realSidecar?: boolean } = {},
+  options: { realSidecar?: boolean; savedChatIds?: string[] } = {},
 ): Promise<void> {
   const smokeHome = mkdtempSync(path.join(tmpdir(), 'droidex-canvas-smoke-'));
   const environment = { ...process.env };
@@ -232,6 +251,23 @@ export async function withCanvasHost(
   let app: ElectronApplication | undefined;
   let childPids: number[] = [];
   try {
+    const sessions = path.join(smokeHome, '.factory', 'sessions');
+    mkdirSync(sessions, { recursive: true });
+    for (const sessionId of options.savedChatIds ?? []) {
+      const lines = [
+        { type: 'session_start', sessionId, sessionTitle: sessionId, cwd: '' },
+        ...['user', 'assistant'].map((role) => ({
+          type: 'message',
+          id: `${sessionId}-${role}`,
+          timestamp: new Date().toISOString(),
+          message: { role, content: [{ type: 'text', text: 'Canvas smoke fixture' }] },
+        })),
+      ];
+      writeFileSync(
+        path.join(sessions, `${sessionId}.jsonl`),
+        `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`,
+      );
+    }
     app = await electron.launch({
       args: [path.resolve('electron/main.cjs')],
       cwd: process.cwd(),
