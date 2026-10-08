@@ -1040,17 +1040,17 @@ export class ProjectService {
     target: string,
     turnCount: number,
   ): Promise<'stopped' | 'cancelled'> {
-    // A question asked after Stop began belongs to a newer turn; leave it with its owner.
-    const askedBefore = requireThread(project, target).ask;
     await this.wakes.settle(project);
     const thread = requireThread(project, target);
-    if (thread.ask === askedBefore) clearAsk(project, thread);
+    // A turn that opened while Stop settled is newer work: its question and its
+    // restart continuation stay. Opening it already cleared the stopped turn's question.
+    const sameTurn = this.turns.turnCount(target) === turnCount;
+    if (sameTurn) clearAsk(project, thread);
     if (project.interrupted) {
       project.interrupted = project.interrupted.filter((id) => id !== target);
       if (!project.interrupted.length) delete project.interrupted;
     }
-    // A late interrupt receipt must not suppress restart recovery for a newer turn.
-    if (this.turns.turnCount(target) === turnCount) thread.stopped = true;
+    if (sameTurn) thread.stopped = true;
     this.inbox.forgetRecovery(target, project);
     const queued = thread.queuedSpawn;
     const checkoutOwner = queued?.workspace

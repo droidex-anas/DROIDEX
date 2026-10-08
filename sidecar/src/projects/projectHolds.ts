@@ -94,15 +94,16 @@ export class ProjectHolds {
       !project.pending.some((message) => message.to === lead.appSessionId)
     ) {
       const unread = unreadThreadNote(project);
-      if (unread) {
-        if (!inboxFull(project))
-          this.inbox.enqueue(project, {
-            from: lead.appSessionId,
-            to: lead.appSessionId,
-            kind: 'message',
-            text: unread,
-          });
-      } else if (!this.sessions.get(lead.appSessionId)?.streaming) project.wakePending = 'resume';
+      // A full inbox still wakes the lead, through the flag delivered when a slot frees.
+      if (unread && !inboxFull(project))
+        this.inbox.enqueue(project, {
+          from: lead.appSessionId,
+          to: lead.appSessionId,
+          kind: 'message',
+          text: unread,
+        });
+      else if (unread || !this.sessions.get(lead.appSessionId)?.streaming)
+        project.wakePending = 'resume';
     }
     this.inbox.refill(project);
     await this.persist();
