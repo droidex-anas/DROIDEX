@@ -56,15 +56,20 @@ function MessageTime({ ts, label }: { ts: number; label?: string }) {
 }
 
 // A prompt from the last hour says how long ago the agent took it in: "just
-// now", then "12m ago". Only those keep a clock running.
+// now", then "12m ago". Only those keep a clock running. A clock set ahead of
+// this one shows the time instead.
+function isRecent(ago: number): boolean {
+  return ago >= 0 && ago < HOUR_MS;
+}
+
 function PromptTime({ ts }: { ts: number }) {
-  return Date.now() - ts < HOUR_MS ? <RecentPromptTime ts={ts} /> : <MessageTime ts={ts} />;
+  return isRecent(Date.now() - ts) ? <RecentPromptTime ts={ts} /> : <MessageTime ts={ts} />;
 }
 
 function RecentPromptTime({ ts }: { ts: number }) {
   const now = useRelativeTimeNow(ts + HOUR_MS);
   const ago = now - ts;
-  if (ago >= HOUR_MS) return <MessageTime ts={ts} />;
+  if (!isRecent(ago)) return <MessageTime ts={ts} />;
   const minutes = Math.floor(ago / 60_000);
   return <MessageTime ts={ts} label={minutes < 1 ? 'just now' : `${String(minutes)}m ago`} />;
 }

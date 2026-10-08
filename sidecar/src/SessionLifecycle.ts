@@ -744,11 +744,8 @@ export class SessionLifecycle {
     liveSession.steers.push(prompt);
     this.updateQueuedSends(liveSession);
     const outcome = await session.steer(prompt.text, prompt.mentions, steerId).catch(() => false);
-    if (
-      this.dependencies.registry.getLive(appSessionId) !== liveSession ||
-      liveSession.session !== session
-    )
-      return true;
+    // Compaction can replace the provider while this live session still owns the steer.
+    if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return true;
     const held = removePrompt(liveSession.steers, prompt);
     if (!outcome) {
       if (liveSession.pendingSends.includes(prompt)) {
@@ -764,10 +761,7 @@ export class SessionLifecycle {
     removePrompt(liveSession.pendingSends, prompt);
     if (outcome !== 'withdrawn')
       await this.dependencies.appendSteer(appSessionId, prompt.text, steerId);
-    if (
-      this.dependencies.registry.getLive(appSessionId) === liveSession &&
-      liveSession.session === session
-    )
+    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       this.updateQueuedSends(liveSession);
     return true;
   }

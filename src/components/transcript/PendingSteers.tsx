@@ -142,6 +142,11 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
       toast.info('The agent already has this message.');
     };
     const canWithdraw = 'canWithdraw' in steer && steer.canWithdraw;
+    const onWithdraw = canWithdraw
+      ? () => {
+          void withdraw();
+        }
+      : undefined;
     const reports = threadReports(steer.text);
     return (
       <div key={steer.id} className="prompt-enter mx-auto min-w-0 max-w-2xl pb-2 pt-2">
@@ -153,20 +158,11 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
             <PromptActions
               text={reports.map((report) => report.body).join('\n\n')}
               onSendNow={sendNow}
+              onWithdraw={onWithdraw}
             />
           </div>
         ) : (
-          <UserBubble
-            event={{ text: steer.text }}
-            onSendNow={sendNow}
-            onWithdraw={
-              canWithdraw
-                ? () => {
-                    void withdraw();
-                  }
-                : undefined
-            }
-          />
+          <UserBubble event={{ text: steer.text }} onSendNow={sendNow} onWithdraw={onWithdraw} />
         )}
       </div>
     );

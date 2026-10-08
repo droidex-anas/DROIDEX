@@ -35,10 +35,9 @@ export function addLocalSteer(appSessionId: string, steer: LocalSteer, prompt: Q
 export function dropLocalSteers(appSessionId: string, ids: ReadonlySet<string>): void {
   const current = steers.get(appSessionId);
   if (!current?.some((steer) => ids.has(steer.id))) return;
-  steers.set(
-    appSessionId,
-    current.filter((steer) => !ids.has(steer.id)),
-  );
+  const remaining = current.filter((steer) => !ids.has(steer.id));
+  if (remaining.length > 0) steers.set(appSessionId, remaining);
+  else steers.delete(appSessionId);
   emit();
 }
 

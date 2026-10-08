@@ -1030,6 +1030,47 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   await late;
 });
 
+test('a provider swap during compaction preserves a pending steer outcome', async () => {
+  for (const outcome of [false, true, 'withdrawn'] as const) {
+    const h = createHarness();
+    const provider = queueCreate(h, 'steer');
+    const turn = provider.deferNextStream();
+    await h.lifecycle.create(createCommand('first'));
+    await provider.waitForPrompts(1);
+    const live = requireLive(h, 'steer');
+    const handedOver = turnGate();
+    let settleDelivery: (outcome: boolean | 'withdrawn') => void = () => undefined;
+    live.session.steer = () =>
+      new Promise((resolve) => {
+        settleDelivery = resolve;
+        handedOver.resolve();
+      });
+
+    const sending = h.lifecycle.send('steer', 'held', undefined, 'held');
+    await handedOver.promise;
+    live.compacting = true;
+    const replacement = new FakeFactorySession('replacement', {}, h.calls);
+    live.session = new DroidProviderSession('steer', replacement, h.runtime, {
+      autonomy: 'low',
+    });
+    settleDelivery(outcome);
+    await sending;
+
+    assert.deepEqual(
+      h.registry.getCanonicalSummary('steer')?.pendingSteers,
+      outcome === false ? [{ id: 'held', text: 'held', canWithdraw: true }] : [],
+    );
+    assert.deepEqual(
+      h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
+      outcome === true ? [['steer', 'held', 'held']] : [],
+    );
+    live.compacting = false;
+    turn.resolve();
+    await live.turnPromise;
+    assert.deepEqual(replacement.prompts, outcome === false ? ['held'] : []);
+  }
+});
+
 test('a turn persists recent activity at start and completion while queued sends leave it alone', async () => {
   // Recency survives a restart mid-turn; streaming suppresses unread until
   // the response completes.

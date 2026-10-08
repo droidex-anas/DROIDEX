@@ -108,6 +108,7 @@ export class ClaudeSession implements ProviderSession {
       resolve: (outcome: boolean | 'withdrawn') => void;
       outcome?: boolean | 'withdrawn';
       withdrawalRequested?: true;
+      cancellation?: Promise<boolean>;
     }
   >();
   // The running turn's own result has arrived; it may still wait for steers.
@@ -391,7 +392,9 @@ export class ClaudeSession implements ProviderSession {
     // Only one caller can reclaim the prompt while cancellation is in flight.
     if (!pending || pending.withdrawalRequested || this.isClosed) return false;
     pending.withdrawalRequested = true;
-    const cancelled = await this.query.cancelAsyncMessage(uuid).catch(() => false);
+    pending.cancellation ??= this.query.cancelAsyncMessage(uuid).catch(() => false);
+    const cancelled = await pending.cancellation;
+    delete pending.cancellation;
     // A failed withdrawal must not claim a later Stop or Send now cancellation.
     if (!cancelled) delete pending.withdrawalRequested;
     if (this.abort.signal.aborted) return false;
@@ -403,11 +406,16 @@ export class ClaudeSession implements ProviderSession {
   // it again. Unless the CLI says it cancelled it, the CLI may still run it,
   // and losing one steer on a failed turn beats showing it twice.
   private async cancelUndeliveredSteer(uuid: string): Promise<void> {
+    const pending = this.steerDeliveries.get(uuid);
+    if (!pending) return;
     if (this.isClosed) {
       this.settleSteer(uuid, false);
       return;
     }
-    const cancelled = await this.query.cancelAsyncMessage(uuid).catch(() => false);
+    // Finalization and user withdrawal must settle from the same cancellation receipt.
+    pending.cancellation ??= this.query.cancelAsyncMessage(uuid).catch(() => false);
+    const cancelled = await pending.cancellation;
+    delete pending.cancellation;
     if (cancelled) this.settleCancelledSteer(uuid);
     else this.settleSteer(uuid, true);
   }

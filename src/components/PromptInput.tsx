@@ -1779,6 +1779,7 @@ export default function PromptInput({
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();
+        if (steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
         console.error('[PromptInput] sendToSession failed:', err);
       }
     };
