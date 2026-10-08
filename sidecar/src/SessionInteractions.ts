@@ -134,7 +134,7 @@ export class SessionInteractions {
     if (
       approval.signal?.aborted ||
       this.dependencies.getLiveSession(sessionId) !== liveSession ||
-      liveSession?.session !== providerSession
+      liveSession.session !== providerSession
     )
       return 'cancel';
     return await new Promise<PermissionOutcome>((resolve) => {

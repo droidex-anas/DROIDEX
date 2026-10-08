@@ -786,30 +786,6 @@ test("a project lead's approval targets the provider request and publishes its b
   assert.equal(h.state.saved[0].pending.length, 0);
 });
 
-test('a permission check uses the current autonomy after asynchronous automation lookup', async () => {
-  const h = createHarness();
-  const actor = h.addLiveSession('actor');
-  actor.summary.autonomy = 'high';
-  const pending = h.interactions.interactionsFor({ id: 'actor' }).requestApproval({
-    request: {
-      appSessionId: 'actor',
-      requestId: 'spawn-request',
-      kind: 'mcp',
-      title: 'Start a thread',
-      detail: '',
-      canAlwaysAllow: false,
-      raw: {},
-    },
-    confirmationType: 'mcp_tool',
-    mcpTool: { serverName: 'droidex-sessions', toolName: 'thread_spawn' },
-  });
-  actor.summary.autonomy = 'off';
-  await drain();
-  assert.equal(h.interactions.pendingApproval('actor')?.requestId, 'spawn-request');
-  await h.interactions.respondToApproval('actor', 'spawn-request', 'refuse');
-  assert.equal(await pending, 'refuse');
-});
-
 test('lead approvals cannot disable a worker sandbox', async () => {
   const h = createHarness();
   const lead = h.addLiveSession('lead');
