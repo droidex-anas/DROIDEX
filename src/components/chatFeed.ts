@@ -34,6 +34,12 @@ export function startsTurn(event: TranscriptEvent): boolean {
   );
 }
 
+// A steer is the user's bubble inside a running turn, not the start of a new
+// one: the work around it is the same live turn.
+export function isSteeredPrompt(event: TranscriptEvent): boolean {
+  return event.author === 'user' && event.steered === true;
+}
+
 // Whether `next` is the tool_result produced by the `call` event. Result events
 // carry no usable `toolName` (the live SDK emits "" and history reads the empty
 // result name), so classification cannot identify them; correlate by toolUseId

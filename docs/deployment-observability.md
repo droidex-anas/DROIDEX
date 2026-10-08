@@ -30,6 +30,7 @@ Record these values with each release candidate:
 | `DROIDEX_UNSIGNED_RELEASE_BUILD` | Enables the fail-closed unsigned website release configuration |
 | `DROIDEX_RELEASE_BUILD` | Enables the fail-closed signed/notarized release configuration |
 | `CSC_LINK` | Developer ID Application certificate supplied through CI secrets |
+| `DROIDEX_SIGNING_CERT_P12_BASE64` / `DROIDEX_SIGNING_CERT_PASSWORD` | Stable self-signed certificate and its export password in protected release secrets |
 | `APPLE_API_KEY_P8_BASE64` | Base64-encoded App Store Connect key materialized as a temporary `.p8` file in CI |
 | `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` / `APPLE_TEAM_ID` | Apple identities used for notarization and signature verification |
 | `SENTRY_DSN` | Public client DSN embedded for crash and `/bug` reporting |
@@ -68,8 +69,10 @@ failure blocks tagging.
 
 ## Canonical release path
 
-The current website release is ad-hoc signed, but it has no trusted Developer ID
-signature and is not notarized. It does not require an Apple Developer Program subscription. Build with
+The website release is self-signed when the certificate secrets are configured,
+otherwise ad-hoc signed. It has no trusted Developer ID signature and is not
+notarized. See [the one-time signing setup](releasing.md#one-time-free-signing-setup).
+It does not require an Apple Developer Program subscription. Build with
 `DROIDEX_UNSIGNED_RELEASE_BUILD=1`, inject `SENTRY_DSN` from protected release
 configuration, generate both Sparkle appcasts with `npm run sparkle:appcast`,
 and run the unsigned preflight. Publish only these immutable public assets:
@@ -101,7 +104,7 @@ Keep the private key only in the macOS Keychain and the protected
 
 `.github/workflows/release-macos.yml` is the only production publisher. A tag
 whose name exactly matches the source package version and is already
-contained in `main` runs all release gates, builds the ad-hoc-signed Intel and
+contained in `main` runs all release gates, builds the Intel and
 Apple silicon packages, signs both Sparkle appcasts, verifies the artifacts,
 and generates `SHA256SUMS`.
 

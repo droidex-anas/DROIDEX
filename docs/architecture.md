@@ -352,7 +352,7 @@ and warned, not failed, on shared runners. Bundle bytes stay gated by
 
 ## Update path
 
-Free, ad-hoc-signed macOS builds use Sparkle against architecture-specific,
+Free macOS builds (self-signed when configured, otherwise ad-hoc) use Sparkle against architecture-specific,
 EdDSA-signed appcasts and ZIPs in the public
 `droidex-anas/droidex-releases` repository. DROIDEX may check for a new
 version in the background, but download and installation always require an

@@ -16,7 +16,7 @@ import { conversationMarkdown } from './sessionMarkdown.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
 import { forkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
 import type { ProviderKind } from './providers/providerKind.js';
-import type { Provider, ProviderModelSettings } from './providers/session.js';
+import type { Provider, ProviderForkHandle, ProviderModelSettings } from './providers/session.js';
 
 type SessionForkCommand = Extract<ClientCommand, { type: 'session.fork' }>;
 
@@ -37,6 +37,9 @@ export interface SessionForksDependencies {
   readTranscript: (appSessionId: string) => Promise<string>;
   // The settings owner's model change: it reaches the provider as well as the stored row.
   updateModel: (appSessionId: string, settings: ProviderModelSettings) => Promise<boolean>;
+  beginForkOpen: (appSessionId: string) => void;
+  endForkOpen: (appSessionId: string) => void;
+  isCloseRequested: (appSessionId: string) => boolean;
   isShutdownStarted: () => boolean;
   create: (command: SessionCreateCommand, branch: SessionBranch) => Promise<void>;
   send: (appSessionId: string, text: string) => Promise<void>;
@@ -49,17 +52,13 @@ export interface SessionForksDependencies {
   }) => void;
 }
 
-// Copies a session into a new one. On the source's own provider the provider
-// copies its conversation and the copy is stored closed, to be resumed by its
-// first send. Another provider cannot read that conversation, and a turn in
-// progress cannot be copied, so then the copy is a new session whose first
-// prompt carries the source transcript. Either way a `prompt` is the copy's
-// first message.
+// Native copies preserve the provider's full context and resume on their first
+// send. Cross-provider branches and streaming sources carry a transcript instead.
 export class SessionForks {
   constructor(private readonly d: SessionForksDependencies) {}
 
   async fork(command: SessionForkCommand): Promise<void> {
-    let copiedAppSessionId: string | undefined;
+    let copy: ProviderForkHandle | undefined;
     try {
       const source = this.forkableSource(command);
       const lineage: SessionLineage = {
@@ -69,9 +68,9 @@ export class SessionForks {
       };
       const provider = command.provider ?? source.provider;
       if (provider === source.provider && !this.isStreaming(source)) {
-        copiedAppSessionId = await this.copyNatively(command, source, lineage);
+        copy = await this.copyNatively(command, source, lineage);
       } else {
-        await this.branchAcross(command, source, provider, lineage);
+        await this.branchFromTranscript(command, source, provider, lineage);
       }
     } catch (error) {
       this.d.emitError({
@@ -83,10 +82,21 @@ export class SessionForks {
     }
     // Outside the fork's own failure path: the copy exists by now, so a model
     // or a send that fails is that chat's error, not a failed fork.
-    if (!copiedAppSessionId) return;
-    if (command.modelId && !(await this.applyPickedModel(copiedAppSessionId, command))) return;
-    const request = command.prompt?.trim();
-    if (request) await this.d.send(copiedAppSessionId, firstMessage(command.lineage, request));
+    if (!copy) return;
+    try {
+      if (this.d.isCloseRequested(copy.providerSessionId)) return;
+      if (command.modelId && !(await this.applyPickedModel(copy.providerSessionId, command)))
+        return;
+      // The renderer can close the announced copy while its model is being applied.
+      if (this.d.isCloseRequested(copy.providerSessionId)) return;
+      const request = command.prompt?.trim();
+      if (request)
+        await this.d.send(copy.providerSessionId, firstMessage(command.lineage, request));
+    } finally {
+      this.d.endForkOpen(copy.providerSessionId);
+      // Resume owns a transferred client; failed or unopened copies release it.
+      await copy.release?.();
+    }
   }
 
   // A model picked for the copy replaces the source's and its effort, since an
@@ -133,7 +143,7 @@ export class SessionForks {
     command: SessionForkCommand,
     source: SessionSummary,
     lineage: SessionLineage,
-  ): Promise<string> {
+  ): Promise<ProviderForkHandle> {
     const live = this.d.registry.getLive(source.appSessionId);
     const handle = await this.d.provider(source.provider).fork({
       providerSessionId: source.providerSessionId ?? source.appSessionId,
@@ -146,43 +156,50 @@ export class SessionForks {
       ...(live ? { live: live.session } : {}),
       ...(command.forkPointId ? { forkPointId: command.forkPointId } : {}),
     });
-    // Droid writes its copy where its own sessions live. Every other provider's
-    // scrollback is DROIDEX's transcript file, which is copied beside it.
-    let transcript = null;
-    if (source.provider !== 'droid') {
-      this.requireUnchanged(source, live);
-      const stored = await this.d.readTranscript(source.appSessionId);
-      this.requireUnchanged(source, live);
-      transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
-    }
-    const appSessionId = handle.providerSessionId;
-    const change = transcript && {
-      providerSessionId: appSessionId,
-      path: await writeForkedTranscript(transcript, {
+    try {
+      this.d.beginForkOpen(handle.providerSessionId);
+      // Droid writes its copy where its own sessions live. Every other provider's
+      // scrollback is DROIDEX's transcript file, which is copied beside it.
+      let transcript = null;
+      if (source.provider !== 'droid') {
+        this.requireUnchanged(source, live);
+        const stored = await this.d.readTranscript(source.appSessionId);
+        this.requireUnchanged(source, live);
+        transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
+      }
+      const appSessionId = handle.providerSessionId;
+      const change = transcript && {
+        providerSessionId: appSessionId,
+        path: await writeForkedTranscript(transcript, {
+          appSessionId,
+          title: command.title,
+          ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
+          ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
+          dropContextWindow: changesModel(command, source),
+        }),
+      };
+      // Recorded before the copy is indexed, so the list that indexing publishes
+      // already keeps a side chat out of the sidebar.
+      this.d.lineage.record(appSessionId, lineage);
+      await this.d.indexSessionFiles(change);
+      // The stored row makes the copy a DROIDEX chat and carries the source's
+      // settings, which the provider's file does not always hold.
+      const stored = await this.d.registry.updateStoredSummary(
         appSessionId,
-        title: command.title,
-        ...(handle.resumeId ? { resumeId: handle.resumeId } : {}),
-        ...(handle.forkPointRenames ? { forkPointRenames: handle.forkPointRenames } : {}),
-        dropContextWindow: changesModel(command, source),
-      }),
-    };
-    // Recorded before the copy is indexed, so the list that indexing publishes
-    // already keeps a side chat out of the sidebar.
-    this.d.lineage.record(appSessionId, lineage);
-    await this.d.indexSessionFiles(change);
-    // The stored row makes the copy a DROIDEX chat and carries the source's
-    // settings, which the provider's file does not always hold.
-    const stored = await this.d.registry.updateStoredSummary(
-      appSessionId,
-      copiedSettings(command, source),
-    );
-    const session = stored && this.d.registry.resolveSummary(appSessionId);
-    if (!session) throw new Error('The copied chat could not be found after forking.');
-    this.d.emit({ type: 'session.forked', clientRef: command.clientRef, session });
-    return appSessionId;
+        copiedSettings(command, source),
+      );
+      const session = stored && this.d.registry.resolveSummary(appSessionId);
+      if (!session) throw new Error('The copied chat could not be found after forking.');
+      this.d.emit({ type: 'session.forked', clientRef: command.clientRef, session });
+      return handle;
+    } catch (error) {
+      this.d.endForkOpen(handle.providerSessionId);
+      await handle.release?.();
+      throw error;
+    }
   }
 
-  private async branchAcross(
+  private async branchFromTranscript(
     command: SessionForkCommand,
     source: SessionSummary,
     provider: ProviderKind,
