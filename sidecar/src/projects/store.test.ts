@@ -15,12 +15,82 @@ import {
   summary,
 } from '../testing/projectServiceHarness.js';
 import { ProjectService } from './ProjectService.js';
+import type { SteeredReportDelivery } from '../SessionLifecycle.js';
 
 /** The ledger path in a scratch directory removed after the test. */
 async function ledgerPath(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-projects-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return join(directory, 'projects.json');
+}
+
+for (const kind of ['question', 'approval'] as const) {
+  test(`a refused ${kind} waits outside a full inbox and delivers once when room opens`, async (t) => {
+    const h = await harness(t);
+    const ledger = new ProjectStore(await ledgerPath(t));
+    const save = h.store.save.bind(h.store);
+    const snapshots: Project[][] = [];
+    t.mock.method(h.store, 'save', (projects: Project[]) => {
+      snapshots.push(structuredClone(projects));
+      return save(projects);
+    });
+    const validateSaves = async () => {
+      for (const snapshot of snapshots.splice(0)) await ledger.save(snapshot);
+      return ledger.load();
+    };
+    const { main } = await h.root();
+    const child = await h.projects.spawn(main, input);
+    const backlog = await h.projects.spawn(main, { ...input, title: 'Backlog' });
+    await h.streaming(main, true);
+    let delivery: SteeredReportDelivery | undefined;
+    h.port.steer = async (_target, _prompt, _current, _now, callbacks) => {
+      delivery = callbacks;
+      callbacks?.accepted();
+      return true;
+    };
+    if (kind === 'question') {
+      await h.ask(child.appSessionId, 'request', 'Which format?', [{ label: 'JSON' }]);
+    } else {
+      const request = {
+        kind: 'exec' as const,
+        appSessionId: child.appSessionId,
+        requestId: 'request',
+        title: 'Run tests',
+        detail: 'npm test',
+        canAlwaysAllow: false,
+        raw: {},
+      };
+      h.state.approvals.set(child.appSessionId, request);
+      await h.projects.observe({ type: 'approval.requested', request });
+    }
+    await drain();
+    assert.ok(delivery);
+    assert.equal(h.state.saved[0].pending.length, 0);
+    for (let index = 0; index < LEDGER_LIMITS.inbox; index += 1)
+      await h.projects.send(main, backlog.appSessionId, `Task ${index}`, 'queue');
+    delivery.declined('refused');
+    await drain();
+    assert.equal(h.projects.list()[0]?.paused, false);
+    assert.equal((await validateSaves())[0]?.pending.length, LEDGER_LIMITS.inbox);
+    assert.equal(h.sent.length, 0);
+    await h.streaming(main, false);
+    await h.finish(backlog.appSessionId, 'Backlog ready.');
+    await drain();
+    const delivered = () => h.sent.filter(({ prompt }) => prompt.includes(`, ${kind} request):`));
+    assert.equal(delivered().length, 1);
+    assert.match(
+      delivered()[0].prompt,
+      kind === 'question' ? /Which format\?\n- JSON/ : /npm test/,
+    );
+    assert.equal(h.projects.list()[0]?.paused, false);
+    assert.ok((await validateSaves())[0].pending.length <= LEDGER_LIMITS.inbox);
+    await h.finish(main);
+    h.projects.sessionAvailable(main);
+    h.projects.capacityChanged();
+    await drain();
+    assert.equal(delivered().length, 1);
+    assert.ok((await validateSaves())[0].pending.length <= LEDGER_LIMITS.inbox);
+  });
 }
 
 function project(): Project {

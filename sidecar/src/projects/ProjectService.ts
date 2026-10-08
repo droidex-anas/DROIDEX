@@ -108,6 +108,19 @@ export class ProjectService {
       (project) => {
         this.inbox.refill(project);
       },
+      (project, target) => {
+        const restore = this.inbox.refusalRecovery(project, target);
+        return (messages) => {
+          if (this.closed || this.projects.get(project.id) !== project) return false;
+          return restore(
+            messages.filter(
+              (message) =>
+                this.membership.get(message.from) === project &&
+                this.membership.get(message.to) === project,
+            ),
+          );
+        };
+      },
       async (project, thread) => {
         const queued = thread.queuedSpawn;
         if (!queued) return true;
@@ -1043,9 +1056,7 @@ export class ProjectService {
         if (step.threadAppSessionId === target) delete step.threadAppSessionId;
       for (const todo of project.todos) if (todo.after === target) delete todo.after;
     }
-    project.pending = project.pending.filter((message) => message.to !== target);
-    for (const thread of project.threads)
-      if (thread.ownerAppSessionId === target) delete thread.owedReport;
+    this.inbox.withdraw(project, thread);
     await this.save();
     if (queued?.workspace && checkoutOwner)
       await discardThreadCheckout(checkoutOwner.cwd, queued.workspace);

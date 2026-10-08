@@ -2502,7 +2502,7 @@ test('a report refused during a context relaunch never joins the typed prompt qu
   await h.lifecycle.closeAll();
 });
 
-test('a definitive report steer refusal restores its ids until the owner settles', async (t) => {
+test('a report refused after lead Stop restores its ids and delivers once when the user continues', async (t) => {
   const project = await projectHarness(t);
   const { main } = await project.root();
   const child = await project.projects.spawn(main, { ...projectInput, title: 'Listing' });
@@ -2513,15 +2513,26 @@ test('a definitive report steer refusal restores its ids until the owner settles
   await h.lifecycle.create(createCommand('working'));
   await provider.waitForPrompts(1);
   const live = requireLive(h, main);
+  const refusal = turnGate();
   let attempts = 0;
   live.session.steer = async () => {
     attempts += 1;
+    await refusal.promise;
     return false;
   };
   project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
   project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
   await project.streaming(main, true);
   await project.finish(child.appSessionId, 'I ran `ls /` and listed the folders.');
+  await drain();
+  assert.equal(project.state.saved[0].pending.length, 0);
+  assert.equal(project.state.saved[0].delivery, undefined);
+  await h.lifecycle.interrupt(main);
+  await project.projects.userStopped(main);
+  turn.resolve();
+  await live.turnPromise;
+  await project.streaming(main, false);
+  refusal.resolve();
   await drain();
   const pending = structuredClone(project.state.saved[0].pending);
   assert.equal(pending.length, 1);
@@ -2531,14 +2542,16 @@ test('a definitive report steer refusal restores its ids until the owner settles
   await drain();
   assert.equal(attempts, 1);
   assert.deepEqual(project.state.saved[0].pending, pending);
-  turn.resolve();
-  await live.turnPromise;
-  await project.streaming(main, false);
+  assert.deepEqual(provider.prompts, ['working']);
+  await project.projects.userContinued(main);
   await drain();
   assert.equal(provider.prompts.length, 2);
   assert.match(provider.prompts[1], /I ran `ls \/`/);
   assert.equal(project.state.saved[0].pending.length, 0);
   assert.equal(project.state.saved[0].threads[1].unread, undefined);
+  project.projects.sessionAvailable(main);
+  await drain();
+  assert.equal(provider.prompts.length, 2);
 });
 
 test('recovering a bound queued thread uses its adopted provider for the original task', async (t) => {

@@ -136,6 +136,8 @@ export interface ThreadMessage {
 interface ThreadAsk {
   requestId: string;
   questions: { index: number; question: string; options: string[] }[];
+  /** Its owner update is queued or handed off; a refusal can make it owed again. */
+  notified?: true;
 }
 
 export interface Project {

@@ -1,4 +1,16 @@
-import type { Project, ThreadMessage } from './types.js';
+import type { Project, ProjectThread, ThreadMessage } from './types.js';
+import { LEDGER_LIMITS } from './store.js';
+
+export function questionText(ask: NonNullable<ProjectThread['ask']>): string {
+  return ask.questions
+    .map((item) =>
+      item.options.length
+        ? `${item.question}\n${item.options.map((option) => `- ${option}`).join('\n')}`
+        : item.question,
+    )
+    .join('\n\n')
+    .slice(0, LEDGER_LIMITS.text);
+}
 
 export function failureReport(title: string, reason: string, resetsAt?: number): string {
   const failed = `${title} failed: ${reason.trimEnd().replace(/\.$/, '')}. Continue it with thread_send.`;

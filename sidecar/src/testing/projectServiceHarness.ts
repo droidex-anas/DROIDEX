@@ -306,6 +306,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     events,
     transcripts,
     state,
+    store,
     port,
     streaming,
     finish,
@@ -395,6 +396,7 @@ export function wakeQueue(
       options.fail(error);
     },
     () => undefined,
+    () => () => false,
     options.launch,
   );
   queue.start([]);

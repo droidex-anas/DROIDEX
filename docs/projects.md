@@ -26,9 +26,10 @@ changes a sandbox or raises autonomy.
 
 **How a report reaches the lead.** When a thread finishes, its report goes to
 its owner. If the owner is in a turn, the report is steered into that turn; if
-it is idle, the report starts a new turn. A steered report counts as delivered
-the moment it is handed to the provider, and nothing can send it again. If it
-is refused before that moment, it stays queued and is tried again later.
+it is idle, the report starts a new turn. A steered report settles when handed
+to the provider. A definitive refusal returns it to the inbox for another try,
+including when the user stopped the lead meanwhile; it waits until the user
+continues the lead. An unconfirmed outcome stays settled and is never replayed.
 
 **Unread is the safety net.** A new reply marks its thread unread until the
 lead reads it (`thread_read`), a turn starts with that reply's report, or the
@@ -99,7 +100,7 @@ A ledger that cannot be read is reported and left untouched.
 | `thread_list` | Reads threads, unread, runtime load and to-dos | Starts no work |
 | `thread_read` | Reads replies and durably clears unread; `full: true` reads the latest settled final reply from its transcript | Starts no work; ordinary reads keep bounded ledger previews |
 | `thread_configure` | Sets autonomy or queued launch settings | Running model/effort changes wait for settlement |
-| `thread_stop` | Interrupts and drops queued messages; cancels queued starts | Handed-off reports stay settled |
+| `thread_stop` | Interrupts and drops queued messages; cancels queued starts | A late refusal cannot restore messages withdrawn by this Stop |
 | `plan_set` | Saves plan, optional title and agreed `brief` (≤2,000 characters) | Lead owns planned/doing/review/done/blocked; ids survive reordering and explicit ids survive renaming |
 | `project_done` | Records outcome after work is handled | Refuses with unread reports, open to-dos, failed/approval-waiting threads, pending messages and active work; new work reopens it |
 | `todo_add` | Saves a follow-up: `after`, `inMinutes` or absolute ISO `at` | Due after the next report, including failure/interruption, or the reminder time; first trigger wins |
@@ -424,10 +425,17 @@ settled reply from its transcript. A ledger that still passed 8 MiB would be
 refused, and every project held. Membership is persisted before a new session
 receives its first task.
 
-The wake queue writes its claim before dispatch. A steered report settles when
-`session.steer(text)` is called. A definitive `false` restores the batch with
-its message and reply ids and parks it until that turn settles, then uses ordinary
-delivery. An `unconfirmed` outcome stays settled and is never replayed.
+The wake queue writes its claim before dispatch. A steered update settles when
+`session.steer(text)` is called. A definitive `false` restores the batch under
+the same project's ownership, even after lead Stop or project Pause. Only an
+explicit `thread_stop` withdrawal cancels recovery for that target, including
+if it has since continued. Restored updates wait for recipient availability;
+updates to a stopped lead wait for the user to continue it. An `unconfirmed`
+outcome stays settled and is never replayed.
+Restoration preserves the inbox limit. A refused report that finds it full waits
+as its thread's `owedReport`; a question stays on its waiting ask, and an approval
+stays on its pending permission request. Refill queues these updates once room
+opens. Due reminders likewise retain their to-do until it can queue again.
 Confirmed consumption clears unread only for the reply that report carries;
 an uncertain or missing acknowledgement leaves it unread.
 An idle owner's scheduled turn keeps its existing receipt:
@@ -452,13 +460,14 @@ Projects take turns admitting deliveries, so one project's backlog cannot
 starve another project. Reports and due reminders can steer into a busy owner's
 turn without starting a competing turn. Stop waits for admissions; steered
 handoffs settle without waiting for provider acknowledgement. An unread reply
-remains discoverable through `thread_list` and the next wake even if Stop loses
-the push. Interrupted threads receive one restart continuation only when they
+remains discoverable through `thread_list` and the next wake when consumption
+is unconfirmed. Definitive refusals retain delivery independently of unread.
+Interrupted threads receive one restart continuation only when they
 have no instruction already queued, including when the inbox is full.
 
 A report refused before handoff or definitively refused by the provider returns
-unchanged to the ledger. A scheduled turn whose outcome is unknown holds the
-project for review. A withdrawal before dispatch, by Stop, a hold or a question its thread stopped
+to pending or its thread's owed report. A scheduled turn whose outcome is unknown
+holds the project for review. A withdrawal before dispatch, by Stop, a hold or a question its thread stopped
 asking, returns messages to the queue, less the withdrawn question. After a
 restart, reports in a sending claim with an identified, durable reply are
 dropped: their replies remain unread. Reports without a reply identity or
@@ -489,8 +498,9 @@ note and any time trigger remain.
 ## Ownership in code
 
 `ProjectService` owns project membership, plans, holds and tool authority.
-`ProjectInbox` owns retained reports, restart continuations, approval notices
-and idle wakes; interruption identities discovered while held live in the ledger.
+`ProjectInbox` owns refusal recovery, retained reports and questions, restart
+continuations, approval notices and idle wakes; interruption identities
+discovered while held live in the ledger.
 `ThreadLaunches` owns queued launch order and binding and reuses a bound provider
 for the original task after restart. `ProjectReads` owns snapshots, transcript
 reads and reply-specific unread acknowledgement. Stored steer message ids keep

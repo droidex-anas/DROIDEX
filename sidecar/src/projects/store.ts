@@ -77,6 +77,7 @@ const message = z
 const ask = z
   .object({
     requestId: id,
+    notified: z.literal(true).optional(),
     questions: z
       .array(
         z

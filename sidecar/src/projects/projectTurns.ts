@@ -1,6 +1,6 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import { failureReport } from './projectMessages.js';
+import { failureReport, questionText } from './projectMessages.js';
 import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
 import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
@@ -187,14 +187,7 @@ export class ProjectTurns {
         .map((option) => option.label.slice(0, LEDGER_LIMITS.askOptionText)),
     }));
     if (!questions.length) return;
-    const asked = questions
-      .map((item) =>
-        item.options.length
-          ? `${item.question}\n${item.options.map((option) => `- ${option}`).join('\n')}`
-          : item.question,
-      )
-      .join('\n\n')
-      .slice(0, LEDGER_LIMITS.text);
+    const ask = { requestId: question.requestId, questions };
     try {
       // The id travels with the question, so an answer written for it can
       // never settle a later question the thread asks instead.
@@ -202,7 +195,7 @@ export class ProjectTurns {
         from: thread.appSessionId,
         to: thread.ownerAppSessionId,
         kind: 'question',
-        text: asked,
+        text: questionText(ask),
         questionId: question.requestId,
       });
     } catch (error) {
@@ -212,7 +205,7 @@ export class ProjectTurns {
       await this.d.save();
       return;
     }
-    thread.ask = { requestId: question.requestId, questions };
+    thread.ask = { ...ask, notified: true };
     thread.waiting = true;
     await this.d.save();
     this.d.wakes.kick(project);

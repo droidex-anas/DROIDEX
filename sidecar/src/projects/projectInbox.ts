@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { TURN_INTERRUPTED } from '../sessionAdoption.js';
 import type { ProjectPort } from './sessions.js';
 import { requireThread } from './projectTurns.js';
+import { questionText } from './projectMessages.js';
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, ThreadMessage } from './types.js';
 
@@ -10,6 +11,7 @@ export class ProjectInbox {
   // Identities live in project.interrupted; this set only chooses restart wording.
   private readonly restartRecovery = new Set<string>();
   private readonly approvalNotified = new Map<string, string>();
+  private readonly withdrawals = new WeakMap<ProjectThread, object>();
   constructor(
     private readonly sessions: ProjectPort,
     private readonly persist: () => Promise<void>,
@@ -110,6 +112,59 @@ export class ProjectInbox {
     delete thread.owedLeadAlert;
   }
 
+  withdraw(project: Project, target: ProjectThread): void {
+    this.withdrawals.set(target, {});
+    project.pending = project.pending.filter((message) => message.to !== target.appSessionId);
+    for (const thread of project.threads) {
+      if (thread.ownerAppSessionId !== target.appSessionId) continue;
+      delete thread.owedReport;
+      if (thread.ask) thread.ask.notified = true;
+    }
+  }
+
+  /** Only an explicit inbox withdrawal cancels recovery, including after the target continues. */
+  refusalRecovery(project: Project, target: string): (messages: ThreadMessage[]) => boolean {
+    const thread = requireThread(project, target);
+    const withdrawal = this.withdrawals.get(thread);
+    return (messages) => {
+      if (!this.isOpen() || this.withdrawals.get(thread) !== withdrawal) return false;
+      return this.restore(project, messages);
+    };
+  }
+
+  private restore(project: Project, messages: ThreadMessage[]): boolean {
+    for (const message of [...messages].reverse()) {
+      if (!inboxFull(project)) {
+        project.pending.unshift(message);
+        continue;
+      }
+      const thread = requireThread(project, message.from);
+      switch (message.kind) {
+        case 'result':
+          thread.owedReport ??= { text: message.text, replyId: message.replyId };
+          if (message.to !== thread.ownerAppSessionId) thread.owedLeadAlert = true;
+          break;
+        case 'question':
+          if (thread.ask && thread.ask.requestId === message.questionId) delete thread.ask.notified;
+          break;
+        case 'approval':
+          if (this.approvalNotified.get(message.from) === message.approvalId)
+            this.approvalNotified.delete(message.from);
+          break;
+        case 'idle':
+          project.wakePending ??= 'team-idle';
+          break;
+        case 'message': {
+          const todo = project.todos.find((todo) => todo.id === message.id);
+          if (!todo) throw new Error('A steered inbox instruction must belong to a due to-do.');
+          delete todo.notified;
+          break;
+        }
+      }
+    }
+    return messages.length > 0;
+  }
+
   refill(project: Project): void {
     if (!this.isOpen()) return;
     const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
@@ -132,6 +187,7 @@ export class ProjectInbox {
       if (report) this.report(project, thread, report.text, report.replyId, thread.owedLeadAlert);
     }
     if (!lead) return;
+    this.refillQuestions(project);
     this.refillApprovals(project);
     for (const todo of project.todos) {
       if (inboxFull(project)) return;
@@ -144,6 +200,28 @@ export class ProjectInbox {
         text: `Reminder — follow-up due (to-do ${todo.id}): ${todo.text}`,
       });
       todo.notified = true;
+    }
+  }
+
+  private refillQuestions(project: Project): void {
+    for (const thread of project.threads) {
+      if (inboxFull(project)) return;
+      const ask = thread.ask;
+      if (
+        !ask ||
+        ask.notified ||
+        !thread.ownerAppSessionId ||
+        !this.sessions.isAsking(thread.appSessionId, ask.requestId)
+      )
+        continue;
+      this.enqueue(project, {
+        from: thread.appSessionId,
+        to: thread.ownerAppSessionId,
+        kind: 'question',
+        text: questionText(ask),
+        questionId: ask.requestId,
+      });
+      ask.notified = true;
     }
   }
 
