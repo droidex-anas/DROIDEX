@@ -285,16 +285,13 @@ export class ProjectWakeQueue {
     project.pending = project.pending.filter((message) => !ids.has(message.id));
     const claim: NonNullable<Project['delivery']> = { state: 'sending', messages };
     project.delivery = claim;
-    const replies = messages
-      .filter((message) => message.kind === 'result')
-      .map((message) => project.threads.find((thread) => thread.appSessionId === message.from))
-      .filter((thread) => thread !== undefined)
-      .map((thread) => ({ thread, reply: thread.reply, earlierReplies: thread.earlierReplies }));
     const clearUnread = () => {
       // A late acknowledgement cannot mark a newer reply as read.
-      for (const { thread, reply, earlierReplies } of replies)
-        if (thread.reply === reply && thread.earlierReplies === earlierReplies)
-          delete thread.unread;
+      for (const message of messages) {
+        if (message.kind !== 'result' || !message.replyId) continue;
+        const thread = project.threads.find((thread) => thread.appSessionId === message.from);
+        if (thread?.replyId === message.replyId) delete thread.unread;
+      }
     };
     // Withdraw questions their threads stopped asking before the owner woke.
     const stillAsked = () => messages.every((message) => isAsked(project, message));

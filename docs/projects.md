@@ -27,12 +27,15 @@ the moment it is handed to the provider, and nothing can send it again. If it
 is refused before that moment, it stays queued and is tried again later.
 
 **Unread is the safety net.** A new reply marks its thread unread until the
-lead reads it (`thread_read`), a turn starts with its report, or the provider
-confirms the steer. If a report is handed over just as the lead's turn is
-stopped, the thread stays unread. So after a stop, a restart or a compaction,
+lead reads it (`thread_read`), a turn starts with that reply's report, or the
+provider confirms consumption of that reply's steer. An uncertain withdrawal
+or an older report's acknowledgement never clears a newer reply. If a report
+is handed over just as the lead's turn is stopped, the thread stays unread.
+So after a stop, a restart or a compaction,
 the lead calls `thread_list` and reads the unread threads; every wake also
 lists them, apart from the reports themselves. Being unread does not wake
-anyone by itself.
+anyone by itself. Resume wakes the lead with a short reminder to read unread
+threads even when no report or other message is waiting.
 
 **What wakes the lead.** A report, a thread's question, a thread's failure, a
 due to-do, the last working thread going idle (with how it ended), a message
@@ -357,8 +360,9 @@ persisted before a new session receives its first task.
 
 The wake queue writes its claim before dispatch. A steered report settles when
 `session.steer(text)` is called, and never returns to the queue afterward.
-Its acknowledgement clears unread; a failed or missing acknowledgement does not
-change settlement. An idle owner's scheduled turn keeps its existing receipt:
+Confirmed consumption clears unread only for the reply that report carries;
+a failed, uncertain or missing acknowledgement does not change settlement.
+An idle owner's scheduled turn keeps its existing receipt:
 **Accepted** means the provider acknowledged its prompt. Its concurrency slot stays
 held until that turn settles, except while the turn waits on a question routed
 to the chat that started it, or on the user's permission: it runs nothing then,

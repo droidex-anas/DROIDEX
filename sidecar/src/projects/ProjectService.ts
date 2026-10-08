@@ -216,8 +216,8 @@ export class ProjectService {
       enqueue: (project, message) => {
         this.enqueue(project, message);
       },
-      report: (project, thread, text) => {
-        this.report(project, thread, text);
+      report: (project, thread, text, replyId) => {
+        this.report(project, thread, text, replyId);
       },
       leadFailed: (project) => {
         this.leadFailed(project);
@@ -1054,6 +1054,21 @@ export class ProjectService {
         throw new Error('Review the uncertain delivery before resuming without replay.');
       delete project.delivery;
     }
+    if (project.paused && !paused) {
+      const unread = project.threads.filter((thread) => thread.unread);
+      const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+      if (
+        unread.length &&
+        lead &&
+        !project.pending.some((message) => message.to === lead.appSessionId)
+      )
+        this.enqueue(project, {
+          from: lead.appSessionId,
+          to: lead.appSessionId,
+          kind: 'message',
+          text: `Unread threads: ${unread.map((thread) => thread.title).join(', ')}. Read them with thread_read.`,
+        });
+    }
     this.wakes.invalidate(project);
     if (paused) this.noteHold(project);
     project.paused = paused;
@@ -1375,7 +1390,7 @@ export class ProjectService {
 
   /* A report that finds the inbox full waits on its thread and queues as soon as
      a delivery makes room. A newer report from the same thread replaces it. */
-  private report(project: Project, thread: ProjectThread, text: string): void {
+  private report(project: Project, thread: ProjectThread, text: string, replyId?: string): void {
     const owner = thread.ownerAppSessionId;
     if (!owner) return;
     requireMessageText(text);
@@ -1386,10 +1401,10 @@ export class ProjectService {
       if (!requireThread(project, owner).ownerAppSessionId) todo.notified = true;
     }
     if (inboxFull(project)) {
-      thread.owedReport = text;
+      thread.owedReport = { text, replyId };
       return;
     }
-    this.enqueue(project, { from: thread.appSessionId, to: owner, kind: 'result', text });
+    this.enqueue(project, { from: thread.appSessionId, to: owner, kind: 'result', text, replyId });
     delete thread.owedReport;
   }
 
@@ -1397,8 +1412,8 @@ export class ProjectService {
     if (this.closed) return;
     for (const thread of project.threads) {
       if (inboxFull(project)) return;
-      const text = thread.owedReport;
-      if (text) this.report(project, thread, text);
+      const report = thread.owedReport;
+      if (report) this.report(project, thread, report.text, report.replyId);
     }
     const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
     if (!lead) return;

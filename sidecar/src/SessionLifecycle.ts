@@ -823,7 +823,7 @@ export class SessionLifecycle {
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
-    prompt.delivery?.acknowledged?.();
+    if (delivered === true) prompt.delivery?.acknowledged?.();
     const appSessionId = liveSession.summary.appSessionId;
     if (this.dependencies.registry.getLive(appSessionId) === liveSession)
       await this.dependencies.appendSteer(appSessionId, prompt.text);

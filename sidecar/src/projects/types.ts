@@ -92,6 +92,8 @@ export interface ProjectThread {
   /** Its latest final reply, which its report only excerpts. The lead's stays
       empty, because nothing reads it back. */
   reply: string;
+  /** Identifies the latest reply independently of its text or read state. */
+  replyId?: string;
   /** The final replies before that one, oldest first, so an owner that lost the
       thread of a conversation can read further back than its last answer. */
   earlierReplies?: string[];
@@ -100,7 +102,7 @@ export interface ProjectThread {
   /** Why that turn failed. The session summary keeps the phase, not the reason. */
   error?: string;
   /** Its newest report, kept here while the project's inbox is full. */
-  owedReport?: string;
+  owedReport?: { text: string; replyId?: string };
   /** Its latest final reply has not been read or acknowledged by its owner. */
   unread?: true;
   waiting: boolean;
@@ -125,6 +127,8 @@ export interface ThreadMessage {
   text: string;
   /** The harness question a routed question carries, which its answers must name. */
   questionId?: string;
+  /** The reply represented by this report, absent when the turn had no reply. */
+  replyId?: string;
 }
 
 /** A harness question a thread is blocked on, routed to the chat that owns it. */

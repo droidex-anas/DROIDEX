@@ -1,6 +1,7 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
+import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
 
@@ -20,7 +21,7 @@ interface ProjectTurnsDependencies {
   isAsking: (appSessionId: string, requestId: string) => boolean;
   enqueue: (project: Project, message: Omit<ThreadMessage, 'id'>) => void;
   /** Queues a thread's report to its owner, or keeps it on the thread while the inbox is full. */
-  report: (project: Project, thread: ProjectThread, text: string) => void;
+  report: (project: Project, thread: ProjectThread, text: string, replyId?: string) => void;
   leadFailed: (project: Project) => void;
   leadRecovered: (project: Project) => Promise<void>;
   save: () => Promise<void>;
@@ -88,7 +89,7 @@ export class ProjectTurns {
       this.d.wakes.kick(project);
       return;
     }
-    this.keepReply(project, thread, turn.text);
+    const replyId = this.keepReply(project, thread, turn.text);
     if (turn.error) thread.error = turn.error;
     else delete thread.error;
     // A question the turn ended on will never be answered now.
@@ -99,7 +100,7 @@ export class ProjectTurns {
     } else {
       try {
         // The wake already names the thread; this is how its turn ended.
-        this.d.report(project, thread, threadReport(session, turn));
+        this.d.report(project, thread, threadReport(session, turn), replyId);
       } catch (error) {
         this.d.fail(project, error);
       }
@@ -111,7 +112,7 @@ export class ProjectTurns {
   /* Only a thread's owner reads its replies back. The lead's go to the user,
      and nothing reads them from the ledger. A turn that says nothing must not
      erase what the thread last said. */
-  private keepReply(project: Project, thread: ProjectThread, text: string): void {
+  private keepReply(project: Project, thread: ProjectThread, text: string): string | undefined {
     if (!text || !thread.ownerAppSessionId) return;
     if (thread.reply) {
       thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
@@ -120,8 +121,10 @@ export class ProjectTurns {
       this.forgetOlderReplies(project);
     }
     thread.reply = text;
+    thread.replyId = randomUUID();
     thread.unread = true;
     delete thread.repliesShed;
+    return thread.replyId;
   }
 
   private forgetOlderReplies(project: Project): void {

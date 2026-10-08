@@ -367,6 +367,66 @@ test('existing resume admissions precede queued starts, which launch in FIFO ord
   finished.resolve();
 });
 
+test('acknowledging eight queued reports does not mark the ninth reply read', async (t) => {
+  const h = await harness(t);
+  const { id, main } = await h.root();
+  const child = await h.projects.spawn(main, { ...input, title: 'Parser' });
+  await h.projects.setPaused(id, true);
+  for (let index = 1; index <= 9; index += 1) {
+    await h.streaming(child.appSessionId, true);
+    await h.finish(child.appSessionId, `Reply ${index}`);
+  }
+  const finished = deferred<void>();
+  h.port.deliver = async (target, prompt) => {
+    h.sent.push({ id: target, prompt });
+    return {
+      status: 'accepted',
+      settled: h.sent.length === 1 ? finished.promise : Promise.resolve(),
+    };
+  };
+  await h.projects.setPaused(id, false);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].prompt, /Reply 8/);
+  assert.doesNotMatch(h.sent[0].prompt, /Reply 9/);
+  assert.equal(h.state.saved[0]?.pending.length, 1);
+  assert.equal(h.state.saved[0]?.pending[0]?.text, 'Reply 9');
+  assert.equal(h.projects.listThreads(main).threads[0]?.unread, true);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, true);
+  finished.resolve();
+  await drain();
+  assert.equal(h.sent.length, 2);
+  assert.match(h.sent[1].prompt, /Reply 9/);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, undefined);
+});
+
+test('Resume wakes an idle lead to read a lost handed-off report with an empty inbox', async (t) => {
+  const h = await harness(t);
+  const { id, main } = await h.root();
+  const child = await h.projects.spawn(main, { ...input, title: 'Parser' });
+  await h.streaming(main, true);
+  h.port.steer = async (_target, _prompt, _current, _now, delivery) => {
+    delivery?.accepted();
+    return true;
+  };
+  await h.finish(child.appSessionId, 'Parsed the config.');
+  await drain();
+  await h.projects.userStopped(main);
+  await h.streaming(main, false);
+  assert.equal(h.state.saved[0]?.pending.length, 0);
+  assert.equal(h.state.saved[0]?.delivery, undefined);
+  assert.equal(h.sent.length, 0);
+  await h.projects.setPaused(id, false);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent[0].id, main);
+  assert.match(h.sent[0].prompt, /Unread threads: Parser\. Read them with thread_read\./);
+  assert.doesNotMatch(h.sent[0].prompt, /Parsed the config/);
+  assert.equal(h.sessions.get(main)?.streaming, true);
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, true);
+  await h.finish(main);
+});
+
 test('a lost report push survives restart as unread and appears in the next wake', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
   const h = await harness(t);

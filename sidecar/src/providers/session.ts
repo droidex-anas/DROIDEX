@@ -142,6 +142,9 @@ export type DelegatedTurnEnd =
   | { status: 'completed' | 'interrupted' }
   | { status: 'failed'; error: Error };
 
+/** True confirms consumption; an uncertain withdrawal must not be replayed. */
+export type SteerOutcome = boolean | 'unconfirmed';
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Native id of the session the provider holds open.
@@ -176,8 +179,8 @@ export interface ProviderSession {
   // Hands a prompt to the running turn, which the harness delivers at its own
   // next step. Resolves true once the model has it, and false when the turn
   // cannot take it or ends without it; the session layer then sends it as an
-  // ordinary message.
-  steer(text: string, mentions?: ProviderMention[]): Promise<boolean>;
+  // ordinary message. 'unconfirmed' prevents replay without claiming consumption.
+  steer(text: string, mentions?: ProviderMention[]): Promise<SteerOutcome>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.
   catalogItems?(): Promise<SkillInfo[]>;
   onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;

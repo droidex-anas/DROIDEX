@@ -26,6 +26,7 @@ import type {
   DelegatedTurnEnd,
   ProviderModelSettings,
   ProviderSession,
+  SteerOutcome,
   UsageMetersListener,
 } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
@@ -99,7 +100,7 @@ export class ClaudeSession implements ProviderSession {
   // The running turn takes steers: set once its prompt is pushed, never for a slash command.
   private steerable = false;
   // Steers the CLI has not started yet, by uuid, with whoever waits on each.
-  private readonly steerDeliveries = new Map<string, (delivered: boolean) => void>();
+  private readonly steerDeliveries = new Map<string, (delivered: SteerOutcome) => void>();
   // The running turn's own result has arrived; it may still wait for steers.
   private turnAnswered = false;
   private turnQueue?: MessageQueue<TurnItem>;
@@ -340,10 +341,10 @@ export class ClaudeSession implements ProviderSession {
   // boundary, or runs it right after the turn's result. Resolves true once the
   // model has it. The CLI resolves a slash command itself, so that can only
   // run as a turn of its own.
-  steer(text: string): Promise<boolean> {
+  steer(text: string): Promise<SteerOutcome> {
     if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
     const uuid = randomUUID();
-    const delivered = new Promise<boolean>((resolve) => {
+    const delivered = new Promise<SteerOutcome>((resolve) => {
       this.steerDeliveries.set(uuid, resolve);
     });
     this.prompts.push({
@@ -357,7 +358,7 @@ export class ClaudeSession implements ProviderSession {
     return delivered;
   }
 
-  private settleSteer(uuid: string, delivered: boolean): void {
+  private settleSteer(uuid: string, delivered: SteerOutcome): void {
     this.steerDeliveries.get(uuid)?.(delivered);
     this.steerDeliveries.delete(uuid);
   }
@@ -368,7 +369,7 @@ export class ClaudeSession implements ProviderSession {
   private async withdrawSteer(uuid: string): Promise<void> {
     const cancelled =
       this.isClosed || (await this.query.cancelAsyncMessage(uuid).catch(() => false));
-    this.settleSteer(uuid, !cancelled);
+    this.settleSteer(uuid, cancelled ? false : 'unconfirmed');
   }
 
   private requireTurnCanStart(): void {
