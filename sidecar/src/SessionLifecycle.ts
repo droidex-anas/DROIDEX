@@ -1072,6 +1072,7 @@ export class SessionLifecycle {
     const wasAutoCompacting = liveSession.autoCompacting;
     const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
     const session = liveSession.session;
+    const turn = liveSession.turnPromise;
     const isCurrent = () =>
       !this.dependencies.isShutdownStarted() &&
       this.dependencies.registry.getLive(appSessionId) === liveSession &&
@@ -1090,6 +1091,11 @@ export class SessionLifecycle {
     }
     if (wasAutoCompacting && compactionTarget) {
       this.dependencies.compaction.cancel(compactionTarget);
+    }
+    // A turn started while the receipt was on its way is not the one this Stop stopped.
+    if (liveSession.turnPromise && liveSession.turnPromise !== turn) {
+      this.dependencies.registry.updateSummary(appSessionId, queueSummary(liveSession));
+      return;
     }
     if (!liveSession.streaming) liveSession.interrupting = false;
     this.dependencies.registry.updateSummary(appSessionId, {
