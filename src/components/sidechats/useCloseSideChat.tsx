@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
-import { isChatHidden } from '../../lib/chatMetadata';
+import { useCallback, useState, type ReactNode } from 'react';
+import { useStoreApi, useStoreDispatch } from '../../hooks/useStore';
 import { closeSession } from '../../lib/commands';
-import { sessionIsLive } from '../../lib/sessions';
-import { isSideChat, shownSideChat, sideChatPanel } from '../../lib/sideChats';
+import { shownSideChat, sideChatPanel } from '../../lib/sideChats';
 import { utilityPanelForSession } from '../../lib/utilityPanel';
 import { SideChatCloseDialog } from './SideChatCloseDialog';
 
@@ -70,39 +68,4 @@ export function useCloseSideChat(onClosed?: () => void): {
   );
 
   return { requestClose, dialog };
-}
-
-function revivedSideChatIds(state: Pick<AppState, 'sessions' | 'chatMetadata'>): string[] {
-  const ids: string[] = [];
-  for (const session of Object.values(state.sessions)) {
-    if (!isSideChat(session) || !sessionIsLive(session)) continue;
-    if (isChatHidden(state.chatMetadata[session.appSessionId])) ids.push(session.appSessionId);
-  }
-  return ids;
-}
-
-/* A side chat closed just after it was made can still start its first turn:
-   the sidecar sends a native copy's first prompt only once the copy and its
-   model are ready, and a close that lands before the copy has a runtime has
-   nothing to stop. So a closed side chat that turns live is closed again.
-   Mount once. */
-export function useCloseRevivedSideChats(): void {
-  const store = useStoreApi();
-  useEffect(() => {
-    let checked: Pick<AppState, 'sessions' | 'chatMetadata'> | null = null;
-    // A closed chat stays deleted, so one close each is enough.
-    const closed = new Set<string>();
-    const closeRevived = () => {
-      const { sessions, chatMetadata } = store.getState();
-      if (checked?.sessions === sessions && checked.chatMetadata === chatMetadata) return;
-      checked = { sessions, chatMetadata };
-      for (const appSessionId of revivedSideChatIds(checked)) {
-        if (closed.has(appSessionId)) continue;
-        closed.add(appSessionId);
-        closeSession(appSessionId);
-      }
-    };
-    closeRevived();
-    return store.subscribe(closeRevived);
-  }, [store]);
 }

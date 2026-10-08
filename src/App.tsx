@@ -84,10 +84,7 @@ import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
 import { useBackgroundWorkTier } from './hooks/useBackgroundWorkTier';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { sideChatPanel } from './lib/sideChats';
-import {
-  useCloseRevivedSideChats,
-  useCloseSideChat,
-} from './components/sidechats/useCloseSideChat';
+import { useCloseSideChat } from './components/sidechats/useCloseSideChat';
 import {
   bindLazySurfaceIntent,
   scheduleIdleLazyWarmup,
@@ -285,7 +282,6 @@ export default function App() {
   const sideChatClose = useCloseSideChat(() => {
     setExpandedPaneAppSessionId(null);
   });
-  useCloseRevivedSideChats();
   // A late busy-check must not restore a dialog in a hidden or replaced pane.
   const visibleUtilityPanelRef = useRef(showUtilityPane ? utilityPanel : null);
   visibleUtilityPanelRef.current = showUtilityPane ? utilityPanel : null;
