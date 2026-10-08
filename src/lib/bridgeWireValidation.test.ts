@@ -21,6 +21,28 @@ function assertRejected(event: unknown): void {
   assert.equal(serverWireMessage(batch(event)), null, JSON.stringify(event));
 }
 
+test('canvas asset replies accept owned images and reject malformed metadata', () => {
+  const asset = {
+    assetId: 'a'.repeat(64),
+    mediaType: 'image/png',
+    byteLength: 512,
+    width: 32,
+    height: 16,
+  };
+  const result = { type: 'canvas.result', requestId: 'assets-1', ok: true };
+  assertAccepted({ ...result, reply: { kind: 'assets', assets: [asset] } });
+  assertAccepted({ ...result, reply: { kind: 'assets', assets: [] } });
+  for (const malformed of [
+    { ...asset, assetId: 'not-an-image-digest' },
+    { ...asset, mediaType: 'image/svg+xml' },
+    { ...asset, byteLength: 0 },
+    { ...asset, width: 1.5 },
+    { ...asset, height: 8193 },
+  ]) {
+    assertRejected({ ...result, reply: { kind: 'assets', assets: [malformed] } });
+  }
+});
+
 test('interaction wire validation preserves rich questions and approval eligibility', () => {
   const request = {
     appSessionId: 'app',
