@@ -1,10 +1,19 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
+import { failureReport } from './projectMessages.js';
 import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
 
-export type ThreadState = 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
+export type ThreadState =
+  | 'working'
+  | 'queued'
+  | 'waiting'
+  | 'approval'
+  | 'rate-limited'
+  | 'stopped'
+  | 'failed'
+  | 'idle';
 
 /* A project runs as many threads as its work needs, so the ledger cannot keep
    every thread's history. The settled threads whose conversations moved most
@@ -20,9 +29,10 @@ interface ProjectTurnsDependencies {
   isAsking: (appSessionId: string, requestId: string) => boolean;
   enqueue: (project: Project, message: Omit<ThreadMessage, 'id'>) => void;
   /** Queues a thread's report to its owner, or keeps it on the thread while the inbox is full. */
-  report: (project: Project, thread: ProjectThread, text: string) => void;
+  report: (project: Project, thread: ProjectThread, text: string, leadAlert?: boolean) => void;
   leadFailed: (project: Project) => void;
-  leadRecovered: (project: Project) => Promise<void>;
+  leadRecovered: (project: Project) => void;
+  teamIdle: (project: Project) => void;
   save: () => Promise<void>;
   fail: (project: Project, error: unknown) => void;
   wakes: ProjectWakeQueue;
@@ -95,11 +105,17 @@ export class ProjectTurns {
     clearAsk(project, thread);
     if (!thread.ownerAppSessionId) {
       if (session.phase === 'failed') this.d.leadFailed(project);
-      else if (session.phase !== 'paused') await this.d.leadRecovered(project);
+      else if (session.phase !== 'paused') this.d.leadRecovered(project);
     } else {
       try {
         // The wake already names the thread; this is how its turn ended.
-        this.d.report(project, thread, threadReport(session, turn));
+        this.d.report(
+          project,
+          thread,
+          threadReport(thread.title, session, turn),
+          session.phase === 'failed' || session.usageLimit !== undefined,
+        );
+        this.d.teamIdle(project);
       } catch (error) {
         this.d.fail(project, error);
       }
@@ -141,7 +157,7 @@ export class ProjectTurns {
    */
   private async routeQuestion(question: SessionQuestion): Promise<void> {
     const project = this.d.project(question.appSessionId);
-    if (!project || project.paused) return;
+    if (!project) return;
     const thread = project.threads.find(
       (candidate) => candidate.appSessionId === question.appSessionId,
     );
@@ -294,9 +310,11 @@ export function threadState(
   session: SessionSummary | undefined,
   wait?: ThreadWait,
 ): ThreadState {
+  if (thread.queuedSpawn?.phase === 'failed') return 'failed';
   if (wait?.kind === 'start') return 'queued';
   if (wait?.kind === 'slot') return 'waiting';
   if (thread.ask) return 'waiting';
+  if (!session?.streaming && session?.usageLimit) return 'rate-limited';
   if (session?.streaming) return 'working';
   if (session?.phase === 'failed') return 'failed';
   if (session?.phase === 'paused') return 'stopped';
@@ -308,14 +326,20 @@ export function threadState(
    and silence, or it will keep nudging a thread that cannot answer. A long reply
    is excerpted here and read in full with thread_read, so the excerpt says it is
    one, in words that read the same to the person watching this chat. */
-function threadReport(session: SessionSummary, turn: ThreadTurn): string {
+function threadReport(title: string, session: SessionSummary, turn: ThreadTurn): string {
   const reply = turn.text.slice(-1_200);
   const excerpt =
     reply.length < turn.text.length
       ? `The last 1,200 characters of a longer reply:\n${reply}`
       : reply;
-  if (session.phase === 'failed')
-    return ['It failed before finishing.', turn.error, excerpt].filter(Boolean).join('\n');
+  if (session.phase === 'failed' || session.usageLimit) {
+    const reason =
+      turn.error ??
+      (session.usageLimit ? 'Provider usage limit reached' : 'The turn ended without completing');
+    return [failureReport(title, reason, session.usageLimit?.resetsAt), excerpt]
+      .filter(Boolean)
+      .join('\n');
+  }
   if (session.phase === 'paused')
     return ['It was stopped before it finished.', excerpt].filter(Boolean).join('\n');
   return excerpt || 'It ended its turn without a reply.';

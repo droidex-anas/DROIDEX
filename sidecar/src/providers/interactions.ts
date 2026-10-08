@@ -3,6 +3,7 @@ import type {
   PermissionRequest,
   QuestionAnswer,
   SessionQuestion,
+  SessionSummary,
 } from '../protocol.js';
 
 // An approval a provider runtime needs from the user, in DROIDEX's own terms:
@@ -16,6 +17,8 @@ export interface ProviderApprovalRequest {
   // The MCP server and tool, when the request is for one. The policies for
   // DROIDEX's own servers approve their tools by the chat's autonomy.
   mcpTool?: { serverName: string; toolName: string };
+  /** Provider-verified action the owner could perform without a permission prompt. */
+  canApproveFor?: (actor: SessionSummary) => boolean;
 }
 
 export interface ProviderQuestionAnswers {

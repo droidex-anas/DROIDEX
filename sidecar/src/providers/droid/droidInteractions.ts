@@ -1,5 +1,6 @@
 import {
   ToolConfirmationOutcome,
+  ToolConfirmationType,
   type AskUserHandler,
   type AskUserRequestParams,
   type PermissionHandler,
@@ -71,6 +72,21 @@ async function requestApproval(
   return await interactions.requestApproval({
     request: classifyPermission(appSessionId, nextInteractionRequestId(), params),
     confirmationType: confirmationType(params),
+    canApproveFor: (actor) =>
+      params.toolUses.length > 0 &&
+      params.toolUses.every(({ details }) => {
+        if (['edit', 'create', 'apply_patch'].includes(details.type))
+          return (
+            actor.autonomy === 'high' || (actor.provider === 'droid' && actor.autonomy !== 'off')
+          );
+        if (details.type !== ToolConfirmationType.Execute) return false;
+        return (
+          (actor.provider === 'droid' &&
+            actor.autonomy === 'medium' &&
+            details.impactLevel === 'low') ||
+          (actor.autonomy === 'high' && ['low', 'medium'].includes(details.impactLevel ?? ''))
+        );
+      }),
     ...(signature ? { signature } : {}),
     ...(mcpTool ? { mcpTool } : {}),
   });

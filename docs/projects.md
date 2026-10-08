@@ -17,8 +17,12 @@ Every conversation also keeps its own full transcript.
 that talks to the user. Every thread belongs to the chat that started it;
 threads can start their own, up to three levels below the lead. The lead
 controls every thread in the project; any other thread controls only its own.
-A thread's autonomy never exceeds its owner's. Permission prompts still go to
-the user.
+Threads default to Full access, capped by their owner's autonomy. Messages from
+the lead or direct owner are instructions within that ceiling; reports remain
+data. Permission prompts wake the lead and show an approval state. The lead can
+use `thread_approve` only for an action its own autonomy permits without asking.
+Requests beyond that authority require one question to the user; no approval
+changes a sandbox or raises autonomy.
 
 **How a report reaches the lead.** When a thread finishes, its report goes to
 its owner. If the owner is in a turn, the report is steered into that turn; if
@@ -34,19 +38,31 @@ the lead calls `thread_list` and reads the unread threads; every wake also
 lists them, apart from the reports themselves. Being unread does not wake
 anyone by itself.
 
-**What wakes the lead.** A report, a thread's question, a thread's failure, a
-due to-do, the last working thread going idle (with how it ended), a message
-from the user, and Resume. Nothing else: reading, listing, planning and
-waiting never start a turn. A held project delivers nothing until it resumes.
+**What wakes the lead.** A report, a thread's question or approval request, a
+thread's failure or rate limit, a due to-do, the last working thread going idle
+(with how it ended), a message from the user, and Resume. Nothing else: reading,
+listing, planning and waiting never start a turn. A held project delivers nothing
+until it resumes. Nested failures also notify the project lead. Rate-limited
+threads show the provider's reset time when known and need `thread_send` after
+that time. An idle team with unfinished plan work gets a durable wake after a restart.
 
 **Runtime slots.** Starting and restoring threads automatically shares
 **20 runtimes**, counting ones still starting. Threads waiting to resume go
 before newly queued threads, and queued threads start in the order they were
-queued. At most two project deliveries start turns at once; steering into a
-running turn needs no slot. A runtime idle for 30 minutes is released to save
-memory (only the three most recent idle ones may stay that long). A message to
-its thread brings it back with its conversation intact. Chats the user starts
-are never capped.
+queued. At most two worker deliveries start turns at once; sleeping leads have
+a separate lane and wake before new worker starts. Steering into a running turn
+needs no slot. A runtime idle for 30 minutes is released to save memory (only
+the three most recent idle ones may stay that long). A message to its thread
+brings it back with its conversation intact. Chats the user starts are never
+capped.
+
+**Stop and Pause.** Stop on the lead stops only the lead; workers continue and
+their reports wait until the user sends the lead a message or explicitly
+resumes. Starting another thread never releases that Stop. Hold project (or
+`project_pause`) interrupts active work and records which turns it interrupted.
+`project_resume` continues those turns and drains retained reports; previously
+stopped threads stay stopped. A delivery loop above `max(60, 3 × threads)` in
+five minutes holds the project with a message naming the cause.
 
 **After a restart.** DROIDEX loads the transcripts first. Waiting messages and
 queued threads are kept. A thread cut off mid-turn gets one "continue" from
@@ -62,6 +78,9 @@ A ledger that cannot be read is reported and left untouched.
 | `thread_list` | Reads threads, unread, runtime load and to-dos | Starts no work |
 | `thread_read` | Reads replies and durably clears unread | Starts no work |
 | `thread_configure` | Sets autonomy or queued launch settings | Running model/effort changes wait for settlement |
+| `thread_approve` | Allows once or denies a pending request within the lead's authority | Higher authority requires the user |
+| `project_pause` | Holds new work and interrupts workers | Records interrupted work for Resume |
+| `project_resume` | Releases the hold | Continues interrupted work and drains reports |
 | `thread_stop` | Interrupts and drops queued messages; cancels queued starts | Handed-off reports stay settled |
 | `plan_set` | Saves plan and optional title | Linked steps follow actual thread state |
 | `project_done` | Records outcome when work has settled | New work reopens the project |
@@ -79,10 +98,10 @@ it is one of the sidebar's announcements (`src/lib/sidebarCards.ts`, id
 
 A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
 Droid and Claude Code receive the `droidex-sessions` MCP server; Codex receives
-the same tools as deferred dynamic tools in `droidex_sessions`. Ten run a
+the same tools as deferred dynamic tools in `droidex_sessions`. These run a
 project: `thread_spawn`, `thread_send`, `thread_list`, `thread_read`,
-`thread_configure`, `thread_stop`, `plan_set`, `project_done`, `todo_add` and
-`todo_done`.
+`thread_configure`, `thread_stop`, `thread_approve`, `project_pause`,
+`project_resume`, `plan_set`, `project_done`, `todo_add` and `todo_done`.
 The other five are the [session tools](session-tools.md) for the chats in the
 user's sidebar. A Codex chat started before these tools were added resumes
 without them because Codex cannot add dynamic tools to an existing thread;
@@ -144,10 +163,12 @@ question; a send without them is refused while the thread waits. The answers
 name the question by the `questionId` its wake and `thread_read` give, and are
 refused when the thread now waits on another question. The user can still
 answer inside the thread, and whichever answer comes first wins. A held project
-routes nothing: its threads wait for the user.
+retains questions until it resumes.
 
-Permission requests are never routed. They stay with the user whatever the
-project is doing.
+Permission requests remain visible in the thread and wake the project lead.
+The lead can allow once or deny with `thread_approve` only within its own
+autonomy. When the action needs more authority, the lead asks the user one
+question so the user can decide the request in the thread.
 
 ## Steering a thread
 

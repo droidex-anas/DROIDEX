@@ -139,6 +139,13 @@ async function approveTool(
       raw: { toolName, input },
     },
     confirmationType: CONFIRMATION_TYPES[kind],
+    canApproveFor: (actor) =>
+      actor.provider === 'claude' &&
+      !options.blockedPath &&
+      !options.defaultToNo &&
+      input.dangerouslyDisableSandbox !== true &&
+      ((actor.autonomy !== 'off' && ['edit', 'create'].includes(kind)) ||
+        (actor.autonomy === 'high' && kind === 'exec')),
     ...(signature ? { signature } : {}),
     ...(mcp ? { mcpTool: mcp } : {}),
   });

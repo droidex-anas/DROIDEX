@@ -65,9 +65,10 @@ const message = z
     id,
     from: id,
     to: id,
-    kind: z.enum(['result', 'question', 'message']),
+    kind: z.enum(['result', 'question', 'approval', 'idle', 'message']),
     text,
     questionId: id.optional(),
+    approvalId: id.optional(),
   })
   .strict();
 
@@ -96,6 +97,8 @@ const project = z
     paused: z.boolean(),
     leadStopped: z.literal(true).optional(),
     leadFailed: z.literal(true).optional(),
+    interrupted: z.array(id).optional(),
+    wakePending: z.enum(['team-idle', 'resume']).optional(),
     startedAt: z.number().int().min(0).optional(),
     done: z
       .object({
@@ -148,11 +151,12 @@ const project = z
           repliesShed: z.literal(true).optional(),
           error: z.string().max(LEDGER_LIMITS.threadError).optional(),
           owedReport: text.optional(),
+          owedLeadAlert: z.literal(true).optional(),
           unread: z.literal(true).optional(),
           waiting: z.boolean(),
           queuedSpawn: z
             .object({
-              phase: z.enum(['queued', 'opening']),
+              phase: z.enum(['queued', 'opening', 'failed']),
               input: threadInputSchema,
               order: z.number().int().min(0),
               workspace: z
@@ -327,6 +331,11 @@ function validateOwnership(project: Project): void {
 
 function validateInbox(project: Project): void {
   const ids = new Set(project.threads.map((thread) => thread.appSessionId));
+  if (
+    project.interrupted?.some((id) => !ids.has(id)) ||
+    new Set(project.interrupted).size !== (project.interrupted?.length ?? 0)
+  )
+    throw new Error('Invalid interrupted work in project ledger.');
   const messages = [...project.pending, ...(project.delivery?.messages ?? [])];
   if (messages.length > LEDGER_LIMITS.inbox)
     throw new Error(`Project inbox exceeds ${String(LEDGER_LIMITS.inbox)} messages.`);

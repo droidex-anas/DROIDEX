@@ -559,6 +559,15 @@ export class CodexSession implements ProviderSession {
         request.threadId === this.threadId &&
         request.turnId === this.turnId &&
         canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
+      (request, actor) =>
+        actor.provider === 'codex' &&
+        actor.autonomy !== 'off' &&
+        !this.hasClosed &&
+        this.turnId !== undefined &&
+        request.threadId === this.threadId &&
+        request.turnId === this.turnId &&
+        canApproveWorkspaceEdits(actor.cwd, this.mapper.fileChanges(request.itemId)) &&
+        canApproveWorkspaceEdits(this.cwd, this.mapper.fileChanges(request.itemId)),
     );
     // Codex can ask for things this build has no card for. They are refused at
     // the transport, and the chat says so: a silent refusal reads as the turn

@@ -101,12 +101,14 @@ export interface ProjectThread {
   error?: string;
   /** Its newest report, kept here while the project's inbox is full. */
   owedReport?: string;
+  /** A nested failure also owes the project lead this report. */
+  owedLeadAlert?: true;
   /** Its latest final reply has not been read or acknowledged by its owner. */
   unread?: true;
   waiting: boolean;
   /** Original task and selected checkout while this thread waits for a runtime slot. */
   queuedSpawn?: {
-    phase: 'queued' | 'opening';
+    phase: 'queued' | 'opening' | 'failed';
     input: ThreadInput;
     order: number;
     workspace?: ThreadCheckout;
@@ -121,10 +123,11 @@ export interface ThreadMessage {
   id: string;
   from: string;
   to: string;
-  kind: 'result' | 'question' | 'message';
+  kind: 'result' | 'question' | 'approval' | 'idle' | 'message';
   text: string;
   /** The harness question a routed question carries, which its answers must name. */
   questionId?: string;
+  approvalId?: string;
 }
 
 /** A harness question a thread is blocked on, routed to the chat that owns it. */
@@ -137,10 +140,14 @@ export interface Project {
   id: string;
   title: string;
   paused: boolean;
-  /** The hold is the user's Stop on the main chat alone, which that chat's own next spawn lifts. */
+  /** Reports to the lead wait until the user continues it. Workers keep running. */
   leadStopped?: true;
-  /** The hold is the main chat's failed turn alone, which its next successful turn lifts. */
+  /** A failed lead waits for the user to continue coordination; workers keep running. */
   leadFailed?: true;
+  /** Turns stopped by project Pause, continued once on Resume. */
+  interrupted?: string[];
+  /** A coordination wake still owed while the inbox is full. */
+  wakePending?: 'team-idle' | 'resume';
   /** When it began. Projects from before this was kept show their lead's start. */
   startedAt?: number;
   /** Set when the lead marks the goal achieved; new work clears it. */
@@ -168,6 +175,7 @@ export interface ProjectView {
   // The main conversation's workspace, when its session is still known.
   cwd?: string;
   paused: boolean;
+  leadStopped?: true;
   launching: number;
   plan: ProjectStep[];
   todos: Omit<ProjectTodo, 'notified'>[];
@@ -178,6 +186,8 @@ export interface ProjectView {
   > & {
     state: ThreadState;
     wait?: ThreadWait;
+    approval?: { requestId: string; summary: string };
+    resetsAt?: number;
   })[];
   queued: number;
   uncertain: number;

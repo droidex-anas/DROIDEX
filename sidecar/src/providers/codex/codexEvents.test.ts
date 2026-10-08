@@ -161,6 +161,7 @@ test('Codex approvals retain file diffs and questions retain answer arrays', asy
     },
     (id) => mapper.toolDetail(id),
     () => false,
+    () => false,
   );
   const approve = handlers.get('item/fileChange/requestApproval');
   assert.ok(approve);

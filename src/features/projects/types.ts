@@ -37,8 +37,18 @@ export interface ProjectThread {
   title: string;
   waiting: boolean;
   unread?: true;
-  state: 'working' | 'queued' | 'waiting' | 'stopped' | 'failed' | 'idle';
+  state:
+    | 'working'
+    | 'queued'
+    | 'waiting'
+    | 'approval'
+    | 'rate-limited'
+    | 'stopped'
+    | 'failed'
+    | 'idle';
   wait?: ThreadWait;
+  approval?: { requestId: string; summary: string };
+  resetsAt?: number;
 }
 
 export interface ProjectTodo {
@@ -63,6 +73,7 @@ export interface ProjectView {
   done?: ProjectDone;
   cwd?: string;
   paused: boolean;
+  leadStopped?: true;
   launching: number;
   plan: ProjectStep[];
   todos: ProjectTodo[];

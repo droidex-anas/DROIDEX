@@ -13,7 +13,8 @@ import { LEDGER_LIMITS } from './store.js';
 import type { ProjectPort } from './ProjectService.js';
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { threadReports } from '../../../src/features/projects/threadNotices.js';
-import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
+import { ProjectWakeQueue } from './ProjectWakeQueue.js';
+import { wakePrompt } from './projectMessages.js';
 import type { Project, ThreadMessage } from './types.js';
 
 function deferred<T>() {
@@ -70,6 +71,7 @@ function wakeQueue(
         return true;
       },
       awaitingApproval: () => false,
+      pendingApproval: () => undefined,
       get: () => undefined,
       isLive: () => true,
       ...options.sessions,
@@ -209,7 +211,7 @@ test('a report refused before handoff stays unchanged and delivers once after av
   assert.match(sent[0], /Worker reported back \(thread worker\):\nfirst/);
 });
 
-test('completed callbacks free the global limit of two accepted project turns', async (t) => {
+test('completed callbacks free the global limit of two accepted worker turns', async (t) => {
   const states = [project('one'), project('two'), project('three')];
   states.forEach((item, index) => {
     item.pending[0].to = `main-${String(index)}`;
@@ -692,11 +694,12 @@ test('a capacity refusal publishes its wait in the last renderer snapshot', asyn
   assert.deepEqual(published?.wait, { kind: 'slot', position: 1 });
 });
 
-test('waiting resumes block queued spawns while both delivery slots are occupied', async (t) => {
+test('worker resumes precede queued starts while reports wait for a released stopped lead', async (t) => {
   const states = [project('first'), project('second'), project('resume'), project('spawn')];
+  states[0].pending[0].to = 'worker';
   states[1].pending[0].to = 'other-live';
   states[2].pending[0].to = 'sleeping';
-  states[3].pending = [];
+  states[3].leadStopped = true;
   states[3].threads[1].queuedSpawn = { phase: 'queued', input, order: 1 };
   const finished = deferred<void>();
   const order: string[] = [];
@@ -710,7 +713,7 @@ test('waiting resumes block queued spawns while both delivery slots are occupied
       };
     },
     {
-      sessions: { isLive: (id) => id !== 'sleeping' },
+      sessions: { isLive: (id) => id !== 'sleeping' && id !== 'main' },
       launch: async (_project, thread) => {
         order.push('spawn');
         delete thread.queuedSpawn;
@@ -723,6 +726,107 @@ test('waiting resumes block queued spawns while both delivery slots are occupied
   const beforeSettlement = [...order];
   finished.resolve();
   await drain();
-  assert.deepEqual(beforeSettlement, ['main', 'other-live']);
-  assert.deepEqual(order, ['main', 'other-live', 'sleeping', 'spawn']);
+  assert.deepEqual(beforeSettlement, ['worker', 'other-live']);
+  assert.deepEqual(order, ['worker', 'other-live', 'sleeping', 'spawn']);
+});
+
+test('a sleeping lead wakes through two occupied worker slots before a new worker starts', async (t) => {
+  const state = project();
+  state.threads.push({ ...state.threads[1], appSessionId: 'second', title: 'Second' });
+  state.pending = ['worker', 'second'].map((to) => ({
+    id: to,
+    from: 'main',
+    to,
+    kind: 'message',
+    text: 'Work',
+  }));
+  const workersFinished = deferred<void>();
+  const leadAdmitted = deferred<AutomationDeliveryReceipt>();
+  const order: string[] = [];
+  const queue = wakeQueue(
+    t,
+    async (target) => {
+      order.push(target);
+      return target === 'main'
+        ? leadAdmitted.promise
+        : { status: 'accepted', settled: workersFinished.promise };
+    },
+    {
+      launch: async (_project, thread) => {
+        order.push('spawn');
+        delete thread.queuedSpawn;
+        return true;
+      },
+    },
+  );
+  queue.kick(state);
+  await drain();
+  assert.deepEqual(order, ['worker', 'second']);
+  state.pending.push(message('lead-wake'));
+  state.threads.push({
+    ...state.threads[1],
+    appSessionId: 'new',
+    queuedSpawn: { phase: 'queued', input, order: 1 },
+  });
+  queue.kick(state);
+  await drain();
+  assert.deepEqual(order, ['worker', 'second', 'main']);
+  leadAdmitted.resolve({ status: 'accepted', settled: Promise.resolve() });
+  await drain();
+  assert.deepEqual(order, ['worker', 'second', 'main', 'spawn']);
+  workersFinished.resolve();
+});
+
+test('the delivery loop guard allows a large team to report before holding a repeated loop', async (t) => {
+  const state = project();
+  for (let i = 2; i < 120; i += 1)
+    state.threads.push({ ...state.threads[1], appSessionId: `worker-${i}` });
+  let delivered = 0;
+  let error = '';
+  const queue = wakeQueue(
+    t,
+    async () => {
+      delivered += 1;
+      return { status: 'accepted', settled: Promise.resolve() };
+    },
+    {
+      fail: (reason) => {
+        error = String(reason);
+        state.paused = true;
+      },
+    },
+  );
+  for (let i = 0; i < 361; i += 1) {
+    if (i) state.pending.push(message(`report-${i}`));
+    queue.kick(state);
+    await drain();
+  }
+  assert.equal(delivered, 360);
+  assert.match(error, /delivery loop exceeded 360 deliveries in 5 minutes for 120 threads/);
+});
+
+test('a restart durably wakes an idle team with unfinished plan work once', async (t) => {
+  const state = project();
+  state.threads.push({ ...state.threads[1], appSessionId: 'child', ownerAppSessionId: 'worker' });
+  state.pending = [{ ...message('child-report', 'worker'), from: 'child' }];
+  state.plan = [{ id: 'step', title: 'Implement parser', state: 'doing' }];
+  const h = await harness(t, [state], false);
+  h.sessions.set('main', summary('main'));
+  h.sessions.set('worker', summary('worker'));
+  h.sessions.set('child', summary('child'));
+  h.projects.historyReady();
+  await drain();
+  assert.equal(
+    h.sent[0].id,
+    'main',
+    'the lead wakes before the idle parent handles its child report',
+  );
+  assert.match(h.sent[0].prompt, /team is idle while project work remains/);
+  await h.finish('main');
+  await drain();
+  assert.equal(
+    h.sent.filter((message) => message.id === 'main').length,
+    1,
+    'settling the lead alone must not loop the idle wake',
+  );
 });

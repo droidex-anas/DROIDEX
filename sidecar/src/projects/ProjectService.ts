@@ -1,6 +1,7 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { SteeredReportDelivery } from '../SessionLifecycle.js';
-import { ProjectWakeQueue, wakePrompt } from './ProjectWakeQueue.js';
+import { ProjectWakeQueue } from './ProjectWakeQueue.js';
+import { failureReport, wakePrompt } from './projectMessages.js';
 import {
   clearAsk,
   ProjectTurns,
@@ -12,7 +13,12 @@ import {
   type ThreadState,
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
-import type { ProviderStatus, ServerEvent, SessionSummary } from '../protocol.js';
+import type {
+  PermissionRequest,
+  ProviderStatus,
+  ServerEvent,
+  SessionSummary,
+} from '../protocol.js';
 import { findPlanStep, planFromSteps } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
@@ -66,8 +72,15 @@ export interface ProjectPort {
   interrupt(appSessionId: string): Promise<void>;
   /** Whether a question routed to an owner is still waiting on its thread. */
   isAsking(appSessionId: string, requestId: string): boolean;
-  /** Whether the conversation is stopped on a permission request only the user can answer. */
+  /** Whether the conversation is waiting on a permission request. */
   awaitingApproval(appSessionId: string): boolean;
+  pendingApproval(appSessionId: string, requestId?: string): PermissionRequest | undefined;
+  approveFor(
+    source: string,
+    target: string,
+    requestId: string,
+    decision: 'allow' | 'deny',
+  ): Promise<boolean>;
   /** Whether its runtime is open; an idle one is released to save memory. */
   isLive(appSessionId: string): boolean;
   /** Retunes a live thread, the way the composer's own controls do. */
@@ -127,6 +140,8 @@ export interface ThreadReadout {
   threadId: string;
   title: string;
   state: ThreadState;
+  approval?: { requestId: string; summary: string };
+  resetsAt?: number;
   waitReason?: string;
   runtimeLoad: RuntimeLoad;
   wait?: ThreadWait;
@@ -175,6 +190,8 @@ export class ProjectService {
   private historyLoaded = false;
   private spawnOrder = 0;
   private readonly restartRecovery = new Set<string>();
+  private readonly approvalNotified = new Map<string, string>();
+  private readonly pausing = new Map<Project, Promise<string[]>>();
   private closed = false;
 
   private constructor(
@@ -216,13 +233,18 @@ export class ProjectService {
       enqueue: (project, message) => {
         this.enqueue(project, message);
       },
-      report: (project, thread, text) => {
-        this.report(project, thread, text);
+      report: (project, thread, text, leadAlert) => {
+        this.report(project, thread, text, leadAlert);
       },
       leadFailed: (project) => {
         this.leadFailed(project);
       },
-      leadRecovered: (project) => this.leadRecovered(project),
+      leadRecovered: (project) => {
+        this.leadRecovered(project);
+      },
+      teamIdle: (project) => {
+        this.teamIdle(project);
+      },
       save: () => this.save(),
       fail: (project, error) => {
         this.fail(project, error);
@@ -258,7 +280,7 @@ export class ProjectService {
       owner.projects.set(project.id, project);
       for (const thread of project.threads) {
         owner.membership.set(thread.appSessionId, project);
-        if (thread.queuedSpawn) thread.queuedSpawn.phase = 'queued';
+        if (thread.queuedSpawn?.phase === 'opening') thread.queuedSpawn.phase = 'queued';
         owner.spawnOrder = Math.max(owner.spawnOrder, thread.queuedSpawn?.order ?? 0);
       }
       owner.wakes.kick(project);
@@ -286,6 +308,7 @@ export class ProjectService {
       ...(project.done ? { done: project.done } : {}),
       ...(cwd ? { cwd } : {}),
       paused: project.paused,
+      ...(project.leadStopped ? { leadStopped: true as const } : {}),
       launching: project.launching,
       plan: project.plan.map(({ milestone, note, ...step }) => ({
         ...step,
@@ -302,6 +325,8 @@ export class ProjectService {
           waiting: thread.waiting,
           ...(thread.unread ? { unread: true as const } : {}),
           state: status.state,
+          ...(status.approval ? { approval: status.approval } : {}),
+          ...(status.resetsAt !== undefined ? { resetsAt: status.resetsAt } : {}),
           ...(status.wait ? { wait: status.wait } : {}),
           ...(thread.ownerAppSessionId ? { ownerAppSessionId: thread.ownerAppSessionId } : {}),
         };
@@ -383,7 +408,6 @@ export class ProjectService {
     const spawn: SpawnUnderWay = { source, stopped: false };
     this.spawnsUnderWay.add(spawn);
     try {
-      await this.resumeAfterLeadStop(source);
       const input = await spawnSettings(owner, requested, () => this.sessions.catalog());
       // A chat's first spawn has no project yet for a Stop to hold, so one that
       // came while the settings resolved is only known here.
@@ -904,25 +928,42 @@ export class ProjectService {
 
   private threadStatus(project: Project, thread: ProjectThread) {
     const wait = this.wakes.waitReason(thread.appSessionId);
-    const approval = this.sessions.awaitingApproval(thread.appSessionId);
-    const state = approval
-      ? 'waiting'
-      : threadState(thread, this.sessions.get(thread.appSessionId), wait);
-    const reason =
-      approval && !project.paused && !wait
-        ? 'waiting for user approval'
-        : threadWaitReason(
-            state,
-            wait,
-            this.sessions.runtimeLoad(),
-            project.paused,
-            this.queuedMessages(project, thread.appSessionId),
-          );
+    const request = this.sessions.pendingApproval(thread.appSessionId);
+    const approval = request
+      ? {
+          requestId: request.requestId,
+          summary: (request.detail || request.title || 'Permission request').slice(
+            0,
+            LEDGER_LIMITS.threadError,
+          ),
+        }
+      : undefined;
+    const session = this.sessions.get(thread.appSessionId);
+    const state = approval ? ('approval' as const) : threadState(thread, session, wait);
+    let reason: string | undefined;
+    if (approval && !project.paused && !wait) reason = `waiting on approval: ${approval.summary}`;
+    else if (state === 'rate-limited') {
+      const resetsAt = session?.usageLimit?.resetsAt;
+      reason = resetsAt
+        ? `rate-limited · send again after ${new Date(resetsAt).toISOString()}`
+        : 'rate-limited · send again when the provider limit resets';
+    } else
+      reason = threadWaitReason(
+        state,
+        wait,
+        this.sessions.runtimeLoad(),
+        project.paused,
+        this.queuedMessages(project, thread.appSessionId),
+      );
     const targets = [...new Set(project.pending.map((message) => message.to))];
     const position =
       wait && wait.kind !== 'turn' ? wait.position : targets.indexOf(thread.appSessionId) + 1;
     return {
       state,
+      ...(approval ? { approval } : {}),
+      ...(state === 'rate-limited' && session?.usageLimit?.resetsAt !== undefined
+        ? { resetsAt: session.usageLimit.resetsAt }
+        : {}),
       ...(wait ? { wait } : {}),
       ...(reason ? { waitReason: reason } : {}),
       ...(position > 0 ? { position } : {}),
@@ -1038,7 +1079,7 @@ export class ProjectService {
   async stop(source: string, target: string): Promise<'stopped' | 'cancelled'> {
     target = this.resolveThreadId(source, target);
     const project = this.controlledProject(source, target);
-    this.wakes.invalidate(project);
+    this.wakes.invalidateTarget(target);
     await this.sessions.interrupt(target);
     return this.quiet(project, target);
   }
@@ -1047,27 +1088,151 @@ export class ProjectService {
     this.requireOpen();
     const project = this.projects.get(id);
     if (!project) throw new Error('Project not found.');
-    if (!paused && project.delivery) {
+    if (paused) await this.pauseProject(project);
+    else await this.resumeProject(project, acknowledgeDelivery);
+  }
+
+  async pause(source: string): Promise<{ interrupted: string[] }> {
+    const project = this.requireLeadProject(source);
+    return { interrupted: await this.pauseProject(project, source) };
+  }
+
+  async resume(source: string): Promise<{ resumed: string[] }> {
+    const project = this.requireLeadProject(source);
+    return { resumed: await this.resumeProject(project) };
+  }
+
+  private pauseProject(project: Project, caller?: string): Promise<string[]> {
+    const pending = this.pausing.get(project);
+    if (pending) {
+      this.noteHold(project);
+      return pending;
+    }
+    const work = this.interruptProject(project, caller).finally(() => this.pausing.delete(project));
+    this.pausing.set(project, work);
+    return work;
+  }
+
+  private async interruptProject(project: Project, caller?: string): Promise<string[]> {
+    this.wakes.invalidate(project);
+    this.noteHold(project);
+    project.paused = true;
+    const interrupted = project.threads
+      .filter(
+        (thread) =>
+          thread.appSessionId !== caller && this.sessions.get(thread.appSessionId)?.streaming,
+      )
+      .map((thread) => thread.appSessionId);
+    project.interrupted = [...new Set([...(project.interrupted ?? []), ...interrupted])];
+    const stopping = Promise.allSettled(interrupted.map((id) => this.sessions.interrupt(id)));
+    await this.save();
+    if (this.closed) return interrupted;
+    const stopped = await stopping;
+    this.requireOpen();
+    await this.save();
+    const failure = stopped.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
+    return interrupted;
+  }
+
+  private async resumeProject(project: Project, acknowledgeDelivery = false): Promise<string[]> {
+    const holds = this.holds.get(project);
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    const leadCurrent = lead ? this.wakes.targetGuard(lead.appSessionId) : () => true;
+    const pausing = this.pausing.get(project);
+    if (pausing) await pausing;
+    this.requireOpen();
+    if (this.holds.get(project) !== holds)
+      throw new Error(
+        'A newer Pause canceled this Resume. Resume again when you want work to continue.',
+      );
+    if (!leadCurrent() && project.interrupted)
+      project.interrupted = project.interrupted.filter((id) => id !== lead?.appSessionId);
+    if (project.delivery) {
       if (project.delivery.state === 'sending')
         throw new Error('A delivery is settling. Try resuming again.');
       if (!acknowledgeDelivery)
         throw new Error('Review the uncertain delivery before resuming without replay.');
       delete project.delivery;
     }
+    const shouldWake = project.paused || (project.leadStopped ?? project.leadFailed);
     this.wakes.invalidate(project);
-    if (paused) this.noteHold(project);
-    project.paused = paused;
-    delete project.leadStopped;
-    delete project.leadFailed;
-    if (!paused) delete project.error;
+    project.paused = false;
+    if (leadCurrent()) {
+      delete project.leadStopped;
+      delete project.leadFailed;
+    }
+    if (!project.leadFailed) delete project.error;
+    const resumed = [...(project.interrupted ?? [])];
+    if (
+      shouldWake &&
+      lead &&
+      !this.sessions.get(lead.appSessionId)?.streaming &&
+      !project.pending.some((message) => message.to === lead.appSessionId)
+    )
+      project.wakePending = 'resume';
+    this.refill(project);
     await this.save();
     this.wakes.kick(project);
+    return resumed;
+  }
+
+  private refillInterrupted(project: Project): void {
+    if (project.paused || !project.interrupted?.length) return;
+    for (const id of [...project.interrupted]) {
+      const thread = requireThread(project, id);
+      const queued = [...project.pending, ...(project.delivery?.messages ?? [])].some(
+        (message) => message.to === id && message.kind === 'message',
+      );
+      if (!queued) {
+        if (inboxFull(project)) continue;
+        this.enqueue(project, {
+          from: thread.ownerAppSessionId ?? id,
+          to: id,
+          kind: 'message',
+          text: 'The project resumed. Continue the work interrupted by project Pause from where you stopped.',
+        });
+      }
+      project.interrupted = project.interrupted.filter((target) => target !== id);
+    }
+    if (!project.interrupted.length) delete project.interrupted;
+  }
+
+  async approve(
+    source: string,
+    threadId: string,
+    requestId: string,
+    decision: 'allow' | 'deny',
+    note?: string,
+  ): Promise<{ state: string }> {
+    threadId = this.resolveThreadId(source, threadId);
+    const project = this.controlledProject(source, threadId);
+    if (project.paused)
+      throw new Error('The project is held. Resume it before deciding approvals.');
+    const thread = requireThread(project, threadId);
+    if (note?.trim()) requireMessageText(note);
+    const isCurrent = this.wakes.guard(project, threadId);
+    const sourceCurrent = this.wakes.targetGuard(source);
+    if (this.sessions.pendingApproval(threadId, requestId)?.requestId !== requestId)
+      throw new Error(
+        `${thread.title} is no longer waiting on that approval. Read it again with thread_read.`,
+      );
+    if (!(await this.sessions.approveFor(source, threadId, requestId, decision)))
+      throw new Error('The approval settled before your decision. Read the thread again.');
+    if (!isCurrent() || !sourceCurrent() || this.membership.get(threadId) !== project)
+      return { state: 'stopped' };
+    project.pending = project.pending.filter(
+      (message) => message.approvalId !== requestId || message.from !== threadId,
+    );
+    if (note?.trim())
+      this.enqueue(project, { from: source, to: threadId, kind: 'message', text: note });
+    await this.save();
+    this.wakes.available(project, threadId);
+    return { state: this.threadStatus(project, thread).state };
   }
 
   /**
-   * The user stopped or closed a conversation by hand. Stopping the main thread
-   * holds the whole project; stopping one thread quiets only that thread, so
-   * the rest of the project keeps working.
+   * A user Stop quiets that conversation; workers continue while lead reports wait.
    */
   async userStopped(appSessionId: string): Promise<void> {
     for (const spawn of this.spawnsUnderWay)
@@ -1077,22 +1242,36 @@ export class ProjectService {
     const project = this.membership.get(appSessionId) ?? this.adopting.get(appSessionId);
     if (!project || this.closed) return;
     if (!requireThread(project, appSessionId).ownerAppSessionId) {
-      // A hold already in place for another reason stays the user's to lift,
-      // and a failure is no longer the only reason once the user has stopped.
-      if (!project.paused) project.leadStopped = true;
+      project.leadStopped = true;
       delete project.leadFailed;
-      this.wakes.invalidate(project);
-      this.noteHold(project);
-      project.paused = true;
+      this.wakes.invalidateTarget(appSessionId);
       await this.save();
       return;
     }
-    this.wakes.invalidate(project);
+    this.wakes.invalidateTarget(appSessionId);
     await this.quiet(project, appSessionId);
+  }
+
+  async userContinued(appSessionId: string): Promise<void> {
+    const project = this.membership.get(appSessionId);
+    if (
+      this.closed ||
+      !project ||
+      !(project.leadStopped ?? project.leadFailed) ||
+      requireThread(project, appSessionId).ownerAppSessionId
+    )
+      return;
+    if (project.leadFailed && !project.paused) delete project.error;
+    delete project.leadStopped;
+    delete project.leadFailed;
+    await this.save();
+    this.wakes.available(project, appSessionId);
   }
 
   async observe(event: ServerEvent): Promise<void> {
     if (this.closed) return;
+    if (event.type === 'session.closed' && this.membership.has(event.appSessionId))
+      this.wakes.invalidateTarget(event.appSessionId);
     // Read before any wait, so a slow save cannot reorder a turn's start and end.
     const settled = event.type === 'session.updated' && this.noteStreaming(event.session);
     // Decided as the event arrives, so a project_done made while this observer
@@ -1105,7 +1284,24 @@ export class ProjectService {
     if (reopened) await this.save();
     // A delivered turn that stops on the user's approval frees its slot.
     if (event.type === 'approval.requested') {
-      if (this.membership.has(event.request.appSessionId)) this.wakes.waitingChanged();
+      const project = this.membership.get(event.request.appSessionId);
+      if (project) {
+        this.refillApprovals(project);
+        await this.save();
+        this.wakes.kick(project);
+      }
+      this.wakes.waitingChanged();
+      return;
+    }
+    if (event.type === 'interaction.cancelled') {
+      const project = this.membership.get(event.appSessionId);
+      if (project) {
+        project.pending = project.pending.filter(
+          (message) =>
+            message.from !== event.appSessionId || message.approvalId !== event.requestId,
+        );
+        await this.save();
+      }
       return;
     }
     // A session whose turn just settled may be one the runtime cap can release
@@ -1167,10 +1363,11 @@ export class ProjectService {
           this.restartRecovery.add(thread.appSessionId);
       }
       this.refillRestartRecovery(project);
+      this.teamIdle(project);
     }
     if (
       this.restartRecovery.size ||
-      [...this.projects.values()].some((project) => project.pending.length)
+      [...this.projects.values()].some((project) => project.pending.length || project.wakePending)
     )
       await this.save();
   }
@@ -1220,36 +1417,22 @@ export class ProjectService {
     await this.save();
   }
 
-  /**
-   * The user's Stop on a project's main chat holds the project, and that chat's
-   * own next spawn resumes it the way Resume in Projects does: the chat is
-   * working again. A hold from a failure, a loop or an uncertain delivery is
-   * never lifted here. This runs as a spawn begins, so a spawn already under
-   * way when the user pressed Stop meets the hold and is refused.
-   */
+  /** A failed lead stops coordination while workers finish their own work. */
   private leadFailed(project: Project): void {
-    // A hold already in place for another reason stays the user's to lift.
-    const onlyCause = !project.paused || project.leadFailed === true;
-    this.fail(
-      project,
-      new Error(
-        "The main chat's turn failed. Coordination resumes when its next turn succeeds, or with Resume.",
-      ),
-    );
-    if (onlyCause) project.leadFailed = true;
+    project.leadFailed = true;
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (lead) this.wakes.invalidateTarget(lead.appSessionId);
+    if (!project.paused)
+      project.error =
+        'The lead failed. Workers continue; reports wait until you send the lead a message or resume the project.';
   }
 
-  /** The main chat's next successful turn shows it is working again, which lifts a hold its failure put on. */
-  private async leadRecovered(project: Project): Promise<void> {
+  /** A successful lead turn restores coordination without releasing another hold. */
+  private leadRecovered(project: Project): void {
     if (!project.leadFailed || project.delivery) return;
-    await this.setPaused(project.id, false);
-  }
-
-  private async resumeAfterLeadStop(source: string): Promise<void> {
-    const project = this.membership.get(source);
-    if (!project?.leadStopped || project.delivery) return;
-    if (requireThread(project, source).ownerAppSessionId) return;
-    await this.setPaused(project.id, false);
+    delete project.leadFailed;
+    if (!project.paused) delete project.error;
+    this.wakes.kick(project);
   }
 
   /** Drops what was queued for a stopped thread once admission has settled. */
@@ -1257,6 +1440,11 @@ export class ProjectService {
     await this.wakes.settle(project);
     const thread = requireThread(project, target);
     clearAsk(project, thread);
+    if (project.interrupted) {
+      project.interrupted = project.interrupted.filter((id) => id !== target);
+      if (!project.interrupted.length) delete project.interrupted;
+    }
+    this.restartRecovery.delete(target);
     const queued = thread.queuedSpawn;
     const checkoutOwner = queued?.workspace
       ? this.requireSession(thread.ownerAppSessionId ?? '')
@@ -1316,6 +1504,9 @@ export class ProjectService {
     thread: ProjectThread,
     isCurrent: () => boolean,
   ): Promise<boolean> {
+    const projectCurrent = isCurrent;
+    const targetCurrent = this.wakes.guard(project, thread.appSessionId);
+    isCurrent = () => projectCurrent() && targetCurrent();
     const queued = thread.queuedSpawn;
     const owner = thread.ownerAppSessionId;
     if (!queued || !owner) throw new Error('Only an identified, unstarted thread can open.');
@@ -1345,6 +1536,16 @@ export class ProjectService {
         throw new Error('The selected harness did not start this thread and reported no reason.');
       return true;
     } catch (error) {
+      if (wasQueued && isCurrent()) {
+        queued.phase = 'failed';
+        thread.queuedSpawn = queued;
+        thread.error = (error instanceof Error ? error.message : String(error)).slice(
+          0,
+          LEDGER_LIMITS.threadError,
+        );
+        this.report(project, thread, failureReport(thread.title, thread.error), true);
+        return true;
+      }
       if (wasQueued) thread.queuedSpawn = queued;
       else {
         project.threads = project.threads.filter((candidate) => candidate !== thread);
@@ -1352,7 +1553,7 @@ export class ProjectService {
       }
       throw error;
     } finally {
-      if (thread.queuedSpawn) thread.queuedSpawn.phase = 'queued';
+      if (thread.queuedSpawn?.phase === 'opening') thread.queuedSpawn.phase = 'queued';
       project.launching -= 1;
       await this.save(project);
     }
@@ -1375,33 +1576,55 @@ export class ProjectService {
 
   /* A report that finds the inbox full waits on its thread and queues as soon as
      a delivery makes room. A newer report from the same thread replaces it. */
-  private report(project: Project, thread: ProjectThread, text: string): void {
+  private report(project: Project, thread: ProjectThread, text: string, leadAlert = false): void {
     const owner = thread.ownerAppSessionId;
     if (!owner) return;
     requireMessageText(text);
+    const recipients = [owner];
+    const lead = project.threads.find((candidate) => !candidate.ownerAppSessionId);
+    if (leadAlert && lead && lead.appSessionId !== owner) recipients.push(lead.appSessionId);
     for (const todo of project.todos) {
       if (todo.after !== thread.appSessionId || todo.due) continue;
       todo.due = true;
       // A direct report already wakes the lead with this follow-up attached.
       if (!requireThread(project, owner).ownerAppSessionId) todo.notified = true;
     }
-    if (inboxFull(project)) {
+    const queued = project.pending.length + (project.delivery?.messages.length ?? 0);
+    if (queued + recipients.length > LEDGER_LIMITS.inbox) {
       thread.owedReport = text;
+      if (recipients.length > 1) thread.owedLeadAlert = true;
+      else delete thread.owedLeadAlert;
       return;
     }
-    this.enqueue(project, { from: thread.appSessionId, to: owner, kind: 'result', text });
+    for (const to of recipients)
+      this.enqueue(project, { from: thread.appSessionId, to, kind: 'result', text });
     delete thread.owedReport;
+    delete thread.owedLeadAlert;
   }
 
   private refill(project: Project): void {
     if (this.closed) return;
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (lead && project.wakePending && !inboxFull(project)) {
+      this.enqueue(project, {
+        from: lead.appSessionId,
+        to: lead.appSessionId,
+        kind: 'idle',
+        text:
+          project.wakePending === 'resume'
+            ? 'The project resumed. Review retained reports and continue interrupted work.'
+            : 'The team is idle while project work remains. Review the plan and open to-dos, then continue existing threads with thread_send or decide the next work.',
+      });
+      delete project.wakePending;
+    }
+    this.refillInterrupted(project);
     for (const thread of project.threads) {
       if (inboxFull(project)) return;
       const text = thread.owedReport;
-      if (text) this.report(project, thread, text);
+      if (text) this.report(project, thread, text, thread.owedLeadAlert);
     }
-    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
     if (!lead) return;
+    this.refillApprovals(project);
     for (const todo of project.todos) {
       if (inboxFull(project)) return;
       if (!todo.due || todo.notified) continue;
@@ -1416,6 +1639,61 @@ export class ProjectService {
     }
   }
 
+  private refillApprovals(project: Project): void {
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (!lead) return;
+    for (const thread of project.threads) {
+      if (!thread.ownerAppSessionId) continue;
+      const request = this.sessions.pendingApproval(thread.appSessionId);
+      if (
+        !request ||
+        this.approvalNotified.get(thread.appSessionId) === request.requestId ||
+        inboxFull(project)
+      )
+        continue;
+      this.enqueue(project, {
+        from: thread.appSessionId,
+        to: lead.appSessionId,
+        kind: 'approval',
+        approvalId: request.requestId,
+        text: `Waiting on approval: ${(request.detail || request.title || 'Permission request').slice(0, LEDGER_LIMITS.threadError)}. Decide with thread_approve, or ask the user one question if it exceeds your autonomy.`,
+      });
+      this.approvalNotified.set(thread.appSessionId, request.requestId);
+    }
+  }
+
+  private teamIdle(project: Project): void {
+    const lead = project.threads.find((thread) => !thread.ownerAppSessionId);
+    if (!lead || project.done || this.sessions.get(lead.appSessionId)?.streaming) return;
+    const workRemains =
+      project.plan.some((step) => step.state !== 'done') ||
+      project.todos.length > 0 ||
+      project.pending.length > 0;
+    if (
+      !workRemains ||
+      project.launching ||
+      project.threads.some(
+        (thread) =>
+          thread.ownerAppSessionId &&
+          (thread.queuedSpawn !== undefined ||
+            this.sessions.get(thread.appSessionId)?.streaming === true),
+      )
+    )
+      return;
+    if (
+      project.pending.some((message) => message.to === lead.appSessionId) ||
+      project.delivery?.messages.some((message) => message.to === lead.appSessionId) ||
+      project.threads.some(
+        (thread) =>
+          thread.owedReport &&
+          (thread.ownerAppSessionId === lead.appSessionId || thread.owedLeadAlert),
+      )
+    )
+      return;
+    project.wakePending = 'team-idle';
+    this.refill(project);
+  }
+
   private enqueue(project: Project, message: Omit<ThreadMessage, 'id'>): void {
     this.requireOpen();
     requireMessageText(message.text);
@@ -1423,6 +1701,11 @@ export class ProjectService {
       throw new Error(
         `The project inbox is full: ${String(LEDGER_LIMITS.inbox)} messages are waiting for their threads, and nothing more can queue until they are delivered.`,
       );
+    const target = project.threads.find((thread) => thread.appSessionId === message.to);
+    if (message.kind === 'message' && target?.queuedSpawn?.phase === 'failed') {
+      target.queuedSpawn.phase = 'queued';
+      delete target.error;
+    }
     project.pending.push({ id: randomUUID(), ...message });
     if (message.kind === 'message') this.restartRecovery.delete(message.to);
   }

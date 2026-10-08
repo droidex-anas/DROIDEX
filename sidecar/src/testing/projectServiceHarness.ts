@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { ProjectService, type ProjectPort } from '../projects/ProjectService.js';
 import type { ProjectPersistence } from '../projects/store.js';
 import type { Project, ThreadInput } from '../projects/types.js';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type { PermissionRequest, ServerEvent, SessionSummary } from '../protocol.js';
 import { sessionSummary } from './sessionSummaryFixture.js';
 
 export const input: ThreadInput = {
@@ -31,6 +31,19 @@ export function deferred() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+export function waitForThreadStarts(port: ProjectPort, count: number): Promise<void> {
+  const admitted = deferred();
+  const create = port.create.bind(port);
+  let started = 0;
+  port.create = (...args) => {
+    const work = create(...args);
+    started += 1;
+    if (started === count) admitted.resolve();
+    return work;
+  };
+  return admitted.promise;
 }
 
 export function summary(id: string, selection: ThreadInput = input): SessionSummary {
@@ -91,8 +104,9 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     // Holds a bound thread before its first turn, while it is not streaming yet.
     firstTurnGate: undefined as Promise<void> | undefined,
     createFailure: undefined as 'before-bind' | 'after-bind' | undefined,
-    // Sessions stopped on a permission request only the user can answer.
+    // Sessions waiting on a permission request.
     awaitingApproval: new Set<string>(),
+    approvals: new Map<string, PermissionRequest>(),
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
   // What each session is actually blocked on, the way the harness would know.
@@ -114,6 +128,13 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     runtimeLoad: () => ({ live: state.capacity === 'busy' ? 20 : sessions.size, limit: 20 }),
     makeRoom: () => Promise.resolve(state.capacity === 'free'),
     awaitingApproval: (id) => state.awaitingApproval.has(id),
+    pendingApproval: (id) => state.approvals.get(id),
+    approveFor: (_source, target, requestId) => {
+      if (state.approvals.get(target)?.requestId !== requestId) return Promise.resolve(false);
+      state.approvals.delete(target);
+      state.awaitingApproval.delete(target);
+      return Promise.resolve(true);
+    },
     isLive: (id) => sessions.has(id),
     catalog: async () => {
       if (state.catalogGate) await state.catalogGate;
@@ -226,6 +247,26 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     });
     await streaming(id, false);
   }
+  async function fail(id: string, message: string, usageLimit?: SessionSummary['usageLimit']) {
+    const session = sessions.get(id);
+    assert.ok(session);
+    session.phase = 'failed';
+    session.usageLimit = usageLimit;
+    await projects.observe({
+      type: 'event.appended',
+      event: {
+        id: `${id}-error`,
+        appSessionId: id,
+        sourceSessionId: id,
+        role: 'primary',
+        ts: 1,
+        kind: 'error',
+        text: message,
+        isError: true,
+      },
+    });
+    await streaming(id, false);
+  }
   /** The thread `id` asks `question`; `blocked` says whether its harness call is waiting on it. */
   async function ask(
     id: string,
@@ -259,7 +300,30 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     port,
     streaming,
     finish,
+    fail,
     ask,
     root,
   };
+}
+
+/** An ordinary user chat before it adopts a project. */
+export async function ordinaryChat(t: TestContext, selection: ThreadInput = input) {
+  const h = await harness(t);
+  h.sessions.set('ordinary', summary('ordinary', selection));
+  return h;
+}
+
+/** A settled lead and its first working thread. */
+export async function projectWithThread(t: TestContext) {
+  const h = await harness(t);
+  const { id, main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  return { h, id, main, child };
+}
+
+/** A project whose lead has settled, ready to delegate. */
+export async function idleProject(t: TestContext) {
+  const h = await harness(t);
+  const { id, main } = await h.root();
+  return { h, id, main };
 }

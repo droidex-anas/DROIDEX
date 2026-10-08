@@ -161,6 +161,7 @@ export interface LiveSession extends LiveTurnState {
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionLifecycleDependencies {
+  onUserPrompt?: (appSessionId: string) => void;
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
   // A scheduled runtime slot was released without a session closing.
@@ -764,6 +765,7 @@ export class SessionLifecycle {
     if (!admitted || admitted === 'held') return;
     // A Stop can land between admission and this line.
     if (this.stopCount(requestedAppSessionId) !== admitted.stops) return;
+    this.dependencies.onUserPrompt?.(requestedAppSessionId);
     await this.handOver(requestedAppSessionId, admitted, prompt);
   }
 
@@ -799,6 +801,17 @@ export class SessionLifecycle {
   // Reports settle at handoff and never enter the typed-message queues.
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const session = liveSession.session;
+    const appSessionId = liveSession.summary.appSessionId;
+    const stops = this.stopCount(appSessionId);
+    const turn = liveSession.turnPromise;
+    const delegatedTurns = liveSession.delegatedTurns;
+    const isCurrent = () =>
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      liveSession.turnPromise === turn &&
+      liveSession.delegatedTurns === delegatedTurns &&
+      this.stopCount(appSessionId) === stops &&
+      !isWithdrawn(prompt);
     if (
       !liveSession.streaming ||
       liveSession.compacting ||
@@ -818,16 +831,15 @@ export class SessionLifecycle {
     const delivered = await session.steer(prompt.text, prompt.mentions).catch(() => false);
     const held = removePrompt(liveSession.steers, prompt);
     if (!delivered) return !held;
+    if (!isCurrent()) return true;
     // Send now may have queued it again just as the harness delivered it. It
     // leaves the queue at once, so a turn settling while the row is written
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
     removePrompt(liveSession.pendingSends, prompt);
     prompt.delivery?.acknowledged?.();
-    const appSessionId = liveSession.summary.appSessionId;
-    if (this.dependencies.registry.getLive(appSessionId) === liveSession)
-      await this.dependencies.appendSteer(appSessionId, prompt.text);
-    this.updateQueuedSends(liveSession);
+    await this.dependencies.appendSteer(appSessionId, prompt.text);
+    if (isCurrent()) this.updateQueuedSends(liveSession);
     return true;
   }
 

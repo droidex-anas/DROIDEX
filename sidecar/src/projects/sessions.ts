@@ -21,6 +21,8 @@ type Host = Pick<
   | 'isSessionLive'
   | 'isQuestionPending'
   | 'isApprovalPending'
+  | 'pendingApproval'
+  | 'approveFor'
   | 'deliverScheduledMessage'
   | 'providerCatalog'
   | 'answerQuestion'
@@ -113,6 +115,14 @@ export class ProjectSessions implements ProjectPort {
 
   awaitingApproval(appSessionId: string): boolean {
     return this.host.isApprovalPending(appSessionId);
+  }
+
+  pendingApproval(appSessionId: string, requestId?: string) {
+    return this.host.pendingApproval(appSessionId, requestId);
+  }
+
+  approveFor(source: string, target: string, requestId: string, decision: 'allow' | 'deny') {
+    return this.host.approveFor(source, target, requestId, decision);
   }
 
   configure(appSessionId: string, settings: ThreadSettings): Promise<void> {

@@ -38,6 +38,7 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
     (value.done === undefined ||
       (record(value.done) && count(value.done.at) && text(value.done.outcome, 600))) &&
     typeof value.paused === 'boolean' &&
+    (value.leadStopped === undefined || value.leadStopped === true) &&
     // A project starts as many threads as its work needs; only its queues are bounded.
     count(value.launching) &&
     count(value.queued, 64) &&
@@ -75,7 +76,22 @@ function isThreadList(value: unknown): value is ProjectThread[] {
         typeof thread.waiting === 'boolean' &&
         (thread.unread === undefined || thread.unread === true) &&
         typeof thread.state === 'string' &&
-        ['working', 'queued', 'waiting', 'stopped', 'failed', 'idle'].includes(thread.state) &&
+        [
+          'working',
+          'queued',
+          'waiting',
+          'approval',
+          'rate-limited',
+          'stopped',
+          'failed',
+          'idle',
+        ].includes(thread.state) &&
+        (thread.resetsAt === undefined || count(thread.resetsAt)) &&
+        (thread.approval === undefined ||
+          (record(thread.approval) &&
+            text(thread.approval.requestId, 200) &&
+            text(thread.approval.summary, 600))) &&
+        (thread.state !== 'approval' || thread.approval !== undefined) &&
         (thread.wait === undefined || isThreadWait(thread.wait)) &&
         (thread.ownerAppSessionId === undefined || text(thread.ownerAppSessionId, 200)),
     )

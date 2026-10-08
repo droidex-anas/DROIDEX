@@ -204,6 +204,7 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
+  onUserPrompt?: (appSessionId: string) => void;
   beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -682,6 +683,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
+      onUserPrompt: options.onUserPrompt,
       beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -1307,6 +1309,14 @@ export class SessionManager {
   /** Whether this conversation is stopped on a permission request only the user can answer. */
   isApprovalPending(appSessionId: string): boolean {
     return this.interactions.hasPendingApproval(appSessionId);
+  }
+
+  pendingApproval(appSessionId: string, requestId?: string) {
+    return this.interactions.pendingApproval(appSessionId, requestId);
+  }
+
+  approveFor(source: string, target: string, requestId: string, decision: 'allow' | 'deny') {
+    return this.interactions.approveFor(source, target, requestId, decision);
   }
 
   /** Whether this conversation is open right now, rather than merely known. */

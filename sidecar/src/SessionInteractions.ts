@@ -9,6 +9,7 @@ import {
 import type {
   PermissionKind,
   PermissionOutcome,
+  PermissionRequest,
   ServerEvent,
   SessionQuestion,
   SessionSummary,
@@ -27,6 +28,7 @@ interface PendingPermission {
   canAlwaysAllow: boolean;
   signature?: string;
   responding?: boolean;
+  approval: ProviderApprovalRequest;
 }
 
 interface InteractionScope {
@@ -97,44 +99,50 @@ export class SessionInteractions {
     approval: ProviderApprovalRequest,
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
-    const autonomy = liveSession?.summary.autonomy;
+    if (!liveSession) return 'cancel';
     const tool = approval.mcpTool;
     const autoApproved = (unattended: boolean) =>
       tool !== undefined &&
-      (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
-        shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended));
-    const safeForUnattended = autoApproved(true);
-    const safeForInteractive = autoApproved(false);
-    if (
-      safeForUnattended ||
-      (safeForInteractive &&
-        !(await isUnattendedAutomationSession(liveSession?.summary.appSessionId)))
-    ) {
-      return 'proceed_once';
+      (shouldAutoApproveAutomationTool(
+        tool.serverName,
+        tool.toolName,
+        liveSession.summary.autonomy,
+        unattended,
+      ) ||
+        shouldAutoApproveSessionsTool(
+          tool.serverName,
+          tool.toolName,
+          liveSession.summary.autonomy,
+          unattended,
+        ));
+    if (autoApproved(true)) return 'proceed_once';
+    if (autoApproved(false)) {
+      const unattended = await isUnattendedAutomationSession(liveSession.summary.appSessionId);
+      if (this.dependencies.getLiveSession(sessionId) !== liveSession) return 'cancel';
+      if (autoApproved(unattended)) return 'proceed_once';
     }
     return await new Promise<PermissionOutcome>((resolve) => {
       const { request, signature } = approval;
       const canAlwaysAllow = request.canAlwaysAllow && Boolean(signature);
-      const scope = liveSession ? this.scope(liveSession.summary.appSessionId) : undefined;
-      if (scope && canAlwaysAllow && signature && scope.permissionGrants.has(signature)) {
+      const scope = this.scope(liveSession.summary.appSessionId);
+      if (canAlwaysAllow && signature && scope.permissionGrants.has(signature)) {
         resolve('proceed_always');
         return;
       }
-      if (liveSession && scope) {
-        scope.pendingPermissions.set(request.requestId, {
-          resolve,
-          kind: request.kind,
-          canAlwaysAllow,
-          ...(signature ? { signature } : {}),
+      scope.pendingPermissions.set(request.requestId, {
+        resolve,
+        approval,
+        kind: request.kind,
+        canAlwaysAllow,
+        ...(signature ? { signature } : {}),
+      });
+      if (approval.confirmationType === 'propose_mission') {
+        this.dependencies.updateSummary(sessionId, {
+          phase: 'awaiting_plan_approval',
+          proposal: request.detail,
         });
-        if (approval.confirmationType === 'propose_mission') {
-          this.dependencies.updateSummary(sessionId, {
-            phase: 'awaiting_plan_approval',
-            proposal: request.detail,
-          });
-        } else if (approval.confirmationType === 'start_mission_run') {
-          this.dependencies.updateSummary(sessionId, { phase: 'awaiting_run_start' });
-        }
+      } else if (approval.confirmationType === 'start_mission_run') {
+        this.dependencies.updateSummary(sessionId, { phase: 'awaiting_run_start' });
       }
       this.dependencies.emit({
         type: 'approval.requested',
@@ -244,6 +252,40 @@ export class SessionInteractions {
     const scope = liveSession ? this.scopes.get(liveSession.summary.appSessionId) : undefined;
     // One the user has answered is resuming the turn, not waiting on them.
     return [...(scope?.pendingPermissions.values() ?? [])].some((pending) => !pending.responding);
+  }
+
+  pendingApproval(appSessionId: string, requestId?: string): PermissionRequest | undefined {
+    const live = this.dependencies.getLiveSession(appSessionId);
+    const scope = live ? this.scopes.get(live.summary.appSessionId) : undefined;
+    const pending = requestId
+      ? scope?.pendingPermissions.get(requestId)
+      : [...(scope?.pendingPermissions.values() ?? [])].find((item) => !item.responding);
+    return pending && !pending.responding ? pending.approval.request : undefined;
+  }
+
+  async approveFor(
+    source: string,
+    target: string,
+    requestId: string,
+    decision: 'allow' | 'deny',
+  ): Promise<boolean> {
+    const actor = this.dependencies.getLiveSession(source);
+    const live = this.dependencies.getLiveSession(target);
+    const scope = live ? this.scopes.get(live.summary.appSessionId) : undefined;
+    const pending = scope?.pendingPermissions.get(requestId);
+    if (!actor || actor.closePromise || !pending || pending.responding) return false;
+    if (decision === 'allow' && !pending.approval.canApproveFor?.(actor.summary))
+      throw new Error(
+        'DROIDEX cannot approve this request within your autonomy. Ask the user one question to approve it in the thread.',
+      );
+    await this.respondToApproval(
+      target,
+      requestId,
+      decision === 'allow' ? 'proceed_once' : 'refuse',
+    );
+    if (this.dependencies.getLiveSession(target) !== live) return false;
+    this.dependencies.emit({ type: 'interaction.cancelled', appSessionId: target, requestId });
+    return true;
   }
 
   hasPending(appSessionId: string): boolean {

@@ -2218,9 +2218,9 @@ test('Send now and Stop after report handoff never replay it and leave its reply
   const consumed = turnGate();
   const reports: string[] = [];
   live.session.steer = (text) => {
-    if (!text.includes('your project threads reported')) return Promise.resolve(false);
+    if (!text.startsWith('Project update — lead action required')) return Promise.resolve(false);
     reports.push(text);
-    return consumed.promise.then(() => false);
+    return consumed.promise.then(() => true);
   };
   project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
   await project.streaming(main, true);
