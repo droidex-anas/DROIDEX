@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { PermissionMode, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderApprovalRequest } from '../interactions.js';
+import type { Autonomy } from '../../protocol.js';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 import { sessionOptions } from './claudeOptions.js';
@@ -83,6 +84,48 @@ test('Spec restores the chosen permission mode and rejected changes keep the sel
     /refused/,
   );
   assert.equal(modes.selection(), 'low');
+  reject = false;
+  const writesAfterRefusal = calls.length;
+  let started = false;
+  await modes.startTurn(() => {
+    started = true;
+  });
+  assert.equal(started, true);
+  assert.equal(calls.length, writesAfterRefusal, 'an ordinary prompt must not retry Full access');
+  assert.equal(modes.selection(), 'low');
+});
+
+test('Claude rechecks automatic grants after revocation and cancellation crosses the callback await', async () => {
+  for (const tool of ['Bash', 'Edit']) {
+    let level: Autonomy = tool === 'Bash' ? 'high' : 'low';
+    let asked = 0;
+    const callback = claudeCanUseTool(
+      'chat',
+      {
+        requestApproval: async () => {
+          asked += 1;
+          return 'refuse';
+        },
+        requestQuestion: async () => ({ cancelled: true, answers: [] }),
+        cancelPending: () => {},
+        isActive: () => true,
+      },
+      () => false,
+      () => level,
+    );
+    const abort = new AbortController();
+    const options = { signal: abort.signal, toolUseID: 'tool', requestId: 'request' };
+    const input = tool === 'Bash' ? { command: 'pwd' } : { file_path: 'file.ts' };
+    const pending = callback(tool, input, options);
+    level = 'off';
+    assert.equal((await pending)?.behavior, 'deny');
+    assert.equal(asked, 1);
+    level = 'high';
+    const cancelled = callback(tool, input, options);
+    abort.abort();
+    assert.equal((await cancelled)?.behavior, 'deny');
+    assert.equal(asked, 1);
+  }
 });
 
 test('Claude coalesces queued grants into the latest revocation before native dispatch', async () => {

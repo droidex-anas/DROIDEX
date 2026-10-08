@@ -75,14 +75,20 @@ export class CodexSession implements ProviderSession {
   private threadModel?: string;
   private turnId?: string;
   private turn?: TurnStream;
+  private turnAutonomy?: Autonomy;
+  // Containment needs the id as soon as it arrives, even before the start reply.
+  private turnStarted?: Promise<void>;
+  private resolveTurnStarted?: () => void;
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
   // to name it with yet.
   private pendingInterrupt = false;
   private interruptedTurnId?: string;
+  private stoppedTurnId?: string;
   // A turn Codex started by itself, for a request spoken to a voice
   // conversation. It has no stream of its own, so its id is kept here: Stop has
   // to reach it, and its completion must not settle a turn the user typed.
   private delegatedTurnId?: string;
+  private delegatedTurnAutonomy?: Autonomy;
   // The chat asked for the model's own effort, which the thread has to be told
   // explicitly; an omitted effort would leave the previous one in place.
   private effortCleared = false;
@@ -113,17 +119,25 @@ export class CodexSession implements ProviderSession {
     this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
     this.permissions = new SessionAutonomy(input.autonomy, {
-      write: () =>
-        this.changeThreadSettings(async () => {
+      write: () => {
+        const stopping = this.stopUnenforceableTurn();
+        // The queued writer reports failure even if another settings write delays it.
+        void stopping.catch(() => undefined);
+        return this.changeThreadSettings(async () => {
+          await stopping;
+          await this.stopUnenforceableTurn();
           const autonomy = this.permissions.latestAutonomy;
           await this.applyThreadSettings(autonomy);
           return autonomy;
-        }),
+        });
+      },
       isApplied: () => true,
       isUnsafe: () =>
         AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
         AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
       interrupt: async () => {
+        if (this.turnStarted) await this.turnStarted;
+        this.permissions.requireOpen();
         await Promise.all([this.interrupt(), this.voice.stop()]);
       },
       close: () => this.close(),
@@ -273,14 +287,19 @@ export class CodexSession implements ProviderSession {
       await this.settingsChanges;
       while (!this.permissions.isApplied) await this.permissions.synchronize();
       if (this.hasClosed) throw new Error('This Codex session is closed.');
+      this.turnAutonomy = this.autonomy;
+      this.turnStarted = new Promise<void>((resolve) => {
+        this.resolveTurnStarted = resolve;
+      });
       const started = await this.client.request<{ turn: CodexTurn }>(
         'turn/start',
         turnStartParams(threadId, prompt, mentions, {
-          autonomy: this.autonomy,
+          autonomy: this.turnAutonomy,
           model: this.model,
           ...(this.threadModel ? { threadModel: this.threadModel } : {}),
         }),
       );
+      this.permissions.requireOpen();
       this.adoptTurn(started.turn.id);
       // Only a turn that started can carry them; one that Codex refused would
       // have dropped them with it.
@@ -294,6 +313,8 @@ export class CodexSession implements ProviderSession {
         this.prompts.cancel();
         this.turn = undefined;
         this.turnId = undefined;
+        this.turnAutonomy = undefined;
+        this.releaseTurnStart();
       }
       this.pendingInterrupt = false;
     }
@@ -301,6 +322,34 @@ export class CodexSession implements ProviderSession {
 
   setAutonomy(autonomy: Autonomy): Promise<void> {
     return this.permissions.set(autonomy);
+  }
+
+  private async stopUnenforceableTurn(): Promise<void> {
+    if (this.turnStarted) await this.turnStarted;
+    this.permissions.requireOpen();
+    const runningAutonomy = this.turnAutonomy ?? this.delegatedTurnAutonomy;
+    const latest = this.permissions.latestAutonomy;
+    if (
+      runningAutonomy === undefined ||
+      AUTONOMY_LEVELS.indexOf(runningAutonomy) <= AUTONOMY_LEVELS.indexOf(latest) ||
+      codexAutonomy(runningAutonomy).approvalPolicy === 'untrusted'
+    )
+      return;
+    // Thread settings cannot revoke a turn whose tools bypass host callbacks.
+    try {
+      const turnId = this.turnId ?? this.delegatedTurnId;
+      if (turnId === undefined || turnId === this.stoppedTurnId) return;
+      this.deliver([
+        this.mapper.statusEvent(
+          `Stopped the turn to apply ${latest}: Codex keeps a turn's permissions until it ends`,
+        ),
+      ]);
+      await Promise.all([this.interrupt(), this.voice.stop()]);
+      this.permissions.requireOpen();
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
   }
 
   setModel(settings: ProviderModelSettings): Promise<void> {
@@ -452,6 +501,7 @@ export class CodexSession implements ProviderSession {
   close(): Promise<void> {
     this.permissions.stop();
     this.resolveClosed();
+    this.releaseTurnStart();
     this.prompts.cancel();
     this.catalog?.close();
     return (this.closePromise ??= this.client.close());
@@ -485,6 +535,8 @@ export class CodexSession implements ProviderSession {
   // not settle the same turn twice.
   private setDelegatedTurn(turnId: string | undefined, end?: DelegatedTurnEnd): void {
     const was = this.delegatedTurnId !== undefined;
+    if (turnId !== this.delegatedTurnId)
+      this.delegatedTurnAutonomy = turnId ? this.permissions.inForce : undefined;
     this.delegatedTurnId = turnId;
     if (turnId && turnId !== this.interruptedTurnId) this.interruptedTurnId = undefined;
     const running = turnId !== undefined;
@@ -575,9 +627,11 @@ export class CodexSession implements ProviderSession {
     });
     this.client.onClose((error, cleanExit) => {
       this.catalog?.close();
+      this.releaseTurnStart();
       // Not announced: the close path owns what happens to the queue, and a
       // settlement here would start the next prompt on a client that is gone.
       this.delegatedTurnId = undefined;
+      this.delegatedTurnAutonomy = undefined;
       this.dropSteers();
       // A turn still in flight when the process goes away has failed, however
       // the process ended; an idle chat only records a death that was abnormal.
@@ -627,6 +681,7 @@ export class CodexSession implements ProviderSession {
   // response, whichever lands first; a Stop that beat both goes out now.
   private adoptTurn(turnId: string): void {
     this.turnId = turnId;
+    this.releaseTurnStart();
     if (!this.pendingInterrupt) return;
     this.pendingInterrupt = false;
     // Stopped before it had an id: its tool calls are refused from now on, as
@@ -640,8 +695,15 @@ export class CodexSession implements ProviderSession {
     });
   }
 
-  private sendInterrupt(turnId: string): Promise<unknown> {
-    return this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
+  private releaseTurnStart(): void {
+    this.resolveTurnStarted?.();
+    this.resolveTurnStarted = undefined;
+    this.turnStarted = undefined;
+  }
+
+  private async sendInterrupt(turnId: string): Promise<void> {
+    await this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
+    this.stoppedTurnId = turnId;
   }
 
   // The echo of a steered message is the moment the model took it in.
@@ -665,6 +727,8 @@ export class CodexSession implements ProviderSession {
     // this same batch that the turn it announces is Codex's own.
     this.turn = undefined;
     this.turnId = undefined;
+    this.turnAutonomy = undefined;
+    this.releaseTurnStart();
   }
 }
 

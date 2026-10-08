@@ -495,8 +495,8 @@ test('Codex closes the provider runtime when a refused downgrade cannot be conta
     };
     const session = codexSession(client, 'app-1');
     await session.open();
-    await session.setAutonomy('high');
     notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'spoken-1' } });
+    await session.setAutonomy('high');
     refuseOff = true;
     await assert.rejects(session.setAutonomy('off'), /revocation refused/);
     assert.equal(closes, 1);
@@ -507,5 +507,160 @@ test('Codex closes the provider runtime when a refused downgrade cannot be conta
     const next = session.stream('blocked');
     await assert.rejects(next.next());
     assert.equal(turns, 0);
+  }
+});
+
+test('Codex stops a downgrade only when the running turn bypasses approval callbacks', async () => {
+  for (const level of ['low', 'medium', 'high'] as const) {
+    let markStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const starts: Record<string, unknown>[] = [];
+    let interrupts = 0;
+    let refuseInterrupt = level === 'high';
+    const { client, notifications } = fakeClient((method, params) => {
+      if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+      if (method === 'turn/interrupt') {
+        if (refuseInterrupt) {
+          refuseInterrupt = false;
+          throw new Error('interrupt refused');
+        }
+        interrupts += 1;
+        notifications.get('turn/completed')?.({
+          threadId: 'thread-1',
+          turn: { id: 'turn-1', status: 'interrupted' },
+        });
+      }
+      if (method !== 'turn/start') return;
+      starts.push(params);
+      markStarted();
+      const id = `turn-${starts.length}`;
+      if (starts.length > 1)
+        notifications.get('turn/completed')?.({
+          threadId: 'thread-1',
+          turn: { id, status: 'completed' },
+        });
+      return { turn: { id } };
+    });
+    const session = codexSession(client, 'app-1');
+    await session.open();
+    await session.setAutonomy(level);
+    const rows: string[] = [];
+    const running = (async () => {
+      for await (const event of session.stream('work'))
+        if (event.transcript?.kind === 'status') rows.push(event.transcript.text ?? '');
+    })();
+    await started;
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
+    // A later thread escalation does not change the running turn's own policy.
+    if (level === 'low') await session.setAutonomy('high');
+    // A failed Stop denied callbacks but did not revoke native permissions.
+    if (level === 'high') await assert.rejects(session.interrupt(), /interrupt refused/);
+    await session.setAutonomy('off');
+    assert.equal(interrupts, level === 'low' ? 0 : 1);
+    assert.deepEqual(
+      rows,
+      level === 'low'
+        ? []
+        : ["Stopped the turn to apply off: Codex keeps a turn's permissions until it ends"],
+    );
+    if (level === 'low')
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+    await running;
+    for await (const event of session.stream('continue')) assert.equal(event.done, true);
+    assert.equal(starts.at(-1)?.approvalPolicy, 'untrusted');
+    assert.deepEqual(starts.at(-1)?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
+    await session.close();
+  }
+});
+
+test('Codex disarms a failed escalation before an ordinary turn', async () => {
+  let refuseHigh = true;
+  const policies: unknown[] = [];
+  let turnPolicy: unknown;
+  const { client, notifications } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method === 'thread/settings/update') {
+      policies.push(params.approvalPolicy);
+      if (refuseHigh && params.approvalPolicy === 'never') throw new Error('escalation refused');
+    }
+    if (method === 'turn/start') {
+      turnPolicy = params.approvalPolicy;
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+      return { turn: { id: 'turn-1' } };
+    }
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  await assert.rejects(session.setAutonomy('high'), /escalation refused/);
+  const writesAfterRefusal = policies.length;
+  refuseHigh = false;
+  for await (const event of session.stream('continue')) assert.equal(event.done, true);
+  assert.equal(turnPolicy, 'untrusted');
+  assert.equal(policies.length, writesAfterRefusal);
+  assert.equal(session.autonomy, 'low');
+  await session.close();
+});
+
+test('Codex contains a downgrade during turn start and closes if interruption fails', async () => {
+  for (const interruptFails of [false, true]) {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let markStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const policies: unknown[] = [];
+    let interrupts = 0;
+    let closes = 0;
+    const { client, notifications } = fakeClient(async (method, params) => {
+      if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+      if (method === 'thread/settings/update') policies.push(params.approvalPolicy);
+      if (method === 'turn/interrupt') {
+        interrupts += 1;
+        if (interruptFails) throw new Error('interrupt refused');
+      }
+      if (method === 'turn/start') {
+        markStarted();
+        await held;
+        return { turn: { id: 'turn-1' } };
+      }
+    });
+    client.close = async () => {
+      closes += 1;
+    };
+    const session = codexSession(client, 'app-1');
+    await session.open();
+    await session.setAutonomy('high');
+    policies.length = 0;
+    const stream = session.stream('work');
+    const first = stream.next();
+    const firstSettled = interruptFails ? assert.rejects(first, /closed/) : first;
+    await started;
+    const off = session.setAutonomy('off');
+    const settled = interruptFails ? assert.rejects(off, /closed/) : off;
+    assert.equal(session.autonomy, 'off');
+    assert.equal(policies.length, 0, 'revocation waits for the running turn to be contained');
+    notifications.get('turn/started')?.({ threadId: 'thread-1', turn: { id: 'turn-1' } });
+    await settled;
+    assert.equal(interrupts, 1);
+    assert.equal(closes, interruptFails ? 1 : 0);
+    assert.deepEqual(policies, interruptFails ? [] : ['untrusted']);
+    release();
+    await firstSettled;
+    if (!interruptFails)
+      assert.match((await first).value?.transcript?.text ?? '', /Stopped the turn to apply off/);
+    await stream.return(undefined);
+    if (interruptFails) await assert.rejects(session.stream('blocked').next(), /closed/);
+    await session.close();
   }
 });

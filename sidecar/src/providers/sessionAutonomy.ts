@@ -82,6 +82,9 @@ export class SessionAutonomy {
           this.requireOpen();
           this.confirmedAutonomy = confirmed;
           retryLevel = undefined;
+          // An obsolete grant can land after revocation; stop work before repairing it.
+          await this.interruptUnsafeRuntime();
+          this.requireOpen();
         } catch (error) {
           this.requireOpen();
           await this.interruptUnsafeRuntime(error);
@@ -89,9 +92,14 @@ export class SessionAutonomy {
           // A stale failure still owes the newest choice. Retry a current refusal
           // once; an unapplied revocation cannot leave the runtime alive.
           const hasRetried = retryLevel === this.latestAutonomy;
-          if (hasRetried && this.native.isUnsafe()) await this.retire();
-          if (hasRetried) throw error;
-          retryLevel = attempted === this.latestAutonomy ? attempted : undefined;
+          if (!hasRetried) {
+            retryLevel = attempted === this.latestAutonomy ? attempted : undefined;
+            continue;
+          }
+          // A refused escalation must not be retried by the next ordinary prompt.
+          if (this.native.isUnsafe()) await this.retire();
+          else this.latestAutonomy = this.confirmedAutonomy;
+          throw error;
         }
       }
     } finally {
@@ -99,13 +107,13 @@ export class SessionAutonomy {
     }
   }
 
-  private async interruptUnsafeRuntime(error: unknown): Promise<void> {
+  private async interruptUnsafeRuntime(error?: unknown): Promise<void> {
     if (!this.native.isUnsafe()) return;
     try {
       await this.native.interrupt();
-    } catch {
+    } catch (interruptError) {
       await this.retire();
-      throw error;
+      throw error ?? interruptError;
     }
   }
 
