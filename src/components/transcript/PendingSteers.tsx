@@ -77,9 +77,11 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
     const withdraw = async () => {
       // One take-back per steer at a time, so a double click cannot restore it twice.
       if (!beginSteerWithdrawal(steer.id)) return;
-      const { withdrawn } = await withdrawSteer(appSessionId, steer.id).catch(() => ({
-        withdrawn: false,
+      const result = await withdrawSteer(appSessionId, steer.id).catch(() => ({
+        withdrawn: false as const,
+        text: undefined,
       }));
+      const withdrawn = result.withdrawn;
       if (!withdrawn) {
         endSteerWithdrawal(steer.id);
         toast.info('The agent already has this message.');
@@ -91,7 +93,8 @@ export function PendingSteers({ appSessionId }: { appSessionId: string }) {
       endSteerWithdrawal(steer.id);
       dispatch({
         type: 'SEED_COMPOSER',
-        text: steer.text,
+        // The sidecar's text is the whole prompt; the listed one is shortened.
+        text: result.text ?? steer.text,
         appSessionId,
         focus: true,
         ...(prompt ? { prompt } : {}),

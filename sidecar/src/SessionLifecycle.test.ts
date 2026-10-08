@@ -826,32 +826,32 @@ test('withdrawal requires harness confirmation, including during Send now, and n
     await h.lifecycle.send(provider, 'queued', undefined, 'queued');
     assert.deepEqual(pending(), [{ id: 'queued', text: 'queued', canWithdraw: true }]);
     live.closeMode = 'preserve-pending';
-    assert.equal(await h.lifecycle.withdrawSteer(provider, 'queued'), true);
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'queued'), 'queued');
     assert.deepEqual(pending(), []);
     delete live.closeMode;
     live.compacting = false;
-    assert.equal(await h.lifecycle.withdrawSteer(provider, 'unknown'), false);
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'unknown'), undefined);
 
     const sending = h.lifecycle.send(provider, 'held', undefined, 'held');
     await handedOver.promise;
     assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: provider === 'claude' }]);
-    assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), false);
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), undefined);
     assert.equal(pending()?.length, 1);
     if (provider === 'claude') {
       confirmed = true;
-      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), true);
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), 'held');
       await sending;
     } else {
       const interrupt = backend.deferNextInterrupt();
       const stopping = h.lifecycle.sendNow(provider, 'held');
       assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: false }]);
-      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), false);
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), undefined);
       settleDelivery(false);
       await sending;
       interrupt.resolve();
       await stopping;
       assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: true }]);
-      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), true);
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), 'held');
     }
     assert.deepEqual(pending(), []);
     turn.resolve();

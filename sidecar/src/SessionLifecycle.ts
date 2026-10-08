@@ -772,25 +772,27 @@ export class SessionLifecycle {
     return true;
   }
 
-  async withdrawSteer(appSessionId: string, steerId: string): Promise<boolean> {
+  // Resolves to the prompt's full text once the model can no longer see it,
+  // so a window that no longer holds the draft can still give it back whole.
+  async withdrawSteer(appSessionId: string, steerId: string): Promise<string | undefined> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
-    if (!liveSession) return false;
+    if (!liveSession) return undefined;
     const prompt = [...liveSession.steers, ...liveSession.pendingSends].find(
       (pending) => pending.steerId === steerId,
     );
-    if (!prompt) return false;
+    if (!prompt) return undefined;
     if (!liveSession.steers.includes(prompt)) {
       removePrompt(liveSession.pendingSends, prompt);
       this.updateQueuedSends(liveSession);
-      return true;
+      return prompt.text;
     }
     const session = liveSession.session;
-    if (!session.withdrawSteer) return false;
+    if (!session.withdrawSteer) return undefined;
     const withdrawn = await session.withdrawSteer(steerId).catch(() => false);
     const current = this.dependencies.registry.getLive(appSessionId);
-    return (
-      current === liveSession && current.session === session && !current.closeMode && withdrawn
-    );
+    return current === liveSession && current.session === session && !current.closeMode && withdrawn
+      ? prompt.text
+      : undefined;
   }
 
   // Stops the running turn so this steer runs next. The interrupt drops every

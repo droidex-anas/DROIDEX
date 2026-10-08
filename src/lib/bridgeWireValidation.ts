@@ -219,7 +219,8 @@ export function isServerEvent(value: unknown): value is ServerEvent {
     case 'session.steerWithdrawn':
       return (
         hasStrings(value, ['appSessionId', 'steerId', 'requestId']) &&
-        typeof value.withdrawn === 'boolean'
+        typeof value.withdrawn === 'boolean' &&
+        (value.text === undefined || typeof value.text === 'string')
       );
     case 'session.model_update_applied':
       return hasStrings(value, ['appSessionId', 'requestId']);

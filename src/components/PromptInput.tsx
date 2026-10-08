@@ -1908,16 +1908,9 @@ export default function PromptInput({
 
   // The seed effect above runs before this declaration in source order, so it
   // reaches the restore through a ref.
-  restoreRef.current = (prompt) => {
-    const draft =
-      input.trim() ||
-      attachedFiles.length > 0 ||
-      activeSkills.length > 0 ||
-      imageAttachments.images.length > 0 ||
-      fileAttachments.files.length > 0;
-    if (draft) appendPromptToComposer(prompt);
-    else restorePromptToComposer(prompt);
-  };
+  // A taken-back steer only ever adds to the draft: whatever the composer
+  // holds (text, chips, marks, attachments still encoding) stays.
+  restoreRef.current = appendPromptToComposer;
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)

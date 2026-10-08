@@ -208,17 +208,21 @@ export const sendSteerNow = (appSessionId: string, steerId: string) => {
   bridge.send({ type: 'session.sendNow', appSessionId, steerId });
 };
 
+// Waits for the sidecar's definitive answer: a late "taken back" must still
+// reach the chat, or the steer would vanish without coming back. Only losing
+// the connection, which also loses that answer, ends the wait early.
 export const withdrawSteer = (
   appSessionId: string,
   steerId: string,
-): Promise<{ withdrawn: boolean }> => {
+): Promise<{ withdrawn: boolean; text?: string }> => {
   const requestId = newClientRef();
   return new Promise((resolve, reject) => {
-    const timeout = globalThis.setTimeout(() => {
-      unsubscribe();
-      reject(new Error('Timed out while withdrawing the steer.'));
-    }, 10_000);
     const unsubscribe = bridge.subscribe((event) => {
+      if (event.type === 'connection' && event.status !== 'connected') {
+        unsubscribe();
+        resolve({ withdrawn: false });
+        return;
+      }
       if (
         event.type !== 'session.steerWithdrawn' ||
         event.requestId !== requestId ||
@@ -226,14 +230,15 @@ export const withdrawSteer = (
         event.steerId !== steerId
       )
         return;
-      globalThis.clearTimeout(timeout);
       unsubscribe();
-      resolve({ withdrawn: event.withdrawn });
+      resolve({
+        withdrawn: event.withdrawn,
+        ...(event.text !== undefined ? { text: event.text } : {}),
+      });
     });
     if (
       !bridge.sendIfConnected({ type: 'session.withdrawSteer', appSessionId, steerId, requestId })
     ) {
-      globalThis.clearTimeout(timeout);
       unsubscribe();
       reject(new Error('Reconnect to DROIDEX before withdrawing a steer.'));
     }
