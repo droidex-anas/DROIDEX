@@ -39,7 +39,7 @@ interface ChatLeases {
 
 export class CanvasTurns {
   private readonly chats = new Map<string, ChatLeases>();
-  // Keep issued identities, without payloads, to distinguish revocation from invention.
+  // Keep live chats' issued identities to distinguish turn revocation from invention.
   private readonly scopeOwners = new Map<string, string>();
   // Provider eras stay ordered across closed chats.
   private nextGeneration = 1;
@@ -89,6 +89,9 @@ export class CanvasTurns {
     if (!chat) return;
     for (const lease of chat.live) this.scopes.revoke(lease.scopeId);
     chat.live = [];
+    for (const [scopeId, owner] of this.scopeOwners) {
+      if (owner === appSessionId) this.scopeOwners.delete(scopeId);
+    }
     this.chats.delete(appSessionId);
   }
 

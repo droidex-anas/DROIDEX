@@ -113,9 +113,13 @@ test('a steer leases its own references beside the running turn, never over them
 
 test('a settled turn revokes once, and never a later turn or a replacement', () => {
   const { turns } = turnsFor('cv_01');
+  turns.beginTurn('app-2', context('dsg_other'));
+  const other = lease(turns, 'app-2');
   const first = turns.beginTurn('app-1', context('dsg_hey'));
+  const settled = lease(turns, 'app-1');
   first.revoke();
   first.revoke();
+  assert.throws(() => turns.requireScope(settled.scopeId), { code: 'scope_expired' });
 
   // The next turn's lease is its own; the settled turn's handle cannot reach it.
   const second = turns.beginTurn('app-1', context('dsg_hey'));
@@ -127,6 +131,9 @@ test('a settled turn revokes once, and never a later turn or a replacement', () 
   // and the stale settlement arriving afterwards touches nothing.
   turns.endSession('app-1');
   assert.equal(turns.activeScope('app-1'), undefined);
+  for (const scope of [settled, running])
+    assert.throws(() => turns.requireScope(scope.scopeId), { code: 'invalid_input' });
+  assert.equal(turns.requireScope(other.scopeId), other);
   const replacement = turns.beginTurn('app-1', context('dsg_hey'));
   const minted = lease(turns, 'app-1');
   second.addSteer(context('dsg_late'));

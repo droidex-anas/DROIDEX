@@ -584,7 +584,7 @@ test('shutdown revokes turn scopes before held session-file reconciliation settl
     await reached.promise;
     const closing = h.shutdown();
     try {
-      assert.throws(() => turns.requireScope(scope.scopeId), { code: 'scope_expired' });
+      assert.throws(() => turns.requireScope(scope.scopeId), { code: 'invalid_input' });
     } finally {
       reconcile.resolve();
       stream.resolve();
