@@ -1,4 +1,5 @@
 import { bridge } from './bridge';
+import { getRuntimeHealth, subscribeRuntimeHealth } from './runtimeHealth';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   Autonomy,
@@ -206,6 +207,49 @@ export const repairApp = (appSessionId: string, error: string, source: string) =
 export const sendSteerNow = (appSessionId: string, steerId: string) => {
   requireAgentWorkAvailable();
   bridge.send({ type: 'session.sendNow', appSessionId, steerId });
+};
+
+// Waits for the sidecar's definitive answer: a late "taken back" must still
+// reach the chat, or the steer would vanish without coming back. Only losing
+// the connection, which also loses that answer, ends the wait early.
+export const withdrawSteer = (
+  appSessionId: string,
+  steerId: string,
+): Promise<{ withdrawn: boolean; lost?: true; text?: string; mentions?: ProviderMention[] }> => {
+  const requestId = newClientRef();
+  return new Promise((resolve) => {
+    let stopWatchingHealth: () => void = () => undefined;
+    const stopListening = bridge.subscribe((event) => {
+      if (
+        event.type !== 'session.steerWithdrawn' ||
+        event.requestId !== requestId ||
+        event.appSessionId !== appSessionId ||
+        event.steerId !== steerId
+      )
+        return;
+      stopWatchingHealth();
+      stopListening();
+      resolve({
+        withdrawn: event.withdrawn,
+        ...(event.text !== undefined ? { text: event.text } : {}),
+        ...(event.mentions ? { mentions: event.mentions } : {}),
+      });
+    });
+    // A lost answer must be requested again once the bridge reconnects.
+    stopWatchingHealth = subscribeRuntimeHealth(() => {
+      if (getRuntimeHealth().transport === 'connected') return;
+      stopWatchingHealth();
+      stopListening();
+      resolve({ withdrawn: false, lost: true });
+    });
+    if (
+      !bridge.sendIfConnected({ type: 'session.withdrawSteer', appSessionId, steerId, requestId })
+    ) {
+      stopWatchingHealth();
+      stopListening();
+      resolve({ withdrawn: false, lost: true });
+    }
+  });
 };
 
 export const sendToChild = (
