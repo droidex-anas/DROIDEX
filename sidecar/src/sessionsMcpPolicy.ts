@@ -5,8 +5,17 @@ export const SESSIONS_MCP_SERVER_NAME = 'droidex-sessions';
 
 const TOOL_TITLES = new Map([
   ['thread_spawn', 'Start a DROIDEX chat'],
+  ['thread_answer', 'Answer a DROIDEX thread'],
+  ['thread_approve', 'Decide a DROIDEX thread approval'],
+  ['project_guide', 'Read the DROIDEX project guide'],
+  ['project_read', 'Read the DROIDEX project'],
+  ['project_pause', 'Hold the DROIDEX project'],
+  ['project_resume', 'Resume the DROIDEX project'],
   ['thread_send', 'Message a DROIDEX thread'],
   ['thread_read', 'Read a DROIDEX thread'],
+  ['thread_list', 'List DROIDEX threads'],
+  ['todo_add', 'Add a DROIDEX project follow-up'],
+  ['todo_done', 'Finish a DROIDEX project follow-up'],
   ['thread_configure', 'Adjust a DROIDEX thread'],
   ['thread_stop', 'Stop a DROIDEX thread'],
   ['plan_set', 'Update the DROIDEX project plan'],
@@ -26,8 +35,17 @@ const TOOL_TITLES = new Map([
 // stopping or moving a chat the user follows acts on their work, so those ask
 // unless this chat runs at High.
 const ALWAYS_ALLOWED = new Set([
+  'thread_answer',
+  'thread_approve',
+  'project_guide',
+  'project_read',
+  'project_pause',
+  'project_resume',
   'thread_send',
   'thread_read',
+  'thread_list',
+  'todo_add',
+  'todo_done',
   'thread_configure',
   'thread_stop',
   'plan_set',
@@ -36,8 +54,42 @@ const ALWAYS_ALLOWED = new Set([
   'session_read',
 ]);
 
-export function sessionsToolDisplayTitle(serverName: string, toolName: string): string | null {
-  return TOOL_TITLES.get(sessionsTool(serverName, toolName)) ?? null;
+/** Human approval text for DROIDEX tools; task context stays out of the card. */
+export function sessionsToolDisplay(
+  serverName: string,
+  toolName: string,
+  input: Record<string, unknown>,
+): { title: string; detail: string } | null {
+  const name = sessionsTool(serverName, toolName);
+  const title = TOOL_TITLES.get(name);
+  if (!title) return null;
+  const firstLine = (key: string) =>
+    typeof input[key] === 'string' ? input[key].trim().split(/\r?\n/, 1)[0].slice(0, 200) : '';
+  if (name === 'thread_spawn') {
+    const kind = input.reportBack === false ? 'chat' : 'thread';
+    const task = firstLine('title');
+    return {
+      title: task ? `Start ${kind} "${task}"` : `Start a DROIDEX ${kind}`,
+      detail: firstLine('prompt'),
+    };
+  }
+  if (name === 'plan_set') {
+    const count = Array.isArray(input.steps) ? input.steps.length : 0;
+    return {
+      title,
+      detail: [firstLine('title'), `${String(count)} ${count === 1 ? 'step' : 'steps'}`]
+        .filter(Boolean)
+        .join(' · '),
+    };
+  }
+  const detail =
+    firstLine('text') ||
+    firstLine('outcome') ||
+    firstLine('note') ||
+    firstLine('threadId') ||
+    firstLine('sessionId') ||
+    firstLine('id');
+  return { title, detail };
 }
 
 export function shouldAutoApproveSessionsTool(

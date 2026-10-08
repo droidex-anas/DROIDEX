@@ -27,6 +27,7 @@ import type {
   DelegatedTurnEnd,
   ProviderModelSettings,
   ProviderSession,
+  SteerOutcome,
   UsageMetersListener,
 } from '../session.js';
 import { ClaudeCatalog } from './claudeCatalog.js';
@@ -45,8 +46,6 @@ import { ClaudePermissionModes } from './claudePermissionModes.js';
 import { ClaudeUsage } from './claudeRateLimits.js';
 
 export interface ClaudeSessionInput {
-  // Claude pins the session id it is given, so DROIDEX's own identity is also
-  // the provider's: there is no separate resume handle.
   appSessionId: string;
   executable: string;
   cwd: string;
@@ -63,7 +62,7 @@ export interface ClaudeSessionInput {
   mcpServers: Record<string, McpServerConfig>;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
-  resume?: boolean;
+  resumeId?: string;
   onUsage?: UsageMetersListener;
 }
 
@@ -105,8 +104,8 @@ export class ClaudeSession implements ProviderSession {
   private readonly steerDeliveries = new Map<
     string,
     {
-      resolve: (outcome: boolean | 'withdrawn') => void;
-      outcome?: boolean | 'withdrawn';
+      resolve: (outcome: SteerOutcome) => void;
+      outcome?: SteerOutcome;
       withdrawalRequested?: true;
       cancellation?: Promise<boolean>;
     }
@@ -122,7 +121,7 @@ export class ClaudeSession implements ProviderSession {
   >();
 
   constructor(private readonly input: ClaudeSessionInput) {
-    this.providerSessionId = input.appSessionId;
+    this.providerSessionId = input.resumeId ?? input.appSessionId;
     this.fastMode = input.fastMode ?? false;
     this.permissions = new ClaudePermissionModes(
       input.autonomy,
@@ -361,9 +360,9 @@ export class ClaudeSession implements ProviderSession {
     text: string,
     _mentions: ProviderMention[] | undefined,
     uuid: string,
-  ): Promise<boolean | 'withdrawn'> {
+  ): Promise<SteerOutcome> {
     if (!this.steerable || this.isClosed || isSlashCommand(text)) return Promise.resolve(false);
-    const delivery = new Promise<boolean | 'withdrawn'>((resolve) => {
+    const delivery = new Promise<SteerOutcome>((resolve) => {
       this.steerDeliveries.set(uuid, { resolve });
     });
     this.prompts.push({
@@ -377,7 +376,7 @@ export class ClaudeSession implements ProviderSession {
     return delivery;
   }
 
-  private settleSteer(uuid: string, outcome: boolean | 'withdrawn'): void {
+  private settleSteer(uuid: string, outcome: SteerOutcome): void {
     const pending = this.steerDeliveries.get(uuid);
     if (!pending) return;
     this.steerDeliveries.delete(uuid);
@@ -422,7 +421,7 @@ export class ClaudeSession implements ProviderSession {
     const cancelled = await pending.cancellation;
     delete pending.cancellation;
     if (cancelled) this.settleCancelledSteer(uuid);
-    else this.settleSteer(uuid, true);
+    else this.settleSteer(uuid, 'unconfirmed');
   }
 
   private requireTurnCanStart(): void {

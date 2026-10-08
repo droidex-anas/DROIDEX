@@ -1087,7 +1087,7 @@ function parseTranscriptCursor(
 export function loadSessionTranscriptWindow(
   appSessionId: string,
   chainProviderSessionIds: string[],
-  opts: { cursor?: string; limit?: number; role?: SessionRole } = {},
+  opts: { cursor?: string; limit?: number; role?: SessionRole; fullText?: boolean } = {},
 ): { events: TranscriptEvent[]; olderCursor?: string } {
   const limit = Math.max(1, opts.limit ?? DEFAULT_HISTORY_WINDOW);
   const role = opts.role ?? 'primary';
@@ -1107,7 +1107,10 @@ export function loadSessionTranscriptWindow(
   const picked: TranscriptEvent[] = [];
   let olderCursor: string | undefined;
   for (let ci = startIdx; ci >= 0; ci--) {
-    const reader = transcriptReaderFor(appSessionId, chain[ci], sessionIndex.get(chain[ci])!, role);
+    const path = sessionIndex.get(chain[ci])!;
+    const reader = opts.fullText
+      ? new SessionTranscriptReader(appSessionId, chain[ci], path, role, true)
+      : transcriptReaderFor(appSessionId, chain[ci], path, role);
     // Chain-derived monotonic order: older segments (lower ci) and earlier
     // in-segment positions sort first, independent of wall-clock ts.
     const window = reader.windowBackward(
@@ -1137,12 +1140,13 @@ export function loadOpenTranscriptTail(
   appSessionId: string,
   path: string,
   limit: number,
+  fullText = false,
 ): TranscriptEvent[] {
   if (!existsSync(path)) return [];
-  return transcriptReaderFor(appSessionId, appSessionId, path, 'primary').windowBackward(
-    Math.max(1, limit),
-    0,
-  ).events;
+  const reader = fullText
+    ? new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary', true)
+    : transcriptReaderFor(appSessionId, appSessionId, path, 'primary');
+  return reader.windowBackward(Math.max(1, limit), 0).events;
 }
 
 export function readFactoryDefaults(): FactoryDefaults {

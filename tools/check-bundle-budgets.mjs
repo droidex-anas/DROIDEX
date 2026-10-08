@@ -142,6 +142,11 @@ import { join } from 'node:path';
 // main at 1b21548c (102_602) measures 103_872 with them, leaving ~1.1KB. The
 // entry JS stays ~1.3KB under main's.
 //
+// initialCssBytes raised from 105_000 to 106_000 for the Threads panel: its
+// inline approvals and questions and the virtualized thread list add 171 bytes
+// of utility classes. Main at f8948cd9 measures 104_889, with them 105_060,
+// leaving ~0.9KB.
+//
 // Raised from 1_459_000 to 1_468_000 for steers and side chats. A pending
 // steer paints as the user's bubble with its relative time and take-back
 // button (~4.5KB), and a collapsed sidebar keeps the side chat's restore pill
@@ -150,7 +155,7 @@ import { join } from 'node:path';
 // the two together leave ~3.2KB of headroom.
 const BUDGETS = {
   initialRendererJsBytes: 1_468_000,
-  initialCssBytes: 105_000,
+  initialCssBytes: 106_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

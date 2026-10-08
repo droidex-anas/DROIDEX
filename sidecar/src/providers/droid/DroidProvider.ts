@@ -28,6 +28,7 @@ export class DroidProvider implements Provider {
   ) {}
 
   async create({
+    appSessionId,
     cwd,
     interactionMode,
     autonomy,
@@ -37,12 +38,12 @@ export class DroidProvider implements Provider {
     interactions,
     droidLaunch,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // A created session mints the identity DROIDEX adopts as its own, and the
-    // daemon can ask for permission before it is known, so the handlers read it
-    // lazily from this holder.
+    // Ordinary chats adopt Droid's id; queued threads bring their own. The daemon
+    // can ask for permission before the session exists, so the handlers read its
+    // autonomy lazily from this holder.
     let providerSession: DroidProviderSession | undefined = undefined;
     const ref = {
-      id: '',
+      id: appSessionId ?? '',
       get autonomy(): Autonomy {
         return providerSession?.autonomy ?? autonomy;
       },
@@ -57,9 +58,9 @@ export class DroidProvider implements Provider {
       ...droidLaunch,
       ...droidInteractionHandlers(ref, interactions),
     });
-    ref.id = session.sessionId;
+    ref.id = appSessionId ?? session.sessionId;
     this.onAvailableModels(session.initResult.availableModels ?? []);
-    providerSession = new DroidProviderSession(session.sessionId, session, this.runtime, autonomy);
+    providerSession = new DroidProviderSession(ref.id, session, this.runtime, autonomy);
     return providerSession;
   }
 
