@@ -825,6 +825,12 @@ export class SessionManager {
         this.timeline.readTranscript(appSessionId) ?? readProviderTranscript(appSessionId),
       updateModel: (appSessionId, settings) =>
         this.modelSettings.update(appSessionId, 'primary', settings),
+      beginForkOpen: (appSessionId) => {
+        this.lifecycle.beginForkOpen(appSessionId);
+      },
+      endForkOpen: (appSessionId) => {
+        this.lifecycle.endForkOpen(appSessionId);
+      },
       isCloseRequested: (appSessionId) => this.lifecycle.isCloseRequested(appSessionId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       create: (command, branch) => this.lifecycle.create(command, branch),

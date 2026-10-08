@@ -142,6 +142,7 @@ function harness(
   const errors: { code: string; clientRef?: string; message: string }[] = [];
   const order: string[] = [];
   const created: { command: SessionCreateCommand; branch: SessionBranch }[] = [];
+  const forkOpens = new Set<string>();
 
   const forks = new SessionForks({
     provider: () =>
@@ -206,7 +207,14 @@ function harness(
         });
       return options.updateModel?.(appSessionId, settings) ?? Promise.resolve(true);
     },
-    isCloseRequested: (appSessionId) => options.isCloseRequested?.(appSessionId) ?? false,
+    beginForkOpen: (appSessionId) => {
+      forkOpens.add(appSessionId);
+    },
+    endForkOpen: (appSessionId) => {
+      forkOpens.delete(appSessionId);
+    },
+    isCloseRequested: (appSessionId) =>
+      forkOpens.has(appSessionId) && (options.isCloseRequested?.(appSessionId) ?? false),
     isShutdownStarted: () => false,
     create: (command, branch) => {
       created.push({ command, branch });

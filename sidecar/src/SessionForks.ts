@@ -37,6 +37,8 @@ export interface SessionForksDependencies {
   readTranscript: (appSessionId: string) => Promise<string>;
   // The settings owner's model change: it reaches the provider as well as the stored row.
   updateModel: (appSessionId: string, settings: ProviderModelSettings) => Promise<boolean>;
+  beginForkOpen: (appSessionId: string) => void;
+  endForkOpen: (appSessionId: string) => void;
   isCloseRequested: (appSessionId: string) => boolean;
   isShutdownStarted: () => boolean;
   create: (command: SessionCreateCommand, branch: SessionBranch) => Promise<void>;
@@ -91,6 +93,7 @@ export class SessionForks {
       if (request)
         await this.d.send(copy.providerSessionId, firstMessage(command.lineage, request));
     } finally {
+      this.d.endForkOpen(copy.providerSessionId);
       // Resume owns a transferred client; failed or unopened copies release it.
       await copy.release?.();
     }
@@ -154,6 +157,7 @@ export class SessionForks {
       ...(command.forkPointId ? { forkPointId: command.forkPointId } : {}),
     });
     try {
+      this.d.beginForkOpen(handle.providerSessionId);
       // Droid writes its copy where its own sessions live. Every other provider's
       // scrollback is DROIDEX's transcript file, which is copied beside it.
       let transcript = null;
@@ -189,6 +193,7 @@ export class SessionForks {
       this.d.emit({ type: 'session.forked', clientRef: command.clientRef, session });
       return handle;
     } catch (error) {
+      this.d.endForkOpen(handle.providerSessionId);
       await handle.release?.();
       throw error;
     }
