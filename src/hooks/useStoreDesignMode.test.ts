@@ -21,6 +21,7 @@ function send(state: AppState, clientRef: string): AppState {
     skills: [],
     files: [],
     originHoldId: `hold-${clientRef}`,
+    canvas: state.canvasDraft ?? undefined,
   });
 }
 
@@ -76,20 +77,20 @@ test('Chat stays on a draft when Design was entered from one', () => {
   assert.equal(back.canvasDraft, null);
 });
 
-test('a Design home prompt asks for a new canvas and hands it the chat it created', () => {
+test('a Design home send consumes its intent and opens the pane for its own created chat', () => {
   const home = designHome(reducer(initialState, { type: 'SET_PRODUCT_MODE', mode: 'design' }));
   assert.deepEqual(home.canvasDraft, { canvasId: null });
 
   const sent = send(home, 'ref-design');
-  // The obligation belongs to this create request, and the draft is discharged.
+  // The pane request belongs to this create, and the draft is consumed.
   assert.deepEqual(sent.canvasChatRequests, {
-    'ref-design': { appSessionId: null, canvasId: null },
+    'ref-design': { appSessionId: null },
   });
   assert.equal(sent.canvasDraft, null);
 
   const chatExists = created(sent, 'ref-design', 'session-design');
   assert.deepEqual(chatExists.canvasChatRequests, {
-    'ref-design': { appSessionId: 'session-design', canvasId: null },
+    'ref-design': { appSessionId: 'session-design' },
   });
 
   const settled = reducer(chatExists, {
@@ -113,7 +114,35 @@ test('an unrelated create cannot consume a design draft its prompt never started
   assert.deepEqual(landed.canvasDraft, { canvasId: null });
 });
 
-test('overlapping design drafts keep their own canvas, whichever reply lands first', () => {
+test('a send preparing in the background consumes only its captured draft and leaves the next alone', () => {
+  const first = reducer(initialState, {
+    type: 'START_CHAT',
+    cwd: '',
+    executionMode: 'local',
+    canvas: { canvasId: 'canvas-a' },
+  });
+  const next = reducer(first, {
+    type: 'START_CHAT',
+    cwd: '',
+    executionMode: 'local',
+    canvas: { canvasId: 'canvas-b' },
+  });
+  const submitted = reducer(next, {
+    type: 'SET_PENDING_COMPOSE',
+    clientRef: 'ref-a',
+    text: 'First design',
+    skills: [],
+    files: [],
+    originHoldId: null,
+    canvas: first.canvasDraft ?? undefined,
+  });
+  assert.deepEqual(submitted.canvasChatRequests, {
+    'ref-a': { appSessionId: null },
+  });
+  assert.equal(submitted.canvasDraft, next.canvasDraft);
+});
+
+test('overlapping Design sends open panes for their own chats, whichever reply lands first', () => {
   const first = send(
     reducer(initialState, {
       type: 'START_CHAT',
@@ -136,14 +165,14 @@ test('overlapping design drafts keep their own canvas, whichever reply lands fir
   const afterA = created(second, 'ref-a', 'chat-a');
   const afterB = created(afterA, 'ref-b', 'chat-b');
   assert.deepEqual(afterB.canvasChatRequests, {
-    'ref-a': { appSessionId: 'chat-a', canvasId: 'canvas-a' },
-    'ref-b': { appSessionId: 'chat-b', canvasId: 'canvas-b' },
+    'ref-a': { appSessionId: 'chat-a' },
+    'ref-b': { appSessionId: 'chat-b' },
   });
 
-  // Each obligation is discharged by its own chat.
+  // Each pane request is settled by its own chat.
   const settledA = reducer(afterB, { type: 'CANVAS_CHAT_SETTLED', appSessionId: 'chat-a' });
   assert.deepEqual(settledA.canvasChatRequests, {
-    'ref-b': { appSessionId: 'chat-b', canvasId: 'canvas-b' },
+    'ref-b': { appSessionId: 'chat-b' },
   });
 });
 
@@ -159,7 +188,6 @@ test('a submitted canvas request survives navigation and the next draft', () => 
   const landed = created(nextDraft, 'ref-design', 'session-design');
   assert.deepEqual(landed.canvasChatRequests['ref-design'], {
     appSessionId: 'session-design',
-    canvasId: null,
   });
 });
 
@@ -180,7 +208,7 @@ test('a create that never produced a chat takes its canvas request with it', () 
   assert.deepEqual(failed.canvasChatRequests, {});
 });
 
-test('new chat with this canvas attaches the same canvas; an ordinary new chat attaches none', () => {
+test('new chat with this canvas requests its pane; an ordinary new chat requests none', () => {
   const withCanvas = sendDraft(
     reducer(initialState, {
       type: 'START_CHAT',
@@ -193,7 +221,6 @@ test('new chat with this canvas attaches the same canvas; an ordinary new chat a
   );
   assert.deepEqual(withCanvas.canvasChatRequests['ref-second'], {
     appSessionId: 'session-second',
-    canvasId: 'canvas-shared',
   });
 
   const ordinary = sendDraft(
@@ -218,7 +245,7 @@ test('leaving an unsent design draft drops its canvas intent', () => {
   );
 });
 
-test('a deleted chat cannot leave an attachment waiting for it', () => {
+test('a deleted chat cannot leave a pane request waiting for it', () => {
   const sent = sendDraft(
     reducer(initialState, {
       type: 'START_CHAT',

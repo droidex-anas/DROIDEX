@@ -1,3 +1,4 @@
+import { canvasIntentForDraft } from '../features/canvas/canvasChatIntent';
 import {
   Suspense,
   lazy,
@@ -300,6 +301,7 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      canvasDraft: current.canvasDraft,
       draftContextWindowTokens: current.draftContextWindowTokens,
       draftFastMode: current.draftFastMode,
       draftProvider: current.draftProvider,
@@ -1384,7 +1386,7 @@ export default function PromptInput({
       ),
       sideChatReplies,
     );
-    const registerPending = (ref: string) => {
+    const registerPending = (ref: string, canvas?: { canvasId: string | null }) => {
       if (turnStartingClientRef.current === ref) {
         turnStartingPendingRegisteredRef.current = true;
       }
@@ -1395,6 +1397,7 @@ export default function PromptInput({
         skills: skillNames,
         files: allFiles,
         originHoldId,
+        canvas,
       });
     };
 
@@ -1486,7 +1489,7 @@ export default function PromptInput({
         releaseProjectStart(clientRef);
         return;
       }
-      registerPending(clientRef);
+      registerPending(clientRef, state.canvasDraft ?? undefined);
       // Whether this send empties the composer: an edit made while it was
       // preparing is kept, and a failure must not replace it.
       const clearsDraft = composerRevisionRef.current === composerRevision;
@@ -1527,6 +1530,7 @@ export default function PromptInput({
           cwd: dir,
           title,
           goal: composed,
+          canvas: canvasIntentForDraft(state.canvasDraft, displayText, clientRef),
           ...(mentions.length > 0 ? { mentions } : {}),
           sessionPurpose: 'chat',
           provider: draftProvider,
@@ -1956,6 +1960,7 @@ export default function PromptInput({
         skills: [],
         files: [],
         originHoldId,
+        canvas: state.canvasDraft ?? undefined,
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
@@ -1981,6 +1986,7 @@ export default function PromptInput({
         cwd: preparation.path,
         title: placeholder,
         goal: '',
+        canvas: canvasIntentForDraft(state.canvasDraft, '', clientRef),
         sessionPurpose: 'chat',
         provider: draftProvider,
         interactionMode: isSpecMode ? 'spec' : 'auto',

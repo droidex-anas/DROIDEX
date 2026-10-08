@@ -204,7 +204,13 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
-  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
+  beforeFirstTurn?:
+    | ((
+        session: SessionSummary,
+        clientRef: string,
+        canvas?: Extract<ClientCommand, { type: 'session.create' }>['canvas'],
+      ) => Promise<void>)
+    | undefined;
   // The Canvas lease owner turns mint into. The sidecar entry passes the one the
   // Canvas workspace checks; a harness that opens no workspace gets its own, so
   // turns still mint and revoke exactly as they do in production.

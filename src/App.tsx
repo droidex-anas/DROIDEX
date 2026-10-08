@@ -300,10 +300,9 @@ export default function App() {
   // the row and leaves the chat behind it inert.
   const canvasExpanded = paneExpanded && activeUtilityTab?.tool === 'canvas';
   const chatObscured = paneExpanded && !canvasExpanded;
-  // Only a request whose create has replied has a chat to attach.
+  // Only a request whose create has replied has a canvas pane to open.
   const canvasRequests = Object.entries(state.canvasChatRequests).filter(
-    (entry): entry is [string, { appSessionId: string; canvasId: string | null }] =>
-      entry[1].appSessionId !== null,
+    (entry): entry is [string, { appSessionId: string }] => entry[1].appSessionId !== null,
   );
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
@@ -1236,15 +1235,12 @@ export default function App() {
         <LazySpecWikiModal />
       </Suspense>
       {/* Each design draft whose chat now exists: the canvas it was started
-          for is committed and the board opens beside it (spec §4). Two drafts
+          for is already committed and the board opens beside it (spec §4). Two drafts
           sent in a row each keep their own canvas. */}
       {!embedded &&
         canvasRequests.map(([clientRef, request]) => (
           <Suspense key={clientRef} fallback={null}>
-            <LazyCanvasChatBootstrap
-              appSessionId={request.appSessionId}
-              canvasId={request.canvasId}
-            />
+            <LazyCanvasChatBootstrap appSessionId={request.appSessionId} />
           </Suspense>
         ))}
       {/* Watches project threads for a block that needs the user. Nothing to

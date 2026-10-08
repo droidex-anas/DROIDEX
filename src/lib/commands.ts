@@ -42,6 +42,7 @@ export const connect = (apiKey: string) => {
 
 export const createSession = (input: {
   clientRef: string;
+  canvas?: { canvasId: string | null; name?: string; mutationId: string };
   cwd?: string;
   title: string;
   goal: string;
