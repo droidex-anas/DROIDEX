@@ -374,9 +374,10 @@ export class ProjectWakeQueue {
         if (thread?.replyId === message.replyId) delete thread.unread;
       }
     };
-    // Withdraw questions their threads stopped asking before the owner woke.
+    // Withdraw owner updates that are no longer needed before delivery or retry.
     const relevant = (message: ThreadMessage) =>
       isAsked(project, message) &&
+      (!steering || message.kind !== 'message' || isOwnerUpdate(project, message)) &&
       (message.kind !== 'approval' ||
         this.sessions.pendingApproval(message.from, message.approvalId)?.requestId ===
           message.approvalId);

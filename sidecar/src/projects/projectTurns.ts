@@ -4,6 +4,7 @@ import { failureReport, questionText } from './projectMessages.js';
 import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
 import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
+import { inboxFull } from './projectInbox.js';
 import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
 
 export type ThreadState =
@@ -188,16 +189,22 @@ export class ProjectTurns {
     }));
     if (!questions.length) return;
     const ask = { requestId: question.requestId, questions };
+    // A full inbox leaves this question unnotified for the existing refill path.
+    thread.ask = ask;
+    thread.waiting = true;
     try {
       // The id travels with the question, so an answer written for it can
       // never settle a later question the thread asks instead.
-      this.d.enqueue(project, {
-        from: thread.appSessionId,
-        to: thread.ownerAppSessionId,
-        kind: 'question',
-        text: questionText(ask),
-        questionId: question.requestId,
-      });
+      if (!inboxFull(project)) {
+        this.d.enqueue(project, {
+          from: thread.appSessionId,
+          to: thread.ownerAppSessionId,
+          kind: 'question',
+          text: questionText(ask),
+          questionId: question.requestId,
+        });
+        thread.ask.notified = true;
+      }
     } catch (error) {
       // Holding a project is a decision the ledger has to carry: without this
       // the hold and its reason live only in memory until something else saves.
@@ -205,8 +212,6 @@ export class ProjectTurns {
       await this.d.save();
       return;
     }
-    thread.ask = { ...ask, notified: true };
-    thread.waiting = true;
     await this.d.save();
     this.d.wakes.kick(project);
   }

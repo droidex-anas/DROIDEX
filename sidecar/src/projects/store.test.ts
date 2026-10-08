@@ -93,6 +93,128 @@ for (const kind of ['question', 'approval'] as const) {
   });
 }
 
+test('refusal drops a completed reminder but retains the rest of its batch at either inbox capacity', async (t) => {
+  for (const full of [true, false]) {
+    const saved = wakeProject();
+    saved.threads[1].reply = 'first';
+    saved.threads[1].replyId = 'reply';
+    saved.pending[0].replyId = 'reply';
+    saved.threads.push({
+      appSessionId: 'backlog',
+      ownerAppSessionId: 'main',
+      title: 'Backlog',
+      reply: '',
+      waiting: false,
+    });
+    saved.todos = [{ id: 'reminder', text: 'Completed reminder', due: true, notified: true }];
+    saved.pending.push({
+      id: 'reminder',
+      from: 'main',
+      to: 'main',
+      kind: 'message',
+      text: 'Completed reminder',
+    });
+    const h = await harness(t, [saved], false);
+    h.sessions.set('main', summary('main'));
+    h.sessions.set('worker', summary('worker'));
+    h.sessions.set('backlog', summary('backlog'));
+    await h.streaming('main', true);
+    await h.streaming('backlog', true);
+    let delivery: SteeredReportDelivery | undefined;
+    const steer = h.port.steer;
+    h.port.steer = async (_target, prompt, _current, _now, callbacks) => {
+      assert.match(prompt, /first/);
+      assert.match(prompt, /Completed reminder/);
+      delivery = callbacks;
+      callbacks?.accepted();
+      return true;
+    };
+    h.projects.historyReady();
+    await drain();
+    const handedOff = delivery;
+    assert.ok(handedOff);
+    assert.equal(h.state.saved[0].pending.length, 0);
+    await h.projects.doneTodo('main', 'reminder');
+    if (full)
+      for (let index = 0; index < LEDGER_LIMITS.inbox; index += 1)
+        await h.projects.send('main', 'backlog', `Task ${index}`, 'queue');
+    assert.doesNotThrow(() => handedOff.declined('refused'));
+    await drain();
+    const retained = h.state.saved[0];
+    assert.equal(retained.paused, false);
+    assert.deepEqual(retained.todos, []);
+    assert.equal(
+      retained.pending.some((message) => message.id === 'reminder'),
+      false,
+    );
+    if (full) assert.deepEqual(retained.threads[1].owedReport, { text: 'first', replyId: 'reply' });
+    else assert.deepEqual(retained.pending, [saved.pending[0]]);
+    const ledger = new ProjectStore(await ledgerPath(t));
+    await ledger.save(h.state.saved);
+    assert.deepEqual(await ledger.load(), h.state.saved);
+    h.port.steer = steer;
+    await h.streaming('main', false);
+    if (full) await h.finish('backlog', 'Backlog ready.');
+    await drain();
+    const reports = () => h.sent.filter(({ prompt }) => prompt.includes('):\nfirst'));
+    assert.equal(reports().length, 1);
+    assert.ok(h.sent.every(({ prompt }) => !prompt.includes('Completed reminder')));
+    await h.finish('main');
+    h.projects.sessionAvailable('main');
+    h.projects.capacityChanged();
+    await drain();
+    assert.equal(reports().length, 1);
+  }
+});
+
+test('a new question at a full inbox persists bounded and delivers once when room opens', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  const backlog = await h.projects.spawn(main, { ...input, title: 'Backlog' });
+  for (let index = 0; index < LEDGER_LIMITS.inbox; index += 1)
+    await h.projects.send(main, backlog.appSessionId, `Task ${index}`, 'queue');
+  await h.ask(child.appSessionId, 'new-question', 'q'.repeat(LEDGER_LIMITS.askQuestionText + 1), [
+    { label: 'o'.repeat(LEDGER_LIMITS.askOptionText + 1) },
+  ]);
+  await drain();
+  const waiting = h.state.saved[0].threads.find(
+    (thread) => thread.appSessionId === child.appSessionId,
+  );
+  assert.ok(waiting?.ask);
+  assert.equal(waiting.waiting, true);
+  assert.equal(waiting.ask.requestId, 'new-question');
+  assert.equal(waiting.ask.notified, undefined);
+  assert.deepEqual(waiting.ask.questions, [
+    {
+      index: 0,
+      question: 'q'.repeat(LEDGER_LIMITS.askQuestionText),
+      options: ['o'.repeat(LEDGER_LIMITS.askOptionText)],
+    },
+  ]);
+  assert.equal(h.projects.list()[0].paused, false);
+  assert.equal(h.state.saved[0].pending.length, LEDGER_LIMITS.inbox);
+  assert.equal(h.sent.length, 0);
+  const ledger = new ProjectStore(await ledgerPath(t));
+  await ledger.save(h.state.saved);
+  assert.deepEqual(await ledger.load(), h.state.saved);
+  await h.finish(backlog.appSessionId, 'Backlog ready.');
+  await drain();
+  const questions = () =>
+    h.sent.filter(({ prompt }) => prompt.includes(', question new-question):'));
+  assert.equal(questions().length, 1);
+  assert.ok(questions()[0].prompt.includes(waiting.ask.questions[0].question));
+  await h.projects.answer(main, child.appSessionId, 'new-question', ['JSON']);
+  assert.equal(h.answered.length, 1);
+  await h.finish(main);
+  h.projects.sessionAvailable(main);
+  h.projects.capacityChanged();
+  await drain();
+  assert.equal(questions().length, 1);
+  await ledger.save(h.state.saved);
+  assert.deepEqual(await ledger.load(), h.state.saved);
+});
+
 function project(): Project {
   return {
     id: 'project',
