@@ -24,7 +24,10 @@ const SDK_STATES: ReadonlySet<string> = new Set(Object.values(DroidWorkingState)
 
 // One app turn may span several Droid loops. Only its final result settles it.
 export class DroidTurn {
-  private readonly deliveries = new Map<string, (delivered: boolean) => void>();
+  private readonly deliveries = new Map<
+    string,
+    { resolve: (delivered: boolean) => void; received: boolean }
+  >();
   private readonly tracker: StreamStateTracker;
   private readonly tail: unknown[] = [];
   private wake: (() => void) | undefined;
@@ -56,7 +59,9 @@ export class DroidTurn {
     if (!this.acceptingSteers || this.interrupting || /(^|\s)\//.test(text))
       return Promise.resolve(false);
     const messageId = randomUUID();
-    const delivered = new Promise<boolean>((resolve) => this.deliveries.set(messageId, resolve));
+    const delivered = new Promise<boolean>((resolve) =>
+      this.deliveries.set(messageId, { resolve, received: false }),
+    );
     void client.addUserMessage({ text, messageId }).catch(() => {
       this.settle(messageId, false);
     });
@@ -111,8 +116,14 @@ export class DroidTurn {
       message.role === 'user' &&
       'id' in message &&
       typeof message.id === 'string'
-    )
-      this.settle(message.id, true);
+    ) {
+      const delivery = this.deliveries.get(message.id);
+      if (!delivery || delivery.received) return;
+      // Loop bookkeeping follows raw notices; the row waits for ordered consumption.
+      delivery.received = true;
+      this.loopOwed = true;
+      this.outputSinceDelivery = false;
+    }
   }
 
   private observeState(newState: string): void {
@@ -144,6 +155,7 @@ export class DroidTurn {
   }
 
   observeMainEvent(event: DroidStreamEvent): void {
+    if (event.type === 'user') this.settle(event.message.id, true);
     if (event.type !== 'tool_call' && event.type !== 'tool_call_delta') return;
     this.tracker.processMessage({
       type: 'tool_use',
@@ -179,6 +191,7 @@ export class DroidTurn {
     const converted = convertNotificationToStreamMessage(raw);
     if (!converted) return;
     for (const event of Array.isArray(converted) ? converted : [converted]) {
+      if (event.type === 'user') this.settle(event.message.id, true);
       const { message, additional } = this.tracker.processMessage(event);
       for (const extra of additional) {
         if (extra.type === 'result') this.result = extra;
@@ -219,11 +232,10 @@ export class DroidTurn {
   }
 
   private settle(messageId: string, delivered: boolean): void {
-    if (delivered && this.deliveries.has(messageId)) {
-      this.loopOwed = true;
-      this.outputSinceDelivery = false;
-    }
-    this.deliveries.get(messageId)?.(delivered);
+    const delivery = this.deliveries.get(messageId);
+    // A rejection or interrupt cannot undo an echo still waiting behind output.
+    if (!delivered && delivery?.received && !this.stopped) return;
+    delivery?.resolve(delivered);
     this.deliveries.delete(messageId);
     this.wake?.();
   }

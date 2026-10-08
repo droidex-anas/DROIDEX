@@ -362,6 +362,7 @@ test('a refused Stop reopens steering only when no Stop was accepted for that tu
   await session.interrupt();
   releaseTurn({ turn: { id: 'turn-1' } });
   await first;
+  const next = events.next();
 
   assert.equal(
     await session.steer('after refusal'),
@@ -376,6 +377,11 @@ test('a refused Stop reopens steering only when no Stop was accepted for that tu
     false,
     'the accepted Stop still owns the turn',
   );
+  notifications.get('turn/completed')?.({
+    threadId: 'thread-1',
+    turn: { id: 'turn-1', status: 'interrupted' },
+  });
+  await next;
   await events.return(undefined);
 });
 

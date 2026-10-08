@@ -223,6 +223,40 @@ const turnCatchesUp = () => new Promise<void>((resolve) => setImmediate(resolve)
 const texts = (events: NormalizedEvent[]) =>
   events.flatMap((event) => (event.transcript?.text ? [event.transcript.text] : []));
 
+test('a delivered steer follows earlier output in both the main stream and the tail', async () => {
+  for (const consumer of ['main', 'tail']) {
+    const h = await droidOverMemory();
+    try {
+      const prompt = h.nextRequest('droid.add_user_message', () => {
+        h.state('streaming_assistant_message');
+      });
+      const rows: string[] = [];
+      const stream = (async () => {
+        for await (const event of h.session.stream('hello'))
+          if (event.transcript?.text) rows.push(event.transcript.text);
+      })();
+      await prompt;
+      if (consumer === 'tail') h.state('idle');
+      h.nextRequest('droid.add_user_message', ({ messageId }) => {
+        h.state('streaming_assistant_message');
+        h.answer('before1');
+        h.answer('before2');
+        h.showUserMessage(messageId, 'steer');
+        h.answer('after');
+        h.state('idle');
+      });
+      await h.session.steer('steer').then((delivered) => {
+        assert.equal(delivered, true);
+        rows.push('steer');
+      });
+      await stream;
+      assert.deepEqual(rows, ['before1', 'before2', 'steer', 'after'], consumer);
+    } finally {
+      await h.session.close();
+    }
+  }
+});
+
 // The SDK drops Droid's "thinking" state, so it never settles a loop that only
 // thought; the runtime must end it.
 test('a turn that thinks, fails and goes idle ends', { timeout: 2000 }, async () => {

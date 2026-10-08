@@ -58,15 +58,15 @@ export function turnInput(prompt: string, mentions: ProviderMention[] = []) {
   ];
 }
 
-// One turn's events, filled by the notification handlers and drained by the
-// turn that is streaming. Events that arrive outside a turn have no transcript
-// to land in and are dropped.
+// One turn's output and delivery acknowledgements, filled by notification
+// handlers and drained by the streaming turn. Events outside a turn have no
+// transcript to land in and are dropped.
 export class TurnStream {
-  private readonly queued: NormalizedEvent[] = [];
+  private readonly queued: (NormalizedEvent | ((delivered: boolean) => void))[] = [];
   private waiting?: () => void;
   private settlement?: Error | 'done';
 
-  push(events: NormalizedEvent[]): void {
+  push(events: (NormalizedEvent | ((delivered: boolean) => void))[]): void {
     this.queued.push(...events);
     this.wake();
   }
@@ -76,6 +76,15 @@ export class TurnStream {
   finish(): void {
     this.settlement ??= 'done';
     this.wake();
+  }
+
+  // A consumer that leaves early cannot deliver echoes it never reached.
+  discard(): void {
+    for (const entry of this.queued) {
+      if (typeof entry === 'function') entry(false);
+    }
+    this.queued.length = 0;
+    this.finish();
   }
 
   // First settlement wins: whichever of the failing error notification, the
@@ -89,7 +98,8 @@ export class TurnStream {
     for (;;) {
       const next = this.queued.shift();
       if (next) {
-        yield next;
+        if (typeof next === 'function') next(true);
+        else yield next;
         continue;
       }
       if (this.settlement === 'done') return;

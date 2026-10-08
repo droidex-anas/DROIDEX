@@ -265,7 +265,7 @@ export class CodexSession implements ProviderSession {
       if (this.heldNotices.length > 0) turn.push(this.heldNotices.splice(0));
       yield* turn.drain();
     } finally {
-      turn.finish();
+      turn.discard();
       // Settlement may already have let go, and a later turn may already own
       // these; only the turn that set them takes them away.
       if (this.turn === turn) {
@@ -456,6 +456,7 @@ export class CodexSession implements ProviderSession {
 
   close(): Promise<void> {
     this.resolveClosed();
+    this.turn?.discard();
     this.dropSteers();
     this.prompts.cancel();
     this.catalog?.close();
@@ -637,11 +638,16 @@ export class CodexSession implements ProviderSession {
     });
   }
 
-  // The echo of a steered message is the moment the model took it in.
   private settleDeliveredSteer(params: unknown): void {
     if (!isObject(params) || !isObject(params.item)) return;
     const { type, clientId } = params.item;
-    if (type === 'userMessage' && typeof clientId === 'string') this.settleSteer(clientId, true);
+    if (type !== 'userMessage' || typeof clientId !== 'string') return;
+    const resolve = this.steers.get(clientId);
+    if (!resolve) return;
+    // The echo survives turn settlement, but its row must follow queued output.
+    this.steers.delete(clientId);
+    if (this.turn) this.turn.push([resolve]);
+    else resolve(true);
   }
 
   private settle(turn: CodexTurn): void {
