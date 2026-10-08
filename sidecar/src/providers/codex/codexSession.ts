@@ -292,6 +292,9 @@ export class CodexSession implements ProviderSession {
     } catch (error) {
       this.threadAutonomy = previous;
       this.autonomy = previous;
+      // A model write queued meanwhile may have carried the refused level to
+      // the thread; put the one the chat still has back.
+      await this.applyThreadSettings().catch(() => undefined);
       throw error;
     }
     this.autonomy = autonomy;

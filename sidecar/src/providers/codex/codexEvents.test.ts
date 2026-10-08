@@ -446,3 +446,28 @@ test('a model write racing a lowered autonomy cannot restore the old level on th
   assert.equal(writes.length, 3);
   assert.ok(!writes.includes('never'));
 });
+
+test('a refused autonomy raise puts the previous level back on the thread', async () => {
+  const writes: unknown[] = [];
+  let failNext = false;
+  const { client } = fakeClient((method, params) => {
+    if (method === 'thread/start') return { thread: { id: 'thread-1' }, model: 'model' };
+    if (method !== 'thread/settings/update') return undefined;
+    writes.push(params.approvalPolicy);
+    if (failNext) {
+      failNext = false;
+      return Promise.reject(new Error('refused'));
+    }
+    return undefined;
+  });
+  const session = codexSession(client, 'app-1');
+  await session.open();
+  writes.length = 0;
+  failNext = true;
+  const raised = session.setAutonomy('high');
+  const model = session.setModel({ modelId: 'other' });
+  await assert.rejects(raised);
+  await model;
+  // Whatever ran in between, the thread ends on the level the chat still has.
+  assert.equal(writes.at(-1), 'untrusted');
+});
