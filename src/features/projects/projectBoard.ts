@@ -42,6 +42,7 @@ function summarize(
 ): string {
   if (project.paused) return 'Paused';
   if (project.done) return 'Done';
+  if (project.leadStopped) return 'Lead stopped';
   if (lead.attention + counts.attention > 0) return 'Needs an answer';
   if (lead.working + counts.working > 0) return 'Working';
   if (counts.queued + counts.waiting + project.queued > 0) return 'Waiting for a slot';

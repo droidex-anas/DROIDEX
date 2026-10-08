@@ -73,6 +73,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             startedAt={project?.startedAt}
             done={project?.done}
             held={project?.paused === true}
+            uncertain={project?.uncertain ?? 0}
             leadStopped={project?.leadStopped === true}
             {...(project
               ? {

@@ -72,6 +72,7 @@ export function ProjectThreads({
           done={project.done}
           // This view carries its own held banner, with the control to resume.
           held={false}
+          leadStopped={project.leadStopped === true}
           now={now}
           error={project.error ?? ''}
           onOpenThread={onOpenThread}
