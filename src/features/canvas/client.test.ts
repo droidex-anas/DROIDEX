@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import { listCanvasAssets } from '../../../sidecar/src/canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../../../sidecar/src/canvas/canvasBridge.js';
 import { CanvasScopes } from '../../../sidecar/src/canvas/canvasScopes.js';
 import { CanvasWorkspace } from '../../../sidecar/src/canvas/CanvasWorkspace.js';
-import { canvasRoot, quietBuilds } from '../../../sidecar/src/testing/canvasStorageSupport.js';
+import {
+  CANVAS_PNG,
+  CANVAS_PNG_ASSET_ID,
+  canvasRoot,
+  quietBuilds,
+} from '../../../sidecar/src/testing/canvasStorageSupport.js';
 import { initialState, reducer } from '../../hooks/useStore';
 import { initialCanvasPaneState, reduceCanvasPane, watchedCanvasId } from './canvasState';
 import { isCanvasEvent } from './wireValidation';
@@ -219,6 +226,57 @@ test('a reported failure rejects its own request with the stable code', async ()
     reply: { kind: 'arranged', change: change(6, [frame('hey')]) },
   });
   assert.equal((await mutating).sequence, 6);
+});
+
+test('asset listing round trips through the renderer boundary and rejects a refused request', async (t) => {
+  const scopes = new CanvasScopes();
+  const builds = quietBuilds();
+  const root = await canvasRoot(t);
+  const workspace = await CanvasWorkspace.open(root, builds, {
+    isChatKnown: (id) => id === 'app-1',
+    isScopeActive: (id) => scopes.isScopeActive(id),
+    bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
+  });
+  t.after(() => workspace.close());
+  const { canvasId } = await workspace.createCanvas('app-1', 'create-assets');
+  const filePath = join(root, 'chosen.png');
+  await writeFile(filePath, CANVAS_PNG);
+  await workspace.importCanvasImage({
+    canvasId,
+    filePath,
+    digest: CANVAS_PNG_ASSET_ID,
+    width: 1,
+    height: 1,
+  });
+  const bridge = fakeBridge();
+  const client = new CanvasClient(bridge.transport);
+  const handle = createCanvasCommandHandler(
+    Promise.resolve(workspace),
+    scopes,
+    builds,
+    { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
+    (event) => {
+      const serialized: Record<string, unknown> = JSON.parse(JSON.stringify(event));
+      assert.ok(isCanvasEvent(serialized));
+      bridge.deliver(serialized);
+    },
+    () => () => {},
+  );
+  const listing = client.listAssets(canvasId);
+  await handle(bridge.last('canvas.listAssets'), 'page-1');
+  assert.deepEqual(await listing, [
+    {
+      assetId: CANVAS_PNG_ASSET_ID,
+      mediaType: 'image/png',
+      byteLength: CANVAS_PNG.length,
+      width: 1,
+      height: 1,
+    },
+  ]);
+
+  const refused = assert.rejects(client.listAssets('cv_missing'), { code: 'invalid_input' });
+  await handle(bridge.last('canvas.listAssets'), 'page-1');
+  await refused;
 });
 
 test('a replayed Create keeps the current attachment in the bridge reply, pane and renderer cache', async (t) => {

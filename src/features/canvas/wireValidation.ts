@@ -28,6 +28,7 @@ const ERROR_CODES = new Set([
 const REPLY_KINDS = new Set([
   'ok',
   'summaries',
+  'assets',
   'attachment',
   'canvasCreated',
   'created',
@@ -72,6 +73,26 @@ function isReply(value: unknown): boolean {
   switch (value.kind) {
     case 'summaries':
       return list(value.summaries, isSummary);
+    case 'assets':
+      return list(
+        value.assets,
+        (asset) =>
+          record(asset) &&
+          typeof asset.assetId === 'string' &&
+          /^[0-9a-f]{64}$/.test(asset.assetId) &&
+          (asset.mediaType === 'image/png' ||
+            asset.mediaType === 'image/jpeg' ||
+            asset.mediaType === 'image/webp') &&
+          count(asset.byteLength) &&
+          asset.byteLength > 0 &&
+          asset.byteLength <= 10 * 1024 * 1024 &&
+          count(asset.width) &&
+          asset.width > 0 &&
+          asset.width <= 8192 &&
+          count(asset.height) &&
+          asset.height > 0 &&
+          asset.height <= 8192,
+      );
     case 'attachment':
       return value.canvasId === null || id(value.canvasId);
     case 'canvasCreated':
