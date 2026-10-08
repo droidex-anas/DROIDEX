@@ -168,7 +168,7 @@ test('callers that join an unfinished create share it instead of minting another
   acknowledgeAttachment('session-a');
 });
 
-test('Design sends canvas intent with session creation and never creates through the Canvas channel', () => {
+test('session creation forwards manually assembled canvas intent', () => {
   const sent: ClientCommand[] = [];
   const original = sessionBridge.send;
   sessionBridge.send = (command) => {

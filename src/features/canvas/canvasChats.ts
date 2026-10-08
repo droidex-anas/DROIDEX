@@ -101,7 +101,7 @@ export function owedAttachment(
 
 /**
  * Forgets the operation once its result has reached the store. Until then it is
- * retained, so a pane or bootstrap that mounts in between replays the same
+ * retained, so a pane that mounts in between replays the same
  * request instead of starting another one.
  */
 export function acknowledgeAttachment(appSessionId: string): void {

@@ -331,8 +331,13 @@ A Design draft sends its canvas intent and durable create mutation ID in
 in `beforeFirstTurn`, after registering the chat and before `session.created`
 or the first prompt. New canvases and saved-canvas attachments share this path;
 a failed attachment fails the session open and releases its runtime. The first
-turn therefore leases the committed attachment. The renderer keeps unsent
-`canvasDraft` separate from submitted `canvasChatRequests`, which only track
+turn therefore leases the committed attachment. Resume publication and all
+turn admission wait on the same pending create.
+Closing cancels that create before cleanup; Canvas checks its captured runtime
+generation before each attachment write, and close drains any started commit
+before a replacement can register. Already-published boards remain durable.
+The renderer keeps unsent `canvasDraft` separate from submitted
+`canvasChatRequests`, which only track
 chats whose panes need opening. The lazy bootstrap reads the committed attachment
 and opens the pane. Explicit pane creation and
 attaching an existing chat remain Canvas bridge actions with durable replay.

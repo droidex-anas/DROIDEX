@@ -78,7 +78,7 @@ const manager = new SessionManager(
     canvasTurns,
     canvasWorkspace: () => canvasReady,
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
-    beforeFirstTurn: (session, clientRef, canvas): Promise<void> =>
+    beforeFirstTurn: (session, clientRef, canvas, admission): Promise<void> =>
       prepareSessionFirstTurn(
         session,
         { clientRef, canvas },
@@ -87,6 +87,7 @@ const manager = new SessionManager(
         (event) => {
           server.broadcast(event);
         },
+        admission,
       ),
     onSessionAvailable: (appSessionId) => {
       projects?.sessionAvailable(appSessionId);

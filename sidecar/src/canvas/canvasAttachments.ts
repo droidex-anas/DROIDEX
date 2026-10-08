@@ -22,36 +22,39 @@ export class CanvasAttachments {
     appSessionId: string,
     mutationId: string,
     name?: string,
+    isCurrent?: () => boolean,
   ): Promise<{ canvasId: string }> {
-    this.requireChat(appSessionId);
+    this.requireChat(appSessionId, isCurrent);
     const previous = this.heads.all().find((head) => head.creation?.mutationId === mutationId);
     if (previous) {
       if (previous.creation?.appSessionId !== appSessionId)
         throw canvasError('invalid_input', 'That Canvas mutation ID belongs to another chat.');
       return { canvasId: previous.canvasId };
     }
-    await this.detachFrom(appSessionId, null);
+    await this.detachFrom(appSessionId, null, isCurrent);
+    this.requireChat(appSessionId, isCurrent);
     const manifest = emptyCanvasManifest(randomUUID(), name ?? this.nextCanvasName(), Date.now());
     manifest.creation = { mutationId, appSessionId };
     manifest.attachedAppSessionIds.push(appSessionId);
-    await this.heads.install(manifest, this.chatGate(appSessionId));
+    await this.heads.install(manifest, this.chatGate(appSessionId, isCurrent));
     return { canvasId: manifest.canvasId };
   }
 
-  async attach(appSessionId: string, canvasId: string): Promise<void> {
-    this.requireChat(appSessionId);
+  async attach(appSessionId: string, canvasId: string, isCurrent?: () => boolean): Promise<void> {
+    this.requireChat(appSessionId, isCurrent);
     // Refuse an unknown canvas before detaching the chat from its current one.
     const manifest = this.heads.find(canvasId);
     if (!manifest) {
       if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
       throw canvasError('invalid_input', 'That canvas is not open.');
     }
-    await this.detachFrom(appSessionId, canvasId);
+    await this.detachFrom(appSessionId, canvasId, isCurrent);
+    this.requireChat(appSessionId, isCurrent);
     const next = structuredClone(manifest);
     if (next.attachedAppSessionIds.includes(appSessionId)) return;
     next.attachedAppSessionIds.push(appSessionId);
     next.updatedAt = Date.now();
-    await this.heads.install(next, this.chatGate(appSessionId));
+    await this.heads.install(next, this.chatGate(appSessionId, isCurrent));
   }
 
   detach(appSessionId: string): Promise<void> {
@@ -59,7 +62,9 @@ export class CanvasAttachments {
     return this.detachFrom(appSessionId, null);
   }
 
-  requireChat(appSessionId: string): void {
+  requireChat(appSessionId: string, isCurrent?: () => boolean): void {
+    if (isCurrent && !isCurrent())
+      throw canvasError('scope_expired', 'The session closed before its first turn.');
     if (!this.isChatKnown(appSessionId))
       throw canvasError(
         'unknown_chat',
@@ -67,10 +72,10 @@ export class CanvasAttachments {
       );
   }
 
-  private chatGate(appSessionId: string): () => void {
+  private chatGate(appSessionId: string, isCurrent?: () => boolean): () => void {
     return () => {
       this.commits.requireOpen();
-      this.requireChat(appSessionId);
+      this.requireChat(appSessionId, isCurrent);
     };
   }
 
@@ -79,7 +84,12 @@ export class CanvasAttachments {
   }
 
   /** Canvas files are kept: detaching a chat only drops the reference. */
-  private async detachFrom(appSessionId: string, keep: string | null): Promise<void> {
+  private async detachFrom(
+    appSessionId: string,
+    keep: string | null,
+    isCurrent?: () => boolean,
+  ): Promise<void> {
+    this.requireChat(appSessionId, isCurrent);
     const attached = this.heads.attachedCanvasId(appSessionId);
     if (attached !== null && attached !== keep && this.heads.isDamaged(attached))
       throw canvasError('storage_failed', UNREADABLE_CANVAS);
@@ -89,7 +99,8 @@ export class CanvasAttachments {
       const next = structuredClone(manifest);
       next.attachedAppSessionIds = next.attachedAppSessionIds.filter((id) => id !== appSessionId);
       next.updatedAt = Date.now();
-      await this.heads.install(next, this.chatGate(appSessionId));
+      await this.heads.install(next, this.chatGate(appSessionId, isCurrent));
+      this.requireChat(appSessionId, isCurrent);
     }
   }
 }

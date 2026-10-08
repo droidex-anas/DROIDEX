@@ -49,6 +49,7 @@ import {
 import { droidSessionOf } from './providers/droid/DroidProviderSession.js';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
 import type { Provider, ProviderSession } from './providers/session.js';
+import { SessionCreateAdmission } from './SessionCreateAdmission.js';
 
 const MAX_SCHEDULED_SESSION_RUNTIMES = 8;
 
@@ -137,6 +138,7 @@ export interface LiveSession extends LiveTurnState {
   canvasTurn?: CanvasTurnLeases;
   restartBeforeNextTurn?: boolean;
   providerClosePromise?: Promise<void>;
+  createAdmission?: SessionCreateAdmission;
   mcpServers: LocalMcpResource[];
   // Running MCP handles reused when compaction swaps the provider session.
   mcpConfigs: McpServerConfig[];
@@ -152,7 +154,8 @@ export interface SessionLifecycleDependencies {
     | ((
         session: SessionSummary,
         clientRef: string,
-        canvas?: Extract<ClientCommand, { type: 'session.create' }>['canvas'],
+        canvas: SessionCreateCommand['canvas'],
+        admission: SessionCreateAdmission,
       ) => Promise<void>)
     | undefined;
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
@@ -343,6 +346,15 @@ export class SessionLifecycle {
       ref.id = appSessionId;
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
+      const admission = new SessionCreateAdmission(
+        () =>
+          !d.isShutdownStarted() &&
+          d.registry.getLive(appSessionId) === liveSession &&
+          liveSession.session === providerSession &&
+          !liveSession.closeMode &&
+          !providerSession.isClosed,
+      );
+      liveSession.createAdmission = admission;
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, () => {
@@ -355,18 +367,12 @@ export class SessionLifecycle {
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
       d.childSessions.attachParent(appSessionId);
       // Commit dependent ownership before the provider can execute its first task.
-      if (d.beforeFirstTurn) {
-        await d.beforeFirstTurn(summary, command.clientRef, command.canvas);
-        this.requireOpenAdmission();
-        if (
-          d.registry.getLive(appSessionId) !== liveSession ||
-          liveSession.closeMode ||
-          providerSession.isClosed
-        ) {
-          throw new Error('The session closed before its first turn.');
-        }
-      }
+      await d.beforeFirstTurn?.(summary, command.clientRef, command.canvas, admission);
+      this.requireOpenAdmission();
+      admission.requireCurrent();
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
+      admission.admit();
+      liveSession.createAdmission = undefined;
       // A chat can open with nothing to say: voice mode creates the session so
       // the conversation has a thread to attach to, and the first request
       // arrives spoken. Driving an empty prompt would run a turn about nothing.
@@ -422,6 +428,8 @@ export class SessionLifecycle {
     const providerSessionId = historical?.providerSessionId ?? requestedAppSessionId;
     const existing = d.registry.getLive(appSessionId);
     if (existing) {
+      const admission = existing.createAdmission;
+      if (admission && (!(await admission.ready) || !admission.isCurrent())) return false;
       const projectedSummary =
         d.registry.resolveSummary(appSessionId) ??
         d.applyPendingSettingsToSummary({ ...existing.summary });
@@ -928,6 +936,7 @@ export class SessionLifecycle {
 
   private beginClose(liveSession: LiveSession, mode: SessionCloseMode): CloseOperation {
     // Before any external cleanup await, and before a resume can mint again.
+    liveSession.createAdmission?.cancel();
     this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
     if (mode === 'discard-pending') {
       liveSession.closeMode = mode;
@@ -993,6 +1002,7 @@ export class SessionLifecycle {
       }
     };
 
+    await liveSession.createAdmission?.drain();
     await run(() => d.stopVoiceSession(liveSession.summary.appSessionId));
 
     // First, while every provider process of this session is still alive and
@@ -1061,8 +1071,10 @@ export class SessionLifecycle {
     const snapshot = this.dependencies.registry.liveSessionsSnapshot();
     // A failed process kill skips beginClose below, but cannot leave a tool
     // lease usable while shutdown waits or after it reports the failure.
-    for (const liveSession of snapshot)
+    for (const liveSession of snapshot) {
+      liveSession.createAdmission?.cancel();
       this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
+    }
     if (this.dependencies.isShutdownStarted()) {
       for (const liveSession of snapshot)
         clearTimeout(this.deferredCloses.get(liveSession)?.retryTimer);
@@ -1283,6 +1295,8 @@ export class SessionLifecycle {
       this.dependencies.emitError({ appSessionId, message });
       return undefined;
     }
+    const admission = liveSession.createAdmission;
+    if (admission && (!(await admission.ready) || !admission.isCurrent())) return undefined;
     if (liveSession.streaming && liveSession.summary.provider === 'claude') return liveSession;
     const settingsApplied = await this.dependencies.applyPendingSessionSettings(
       liveSession.summary.appSessionId,
@@ -1295,6 +1309,11 @@ export class SessionLifecycle {
     session: ProviderSession | undefined,
     liveSession: LiveSession | undefined,
   ): Promise<void> {
+    liveSession?.createAdmission?.cancel();
+    if (liveSession?.closePromise) {
+      await liveSession.closePromise;
+      return;
+    }
     if (
       liveSession &&
       this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession
@@ -1356,6 +1375,8 @@ export class SessionLifecycle {
     const stops = this.stopCount(appSessionId);
     const liveSession = d.registry.getLive(appSessionId);
     if (!liveSession || d.isShutdownStarted()) return;
+    const admission = liveSession.createAdmission;
+    if (admission && (!(await admission.ready) || !admission.isCurrent())) return;
     if (liveSession.summary.provider === 'claude' && !liveSession.closeMode) {
       await d.waitForSettingsMutations?.(appSessionId);
       if (d.isShutdownStarted() || this.stopCount(appSessionId) !== stops) return;

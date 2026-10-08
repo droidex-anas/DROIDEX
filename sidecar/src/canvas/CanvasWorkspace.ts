@@ -132,15 +132,18 @@ export class CanvasWorkspace {
     appSessionId: string,
     mutationId: string,
     name?: string,
+    isCurrent?: () => boolean,
   ): Promise<{ canvasId: string }> {
     return this.commits.admit(() =>
-      this.commits.run(() => this.attachments.createCanvas(appSessionId, mutationId, name)),
+      this.commits.run(() =>
+        this.attachments.createCanvas(appSessionId, mutationId, name, isCurrent),
+      ),
     );
   }
 
-  attach(appSessionId: string, canvasId: string): Promise<void> {
+  attach(appSessionId: string, canvasId: string, isCurrent?: () => boolean): Promise<void> {
     return this.commits.admit(() =>
-      this.commits.run(() => this.attachments.attach(appSessionId, canvasId)),
+      this.commits.run(() => this.attachments.attach(appSessionId, canvasId, isCurrent)),
     );
   }
 
