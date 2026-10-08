@@ -112,6 +112,9 @@ export function createSessionManagerTestContext(
     onEvent?: (event: Protocol.ServerEvent) => void;
     onSessionAvailable?: (appSessionId: string) => void;
     canvasTurns?: NonNullable<ConstructorParameters<typeof SessionManager>[1]>['canvasTurns'];
+    beforeFirstTurn?: NonNullable<
+      ConstructorParameters<typeof SessionManager>[1]
+    >['beforeFirstTurn'];
     configuredMcpServers?: McpServerConfig[];
     createLocalMcpResource?: SessionManagerDependencies['createLocalMcpResource'];
   } = {},
@@ -192,6 +195,7 @@ export function createSessionManagerTestContext(
       initialModels: INITIAL_MODELS,
       providerProbes: NO_PROVIDER_PROBES,
       ...(options.canvasTurns ? { canvasTurns: options.canvasTurns } : {}),
+      ...(options.beforeFirstTurn ? { beforeFirstTurn: options.beforeFirstTurn } : {}),
       ...(options.onSessionAvailable ? { onSessionAvailable: options.onSessionAvailable } : {}),
     });
   } catch (error) {

@@ -11,8 +11,9 @@ import { pipeline } from 'node:stream/promises';
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
-import { CanvasCommandError } from './canvas/canvasError.js';
+import { CanvasCommandError, canvasError } from './canvas/canvasError.js';
 import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
+import { sessionCanvasIntentSchema } from './canvas/schema.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
 import { resolveBrowserAssetPath } from './browser/browserPaths.js';
@@ -323,6 +324,17 @@ export function startBridgeServer(options: {
         assertValidSteerId(parsed);
         assertValidInteractionResponse(parsed);
         assertValidChatPreferences(parsed);
+        if ('canvas' in parsed) {
+          if (!('type' in parsed) || parsed.type !== 'session.create')
+            throw canvasError('invalid_input', 'Canvas intent only applies to session creation.');
+          const intent = sessionCanvasIntentSchema.safeParse(parsed.canvas);
+          if (!intent.success)
+            throw canvasError(
+              'invalid_input',
+              intent.error.issues[0]?.message ?? 'Invalid Canvas intent.',
+            );
+          parsed.canvas = intent.data;
+        }
         if ('canvasContext' in parsed) assertCanvasTurnContext(parsed.canvasContext);
       }
       const command = parsed as ClientCommand;

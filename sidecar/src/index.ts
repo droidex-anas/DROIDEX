@@ -5,6 +5,7 @@ import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
 import { ProjectService } from './projects/ProjectService.js';
 import { ProjectStore } from './projects/store.js';
 import { ProjectSessions } from './projects/sessions.js';
@@ -77,9 +78,16 @@ const manager = new SessionManager(
     canvasTurns,
     canvasWorkspace: () => canvasReady,
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
-    beforeFirstTurn: async (session, clientRef) => {
-      await projectSessions.beforeFirstTurn(session, clientRef);
-    },
+    beforeFirstTurn: (session, clientRef, canvas): Promise<void> =>
+      prepareSessionFirstTurn(
+        session,
+        { clientRef, canvas },
+        projectSessions,
+        canvasReady,
+        (event) => {
+          server.broadcast(event);
+        },
+      ),
     onSessionAvailable: (appSessionId) => {
       projects?.sessionAvailable(appSessionId);
       void automationManager?.observeSessionAvailability(appSessionId).catch((error: unknown) => {

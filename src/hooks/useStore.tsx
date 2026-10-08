@@ -245,8 +245,8 @@ export interface CanvasDraft {
   canvasId: string | null;
 }
 
-/** That obligation once a send has handed it to one create request. */
-export interface CanvasChatRequest extends CanvasDraft {
+/** The pane to open once this submitted Design create names its chat. */
+export interface CanvasChatRequest {
   /** Null until `session.created` names the chat this request made. */
   appSessionId: string | null;
 }
@@ -352,7 +352,7 @@ export interface AppState {
   // returning to Chat abandons it. The Design home declares it on every entry
   // path, so a restored window or a new tab promises a canvas too (spec §4).
   canvasDraft: CanvasDraft | null;
-  // The canvas obligations a send has already handed to a create request, keyed
+  // The pane requests a Design send has handed to a create request, keyed
   // by that request's `clientRef`. `appSessionId` is null until `session.created`
   // names the chat. Navigation and later drafts never touch one: only its own
   // settlement, a create that failed, or deleting its chat discharges it.
@@ -551,6 +551,8 @@ export type Action =
       // The hold whose place the compose takes, read here rather than by the
       // caller so a tile closed in the meantime is already forgotten.
       originHoldId: string | null;
+      // The draft captured by this send, before asynchronous preparation.
+      canvas?: CanvasDraft;
     }
   // A send holds the place it was made from until its pending compose takes it.
   | { type: 'HOLD_COMPOSE_ORIGIN'; holdId: string }
@@ -1122,7 +1124,7 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
 }
 
 /**
- * Tells one create request's canvas obligation which chat it made. Only that
+ * Tells one pane-opening request which chat its create made. Only that
  * request's entry moves; every other one keeps waiting for its own reply.
  */
 function namedCanvasChatRequest(
@@ -1133,16 +1135,16 @@ function namedCanvasChatRequest(
   if (!(clientRef in requests)) return requests;
   const request = requests[clientRef];
   if (request.appSessionId !== null) return requests;
-  return { ...requests, [clientRef]: { ...request, appSessionId } };
+  return { ...requests, [clientRef]: { appSessionId } };
 }
 
-/** The canvas obligations left once the ones this names are discharged. */
+/** The pane requests left once the ones this names are settled. */
 function withoutCanvasRequests(
   requests: Record<string, CanvasChatRequest>,
-  discharged: (request: CanvasChatRequest, clientRef: string) => boolean,
+  settled: (request: CanvasChatRequest, clientRef: string) => boolean,
 ): Record<string, CanvasChatRequest> {
   const remaining = Object.entries(requests).filter(
-    ([clientRef, request]) => !discharged(request, clientRef),
+    ([clientRef, request]) => !settled(request, clientRef),
   );
   if (remaining.length === Object.keys(requests).length) return requests;
   return Object.fromEntries(remaining);
@@ -1259,8 +1261,8 @@ export function reducer(state: AppState, action: Action): AppState {
         lastCreatedSessionRequest: shouldActivate
           ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
           : state.lastCreatedSessionRequest,
-        // This create's own canvas obligation, if it had one, now knows the chat
-        // it has to attach. Another create in flight keeps its own target.
+        // This create's own pane request, if it had one, now knows the chat
+        // it opens on. Another create in flight keeps its own target.
         canvasChatRequests: namedCanvasChatRequest(
           state.canvasChatRequests,
           action.clientRef,
@@ -1444,13 +1446,12 @@ export function reducer(state: AppState, action: Action): AppState {
                 : (state.heldComposeOrigins[action.originHoldId] ?? null),
           },
         },
-        // The send is where a design draft's canvas becomes this create's
-        // obligation, so a reply from any other create cannot consume it.
-        canvasDraft: null,
-        canvasChatRequests: state.canvasDraft
+        // Only this send consumes its draft; navigation may have started another.
+        canvasDraft: state.canvasDraft === action.canvas ? null : state.canvasDraft,
+        canvasChatRequests: action.canvas
           ? {
               ...state.canvasChatRequests,
-              [action.clientRef]: { appSessionId: null, canvasId: state.canvasDraft.canvasId },
+              [action.clientRef]: { appSessionId: null },
             }
           : state.canvasChatRequests,
       };

@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CanvasClient } from './client';
+import { canvasIntentForDraft } from './canvasChatIntent';
+import { bridge as sessionBridge } from '../../lib/bridge';
+import { createSession } from '../../lib/commands';
+import type { ClientCommand } from '../../types/bridge';
 import {
   acknowledgeAttachment,
   attachCanvasToChat,
   chooseCanvasForChat,
   owedAttachment,
-  provisionalCanvasName,
   recentAttachedChat,
   searchCanvases,
 } from './canvasChats';
@@ -67,7 +70,7 @@ function refuse(bridge: Bridge, requestId: string, message: string): void {
   });
 }
 
-test('a design prompt mints a canvas for its chat, and the next prompt mints another', async () => {
+test('explicit pane creation mints a canvas for its chat, and another chat mints another', async () => {
   const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
 
@@ -75,13 +78,13 @@ test('a design prompt mints a canvas for its chat, and the next prompt mints ano
   await flush();
   const created = lastCreate(bridge);
   assert.equal(created.appSessionId, 'session-a');
-  // The prompt names the canvas until its first design does (spec §4).
+  // The explicit name reaches the sidecar create request.
   assert.equal(created.name, 'Pricing card');
   answer(bridge, created.requestId, 'canvas-a');
   assert.equal(await first, 'canvas-a');
   acknowledgeAttachment('session-a');
 
-  // Every Design-home prompt is its own canvas, never a second chat on the last.
+  // Explicit creation in another chat owns a distinct canvas.
   const second = attachCanvasToChat(client, 'session-b', { canvasId: null });
   await flush();
   const again = lastCreate(bridge);
@@ -148,27 +151,69 @@ test('callers that join an unfinished create share it instead of minting another
   const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
 
-  // A replayed effect, a remount and the pane all ask for the same chat's
+  // Concurrent pane actions and a remount ask for the same chat's
   // canvas while the first request is still in flight.
-  const bootstrap = attachCanvasToChat(client, 'session-a', { canvasId: null });
+  const first = attachCanvasToChat(client, 'session-a', { canvasId: null });
   const replayed = attachCanvasToChat(client, 'session-a', { canvasId: null });
   await flush();
   assert.equal(bridge.count('canvas.createCanvas'), 1);
   const created = lastCreate(bridge);
   answer(bridge, created.requestId, 'canvas-a');
-  assert.deepEqual(await Promise.all([bootstrap, replayed]), ['canvas-a', 'canvas-a']);
+  assert.deepEqual(await Promise.all([first, replayed]), ['canvas-a', 'canvas-a']);
 
-  // The result is retained until a caller acknowledges it, so a bootstrap that
+  // The result is retained until a caller acknowledges it, so a pane that
   // remounts after the reply settles from it rather than creating again.
   assert.equal(await attachCanvasToChat(client, 'session-a', { canvasId: null }), 'canvas-a');
   assert.equal(bridge.count('canvas.createCanvas'), 1);
   acknowledgeAttachment('session-a');
 });
 
-test('new chat with this canvas attaches the named canvas and mints nothing', async () => {
+test('Design sends canvas intent with session creation and never creates through the Canvas channel', () => {
+  const sent: ClientCommand[] = [];
+  const original = sessionBridge.send;
+  sessionBridge.send = (command) => {
+    sent.push(command);
+  };
+  try {
+    for (const [clientRef, canvasId] of [
+      ['design-a', null],
+      ['design-b', null],
+      ['saved', 'canvas-a'],
+    ] as const) {
+      createSession({
+        clientRef,
+        title: 'Pricing',
+        goal: 'Pricing card.',
+        sessionPurpose: 'chat',
+        autonomy: 'low',
+        canvas: canvasIntentForDraft({ canvasId }, 'Pricing card.', clientRef),
+      });
+    }
+    assert.deepEqual(
+      sent.map((command) => {
+        assert.equal(command.type, 'session.create');
+        if (command.type !== 'session.create') throw new Error('Expected session create');
+        return command.canvas;
+      }),
+      [
+        { canvasId: null, name: 'Pricing card', mutationId: 'design-a' },
+        { canvasId: null, name: 'Pricing card', mutationId: 'design-b' },
+        { canvasId: 'canvas-a', mutationId: 'saved' },
+      ],
+    );
+    assert.equal(
+      sent.some((command) => command.type === 'canvas.createCanvas'),
+      false,
+    );
+    assert.equal(canvasIntentForDraft(null, 'ordinary chat', 'ordinary'), undefined);
+  } finally {
+    sessionBridge.send = original;
+  }
+});
+
+test('attaching an existing chat uses the named canvas and mints nothing', async () => {
   const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
-
   const attaching = attachCanvasToChat(client, 'session-b', { canvasId: 'canvas-a' });
   await flush();
   const attach = lastAttach(bridge);
@@ -213,17 +258,13 @@ test('a failed attach keeps its target, and only the user may retarget it', asyn
 });
 
 test('a provisional canvas name is the prompt, trimmed, or nothing', () => {
-  assert.equal(
-    provisionalCanvasName('A pricing card with three tiers.'),
-    'A pricing card with three tiers',
-  );
-  assert.equal(provisionalCanvasName('  Settings page\nwith a theme toggle  '), 'Settings page');
-  assert.equal(
-    provisionalCanvasName('A pricing card\u001b[0m with tiers'),
-    'A pricing card [0m with tiers',
-  );
-  assert.equal(provisionalCanvasName('   '), null);
-  const long = provisionalCanvasName(`${'word '.repeat(40)}end`);
+  const name = (prompt: string) =>
+    canvasIntentForDraft({ canvasId: null }, prompt, 'name-test')?.name ?? null;
+  assert.equal(name('A pricing card with three tiers.'), 'A pricing card with three tiers');
+  assert.equal(name('  Settings page\nwith a theme toggle  '), 'Settings page');
+  assert.equal(name('A pricing card\u001b[0m with tiers'), 'A pricing card [0m with tiers');
+  assert.equal(name('   '), null);
+  const long = name(`${'word '.repeat(40)}end`);
   assert.ok(long && long.length <= 120, 'a long prompt is cut to the sidecar name limit');
   assert.ok(!long.endsWith(' '), 'the cut lands on a word boundary');
 });

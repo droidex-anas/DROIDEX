@@ -148,7 +148,13 @@ export interface LiveSession extends LiveTurnState {
 type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionLifecycleDependencies {
-  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
+  beforeFirstTurn?:
+    | ((
+        session: SessionSummary,
+        clientRef: string,
+        canvas?: Extract<ClientCommand, { type: 'session.create' }>['canvas'],
+      ) => Promise<void>)
+    | undefined;
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
   // A scheduled runtime slot was released without a session closing.
   onScheduledCapacityChanged?: (() => void) | undefined;
@@ -350,7 +356,7 @@ export class SessionLifecycle {
       d.childSessions.attachParent(appSessionId);
       // Commit dependent ownership before the provider can execute its first task.
       if (d.beforeFirstTurn) {
-        await d.beforeFirstTurn(summary, command.clientRef);
+        await d.beforeFirstTurn(summary, command.clientRef, command.canvas);
         this.requireOpenAdmission();
         if (
           d.registry.getLive(appSessionId) !== liveSession ||
