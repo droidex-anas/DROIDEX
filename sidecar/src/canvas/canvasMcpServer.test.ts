@@ -14,6 +14,7 @@ import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
+import { DESIGN_SESSION_GUIDANCE } from './designSessionGuidance.js';
 
 type Reply = {
   ok: boolean;
@@ -65,6 +66,55 @@ test('six Canvas tools are discoverable and an inactive chat cannot read', async
     [...CANVAS_TOOL_NAMES],
   );
   assert.equal((await h.call('canvas_read', {})).code, 'scope_expired');
+});
+
+test('MCP initialization carries Design guidance only for a Design session', async (t) => {
+  const h = await harness(t);
+  for (const purpose of ['chat', 'design'] as const) {
+    const server = createCanvasMcpServer(
+      () => Promise.resolve(h.workspace),
+      h.turns,
+      () => 'chat-one',
+      purpose,
+    );
+    t.after(() => server.close());
+    const config = await server.start();
+    assert.ok('url' in config);
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'design-profile-test', version: '1' },
+        },
+      }),
+    });
+    const text = await response.text();
+    const payload =
+      text
+        .split('\n')
+        .find((line) => line.startsWith('data: '))
+        ?.slice(6) ?? text;
+    const result = JSON.parse(payload).result;
+    assert.equal(result?.instructions, purpose === 'design' ? DESIGN_SESSION_GUIDANCE : undefined);
+    if (purpose === 'design') {
+      assert.match(result.instructions, /complete working React\/TSX files/);
+      assert.match(result.instructions, /Tailwind available; a plain HTML document is not a frame/);
+    }
+    const write = server.tools.find((entry) => entry.name === 'canvas_write');
+    assert.ok(write);
+    assert.ok(write.description);
+    assert.match(write.description, /React\/TSX files/);
+    assert.match(write.description, /Tailwind available; a plain HTML document is not a frame/);
+  }
 });
 
 test('HTTP Canvas calls strictly validate raw arguments and return payload-free refusal envelopes', async (t) => {

@@ -10,6 +10,7 @@ import { OpenPrompts } from './codexApprovals.js';
 import type { PermissionOutcome } from '../../protocol.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import { CodexSession } from './codexSession.js';
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
 const FAILED = {
@@ -67,6 +68,61 @@ function codexSession(
     },
   });
 }
+
+test('Design guidance uses Codex developer instructions on creation and resume without changing user input', async () => {
+  for (const resumeId of [undefined, 'thread-1']) {
+    const opened: Record<string, unknown>[] = [];
+    let turnInput: unknown;
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const { client, notifications } = fakeClient((method, params) => {
+      if (method === 'thread/start' || method === 'thread/resume') {
+        opened.push(params);
+        return { thread: { id: 'thread-1' }, model: 'model' };
+      }
+      if (method !== 'turn/start') return undefined;
+      turnInput = params.input;
+      markStarted();
+      return { turn: { id: 'turn-1' } };
+    });
+    const session = new CodexSession({
+      appSessionId: 'design-app',
+      client,
+      cwd: '/workspace',
+      autonomy: 'low',
+      sessionPurpose: 'design',
+      model: {},
+      interactions: {
+        requestApproval: () => Promise.reject(new Error('unused')),
+        requestQuestion: async () => ({ cancelled: true, answers: [] }),
+        isActive: () => true,
+        cancelPending: () => undefined,
+      },
+    });
+    try {
+      await session.open(resumeId);
+      assert.equal(opened[0].developerInstructions, DESIGN_SESSION_GUIDANCE);
+      assert.equal('baseInstructions' in opened[0], false);
+      await session.setModel({ modelId: 'another-model' });
+      const stream = session.stream('Create a settings frame');
+      const next = stream.next();
+      await started;
+      assert.deepEqual(turnInput, [{ type: 'text', text: 'Create a settings frame' }]);
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+      const result = await next;
+      assert.equal(result.done, false);
+      assert.deepEqual(result.value, { done: true });
+      assert.equal((await stream.next()).done, true);
+    } finally {
+      await session.close();
+    }
+  }
+});
 
 test('a failed MCP server is read once per server, and its startup is not', () => {
   const mapper = new CodexEventMapper('app-1');

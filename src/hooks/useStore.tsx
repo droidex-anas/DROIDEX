@@ -2271,12 +2271,15 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SET_PRODUCT_MODE': {
       if (state.productMode === action.mode) return state;
       if (action.mode === 'design') {
-        // Design opens on its home the way Chat opens on a chat, and that home
-        // is a folder-less draft: designing needs no repository. The chat being
-        // left is kept so Chat can come back to it.
+        const session = state.activeAppSessionId
+          ? state.sessions[state.activeAppSessionId]
+          : undefined;
+        const cwd = session?.cwd ?? state.draftChat?.cwd ?? '';
+        // Design keeps the selected project as context, without cutting a new
+        // worktree. Chat remembers the conversation it was left on.
         return reducer(
           { ...state, productMode: 'design', chatModeAppSessionId: state.activeAppSessionId },
-          { type: 'START_CHAT', cwd: '', executionMode: 'local' },
+          { type: 'START_CHAT', cwd, executionMode: 'local' },
         );
       }
       // Leaving Design abandons a canvas no send has taken yet, so the next

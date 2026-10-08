@@ -43,16 +43,23 @@ test('the product mode persists as a sidebar preference', () => {
   assert.equal(reducer(design, { type: 'SET_PRODUCT_MODE', mode: 'chat' }).productMode, 'chat');
 });
 
-test('entering Design opens its home on a folder-less draft', () => {
+test('entering Design opens its home with the selected project as local context', () => {
+  const session = { ...chat('session-a'), cwd: '/repo', workspaceKind: 'folder' as const };
   const onChat = reducer(
-    { ...initialState, sessions: { 'session-a': chat('session-a') }, sessionOrder: ['session-a'] },
+    { ...initialState, sessions: { 'session-a': session }, sessionOrder: ['session-a'] },
     { type: 'SET_ACTIVE_SESSION', id: 'session-a' },
   );
-  const design = reducer(onChat, { type: 'SET_PRODUCT_MODE', mode: 'design' });
-  assert.equal(design.activeAppSessionId, null);
-  assert.deepEqual(design.draftChat, { cwd: '', executionMode: 'local', branch: undefined });
-  // The home has not been mounted yet, so nothing is owed any canvas.
-  assert.equal(design.canvasDraft, null);
+  const onDraft = reducer(initialState, {
+    type: 'START_CHAT',
+    cwd: '/repo',
+    executionMode: 'worktree',
+  });
+  for (const state of [onChat, onDraft]) {
+    const design = reducer(state, { type: 'SET_PRODUCT_MODE', mode: 'design' });
+    assert.equal(design.activeAppSessionId, null);
+    assert.deepEqual(design.draftChat, { cwd: '/repo', executionMode: 'local', branch: undefined });
+    assert.equal(design.canvasDraft, null);
+  }
 });
 
 test('Chat returns to the chat Design was entered from', () => {

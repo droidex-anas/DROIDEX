@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import { SessionCompaction } from './SessionCompaction.js';
@@ -236,6 +237,33 @@ test('provider adoption retries cleanly after a partial first adoption', async (
   assert.equal(
     h.errors.some((error) => error.message.includes('first persistence failed')),
     true,
+  );
+});
+
+test('Design compaction keeps native guidance on live replacement and historical loading', async () => {
+  const liveHarness = createHarness();
+  const { live, session } = addLive(liveHarness);
+  live.summary.sessionPurpose = 'design';
+  session.nextCompactResult = { newSessionId: 'design-compacted', removedCount: 1 };
+  await liveHarness.compaction.compact(live.summary.appSessionId);
+  assert.equal(
+    liveHarness.runtime.loadCalls.at(-1)?.handlers.systemPromptAppend,
+    DESIGN_SESSION_GUIDANCE,
+  );
+  assert.equal(live.summary.sessionPurpose, 'design');
+
+  const historicalHarness = createHarness();
+  addHistorical(
+    historicalHarness,
+    new FakeFactorySession('provider-history', {}, historicalHarness.calls),
+  );
+  const historical = historicalHarness.registry.resolveSummary('app-history');
+  assert.ok(historical);
+  historical.sessionPurpose = 'design';
+  await historicalHarness.compaction.compact(historical.appSessionId);
+  assert.equal(
+    historicalHarness.runtime.loadCalls.at(-1)?.handlers.systemPromptAppend,
+    DESIGN_SESSION_GUIDANCE,
   );
 });
 

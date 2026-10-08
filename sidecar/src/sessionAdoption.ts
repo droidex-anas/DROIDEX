@@ -5,7 +5,6 @@ import type {
   LiveSessionIdentity,
 } from './liveRuntimeJournal.js';
 import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from './protocol.js';
-import { DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { errMsg } from './errors.js';
 import type { SessionLifecycle } from './SessionLifecycle.js';
 import { adoptedSessionFacts, retirableSessions } from './sessionRuntimeRetirement.js';
@@ -24,6 +23,7 @@ const ACTIVE_PHASES = new Set<SessionPhase>([
 ]);
 
 export interface SessionAdoptionDependencies {
+  whenSessionHistoryReady: () => Promise<void>;
   journal: LiveRuntimeJournal;
   registry: {
     liveSessionsSnapshot(): readonly { summary: SessionSummary }[];
@@ -98,6 +98,7 @@ export class SessionAdoption {
     // Before anything is resurrected: a session that comes back must not
     // inherit a dev server from the run that died holding the port.
     await d.reapProcesses(identities.processes);
+    await d.whenSessionHistoryReady();
     // Retirement owns the idle budget and count cap, so boot never spawns
     // runtimes the first sweep would immediately release.
     const facts = identities.sessions.map((session) =>
@@ -162,10 +163,9 @@ export class SessionAdoption {
       registry.updateSummary(identity.appSessionId, interruption(live.summary, wasActive, reason), {
         touchActivity: false,
       });
-    } else {
-      const base = historical ?? syntheticSummary(identity);
+    } else if (historical) {
       await this.dependencies.persistSummaries([
-        { ...base, ...interruption(base, wasActive, reason) },
+        { ...historical, ...interruption(historical, wasActive, reason) },
       ]);
       // The chat was opened while this was stored, and speaks for itself now.
       if (registry.getLive(identity.appSessionId)) return;
@@ -199,28 +199,4 @@ function interruption(
 function interruptedPhase(phase: SessionPhase): SessionPhase {
   if (phase === 'completed' || phase === 'failed' || phase === 'paused') return phase;
   return 'paused';
-}
-
-function syntheticSummary(identity: LiveSessionIdentity): SessionSummary {
-  const now = Date.now();
-  return {
-    appSessionId: identity.appSessionId,
-    providerSessionId: identity.providerSessionId,
-    provider: DEFAULT_PROVIDER,
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: `Session ${identity.providerSessionId.slice(0, 8)}`,
-    goal: '',
-    cwd: '',
-    autonomy: 'off',
-    phase: 'paused',
-    streaming: false,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: now,
-    updatedAt: now,
-  };
 }

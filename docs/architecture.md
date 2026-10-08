@@ -327,7 +327,17 @@ It still waits for admitted staging and active durable writes before releasing
 the lease; a failed open releases it too.
 
 A Design draft sends its canvas intent and durable create mutation ID in
-`session.create`. The sidecar composes project membership and Canvas attachment
+`session.create`. Canvas intent establishes `sessionPurpose: 'design'` before
+the provider and per-session tools start. Purpose is stored in the session
+summary and restored on resume and provider replacement. Resume and startup
+adoption wait for boot history reconciliation before reading canonical metadata,
+so native-file classification cannot overwrite the app-owned purpose. An app-owned
+chat with a missing or incomplete provider conversation refuses resume with recovery
+instructions and retains its metadata; it is never reopened as a fabricated Chat.
+Design sessions run
+in the user's project folder, with that folder framed as read-only context
+unless the user explicitly requests repository edits.
+The sidecar composes project membership and Canvas attachment
 in `beforeFirstTurn`, after registering the chat and before `session.created`
 or the first prompt. New canvases and saved-canvas attachments share this path;
 a failed attachment fails the session open and releases its runtime. The first
@@ -368,6 +378,19 @@ write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn star
 `canvas_read` returns that chat's newest live lease. Every mutation requires its
 explicit `scopeId`; retries keep the original scope and cannot borrow a later
 turn's authority. Named leases expire when their turn or provider ends.
+
+`designSessionGuidance.ts` owns the concise Design brief. Droid receives it
+through process-local `exec --append-system-prompt`, Claude through the
+`claude_code` preset's system-prompt append, and Codex through native thread
+developer instructions on start and resume. The Canvas MCP initialize result
+also carries the brief for Design sessions. Codex dynamic tools do not initialize
+MCP; Droid's measured MCP path did not demonstrate instruction delivery, so each
+provider's native channel owns framing. Framing is never injected into user prompts,
+normalized conversation events, or DROIDEX history/export; model-generated quotations
+may remain in conversation content. Provider-native logs may retain their model context. This is workflow guidance, not a filesystem
+sandbox: ordinary provider permission and autonomy controls still apply, and an
+explicit user request may authorize repository edits.
+
 Read replies revalidate that lease after awaited work. Mutation owners check it
 at publication; a mutation already published durably returns its receipt even
 if shutdown revokes the turn while the final flush finishes.

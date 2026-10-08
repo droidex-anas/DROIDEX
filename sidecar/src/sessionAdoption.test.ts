@@ -41,6 +41,7 @@ function createAdoption(
   overrides: Partial<AdoptionOptions> = {},
 ): SessionAdoption {
   return new SessionAdoption({
+    whenSessionHistoryReady: () => Promise.resolve(),
     journal,
     registry: {
       liveSessionsSnapshot: () => [],
@@ -70,33 +71,66 @@ function runningIdentity(appSessionId: string): LiveSessionIdentity {
   };
 }
 
-test('failed provider adoption marks the session interrupted instead of running', async (t) => {
+for (const hasHistoricalSummary of [true, false]) {
+  test(`failed provider adoption records interruption with historical metadata ${hasHistoricalSummary}`, async (t) => {
+    const { journal } = scratchJournal(t);
+    journal.write({ sessions: [runningIdentity('app-1')], children: [], processes: [] });
+    const historical = summary('app-1');
+    const persisted: SessionSummary[] = [];
+    const statuses: string[] = [];
+    const adoption = createAdoption(journal, {
+      registry: {
+        liveSessionsSnapshot: () => [],
+        getCanonicalSummary: () => (hasHistoricalSummary ? historical : undefined),
+        getLive: () => undefined,
+        updateSummary: () => undefined,
+      },
+      persistSummaries: (sessions) => {
+        persisted.push(...sessions);
+      },
+      appendStatus: (_appSessionId, text) => {
+        statuses.push(text);
+      },
+    });
+
+    const result = await adoption.adopt();
+    assert.equal(result.interrupted.length, 1);
+    if (hasHistoricalSummary) {
+      assert.equal(persisted[0]?.phase, 'paused');
+      assert.equal(persisted[0]?.streaming, false);
+      assert.match(persisted[0]?.interruptReason ?? '', /could not reconnect/);
+    } else assert.deepEqual(persisted, []);
+    assert.equal(statuses.length, 1);
+  });
+}
+
+test('failed history reconciliation reaps old processes without overwriting session metadata', async (t) => {
   const { journal } = scratchJournal(t);
-  journal.write({ sessions: [runningIdentity('app-1')], children: [], processes: [] });
-  const historical = summary('app-1');
-  const persisted: SessionSummary[] = [];
-  const statuses: string[] = [];
+  const identity = runningIdentity('design-chat');
+  journal.write({ sessions: [identity], children: [], processes: [] });
+  const actions: string[] = [];
+  const failure = new Error('History reconciliation failed');
   const adoption = createAdoption(journal, {
-    registry: {
-      liveSessionsSnapshot: () => [],
-      getCanonicalSummary: () => historical,
-      getLive: () => undefined,
-      updateSummary: () => undefined,
+    reapProcesses: async () => {
+      actions.push('reap');
     },
-    persistSummaries: (sessions) => {
-      persisted.push(...sessions);
+    whenSessionHistoryReady: async () => {
+      throw failure;
     },
-    appendStatus: (_appSessionId, text) => {
-      statuses.push(text);
+    lifecycle: {
+      resume: async () => {
+        actions.push('resume');
+        return false;
+      },
+    },
+    persistSummaries: () => {
+      actions.push('persist');
     },
   });
 
-  const result = await adoption.adopt();
-  assert.equal(result.interrupted.length, 1);
-  assert.equal(persisted[0]?.phase, 'paused');
-  assert.equal(persisted[0]?.streaming, false);
-  assert.match(persisted[0]?.interruptReason ?? '', /could not reconnect/);
-  assert.equal(statuses.length, 1);
+  await assert.rejects(adoption.adopt(), failure);
+  assert.deepEqual(actions, ['reap']);
+  assert.deepEqual(journal.read().sessions, [identity]);
 });
 
 test('a resumed in-flight session is paused with an interrupt reason', async (t) => {

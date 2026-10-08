@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { SdkMcpServer } from '@factory/droid-sdk';
-import type { Autonomy } from '../../protocol.js';
+import type { Autonomy, SessionPurpose } from '../../protocol.js';
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
@@ -33,6 +34,7 @@ export interface CodexSessionInput {
   client: AppServerClient;
   cwd: string;
   autonomy: Autonomy;
+  sessionPurpose?: SessionPurpose;
   model: ProviderModelSettings;
   interactions: ProviderInteractions;
   inAppMcpServers?: SdkMcpServer[];
@@ -58,6 +60,7 @@ export class CodexSession implements ProviderSession {
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
+  private readonly developerInstructions?: string;
   private autonomy: Autonomy;
   private turnAutonomy?: Autonomy;
   private model: ProviderModelSettings;
@@ -98,6 +101,8 @@ export class CodexSession implements ProviderSession {
     });
     this.client = input.client;
     this.cwd = input.cwd;
+    this.developerInstructions =
+      input.sessionPurpose === 'design' ? DESIGN_SESSION_GUIDANCE : undefined;
     this.autonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
@@ -152,6 +157,7 @@ export class CodexSession implements ProviderSession {
       cwd: this.cwd,
       approvalPolicy,
       sandbox,
+      ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
       serviceTier: this.model.fastMode ? 'priority' : 'default',
       ...(this.model.modelId ? { model: this.model.modelId } : {}),
     };

@@ -162,6 +162,7 @@ export interface SessionLifecycleDependencies {
   providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
   ensureConnected: () => void;
+  whenSessionHistoryReady: () => Promise<void>;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   startLocalMcpServers: (
@@ -233,6 +234,7 @@ export class SessionLifecycle {
   // A branch is a session opened from another session's transcript: its goal
   // stays the user's request while the model's first prompt carries the source.
   async create(command: SessionCreateCommand, branch?: SessionBranch): Promise<void> {
+    if (command.canvas) command = { ...command, sessionPurpose: 'design' };
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
@@ -280,6 +282,7 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
       const providerSession = await provider.create({
         cwd: runtimeCwd,
+        sessionPurpose: command.sessionPurpose,
         interactionMode,
         autonomy,
         ...primary,
@@ -401,7 +404,7 @@ export class SessionLifecycle {
     const pending = this.resumeOperations.get(appSessionId);
     if (pending) return pending;
 
-    const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
+    const operation = this.resumeOnce(requestedAppSessionId, appSessionId).finally(() => {
       if (this.resumeOperations.get(appSessionId) !== operation) return;
       this.resumeOperations.delete(appSessionId);
       this.canceledResumes.delete(appSessionId);
@@ -414,11 +417,17 @@ export class SessionLifecycle {
     return operation;
   }
 
-  private async resumeOnce(requestedAppSessionId: string): Promise<boolean> {
+  private async resumeOnce(requestedAppSessionId: string, resumeKey: string): Promise<boolean> {
     const d = this.dependencies;
+    // Native file summaries need the app-owned metadata overlay before a
+    // provider can reopen; otherwise registration would overwrite that metadata.
+    await d.whenSessionHistoryReady();
+    if (d.isShutdownStarted() || this.canceledResumes.has(resumeKey)) return false;
     d.ensureConnected();
     const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
+    // Reconciliation may have discovered the stable identity for a provider id.
+    if (appSessionId !== resumeKey) return this.resume(appSessionId);
     const providerSessionId = historical?.providerSessionId ?? requestedAppSessionId;
     const existing = d.registry.getLive(appSessionId);
     if (existing) {
@@ -450,6 +459,12 @@ export class SessionLifecycle {
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
     try {
+      if (!historical && d.registry.hasPersistedSession(requestedAppSessionId)) {
+        throw new Error(
+          "This chat's provider conversation is missing or incomplete, so it cannot be resumed safely. " +
+            'Start a new chat; for an existing canvas, choose New chat with this canvas.',
+        );
+      }
       // Resolved before any resource starts, so a session bound to a provider
       // this build cannot route fails before it costs anything. A summary that
       // predates the binding has none and resumes on the default provider.
@@ -461,6 +476,7 @@ export class SessionLifecycle {
       requireCurrentResume();
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
+        sessionPurpose: historical?.sessionPurpose,
         ...resumeHandle(historical),
         interactions: d.interactionsFor(ref),
         ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),

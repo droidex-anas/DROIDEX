@@ -1,4 +1,5 @@
 import type { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import { runCompaction } from './compaction.js';
 import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
 import type { ServerEvent } from './protocol.js';
@@ -142,6 +143,9 @@ export class SessionCompactionExecution {
       ...droidInteractionHandlers(ref, this.dependencies.interactionsFor(ref)),
       cwd: liveSession.summary.cwd,
       mcpServers: liveSession.mcpConfigs,
+      ...(liveSession.summary.sessionPurpose === 'design'
+        ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
+        : {}),
     });
     const replacementPid = this.dependencies.runtime.processIdOf(replacement);
     const rawOldPid = oldSession.process?.pid;
@@ -261,7 +265,11 @@ export class SessionCompactionExecution {
     const oldProviderSessionId = historical?.providerSessionId ?? requestedAppSessionId;
     let session: FactorySession | undefined;
     try {
-      session = await this.dependencies.runtime.loadSession(oldProviderSessionId);
+      session = await this.dependencies.runtime.loadSession(oldProviderSessionId, {
+        ...(historical?.sessionPurpose === 'design'
+          ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
+          : {}),
+      });
       const result: unknown = await session.compactSession(
         customInstructions ? { customInstructions } : {},
       );

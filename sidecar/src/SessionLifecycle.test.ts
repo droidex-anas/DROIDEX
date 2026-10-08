@@ -154,6 +154,7 @@ function createHarness(
   const canvasScopes = new CanvasScopes();
   const canvasTurns = new CanvasTurns(canvasScopes, () => null);
   const lifecycle = new SessionLifecycle({
+    whenSessionHistoryReady: () => Promise.resolve(),
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
     provider: () => provider,

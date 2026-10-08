@@ -6,6 +6,7 @@ import type {
   ContextWindowTokens,
   ReasoningEffort,
   SessionInteractionMode,
+  SessionPurpose,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
@@ -16,6 +17,7 @@ import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
   cwd: string;
+  sessionPurpose?: SessionPurpose;
   interactionMode: SessionInteractionMode;
   autonomy: Autonomy;
   modelId?: string;
@@ -35,6 +37,7 @@ export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session
   // does not carry and which stamps everything the session streams.
   appSessionId: string;
+  sessionPurpose?: SessionPurpose;
   // The provider's own resume handle when it differs from providerSessionId
   // (a Codex thread id); absent for providers that resume by session id.
   resumeId?: string;
