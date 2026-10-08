@@ -245,7 +245,7 @@ test('thread start, resume and every turn carry the requested service tier inclu
   );
 });
 
-test('running Codex approvals use current autonomy and retain workspace edit checks', async () => {
+test('running Codex approvals grant only confirmed escalations, keep failed downgrades and serialize settings', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'codex-permissions-'));
   const cwd = join(directory, 'workspace');
   mkdirSync(cwd);
@@ -253,10 +253,41 @@ test('running Codex approvals use current autonomy and retain workspace edit che
   symlinkSync(directory, join(cwd, 'escape'));
   symlinkSync(join(directory, 'missing'), join(cwd, 'dangling'));
   const starts: Record<string, unknown>[] = [];
+  const settingsWrites: Record<string, unknown>[] = [];
+  let nativeSettings: Record<string, unknown> | undefined;
+  let nextSettingsWrite:
+    | {
+        started: () => void;
+        result: Promise<void>;
+      }
+    | undefined;
+  const deferSettings = () => {
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let resolve: () => void = () => undefined;
+    let reject: (error: Error) => void = () => undefined;
+    const result = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    nextSettingsWrite = { started: markStarted, result };
+    return { started, resolve, reject };
+  };
   let asked = 0;
   let turnNumber = 0;
   let markStarted: () => void = () => undefined;
   const { client, notifications, requests } = fakeClient((method, params) => {
+    if (method === 'thread/settings/update') {
+      settingsWrites.push(params);
+      const write = nextSettingsWrite;
+      nextSettingsWrite = undefined;
+      write?.started();
+      return (write?.result ?? Promise.resolve()).then(() => {
+        nativeSettings = params;
+      });
+    }
     if (method === 'thread/resume') {
       starts.push(params);
       return { thread: { id: 'thread-1' }, model: 'model' };
@@ -328,7 +359,35 @@ test('running Codex approvals use current autonomy and retain workspace edit che
       { decision: 'cancel' },
     );
     assert.equal(asked, 10);
-    await session.setAutonomy('high');
+    const rejectedEscalation = deferSettings();
+    const writesBefore = settingsWrites.length;
+    const rejected = session.setAutonomy('high');
+    const refusal = assert.rejects(rejected, /refused/);
+    const modelUpdate = session.setModel({ modelId: 'updated-model' });
+    await rejectedEscalation.started;
+    assert.equal(settingsWrites.length, writesBefore + 1);
+    assert.deepEqual(await approval('../unconfirmed-full-access.ts'), { decision: 'cancel' });
+    rejectedEscalation.reject(new Error('refused'));
+    await refusal;
+    await modelUpdate;
+    assert.equal(nativeSettings?.model, 'updated-model');
+    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
+    assert.deepEqual(nativeSettings?.sandboxPolicy, {
+      type: 'workspaceWrite',
+      writableRoots: [],
+      networkAccess: false,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+    });
+    assert.deepEqual(await approval('../rejected-full-access.ts'), { decision: 'cancel' });
+
+    const escalation = deferSettings();
+    const raised = session.setAutonomy('high');
+    await escalation.started;
+    assert.deepEqual(await approval('../pending-full-access.ts'), { decision: 'cancel' });
+    const asksBeforeFullAccess = asked;
+    escalation.resolve();
+    await raised;
     assert.deepEqual(await approval('../full-access.ts'), { decision: 'accept' });
     assert.deepEqual(
       await requests.get('item/commandExecution/requestApproval')?.({
@@ -339,8 +398,30 @@ test('running Codex approvals use current autonomy and retain workspace edit che
       }),
       { decision: 'accept' },
     );
-    assert.equal(asked, 10);
-    await session.setAutonomy('off');
+    assert.equal(asked, asksBeforeFullAccess);
+    const downgrade = deferSettings();
+    const lowered = session.setAutonomy('off');
+    const downgradeRefusal = assert.rejects(lowered, /refused/);
+    // Revocation precedes even the start of the queued native write.
+    assert.deepEqual(await approval('pending-supervised.ts'), { decision: 'cancel' });
+    await downgrade.started;
+    downgrade.reject(new Error('refused'));
+    await downgradeRefusal;
+    assert.deepEqual(await approval('failed-supervised.ts'), { decision: 'cancel' });
+    await session.setModel({ reasoningEffort: 'high' });
+    assert.equal(nativeSettings?.approvalPolicy, 'untrusted');
+    assert.deepEqual(nativeSettings?.sandboxPolicy, { type: 'readOnly', networkAccess: false });
+    const pendingEscalation = deferSettings();
+    const earlierRaise = session.setAutonomy('high');
+    await pendingEscalation.started;
+    const queuedDowngrade = deferSettings();
+    const laterRevoke = session.setAutonomy('off');
+    pendingEscalation.resolve();
+    await earlierRaise;
+    assert.deepEqual(await approval('revoked-before-escalation-ack.ts'), { decision: 'cancel' });
+    await queuedDowngrade.started;
+    queuedDowngrade.resolve();
+    await laterRevoke;
     await stream.return(undefined);
     const nextStarted = new Promise<void>((resolve) => {
       markStarted = resolve;

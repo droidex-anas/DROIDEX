@@ -486,19 +486,17 @@ export class ClaudeSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.permissions.change(this.query, this.initialized, () => ({
-      autonomy,
-      planning: this.permissions.planning,
-    }));
+    await this.permissions.change(this.query, this.initialized, { autonomy });
     this.publishPermissionNotice();
   }
 
   async setInteractionMode(mode: SessionInteractionMode): Promise<void> {
-    await this.permissions.change(this.query, this.initialized, () => ({
-      autonomy: this.permissions.selection(),
-      planning: mode === 'spec',
-    }));
+    await this.permissions.change(this.query, this.initialized, { planning: mode === 'spec' });
     this.publishPermissionNotice();
+  }
+
+  get autonomy(): Autonomy {
+    return this.permissions.selection();
   }
 
   private publishPermissionNotice(): void {

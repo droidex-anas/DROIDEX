@@ -1944,6 +1944,9 @@ function claudeResumeProvider(
       await beforeResume(id, input);
       return {
         provider: 'claude',
+        get autonomy() {
+          return resumed.autonomy;
+        },
         providerSessionId: id,
         ...(setInteractionMode ? { setInteractionMode } : {}),
         stream: resumed.stream.bind(resumed),

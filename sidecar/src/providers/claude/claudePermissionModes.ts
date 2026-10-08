@@ -10,12 +10,15 @@ export class ClaudePermissionModes {
   private changes: Promise<void> = Promise.resolve();
   private noticePending = false;
   private noticeReported = false;
+  private requestedAutonomy: Autonomy;
 
   constructor(
     private autonomy: Autonomy,
     public planning: boolean,
     private readonly requireOpen: () => void,
-  ) {}
+  ) {
+    this.requestedAutonomy = autonomy;
+  }
 
   async initialize(query: Pick<Query, 'setPermissionMode'>): Promise<void> {
     try {
@@ -34,23 +37,30 @@ export class ClaudePermissionModes {
   change(
     query: Pick<Query, 'setPermissionMode'>,
     initialized: Promise<void>,
-    next: () => { autonomy: Autonomy; planning: boolean },
+    next: { autonomy?: Autonomy; planning?: boolean },
   ): Promise<void> {
+    const levels: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+    // Revoking permission cannot wait for the CLI or be undone by its refusal.
+    if (next.autonomy !== undefined) {
+      this.requestedAutonomy = next.autonomy;
+      if (levels.indexOf(next.autonomy) < levels.indexOf(this.autonomy))
+        this.autonomy = next.autonomy;
+    }
     const applied = this.changes.then(async () => {
       await initialized;
       this.requireOpen();
-      const { autonomy, planning } = next();
-      const previous = this.autonomy;
-      // Permission callbacks must see the choice before the CLI acknowledges it.
-      this.autonomy = autonomy;
-      try {
-        if (!planning || !this.planning)
-          await query.setPermissionMode(this.mode(autonomy, planning));
-        this.requireOpen();
-      } catch (error) {
-        this.autonomy = previous;
-        throw error;
-      }
+      const autonomy = next.autonomy ?? this.autonomy;
+      const planning = next.planning ?? this.planning;
+      const isEscalation = levels.indexOf(autonomy) > levels.indexOf(this.autonomy);
+      // A grant in Spec still needs the CLI's acknowledgement of plan mode.
+      if (!planning || !this.planning || isEscalation)
+        await query.setPermissionMode(this.mode(autonomy, planning));
+      this.requireOpen();
+      // An older acknowledgement cannot restore access revoked behind it.
+      this.autonomy =
+        levels.indexOf(autonomy) < levels.indexOf(this.requestedAutonomy)
+          ? autonomy
+          : this.requestedAutonomy;
       this.planning = planning;
       this.noteFallback();
     });

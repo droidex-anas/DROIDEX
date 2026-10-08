@@ -29,15 +29,15 @@ test('Auto is probed once, with one notice and default fallback when refused, wi
   await modes.initialize(query);
   assert.deepEqual(calls, ['auto', 'default']);
   assert.match(modes.takeNotice() ?? '', /approvals still ask/);
-  await modes.change(query, Promise.resolve(), () => ({ autonomy: 'low', planning: false }));
-  await modes.change(query, Promise.resolve(), () => ({ autonomy: 'medium', planning: false }));
+  await modes.change(query, Promise.resolve(), { autonomy: 'low', planning: false });
+  await modes.change(query, Promise.resolve(), { autonomy: 'medium', planning: false });
   assert.deepEqual(calls, ['auto', 'default', 'acceptEdits', 'default']);
   assert.equal(modes.takeNotice(), undefined);
 
   // The notice is withdrawn when the user selects another mode before it is delivered.
   const reselected = new ClaudePermissionModes('medium', false, () => undefined);
   await reselected.initialize(query);
-  await reselected.change(query, Promise.resolve(), () => ({ autonomy: 'high', planning: false }));
+  await reselected.change(query, Promise.resolve(), { autonomy: 'high', planning: false });
   assert.equal(reselected.takeNotice(), undefined);
 });
 
@@ -52,16 +52,16 @@ test('Spec restores the chosen permission mode and rejected changes keep the sel
   };
   const modes = new ClaudePermissionModes('medium', true, () => undefined);
   await modes.initialize(query);
-  await modes.change(query, Promise.resolve(), () => ({ autonomy: 'low', planning: true }));
+  await modes.change(query, Promise.resolve(), { autonomy: 'low', planning: true });
   assert.deepEqual(calls, ['auto', 'plan']);
-  await modes.change(query, Promise.resolve(), () => ({
+  await modes.change(query, Promise.resolve(), {
     autonomy: modes.selection(),
     planning: false,
-  }));
+  });
   assert.equal(calls.at(-1), 'acceptEdits');
   reject = true;
   await assert.rejects(
-    modes.change(query, Promise.resolve(), () => ({ autonomy: 'high', planning: false })),
+    modes.change(query, Promise.resolve(), { autonomy: 'high', planning: false }),
     /refused/,
   );
   assert.equal(modes.selection(), 'low');

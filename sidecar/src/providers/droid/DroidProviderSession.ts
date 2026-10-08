@@ -45,6 +45,8 @@ export class DroidProviderSession implements ProviderSession {
   // The refusal Droid gave this turn, if any.
   private limitDetail: string | undefined;
   private readonly stopListening: () => void;
+  private requestedAutonomy: Autonomy;
+  private autonomyChanges: Promise<void> = Promise.resolve();
 
   constructor(
     // Primary-session events are stamped with DROIDEX's identity, not the
@@ -54,6 +56,7 @@ export class DroidProviderSession implements ProviderSession {
     private readonly runtime: DroidProcessRuntime,
     private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
   ) {
+    this.requestedAutonomy = permissions.autonomy;
     this.modelId = droid.initResult.settings.modelId;
     // Listened to for the session's life: a switch Droid reports between turns
     // is still the model the next turn runs on.
@@ -159,15 +162,24 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    const previous = this.permissions.autonomy;
+    const levels: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+    this.requestedAutonomy = autonomy;
     // Off and edits-only share native Off, so callbacks own their distinction.
-    this.permissions.autonomy = autonomy;
-    try {
+    if (levels.indexOf(autonomy) < levels.indexOf(this.permissions.autonomy))
+      this.permissions.autonomy = autonomy;
+    const applied = this.autonomyChanges.then(async () => {
       await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
-    } catch (error) {
-      this.permissions.autonomy = previous;
-      throw error;
-    }
+      this.permissions.autonomy =
+        levels.indexOf(autonomy) < levels.indexOf(this.requestedAutonomy)
+          ? autonomy
+          : this.requestedAutonomy;
+    });
+    this.autonomyChanges = applied.catch(() => undefined);
+    await applied;
+  }
+
+  get autonomy(): Autonomy {
+    return this.permissions.autonomy;
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {

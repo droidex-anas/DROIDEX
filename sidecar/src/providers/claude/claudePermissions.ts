@@ -74,17 +74,17 @@ export function claudeCanUseTool(
     const kind = permissionKind(toolName);
     if (
       !isPlanning() &&
-      (level === 'high' || (level === 'low' && (kind === 'edit' || kind === 'create')))
+      (level === 'high' ||
+        (level === 'low' && !options.matchedAskRule && (kind === 'edit' || kind === 'create')))
     )
       return Promise.resolve({ behavior: 'allow' });
     return approveTool(appSessionId, toolName, input, options, interactions);
   };
   return async (toolName, input, options): Promise<PermissionResult> => {
-    const decision = await Promise.race([
-      decide(toolName, input, options),
-      interrupted(options.signal),
-    ]);
-    if (decision !== INTERRUPTED) return decision;
+    const decision = options.signal.aborted
+      ? INTERRUPTED
+      : await Promise.race([decide(toolName, input, options), interrupted(options.signal)]);
+    if (decision !== INTERRUPTED && !options.signal.aborted) return decision;
     // The turn ended with the card still open. Settling only the SDK's side
     // would leave the prompt and its waiter behind, under the next turn.
     interactions.cancelPending();
@@ -149,6 +149,7 @@ async function approveTool(
       raw: { toolName, input },
     },
     confirmationType: CONFIRMATION_TYPES[kind],
+    signal: options.signal,
     ...(signature ? { signature } : {}),
     ...(mcp ? { mcpTool: mcp } : {}),
   });

@@ -65,7 +65,9 @@ export class CodexSession implements ProviderSession {
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
-  private autonomy: Autonomy;
+  private currentAutonomy: Autonomy;
+  private requestedAutonomy: Autonomy;
+  private settingsChanges: Promise<void> = Promise.resolve();
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
@@ -108,13 +110,14 @@ export class CodexSession implements ProviderSession {
     this.client = input.client;
     this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
-    this.autonomy = input.autonomy;
+    this.currentAutonomy = input.autonomy;
+    this.requestedAutonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
     this.voice = new CodexVoice(
       this.client,
       () => this.threadId,
-      () => this.applyThreadSettings(),
+      () => this.changeThreadSettings(() => this.applyThreadSettings()),
     );
     this.prompts = new OpenPrompts(input.appSessionId, input.interactions);
     this.tools = new CodexToolBridge(input.inAppMcpServers ?? [], {
@@ -145,6 +148,10 @@ export class CodexSession implements ProviderSession {
 
   get isClosed(): boolean {
     return this.hasClosed;
+  }
+
+  get autonomy(): Autonomy {
+    return this.currentAutonomy;
   }
 
   get process(): { pid: number; isAlive(): boolean } | undefined {
@@ -266,47 +273,62 @@ export class CodexSession implements ProviderSession {
     }
   }
 
-  // Callbacks use this selection now; native permissions change next turn.
+  // Revocations apply now; grants wait for the native write. The running
+  // turn keeps its native sandbox, but callbacks use the safer selection.
   // Thread settings also cover turns Codex starts itself for spoken requests.
   async setAutonomy(autonomy: Autonomy): Promise<void> {
-    const previous = this.autonomy;
-    this.autonomy = autonomy;
-    try {
-      await this.applyThreadSettings();
-    } catch (error) {
-      this.autonomy = previous;
-      throw error;
-    }
+    const levels: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+    this.requestedAutonomy = autonomy;
+    if (levels.indexOf(autonomy) < levels.indexOf(this.autonomy)) this.currentAutonomy = autonomy;
+    await this.changeThreadSettings(async () => {
+      await this.applyThreadSettings(autonomy);
+      this.currentAutonomy =
+        levels.indexOf(autonomy) < levels.indexOf(this.requestedAutonomy)
+          ? autonomy
+          : this.requestedAutonomy;
+    });
   }
 
-  async setModel(settings: ProviderModelSettings): Promise<void> {
-    // An omitted field keeps its value; only what the caller named changes.
-    // A cleared effort leaves `turn/start` to the model's own.
-    const model = { ...this.model };
-    if (settings.modelId !== undefined) model.modelId = settings.modelId;
-    if (settings.reasoningEffort === null) {
-      delete model.reasoningEffort;
-      // Omitting it would leave the thread on the effort it already had, so
-      // the reset has to be said out loud the next time settings are applied.
-      this.effortCleared = true;
-    } else if (settings.reasoningEffort) {
-      model.reasoningEffort = settings.reasoningEffort;
-      this.effortCleared = false;
-    }
-    if (settings.fastMode !== undefined) model.fastMode = settings.fastMode;
-    const previous = this.model;
-    this.model = model;
-    this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-    try {
-      // Not swallowed: a turn Codex starts for a spoken request runs on what
-      // the thread has, so a rejected write means the selection the chat shows
-      // is not the one that would run.
-      await this.applyThreadSettings();
-    } catch (error) {
-      this.model = previous;
+  setModel(settings: ProviderModelSettings): Promise<void> {
+    return this.changeThreadSettings(async () => {
+      // An omitted field keeps its value; only what the caller named changes.
+      // A cleared effort leaves `turn/start` to the model's own.
+      const model = { ...this.model };
+      const previousEffortCleared = this.effortCleared;
+      if (settings.modelId !== undefined) model.modelId = settings.modelId;
+      if (settings.reasoningEffort === null) {
+        delete model.reasoningEffort;
+        // Omitting it would leave the thread on the effort it already had, so
+        // the reset has to be said out loud the next time settings are applied.
+        this.effortCleared = true;
+      } else if (settings.reasoningEffort) {
+        model.reasoningEffort = settings.reasoningEffort;
+        this.effortCleared = false;
+      }
+      if (settings.fastMode !== undefined) model.fastMode = settings.fastMode;
+      const previous = this.model;
+      this.model = model;
       this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
-      throw error;
-    }
+      try {
+        // Not swallowed: a turn Codex starts for a spoken request runs on what
+        // the thread has, so a rejected write means the selection the chat shows
+        // is not the one that would run.
+        await this.applyThreadSettings();
+      } catch (error) {
+        this.model = previous;
+        this.effortCleared = previousEffortCleared;
+        this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+        throw error;
+      }
+    });
+  }
+
+  private changeThreadSettings(change: () => Promise<void>): Promise<void> {
+    // Every write carries full settings, so it must read state only after the
+    // preceding mutation has either committed or rolled back.
+    const applied = this.settingsChanges.then(change);
+    this.settingsChanges = applied.catch(() => undefined);
+    return applied;
   }
 
   // The chat's settings on the thread itself. A typed turn carries these on
@@ -316,11 +338,11 @@ export class CodexSession implements ProviderSession {
   // sandbox travel together, the way `turn/start` sends them, because half an
   // autonomy level is worse than none: an unsandboxed turn that never asks, or
   // a sandboxed one that cannot ask for the escalation it needs.
-  private async applyThreadSettings(): Promise<void> {
+  private async applyThreadSettings(autonomy = this.autonomy): Promise<void> {
     const threadId = this.threadId;
     if (!threadId) return;
     const { reasoningEffort } = this.model;
-    const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
+    const { approvalPolicy, sandbox } = codexAutonomy(autonomy);
     // A cleared pin means the thread's own model, which is what the mapper and
     // `turn/start` already read it as. Omitting it would leave the thread on
     // the model the chat no longer names.
@@ -341,7 +363,7 @@ export class CodexSession implements ProviderSession {
   // and effort ride `turn/start` anyway, and a conversation applies all of it
   // again before it opens, which is where the failure is worth reporting.
   private async pushThreadSettings(): Promise<void> {
-    await this.applyThreadSettings().catch(() => undefined);
+    await this.changeThreadSettings(() => this.applyThreadSettings()).catch(() => undefined);
   }
 
   // Codex hands the prompt to the running turn at its next model request,

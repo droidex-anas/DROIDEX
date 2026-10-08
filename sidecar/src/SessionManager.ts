@@ -306,8 +306,8 @@ export class SessionManager {
   private readonly lineage = new SessionLineageStore(sessionLineagePath(droidexUserDataDir()));
   private readonly forks: SessionForks;
   private shutdownPromise?: Promise<void>;
-  // Per-session autonomy mutation queue: rapid changes settle against the
-  // provider in the order they were requested.
+  // Providers serialize native writes; this tracks outstanding changes so
+  // delivery and retirement cannot outlive them.
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly browsers: SessionBrowsers;
@@ -1870,9 +1870,9 @@ export class SessionManager {
   }
 
   private setAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
-    const tail = this.autonomyMutationTails.get(appSessionId) ?? Promise.resolve();
-    // A rejected predecessor must not drop the changes queued behind it.
-    const next = tail.catch(() => undefined).then(() => this.applyAutonomy(appSessionId, autonomy));
+    const tail = this.autonomyMutationTails.get(appSessionId);
+    const applied = this.applyAutonomy(appSessionId, autonomy);
+    const next = tail ? Promise.all([tail, applied]).then(() => undefined) : applied;
     this.autonomyMutationTails.set(appSessionId, next);
     return next.finally(() => {
       if (this.autonomyMutationTails.get(appSessionId) === next) {
@@ -1905,10 +1905,30 @@ export class SessionManager {
       });
       return;
     }
-    if (liveSession.summary.autonomy === nextAutonomy) return;
+    if (
+      liveSession.summary.autonomy === nextAutonomy &&
+      !this.autonomyMutationTails.has(appSessionId)
+    )
+      return;
     const session = liveSession.session;
+    const publishAutonomy = () => {
+      if (liveSession.summary.autonomy === session.autonomy) return;
+      try {
+        this.registry.updateSummary(appSessionId, { autonomy: session.autonomy });
+      } catch (err) {
+        this.emitError({
+          code: 'session.autonomy_update_failed',
+          appSessionId,
+          message: `Could not record the autonomy change: ${errMsg(err)}`,
+          recoverable: true,
+        });
+      }
+    };
     try {
-      await session.setAutonomy(nextAutonomy);
+      const applied = session.setAutonomy(nextAutonomy);
+      // Save revocations before the native acknowledgement, including refusals.
+      publishAutonomy();
+      await applied;
     } catch (err) {
       this.emitError({
         code: 'session.autonomy_update_failed',
@@ -1938,16 +1958,7 @@ export class SessionManager {
       });
       return;
     }
-    try {
-      this.registry.updateSummary(appSessionId, { autonomy: nextAutonomy });
-    } catch (err) {
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: `Could not record the autonomy change: ${errMsg(err)}`,
-        recoverable: true,
-      });
-    }
+    publishAutonomy();
   }
 
   private async setInteractionMode(

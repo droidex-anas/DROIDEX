@@ -29,6 +29,11 @@ function createHarness(options: HarnessOptions = {}) {
 
   const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
     const liveSession: InteractionLiveSession = {
+      session: {
+        get autonomy() {
+          return liveSession.summary.autonomy;
+        },
+      },
       summary: sessionSummary({
         appSessionId,
         providerSessionId,
