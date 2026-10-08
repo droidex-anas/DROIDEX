@@ -65,6 +65,7 @@ export class SessionCompactionExecution {
     liveSession: LiveSession,
     customInstructions: string | undefined,
   ): Promise<CompactionExecutionResult> {
+    liveSession.createAdmission?.requireProviderChange();
     const appSessionId = liveSession.summary.appSessionId;
     const isCurrent = () => this.effects.primaryTarget(liveSession).isCurrent();
     const preCompactSessionId = liveSession.summary.providerSessionId;
@@ -134,6 +135,7 @@ export class SessionCompactionExecution {
     providerSessionId: string,
     carryover: UsageOffset,
   ): Promise<void> {
+    liveSession.createAdmission?.requireProviderChange();
     const appSessionId = liveSession.summary.appSessionId;
     const ref = { id: appSessionId, autonomy: liveSession.summary.autonomy };
     const oldSession = liveSession.session;
@@ -179,6 +181,7 @@ export class SessionCompactionExecution {
       }
       // The replacement speaks for this chat from here on, so the leases the
       // old provider session could still have served end before it closes.
+      liveSession.createAdmission?.requireProviderChange();
       this.dependencies.canvasTurns.endSession(appSessionId);
       await oldSession.close();
       if (!target.isCurrent()) return;

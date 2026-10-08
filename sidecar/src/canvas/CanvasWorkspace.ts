@@ -8,7 +8,7 @@ import { CanvasAttachments } from './canvasAttachments.js';
 import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
 import type { BuildCommit, BuildTarget } from './canvasBuildHost.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
-import { CanvasCommits, CLOSING } from './canvasCommits.js';
+import { CanvasCommits, CLOSING, type CanvasCommitOwner } from './canvasCommits.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasFrameEdits } from './CanvasFrameEdits.js';
@@ -132,18 +132,23 @@ export class CanvasWorkspace {
     appSessionId: string,
     mutationId: string,
     name?: string,
-    isCurrent?: () => boolean,
+    owner?: CanvasCommitOwner,
   ): Promise<{ canvasId: string }> {
     return this.commits.admit(() =>
-      this.commits.run(() =>
-        this.attachments.createCanvas(appSessionId, mutationId, name, isCurrent),
-      ),
+      this.commits.run(() => {
+        const write = () =>
+          this.attachments.createCanvas(appSessionId, mutationId, name, owner?.isCurrent);
+        return owner ? owner.commit(write) : write();
+      }, owner?.signal),
     );
   }
 
-  attach(appSessionId: string, canvasId: string, isCurrent?: () => boolean): Promise<void> {
+  attach(appSessionId: string, canvasId: string, owner?: CanvasCommitOwner): Promise<void> {
     return this.commits.admit(() =>
-      this.commits.run(() => this.attachments.attach(appSessionId, canvasId, isCurrent)),
+      this.commits.run(() => {
+        const write = () => this.attachments.attach(appSessionId, canvasId, owner?.isCurrent);
+        return owner ? owner.commit(write) : write();
+      }, owner?.signal),
     );
   }
 

@@ -331,11 +331,16 @@ A Design draft sends its canvas intent and durable create mutation ID in
 in `beforeFirstTurn`, after registering the chat and before `session.created`
 or the first prompt. New canvases and saved-canvas attachments share this path;
 a failed attachment fails the session open and releases its runtime. The first
-turn therefore leases the committed attachment. Resume publication and all
-turn admission wait on the same pending create.
-Closing cancels that create before cleanup; Canvas checks its captured runtime
-generation before each attachment write, and close drains any started commit
-before a replacement can register. Already-published boards remain durable.
+turn therefore leases the committed attachment. Resume publication, typed sends,
+voice starts and delegated turns wait on the same pending create; compaction
+cannot replace its provisional provider. Every admission rechecks the captured
+runtime before applying results.
+Closing cancels that create before cleanup. The Canvas queue releases cancelled
+work that has not started, independently of unrelated writes. Canvas checks the
+captured runtime generation before each attachment write, and close drains only
+this create's started commit before a replacement can register. A write still
+draining after five seconds emits an actionable diagnostic; its fence never
+times out. Already-published boards remain durable.
 The renderer keeps unsent `canvasDraft` separate from submitted
 `canvasChatRequests`, which only track
 chats whose panes need opening. The lazy bootstrap reads the committed attachment

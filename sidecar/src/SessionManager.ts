@@ -662,7 +662,7 @@ export class SessionManager {
         this.timeline.append(event);
       },
       ensureRunning: async (appSessionId) => {
-        if (!this.registry.getLive(appSessionId)) await this.lifecycle.resume(appSessionId);
+        return (await this.lifecycle.prepareTurn(appSessionId))?.session;
       },
       emit: (event) => {
         this.emit(event);
@@ -1757,6 +1757,16 @@ export class SessionManager {
       previousLiveSession?.summary.appSessionId ??
       this.registry.resolveSummary(requestedAppSessionId)?.appSessionId ??
       requestedAppSessionId;
+    if (
+      previousLiveSession?.createAdmission &&
+      !previousLiveSession.createAdmission.canChangeProvider()
+    ) {
+      this.timeline.appendProgress(
+        appSessionId,
+        'This chat is still opening. Wait for it to finish before compacting.',
+      );
+      return;
+    }
     if (
       previousLiveSession?.streaming ||
       previousLiveSession?.compacting ||

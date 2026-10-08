@@ -3,8 +3,10 @@ import { CanvasScopes } from './canvas/canvasScopes.js';
 import type { CanvasTurnContext } from './canvas/protocol.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
+import { SessionVoice } from './providers/SessionVoice.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
-import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
+import { canvasRoot, deferred, quietBuilds } from './testing/canvasStorageSupport.js';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,6 +28,7 @@ import {
   SessionLifecycle,
   type LiveSession,
   type SessionCreateCommand,
+  type SessionLifecycleDependencies,
 } from './SessionLifecycle.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import {
@@ -88,7 +91,8 @@ class RejectingCloseSession extends FakeFactorySession {
 
 function createHarness(
   ordinarySummaries: SessionSummary[] = [],
-  beforeFirstTurn?: (session: SessionSummary, clientRef: string) => Promise<void>,
+  beforeFirstTurn?: SessionLifecycleDependencies['beforeFirstTurn'],
+  attachedCanvasId: (appSessionId: string) => string | null = () => null,
 ) {
   const calls: RecordedCall[] = [];
   const events: ServerEvent[] = [];
@@ -149,10 +153,9 @@ function createHarness(
   const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
     calls.push({ target, method, args });
   };
-  // The production lease owner, with no Canvas workspace open behind it, so
-  // every chat reads as unattached.
+  // Most lifecycle cases have no attached Canvas workspace.
   const canvasScopes = new CanvasScopes();
-  const canvasTurns = new CanvasTurns(canvasScopes, () => null);
+  const canvasTurns = new CanvasTurns(canvasScopes, attachedCanvasId);
   const lifecycle = new SessionLifecycle({
     beforeFirstTurn,
     eventFlow: { apply: () => undefined, beginTurn: () => undefined },
@@ -2254,6 +2257,106 @@ function delegatingProvider(
       }),
   };
 }
+
+test('voice and delegated turns wait for the captured Canvas create before leasing', async (t) => {
+  const entered = deferred();
+  const binding = deferred();
+  const h = createHarness(
+    [],
+    (session, clientRef, canvas, admission) =>
+      prepareSessionFirstTurn(
+        session,
+        { clientRef, canvas },
+        {
+          beforeFirstTurn: async () => {
+            entered.resolve();
+            await binding.promise;
+          },
+        },
+        Promise.resolve(workspace),
+        (event) => h.events.push(event),
+        admission,
+      ),
+    (id) => workspace.attachedCanvasId(id),
+  );
+  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
+    isChatKnown: () => true,
+    isScopeActive: (id) => h.canvasScopes.isScopeActive(id),
+    bindScopeCanvas: (id, canvasId) => h.canvasScopes.bindScopeCanvas(id, canvasId),
+  });
+  t.after(() => workspace.close());
+  const session = new FakeFactorySession('spoken', {}, h.calls);
+  let notify: (running: boolean) => void = () => undefined;
+  let starts = 0;
+  const provider = delegatingProvider(h, session, (listener) => {
+    notify = listener;
+  });
+  const create = provider.create.bind(provider);
+  h.setProvider({
+    ...provider,
+    create: async (input) => ({
+      ...(await create(input)),
+      voice: {
+        isLive: () => starts > 0,
+        listVoices: async () => ({ voices: [] }),
+        onEvent: () => () => undefined,
+        start: async () => {
+          starts += 1;
+          notify(true);
+        },
+        stop: async () => {
+          notify(false);
+        },
+      },
+    }),
+  });
+  const voice = new SessionVoice({
+    liveSession: (id) => h.registry.getLive(id)?.session,
+    ensureRunning: async (id) => (await h.lifecycle.prepareTurn(id))?.session,
+    emit: (event) => h.events.push(event),
+    appendTranscript: () => undefined,
+    liveChanged: () => undefined,
+  });
+  const creating = h.lifecycle.create({
+    ...createCommand(),
+    goal: '',
+    canvas: { canvasId: null, mutationId: 'spoken-canvas' },
+  });
+  await entered.promise;
+  const starting = voice.handle({
+    type: 'voice.start',
+    appSessionId: 'spoken',
+    sdp: 'offer',
+    attempt: 'attempt-1',
+  });
+  try {
+    notify(true);
+    notify(false);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(starts, 0);
+    assert.equal(h.canvasTurns.activeScope('spoken'), undefined);
+    assert.equal(
+      h.events.some((event) => event.type === 'session.created'),
+      false,
+    );
+    binding.resolve();
+    await Promise.all([creating, starting]);
+    const scope = h.canvasTurns.activeScope('spoken');
+    assert.ok(scope?.canvasId);
+    const created = await workspace.create(scope, {
+      mutationId: 'spoken-model-create',
+      frames: [
+        { name: 'Spoken', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
+      ],
+    });
+    assert.equal(created.canvasId, workspace.attachedCanvasId('spoken'));
+    assert.equal(workspace.listCanvases().length, 1);
+  } finally {
+    binding.resolve();
+    await Promise.all([creating, starting]);
+    await h.lifecycle.closeAll();
+  }
+});
 
 test('a turn the provider starts beside a typed one never takes its Canvas leases', async () => {
   const h = createHarness();

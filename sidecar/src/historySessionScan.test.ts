@@ -404,7 +404,7 @@ test('voice finals append once and extend under the same id across runtime repla
     emit: () => undefined,
     appendTranscript: (event) => appended.push(event),
     liveChanged: () => undefined,
-    ensureRunning: () => Promise.resolve(),
+    ensureRunning: () => Promise.resolve(currentSession),
   });
   const start = () =>
     relay.handle({

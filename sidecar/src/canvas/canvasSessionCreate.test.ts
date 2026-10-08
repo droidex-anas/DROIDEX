@@ -352,6 +352,11 @@ for (const stage of ['prepared', 'published'] as const) {
       );
       write.release();
       await Promise.all([creating, closing, resuming]);
+      assert.ok(
+        h.events.some(
+          (event) => event.type === 'session.created' && event.clientRef === 'resume:closing-chat',
+        ),
+      );
       assert.deepEqual(original.prompts, []);
       assert.equal(workspace.listCanvases().length, stage === 'published' ? 1 : 0);
       const chosen = await workspace.createCanvas('closing-chat', 'chosen-after-close');
@@ -363,3 +368,74 @@ for (const stage of ['prepared', 'published'] as const) {
     }
   });
 }
+
+test('cancelling a queued Canvas create releases cleanup before an unrelated write finishes', async (t) => {
+  const write = holdManifestWrite('prepared');
+  const enqueued = deferred();
+  let ownSettled = false;
+  const h = createSessionManagerTestContext({
+    beforeFirstTurn: (session, clientRef, canvas, admission) =>
+      prepareSessionFirstTurn(
+        session,
+        { clientRef, canvas },
+        { beforeFirstTurn: async () => undefined },
+        Promise.resolve(workspace),
+        (event) => h.events.push(event),
+        admission,
+      ),
+  });
+  t.after(() => h.dispose());
+  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
+    isChatKnown: () => true,
+    isScopeActive: () => false,
+    bindScopeCanvas: () => undefined,
+    fs: write.fs,
+  });
+  t.after(() => workspace.close());
+  const createCanvas = workspace.createCanvas.bind(workspace);
+  t.mock.method(workspace, 'createCanvas', (...args: Parameters<typeof createCanvas>) => {
+    const pending = createCanvas(...args);
+    if (args[0] === 'queued-chat') {
+      enqueued.resolve();
+      void pending.then(
+        () => {
+          ownSettled = true;
+        },
+        () => {
+          ownSettled = true;
+        },
+      );
+    }
+    return pending;
+  });
+  h.runtime.createQueue.push(new FakeFactorySession('queued-chat', {}, h.calls));
+  writeProviderConversation(h.home, 'queued-chat', 'Resumable chat');
+  h.fixture.seedHistorySummaries([historicalSummary('queued-chat', 'queued-chat')]);
+  write.arm();
+  const unrelated = workspace.createCanvas('other-chat', 'unrelated-write');
+  await write.reached;
+  const creating = h.create(
+    chatCommand('queued', { goal: '', canvas: { canvasId: null, mutationId: 'queued-canvas' } }),
+  );
+  await enqueued.promise;
+  const closing = h.handle({ type: 'session.close', appSessionId: 'queued-chat' });
+  try {
+    await h.waitForIdle();
+    assert.equal(ownSettled, true);
+    await Promise.all([creating, closing]);
+    assert.ok(
+      h.calls.some((call) => call.method === 'session.close' && call.args[0] === 'queued-chat'),
+    );
+    await h.handle({ type: 'session.resume', appSessionId: 'queued-chat' });
+    assert.ok(
+      h.events.some(
+        (event) => event.type === 'session.created' && event.clientRef === 'resume:queued-chat',
+      ),
+    );
+  } finally {
+    write.release();
+    await Promise.all([unrelated, creating, closing]);
+  }
+  assert.equal(workspace.listCanvases().length, 1);
+  assert.equal(workspace.attachedCanvasId('queued-chat'), null);
+});

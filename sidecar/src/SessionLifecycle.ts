@@ -814,7 +814,7 @@ export class SessionLifecycle {
   ): Promise<AdmittedPrompt | 'held' | undefined> {
     if (this.waitForRelaunch(id, prompt)) return 'held';
     const stops = this.stopCount(id);
-    const liveSession = await this.prepareToSend(id);
+    const liveSession = await this.prepareTurn(id);
     if (this.stopCount(id) !== stops || isWithdrawn(prompt)) return undefined;
     if (!liveSession) return this.waitForRelaunch(id, prompt) ? 'held' : undefined;
     return { liveSession, stops };
@@ -1002,7 +1002,15 @@ export class SessionLifecycle {
       }
     };
 
-    await liveSession.createAdmission?.drain();
+    await liveSession.createAdmission?.drain(() => {
+      d.emitError({
+        appSessionId: liveSession.summary.appSessionId,
+        code: 'canvas.close_pending',
+        message:
+          "Close is waiting for this chat's Canvas write to finish. If storage remains stuck, restart DROIDEX to recover the saved board.",
+        recoverable: true,
+      });
+    });
     await run(() => d.stopVoiceSession(liveSession.summary.appSessionId));
 
     // First, while every provider process of this session is still alive and
@@ -1175,9 +1183,11 @@ export class SessionLifecycle {
 
   private subscribeBackgroundEvents(liveSession: LiveSession): void {
     const appSessionId = liveSession.summary.appSessionId;
+    const session = liveSession.session;
     const isCurrent = () =>
       !this.dependencies.isShutdownStarted() &&
       !liveSession.closeMode &&
+      liveSession.session === session &&
       this.dependencies.registry.getLive(appSessionId) === liveSession;
     const events = liveSession.session.onBackgroundEvent?.((normalized) => {
       if (!isCurrent()) return;
@@ -1185,7 +1195,7 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = liveSession.session.onDelegatedTurn?.((running) => {
+    const applyDelegated = (running: boolean): void => {
       if (!isCurrent()) return;
       liveSession.streaming = running;
       if (running) {
@@ -1221,6 +1231,16 @@ export class SessionLifecycle {
       if (liveSession.session.isClosed) return;
       const next = liveSession.pendingSends.shift();
       if (next !== undefined) void this.driveInBackground(appSessionId, next);
+    };
+    const admission = liveSession.createAdmission;
+    const delegated = session.onDelegatedTurn?.((running) => {
+      if (!admission) {
+        applyDelegated(running);
+        return;
+      }
+      void admission.deferDelegatedTurn(running, applyDelegated).catch((error: unknown) => {
+        this.dependencies.emitError({ appSessionId, message: errMsg(error) });
+      });
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
@@ -1274,7 +1294,7 @@ export class SessionLifecycle {
     if (target) void this.dependencies.context.refresh(target);
   }
 
-  private async prepareToSend(appSessionId: string): Promise<LiveSession | undefined> {
+  async prepareTurn(appSessionId: string): Promise<LiveSession | undefined> {
     let liveSession = this.dependencies.registry.getLive(appSessionId);
     // A send that lands while the runtime is being released must wait for that
     // close and reopen, not vanish. Retirement makes this window reachable.
@@ -1298,10 +1318,18 @@ export class SessionLifecycle {
     const admission = liveSession.createAdmission;
     if (admission && (!(await admission.ready) || !admission.isCurrent())) return undefined;
     if (liveSession.streaming && liveSession.summary.provider === 'claude') return liveSession;
+    const provider = liveSession.session;
     const settingsApplied = await this.dependencies.applyPendingSessionSettings(
       liveSession.summary.appSessionId,
     );
-    return settingsApplied && !liveSession.closeMode ? liveSession : undefined;
+    return settingsApplied &&
+      !liveSession.closeMode &&
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === provider &&
+      !provider.isClosed &&
+      !this.dependencies.isShutdownStarted()
+      ? liveSession
+      : undefined;
   }
 
   private async cleanupFailedOpen(
@@ -1309,7 +1337,13 @@ export class SessionLifecycle {
     session: ProviderSession | undefined,
     liveSession: LiveSession | undefined,
   ): Promise<void> {
-    liveSession?.createAdmission?.cancel();
+    const admission = liveSession?.createAdmission;
+    admission?.cancel();
+    if (liveSession && session && liveSession.session !== session) {
+      if (liveSession.createAdmission === admission) liveSession.createAdmission = undefined;
+      await runBestEffortAsync(() => session.close());
+      return;
+    }
     if (liveSession?.closePromise) {
       await liveSession.closePromise;
       return;

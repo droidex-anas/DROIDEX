@@ -22,11 +22,9 @@ export async function prepareSessionFirstTurn(
   admission.requireCurrent();
   const canvasId = intent.canvasId;
   if (canvasId === null) {
-    await admission.commit((isCurrent) =>
-      workspace.createCanvas(appSessionId, intent.mutationId, intent.name, isCurrent),
-    );
+    await workspace.createCanvas(appSessionId, intent.mutationId, intent.name, admission);
   } else {
-    await admission.commit((isCurrent) => workspace.attach(appSessionId, canvasId, isCurrent));
+    await workspace.attach(appSessionId, canvasId, admission);
   }
   admission.requireCurrent();
   emit({ type: 'canvas.summaries', summaries: workspace.listCanvases() });
