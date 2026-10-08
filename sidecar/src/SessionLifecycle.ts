@@ -226,6 +226,9 @@ export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
   private readonly resumeOperations = new Map<string, Promise<boolean>>();
   private readonly canceledResumes = new Set<string>();
+  // A close after a native copy is announced cancels that fork's first open,
+  // but must not prevent a deliberate resume after the attempt ends.
+  private readonly forkOpens = new Map<string, 'pending' | 'closed'>();
   // How often each chat was stopped or discarded. A prompt that was accepted
   // but has not started its turn compares the count it was accepted at, so a
   // Stop takes it back even while there is no runtime to interrupt.
@@ -239,6 +242,18 @@ export class SessionLifecycle {
   >();
 
   constructor(private readonly dependencies: SessionLifecycleDependencies) {}
+
+  beginForkOpen(appSessionId: string): void {
+    this.forkOpens.set(this.chatKey(appSessionId), 'pending');
+  }
+
+  endForkOpen(appSessionId: string): void {
+    this.forkOpens.delete(this.chatKey(appSessionId));
+  }
+
+  isCloseRequested(appSessionId: string): boolean {
+    return this.forkOpens.get(this.chatKey(appSessionId)) === 'closed';
+  }
   // A branch is a session opened from another session's transcript: its goal
   // stays the user's request while the model's first prompt carries the source.
   async create(command: SessionCreateCommand, branch?: SessionBranch): Promise<void> {
@@ -403,6 +418,7 @@ export class SessionLifecycle {
       await closing;
       if (d.isShutdownStarted()) return false;
     }
+    if (this.isCloseRequested(appSessionId)) return false;
     const pending = this.resumeOperations.get(appSessionId);
     if (pending) return pending;
 
@@ -441,7 +457,8 @@ export class SessionLifecycle {
 
     const requireCurrentResume = (): void => {
       this.requireOpenAdmission();
-      if (this.canceledResumes.has(appSessionId)) throw new OpenAdmissionClosedError();
+      if (this.canceledResumes.has(appSessionId) || this.isCloseRequested(appSessionId))
+        throw new OpenAdmissionClosedError();
       if (
         historical &&
         d.registry.getCanonicalSummary(appSessionId)?.providerSessionId !==
@@ -926,6 +943,8 @@ export class SessionLifecycle {
     }
     const pendingResume = this.resumeOperations.get(appSessionId);
     if (pendingResume) this.canceledResumes.add(appSessionId);
+    if (mode === 'discard-pending' && this.forkOpens.has(appSessionId))
+      this.forkOpens.set(appSessionId, 'closed');
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession) {
       await pendingResume;
@@ -1066,6 +1085,7 @@ export class SessionLifecycle {
   }
 
   async closeAll(): Promise<void> {
+    this.forkOpens.clear();
     if (this.dependencies.isShutdownStarted()) {
       for (const liveSession of this.dependencies.registry.liveSessionsSnapshot())
         clearTimeout(this.deferredCloses.get(liveSession)?.retryTimer);

@@ -157,6 +157,8 @@ export class CodexSession implements ProviderSession {
   // Opens the session's thread: a new one, or the stored one it is resuming.
   // A thread Codex cannot load is a visible failure; starting a fresh thread
   // under the same identity would silently lose the conversation.
+  // Typed turns carry settings on turn/start; voice applies them before
+  // connecting, so opening needs no extra settings acknowledgement.
   async open(resumeId?: string): Promise<void> {
     const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
     const settings = {
@@ -190,7 +192,6 @@ export class CodexSession implements ProviderSession {
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
     // Never awaited: the limits only add detail to a later refusal.
     void this.usage.read().catch(() => undefined);
-    await this.pushThreadSettings();
   }
 
   // Codex takes developerInstructions in place of the configured ones, so the
@@ -341,13 +342,6 @@ export class CodexSession implements ProviderSession {
       ...(model ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
     });
-  }
-
-  // For the paths whose own work does not depend on this landing: the model
-  // and effort ride `turn/start` anyway, and a conversation applies all of it
-  // again before it opens, which is where the failure is worth reporting.
-  private async pushThreadSettings(): Promise<void> {
-    await this.applyThreadSettings().catch(() => undefined);
   }
 
   // Codex hands the prompt to the running turn at its next model request,
