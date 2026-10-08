@@ -14,6 +14,7 @@ export class ProjectWakeQueue {
   private readonly projects = new Set<Project>();
   private starting?: { project: Project; work: Promise<void> };
   private startCapacityBlocked = false;
+  private readonly acceptedMessages = new WeakSet<ThreadMessage>();
   private readonly recent = new Map<string, number[]>();
   private readonly generations = new Map<string, number>();
   private readonly targetGenerations = new Map<string, number>();
@@ -202,6 +203,15 @@ export class ProjectWakeQueue {
     ]);
   }
 
+  /** Waits for admission only, never for the resulting provider turn. */
+  async dispatch(project: Project, message: ThreadMessage): Promise<boolean> {
+    if (!this.started || this.closed || project.paused) return false;
+    this.schedule();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await this.settle(project);
+    return this.acceptedMessages.has(message);
+  }
+
   close(): void {
     this.closed = true;
     this.recent.clear();
@@ -371,6 +381,7 @@ export class ProjectWakeQueue {
       if (steering) {
         await this.sessions.steer(target, prompt, current, false, {
           accepted: () => {
+            for (const message of messages) this.acceptedMessages.add(message);
             delete project.delivery;
           },
           acknowledged: () => {
@@ -415,6 +426,7 @@ export class ProjectWakeQueue {
       return;
     }
 
+    for (const message of messages) this.acceptedMessages.add(message);
     clearUnread();
     const release = () => {
       this.active.delete(target);

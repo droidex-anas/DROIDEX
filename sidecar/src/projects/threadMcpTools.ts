@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import { requireProjectService } from './service.js';
-import type { ThreadReadout } from './ProjectService.js';
+import { PROJECT_LEAD_GUIDE } from './projectLeadGuide.js';
 import { LEDGER_LIMITS } from './store.js';
 
 const threadId = z
@@ -74,28 +74,23 @@ const spawnInput = z.object({
 
 const sendInput = z.object({
   threadId,
-  text: z
-    .string()
-    .trim()
-    .max(LEDGER_LIMITS.text)
-    .describe('Instructions, or empty when sending only answers.'),
-  answers: z
-    .array(z.string().max(2_000))
-    .max(16)
-    .optional()
-    .describe('One answer per question, in the order the thread asked them.'),
-  questionId: z
-    .string()
-    .min(1)
-    .max(200)
-    .optional()
-    .describe('Required with answers: the questionId from thread_read or the question message.'),
+  text: z.string().trim().min(1).max(LEDGER_LIMITS.text).describe('Instructions for the thread.'),
   delivery: z
-    .enum(['steer', 'now', 'queue'])
+    .enum(['steer', 'interrupt', 'queue'])
     .optional()
     .describe(
-      'steer (default): hand to the running turn. now: stop that turn and run this next. queue: wait for that turn to end. Without a running turn, all modes queue a new turn; a held project waits for Resume.',
+      'steer (default): hand to the running turn. interrupt: stop it and run this next. queue: wait for it to end. An idle or stopped thread starts when a slot is free; a held project waits for Resume.',
     ),
+});
+
+const answerInput = z.object({
+  threadId,
+  questionId: z.string().min(1).max(200),
+  answers: z
+    .array(z.string().max(2_000))
+    .min(1)
+    .max(16)
+    .describe('One answer per question, in order.'),
 });
 
 const doneInput = z.object({
@@ -108,6 +103,14 @@ const doneInput = z.object({
 });
 
 const planInput = z.object({
+  brief: z
+    .string()
+    .trim()
+    .max(LEDGER_LIMITS.brief)
+    .optional()
+    .describe(
+      'The agreed goal, scope, out of scope, done criteria and authority. Omit to retain it.',
+    ),
   title: z
     .string()
     .trim()
@@ -120,6 +123,12 @@ const planInput = z.object({
   steps: z
     .array(
       z.object({
+        id: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Existing step id; retain it when renaming or reordering.'),
         title: z
           .string()
           .trim()
@@ -133,9 +142,11 @@ const planInput = z.object({
           .optional()
           .describe('Optional heading for a run of steps.'),
         state: z
-          .enum(['planned', 'doing', 'done', 'blocked'])
+          .enum(['planned', 'doing', 'review', 'done', 'blocked'])
           .optional()
-          .describe("Only for a step no thread carries; a linked thread's state wins."),
+          .describe(
+            "Your assessment of progress, independent of the linked thread's runtime state.",
+          ),
         threadId: threadId
           .optional()
           .describe('Id of a thread of this chat that carries the step.'),
@@ -152,6 +163,10 @@ const planInput = z.object({
 
 const readInput = z.object({
   threadId,
+  full: z
+    .boolean()
+    .optional()
+    .describe('Read the latest settled final reply in full from its transcript; ignores replies.'),
   replies: z
     .number()
     .int()
@@ -176,7 +191,16 @@ const todoInput = z.object({
   text: z.string().trim().min(1).max(LEDGER_LIMITS.todoText),
   after: threadId
     .optional()
-    .describe('Make due when this thread reports. A report already queued also makes it due.'),
+    .describe(
+      'Make due after the next report, including failure or interruption. A queued report also makes it due.',
+    ),
+  at: z
+    .string()
+    .datetime({ offset: true })
+    .optional()
+    .describe(
+      'Future ISO timestamp, including timezone; may be days away. Choose at or inMinutes.',
+    ),
   inMinutes: z
     .number()
     .int()
@@ -188,15 +212,13 @@ const todoInput = z.object({
     ),
 });
 
-const DELIVERY_NOTES: Partial<Record<string, string>> = {
-  answered: 'Answers delivered. Any accompanying instructions are queued.',
-  'already-answered':
-    'The question was already answered. Any accompanying instructions are queued.',
-  steered: 'Handed to the running turn. If unread, it may run after that turn ends.',
-  'sent-now': 'Requested that the current turn stop; this message runs next.',
-  queued:
-    'Queued for a new turn. Delivery has not started; waitReason describes the wait. Do not resend.',
-  held: 'Queued in a held project. Waits for the user to press Resume.',
+const DELIVERY_NOTES = {
+  steered: 'Steered into its running turn.',
+  interrupt: 'Stopped its turn; your message runs next.',
+  started: 'Started a new turn now.',
+  resumed: 'Restarted the stopped thread; it continues from where it stopped.',
+  queued: 'Queued: it starts when a slot frees. Do not resend or respawn.',
+  held: 'Held until the project resumes.',
 };
 
 /**
@@ -208,8 +230,88 @@ const DELIVERY_NOTES: Partial<Record<string, string>> = {
 export function threadTools(appSessionId: () => string) {
   return [
     tool(
+      'project_guide',
+      'Read the project lead guide at the start and after compaction.',
+      {},
+      safeTool(() => Promise.resolve(jsonResult({ ok: true, guide: PROJECT_LEAD_GUIDE }))),
+    ),
+    tool(
+      'project_read',
+      'Recover the agreed brief, current milestone, plan, decisions, open to-dos, unread and relevant threads. First call after restart or compaction. Starts no work; clears nothing.',
+      {},
+      safeTool(async () => {
+        const projects = await requireProjectService();
+        return jsonResult({ ok: true, ...projects.projectRead(appSessionId()) });
+      }),
+    ),
+    tool(
+      'thread_answer',
+      'Answer a controlled thread’s current question. Starts no new turn.',
+      answerInput.shape,
+      safeTool(async (input: z.infer<typeof answerInput>) => {
+        const projects = await requireProjectService();
+        return jsonResult({
+          ok: true,
+          ...(await projects.answer(
+            appSessionId(),
+            input.threadId,
+            input.questionId,
+            input.answers,
+          )),
+        });
+      }),
+    ),
+    tool(
+      'thread_approve',
+      'Allow once or deny a controlled thread request within your own autonomy. Otherwise ask the user. Held projects must resume first. Returns the state after; an optional note queues instructions.',
+      {
+        threadId,
+        requestId: z.string().min(1).max(200),
+        decision: z.enum(['allow', 'deny']),
+        note: z.string().max(2_000).optional(),
+      },
+      safeTool(
+        async (input: {
+          threadId: string;
+          requestId: string;
+          decision: 'allow' | 'deny';
+          note?: string;
+        }) => {
+          const projects = await requireProjectService();
+          return jsonResult({
+            ok: true,
+            ...(await projects.approve(
+              appSessionId(),
+              input.threadId,
+              input.requestId,
+              input.decision,
+              input.note,
+            )),
+          });
+        },
+      ),
+    ),
+    tool(
+      'project_pause',
+      'Lead only: hold new work and interrupt active threads, leaving your own turn running. Returns interrupted thread ids.',
+      {},
+      safeTool(async () => {
+        const projects = await requireProjectService();
+        return jsonResult({ ok: true, ...(await projects.pause(appSessionId())) });
+      }),
+    ),
+    tool(
+      'project_resume',
+      'Lead only: resume the project, continue only work interrupted by Pause and drain retained reports. Returns ids queued to continue; uncertain deliveries require user review in Projects.',
+      {},
+      safeTool(async () => {
+        const projects = await requireProjectService();
+        return jsonResult({ ok: true, ...(await projects.resume(appSessionId())) });
+      }),
+    ),
+    tool(
       'thread_list',
-      "List controlled threads that are working, queued, waiting, failed or unread, plus a count of inactive threads. Pass all: true for every thread. unread means a final reply you have not acted on. Returns full ids, owners, states, queue positions, wait reasons, one-line reply previews, queued messages, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and the lead's open to-dos. Starts no work. Use after a stop/resume, restart or compaction; do not poll.",
+      "List controlled threads that are working, queued, waiting, failed or unread, plus a count of inactive threads. Pass all: true for every thread. unread means a final reply you have not acted on. Returns full ids, owners, states, pending approval ids and summaries, rate-limit reset times, queue positions, wait reasons, one-line reply previews, queued messages, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and the lead's open to-dos. Starts no work. Use after a stop/resume, restart or compaction; do not poll.",
       { all: z.boolean().optional() },
       safeTool(async ({ all }: { all?: boolean }) => {
         const projects = await requireProjectService();
@@ -218,7 +320,7 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'todo_add',
-      'Save a lead to-do (at most 40 open). after makes it due with a thread report; inMinutes schedules a reminder. With both, the first trigger wins. Due reminders reach the running lead as reports do, or start a new lead turn. A full inbox retains them; a held project waits for Resume.',
+      'Save a lead to-do (at most 40 open). after makes it due after the next report, including failure or interruption; inMinutes or at schedules a reminder. With both, the first trigger wins. Due reminders reach the running lead as reports do, or start a new lead turn. A full inbox retains them; a held project waits for Resume.',
       todoInput.shape,
       safeTool(async (input: z.infer<typeof todoInput>) => {
         const projects = await requireProjectService();
@@ -277,34 +379,36 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_send',
-      'Send instructions to a controlled thread. steer hands them to its running turn; now stops that turn first; queue waits for it to end. Without a running turn, all modes queue a new turn. Held projects wait for Resume. Answer a waiting question with answers in order and questionId. Queuing requires inbox space.',
+      'Send instructions to a controlled thread. steer reaches its running turn; interrupt stops it first; queue waits for it to end. Stopped or finished threads restart from where they stopped. Returns what happened and the state after. Do not resend queued work.',
       sendInput.shape,
       safeTool(async (input: z.infer<typeof sendInput>) => {
         const projects = await requireProjectService();
         const caller = appSessionId();
         const id = projects.resolveThreadId(caller, input.threadId);
-        const delivery = await projects.send(
-          caller,
-          id,
-          input.text,
-          input.answers,
-          input.questionId,
-          input.delivery,
-        );
+        const delivery = await projects.send(caller, id, input.text, input.delivery);
+        const read = projects.read(caller, id);
+        let note = DELIVERY_NOTES[delivery];
+        if (delivery === 'queued') {
+          note =
+            read.wait?.kind === 'turn'
+              ? 'Queued: it runs after its current turn. Do not resend or respawn.'
+              : `Queued: it starts when a slot frees (position ${String(read.position ?? 1)} in line). Do not resend or respawn.`;
+        }
         return jsonResult({
           ok: true,
           threadId: id,
           delivery,
-          ...(delivery === 'queued' || delivery === 'held'
-            ? deliveryStatus(projects.read(caller, id))
-            : {}),
-          ...(DELIVERY_NOTES[delivery] ? { note: DELIVERY_NOTES[delivery] } : {}),
+          state: read.state,
+          ...(read.position ? { position: read.position } : {}),
+          ...(read.waitReason ? { waitReason: read.waitReason } : {}),
+          runtimeLoad: read.runtimeLoad,
+          note,
         });
       }),
     ),
     tool(
       'plan_set',
-      "Replace the lead's whole plan (at most 60 steps). title names the project and lead chat. Link steps with threadId or thread_spawn.step. A first nonempty plan creates a project. Works when full or held; starts no work.",
+      "Replace the lead's plan (at most 60 steps) and optionally its agreed brief and title. Step ids stay stable; retain id when renaming. You own step states: planned, doing, review, done, blocked. A first nonempty plan creates a project. Starts no work.",
       planInput.shape,
       safeTool(async (input: z.infer<typeof planInput>) => {
         const projects = await requireProjectService();
@@ -315,13 +419,14 @@ export function threadTools(appSessionId: () => string) {
             ...(threadId ? { threadAppSessionId: threadId } : {}),
           })),
           input.title,
+          input.brief,
         );
         return jsonResult({ ok: true, stepCount });
       }),
     ),
     tool(
       'project_done',
-      "Mark the lead's project done with its outcome. Refuses while threads work, wait to start, need an answer or approval, or have undelivered messages. New work reopens it.",
+      "Mark the lead's project done with its outcome. Refuses with outstanding unread reports, open to-dos, failed or approval-waiting threads, active work and pending messages. New work reopens it.",
       doneInput.shape,
       safeTool(async (input: z.infer<typeof doneInput>) => {
         const projects = await requireProjectService();
@@ -331,11 +436,13 @@ export function threadTools(appSessionId: () => string) {
     ),
     tool(
       'thread_read',
-      "Read a controlled thread's final replies and clear unread. Returns its question, settings, state, wait reason, queue position, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and queued message count. Starts no work, even when full or held. Do not poll.",
+      "Read a controlled thread's final replies and clear unread. full: true reads the latest settled final reply from its transcript without truncation. Returns its question, settings, state, pending approval id and summary, rate-limit reset time, wait reason, queue position, runtimeLoad (live: in use, running or starting; limit: automatic runtime limit) and queued message count. Starts no work, even when full or held. Do not poll.",
       readInput.shape,
       safeTool(async (input: z.infer<typeof readInput>) => {
         const projects = await requireProjectService();
-        const read = projects.read(appSessionId(), input.threadId, input.replies);
+        const read = input.full
+          ? await projects.readFull(appSessionId(), input.threadId)
+          : projects.read(appSessionId(), input.threadId, input.replies);
         await projects.markRead(appSessionId(), read.threadId);
         return jsonResult({
           ok: true,
@@ -368,13 +475,4 @@ export function threadTools(appSessionId: () => string) {
       }),
     ),
   ];
-}
-
-function deliveryStatus(read: ThreadReadout) {
-  return {
-    state: read.state,
-    ...(read.position ? { position: read.position } : {}),
-    ...(read.waitReason ? { waitReason: read.waitReason } : {}),
-    runtimeLoad: read.runtimeLoad,
-  };
 }

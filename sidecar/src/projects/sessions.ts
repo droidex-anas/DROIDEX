@@ -18,6 +18,7 @@ type Host = Pick<
   | 'automaticRuntimeLoad'
   | 'makeAutomaticRuntimeRoom'
   | 'sessionSummary'
+  | 'transcriptTail'
   | 'isSessionLive'
   | 'isQuestionPending'
   | 'isApprovalPending'
@@ -38,6 +39,10 @@ export class ProjectSessions implements ProjectPort {
 
   get(appSessionId: string): SessionSummary | undefined {
     return this.host.sessionSummary(appSessionId);
+  }
+
+  transcriptTail(appSessionId: string, limit: number) {
+    return this.host.transcriptTail(appSessionId, limit, true);
   }
 
   runtimeLoad(): { live: number; limit: number } {

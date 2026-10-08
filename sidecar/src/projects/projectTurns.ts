@@ -327,10 +327,10 @@ export function threadState(
    is excerpted here and read in full with thread_read, so the excerpt says it is
    one, in words that read the same to the person watching this chat. */
 function threadReport(title: string, session: SessionSummary, turn: ThreadTurn): string {
-  const reply = turn.text.slice(-1_200);
+  const reply = turn.text.slice(0, 1_200);
   const excerpt =
     reply.length < turn.text.length
-      ? `The last 1,200 characters of a longer reply:\n${reply}`
+      ? `The first 1,200 characters of a longer reply (truncated; read the full reply with thread_read full: true):\n${reply}`
       : reply;
   if (session.phase === 'failed' || session.usageLimit) {
     const reason =

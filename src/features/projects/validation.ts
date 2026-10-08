@@ -33,6 +33,8 @@ function isProjectMetadata(value: Record<string, unknown>): boolean {
   return (
     text(value.id, 200) &&
     text(value.title, 120) &&
+    (value.brief === undefined ||
+      (typeof value.brief === 'string' && value.brief.length <= 2_000)) &&
     (value.cwd === undefined || text(value.cwd, 4_096)) &&
     (value.startedAt === undefined || count(value.startedAt)) &&
     (value.done === undefined ||
@@ -60,7 +62,7 @@ function isPlan(value: unknown): value is ProjectStep[] {
         (step.note === undefined || text(step.note, 400)) &&
         (step.threadAppSessionId === undefined || text(step.threadAppSessionId, 200)) &&
         (step.state === undefined ||
-          ['planned', 'doing', 'done', 'blocked'].includes(step.state as string)),
+          ['planned', 'doing', 'review', 'done', 'blocked'].includes(step.state as string)),
     )
   );
 }

@@ -37,12 +37,11 @@ export function wakePrompt(
     const question = message.questionId ? `, question ${message.questionId}` : '';
     const approval = message.approvalId ? `, approval ${message.approvalId}` : '';
     const verb = isInstruction(message) ? 'gave instructions' : VERB[message.kind];
-    const reminder = project.todos.some((todo) => todo.id === message.id) ? 'Reminder: ' : '';
-    return `${from} ${verb} (thread ${message.from}${question}${approval}):\n${reminder}${message.text}`;
+    return `${from} ${verb} (thread ${message.from}${question}${approval}):\n${message.text}`;
   });
   const guidance = threads.get(to)?.ownerAppSessionId
-    ? 'A message from the chat that started you is part of your task: do it, then end your turn with your report, which DROIDEX delivers to that chat. Answer your own threads with thread_send.'
-    : 'Reports may arrive mid-turn. Answer with thread_send when a thread needs a reply. Keep follow-ups with todo_add instead of polling; use todo_done when handled. Tell the user only what matters.';
+    ? 'A message from the chat that started you is part of your task: do it, then end your turn with your report, which DROIDEX delivers to that chat. Answer your own threads with thread_answer and send instructions with thread_send.'
+    : 'Reports may arrive mid-turn. Answer questions with thread_answer and send instructions with thread_send. Keep follow-ups with todo_add instead of polling; use todo_done when handled. Tell the user only what matters.';
   const todos = [...project.todos].sort((a, b) => Number(Boolean(b.due)) - Number(Boolean(a.due)));
   const followUps = todos.length
     ? todos.map(

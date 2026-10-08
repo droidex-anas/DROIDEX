@@ -8,6 +8,12 @@ import {
 
 const LEVELS = ['off', 'low', 'medium', 'high'] as const;
 const FREE = [
+  'thread_answer',
+  'thread_approve',
+  'project_read',
+  'project_guide',
+  'project_pause',
+  'project_resume',
   'thread_send',
   'thread_read',
   'thread_list',

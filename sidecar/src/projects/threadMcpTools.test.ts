@@ -12,6 +12,8 @@ import {
 import { registerProjectService } from './service.js';
 import { threadTools } from './threadMcpTools.js';
 import type { Project } from './types.js';
+import { parseSessionLineEvents } from '../sessionTranscriptParser.js';
+import { PROJECT_LEAD_GUIDE } from './projectLeadGuide.js';
 
 async function call(source: string, name: string, input: Record<string, unknown> = {}) {
   const tool = threadTools(() => source).find((tool) => tool.name === name);
@@ -353,4 +355,283 @@ test('thread_configure refuses changes during opening and accepts them after bin
     ).autonomy,
     'off',
   );
+});
+
+test('thread_read full returns the settled transcript reply whole while a new turn is working', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.threads[1].reply = 'Ledger excerpt';
+  saved.threads[1].unread = true;
+  const h = await harness(t, [saved], false);
+  h.sessions.set('worker00-alpha', { ...summary('worker00-alpha'), streaming: true });
+  const full = `Conclusion first. ${'Full write-up details. '.repeat(1_000)} End.`;
+  const rows = [
+    ['user', [{ type: 'text', text: 'Initial task' }]],
+    [
+      'assistant',
+      [
+        { type: 'text', text: 'Before tools' },
+        { type: 'tool_use', name: 'Read', id: 'read' },
+      ],
+    ],
+    [
+      'assistant',
+      [
+        { type: 'thinking', thinking: 'Private' },
+        { type: 'text', text: full },
+      ],
+    ],
+    ['user', [{ type: 'text', text: 'New task' }]],
+    ['assistant', [{ type: 'text', text: 'Unsettled partial reply' }]],
+  ] as const;
+  h.transcripts.set(
+    'worker00-alpha',
+    rows.flatMap(([role, content], index) =>
+      parseSessionLineEvents(
+        'worker00-alpha',
+        'provider',
+        'primary',
+        { type: 'message', id: String(index), message: { role, content: [...content] } },
+        { fullText: true },
+      ),
+    ),
+  );
+  registerProjectService(Promise.resolve(h.projects));
+  const read = await call('lead0000-main', 'thread_read', { threadId: 'worker00-a', full: true });
+  assert.deepEqual(read.replies, [full]);
+  assert.equal(read.state, 'working');
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, undefined);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.launched.length, 0);
+});
+
+test('project_read recovers the agreement and lead-owned progress without clearing unread', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.threads[1].unread = true;
+  const h = await harness(t, [saved], false);
+  registerProjectService(Promise.resolve(h.projects));
+  const brief =
+    'Goal: parser. Scope: config. Out of scope: UI. Done: checks pass. Authority: implement only.';
+  await call('lead0000-main', 'plan_set', {
+    brief,
+    steps: [
+      { title: 'Investigate', milestone: 'Parser', state: 'done', note: 'Use the current format.' },
+      { title: 'Implement', milestone: 'Parser', state: 'review', threadId: 'worker00-a' },
+    ],
+  });
+  const plan = h.state.saved[0]?.plan;
+  assert.ok(plan);
+  await call('lead0000-main', 'plan_set', {
+    steps: [
+      { id: plan[1].id, title: 'Review parser', state: 'review', threadId: 'worker00-a' },
+      { id: plan[0].id, title: 'Investigate', state: 'done', note: 'Use the current format.' },
+    ],
+  });
+  const read = await call('lead0000-main', 'project_read');
+  assert.equal(read.brief, brief);
+  assert.deepEqual(read.unreadThreads, ['worker00-alpha']);
+  assert.deepEqual(read.decisions, [{ stepId: plan[0].id, note: 'Use the current format.' }]);
+  assert.deepEqual(
+    h.state.saved[0]?.plan.map((step) => [step.id, step.state]),
+    [
+      [plan[1].id, 'review'],
+      [plan[0].id, 'done'],
+    ],
+  );
+  assert.equal(h.state.saved[0]?.threads[1]?.unread, true);
+  await call('lead0000-main', 'plan_set', { steps: [] });
+  await call('lead0000-main', 'plan_set', { steps: [{ title: 'Ship' }] });
+  assert.notEqual(h.state.saved[0]?.plan[0]?.id, plan[0].id);
+  assert.notEqual(h.state.saved[0]?.plan[0]?.id, plan[1].id);
+  assert.equal((await call('lead0000-main', 'project_guide')).guide, PROJECT_LEAD_GUIDE);
+  assert.equal(h.sent.length, 0);
+});
+
+test('lifecycle tools use real approvals and resume only work interrupted by Pause', async (t) => {
+  const h = await harness(t, [], false);
+  const { main } = await h.root();
+  const worker = (await h.projects.spawn(main, input)).appSessionId;
+  const stopped = (await h.projects.spawn(main, input)).appSessionId;
+  await h.projects.stop(main, stopped);
+  h.state.approvals.set(worker, {
+    appSessionId: worker,
+    requestId: 'request',
+    kind: 'exec',
+    title: 'Run checks',
+    detail: 'npm test',
+    canAlwaysAllow: false,
+    raw: {},
+  });
+  registerProjectService(Promise.resolve(h.projects));
+  const approval = { requestId: 'request', summary: 'npm test' };
+  assert.deepEqual((await call(main, 'thread_read', { threadId: worker })).approval, approval);
+  for (const tool of ['thread_list', 'project_read']) {
+    const read = await call(main, tool);
+    assert.ok(Array.isArray(read.threads));
+    assert.deepEqual(read.threads.find((thread) => thread.threadId === worker)?.approval, approval);
+  }
+  assert.deepEqual(
+    await call(main, 'thread_approve', {
+      threadId: worker,
+      requestId: 'request',
+      decision: 'allow',
+      note: 'Continue after checks.',
+    }),
+    { ok: true, state: 'working' },
+  );
+  assert.equal(h.state.approvals.has(worker), false);
+  assert.ok(
+    h.state.saved[0].pending.some(
+      (message) => message.to === worker && message.text === 'Continue after checks.',
+    ),
+  );
+  assert.deepEqual(await call(main, 'project_pause'), { ok: true, interrupted: [worker] });
+  assert.equal(h.projects.list()[0].paused, true);
+  assert.deepEqual(await call(main, 'project_resume'), { ok: true, resumed: [worker] });
+  assert.equal(h.projects.list()[0].paused, false);
+  assert.equal(h.projects.read(main, stopped).state, 'stopped');
+});
+
+test('project_done lists all outstanding reports, to-dos, failures, approvals and lead messages', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.threads[1].unread = true;
+  saved.todos.push({ id: 'todo', text: 'Review parser' });
+  saved.pending.push({
+    id: 'report',
+    from: 'worker00-alpha',
+    to: 'lead0000-main',
+    kind: 'result',
+    text: 'Result',
+  });
+  const h = await harness(t, [saved], false);
+  h.sessions.set('worker00-alpha', { ...summary('worker00-alpha'), phase: 'failed' });
+  h.state.approvals.set('worker00-bravo', {
+    appSessionId: 'worker00-bravo',
+    requestId: 'approval',
+    kind: 'exec',
+    title: 'Run checks',
+    detail: 'npm test',
+    canAlwaysAllow: false,
+    raw: {},
+  });
+  registerProjectService(Promise.resolve(h.projects));
+  const result = await call('lead0000-main', 'project_done', { outcome: 'Implemented' });
+  assert.equal(result.ok, false);
+  for (const text of [
+    'Alpha: unread report',
+    'Alpha: failed',
+    'Bravo: waiting on an approval',
+    'Open to-do: Review parser',
+    'pending messages to the lead',
+  ])
+    assert.ok(String(result.error).includes(text), text);
+  assert.equal(h.state.saved[0]?.done, undefined);
+});
+
+test('thread_answer routes current answers and a historical question leaves completion recorded', async (t) => {
+  const saved = structuredClone(recovered);
+  saved.done = { at: 1, outcome: 'Already shipped' };
+  saved.threads[1].ask = {
+    requestId: 'question',
+    questions: [{ index: 0, question: 'Format?', options: ['JSON'] }],
+  };
+  saved.threads[1].waiting = true;
+  const h = await harness(t, [saved], false);
+  h.asking.set('worker00-alpha', 'question');
+  registerProjectService(Promise.resolve(h.projects));
+  const answer = await call('lead0000-main', 'thread_answer', {
+    threadId: 'worker00-a',
+    questionId: 'question',
+    answers: ['JSON'],
+  });
+  assert.equal(answer.answered, true);
+  assert.equal(answer.state, 'idle');
+  assert.equal(h.answered[0]?.requestId, 'question');
+  assert.deepEqual(h.state.saved[0]?.done, saved.done);
+  assert.equal(h.state.saved[0]?.threads[1]?.ask, undefined);
+});
+
+test('thread_send states whether it started, resumed, queued for capacity or is held', async (t) => {
+  const h = await harness(t);
+  const { id, main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  registerProjectService(Promise.resolve(h.projects));
+  const steered = await call(main, 'thread_send', {
+    threadId: child.appSessionId,
+    text: 'Add tests',
+  });
+  assert.equal(steered.delivery, 'steered');
+  assert.equal(steered.state, 'working');
+  assert.equal(steered.note, 'Steered into its running turn.');
+  await h.finish(child.appSessionId);
+  await drain();
+  const started = await call(main, 'thread_send', {
+    threadId: child.appSessionId,
+    text: 'Next task',
+  });
+  assert.equal(started.delivery, 'started');
+  assert.equal(started.state, 'working');
+  await h.finish(child.appSessionId);
+  await drain();
+  const session = h.sessions.get(child.appSessionId);
+  assert.ok(session);
+  session.phase = 'paused';
+  const resumed = await call(main, 'thread_send', {
+    threadId: child.appSessionId,
+    text: 'Continue',
+  });
+  assert.equal(resumed.delivery, 'resumed');
+  assert.equal(resumed.state, 'working');
+  await h.finish(child.appSessionId);
+  await drain();
+  h.state.capacity = 'busy';
+  const queued = await call(main, 'thread_send', {
+    threadId: child.appSessionId,
+    text: 'Continue again',
+  });
+  assert.equal(queued.delivery, 'queued');
+  assert.equal(queued.position, 1);
+  assert.match(String(queued.note), /slot frees.*Do not resend or respawn/);
+  await h.projects.setPaused(id, true);
+  const held = await call(main, 'thread_send', { threadId: child.appSessionId, text: 'Held work' });
+  assert.equal(held.delivery, 'held');
+  assert.equal(held.note, 'Held until the project resumes.');
+});
+
+test('todo_add accepts a multi-day absolute reminder and rejects two time triggers', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
+  const h = await harness(t, [recovered], false);
+  registerProjectService(Promise.resolve(h.projects));
+  const dueAt = Date.now() + 3 * 24 * 60 * 60_000;
+  const todo = await call('lead0000-main', 'todo_add', {
+    text: 'Recheck rollout',
+    at: new Date(dueAt).toISOString(),
+  });
+  assert.equal(todo.dueAt, dueAt);
+  assert.equal(h.state.saved[0]?.todos[0]?.dueAt, dueAt);
+  const invalid = await call('lead0000-main', 'todo_add', {
+    text: 'Invalid',
+    at: new Date(dueAt).toISOString(),
+    inMinutes: 10,
+  });
+  assert.equal(invalid.ok, false);
+  assert.match(String(invalid.error), /Choose at or inMinutes/);
+});
+
+test('thread_send cannot claim a start when Stop cancels its admission', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, input);
+  await h.finish(child.appSessionId);
+  await drain();
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  registerProjectService(Promise.resolve(h.projects));
+  const pending = call(main, 'thread_send', { threadId: child.appSessionId, text: 'Next task' });
+  await drain();
+  const stopped = h.projects.stop(main, child.appSessionId);
+  gate.resolve();
+  const [result] = await Promise.all([pending, stopped]);
+  assert.equal(result.ok, false);
+  assert.match(String(result.error), /cancelled before it started/);
+  assert.ok(!h.sent.some((message) => message.id === child.appSessionId));
 });

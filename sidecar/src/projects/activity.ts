@@ -43,7 +43,10 @@ export class ProjectActivity {
     if (!GENERATED.has(event.kind)) return;
     this.open(event.appSessionId);
     const turn = this.turns.get(event.appSessionId);
-    if (turn) applyGenerated(turn, event);
+    if (turn) {
+      applyGenerated(turn, event);
+      turn.text = turn.text.slice(0, LEDGER_LIMITS.text);
+    }
   }
 
   /** The settled turn, or nothing when this conversation had none open. */
@@ -75,6 +78,7 @@ export function transcriptEnding(events: readonly TranscriptEvent[]): Transcript
       last = 'prompt';
     } else if (GENERATED.has(event.kind)) {
       applyGenerated(turn, event);
+      turn.text = turn.text.slice(-LEDGER_LIMITS.text);
       if (event.kind === 'text') last = 'reply';
     }
   }
@@ -89,8 +93,25 @@ function applyGenerated(turn: ThreadTurn, event: TranscriptEvent): void {
     // A pre-tool explanation is not the final report.
     turn.text = '';
   } else if (event.kind === 'text') {
-    turn.text = (turn.text + (event.text ?? '')).slice(-LEDGER_LIMITS.text);
+    turn.text += event.text ?? '';
   } else if (event.kind === 'error') {
     turn.error = (event.text ?? '').slice(0, LEDGER_LIMITS.threadError);
   }
+}
+
+/** Latest final reply before the currently running turn; silent turns retain the prior reply. */
+export function latestSettledReply(events: readonly TranscriptEvent[], running: boolean): string {
+  const turns: string[] = [];
+  let turn: ThreadTurn = { text: '' };
+  let hasPrompt = false;
+  for (const event of events) {
+    if (event.role !== 'primary') continue;
+    if (event.author === 'user') {
+      if (hasPrompt) turns.push(turn.text);
+      hasPrompt = true;
+      turn = { text: '' };
+    } else if (GENERATED.has(event.kind)) applyGenerated(turn, event);
+  }
+  if (!running) turns.push(turn.text);
+  return turns.findLast((text) => text.length > 0) ?? '';
 }

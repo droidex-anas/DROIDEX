@@ -65,18 +65,14 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
     step?: string;
   };
 
-/* The plan the lead keeps for the user: what this project intends to do, in
-   order. A step that names a thread has no state of its own: it reports the
-   state of that conversation, so the table can never claim progress the app
-   cannot see. */
+/** The lead owns step progress independently of a linked conversation. */
 export interface ProjectStep {
   id: string;
   title: string;
   /** Optional grouping, the way a mission groups features under milestones. */
   milestone?: string;
-  /** Only for a step no thread carries yet. */
-  state?: 'planned' | 'doing' | 'done' | 'blocked';
-  /** The thread carrying the step; its live state wins over `state`. */
+  state?: 'planned' | 'doing' | 'review' | 'done' | 'blocked';
+  /** The thread carrying the step. */
   threadAppSessionId?: string;
   /** One line of outcome or blocker, in the lead's words. */
   note?: string;
@@ -117,7 +113,7 @@ export interface ProjectThread {
 
 /** How a lead's message reaches a thread: into its running turn at the
     harness's next step, in place of the rest of that turn, or after it. */
-export type ThreadDelivery = 'steer' | 'now' | 'queue';
+export type ThreadDelivery = 'steer' | 'interrupt' | 'queue';
 
 export interface ThreadMessage {
   id: string;
@@ -153,6 +149,9 @@ export interface Project {
   /** Set when the lead marks the goal achieved; new work clears it. */
   done?: ProjectDone;
   launching: number;
+  brief?: string;
+  /** Largest assigned plan id, retained when steps are removed. */
+  lastStepId?: number;
   plan: ProjectStep[];
   todos: ProjectTodo[];
   threads: ProjectThread[];
@@ -177,6 +176,7 @@ export interface ProjectView {
   paused: boolean;
   leadStopped?: true;
   launching: number;
+  brief?: string;
   plan: ProjectStep[];
   todos: Omit<ProjectTodo, 'notified'>[];
   runtimeLoad: RuntimeLoad;

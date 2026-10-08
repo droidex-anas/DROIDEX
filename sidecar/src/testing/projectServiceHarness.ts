@@ -8,7 +8,12 @@ import { promisify } from 'node:util';
 import { ProjectService, type ProjectPort } from '../projects/ProjectService.js';
 import type { ProjectPersistence } from '../projects/store.js';
 import type { Project, ThreadInput } from '../projects/types.js';
-import type { PermissionRequest, ServerEvent, SessionSummary } from '../protocol.js';
+import type {
+  PermissionRequest,
+  ServerEvent,
+  SessionSummary,
+  TranscriptEvent,
+} from '../protocol.js';
 import { sessionSummary } from './sessionSummaryFixture.js';
 
 export const input: ThreadInput = {
@@ -94,6 +99,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   const steered: { id: string; prompt: string; now: boolean }[] = [];
   const launched: ThreadInput[] = [];
   const events: ServerEvent[] = [];
+  const transcripts = new Map<string, TranscriptEvent[]>();
   const state = {
     saved: structuredClone(saved),
     failSave: false,
@@ -105,7 +111,6 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     firstTurnGate: undefined as Promise<void> | undefined,
     createFailure: undefined as 'before-bind' | 'after-bind' | undefined,
     // Sessions waiting on a permission request.
-    awaitingApproval: new Set<string>(),
     approvals: new Map<string, PermissionRequest>(),
   };
   const answered: { id: string; requestId: string; answers: unknown[] }[] = [];
@@ -125,14 +130,14 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
   };
   const port: ProjectPort = {
     get: (id) => sessions.get(id),
+    transcriptTail: (id, limit) => Promise.resolve((transcripts.get(id) ?? []).slice(-limit)),
     runtimeLoad: () => ({ live: state.capacity === 'busy' ? 20 : sessions.size, limit: 20 }),
     makeRoom: () => Promise.resolve(state.capacity === 'free'),
-    awaitingApproval: (id) => state.awaitingApproval.has(id),
+    awaitingApproval: (id) => state.approvals.has(id),
     pendingApproval: (id) => state.approvals.get(id),
     approveFor: (_source, target, requestId) => {
       if (state.approvals.get(target)?.requestId !== requestId) return Promise.resolve(false);
       state.approvals.delete(target);
-      state.awaitingApproval.delete(target);
       return Promise.resolve(true);
     },
     isLive: (id) => sessions.has(id),
@@ -296,6 +301,7 @@ export async function harness(t: TestContext, saved: Project[] = [], historyRead
     asking,
     launched,
     events,
+    transcripts,
     state,
     port,
     streaming,

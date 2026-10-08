@@ -41,7 +41,7 @@ test('a missing ledger is empty, writes are ordered, and a fresh reader restores
   await Promise.all([one, two]);
   const [loaded] = await new ProjectStore(path).load();
   assert.equal(loaded?.title, 'Second');
-  // Why a project is held has to survive a restart, or the lead's spawn could not lift it.
+  // A lead Stop survives restart until the user continues it.
   assert.equal(loaded?.leadStopped, true);
   if (process.platform !== 'win32') assert.equal((await stat(path)).mode & 0o777, 0o600);
 });
@@ -163,12 +163,19 @@ test('corrupt ledgers, unknown owners, duplicates, cycles and foreign targets ar
 test('to-dos and queued spawns restore, while v1.3.8 ledgers and stale to-do links still load', async (t) => {
   const path = await ledgerPath(t);
   const saved = project();
+  saved.brief = 'Goal, scope, out of scope, done criteria and authority.';
+  saved.lastStepId = 5;
+  saved.plan = [{ id: '5', title: 'Review', state: 'review' }];
   saved.todos = [
     { id: 'todo', text: 'Review', after: 'main', dueAt: 123, due: true, notified: true },
   ];
   const store = new ProjectStore(path);
   await store.save([saved]);
-  assert.deepEqual((await store.load())[0]?.todos, saved.todos);
+  const loaded = (await store.load())[0];
+  assert.deepEqual(loaded?.todos, saved.todos);
+  assert.equal(loaded?.brief, saved.brief);
+  assert.equal(loaded?.lastStepId, 5);
+  assert.equal(loaded?.plan[0]?.state, 'review');
   const older = {
     id: saved.id,
     title: saved.title,

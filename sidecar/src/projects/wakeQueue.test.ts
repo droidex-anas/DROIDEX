@@ -6,6 +6,7 @@ import {
   harness,
   input,
   interruptedSummary,
+  projectWithThread,
   summary,
   tick,
 } from '../testing/projectServiceHarness.js';
@@ -472,9 +473,7 @@ test('restart drains reports, queued starts and interrupted threads only after h
 
 test('timed to-dos survive restart and a full held inbox, then steer into a busy lead once', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
-  const h = await harness(t);
-  const { id, main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, id, main, child } = await projectWithThread(t);
   await h.projects.setPaused(id, true);
   const todo = await h.projects.addTodo(main, { text: 'Check the build', inMinutes: 1 });
   const cancelled = await h.projects.addTodo(main, { text: 'Cancelled reminder', inMinutes: 1 });
@@ -505,7 +504,9 @@ test('timed to-dos survive restart and a full held inbox, then steer into a busy
   assert.equal(restored.projects.list()[0]?.queued, LEDGER_LIMITS.inbox);
   await restored.projects.setPaused(id, false);
   await drain();
-  const reminders = restored.steered.filter(({ prompt }) => prompt.includes('Follow-up due'));
+  const reminders = restored.steered.filter(({ prompt }) =>
+    prompt.includes('Reminder — follow-up due'),
+  );
   assert.equal(reminders.length, 1);
   assert.match(reminders[0]?.prompt ?? '', /Check the build/);
   assert.ok(
@@ -681,9 +682,7 @@ test('wake to-dos are separate from the last worker report rendered in the chat'
 });
 
 test('a capacity refusal publishes its wait in the last renderer snapshot', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   h.state.capacity = 'busy';
   await h.finish(child.appSessionId);
   await drain();

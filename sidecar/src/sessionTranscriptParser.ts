@@ -108,6 +108,7 @@ function assistantBlockEvent(
   index: number,
   block: Record<string, unknown>,
   forkPointId: string | undefined,
+  fullText: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'thinking') {
@@ -118,7 +119,8 @@ function assistantBlockEvent(
     return text ? event(base, index, 'thinking', { text }) : null;
   }
   if (type === 'text') {
-    const text = trimAnswerText(nonEmpty(stringValue(block.text)));
+    const answer = nonEmpty(stringValue(block.text));
+    const text = fullText ? answer : trimAnswerText(answer);
     if (!text) return null;
     return event(base, index, 'text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
@@ -204,7 +206,7 @@ export function parseSessionLineEvents(
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
-  { textOnly = false }: { textOnly?: boolean } = {},
+  { textOnly = false, fullText = false }: { textOnly?: boolean; fullText?: boolean } = {},
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -296,7 +298,7 @@ export function parseSessionLineEvents(
     }
     const parsed =
       messageRole === 'assistant'
-        ? assistantBlockEvent(base, index, block, forkPointId)
+        ? assistantBlockEvent(base, index, block, forkPointId, fullText)
         : nonAssistantBlockEvent(base, index, block, messageRole, textOnly);
     if (parsed) events.push(parsed);
   });

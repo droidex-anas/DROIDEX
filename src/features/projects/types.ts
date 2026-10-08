@@ -21,7 +21,7 @@ export interface ProjectStep {
   id: string;
   title: string;
   milestone?: string;
-  state?: 'planned' | 'doing' | 'done' | 'blocked';
+  state?: 'planned' | 'doing' | 'review' | 'done' | 'blocked';
   threadAppSessionId?: string;
   note?: string;
 }
@@ -75,6 +75,7 @@ export interface ProjectView {
   paused: boolean;
   leadStopped?: true;
   launching: number;
+  brief?: string;
   plan: ProjectStep[];
   todos: ProjectTodo[];
   runtimeLoad: { live: number; limit: number };

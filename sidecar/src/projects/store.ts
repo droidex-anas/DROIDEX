@@ -13,6 +13,7 @@ const id = z.string().min(1).max(200);
 export const LEDGER_LIMITS = {
   /** A project's or a thread's title. */
   title: 120,
+  brief: 2_000,
   planSteps: 60,
   stepTitle: 200,
   stepMilestone: 80,
@@ -108,6 +109,8 @@ const project = z
       .strict()
       .optional(),
     launching: z.number().int().min(0),
+    lastStepId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    brief: z.string().max(LEDGER_LIMITS.brief).optional(),
     plan: z
       .array(
         z
@@ -115,7 +118,7 @@ const project = z
             id,
             title: z.string().min(1).max(LEDGER_LIMITS.stepTitle),
             milestone: z.string().max(LEDGER_LIMITS.stepMilestone).optional(),
-            state: z.enum(['planned', 'doing', 'done', 'blocked']).optional(),
+            state: z.enum(['planned', 'doing', 'review', 'done', 'blocked']).optional(),
             threadAppSessionId: id.optional(),
             note: z.string().max(LEDGER_LIMITS.stepNote).optional(),
           })

@@ -1301,6 +1301,10 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  transcriptTail(appSessionId: string, limit: number, fullText = false) {
+    return this.timeline.tail(appSessionId, limit, fullText);
+  }
+
   /** Whether a question a conversation was asked is still waiting for an answer. */
   isQuestionPending(appSessionId: string, requestId: string): boolean {
     return this.interactions.isQuestionPending(appSessionId, requestId);
