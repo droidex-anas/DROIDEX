@@ -11,7 +11,7 @@ import {
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
-import { findPlanStep, planFromSteps } from './plan.js';
+import { findPlanStep, planFromSteps, stepNumber } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import { ProjectReads, acknowledgeReply, type ThreadReadout } from './projectReads.js';
@@ -502,7 +502,7 @@ export class ProjectService {
     project.lastStepId = Math.max(
       project.lastStepId ?? 0,
       // Only whole-number ids advance the counter; a lead may name steps "1.1".
-      ...project.plan.map((step) => (Number.isSafeInteger(Number(step.id)) ? Number(step.id) : 0)),
+      ...project.plan.map((step) => stepNumber(step.id)),
     );
     if (brief !== undefined) project.brief = brief;
     if (project.plan.some((step) => step.state !== 'done')) delete project.done;

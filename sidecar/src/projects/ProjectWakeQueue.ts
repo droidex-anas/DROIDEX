@@ -381,7 +381,10 @@ export class ProjectWakeQueue {
       (message.kind !== 'approval' ||
         this.sessions.pendingApproval(message.from, message.approvalId)?.requestId ===
           message.approvalId);
-    const stillAsked = () => messages.every(relevant);
+    // A to-do finished meanwhile leaves the claimed batch; the prompt built from
+    // the whole batch must not go out then.
+    const batchSize = messages.length;
+    const stillAsked = () => messages.length === batchSize && messages.every(relevant);
     let receipt: AutomationDeliveryReceipt;
     let handedOff = false;
     try {

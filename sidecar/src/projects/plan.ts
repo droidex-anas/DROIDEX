@@ -10,7 +10,7 @@ export function planFromSteps(
 ): ProjectStep[] {
   const used = new Set<string>();
   const reserved = new Set(steps.flatMap((step) => (step.id ? [step.id] : [])));
-  let nextId = Math.max(lastStepId, ...previous.map((step) => Number(step.id) || 0));
+  let nextId = Math.max(lastStepId, ...previous.map((step) => stepNumber(step.id)));
   return steps.map((step) => {
     if (step.threadAppSessionId && !isMember(step.threadAppSessionId))
       throw new Error('Thread is outside this project.');
@@ -50,4 +50,10 @@ export function findPlanStep(plan: readonly ProjectStep[], step: string): Projec
     );
   }
   return found;
+}
+
+/** A step id's place in the numbering when it is a whole number, else 0. */
+export function stepNumber(id: string): number {
+  const value = Number(id);
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
