@@ -157,7 +157,7 @@ test('a pane mutation’s scope is not a turn lease', () => {
     canvasId: 'cv_01',
     allowedDesignIds: 'canvas',
   });
-  assert.throws(() => turns.requireScope('user:one'), { code: 'scope_expired' });
+  assert.throws(() => turns.requireScope('user:one'), { code: 'invalid_input' });
 });
 
 test('an unattached ordinary chat mints a null binding its first create fills', async (t: TestContext) => {

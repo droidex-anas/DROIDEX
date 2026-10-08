@@ -3,6 +3,8 @@ import type { FrameRect } from './schema.js';
 
 /** What every expired turn lease answers, wherever it is checked (spec §8). */
 export const EXPIRED_TURN = 'That request belongs to a turn that already ended.';
+export const UNKNOWN_SCOPE =
+  'That scopeId is unknown for this chat. Call canvas_read with no arguments first and use its returned scopeId for this turn. Never invent a scopeId.';
 
 /**
  * The only failure Canvas storage and the workspace throw. The message reaches

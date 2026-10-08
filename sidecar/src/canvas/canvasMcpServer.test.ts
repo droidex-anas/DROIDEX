@@ -18,6 +18,7 @@ import type { CanvasFileSystem } from './canvasFiles.js';
 type Reply = {
   ok: boolean;
   code?: string;
+  message?: string;
   scopeId?: string;
   pinned?: { designs: { designId: string }[] };
   created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
@@ -65,6 +66,20 @@ test('six Canvas tools are discoverable and an inactive chat cannot read', async
     [...CANVAS_TOOL_NAMES],
   );
   assert.equal((await h.call('canvas_read', {})).code, 'scope_expired');
+});
+
+test('a fabricated read scope tells the model to obtain the active turn lease first', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const refused = await h.call('canvas_read', { scopeId: 'pricing-card-three-tiers' });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'invalid_input');
+  assert.match(refused.message ?? '', /Call canvas_read with no arguments first/);
+
+  const read = await h.call('canvas_read', {});
+  assert.equal(read.ok, true);
+  assert.ok(read.scopeId);
+  assert.equal(read.scopeId, h.turns.activeScope('chat-one')?.scopeId);
 });
 
 test('HTTP Canvas calls strictly validate raw arguments and return payload-free refusal envelopes', async (t) => {
@@ -183,10 +198,13 @@ test('read binds the newest steer, an earlier named lease stays pinned, and anot
 
   const other = h.turns.beginTurn('child-chat', undefined);
   const childId = h.turns.activeScope('child-chat')?.scopeId;
-  assert.equal((await h.call('canvas_read', { scopeId: childId })).code, 'scope_expired');
+  assert.equal((await h.call('canvas_read', { scopeId: childId })).code, 'invalid_input');
   other.revoke();
+  assert.equal((await h.call('canvas_read', { scopeId: childId })).code, 'invalid_input');
   first.revoke();
-  assert.equal((await h.call('canvas_read', { scopeId: oldId })).code, 'scope_expired');
+  const expired = await h.call('canvas_read', { scopeId: oldId });
+  assert.equal(expired.code, 'scope_expired');
+  assert.equal(expired.message, 'That request belongs to a turn that already ended.');
 });
 
 for (const ending of ['settlement', 'provider replacement'] as const)
@@ -202,7 +220,7 @@ for (const ending of ['settlement', 'provider replacement'] as const)
     else h.turns.endSession('chat-one');
     h.turns.beginTurn('chat-one', undefined);
     delivery.resolve();
-    assert.equal((await pending).code, 'scope_expired');
+    assert.equal((await pending).code, 'invalid_input');
     assert.equal(
       (await h.call('canvas_create', { ...input, scopeId: oldScopeId })).code,
       'scope_expired',
