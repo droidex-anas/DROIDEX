@@ -1,5 +1,6 @@
 import { isUnattendedAutomationSession } from './automations/AutomationManager.js';
 import { shouldAutoApproveAutomationTool } from './automations/permissionPolicy.js';
+import { shouldAutoApproveCanvasTool } from './canvas/canvasMcpNames.js';
 import { shouldAutoApproveSessionsTool } from './sessionsMcpPolicy.js';
 import {
   isAlwaysOutcome,
@@ -102,7 +103,8 @@ export class SessionInteractions {
     const autoApproved = (unattended: boolean) =>
       tool !== undefined &&
       (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
-        shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended));
+        shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+        shouldAutoApproveCanvasTool(tool.serverName, tool.toolName));
     const safeForUnattended = autoApproved(true);
     const safeForInteractive = autoApproved(false);
     if (

@@ -518,6 +518,32 @@ test('Droid edits-only approves a pure edit batch and asks for commands or mixed
   assert.equal(asked, 2);
 });
 
+test('Canvas tools proceed without a card at autonomy off under either harness naming', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('design').summary.autonomy = 'off';
+  const interactions = harness.interactions.interactionsFor({ id: 'design' });
+  for (const mcpTool of [
+    { serverName: 'droidex-canvas', toolName: 'canvas_write' },
+    { serverName: 'droidex_canvas', toolName: 'canvas_read' },
+  ]) {
+    const outcome = await interactions.requestApproval({
+      request: {
+        appSessionId: 'design',
+        requestId: `canvas-${mcpTool.toolName}`,
+        kind: 'mcp',
+        canAlwaysAllow: true,
+        title: mcpTool.toolName,
+        detail: '{}',
+        raw: {},
+      },
+      confirmationType: 'mcp_tool',
+      mcpTool,
+    });
+    assert.equal(outcome, 'proceed_once');
+  }
+  assert.equal(approvalRequests(harness.emitted).length, 0);
+});
+
 // SessionManager wiring: the module tests above own settlement rules; these
 // prove the facade routes provider callbacks to the right app session and
 // applies a Spec exit to the real provider.
