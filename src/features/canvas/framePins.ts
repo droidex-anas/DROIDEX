@@ -21,6 +21,8 @@ export interface FramePin {
 
 const NONE: readonly FramePin[] = [];
 let pinsByChat: Readonly<Record<string, readonly FramePin[]>> = {};
+/** The attached board each chat's pane last showed, which decides what a pin can name. */
+const boards = new Map<string, CanvasSnapshot>();
 const listeners = new Set<() => void>();
 
 function publish(appSessionId: string, pins: readonly FramePin[]) {
@@ -100,11 +102,19 @@ export function unpinFrames(
     );
 }
 
-/** Puts a queued prompt's frames back on the draft it is being edited in. */
+/**
+ * Puts a queued prompt's frames back on the draft it is being edited in, by the
+ * same rule as `syncFramePins`: only frames still on the chat's attached board.
+ * A chat whose pane has not shown its board yet keeps the prompt's own canvas.
+ */
 export function restoreFramePins(appSessionId: string, pins: readonly FramePin[]): void {
+  const canvasId = pins.at(0)?.canvasId;
+  if (canvasId === undefined) return;
   const held = framePins(appSessionId);
-  const returning = pins.filter((pin) => !held.some((own) => own.designId === pin.designId));
-  if (returning.length > 0) publish(appSessionId, [...held, ...returning]);
+  const merged = [...held, ...pins.filter((pin) => !held.some((own) => samePlace(own, pin)))];
+  const board = boards.get(appSessionId);
+  const next = board ? onBoard(merged, board) : merged.filter((pin) => pin.canvasId === canvasId);
+  publishChanged(appSessionId, held, next.slice(0, MAX_PINNED));
 }
 
 /**
@@ -113,12 +123,21 @@ export function restoreFramePins(appSessionId: string, pins: readonly FramePin[]
  * canvas the chat has left, is dropped. Only a change publishes.
  */
 export function syncFramePins(appSessionId: string, attached: CanvasSnapshot): void {
+  boards.set(appSessionId, attached);
   const held = framePins(appSessionId);
+  publishChanged(appSessionId, held, onBoard(held, attached));
+}
+
+/** The pins that name a frame on the attached board, as that frame now is. */
+function onBoard(pins: readonly FramePin[], attached: CanvasSnapshot): FramePin[] {
   const frames = new Map(attached.frames.map((frame) => [frame.designId, frame]));
-  const next = held.flatMap((pin) => {
+  return pins.flatMap((pin) => {
     const frame = pin.canvasId === attached.canvasId ? frames.get(pin.designId) : undefined;
     return frame ? [pinOf(attached.canvasId, frame)] : [];
   });
+}
+
+function publishChanged(appSessionId: string, held: readonly FramePin[], next: FramePin[]) {
   if (next.length !== held.length || next.some((pin, index) => !samePin(pin, held[index])))
     publish(appSessionId, next);
 }

@@ -4,6 +4,7 @@ import {
   canvasContextOf,
   framePins,
   promptWithFramePins,
+  restoreFramePins,
   syncFramePins,
   toggleFramePin,
   unpinFrames,
@@ -115,4 +116,33 @@ test('pins follow the attached canvas, and come off by frame however they have m
   // A chat that moved to another canvas drops the old canvas's frames.
   syncFramePins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1', 'r1')] });
   assert.equal(framePins('chat-s').length, 0);
+});
+
+test('an edited queued prompt brings back only frames still on the attached board', () => {
+  toggleFramePin('chat-e', 'cv_1', frame('d1', 'r1'));
+  toggleFramePin('chat-e', 'cv_1', frame('d2', 'r1'));
+  const queued = framePins('chat-e');
+  unpinFrames('chat-e');
+
+  // Before the pane has shown the board, the prompt's own canvas is kept whole.
+  restoreFramePins('chat-e', queued);
+  restoreFramePins('chat-e', queued);
+  assert.deepEqual(
+    framePins('chat-e').map((pin) => pin.designId),
+    ['d1', 'd2'],
+  );
+  unpinFrames('chat-e');
+
+  // Once it has, a deleted frame stays off, a revised one comes back as it is now,
+  // and frames of a canvas the chat has left do not come back at all.
+  syncFramePins('chat-e', { canvasId: 'cv_1', sequence: 2, frames: [frame('d1', 'r3')] });
+  restoreFramePins('chat-e', queued);
+  assert.deepEqual(
+    framePins('chat-e').map(({ designId, revisionId }) => ({ designId, revisionId })),
+    [{ designId: 'd1', revisionId: 'r3' }],
+  );
+  unpinFrames('chat-e');
+  syncFramePins('chat-e', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1', 'r1')] });
+  restoreFramePins('chat-e', queued);
+  assert.equal(framePins('chat-e').length, 0);
 });
