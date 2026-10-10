@@ -175,7 +175,7 @@ test('a started guest is polled one call at a time on a bounded cadence', async 
   assert.deepEqual(session.clock.pending(), [PREVIEW_POLL_DEADLINE_MS]);
 });
 
-test('bounded events reach the board and a flood is reported as dropped', async () => {
+test('bounded events reach the board, and what a flood dropped is not reported', async () => {
   const session = run();
   const nonce = await started(session);
 
@@ -196,9 +196,8 @@ test('bounded events reach the board and a flood is reported as dropped', async 
   assert.deepEqual(session.seen.sizes, [{ width: 640, height: 480 }]);
   assert.deepEqual(
     session.seen.diagnostics.map((entry) => entry.code),
-    ['preview_flooded', 'preview_error'],
+    ['preview_error'],
   );
-  assert.match(session.seen.diagnostics[0].message, /7 were dropped/);
   assert.deepEqual(session.seen.lost, []);
 });
 

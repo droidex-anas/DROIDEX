@@ -206,14 +206,8 @@ class GuestRun implements PreviewRun {
       this.lose('guest_gone');
       return;
     }
-    if (snapshot.dropped > 0) {
-      this.options.observer.onDiagnostics([
-        {
-          code: 'preview_flooded',
-          message: `This preview sent more messages than DROIDEX keeps, so ${String(snapshot.dropped)} were dropped.`,
-        },
-      ]);
-    }
+    // What the bound dropped is gone on purpose: a design that floods by throwing
+    // already shows its first errors, and one that floods by resizing is not broken.
     for (const event of snapshot.events) this.report(event);
     this.scheduleNextPoll();
   }
