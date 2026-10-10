@@ -247,13 +247,17 @@ test('two deferred releases retain separate holds until each frame receives newe
     window.boardHarness.publish('a', { x: 170, y: 95, width: 400, height: 300 }, 4),
   );
   await page.clock.runFor(32);
-  expect(await renderedRect(page, 'A')).toEqual({ x: 170, y: 95, width: 400, height: 300 });
+  await expect
+    .poll(() => renderedRect(page, 'A'))
+    .toEqual({ x: 170, y: 95, width: 400, height: 300 });
   expect(await renderedRect(page, 'B')).toEqual(heldB);
   await page.evaluate(() =>
     window.boardHarness.publish('b', { x: 610, y: 330, width: 400, height: 300 }, 4),
   );
   await page.clock.runFor(32);
-  expect(await renderedRect(page, 'B')).toEqual({ x: 610, y: 330, width: 400, height: 300 });
+  await expect
+    .poll(() => renderedRect(page, 'B'))
+    .toEqual({ x: 610, y: 330, width: 400, height: 300 });
 });
 
 test('Escape during a re-drag restores acknowledged geometry, not its earlier hold', async ({
@@ -285,6 +289,9 @@ test('obsolete arrange rejections cannot replace newer work or report stale erro
     window.boardHarness.publish('a', { x: 200, y: 120, width: 400, height: 300 }, 4);
   });
   await page.clock.runFor(32);
+  await expect
+    .poll(() => renderedRect(page, 'A'))
+    .toEqual({ x: 200, y: 120, width: 400, height: 300 });
   await page.evaluate(() => window.boardHarness.reject(1));
   await page.clock.runFor(32);
   await expect(page.getByRole('alert')).toHaveCount(0);
