@@ -69,6 +69,15 @@ export function watchedCanvasId(state: CanvasPaneState): string | null {
   return state.status === 'loading' || state.status === 'ready' ? state.canvasId : null;
 }
 
+/**
+ * A canvas an earlier DROIDEX made cannot open. Its name is often the chat's
+ * whole first prompt, so only its start is quoted.
+ */
+export function outdatedCanvasMessage(name: string): string {
+  const shown = name.length > 48 ? `${name.slice(0, 47).trimEnd()}…` : name;
+  return `“${shown}” was made by an earlier DROIDEX and can’t be opened here.`;
+}
+
 /** No canvas to show: an earlier error stays, and an outdated canvas is named. */
 function unattached(state: CanvasPaneState, event: CanvasPaneEvent): CanvasPaneState {
   const outdatedName = event.type === 'attached' ? event.outdatedName : undefined;

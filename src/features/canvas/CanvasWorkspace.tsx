@@ -35,6 +35,7 @@ import {
 } from './canvasChats';
 import {
   initialCanvasPaneState,
+  outdatedCanvasMessage,
   SELECT_MODE,
   type BoardInteraction,
   openSourceFrame,
@@ -114,7 +115,7 @@ export function CanvasWorkspace({
           onAttachmentChange(appSessionId, attached);
           // A restored tab can name the chat's own old canvas, whose board never comes.
           if (outdated?.canvasId === namedCanvasId)
-            dispatch({ type: 'failed', message: outdatedMessage(outdated.name) });
+            dispatch({ type: 'failed', message: outdatedCanvasMessage(outdated.name) });
         },
         () => undefined,
       );
@@ -248,10 +249,6 @@ export function CanvasWorkspace({
       />
     </div>
   );
-}
-
-function outdatedMessage(name: string): string {
-  return `“${name}” was made by an earlier DROIDEX and can’t be opened here.`;
 }
 
 /** The socket's own state, which `sendIfConnected` reads, as the bridge reports it. */
