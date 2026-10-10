@@ -544,6 +544,37 @@ test('Canvas tools proceed without a card at autonomy off under either harness n
   assert.equal(approvalRequests(harness.emitted).length, 0);
 });
 
+test('a Droid bundle led by a Canvas tool still asks for the whole request', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('design').summary.autonomy = 'off';
+  const bundle: RequestPermissionRequestParams = {
+    toolUses: [
+      {
+        toolUse: {
+          type: 'tool_use',
+          id: 'canvas-1',
+          name: 'droidex-canvas___canvas_write',
+          input: {},
+        },
+        confirmationType: ToolConfirmationType.McpTool,
+        details: {
+          type: ToolConfirmationType.McpTool,
+          toolName: 'canvas_write',
+          serverName: 'droidex-canvas',
+          impactLevel: 'low',
+        },
+      },
+      ...permissionInput('exec-1').toolUses,
+    ],
+    options: [],
+  };
+  const pending = Promise.resolve(harness.permissionHandler({ id: 'design' })(bundle));
+  const request = latestApprovalRequest(harness.emitted);
+  await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
+  assert.equal(approvalRequests(harness.emitted).length, 1);
+});
+
 // SessionManager wiring: the module tests above own settlement rules; these
 // prove the facade routes provider callbacks to the right app session and
 // applies a Spec exit to the real provider.
