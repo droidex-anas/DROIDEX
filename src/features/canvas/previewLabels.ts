@@ -29,6 +29,39 @@ export function previewRevisionId(build: CanvasBuildState): string | null {
   return null;
 }
 
+/** Each frame's design that is on show: its working revision, or the one it last showed. */
+export type ShownRevisions = ReadonlyMap<string, string>;
+
+export const NO_SHOWN_REVISIONS: ShownRevisions = new Map();
+
+/**
+ * The revision each frame shows. A frame with a working revision shows it; one
+ * whose newer revision is still queued or building keeps showing the design it
+ * showed before, so a revision never blanks the frame while it builds. A frame
+ * that failed with nothing older, or lost its source, shows nothing. Answers
+ * `previous` itself when nothing changed, so a caller can tell.
+ */
+export function shownRevisions(
+  previous: ShownRevisions,
+  frames: readonly Pick<CanvasFrame, 'designId' | 'build'>[],
+): ShownRevisions {
+  const next = new Map<string, string>();
+  for (const { designId, build } of frames) {
+    const shown = previewRevisionId(build) ?? (isPending(build) ? previous.get(designId) : null);
+    if (shown) next.set(designId, shown);
+  }
+  if (next.size !== previous.size) return next;
+  for (const [designId, revisionId] of next) {
+    if (previous.get(designId) !== revisionId) return next;
+  }
+  return previous;
+}
+
+/** A newer revision that has not finished building yet. */
+export function isPending(build: CanvasBuildState): boolean {
+  return build.status === 'pending' || build.status === 'building' || build.status === 'cancelled';
+}
+
 /** What a frame's sheet shows while it holds no live preview. */
 export type SheetState =
   /** Someone is working on it now: the stage name shimmers. */
@@ -39,6 +72,7 @@ export type SheetState =
   | { kind: 'still'; revisionId: string; detail: string };
 
 /**
+ * `shown` is the revision the frame shows (see `shownRevisions`).
  * `agentWorking` is whether this chat's agent has a turn running. A frame with
  * no source is being written only while it does; otherwise it is empty.
  * `released` means the frame held a live slot and lost it, so returning to it
@@ -46,6 +80,7 @@ export type SheetState =
  */
 export function sheetState(
   frame: Pick<CanvasFrame, 'revisionId' | 'build'>,
+  shown: string | null,
   agentWorking: boolean,
   released: boolean,
 ): SheetState {
@@ -54,11 +89,10 @@ export function sheetState(
     return agentWorking
       ? { kind: 'busy', stage: 'writing' }
       : { kind: 'note', title: 'Empty frame', detail: 'Nothing has been written to it yet.' };
-  const working = previewRevisionId(build);
-  if (working !== null)
+  if (shown !== null)
     return {
       kind: 'still',
-      revisionId: working,
+      revisionId: shown,
       detail: released
         ? 'Paused to keep four previews running. Select it to run it again.'
         : 'Select it to run its preview.',

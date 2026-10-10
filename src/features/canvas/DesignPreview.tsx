@@ -11,7 +11,7 @@ import {
   canvasPreviewUrl,
   terminateCanvasPreviewGuest,
 } from '../../lib/desktop';
-import { diagnosticPlace, missingLabel, previewRevisionId } from './previewLabels';
+import { diagnosticPlace, missingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import { useCanvasMotion } from './useCanvasMotion';
@@ -20,6 +20,8 @@ import type { CanvasDiagnostic, CanvasFrame, PreviewArtifact, PreviewReport } fr
 export interface DesignPreviewProps {
   canvasId: string;
   frame: CanvasFrame;
+  /** The revision on show: the frame's working one, or the one it showed before a newer build. */
+  revisionId: string;
   /** The artifact for one revision, or null once the derived cache lost it. */
   readArtifact: (
     canvasId: string,
@@ -46,30 +48,27 @@ const RENDER_FAILED = 'render_failed';
 export function DesignPreview({
   canvasId,
   frame,
+  revisionId,
   readArtifact,
   reportPreview,
   onResize,
 }: DesignPreviewProps) {
-  const revisionId = previewRevisionId(frame.build);
-  const read = useArtifact(canvasId, frame, readArtifact, reportPreview);
-  const failures = frame.build.status === 'failed' ? frame.build.diagnostics : [];
+  const read = useArtifact(canvasId, frame, revisionId, readArtifact, reportPreview);
+  const { build } = frame;
 
-  // The board mounts a preview only for a frame with a working revision; the
-  // frame's own sheet says what every other state is.
-  if (revisionId === null) return null;
-  if (read.state !== 'found')
-    return <PreviewPlacard label={missingLabel(read.state, frame.build)} />;
+  if (read.state !== 'found') return <PreviewPlacard label={missingLabel(read.state, build)} />;
   return (
     <PreviewGuestFrame
-      key={`${frame.designId}:${read.artifact.artifactId}:${String(frame.build.generation)}`}
+      // A revision's artifact never changes, so a newer build attempt is no
+      // reason to tear down the design someone may be using.
+      key={`${frame.designId}:${read.artifact.artifactId}`}
       canvasId={canvasId}
       designId={frame.designId}
       revisionId={revisionId}
-      generation={frame.build.generation}
       // Spec §5: a failed revision labels the older working preview it is showing.
-      showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
+      showingRevisionId={build.status === 'failed' ? revisionId : null}
       html={read.artifact.html}
-      diagnostics={failures}
+      diagnostics={build.status === 'failed' ? build.diagnostics : []}
       reportPreview={reportPreview}
       onResize={onResize}
     />
@@ -88,48 +87,50 @@ type ArtifactRead =
 const LOADING: ArtifactRead = { state: 'loading' };
 
 /**
- * The artifact for one revision, read again whenever that revision's build
- * actually moves. Starting the read is when this pane tells the agent a preview
- * is on its way, well inside the moment a write waits to hear it.
- * The signal is `generation` — the registry's per-design attempt
- * counter — and the status, never the build object's identity: an arrange
- * re-sends every frame it touches with a fresh object and an unchanged build, and
- * re-reading there would tear down a loaded preview and lose its state.
+ * The artifact for one revision. Starting the read is when this pane tells the
+ * agent a preview is on its way, well inside the moment a write waits to hear it.
  *
- * It is not the artifact ID either, because a rebuild of identical source is
- * content-addressed to the same ID: a recovered document arrives under a new
- * attempt, not under a new name.
+ * A found artifact is kept: a revision's document never changes, and re-reading
+ * on every build move would tear down the preview each time a newer revision
+ * starts building. A miss is read again whenever the frame's build actually
+ * moves, by `generation` and status rather than the build object's identity,
+ * because a recovered document arrives under a new attempt, not a new name, and
+ * an arrange re-sends every frame with a fresh object and an unchanged build.
  */
 function useArtifact(
   canvasId: string,
   { designId, build }: CanvasFrame,
+  revisionId: string,
   readArtifact: DesignPreviewProps['readArtifact'],
   reportPreview: DesignPreviewProps['reportPreview'],
 ): ArtifactRead {
-  const [read, setRead] = useState<ArtifactRead>(LOADING);
-  const revisionId = previewRevisionId(build);
+  const [read, setRead] = useState<{ revisionId: string; result: ArtifactRead } | null>(null);
+  const found = read?.revisionId === revisionId && read.result.state === 'found';
+  const attempt = found ? 'found' : `${build.status}:${String(build.generation)}`;
 
   useEffect(() => {
-    if (revisionId === null) return;
+    if (found) return;
     let wanted = true;
-    setRead(LOADING);
     reportPreview(canvasId, { designId, revisionId, outcome: 'loading', errors: [] });
     readArtifact(canvasId, designId, revisionId).then(
       (artifact) => {
-        if (wanted) setRead(artifact ? { state: 'found', artifact } : { state: 'missing' });
+        if (wanted)
+          setRead({
+            revisionId,
+            result: artifact ? { state: 'found', artifact } : { state: 'missing' },
+          });
       },
       (error: unknown) => {
         console.error('A Canvas preview artifact could not be read:', error);
-        if (wanted) setRead({ state: 'unreadable' });
+        if (wanted) setRead({ revisionId, result: { state: 'unreadable' } });
       },
     );
     return () => {
       wanted = false;
     };
-    // Values, not the build object: see the note above.
-  }, [canvasId, designId, revisionId, build.generation, build.status, readArtifact, reportPreview]);
+  }, [canvasId, designId, revisionId, attempt, found, readArtifact, reportPreview]);
 
-  return read;
+  return read?.revisionId === revisionId ? read.result : LOADING;
 }
 
 /**
@@ -141,7 +142,6 @@ export function PreviewGuestFrame({
   canvasId,
   designId,
   revisionId,
-  generation,
   showingRevisionId,
   html,
   diagnostics,
@@ -151,7 +151,6 @@ export function PreviewGuestFrame({
   canvasId: string;
   designId: string;
   revisionId: string;
-  generation: number;
   /** Named when this is an older working revision rather than the frame's own. */
   showingRevisionId: string | null;
   html: string;
@@ -311,7 +310,7 @@ export function PreviewGuestFrame({
       run?.stop();
       guest.remove();
     };
-  }, [canvasId, designId, revisionId, generation, html]);
+  }, [canvasId, designId, revisionId, html]);
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
   const isReady = phase === 'ready';

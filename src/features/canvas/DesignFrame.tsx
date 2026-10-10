@@ -15,7 +15,7 @@ import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 import { FrameThumbnail } from './FrameThumbnail';
 import { PendingBloom } from './PendingBloom';
-import { diagnosticPlace, sheetState, type SheetState } from './previewLabels';
+import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
 
 /** Screen room the selected frame's actions take at the right of its label row. */
@@ -51,6 +51,8 @@ export interface DesignFrameProps {
    * removes it. The board owns when flipping it is safe; this only paints it.
    */
   capturePointer: boolean;
+  /** The revision on show: its working one, or the one it showed before a newer build. */
+  shownRevisionId: string | null;
   /** The live preview, or null when this frame holds no slot. */
   preview: ReactNode | null;
   /** It held a live slot and lost it, so returning reloads the design. */
@@ -91,6 +93,7 @@ export function DesignFrame(props: DesignFrameProps) {
         className="canvas-sheet"
       >
         <FrameBody {...props} />
+        <RebuildBadge {...props} />
         {capturePointer && (
           <div
             data-canvas-input-overlay
@@ -281,6 +284,24 @@ function arrival(motion: CanvasMotion): CSSProperties {
 }
 
 /**
+ * A design still on show while its newer revision queues or builds: the stage,
+ * in the corner, so the frame never blanks for a revision in progress.
+ */
+function RebuildBadge({ frame, shownRevisionId, motion, visible }: DesignFrameProps) {
+  const { status } = frame.build;
+  if (shownRevisionId === null || !isPending(frame.build) || status === 'cancelled') return null;
+  return (
+    <div className="canvas-sheet-badge canvas-chrome">
+      <PendingBloom
+        stage={status === 'building' ? 'building' : 'queued'}
+        visible={visible}
+        motion={motion}
+      />
+    </div>
+  );
+}
+
+/**
  * What is on the sheet: the live preview, or what the frame can truthfully say
  * without one (see `sheetState`).
  */
@@ -291,13 +312,14 @@ function FrameBody({
   scale,
   motion,
   visible,
+  shownRevisionId,
   preview,
   released,
   agentWorking,
   onOpenSource,
 }: DesignFrameProps) {
   if (preview) return preview;
-  const state = sheetState(frame, agentWorking, released);
+  const state = sheetState(frame, shownRevisionId, agentWorking, released);
   const compact =
     rect.width * scale < COMPACT_SHEET_PX.width || rect.height * scale < COMPACT_SHEET_PX.height;
   const content = (

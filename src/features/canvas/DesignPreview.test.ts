@@ -27,11 +27,16 @@ function frameWith(build: CanvasBuildState): CanvasFrame {
   };
 }
 
-function render(build: CanvasBuildState, overrides: Partial<DesignPreviewProps> = {}): string {
+function render(
+  build: CanvasBuildState,
+  revisionId: string,
+  overrides: Partial<DesignPreviewProps> = {},
+): string {
   return renderToStaticMarkup(
     createElement(DesignPreview, {
       canvasId: CANVAS,
       frame: frameWith(build),
+      revisionId,
       readArtifact: () => Promise.resolve(null),
       reportPreview: () => undefined,
       ...overrides,
@@ -42,19 +47,25 @@ function render(build: CanvasBuildState, overrides: Partial<DesignPreviewProps> 
 test('a revision with an artifact to load waits for it rather than guessing', () => {
   // Reading the artifact is an effect, so a first paint can only say it is
   // loading; previewRuntime.test.ts owns what happens once the guest is up.
-  const ready = render({
-    status: 'ready',
-    revisionId: 'rev_02',
-    artifactId: 'a'.repeat(64),
-    elements: [],
-    diagnostics: [],
-  });
-  const fallback = render({
-    status: 'failed',
-    revisionId: 'rev_03',
-    diagnostics: [],
-    lastWorkingRevisionId: 'rev_01',
-  });
+  const ready = render(
+    {
+      status: 'ready',
+      revisionId: 'rev_02',
+      artifactId: 'a'.repeat(64),
+      elements: [],
+      diagnostics: [],
+    },
+    'rev_02',
+  );
+  const fallback = render(
+    {
+      status: 'failed',
+      revisionId: 'rev_03',
+      diagnostics: [],
+      lastWorkingRevisionId: 'rev_01',
+    },
+    'rev_01',
+  );
 
   assert.match(ready, /Loading this preview/);
   assert.match(fallback, /Loading this preview/);
@@ -66,7 +77,6 @@ test('a mounted fallback says the latest change did not build, over the older re
       canvasId: CANVAS,
       designId: 'dsg_hey',
       revisionId: 'rev_01',
-      generation: 1,
       showingRevisionId: 'rev_01',
       html: '<!doctype html><body>x</body>',
       diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
@@ -86,7 +96,6 @@ test('a mounted fallback says the latest change did not build, over the older re
         canvasId: CANVAS,
         designId: 'dsg_hey',
         revisionId: 'rev_02',
-        generation: 1,
         showingRevisionId: null,
         html: '<!doctype html><body>x</body>',
         diagnostics: [],
@@ -186,7 +195,6 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
     canvasId: CANVAS,
     designId: 'dsg_zoom',
     revisionId: 'rev_zoom',
-    generation: 1,
     html: '',
     diagnostics: [],
     reportPreview: () => undefined,

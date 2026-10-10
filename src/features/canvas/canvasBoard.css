@@ -283,6 +283,20 @@
   pointer-events: none;
 }
 
+/* A newer revision's stage, in the sheet's corner over the design still shown. */
+.canvas-sheet-badge {
+  position: absolute;
+  top: calc(8px / var(--board-scale));
+  right: calc(8px / var(--board-scale));
+  z-index: 1;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  transform-origin: 100% 0;
+  pointer-events: none;
+}
+
 .canvas-sheet-thumbnail {
   width: 100%;
   height: 100%;

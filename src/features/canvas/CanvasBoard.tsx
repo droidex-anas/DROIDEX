@@ -37,7 +37,7 @@ import {
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import { useCanvasMotion } from './useCanvasMotion';
-import { previewRevisionId } from './previewLabels';
+import { NO_SHOWN_REVISIONS, shownRevisions } from './previewLabels';
 import { NO_PREVIEW_SLOTS, reducePreviewSlots, type PreviewSlotRequest } from './previewSlots';
 import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardViewport } from './useBoardViewport';
@@ -60,8 +60,8 @@ export interface CanvasBoardProps {
    * `CanvasClient.arrangeFrames` for this canvas.
    */
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
-  /** One frame's live preview, mounted only while that frame holds a slot. */
-  renderPreview: (frame: CanvasFrame) => ReactNode;
+  /** One frame's live preview of `revisionId`, mounted only while it holds a slot. */
+  renderPreview: (frame: CanvasFrame, revisionId: string) => ReactNode;
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
@@ -89,6 +89,7 @@ export function CanvasBoard({
   const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
   const [retainedSlots, setRetainedSlots] = useState(NO_PREVIEW_SLOTS);
+  const [retainedShown, setRetainedShown] = useState(NO_SHOWN_REVISIONS);
   const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
@@ -168,11 +169,12 @@ export function CanvasBoard({
   }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
-  // Only a frame with a working revision has a document to run.
+  // A frame keeps showing its last design while a newer revision builds, and
+  // only a frame with something to show has a document to run.
+  const shown = shownRevisions(retainedShown, frames);
+  if (shown !== retainedShown) setRetainedShown(shown);
   const slotRequest: PreviewSlotRequest = {
-    designIds: frames
-      .filter((frame) => previewRevisionId(frame.build) !== null)
-      .map((frame) => frame.designId),
+    designIds: frames.filter((frame) => shown.has(frame.designId)).map((frame) => frame.designId),
     visible,
     interacted: interaction.interactedFrameId,
     selected: interaction.selectedFrameIds,
@@ -193,6 +195,13 @@ export function CanvasBoard({
       cancelAnimationFrame(frame);
     };
   }, [capturePointer, overlayCapture, view.scrolling]);
+
+  const preview = (frame: CanvasFrame): ReactNode | null => {
+    const revisionId = shown.get(frame.designId);
+    return revisionId !== undefined && slots.live.includes(frame.designId)
+      ? renderPreview(frame, revisionId)
+      : null;
+  };
 
   /**
    * One layout write for the selection, computed from the rects it is drawn at.
@@ -334,7 +343,8 @@ export function CanvasBoard({
             held={gestures.heldDesignId === frame.designId}
             agentWorking={agentWorking}
             capturePointer={overlayCapture}
-            preview={slots.live.includes(frame.designId) ? renderPreview(frame) : null}
+            shownRevisionId={shown.get(frame.designId) ?? null}
+            preview={preview(frame)}
             released={slots.released.includes(frame.designId)}
             onExitInteract={() => {
               dispatch({ type: 'escape' });

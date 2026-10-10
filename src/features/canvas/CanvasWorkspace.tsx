@@ -312,10 +312,11 @@ function CanvasBoardMount({
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}
-          renderPreview={(frame) => (
+          renderPreview={(frame, revisionId) => (
             <DesignPreview
               canvasId={canvasId}
               frame={frame}
+              revisionId={revisionId}
               readArtifact={readArtifact}
               reportPreview={reportPreview}
             />

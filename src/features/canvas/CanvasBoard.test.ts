@@ -49,10 +49,11 @@ function render(
       agentWorking,
       onInteractionChange: () => undefined,
       onArrangeFrames: () => Promise.resolve(),
-      renderPreview: (frame) =>
+      renderPreview: (frame, revisionId) =>
         createElement(DesignPreview, {
           canvasId: snapshot.canvasId,
           frame,
+          revisionId,
           readArtifact: () => Promise.resolve(null),
           reportPreview: () => undefined,
         }),

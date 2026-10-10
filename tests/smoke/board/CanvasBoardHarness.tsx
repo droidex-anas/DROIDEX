@@ -162,11 +162,12 @@ function Harness() {
           interaction={interaction}
           agentWorking={false}
           onInteractionChange={setInteraction}
-          renderPreview={(frame) =>
+          renderPreview={(frame, revisionId) =>
             params.get('preview') === 'guest' ? (
               <DesignPreview
                 canvasId={snapshot.canvasId}
                 frame={frame}
+                revisionId={revisionId}
                 readArtifact={readArtifact}
                 reportPreview={() => undefined}
               />
