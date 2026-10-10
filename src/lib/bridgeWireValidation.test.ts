@@ -376,6 +376,11 @@ test('transient transcript events accept only the literal true or an absent flag
   for (const transient of ['false', false, 1, null]) {
     assertRejected({ type: 'event.appended', event: { ...event, transient } });
   }
+  // A prompt's pinned frames are names the bubble maps over, so nothing else gets in.
+  assertAccepted({ type: 'event.appended', event: { ...event, canvasFrames: ['Pricing · Wide'] } });
+  for (const canvasFrames of ['Pricing · Wide', [1], [null], {}]) {
+    assertRejected({ type: 'event.appended', event: { ...event, canvasFrames } });
+  }
 });
 
 test('droidproxy reports and outcomes accept known providers and phases only', () => {

@@ -451,7 +451,8 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.interrupted === undefined || value.interrupted === true) &&
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
-    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
+    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies)) &&
+    (value.canvasFrames === undefined || stringArray(value.canvasFrames))
   );
 }
 
