@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
 import './canvasAnimations.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
+import { useSessionLive } from '../../hooks/useSessionLive';
 import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
@@ -290,6 +291,7 @@ function CanvasBoardMount({
   onOpenSource: (designId: string) => void;
 }) {
   const { canvasId } = snapshot;
+  const agentWorking = useSessionLive(appSessionId);
   const arrangeFrames = useCallback(
     (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
     [appSessionId, canvasId],
@@ -307,6 +309,7 @@ function CanvasBoardMount({
           onArrangeFrames={arrangeFrames}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
+          agentWorking={agentWorking}
           renderPreview={(frame) => (
             <DesignPreview
               canvasId={canvasId}

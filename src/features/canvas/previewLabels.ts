@@ -1,9 +1,9 @@
 // What one frame says when it has no mounted document. These rules are about
 // build state rather than presentation, and a frame's claim has to be true:
 // promising a rebuild that nothing queued is worse than saying the preview is
-// gone.
+// gone, and a frame nobody is writing must not shimmer as though someone were.
 
-import type { CanvasBuildState } from './protocol';
+import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame } from './protocol';
 
 /**
  * What a frame without a mounted document should say. Only a miss for the
@@ -29,29 +29,54 @@ export function previewRevisionId(build: CanvasBuildState): string | null {
   return null;
 }
 
-/** What a frame with nothing to show yet is waiting for. */
-export function waitingLabel(build: CanvasBuildState): string {
+/** What a frame's sheet shows while it holds no live preview. */
+export type SheetState =
+  /** Someone is working on it now: the stage name shimmers. */
+  | { kind: 'busy'; stage: 'writing' | 'building' }
+  | { kind: 'note'; title: string; detail: string }
+  | { kind: 'failed'; diagnostics: CanvasDiagnostic[] }
+  /** It has a working revision that is not running: its last picture, if any. */
+  | { kind: 'still'; revisionId: string; detail: string };
+
+/**
+ * `agentWorking` is whether this chat's agent has a turn running. A frame with
+ * no source is being written only while it does; otherwise it is empty.
+ * `released` means the frame held a live slot and lost it, so returning to it
+ * restarts the design from its own beginning.
+ */
+export function sheetState(
+  frame: Pick<CanvasFrame, 'revisionId' | 'build'>,
+  agentWorking: boolean,
+  released: boolean,
+): SheetState {
+  const { build } = frame;
+  if (frame.revisionId === null)
+    return agentWorking
+      ? { kind: 'busy', stage: 'writing' }
+      : { kind: 'note', title: 'Empty frame', detail: 'Nothing has been written to it yet.' };
+  const working = previewRevisionId(build);
+  if (working !== null)
+    return {
+      kind: 'still',
+      revisionId: working,
+      detail: released
+        ? 'Paused to keep four previews running. Select it to run it again.'
+        : 'Select it to run its preview.',
+    };
   switch (build.status) {
     case 'building':
-      return 'Building this design…';
-    case 'cancelled':
-      return 'This build was cancelled.';
+      return { kind: 'busy', stage: 'building' };
     case 'failed':
-      return 'This design has no working preview yet.';
+      return { kind: 'failed', diagnostics: build.diagnostics };
+    case 'cancelled':
+      return { kind: 'note', title: 'Build cancelled', detail: 'Its next change builds it again.' };
     default:
-      return 'Waiting to build…';
+      return { kind: 'note', title: 'Waiting to build', detail: 'It builds when a slot is free.' };
   }
 }
 
-/**
- * What a frame holding no live preview slot says. A frame with nothing built
- * yet is still waiting to build; one whose design is ready says that opening it
- * is what runs it, and names the reload when a slot was taken away, because the
- * design restarts from its own beginning rather than where the user left it.
- */
-export function unmountedLabel(build: CanvasBuildState, released: boolean): string {
-  if (previewRevisionId(build) === null) return waitingLabel(build);
-  return released
-    ? 'This preview was stopped to keep four running. Opening it starts the design again.'
-    : 'Open this design to run its preview.';
+/** Where a diagnostic points, for a person: "main.tsx · line 12". */
+export function diagnosticPlace(diagnostic: CanvasDiagnostic): string | null {
+  if (!diagnostic.file) return null;
+  return diagnostic.line ? `${diagnostic.file} · line ${String(diagnostic.line)}` : diagnostic.file;
 }

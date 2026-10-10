@@ -79,7 +79,8 @@ async function openBoard(
   await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
   await page.goto(`${url}?font=${font}`);
   await expect(page.getByTestId('canvas-board')).toBeVisible();
-  await expect(page.getByTestId('canvas-board').getByText('95%', { exact: true })).toBeVisible();
+  // The opening Fit: 72 px of padding each side in a 1000 px board, about 90%.
+  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
   await page.clock.runFor(32);
 }
 
@@ -196,13 +197,18 @@ test('Fit suppresses trailing wheel input until quiet, independently of reduced 
     await wheel(page, 400, 300, 20);
     expect(await transform(page)).not.toBe(fitted);
 
-    // Spec §11: the arrival animation is the motion tokens', so reduced motion
-    // leaves the frame with no animation at all rather than a zero-length one.
-    const animated = await page
-      .locator('[data-design-frame]')
-      .first()
-      .evaluate((node) => getComputedStyle(node).animationName);
-    expect(animated).toBe(motion === 'reduce' ? 'none' : 'canvas-frame-arrival');
+    // Spec §11: a frame that joins the open board arrives on the motion tokens,
+    // and reduced motion leaves it no animation at all rather than a zero-length
+    // one. The frames the board opened with are simply there.
+    const animation = (designId: string) =>
+      page
+        .locator(`[data-design-frame="${designId}"]`)
+        .evaluate((node) => getComputedStyle(node).animationName);
+    expect(await animation('a')).toBe('none');
+    await page.evaluate(() => {
+      window.boardHarness.arrive();
+    });
+    expect(await animation('arrived')).toBe(motion === 'reduce' ? 'none' : 'canvas-frame-arrival');
   }
 });
 
@@ -571,7 +577,7 @@ declare global {
   }
 }
 
-test('a building slot blooms and only a ready guest crossfades, with reduced motion immediate', async ({
+test('a building slot shimmers its stage and only a ready guest crossfades, with reduced motion immediate', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -618,7 +624,8 @@ test('a building slot blooms and only a ready guest crossfades, with reduced mot
     const design = frame(page, 'A');
     await expect(design.getByText('Building', { exact: true })).toBeVisible();
     await expect(page.locator('webview')).toHaveCount(0);
-    expect(await design.locator('.canvas-bloom-dot').count()).toBe(motion === 'reduce' ? 0 : 5);
+    // The stage name carries the activity shimmer, and stands still under reduced motion.
+    expect(await design.locator('.canvas-bloom-label').count()).toBe(motion === 'reduce' ? 0 : 1);
     await page.evaluate(() => window.boardHarness.buildReady());
     await expect(design.locator('[data-preview-phase="mounting"]')).toBeVisible();
     const host = design.locator('webview').locator('..');

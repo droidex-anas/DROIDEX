@@ -34,6 +34,8 @@ export interface BoardViewport {
   panByScreen: (screenDelta: Point) => void;
   /** Fit and focus are the same operation; focus just passes one rect. */
   fitTo: (rects: readonly FrameRect[]) => void;
+  /** Eases to `scale` about the board's centre, as the zoom menu and keys ask. */
+  zoomTo: (scale: number) => void;
   /** Ends any running focus animation, so a hand gesture is never fought. */
   stopAnimating: () => void;
   /** True while a wheel gesture is still arriving. */
@@ -80,12 +82,11 @@ export function useBoardViewport(
     }));
   }, []);
 
-  const fitTo = useCallback(
-    (rects: readonly FrameRect[]) => {
-      if (rects.length === 0) return;
-      const target = fitFrames(rects, measured.current);
-      // Fit owns the rest of an arriving wheel gesture, whether or not it
-      // animates, so trailing momentum cannot undo what the user just asked for.
+  /** Every programmatic move: fit, focus and the zoom commands. */
+  const animateTo = useCallback(
+    (target: Viewport) => {
+      // A programmatic move owns the rest of an arriving wheel gesture, whether
+      // or not it animates, so trailing momentum cannot undo what was asked for.
       if (scroll.current.active) scroll.current.suppressed = true;
       stopAnimating();
       opening.current.navigated = true;
@@ -103,6 +104,21 @@ export function useBoardViewport(
       animation.current = requestAnimationFrame(step);
     },
     [motion, stopAnimating],
+  );
+
+  const fitTo = useCallback(
+    (rects: readonly FrameRect[]) => {
+      if (rects.length > 0) animateTo(fitFrames(rects, measured.current));
+    },
+    [animateTo],
+  );
+
+  const zoomTo = useCallback(
+    (scale: number) => {
+      const centre = { x: measured.current.x / 2, y: measured.current.y / 2 };
+      animateTo(zoomAtPoint(latest.current.viewport, centre, scale));
+    },
+    [animateTo],
   );
 
   /** Spec §4: the board may fit once, before the user has navigated. */
@@ -196,7 +212,7 @@ export function useBoardViewport(
     [],
   );
 
-  return { viewport, size, panByScreen, fitTo, stopAnimating, scrolling, markNavigated };
+  return { viewport, size, panByScreen, fitTo, zoomTo, stopAnimating, scrolling, markNavigated };
 }
 
 interface ScrollGesture {

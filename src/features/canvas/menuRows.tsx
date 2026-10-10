@@ -27,11 +27,14 @@ export function MenuNote({ children, role }: { children: string; role?: 'status'
 
 export function MenuRow({
   label,
+  hint,
   checked = false,
   disabled = false,
   onRun,
 }: {
   label: string;
+  /** A keyboard shortcut, shown muted at the row's end. */
+  hint?: string;
   checked?: boolean;
   disabled?: boolean;
   onRun: () => void;
@@ -45,6 +48,7 @@ export function MenuRow({
       className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left transition-colors hover:bg-droid-accent/10 focus-visible:bg-droid-accent/10 focus-visible:outline-none disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
     >
       <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text">{label}</span>
+      {hint && <span className="shrink-0 text-[11px] text-droid-text-muted">{hint}</span>}
       {checked && <Check aria-label="Current" className="h-3.5 w-3.5 shrink-0 text-droid-accent" />}
     </button>
   );

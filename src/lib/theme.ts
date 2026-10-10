@@ -396,6 +396,14 @@ const LINK_COLORS = {
   light: '#1d4ed8',
 } as const;
 
+// A design board's selection reads by hue in both schemes, as a design tool's
+// does: the neutral accent is near-white or near-black, so an accent outline
+// around a frame reads as a hard box rather than "this one is selected".
+const SELECTION_COLORS = {
+  dark: '#3b8bff',
+  light: '#1f6feb',
+} as const;
+
 // One rung of the tint ramp (hover, selection, user bubbles, code blocks),
 // `amount` steps away from the canvas.
 //
@@ -489,6 +497,7 @@ export function applyTheme(theme: ThemeSettings) {
   const markShade = bgIsDark ? 'dark' : 'light';
   root.style.setProperty('--droid-skill-mark', MARK_COLORS.skill[markShade]);
   root.style.setProperty('--droid-visualize-mark', MARK_COLORS.visualize[markShade]);
+  root.style.setProperty('--droid-selection', SELECTION_COLORS[markShade]);
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
   // Light themes lead with a faint 1px ring: a white card on near-white paper

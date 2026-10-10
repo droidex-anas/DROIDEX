@@ -14,7 +14,8 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { BoardControls } from './BoardControls';
+import './canvasBoard.css';
+import { BoardControls, type ZoomCommand } from './BoardControls';
 import {
   alignRects,
   arrowDirection,
@@ -22,6 +23,7 @@ import {
   framesInBand,
   nudgeStep,
   visibleDesignIds,
+  zoomStep,
   type AlignEdge,
   type DistributeAxis,
   type PlacedFrame,
@@ -36,6 +38,7 @@ import {
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import { useCanvasMotion } from './useCanvasMotion';
+import { previewRevisionId } from './previewLabels';
 import { NO_PREVIEW_SLOTS, reducePreviewSlots, type PreviewSlotRequest } from './previewSlots';
 import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardViewport } from './useBoardViewport';
@@ -63,6 +66,8 @@ export interface CanvasBoardProps {
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
+  /** This chat's agent has a turn running, so frames with no source are being written. */
+  agentWorking: boolean;
   onOpenSource?: (designId: string) => void;
 }
 
@@ -73,11 +78,14 @@ export function CanvasBoard({
   renderPreview,
   interaction,
   onInteractionChange,
+  agentWorking,
   onOpenSource,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
   const { frames } = snapshot;
+  // The frames the board opened with are simply there; later ones arrive.
+  const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
   const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
@@ -161,9 +169,10 @@ export function CanvasBoard({
   }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
+  // Only a frame with a working revision has a document to run.
   const slotRequest: PreviewSlotRequest = {
     designIds: frames
-      .filter((frame) => frame.build.status === 'ready' || frame.build.status === 'failed')
+      .filter((frame) => previewRevisionId(frame.build) !== null)
       .map((frame) => frame.designId),
     visible,
     interacted: interaction.interactedFrameId,
@@ -203,6 +212,28 @@ export function CanvasBoard({
     );
   };
 
+  const onMode = (next: BoardMode) => {
+    if (next === interaction.mode) return;
+    if (next === 'select') {
+      dispatch({ type: 'escape' });
+      return;
+    }
+    const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
+    if (target !== undefined) dispatch({ type: 'interact', designId: target });
+  };
+
+  const onZoom = (command: ZoomCommand) => {
+    if (command === 'fit') fitTo(drawn.map(({ rect }) => rect));
+    else if (command === 'selection')
+      fitTo(
+        drawn
+          .filter(({ designId }) => interaction.selectedFrameIds.includes(designId))
+          .map(({ rect }) => rect),
+      );
+    else if (command === 'actual') view.zoomTo(1);
+    else view.zoomTo(zoomStep(scale, command === 'in' ? 1 : -1));
+  };
+
   const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     // Inputs and editors keep their shortcuts, including Escape.
     if (isBoardEditor(event.target)) return;
@@ -224,6 +255,18 @@ export function CanvasBoard({
       dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
       return;
     }
+    const zoom = zoomShortcut(event);
+    if (zoom) {
+      event.preventDefault();
+      onZoom(zoom);
+      return;
+    }
+    const mode = modeShortcut(event);
+    if (mode) {
+      event.preventDefault();
+      onMode(mode);
+      return;
+    }
     const direction = arrowDirection(event.key);
     if (!direction) return;
     event.preventDefault();
@@ -237,16 +280,6 @@ export function CanvasBoard({
     placeSelection((rects) =>
       rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
     );
-  };
-
-  const onMode = (next: BoardMode) => {
-    if (next === interaction.mode) return;
-    if (next === 'select') {
-      dispatch({ type: 'escape' });
-      return;
-    }
-    const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
-    if (target !== undefined) dispatch({ type: 'interact', designId: target });
   };
 
   return (
@@ -276,23 +309,31 @@ export function CanvasBoard({
     >
       <div
         className="absolute left-0 top-0"
-        style={{
-          transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
-          transformOrigin: '0 0',
-        }}
+        style={
+          {
+            transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
+            transformOrigin: '0 0',
+            // The board stylesheet divides frame chrome by this, so it keeps its size.
+            '--board-scale': String(scale),
+          } as React.CSSProperties
+        }
       >
         {frames.map((frame, index) => (
           <DesignFrame
             key={frame.designId}
+            canvasId={snapshot.canvasId}
             frame={frame}
             rect={drawn[index].rect}
             scale={scale}
             motion={motion}
+            arriving={!openedWith.has(frame.designId)}
             visible={visible.includes(frame.designId)}
             mode={interaction.mode}
             selected={interaction.selectedFrameIds.includes(frame.designId)}
+            showTools={showsTools(interaction, frame.designId)}
             interacted={interaction.interactedFrameId === frame.designId}
             held={gestures.heldDesignId === frame.designId}
+            agentWorking={agentWorking}
             capturePointer={overlayCapture}
             preview={slots.live.includes(frame.designId) ? renderPreview(frame) : null}
             released={slots.released.includes(frame.designId)}
@@ -322,9 +363,7 @@ export function CanvasBoard({
         hasFrames={frames.length > 0}
         error={gestures.layoutError}
         onMode={onMode}
-        onFit={() => {
-          fitTo(drawn.map(({ rect }) => rect));
-        }}
+        onZoom={onZoom}
         onAlign={(edge: AlignEdge) => {
           placeSelection((rects) => alignRects(rects, edge));
         }}
@@ -341,7 +380,7 @@ function RubberBand({ band: { origin, current } }: { band: Band }) {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute rounded-md bg-droid-accent/10 ring-1 ring-droid-accent/30"
+      className="canvas-band"
       style={{
         left: Math.min(origin.x, current.x),
         top: Math.min(origin.y, current.y),
@@ -356,6 +395,34 @@ interface BoardReads {
   interaction: BoardInteraction;
   drawn: PlacedFrame[];
   viewport: Viewport;
+}
+
+/** A frame shows its actions while it is the one selection, or Interact drives it. */
+function showsTools(interaction: BoardInteraction, designId: string): boolean {
+  if (interaction.interactedFrameId === designId) return true;
+  return interaction.mode === 'select' && interaction.selectedFrameIds.length === 1
+    ? interaction.selectedFrameIds[0] === designId
+    : false;
+}
+
+/** The zoom keys a design tool uses: + and −, and ⇧1, ⇧2 and ⇧0. */
+function zoomShortcut(event: React.KeyboardEvent): ZoomCommand | null {
+  if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  if (event.key === '+' || event.key === '=') return 'in';
+  if (event.key === '-' || event.key === '_') return 'out';
+  if (!event.shiftKey) return null;
+  if (event.code === 'Digit1') return 'fit';
+  if (event.code === 'Digit2') return 'selection';
+  if (event.code === 'Digit0') return 'actual';
+  return null;
+}
+
+/** V for Select and I for Interact, as the rail's tips say. */
+function modeShortcut(event: React.KeyboardEvent): BoardMode | null {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+  if (event.key === 'v' || event.key === 'V') return 'select';
+  if (event.key === 'i' || event.key === 'I') return 'interact';
+  return null;
 }
 
 function isFrameHeader(target: EventTarget): boolean {
