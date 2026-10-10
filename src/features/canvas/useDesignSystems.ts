@@ -3,7 +3,8 @@
 
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { canvasClient } from './canvasClient';
-import { canvasMessage, reply } from './client';
+import { reply } from './canvasReply';
+import { canvasMessage } from './client';
 import { designSystemsReducer, initialDesignSystemsState } from './designSystemsState';
 import { MAX_KIT_NAME_LENGTH } from './wireValidation';
 import type {
