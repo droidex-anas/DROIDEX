@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
-import { canvasContextOf } from '../../features/canvas/framePins';
+import { canvasContextOf, promptWithFramePins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
 import {
@@ -92,13 +92,16 @@ export function useQueuedPromptDelivery({
           const mentioned = new Set(head.mentions?.map((mention) => mention.name));
           sendToSession(
             appSessionId,
-            promptWithSideChatReplies(
-              composePrompt(
-                head.text,
-                head.skills.filter((name) => !mentioned.has(name)),
-                head.files,
+            promptWithFramePins(
+              promptWithSideChatReplies(
+                composePrompt(
+                  head.text,
+                  head.skills.filter((name) => !mentioned.has(name)),
+                  head.files,
+                ),
+                head.sideChatReplies ?? [],
               ),
-              head.sideChatReplies ?? [],
+              head.framePins,
             ),
             {
               responseFormat: responseFormatForPrompt(
@@ -123,6 +126,7 @@ export function useQueuedPromptDelivery({
               skills: head.skills,
               files: head.files,
               ...(head.sideChatReplies ? { sideChatReplies: head.sideChatReplies } : {}),
+              ...(head.framePins ? { canvasFrames: head.framePins.map((pin) => pin.name) } : {}),
             },
           });
         }

@@ -153,7 +153,7 @@ import {
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
-import { promptWithSideChatReplies, sideChatPromptFromCommand } from '../lib/sideChats';
+import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import useFastMode from '../hooks/useFastMode';
@@ -1346,13 +1346,12 @@ export default function PromptInput({
     // it must not also be written into the prompt's words.
     const mentions = mentionsForRows(composerProvider, activeSkills);
     const mentioned = new Set(mentions.map((mention) => mention.name));
-    const composed = promptWithSideChatReplies(
+    const composed = references.compose(
       composePrompt(
         displayText,
         skillNames.filter((name) => !mentioned.has(name)),
         allFiles,
       ),
-      sideChatReplies,
     );
     const registerPending = (ref: string, canvas?: { canvasId: string | null }) => {
       if (turnStartingClientRef.current === ref) {
@@ -1560,7 +1559,7 @@ export default function PromptInput({
             author: 'user',
             skills: skillNames,
             files: allFiles,
-            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+            ...references.transcript,
           },
         });
       references.detach();

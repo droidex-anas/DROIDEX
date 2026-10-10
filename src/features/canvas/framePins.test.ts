@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   canvasContextOf,
   framePins,
+  promptWithFramePins,
   restoreFramePins,
   syncFramePins,
   toggleFramePin,
@@ -75,6 +76,21 @@ test('a queued request keeps the revisions it was sent with when the pins move o
     { designId: 'd2', revisionId: 'r1' },
   ]);
   assert.equal(canvasContextOf([]), undefined);
+
+  // The model is told which frames before any tool call, in the block the
+  // sidecar's canvasFramesFromPrompt splits back out on replay.
+  assert.equal(
+    promptWithFramePins('Make it bolder', queued),
+    [
+      'Make it bolder',
+      '',
+      '<canvas_frames>',
+      'The user pinned these canvas frames to this request; "this" and "it" mean them.',
+      '<frame id="d1">Design d1</frame>',
+      '</canvas_frames>',
+    ].join('\n'),
+  );
+  assert.equal(promptWithFramePins('Make it bolder', []), 'Make it bolder');
 });
 
 test('pins follow the attached canvas, and an edited queued prompt brings its own back', () => {

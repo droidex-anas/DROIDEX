@@ -131,3 +131,23 @@ export function canvasContextOf(pins: readonly FramePin[] = NONE): CanvasTurnCon
     designSystem: { ...first.designSystem },
   };
 }
+
+// Mirrored by sidecar/src/canvas/canvasFramesPrompt.ts, which strips the block
+// back out of a stored prompt so the bubble shows the frames as chips.
+const FRAMES_OPEN =
+  '<canvas_frames>\nThe user pinned these canvas frames to this request; "this" and "it" mean them.';
+const FRAMES_CLOSE = '</canvas_frames>';
+
+/**
+ * The prompt with its pinned frames named after the user's words. The turn's
+ * lease already holds them, but a model that acts before it reads would not
+ * know which frame "this one" is.
+ */
+export function promptWithFramePins(prompt: string, pins: readonly FramePin[] = NONE): string {
+  if (pins.length === 0) return prompt;
+  const frames = pins.map(
+    (pin) => `<frame id="${pin.designId}">${pin.name.replace(/\s+/g, ' ')}</frame>`,
+  );
+  const block = [FRAMES_OPEN, ...frames, FRAMES_CLOSE].join('\n');
+  return prompt ? `${prompt}\n\n${block}` : block;
+}

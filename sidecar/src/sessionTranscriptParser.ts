@@ -11,6 +11,7 @@ import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
 import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
+import { canvasFramesFromPrompt } from './canvas/canvasFramesPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -177,11 +178,12 @@ function nonAssistantBlockEvent(
 }
 
 // A stored prompt as the chat shows it: plain text, never a runnable App, and
-// without the side-chat answers or the branch, design, app and side-chat
-// framing it was sent with.
+// without the pinned frames, the side-chat answers or the branch, design, app
+// and side-chat framing it was sent with.
 export function userPromptDisplay(storedText: string) {
-  const withReplies = sideChatRepliesFromPrompt(storedText);
-  const promptText = withReplies?.text ?? storedText;
+  const withFrames = canvasFramesFromPrompt(storedText);
+  const withReplies = sideChatRepliesFromPrompt(withFrames?.text ?? storedText);
+  const promptText = withReplies?.text ?? withFrames?.text ?? storedText;
   // A branch prompt carries a whole copied conversation after its request; it
   // is cut back to the request before the cap could cut the request off.
   const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
@@ -195,6 +197,7 @@ export function userPromptDisplay(storedText: string) {
     text,
     browserRefs: designDisplay?.browserRefs,
     sideChatReplies: withReplies?.sideChatReplies,
+    canvasFrames: withFrames?.canvasFrames,
   };
 }
 

@@ -7,6 +7,7 @@ import { Frame } from 'lucide-react';
 import { MessageThread } from '@droidex/icons';
 import {
   canvasContextOf,
+  promptWithFramePins,
   restoreFramePins,
   unpinFrames,
   useFramePins,
@@ -14,7 +15,7 @@ import {
 } from '../../features/canvas/framePins';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import type { QueuedPrompt } from '../../lib/promptQueue';
-import { sideChatPanel } from '../../lib/sideChats';
+import { promptWithSideChatReplies, sideChatPanel } from '../../lib/sideChats';
 import type { DraftSelection } from './DraftSelections';
 
 const NO_REPLIES: string[] = [];
@@ -69,6 +70,14 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       ...(framePins.length > 0 ? { framePins } : {}),
     } satisfies Partial<QueuedPrompt>,
     canvasContext: canvasContextOf(framePins),
+    /** The text the agent receives: the user's words, then what goes with them. */
+    compose: (prompt: string) =>
+      promptWithFramePins(promptWithSideChatReplies(prompt, sideChatReplies), framePins),
+    /** The fields the sent prompt's bubble shows them from. */
+    transcript: {
+      ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+      ...(framePins.length > 0 ? { canvasFrames: framePins.map((pin) => pin.name) } : {}),
+    },
     /** Takes them off the draft once its prompt has gone. */
     detach: () => {
       detachReplies();

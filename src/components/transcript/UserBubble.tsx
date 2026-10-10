@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { MousePointer2, PenLine } from 'lucide-react';
+import { Frame, MousePointer2, PenLine } from 'lucide-react';
 import { MessageThread } from '@droidex/icons';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
@@ -183,7 +183,14 @@ export function UserBubble({
 }: {
   event: Pick<
     TranscriptEvent,
-    'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken' | 'sideChatReplies'
+    | 'text'
+    | 'skills'
+    | 'files'
+    | 'browserRefs'
+    | 'steered'
+    | 'spoken'
+    | 'sideChatReplies'
+    | 'canvasFrames'
   > & {
     ts?: number;
   };
@@ -198,7 +205,9 @@ export function UserBubble({
   const display = promptDisplayParts(message.text, event.skills);
   const hasAttachments = message.files.length > 0 || browserRefs.length > 0;
   const replyCount = event.sideChatReplies?.length ?? 0;
-  const hasChips = display.skills.length > 0 || display.visualize || replyCount > 0;
+  const frames = event.canvasFrames ?? [];
+  const hasChips =
+    display.skills.length > 0 || display.visualize || replyCount > 0 || frames.length > 0;
   const hasPrompt = Boolean(display.text) || hasChips;
   const chips = hasChips ? (
     // Top-aligned because the icon, not the label, would set the row's baseline.
@@ -212,6 +221,9 @@ export function UserBubble({
           title="Answers attached from the side chat"
         />
       )}
+      {frames.map((name, index) => (
+        <PromptChip key={`frame:${String(index)}`} icon={Frame} label={name} title="Canvas frame" />
+      ))}
       {display.visualize && <PromptChip icon={VisualizeIcon} label="Visualize" />}
       {display.skills.map((skill) => (
         <PromptChip key={skill} icon={SkillIcon} label={skill} title={`Skill: ${skill}`} />
