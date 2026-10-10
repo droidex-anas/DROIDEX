@@ -79,8 +79,8 @@ export function DesignFrame(props: DesignFrameProps) {
   const { capturePointer, onHold, onPick, onInteract } = props;
   const animated = arriving && motion.frameArrivalMs > 0;
   const screenWidth = rect.width * scale;
-  const toolsPx = TOOLS_PX + (props.onToggleChat ? CHAT_TOOL_PX : 0);
-  const toolsBeside = showTools && screenWidth >= toolsPx + LABEL_ROOM_PX;
+  const tools = toolsPlacement(props);
+  const toolsBeside = showTools && tools.stacked === undefined;
   return (
     <div
       data-design-frame={frame.designId}
@@ -94,7 +94,7 @@ export function DesignFrame(props: DesignFrameProps) {
         ...(animated ? arrival(motion) : {}),
       }}
     >
-      <FrameLabel {...props} width={screenWidth - (toolsBeside ? toolsPx : 0)} />
+      <FrameLabel {...props} width={screenWidth - (toolsBeside ? tools.width : 0)} />
 
       <div
         // The sheet is the design's, never the board's background: in Interact
@@ -126,13 +126,7 @@ export function DesignFrame(props: DesignFrameProps) {
         )}
       </div>
 
-      {showTools && (
-        <FrameTools
-          {...props}
-          // Stacked actions start where the label does, unless the board ends first.
-          stacked={toolsBeside ? undefined : props.roomRight >= toolsPx ? 'start' : 'end'}
-        />
-      )}
+      {showTools && <FrameTools {...props} stacked={tools.stacked} />}
 
       {selected && (
         <div className="canvas-frame-size canvas-chrome">
@@ -160,6 +154,20 @@ export function DesignFrame(props: DesignFrameProps) {
         ))}
     </div>
   );
+}
+
+/**
+ * Where the selected frame's actions go: beside its label when the frame is wide
+ * enough on screen for both, otherwise above the label, starting where it does
+ * unless the board ends first.
+ */
+function toolsPlacement({ rect, scale, roomRight, onToggleChat }: DesignFrameProps): {
+  width: number;
+  stacked?: 'start' | 'end';
+} {
+  const width = TOOLS_PX + (onToggleChat ? CHAT_TOOL_PX : 0);
+  if (rect.width * scale >= width + LABEL_ROOM_PX) return { width };
+  return { width, stacked: roomRight >= width ? 'start' : 'end' };
 }
 
 /**
