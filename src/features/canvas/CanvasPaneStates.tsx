@@ -49,10 +49,13 @@ export function CanvasInvitation({ children }: { children?: ReactNode }) {
 
 export function CanvasEmptyState({
   error,
+  outdatedName,
   onCreate,
   onChoose,
 }: {
   error: string;
+  /** This chat's canvas, made by an earlier DROIDEX that this one cannot open. */
+  outdatedName?: string;
   onCreate: () => void;
   onChoose: (canvasId: string) => Promise<void>;
 }) {
@@ -72,6 +75,12 @@ export function CanvasEmptyState({
 
   return (
     <CanvasInvitation>
+      {outdatedName && (
+        <CanvasNote>
+          This chat’s canvas, “{outdatedName}”, was made by an earlier DROIDEX and can’t be opened
+          here. Create a new one to keep designing in this chat.
+        </CanvasNote>
+      )}
       {error && <CanvasFailure>{error}</CanvasFailure>}
       <div className="flex gap-1.5">
         <CanvasAction label="Create canvas" onClick={onCreate} />

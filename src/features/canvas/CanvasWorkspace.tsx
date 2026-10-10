@@ -87,8 +87,8 @@ export function CanvasWorkspace({
   }, []);
 
   const attach = useCallback(
-    (attached: string | null) => {
-      dispatch({ type: 'attached', canvasId: attached });
+    (attached: string | null, outdatedName?: string) => {
+      dispatch({ type: 'attached', canvasId: attached, outdatedName });
       onAttachmentChange(appSessionId, attached);
     },
     [appSessionId, onAttachmentChange],
@@ -108,8 +108,8 @@ export function CanvasWorkspace({
       // decides whether this canvas's frames can be pinned to the chat. A read
       // that fails leaves them unpinnable, which is all it costs.
       let active = true;
-      canvas.attachedCanvasId(appSessionId).then(
-        (attached) => {
+      canvas.attachment(appSessionId).then(
+        ({ canvasId: attached }) => {
           if (active) onAttachmentChange(appSessionId, attached);
         },
         () => undefined,
@@ -128,9 +128,9 @@ export function CanvasWorkspace({
     if (!connected) return;
     let active = true;
     canvas
-      .attachedCanvasId(appSessionId)
-      .then((attached) => {
-        if (active) attach(attached);
+      .attachment(appSessionId)
+      .then(({ canvasId: attached, outdatedName }) => {
+        if (active) attach(attached, outdatedName);
       })
       .catch((error: unknown) => {
         if (active) dispatch({ type: 'failed', message: canvasMessage(error) });
@@ -296,7 +296,14 @@ function CanvasBody({
         </CanvasPlate>
       );
     case 'unattached':
-      return <CanvasEmptyState error={state.error} onCreate={onAttachOwed} onChoose={onChoose} />;
+      return (
+        <CanvasEmptyState
+          error={state.error}
+          outdatedName={state.outdatedName}
+          onCreate={onAttachOwed}
+          onChoose={onChoose}
+        />
+      );
     case 'ready':
       return (
         <CanvasBoardMount

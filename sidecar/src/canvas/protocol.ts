@@ -401,7 +401,12 @@ export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
   | { kind: 'assets'; assets: OwnedAsset[] }
-  | { kind: 'attachment'; canvasId: string | null }
+  | {
+      kind: 'attachment';
+      canvasId: string | null;
+      /** A canvas an earlier DROIDEX made for this chat, which cannot be opened. */
+      outdatedName?: string;
+    }
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }

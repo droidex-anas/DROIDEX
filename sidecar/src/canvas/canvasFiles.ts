@@ -47,7 +47,7 @@ const CREATE_FLAGS =
 
 export type ManifestLoad =
   | { state: 'missing' }
-  | { state: 'damaged'; reason: string }
+  | { state: 'damaged'; reason: string; written?: unknown }
   | { state: 'loaded'; manifest: CanvasManifest };
 
 interface CanvasFileHandle {
@@ -151,6 +151,7 @@ export class CanvasFiles {
       return {
         state: 'damaged',
         reason: parsed.error.issues[0]?.message ?? 'its manifest does not match the current schema',
+        written: value,
       };
     if (parsed.data.canvasId !== canvasId)
       return { state: 'damaged', reason: 'its manifest names another canvas' };

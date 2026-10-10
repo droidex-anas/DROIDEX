@@ -4,7 +4,9 @@ export type CanvasPaneState =
   // Reading which canvas this chat is attached to.
   | { status: 'opening' }
   // No canvas yet: the Create / Open saved canvas empty state.
-  | { status: 'unattached'; error: string }
+  // `outdatedName` is a canvas an earlier DROIDEX made for this chat, which
+  // this one cannot open: the pane says so instead of looking new.
+  | { status: 'unattached'; error: string; outdatedName?: string }
   // Explicit Create or an attach the user asked for, in flight.
   | { status: 'attaching' }
   // The reply was lost or the attachment failed; `canvasChats` retains the
@@ -23,7 +25,7 @@ export type CanvasPaneState =
 
 export type CanvasPaneEvent =
   // The attachment as the sidecar reports it, which outranks any cached id.
-  | { type: 'attached'; canvasId: string | null }
+  | { type: 'attached'; canvasId: string | null; outdatedName?: string }
   | { type: 'settled'; canvasId: string | null }
   | { type: 'selected'; canvasId: string }
   | { type: 'attaching' }
@@ -67,6 +69,16 @@ export function watchedCanvasId(state: CanvasPaneState): string | null {
   return state.status === 'loading' || state.status === 'ready' ? state.canvasId : null;
 }
 
+/** No canvas to show: an earlier error stays, and an outdated canvas is named. */
+function unattached(state: CanvasPaneState, event: CanvasPaneEvent): CanvasPaneState {
+  const outdatedName = event.type === 'attached' ? event.outdatedName : undefined;
+  if (state.status !== 'unattached')
+    return { status: 'unattached', error: '', ...(outdatedName ? { outdatedName } : {}) };
+  return outdatedName === undefined || state.outdatedName === outdatedName
+    ? state
+    : { ...state, outdatedName };
+}
+
 export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent): CanvasPaneState {
   switch (event.type) {
     case 'settled':
@@ -77,8 +89,7 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
         (state.status === 'attaching' || state.status === 'attach-recovering')
       )
         return state;
-      if (event.canvasId === null)
-        return state.status === 'unattached' ? state : { status: 'unattached', error: '' };
+      if (event.canvasId === null) return unattached(state, event);
       // The answer that confirms what the pane already shows must not throw
       // away a snapshot it has since loaded.
       if (watchedCanvasId(state) === event.canvasId) return state;

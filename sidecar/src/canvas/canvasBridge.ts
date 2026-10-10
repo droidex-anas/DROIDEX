@@ -152,8 +152,14 @@ class CanvasDispatch {
             command.to,
           ),
         };
-      case 'canvas.attachment':
-        return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
+      case 'canvas.attachment': {
+        const outdatedName = workspace.attachments.outdatedCanvasName(command.appSessionId);
+        return {
+          kind: 'attachment',
+          canvasId: workspace.attachedCanvasId(command.appSessionId),
+          ...(outdatedName === null ? {} : { outdatedName }),
+        };
+      }
       case 'canvas.createCanvas': {
         const created = await workspace.createCanvas(
           command.appSessionId,

@@ -104,10 +104,10 @@ export class CanvasClient {
     );
   }
 
-  /** The canvas this chat works on, or null while it is unattached (spec §6). */
-  attachedCanvasId(appSessionId: string): Promise<string | null> {
+  /** This chat's canvas or null (spec §6), and one an earlier DROIDEX made that cannot open. */
+  attachment(appSessionId: string): Promise<{ canvasId: string | null; outdatedName?: string }> {
     return this.request({ type: 'canvas.attachment', requestId: requestId(), appSessionId }).then(
-      (event) => reply(event, 'attachment').canvasId,
+      (event) => reply(event, 'attachment'),
     );
   }
 

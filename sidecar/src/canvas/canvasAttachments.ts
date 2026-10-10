@@ -14,6 +14,11 @@ export class CanvasAttachments {
     private readonly isChatKnown: (appSessionId: string) => boolean,
   ) {}
 
+  /** The canvas an earlier DROIDEX made for a chat that has none of its own now. */
+  outdatedCanvasName(appSessionId: string): string | null {
+    return this.heads.outdatedCanvasName(appSessionId);
+  }
+
   /**
    * Leave the old canvas first: a crash between the two manifest writes must
    * leave the chat unattached, never attached twice.

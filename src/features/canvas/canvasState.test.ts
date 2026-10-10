@@ -57,6 +57,21 @@ test('opening the pane only reads: nothing but an explicit Create attaches a can
   );
 });
 
+test('a chat whose canvas an earlier DROIDEX made is unattached and says which it was', () => {
+  const outdated = reduceCanvasPane(initialCanvasPaneState(null), {
+    type: 'attached',
+    canvasId: null,
+    outdatedName: 'Pricing',
+  });
+  assert.deepEqual(outdated, { status: 'unattached', error: '', outdatedName: 'Pricing' });
+  // Asking again keeps what the pane already says, and a new canvas replaces it.
+  assert.equal(
+    reduceCanvasPane(outdated, { type: 'attached', canvasId: null, outdatedName: 'Pricing' }),
+    outdated,
+  );
+  assert.equal(reduceCanvasPane(outdated, { type: 'settled', canvasId: 'cv_2' }).status, 'loading');
+});
+
 test('reopening a pane with an unsettled attachment keeps recovery ahead of the cache', () => {
   assert.deepEqual(initialCanvasPaneState('canvas-old', 'Canvas creation may still be running.'), {
     status: 'attach-recovering',

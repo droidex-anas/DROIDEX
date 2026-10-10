@@ -12,8 +12,8 @@ export function CanvasChatBootstrap({ appSessionId }: { appSessionId: string }) 
 
   useEffect(() => {
     let active = true;
-    canvasClient.attachedCanvasId(appSessionId).then(
-      (canvasId) => {
+    canvasClient.attachment(appSessionId).then(
+      ({ canvasId }) => {
         if (!active) return;
         dispatch({ type: 'SET_CANVAS_ATTACHMENT', appSessionId, canvasId });
         dispatch({ type: 'CANVAS_CHAT_SETTLED', appSessionId });

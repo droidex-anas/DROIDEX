@@ -4,7 +4,7 @@
 // error vocabulary its callers see belongs there too.
 
 import type { CanvasFiles } from './canvasFiles.js';
-import type { CanvasManifest } from './canvasManifest.js';
+import { outdatedManifest, type CanvasManifest } from './canvasManifest.js';
 
 /** What every caller says about a head it holds but will not serve. */
 export const UNREADABLE_CANVAS = 'That canvas could not be read. Reopen DROIDEX to recover it.';
@@ -16,6 +16,9 @@ export class CanvasHeads {
   // canvas that cannot be served still holds its attachments on disk, and a
   // chat that looks unattached would be given a second canvas to attach to.
   private readonly attachments = new Map<string, string>();
+  // The name of the canvas an earlier DROIDEX made for a chat, which this one
+  // will not open. Not an attachment: the chat may start a new canvas.
+  private readonly outdated = new Map<string, string>();
 
   private constructor(private readonly files: CanvasFiles) {}
 
@@ -31,6 +34,13 @@ export class CanvasHeads {
       const load = await files.loadManifest(canvasId);
       if (load.state === 'missing') continue;
       if (load.state === 'damaged') {
+        const outdated = outdatedManifest(load.written, canvasId);
+        if (outdated) {
+          console.error(`Canvas ${canvasId} was not opened because an earlier DROIDEX made it.`);
+          for (const appSessionId of outdated.attachedAppSessionIds)
+            canvasHeads.outdated.set(appSessionId, outdated.name);
+          continue;
+        }
         console.error(`Canvas ${canvasId} was not opened because ${load.reason}.`);
         canvasHeads.damaged.add(canvasId);
         continue;
@@ -77,6 +87,11 @@ export class CanvasHeads {
    */
   attachedCanvasId(appSessionId: string): string | null {
     return this.attachments.get(appSessionId) ?? null;
+  }
+
+  /** The canvas an earlier DROIDEX made for a chat that has none of its own now. */
+  outdatedCanvasName(appSessionId: string): string | null {
+    return this.attachments.has(appSessionId) ? null : (this.outdated.get(appSessionId) ?? null);
   }
 
   /**
