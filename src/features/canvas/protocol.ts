@@ -51,6 +51,9 @@ export interface DesignSystemSource {
   text: string;
 }
 
+/** How a canvas holds its designs to their pinned kit; `guide` is the default. */
+export type DesignSystemAdherence = 'off' | 'guide' | 'strict';
+
 export interface CreateCanvasResult {
   /** The canvas this mutation originally created, unchanged by a replay. */
   canvasId: string;
@@ -206,6 +209,7 @@ export interface CanvasSummary {
   designCount: number;
   /** The chats working on this canvas, used by Design cards and the chat menu. */
   attachedAppSessionIds: string[];
+  designSystemAdherence: DesignSystemAdherence;
 }
 
 // `create` answers with the canvas as well as the frames because an unattached
@@ -407,6 +411,13 @@ export type CanvasCommand =
     }
   | { type: 'canvas.attach'; requestId: string; appSessionId: string; canvasId: string }
   | { type: 'canvas.detach'; requestId: string; appSessionId: string }
+  | {
+      type: 'canvas.setDesignSystemAdherence';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      designSystemAdherence: DesignSystemAdherence;
+    }
   | {
       type: 'canvas.create';
       requestId: string;

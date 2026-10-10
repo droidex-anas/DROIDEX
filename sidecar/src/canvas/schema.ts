@@ -94,6 +94,10 @@ export const designSystemVersionRefSchema = z
   .object({ id: canvasIdentifierSchema, version: versionSchema })
   .strict();
 
+// How a canvas holds its designs to their pinned kit: `guide` reports where a
+// design strays and still builds it, `strict` fails that build, `off` skips the check.
+export const designSystemAdherenceSchema = z.enum(['off', 'guide', 'strict']);
+
 const revisionRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
@@ -361,6 +365,7 @@ export function mergedRevisionViolation(files: ReadonlyMap<string, string>): str
 
 export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
 export type DesignSystemVersionRef = z.infer<typeof designSystemVersionRefSchema>;
+export type DesignSystemAdherence = z.infer<typeof designSystemAdherenceSchema>;
 export type DesignRef = z.infer<typeof designRefSchema>;
 export type ElementRef = z.infer<typeof elementRefSchema>;
 export type CanvasTurnContext = z.infer<typeof canvasTurnContextSchema>;

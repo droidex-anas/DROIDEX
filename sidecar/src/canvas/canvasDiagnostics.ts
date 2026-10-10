@@ -18,3 +18,17 @@ export function truncateDiagnosticText(
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 1)}…`;
 }
+
+/** What designSystemAdherence.ts reports; a build report keeps these apart from errors. */
+export const ADHERENCE_CODES = {
+  color: 'design_system_color',
+  font: 'design_system_font',
+  unused: 'design_system_unused',
+  override: 'design_system_override',
+} as const;
+
+const ADHERENCE_CODE_SET: ReadonlySet<string> = new Set(Object.values(ADHERENCE_CODES));
+
+export function isAdherenceDiagnostic(diagnostic: CanvasDiagnostic): boolean {
+  return ADHERENCE_CODE_SET.has(diagnostic.code);
+}

@@ -111,6 +111,8 @@ test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared prim
         generation: 1,
         files: { 'main.tsx': DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'] },
         designSystem: { ...ref, mode },
+        // Strict fails a build that strays from the kit, so a clean build is the proof.
+        designSystemAdherence: 'strict',
       },
       new AbortController().signal,
     );
