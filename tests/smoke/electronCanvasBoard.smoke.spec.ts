@@ -303,6 +303,24 @@ test('obsolete arrange rejections cannot replace newer work or report stale erro
   expect(await renderedRect(page, 'B')).toEqual({ x: 650, y: 300, width: 400, height: 300 });
 });
 
+test('a rejection settling before its newer layout is drawn reports no stale error', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  // One task, as when one bridge batch carries the change and the refusal: the
+  // rejection settles while the published layout is still unrendered.
+  await page.evaluate(() => {
+    window.boardHarness.publish('a', { x: 200, y: 120, width: 400, height: 300 }, 4);
+    window.boardHarness.reject(0);
+  });
+  await page.clock.runFor(32);
+  await expect
+    .poll(() => renderedRect(page, 'A'))
+    .toEqual({ x: 200, y: 120, width: 400, height: 300 });
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13/14/16', async ({
   page,
 }) => {

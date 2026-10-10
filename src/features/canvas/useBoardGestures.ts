@@ -58,14 +58,14 @@ export function useBoardGestures({
   const [band, setBand] = useState<Band | null>(null);
   const [pending, setPending] = useState<Map<string, PendingLayout>>(() => new Map());
   const [panning, setPanning] = useState(false);
-  const [layoutError, setLayoutError] = useState('');
+  const [refusal, setRefusal] = useState<LayoutRefusal | null>(null);
   const gesture = useRef<Gesture | null>(null);
   const move = useRef<{ pointer: Point | null; frame: number | null }>({
     pointer: null,
     frame: null,
   });
-  const latest = useRef({ scale, onPan, onBand, frames });
-  latest.current = { scale, onPan, onBand, frames };
+  const latest = useRef({ scale, onPan, onBand });
+  latest.current = { scale, onPan, onBand };
   const work = useRef(0);
   const mounted = useRef(false);
 
@@ -151,26 +151,20 @@ export function useBoardGestures({
         next.set(designId, { mutationId, rect, afterLayoutVersion: expectedLayoutVersion });
       return next;
     });
-    setLayoutError('');
+    setRefusal(null);
     onArrangeFrames({ mutationId, frames: placements }).catch((error: unknown) => {
       if (!mounted.current) return;
-      // A refusal that arrives after the sidecar has already published newer
-      // layout for every frame it named is nobody's answer: it can neither
-      // restore a rect nor describe anything the user is still looking at.
-      const current = placements.filter(({ designId, expectedLayoutVersion }) => {
-        const frame = latest.current.frames.find((candidate) => candidate.designId === designId);
-        return frame !== undefined && frame.layoutVersion <= expectedLayoutVersion;
-      });
-      if (current.length === 0) return;
+      // Dropping a hold is safe even when newer layout already answered it,
+      // since `rectFor` ignores a hold once its frame moves past that version.
       setPending((held) =>
         withoutHolds(
           held,
-          current
+          placements
             .filter(({ designId }) => held.get(designId)?.mutationId === mutationId)
             .map(({ designId }) => designId),
         ),
       );
-      if (work.current === operation) setLayoutError(layoutFailure(error));
+      if (work.current === operation) setRefusal({ message: layoutFailure(error), placements });
     });
   };
 
@@ -203,7 +197,7 @@ export function useBoardGestures({
     if (!root) return null;
     root.focus({ preventScroll: true });
     work.current += 1;
-    setLayoutError('');
+    setRefusal(null);
     return root;
   };
 
@@ -376,7 +370,7 @@ export function useBoardGestures({
     band,
     spaceHeld,
     holdSpace: setSpaceHeld,
-    layoutError,
+    layoutError: refusal && isUnanswered(refusal, frames) ? refusal.message : '',
     rectFor,
     heldDesignId: drag?.designId ?? null,
     place,
@@ -397,6 +391,21 @@ interface DraggedFrame {
 export interface Band {
   origin: Point;
   current: Point;
+}
+
+/** A refused layout write and the placements it refused. */
+interface LayoutRefusal {
+  message: string;
+  placements: FramePlacement[];
+}
+
+// Judged against the frames being drawn: one bridge batch can carry newer
+// layout and the refusal it answers before React renders either.
+function isUnanswered(refusal: LayoutRefusal, frames: CanvasFrame[]): boolean {
+  return refusal.placements.some(({ designId, expectedLayoutVersion }) => {
+    const frame = frames.find((candidate) => candidate.designId === designId);
+    return frame !== undefined && frame.layoutVersion <= expectedLayoutVersion;
+  });
 }
 
 interface PendingLayout {
