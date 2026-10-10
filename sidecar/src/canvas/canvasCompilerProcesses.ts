@@ -4,8 +4,7 @@
 //
 // It is kept apart from the slot scheduler on purpose. Scheduling is about which
 // design builds next; this is about a child process's life, which outlives the
-// build that ended it — an overdue build's kill is still settling when its slot
-// has already taken the next job.
+// build that ended it and keeps that slot occupied until termination settles.
 
 import { CompilerWorker, type CompiledDesign, type CompileInput } from './compiler.js';
 
@@ -21,14 +20,21 @@ interface CompilerHolder {
 }
 
 export class CompilerProcesses {
-  private readonly ending = new Set<Promise<void>>();
+  private readonly ending = new Map<CompilerHolder, Promise<void>>();
 
-  constructor(private readonly fork: () => DesignCompiler = () => new CompilerWorker()) {}
+  constructor(
+    private readonly fork: () => DesignCompiler = () => new CompilerWorker(),
+    private readonly onExit: () => void = () => undefined,
+  ) {}
 
   /** This slot's process, forked on its first build and after one is ended. */
   of(slot: CompilerHolder): DesignCompiler {
     slot.compiler ??= this.fork();
     return slot.compiler;
+  }
+
+  isEnding(slot: CompilerHolder): boolean {
+    return this.ending.has(slot);
   }
 
   /**
@@ -37,18 +43,24 @@ export class CompilerProcesses {
    * overdue build ends it rather than waiting for it.
    */
   end(slot: CompilerHolder): void {
+    if (this.ending.has(slot)) return;
     const compiler = slot.compiler;
-    slot.compiler = null;
     if (!compiler) return;
-    const ended = compiler.terminate().catch((error: unknown) => {
-      console.error('A Canvas compiler process was not stopped cleanly:', error);
-    });
-    this.ending.add(ended);
-    void ended.then(() => this.ending.delete(ended));
+    const ended = compiler
+      .terminate()
+      .catch((error: unknown) => {
+        console.error('A Canvas compiler process was not stopped cleanly:', error);
+      })
+      .then(() => {
+        slot.compiler = null;
+        this.ending.delete(slot);
+        this.onExit();
+      });
+    this.ending.set(slot, ended);
   }
 
   /** Waits for every termination started so far, including an overdue build's. */
   async drain(): Promise<void> {
-    while (this.ending.size > 0) await Promise.all([...this.ending]);
+    while (this.ending.size > 0) await Promise.all(this.ending.values());
   }
 }

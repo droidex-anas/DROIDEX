@@ -8,8 +8,8 @@ const {
   canvasPreviewDocument,
   canvasPreviewSessionReady,
   configureCanvasPreviewSession,
-  createCanvasPreviewHosts,
 } = require('./canvasPreview.cjs');
+const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 
 /** The design's frame, whose every probe is a promise the test settles. */
 function createGeneratedFrame() {
@@ -26,13 +26,22 @@ function createGeneratedFrame() {
 
 function createGuest(id, frames = []) {
   const listeners = new Map();
+  const captures = [];
   return {
     id,
+    captures,
+    identity: { designId: 'dsg_01', revisionId: 'rev_01', generation: 1 },
     crashes: 0,
     destroyed: false,
     windowOpenHandler: null,
     webRtcPolicy: null,
     mainFrame: { frames },
+    executeJavaScript() {
+      return Promise.resolve(this.identity);
+    },
+    capturePage(rect, options) {
+      return new Promise((resolve, reject) => captures.push({ rect, options, resolve, reject }));
+    },
     isDestroyed() {
       return this.destroyed;
     },
@@ -75,6 +84,7 @@ function createClock() {
       },
     },
     pending: () => ({ intervals: intervals.size, deadlines: deadlines.size }),
+    deadlineMs: () => [...deadlines].map((entry) => entry.delayMs),
     /** One turn of every live probe interval. */
     tick() {
       for (const entry of [...intervals]) entry.task();
@@ -89,17 +99,21 @@ function createClock() {
   };
 }
 
-function createHosts() {
+function createHosts(canCapture = () => true) {
   const logged = [];
   const clock = createClock();
   return {
-    hosts: createCanvasPreviewHosts({ log: (message) => logged.push(message), clock: clock.clock }),
+    hosts: createCanvasPreviewHosts({
+      log: (message) => logged.push(message),
+      clock: clock.clock,
+      canCapture,
+    }),
     logged,
     clock,
   };
 }
 
-test('the intermediate forbids every network source and allows only about: frames', () => {
+test('the intermediate forbids network sources and allows only local images and fonts', () => {
   const directives = new Map(
     CANVAS_PREVIEW_CSP.split('; ').map((directive) => {
       const [name, ...values] = directive.split(' ');
@@ -110,8 +124,8 @@ test('the intermediate forbids every network source and allows only about: frame
   assert.equal(directives.get('default-src'), "'none'");
   assert.equal(directives.get('connect-src'), "'none'");
   assert.equal(directives.get('frame-src'), 'about:');
-  assert.equal(directives.get('img-src'), 'data:');
-  assert.equal(directives.get('font-src'), 'data:');
+  assert.equal(directives.get('img-src'), 'data: droidex-canvas-preview:');
+  assert.equal(directives.get('font-src'), 'data: droidex-canvas-preview:');
   // The generated document is inline script and inline style, and inherits this
   // policy through `srcdoc`; nothing beyond that is allowed.
   assert.equal(directives.get('script-src'), "'unsafe-inline'");
@@ -154,6 +168,20 @@ test('main refuses a guest ID it never attached', () => {
 
   assert.equal(hosts.terminate(8), false);
   assert.equal(guest.crashes, 0);
+});
+
+test('a preview frame is bound once to its canvas and loses that binding on close', () => {
+  const { hosts } = createHosts();
+  const frame = createGeneratedFrame();
+  const guest = createGuest(42, [frame]);
+  hosts.attach(guest);
+  assert.equal(hosts.canvasForFrame(42, frame), null);
+  assert.equal(hosts.bindCanvas(42, 'canvas-a'), true);
+  assert.equal(hosts.canvasForFrame(42, frame), 'canvas-a');
+  assert.equal(hosts.canvasForFrame(42, {}), null);
+  assert.equal(hosts.bindCanvas(42, 'canvas-b'), false);
+  hosts.terminate(42);
+  assert.equal(hosts.canvasForFrame(42, frame), null);
 });
 
 test("main's own watchdog ends an unresponsive guest", () => {
@@ -352,4 +380,231 @@ test('a guest is not attachable until the preview session is configured', async 
   assert.equal(canvasPreviewSessionReady(guestSession), true);
   // Readiness belongs to the session that was configured, not to the module.
   assert.equal(canvasPreviewSessionReady({}), false);
+});
+
+const captureRequest = {
+  requestId: 'capture_01',
+  guestId: 41,
+  canvasId: 'cv_01',
+  designId: 'dsg_01',
+  revisionId: 'rev_01',
+  generation: 1,
+  width: 720,
+  height: 720,
+  scaleFactor: 2,
+};
+
+function capturedImage(width = 1440, height = 1440) {
+  const bytes = Buffer.alloc(33);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write('IHDR', 12, 'ascii');
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return { isEmpty: () => false, toPNG: () => bytes };
+}
+
+test('main captures only the attached guest at CSS size and device scale, and keys its cache by revision', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+
+  const capture = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+  assert.deepEqual(guest.captures[0].rect, { x: 0, y: 0, width: 720, height: 720 });
+  assert.deepEqual(guest.captures[0].options, { stayHidden: true });
+  guest.captures[0].resolve(capturedImage());
+
+  const result = await capture;
+  assert.equal(result.ok, true);
+  assert.equal(result.mediaType, 'image/png');
+  assert.deepEqual(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), result.bytes);
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_02'), null);
+  assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+});
+
+test('capture timeout ends overdue native work once and releases every guest timer', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+
+  const capture = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+  assert.deepEqual(clock.deadlineMs(), [6_000]);
+  clock.expire();
+  assert.deepEqual(await capture, {
+    ok: false,
+    error: {
+      code: 'capture_unavailable',
+      message: 'Capturing this design took too long. Keep its preview open and try again.',
+    },
+  });
+  assert.equal(guest.crashes, 1);
+  assert.equal(hosts.terminate(41), false);
+  guest.captures[0].resolve(capturedImage());
+  await Promise.resolve();
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+});
+
+test('caller cancellation leaves the native deadline armed until main ends the guest', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const capture = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+
+  assert.equal(hosts.cancelCapture('capture_01'), true);
+  assert.equal((await capture).error.code, 'capture_unavailable');
+  assert.equal(hosts.cancelCapture('capture_01'), false);
+  assert.deepEqual(clock.deadlineMs(), [6_000]);
+  clock.expire();
+
+  assert.equal(guest.crashes, 1);
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+  guest.captures[0].resolve(capturedImage());
+  await new Promise(setImmediate);
+  clock.expire();
+  assert.equal(guest.crashes, 1);
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
+});
+
+test('a generation change while capture is in flight discards the old pixels', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+
+  const capture = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+  guest.identity = { ...guest.identity, generation: 2 };
+  guest.captures[0].resolve(capturedImage());
+
+  assert.equal((await capture).error.code, 'capture_unavailable');
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
+  assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+});
+
+test('one native capture owns a guest slot through cancellation until its compositor settles', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const first = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+
+  for (const revisionId of ['rev_01', 'rev_02']) {
+    const refused = hosts.capture({
+      ...captureRequest,
+      requestId: `capture_${revisionId}`,
+      revisionId,
+    });
+    await new Promise(setImmediate);
+    assert.equal(guest.captures.length, 1);
+    assert.equal((await refused).ok, false);
+  }
+  assert.equal(guest.captures.length, 1);
+  hosts.cancelCapture('capture_01');
+  await first;
+  const afterCancel = hosts.capture({ ...captureRequest, requestId: 'capture_after_cancel' });
+  await new Promise(setImmediate);
+  assert.equal(guest.captures.length, 1);
+  assert.equal((await afterCancel).ok, false);
+
+  guest.captures[0].resolve(capturedImage());
+  await new Promise(setImmediate);
+  assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+  const next = hosts.capture({ ...captureRequest, requestId: 'capture_next' });
+  await new Promise(setImmediate);
+  assert.equal(guest.captures.length, 2);
+  guest.captures[1].resolve(capturedImage());
+  assert.equal((await next).ok, true);
+});
+
+test('abort and guest release settle a capture once and discard late pixels', async () => {
+  const { hosts, clock } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const first = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+  assert.equal(hosts.cancelCapture('capture_01'), true);
+  assert.equal((await first).error.code, 'capture_unavailable');
+  assert.equal(hosts.cancelCapture('capture_01'), false);
+  guest.captures[0].resolve(capturedImage());
+  await new Promise(setImmediate);
+
+  const second = hosts.capture({ ...captureRequest, requestId: 'capture_02' });
+  await new Promise(setImmediate);
+  guest.emit('destroyed');
+  assert.equal((await second).error.code, 'capture_unavailable');
+  guest.captures[1].resolve(capturedImage());
+  await Promise.resolve();
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+});
+
+test('unavailable, oversized and mismatched captures return a curated refusal', async () => {
+  const { hosts } = createHosts();
+  assert.equal((await hosts.capture(captureRequest)).error.code, 'capture_unavailable');
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  assert.equal(
+    (await hosts.capture({ ...captureRequest, width: 8192, height: 8192 })).error.code,
+    'capture_unavailable',
+  );
+  guest.identity = { designId: 'dsg_01', revisionId: 'rev_other', generation: 1 };
+  assert.equal((await hosts.capture(captureRequest)).error.code, 'capture_unavailable');
+  assert.equal(guest.captures.length, 0, 'a different mounted revision was never captured');
+  guest.identity = { designId: 'dsg_01', revisionId: 'rev_01', generation: 2 };
+  assert.equal((await hosts.capture(captureRequest)).error.code, 'capture_unavailable');
+  guest.identity.generation = 1;
+  const pending = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+  guest.captures[0].resolve(capturedImage(720, 720));
+  assert.equal((await pending).error.code, 'capture_unavailable');
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
+});
+
+test('a locked display refuses capture before and after the compositor answers', async () => {
+  let locked = true;
+  const { hosts } = createHosts(() => !locked);
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  assert.equal((await hosts.capture(captureRequest)).error.code, 'capture_unavailable');
+  assert.equal(guest.captures.length, 0);
+
+  locked = false;
+  const pending = hosts.capture(captureRequest);
+  await new Promise(setImmediate);
+  locked = true;
+  guest.captures[0].resolve(capturedImage());
+  assert.equal((await pending).error.code, 'capture_unavailable');
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
+});
+
+test('forgotten guests release only their thumbnails, and window close releases the rest', async () => {
+  const { hosts, clock } = createHosts();
+  const first = createGuest(41);
+  const second = createGuest(42);
+  for (const guest of [first, second]) {
+    hosts.attach(guest);
+    const capturing = hosts.capture({
+      ...captureRequest,
+      guestId: guest.id,
+      canvasId: `cv_${guest.id}`,
+      requestId: `capture_${guest.id}`,
+    });
+    await new Promise(setImmediate);
+    guest.captures[0].resolve(capturedImage());
+    assert.equal((await capturing).ok, true);
+  }
+  assert.ok(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'));
+  assert.ok(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'));
+
+  first.emit('destroyed');
+  assert.equal(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'), null);
+  assert.ok(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'));
+  hosts.clear();
+  hosts.clear();
+  assert.equal(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'), null);
+  assert.deepEqual(clock.pending(), { intervals: 0, deadlines: 0 });
+  assert.equal(hosts.terminate(42), false);
 });

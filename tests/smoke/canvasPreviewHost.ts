@@ -4,6 +4,8 @@
 // it mounts is the one a board mounts.
 
 import { expect, type ElectronApplication, type Page } from '@playwright/test';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { CompilerWorker, type CompiledDesign } from '../../sidecar/src/canvas/compiler';
 import { DEFAULT_DESIGN_SYSTEM_REF } from '../../sidecar/src/canvas/designSystems';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
@@ -78,6 +80,44 @@ export async function mountPreviewGuest(page: Page): Promise<number> {
     15_000,
   );
   return guestId;
+}
+
+/** Mounts the real renderer component beneath a board zoom, including its capture registry. */
+export async function mountZoomedPreview(page: Page, html: string): Promise<void> {
+  const fromSidecar = createRequire(path.resolve('sidecar/package.json'));
+  const bundler = fromSidecar('esbuild') as {
+    build(options: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
+  };
+  const bundled = await bundler.build({
+    stdin: {
+      contents: `
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { PreviewGuestFrame } from '../../src/features/canvas/DesignPreview';
+import { captureCanvasImage } from '../../src/features/canvas/captureCanvasImage';
+const container = document.createElement('div');
+container.id = 'canvas-zoom-probe';
+container.style.cssText = 'position:fixed;left:0;top:0;width:720px;height:720px;transform:scale(0.5);transform-origin:top left;z-index:99999';
+document.body.append(container);
+createRoot(container).render(createElement(PreviewGuestFrame, {
+  canvasId: 'cv_zoom', designId: 'dsg_zoom', revisionId: 'rev_zoom', generation: 1,
+  showingRevisionId: null, html: ${JSON.stringify(html)}, diagnostics: [],
+}));
+Object.assign(window, { __canvasZoomCapture: () =>
+  captureCanvasImage('cv_zoom', { designId: 'dsg_zoom', revisionId: 'rev_zoom' }, new AbortController().signal) });
+`,
+      resolveDir: path.resolve('tests/smoke'),
+      sourcefile: 'canvasZoomProbe.tsx',
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    jsx: 'automatic',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  await page.evaluate(`(() => { ${bundled.outputFiles[0].text} })()`);
 }
 
 /** What main can prove about one attached guest, read through its own handle. */

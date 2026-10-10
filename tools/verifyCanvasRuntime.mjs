@@ -46,7 +46,7 @@ const VICTORY_VENDOR_LICENSES = [
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
-// needs, so the gate resolves all eight and loads the three the compiler calls
+// needs, so the gate resolves all declared specifiers and loads the three the compiler calls
 // into: resolving a package says nothing about whether its own dependencies are
 // there. `postcss-value-parser` arrives through Tailwind, and the React a design
 // imports is read as files by esbuild rather than required.
@@ -69,6 +69,7 @@ const RUNTIME_SPECIFIERS = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
+  'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
 ];
 

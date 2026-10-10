@@ -66,7 +66,9 @@ export class ClaudeProvider implements Provider {
     contextWindowTokens,
     autonomy,
     interactionMode,
+    sessionPurpose,
     mcpServers,
+    canvasScopeForRead,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Claude pins the id it is given, so the session mints DROIDEX's identity
     // here and the two stay the same for the session's whole life.
@@ -75,11 +77,13 @@ export class ClaudeProvider implements Provider {
       cwd: sessionCwd(cwd),
       autonomy,
       interactionMode,
+      sessionPurpose,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       fastMode: fastMode ?? false,
       ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
+      canvasScopeForRead,
       interactions,
     });
   }
@@ -95,7 +99,9 @@ export class ClaudeProvider implements Provider {
       contextWindowTokens,
       autonomy,
       interactionMode,
+      sessionPurpose,
       mcpServers,
+      canvasScopeForRead,
     }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     return await this.open({
@@ -103,11 +109,13 @@ export class ClaudeProvider implements Provider {
       cwd: sessionCwd(cwd),
       autonomy: autonomy ?? 'off',
       interactionMode: interactionMode ?? 'auto',
+      sessionPurpose,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       fastMode: fastMode ?? false,
       ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
+      canvasScopeForRead,
       interactions,
       resume: true,
     });

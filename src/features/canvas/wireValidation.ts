@@ -7,11 +7,14 @@ import type { CanvasEvent } from './protocol';
 const ERROR_CODES = new Set([
   'invalid_input',
   'revision_conflict',
+  'preset_read_only',
+  'version_mismatch',
   'invalid_source_path',
   'unsupported_import',
   'build_timeout',
   'capture_unavailable',
   'scope_expired',
+  'unknown_chat',
   'storage_failed',
   'stale_revision',
   'stale_reference',
@@ -19,20 +22,26 @@ const ERROR_CODES = new Set([
   'invalid_edit',
   'invalid_source',
   'unsupported_edit',
+  'layout_conflict',
   'not_found',
 ]);
 
 const REPLY_KINDS = new Set([
   'ok',
   'summaries',
+  'assets',
   'attachment',
+  'canvasCreated',
   'created',
   'written',
   'arranged',
+  'removed',
+  'undone',
+  'renamed',
   'artifact',
+  'source',
   'revisions',
   'revisionDiff',
-  'revisionFiles',
 ]);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
@@ -40,9 +49,12 @@ const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_ELEMENTS = 8192;
 const MAX_BUILD_DIAGNOSTICS = 64;
 const MAX_SOURCE_FILE_BYTES = 256 * 1024;
+// What one revision's tree may hold, matching `CANVAS_LIMITS` in the sidecar's
+// schema: 64 files, each path at most 256 characters.
+const MAX_SOURCE_PATHS = 64;
+const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
-const MAX_DESIGN_SOURCE_BYTES = 1024 * 1024;
 const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
@@ -67,37 +79,69 @@ function isReply(value: unknown): boolean {
   switch (value.kind) {
     case 'summaries':
       return list(value.summaries, isSummary);
+    case 'assets':
+      return list(
+        value.assets,
+        (asset) =>
+          record(asset) &&
+          typeof asset.assetId === 'string' &&
+          /^[0-9a-f]{64}$/.test(asset.assetId) &&
+          (asset.mediaType === 'image/png' ||
+            asset.mediaType === 'image/jpeg' ||
+            asset.mediaType === 'image/webp') &&
+          count(asset.byteLength) &&
+          asset.byteLength > 0 &&
+          asset.byteLength <= 10 * 1024 * 1024 &&
+          count(asset.width) &&
+          asset.width > 0 &&
+          asset.width <= 8192 &&
+          count(asset.height) &&
+          asset.height > 0 &&
+          asset.height <= 8192,
+      );
     case 'attachment':
-      return isAttachmentReply(value);
+      return value.canvasId === null || id(value.canvasId);
+    case 'canvasCreated':
+      return id(value.canvasId) && (value.attachedCanvasId === null || id(value.attachedCanvasId));
     case 'created':
-      return isCreatedReply(value);
+      return (
+        record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame)
+      );
     case 'written':
       return isReceipt(value.receipt);
     case 'arranged':
+    case 'undone':
+    case 'renamed':
       return isChange(value.change);
+    case 'removed':
+      return id(value.undoId);
     case 'artifact':
-      return isArtifactReply(value);
+      return value.artifact === null || isArtifact(value.artifact);
+    case 'source':
+      return isSourceTree(value.files);
     case 'revisions':
       return boundedList(value.revisions, MAX_REVISION_PAGE_SIZE, isRevisionSummary);
     case 'revisionDiff':
       return isRevisionDiff(value.diff);
-    case 'revisionFiles':
-      return isSourceFiles(value.files);
     default:
       return true;
   }
 }
 
-function isAttachmentReply(value: Record<string, unknown>): boolean {
-  return value.canvasId === null || id(value.canvasId);
-}
-
-function isCreatedReply(value: Record<string, unknown>): boolean {
-  return record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame);
-}
-
-function isArtifactReply(value: Record<string, unknown>): boolean {
-  return value.artifact === null || isArtifact(value.artifact);
+function isSourceTree(value: unknown): boolean {
+  if (!record(value)) return false;
+  const paths = Object.keys(value);
+  return (
+    paths.length <= MAX_SOURCE_PATHS &&
+    paths.every((path) => {
+      const content = value[path];
+      return (
+        boundedText(path, MAX_SOURCE_PATH_LENGTH) &&
+        typeof content === 'string' &&
+        content.length <= MAX_SOURCE_FILE_BYTES
+      );
+    })
+  );
 }
 
 function isRevisionSummary(value: unknown): boolean {
@@ -117,14 +161,15 @@ function isRevisionSummary(value: unknown): boolean {
   );
 }
 
+// Two revisions can name up to twice one tree's paths; the diff text shares one byte cap.
 function isRevisionDiff(value: unknown): boolean {
   if (!record(value) || !id(value.from) || !id(value.to) || typeof value.truncated !== 'boolean')
     return false;
   let bytes = 0;
-  return boundedList(value.files, 128, (file) => {
+  return boundedList(value.files, MAX_SOURCE_PATHS * 2, (file) => {
     if (
       !record(file) ||
-      !boundedText(file.path, 256) ||
+      !boundedText(file.path, MAX_SOURCE_PATH_LENGTH) ||
       typeof file.diff !== 'string' ||
       typeof file.kind !== 'string' ||
       !['added', 'removed', 'modified'].includes(file.kind)
@@ -133,24 +178,6 @@ function isRevisionDiff(value: unknown): boolean {
     if (file.diff.length > MAX_REVISION_DIFF_BYTES) return false;
     bytes += utf8.encode(file.diff).byteLength;
     return bytes <= MAX_REVISION_DIFF_BYTES;
-  });
-}
-
-function isSourceFiles(value: unknown): boolean {
-  if (!record(value)) return false;
-  const files = Object.entries(value);
-  if (files.length > 64) return false;
-  let totalBytes = 0;
-  return files.every(([path, source]) => {
-    if (
-      !boundedText(path, 256) ||
-      typeof source !== 'string' ||
-      source.length > MAX_SOURCE_FILE_BYTES
-    )
-      return false;
-    const bytes = utf8.encode(source).byteLength;
-    totalBytes += bytes;
-    return bytes <= MAX_SOURCE_FILE_BYTES && totalBytes <= MAX_DESIGN_SOURCE_BYTES;
   });
 }
 
@@ -180,8 +207,14 @@ function isSummary(value: unknown): boolean {
     id(value.canvasId) &&
     text(value.name) &&
     count(value.updatedAt) &&
-    count(value.designCount)
+    count(value.designCount) &&
+    list(value.attachedAppSessionIds, isAppSessionId)
   );
+}
+
+/** A chat identifier, bounded the way the sidecar schema bounds it. */
+function isAppSessionId(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200;
 }
 
 function isReceipt(value: unknown): boolean {
@@ -195,6 +228,7 @@ function isFrame(value: unknown): boolean {
     text(value.name) &&
     isRect(value.rect) &&
     count(value.layoutVersion) &&
+    count(value.manifestVersion) &&
     (value.revisionId === null || id(value.revisionId)) &&
     isDesignSystem(value.designSystem) &&
     isBuild(value.build)
@@ -280,7 +314,8 @@ function isError(value: unknown): boolean {
     record(value) &&
     typeof value.code === 'string' &&
     ERROR_CODES.has(value.code) &&
-    text(value.message)
+    text(value.message) &&
+    (value.code === 'layout_conflict' ? isRect(value.currentRect) : value.currentRect === undefined)
   );
 }
 

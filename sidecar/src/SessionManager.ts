@@ -1,6 +1,8 @@
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
+import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -91,6 +93,7 @@ import {
 } from './SessionCompaction.js';
 import {
   SessionLifecycle,
+  type SessionLifecycleDependencies,
   type LiveSession,
   type StartedLocalMcpResources,
 } from './SessionLifecycle.js';
@@ -202,11 +205,12 @@ export interface SessionManagerDependencies {
 }
 
 export interface SessionManagerOptions {
-  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
+  beforeFirstTurn?: SessionLifecycleDependencies['beforeFirstTurn'];
   // The Canvas lease owner turns mint into. The sidecar entry passes the one the
   // Canvas workspace checks; a harness that opens no workspace gets its own, so
   // turns still mint and revoke exactly as they do in production.
   canvasTurns?: CanvasTurns;
+  canvasWorkspace?: () => Promise<CanvasWorkspace>;
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -313,6 +317,7 @@ export class SessionManager {
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
+  private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -366,6 +371,9 @@ export class SessionManager {
     );
     this.onSessionAvailable = options.onSessionAvailable;
     this.canvasTurns = options.canvasTurns ?? new CanvasTurns(new CanvasScopes(), () => null);
+    this.canvasWorkspace =
+      options.canvasWorkspace ??
+      (() => Promise.reject(new Error('Canvas storage is unavailable.')));
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -654,7 +662,7 @@ export class SessionManager {
         this.timeline.append(event);
       },
       ensureRunning: async (appSessionId) => {
-        if (!this.registry.getLive(appSessionId)) await this.lifecycle.resume(appSessionId);
+        return (await this.lifecycle.prepareTurn(appSessionId))?.session;
       },
       emit: (event) => {
         this.emit(event);
@@ -664,6 +672,7 @@ export class SessionManager {
       },
     });
     this.lifecycle = new SessionLifecycle({
+      whenSessionHistoryReady: () => this.sessionFiles.whenBootReconciled(),
       beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -763,6 +772,7 @@ export class SessionManager {
       resume: (id) => this.lifecycle.resume(id),
     });
     this.adoption = new SessionAdoption({
+      whenSessionHistoryReady: () => this.sessionFiles.whenBootReconciled(),
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
       registry: this.registry,
       lifecycle: this.lifecycle,
@@ -1452,14 +1462,22 @@ export class SessionManager {
     // run has nobody watching, and only an ordinary chat may call them, so no
     // other session carries their schemas.
     const managesChats = attended && (ref.purpose === undefined || ref.purpose === 'chat');
+    const canvas = createCanvasMcpServer(
+      this.canvasWorkspace,
+      this.canvasTurns,
+      () => ref.id,
+      ref.purpose,
+    );
     if (kind === 'codex') {
       const inAppServers = [
         ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),
         ...(attended ? [createAutomationMcpServer(() => ref.id)] : []),
+        canvas,
       ];
+      requireUniqueMcpNames(inAppServers.map((server) => server.name));
       return { servers: [], configs: [], inAppServers };
     }
-    const servers = [this.createLocalMcpResource(() => ref.id)];
+    const servers = [this.createLocalMcpResource(() => ref.id), canvas];
     if (attended) servers.push(this.createAutomationMcpResource(() => ref.id));
     if (managesChats) servers.push(this.createSessionsMcpResource(() => ref.id));
     // A folderless session has no project scope: user-level config only, the
@@ -1472,11 +1490,15 @@ export class SessionManager {
     try {
       for (const server of servers) {
         const config = await server.start();
-        const collision = configured.find(
+        const collision = configs.find(
           (candidate) =>
             normalizeMcpServerName(candidate.name) === normalizeMcpServerName(config.name),
         );
         if (collision) {
+          if (!configured.includes(collision))
+            throw new Error(
+              `DROIDEX in-app MCP servers "${collision.name}" and "${config.name}" share a reserved name.`,
+            );
           throw new Error(
             `Droid MCP server "${collision.name}" collides with "${config.name}", which is reserved by DROIDEX. Rename it in your Droid MCP configuration and start the session again.`,
           );
@@ -1737,11 +1759,27 @@ export class SessionManager {
     requestedAppSessionId: string,
     customInstructions?: string,
   ): Promise<void> {
+    const isAdmitted = this.lifecycle.captureCloseAdmission(requestedAppSessionId);
+    if (!this.registry.getLive(requestedAppSessionId)) {
+      await this.sessionFiles.whenBootReconciled();
+    }
+    if (!isAdmitted(requestedAppSessionId)) return;
     const previousLiveSession = this.registry.getLive(requestedAppSessionId);
     const appSessionId =
       previousLiveSession?.summary.appSessionId ??
-      this.registry.resolveSummary(requestedAppSessionId)?.appSessionId ??
+      this.registry.getCanonicalSummary(requestedAppSessionId)?.appSessionId ??
       requestedAppSessionId;
+    if (!isAdmitted(appSessionId)) return;
+    if (
+      previousLiveSession?.createAdmission &&
+      !previousLiveSession.createAdmission.canChangeProvider()
+    ) {
+      this.timeline.appendProgress(
+        appSessionId,
+        'This chat is still opening. Wait for it to finish before compacting.',
+      );
+      return;
+    }
     if (
       previousLiveSession?.streaming ||
       previousLiveSession?.compacting ||
@@ -1755,7 +1793,10 @@ export class SessionManager {
     }
     let readyToSettle = false;
     try {
-      const result = await this.compaction.compact(appSessionId, customInstructions);
+      const result = await this.compaction.compact(appSessionId, customInstructions, () =>
+        isAdmitted(appSessionId),
+      );
+      if (!isAdmitted(appSessionId)) return;
       if (result.kind === 'close-and-resume') {
         const closeFailure = await this.closeForPermanentCompactionRecovery(result.appSessionId);
         this.context.preserveUsage(result.appSessionId, result.carryover);
@@ -1777,9 +1818,9 @@ export class SessionManager {
       }
       readyToSettle = true;
     } finally {
-      if (readyToSettle) {
+      if (readyToSettle && previousLiveSession) {
         await this.lifecycle.settleAfterCompaction(appSessionId, previousLiveSession);
-      } else {
+      } else if (!readyToSettle && isAdmitted(appSessionId)) {
         this.onSessionAvailable?.(appSessionId);
       }
     }
@@ -2110,7 +2151,19 @@ export class SessionManager {
   }
 
   shutdown(): Promise<void> {
-    this.shutdownPromise ??= Promise.resolve().then(() => this.performShutdown());
+    if (this.shutdownPromise) return this.shutdownPromise;
+    let settlement: { resolve(): void; reject(error: unknown): void };
+    this.shutdownPromise = new Promise<void>((resolve, reject) => {
+      settlement = { resolve, reject };
+    });
+    void this.performShutdown().then(
+      () => {
+        settlement.resolve();
+      },
+      (error: unknown) => {
+        settlement.reject(error);
+      },
+    );
     return this.shutdownPromise;
   }
 
@@ -2130,8 +2183,9 @@ export class SessionManager {
       }
     };
 
+    const closingSessions = run(() => this.lifecycle.closeAll());
     await run(() => this.sessionFiles.close());
-    await run(() => this.lifecycle.closeAll());
+    await closingSessions;
     await run(() => this.childSessions.shutdown());
     // After closeAll: every session's close is what kills its processes.
     await run(() => {
@@ -2153,6 +2207,16 @@ export class SessionManager {
     await run(() => this.history.close());
     if (firstError !== undefined)
       throw firstError instanceof Error ? firstError : new Error(errMsg(firstError));
+  }
+}
+
+function requireUniqueMcpNames(names: readonly string[]): void {
+  const seen = new Set<string>();
+  for (const name of names) {
+    const normalized = normalizeMcpServerName(name);
+    if (seen.has(normalized))
+      throw new Error(`DROIDEX MCP server "${name}" has a reserved-name collision.`);
+    seen.add(normalized);
   }
 }
 

@@ -3,6 +3,7 @@ import {
   Files,
   Globe,
   Hierarchy,
+  LayoutTemplate,
   MessageBubble,
   MessageSquareText,
   SquareTerminal,
@@ -41,6 +42,15 @@ const THREADS_TOOL_OPTION: UtilityToolOption = {
   shortcut: '',
 };
 
+// Opened by an artifact card's Open or the design entry point, never from the
+// picker: Canvas belongs to a chat that has designs, not to every chat.
+const CANVAS_TOOL_OPTION: UtilityToolOption = {
+  tool: 'canvas',
+  label: 'Canvas',
+  icon: LayoutTemplate,
+  shortcut: '',
+};
+
 // Opened by `/side`, `/btw`, or a chat's own side-chat action.
 const SIDE_TOOL_OPTION: UtilityToolOption = {
   tool: 'side',
@@ -53,5 +63,6 @@ export function utilityToolOption(tool: UtilityTool): UtilityToolOption {
   if (tool === 'agents') return AGENTS_TOOL_OPTION;
   if (tool === 'threads') return THREADS_TOOL_OPTION;
   if (tool === 'side') return SIDE_TOOL_OPTION;
+  if (tool === 'canvas') return CANVAS_TOOL_OPTION;
   return UTILITY_TOOL_OPTIONS.find((option) => option.tool === tool) ?? UTILITY_TOOL_OPTIONS[0];
 }

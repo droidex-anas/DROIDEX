@@ -5,6 +5,7 @@ import { z } from 'zod';
 export const CANVAS_LIMITS = {
   maxFramesPerCreate: 4,
   maxFramesPerArrange: 256,
+  maxFramesPerRemoval: 256,
   maxSourceFilesPerDesign: 64,
   maxDesignSourceBytes: 1024 * 1024,
   maxFileBytes: 256 * 1024,
@@ -58,12 +59,25 @@ export const canvasIdentifierSchema = z
   .max(CANVAS_LIMITS.maxIdentifierLength, IDENTIFIER_MESSAGE)
   .regex(/^[A-Za-z0-9_-]+$/, IDENTIFIER_MESSAGE);
 
-const frameNameSchema = z
+// A canvas and a frame are named by the same rule; the manifest holds both.
+export const canvasNameSchema = z
   .string()
-  .trim()
-  .min(1, FRAME_NAME_MESSAGE)
-  .max(CANVAS_LIMITS.maxFrameNameLength, FRAME_NAME_MESSAGE)
-  .refine((name) => !hasControlCharacter(name), { message: FRAME_NAME_MESSAGE });
+  .refine((name) => !hasControlCharacter(name), { message: FRAME_NAME_MESSAGE })
+  .pipe(
+    z
+      .string()
+      .trim()
+      .min(1, FRAME_NAME_MESSAGE)
+      .max(CANVAS_LIMITS.maxFrameNameLength, FRAME_NAME_MESSAGE),
+  );
+
+export const sessionCanvasIntentSchema = z
+  .object({
+    canvasId: canvasIdentifierSchema.nullable(),
+    name: canvasNameSchema.optional(),
+    mutationId: canvasIdentifierSchema,
+  })
+  .strict();
 
 const versionSchema = z.number().int().nonnegative();
 
@@ -118,14 +132,16 @@ export const canvasTurnContextSchema = z
   })
   .strict();
 
+export const revisionSeedSchema = z
+  .object({
+    kind: z.literal('revision'),
+    canvasId: canvasIdentifierSchema,
+    revision: revisionRefSchema,
+  })
+  .strict();
+
 const canvasSeedSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('revision'),
-      canvasId: canvasIdentifierSchema,
-      revision: revisionRefSchema,
-    })
-    .strict(),
+  revisionSeedSchema,
   z.object({ kind: z.literal('library'), itemId: canvasIdentifierSchema }).strict(),
 ]);
 
@@ -192,11 +208,12 @@ const deletedPathsSchema = z
 export const createFramesInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
+    placeBeside: z.object({ designId: canvasIdentifierSchema }).strict().optional(),
     frames: z
       .array(
         z
           .object({
-            name: frameNameSchema,
+            name: canvasNameSchema,
             width: dimensionPxSchema,
             height: dimensionPxSchema,
             designSystem: designSystemRefSchema,
@@ -298,6 +315,35 @@ export const arrangeFramesInputSchema = z
   })
   .strict();
 
+export const removeFramesInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designIds: z
+      .array(canvasIdentifierSchema)
+      .min(1)
+      .max(CANVAS_LIMITS.maxFramesPerRemoval)
+      .refine((ids) => !hasDuplicate(ids), {
+        message: 'A frame can be removed only once per change.',
+      }),
+  })
+  .strict();
+
+export const undoRemovalInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    undoId: canvasIdentifierSchema,
+  })
+  .strict();
+
+export const renameFrameInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designId: canvasIdentifierSchema,
+    name: canvasNameSchema,
+    expectedManifestVersion: versionSchema,
+  })
+  .strict();
+
 // One write is bounded by the schema above; the revision it produces carries
 // unchanged files too, so the same §5 limits are checked against the merge.
 // Returns the limit's own message, or null when the revision fits.
@@ -312,6 +358,13 @@ export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
 export type DesignRef = z.infer<typeof designRefSchema>;
 export type ElementRef = z.infer<typeof elementRefSchema>;
 export type CanvasTurnContext = z.infer<typeof canvasTurnContextSchema>;
+
+export interface CreateCanvasResult {
+  /** The canvas this mutation originally created, unchanged by a replay. */
+  canvasId: string;
+  /** The chat's attachment when this request settled; only this updates its cache. */
+  attachedCanvasId: string | null;
+}
 export type RevisionRef = z.infer<typeof revisionRefSchema>;
 export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;
@@ -321,6 +374,9 @@ export type EditElementInput = z.infer<typeof editElementInputSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
 export type RestoreRevisionInput = z.infer<typeof restoreRevisionInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
+export type RemoveFramesInput = z.infer<typeof removeFramesInputSchema>;
+export type UndoRemovalInput = z.infer<typeof undoRemovalInputSchema>;
+export type RenameFrameInput = z.infer<typeof renameFrameInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
 // other, so two distinct paths would address one file on disk.

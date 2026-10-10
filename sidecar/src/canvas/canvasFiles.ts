@@ -44,6 +44,11 @@ const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
 const CREATE_FLAGS =
   constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
 
+export interface SavedRevision {
+  files: Map<string, string>;
+  designSystem: RevisionMetadata['designSystem'];
+}
+
 export type ManifestLoad =
   | { state: 'missing' }
   | { state: 'damaged'; reason: string }
@@ -304,6 +309,11 @@ export class CanvasFiles {
   }
 
   async readRevision(canvasId: string, ref: RevisionRef): Promise<Map<string, string>> {
+    return (await this.readRevisionDetails(canvasId, ref)).files;
+  }
+
+  /** The source and the kit ref committed with that exact immutable revision. */
+  async readRevisionDetails(canvasId: string, ref: RevisionRef): Promise<SavedRevision> {
     const metadata = await this.readRevisionMetadata(canvasId, ref);
     const revision = this.revisionPath(canvasId, ref.revisionId);
     const checked = new Set<string>();
@@ -314,7 +324,7 @@ export class CanvasFiles {
         await this.refuseLinkedPath(target, checked);
         files.set(path, await this.readText(target));
       }
-      return files;
+      return { files, designSystem: metadata.designSystem };
     } catch (error) {
       throw storageFailure(REVISION_RECOVERY, error);
     }

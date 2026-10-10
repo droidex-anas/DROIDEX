@@ -1,4 +1,5 @@
 import type { CanvasCommand, CanvasEvent, CanvasTurnContext } from './canvas/protocol.js';
+import type { CanvasActivity } from './canvas/canvasToolPresentation.js';
 import type { ProjectCommand, ProjectEvent } from './projects/types.js';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
@@ -227,6 +228,9 @@ export interface TranscriptEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
+  // Safe Canvas tool snapshot. Tool-call merges prefer the latest activity,
+  // but missing or untargeted snapshots cannot replace a targeted activity.
+  canvasActivity?: CanvasActivity;
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already
   // tracking: polling that agent for output, or stopping it. The same tool
@@ -785,6 +789,8 @@ export type ClientCommand =
   | {
       type: 'session.create';
       clientRef: string;
+      // Establishes Design purpose; commit attachment before publication and the first turn.
+      canvas?: { canvasId: string | null; name?: string; mutationId: string };
       cwd?: string;
       title: string;
       goal: string;

@@ -11,11 +11,13 @@ import { pipeline } from 'node:stream/promises';
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
-import { CanvasCommandError } from './canvas/canvasError.js';
+import { CanvasCommandError, canvasError } from './canvas/canvasError.js';
 import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
+import { sessionCanvasIntentSchema } from './canvas/schema.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
 import { resolveBrowserAssetPath } from './browser/browserPaths.js';
+import { serveCanvasSourceExport } from './canvas/canvasExport.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeResetMessage,
@@ -29,6 +31,7 @@ import {
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
+import { serveCanvasImageImport, type CanvasImages } from './canvas/canvasImageRoute.js';
 
 const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
@@ -61,6 +64,8 @@ export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
   assetToken: string;
+  canvasImages?: CanvasImages;
+  canvasExportToken?: string;
   // `pageId` identifies the renderer page the command came from, when it sent
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
@@ -84,6 +89,8 @@ export function startBridgeServer(options: {
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
+    if (serveCanvasImageImport(req, res, options.canvasImages)) return;
+    if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
     if (serveBrowserAsset(req, res, options.assetToken)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
@@ -317,6 +324,17 @@ export function startBridgeServer(options: {
         assertValidSteerId(parsed);
         assertValidInteractionResponse(parsed);
         assertValidChatPreferences(parsed);
+        if ('canvas' in parsed) {
+          if (!('type' in parsed) || parsed.type !== 'session.create')
+            throw canvasError('invalid_input', 'Canvas intent only applies to session creation.');
+          const intent = sessionCanvasIntentSchema.safeParse(parsed.canvas);
+          if (!intent.success)
+            throw canvasError(
+              'invalid_input',
+              intent.error.issues[0]?.message ?? 'Invalid Canvas intent.',
+            );
+          parsed.canvas = intent.data;
+        }
         if ('canvasContext' in parsed) assertCanvasTurnContext(parsed.canvasContext);
       }
       const command = parsed as ClientCommand;

@@ -59,6 +59,7 @@ flowchart LR
 - Approval and question requests carry stable `requestId`s. The renderer keeps each session's pending requests in arrival order and settles only the matching id; consumers display the first pending request. Questions retain headers, option descriptions, and multiple selections as `{ selected: string[], custom?: string }` answers. Claude serializes selections into its question-text keyed answer map; Codex keeps arrays; Droid receives its scalar answer at its adapter boundary.
 - Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal.
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
+- Canvas tool calls are identified by their reserved MCP server, tool name, and tool-use ID. `SessionEventFlow` projects their arguments and results to `CanvasActivity` before recording or emitting them. App-owned provider files store the projected rows and the live call's occurrence ID, preserving saved frame names and revisions across reload. Droid's native file stays provider-owned, with safe occurrence-specific correlations stored beside the app profile. Backward and oversized eager replay resolve each result against its preceding call, including calls outside the page or byte window, without sharing mutable projection state across pages.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
@@ -312,13 +313,135 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas storage and bridge
+
+`CanvasWorkspace` owns the durable manifests, source revisions, attachments and
+serialized commits. Opening canonicalizes the physical Canvas root and claims
+its SQLite writer lease before loading heads or sweeping temporaries. Linked
+roots therefore share one writer, even across separate profiles. A live owner
+refuses a second open with `storage_failed`; an atomic lease transaction
+reclaims only an owner whose process is known to have exited. Malformed leases
+or uncertain process liveness are refused rather than guessed. Close rejects
+queued commits and new mutations immediately, independently of active I/O.
+It still waits for admitted staging and active durable writes before releasing
+the lease; a failed open releases it too.
+
+A Design draft sends its canvas intent and durable create mutation ID in
+`session.create`. Canvas intent establishes `sessionPurpose: 'design'` before
+the provider and per-session tools start. Purpose is stored in the session
+summary and restored on resume and provider replacement. Resume, historical
+compaction and startup adoption wait for boot history reconciliation before reading
+canonical metadata, so native-file classification cannot overwrite the app-owned
+purpose. A close during readiness cancels admission even before the stable identity
+is available; pending readiness still reserves scheduled runtime capacity. An
+app-owned chat with a missing or incomplete provider conversation refuses resume
+or compaction with recovery instructions and retains its metadata; it is never
+reopened as a fabricated Chat.
+Design sessions run
+in the user's project folder, with that folder framed as read-only context
+unless the user explicitly requests repository edits.
+The sidecar composes project membership and Canvas attachment
+in `beforeFirstTurn`, after registering the chat and before `session.created`
+or the first prompt. New canvases and saved-canvas attachments share this path;
+a failed attachment fails the session open and releases its runtime. The first
+turn therefore leases the committed attachment. Resume publication, typed sends,
+voice starts and delegated turns wait on the same pending create; compaction
+cannot replace its provisional provider. Every admission rechecks the captured
+runtime before applying results. Admission applies the latest pending delegated
+state before typed work starts; delegated notifications cannot settle a running
+typed turn or advance its queue.
+Closing cancels that create before cleanup. The Canvas queue releases cancelled
+work that has not started, independently of unrelated writes. Canvas checks the
+captured runtime generation before each attachment write, and close drains only
+this create's started commit before a replacement can register. A write still
+draining after five seconds emits an actionable diagnostic; its fence never
+times out. Already-published boards remain durable.
+The renderer keeps unsent `canvasDraft` separate from submitted
+`canvasChatRequests`, which only track
+chats whose panes need opening. The lazy bootstrap reads the committed attachment
+and opens the pane. Explicit pane creation and
+attaching an existing chat remain Canvas bridge actions with durable replay.
+
+The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
+remove watches synchronously. Removing the last pane watching a canvas cancels
+its queued and running builds through `cancelCanvas` only when `CanvasScopes`
+holds no active turn lease for that canvas. Accepted builds remain wanted while
+an agent turn owns the canvas, even with its pane closed. Cancellation leaves
+another watched canvas and another pane on the same canvas alone.
+A subscribe captures its own subscription identity before awaiting storage.
+Unsubscribe, page loss or a replacement subscription invalidates that identity,
+so a late answer cannot reinstall a watch or schedule rebuilds for a closed pane.
+Artifact reads capture the current subscribers and turn leases before awaiting
+storage. A cache miss admits a rebuild only if a captured subscription or a
+captured turn lease covering the design is still current after the read.
+Replacement panes and turns cannot revive an abandoned read. Reads without a
+live owner can still serve cached artifacts but admit no recovery work.
+
+Canvas compiler slots stay occupied until their child processes physically exit.
+IPC failure retires the same child; new compile or edit requests wait for its exit
+and recheck cancellation and final shutdown before starting a replacement. A
+shutdown acknowledgement, live-child close, or delivered kill cannot release
+capacity. Only a PID-less failed spawn may settle on close. Shutdown revokes
+turn and watch authority and closes workspace publication synchronously before
+awaiting process and storage cleanup. Already-renamed durable mutations finish
+successfully; build publication checks the captured job at the final manifest rename.
+
+### Canvas agent tools
+
+Each chat gets one local `droidex-canvas` MCP server with six tools: read, create,
+write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
+call `canvas_read` with no arguments first to obtain that chat's newest live lease.
+Reads may then name a returned `scopeId` to retain its pinned references across
+steers; Claude's read hook relies on this to bind retries to their original lease.
+Never invent a scope ID. Unknown IDs and IDs issued to another chat return
+`invalid_input` with this recovery step; known revoked IDs return `scope_expired`.
+`CanvasTurns` retains issued IDs and their chat owners for the live provider era,
+without retaining revoked scope payloads. `endSession` drops that chat's issued
+IDs, so requests naming its closed era return `invalid_input`. Every mutation
+requires its explicit `scopeId`; retries keep the original scope and cannot
+borrow a later turn's authority. Named leases expire when their turn or provider ends.
+
+`designSessionGuidance.ts` owns the concise Design brief. Droid receives it
+through process-local `exec --append-system-prompt`, Claude through the
+`claude_code` preset's system-prompt append, and Codex through native thread
+developer instructions on start and resume, appended to the effective configured
+developer instructions for that project. The Canvas MCP initialize result carries
+only concise tool discovery and scope recovery instructions for Design sessions.
+Codex dynamic tools do not initialize
+MCP; Droid's measured MCP path did not demonstrate instruction delivery, so each
+provider's native channel owns framing. Framing is never injected into user prompts,
+normalized conversation events, or DROIDEX history/export; model-generated quotations
+may remain in conversation content. Provider-native logs may retain their model context. This is workflow guidance, not a filesystem
+sandbox: ordinary provider permission and autonomy controls still apply, and an
+explicit user request may authorize repository edits.
+
+Read replies revalidate that lease after awaited work. Mutation owners check it
+at publication; a mutation already published durably returns its receipt even
+if shutdown revokes the turn while the final flush finishes.
+Theme apply validates source token mappings after replay and revision checks.
+A validation refusal has no publication receipt, so its diagnostics revalidate
+the captured lease before delivery. Authored kit saves cannot claim extraction
+provenance; extracted kits retain their source-owned provenance.
+`canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
+`CanvasWorkspace` owns board
+mutations, including retry receipts and attachment bootstrap; the design-system
+store owns immutable kit versions. Droid and Claude use
+the per-chat loopback endpoint; Codex declares the same tools through dynamic
+tools on thread start. Claude's session-local `PreToolUse` hook pins both
+`canvas_read` and `canvas_inspect` tool-use IDs to their original leases. Child
+runtimes do not inherit the parent's Canvas endpoint without an assigned child
+scope. Agent inspection currently
+returns build diagnostics; screenshot and element capture report
+`capture_unavailable` until a scoped capture API exists.
+
 ### Canvas live previews
 
 A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
 crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
-the privileged `droidex-canvas-preview` scheme, the single URL it serves, the
-restrictive CSP it serves it under, the trusted intermediate document, and the
-registry of guests main attached. `electron/main.cjs` sets `webviewTag` on the
+the privileged `droidex-canvas-preview` scheme, the one guest document, its
+restrictive CSP, the trusted intermediate and the registry of guests main
+attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
+and content-addressed kit fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
 app window alone and installs `will-attach-webview` before that window loads
 anything, so renderer content can only ever attach the owned source, with any
 requested preload deleted and Node, nested Node and nested guests off.
@@ -380,6 +503,32 @@ references require reselection. `canvas.editElement` validates the request and p
 tokens before committing through the workspace's revision compare-and-swap. Image edits
 remain unavailable until the asset store can verify ownership.
 
+The source drawer keeps drafts and save operations in the feature-local
+`canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the
+pane retains them. Deliberate Close discards the entire canvas source lifetime;
+a late save callback can settle only its captured lifetime and operation.
+
+A transport failure keeps the exact write and mutation ID for **Try that save
+again**, even after typing, a frame switch or a head update. A server refusal
+uses the client's typed error contract and releases that request for a new
+save. New typing remains unsaved after replay. A historical receipt proves its
+write committed; it never replaces a newer head already read by the drawer.
+Compare exposes the competing source as read-only text in a focusable scroller.
+
+For image imports, preload passes a native dropped `File` path or main opens its
+own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPEG
+with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
+dimension limit. Its private loopback route sends the
+selected path with a digest and decoded dimensions to the sidecar; the sidecar
+rejects a changed file and stores accepted bytes by hash under the canvas. Each
+asset has a durable metadata record, and `canvas.listAssets` recovers its ID
+even when the import reply or original file is lost.
+`canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
+when an artifact is read. Main binds each preview's generated frame to its
+canvas and refuses asset requests from another canvas, an unbound guest or the
+default session. Kit WOFF2 data is stored once under the profile and referenced
+from generated CSS through the same preview scheme.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and
@@ -412,6 +561,8 @@ and warned, not failed, on shared runners. Bundle bytes stay gated by
 `npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus the `historyPersistenceWorker.mjs` and `compilerWorker.mjs` entries beside it; Electron uses the first unless `SIDECAR_ENTRY` is set and packages all three from `sidecar/dist`.
 
 Packaging adds one more resource beside that bundle. The design compiler loads esbuild, Tailwind, PostCSS, React and Recharts at run time, and a packaged app may not resolve them from a checkout or download them, so `npm run canvas:runtime` stages one complete runtime per architecture under `sidecar/canvas-runtime/<arch>` and `extraResources` copies the matching one to `resources/sidecar/canvas-runtime`. The design allowlist exposes only `recharts`; the compiler resolves its ESM entry through the same runtime anchor so unused chart exports can be removed. `electron/main.cjs` derives that directory from its own resources and hands it to the sidecar as `DROIDEX_CANVAS_RUNTIME_DIR`; `sidecar/src/canvas/canvasRuntime.ts` is the only reader, anchoring the compiler's `require` there and naming the owned `ESBUILD_BINARY_PATH` the forked compiler receives. Without that variable a checkout resolves from `sidecar/node_modules` exactly as it does in development, unless a staged runtime's manifest is sitting beside the compiler, which means a packaged app lost the variable and compiles nothing. A relative value is a malformed host and is refused outright.
+
+Canvas source export is a host action. Electron main opens the destination chooser, then calls a schema-validated sidecar HTTP route with a per-process `CANVAS_EXPORT_TOKEN` that never reaches the renderer or agent children. `canvasExport.ts` reads one immutable revision and its pinned kit, copies only referenced owned images, and refuses collisions and linked destination paths. The ordinary Canvas WebSocket exposes no destination path or export command. The exported project includes source, kit files and fonts, pinned build dependencies, and a local build/preview script.
 
 Anchoring `require` is not a boundary on its own: node resolution also walks ancestor `node_modules`, `NODE_PATH` and the user's global folders, and a transitive `require` inside a package cannot be intercepted. The boundary is that the tree is exactly what staging produced. Staging writes `canvas-runtime/manifest.json` listing every file it placed with its size, and the compiler child walks the runtime under a root canonicalised once: every entry has to be a regular file the manifest lists at the staged size, or a directory the manifest has files under, and anything else — a symbolic link, an unlisted file, an unlisted directory — refuses the runtime. Comparing the tree to the manifest rather than the manifest to the tree is what catches an entry nobody staged, such as a nested `node_modules` link that changes resolution without touching a listed file. Only then is anything loaded, through the one `require` built from that same canonical root, which is also the resolver a design's imports go through; the fork drops `NODE_PATH` and `NODE_OPTIONS`. A runtime that fails answers every request with one curated unavailable sentence and loads nothing at all, including on the shutdown path. `npm run canvas:probe` compiles the design kit's own example through that contract with the network refused, then requires damaged copies and misnamed roots to compile nothing and to resolve no module outside the runtime for the whole of a graceful shutdown, and checks that `npm run release:verify:mac`'s own copy of the rule refuses every tree the compiler refuses, for each fixture it exercises. That gate also `require`s esbuild, Tailwind and PostCSS in a child process, because a tree can agree with its own manifest and still be short of a dependency one of them needs; `npm run canvas:runtime` runs the same gate, so an incomplete staging input fails where it was made. It proves those pinned packages load through CommonJS from the owned root, with nothing resolved outside it by that loader; it is not a sandbox, and the manifest sizes remain the only account of what the files contain. The one entry staging never places that the runtime tolerates is a regular `.DS_Store`: Finder writes it into any folder a user opens, and the app's signature omits it, so refusing it would disable Canvas over a still-valid app.
 

@@ -100,7 +100,7 @@ Any chat whose harness has the Canvas tools may create React + Tailwind componen
 
 ### Board controls
 
-- Background drag/Space-drag pans. Wheel/pinch zoom anchors under the pointer. Fit and focus use the same geometry functions.
+- Background drag/Space-drag pans; plain wheel and two-finger scroll also pan, 1:1 in board pixels. Pinch and ctrl/cmd+wheel zoom anchored under the pointer. Fit and focus use the same geometry functions.
 - Select mode gives the board pointer ownership; click a frame to select it, double-click or press Enter to interact. Interact mode gives the preview real pointer/keyboard events. Escape returns to selection; Escape again clears selection. Do not intercept shortcuts typed inside an input/editor.
 - Frame headers remain draggable in both modes. Resize changes viewport dimensions, making responsive layouts real. A soft selected indicator and size label are sufficient; avoid thick permanent outlines.
 - Shift-click/rubber-band selects several frames. Align and distribute affect layout only. Arrow keys nudge selected frames; Delete removes selected frames with Undo. Source-editor undo and board undo have separate focused scopes.
@@ -256,7 +256,7 @@ These timings are proposed starting values, not measurements extracted from the 
 | Interaction | Default behavior | Reduced motion |
 | --- | --- | --- |
 | Pan/drag/resize | Pointer follows 1:1; transform updates once per animation frame; no easing behind the hand | Same direct input |
-| Zoom/fit/focus | Pointer-anchored wheel zoom; programmatic focus/fit 220 ms, cubic-bezier(0.22, 1, 0.36, 1) | Immediate fit/focus |
+| Zoom/fit/focus | Pointer-anchored pinch or ctrl/cmd+wheel zoom; programmatic focus/fit 220 ms, cubic-bezier(0.22, 1, 0.36, 1) | Immediate fit/focus |
 | Pane expand/collapse | 180–220 ms layout transition; retain frame identity and selection | Immediate layout |
 | Toolbar/popover | 120 ms opacity and at most 4 px travel | Opacity only or immediate |
 | New frame | 180 ms fade with at most 8 px travel | Immediate placement |

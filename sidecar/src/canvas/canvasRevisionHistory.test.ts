@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import type { ServerEvent } from '../protocol.js';
+import { canvasCommandHandler } from '../testing/canvasBridgeSupport.js';
 import { board } from '../testing/canvasBuildSupport.js';
 import {
   canvasRoot,
@@ -12,7 +13,6 @@ import {
   quietBuilds,
 } from '../testing/canvasStorageSupport.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
-import { createCanvasCommandHandler } from './canvasBridge.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import { CanvasScopes } from './canvasScopes.js';
@@ -26,6 +26,7 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const scopes = new CanvasScopes();
   const builds = quietBuilds();
   const deps = {
+    isChatKnown: () => true,
     isScopeActive: (scopeId: string) => scopes.isScopeActive(scopeId),
     bindScopeCanvas: () => undefined,
     fs,
@@ -35,8 +36,8 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
     await builds.close();
     await workspace.close();
   });
-  const { canvasId } = await workspace.createCanvas('app-1');
-  const scope: CanvasScope = {
+  const { canvasId } = await workspace.createCanvas('app-1', 'create-canvas');
+  const scope: Extract<CanvasScope, { origin: 'user' }> = {
     origin: 'user',
     scopeId: 'user-1',
     appSessionId: 'app-1',
@@ -127,6 +128,8 @@ test('history pages committed revisions newest first with safe authors and pinne
   assert.ok(loaded.state === 'loaded');
   loaded.manifest.mutations = [];
   await files.writeManifest(loaded.manifest, () => undefined);
+  // The writer lease admits one open workspace per storage root.
+  await canvas.workspace.close();
   const reopenedBuilds = quietBuilds();
   const reopened = await CanvasWorkspace.open(canvas.root, reopenedBuilds, canvas.deps);
   t.after(async () => {
@@ -317,6 +320,8 @@ test('restore commits a new head and build, retaining later history and its orig
     'later',
   );
   const later = await canvas.write('four', restored.revisionId, { 'main.tsx': 'four' });
+  // The writer lease admits one open workspace per storage root.
+  await canvas.workspace.close();
   const reopenedBuilds = quietBuilds();
   const reopened = await CanvasWorkspace.open(canvas.root, reopenedBuilds, canvas.deps);
   t.after(async () => {
@@ -359,7 +364,7 @@ test('restore CAS rejects a concurrent head change without losing either source 
   const canvas = await harness(
     t,
     observedFileSystem(async (operation, path) => {
-      if (operation !== 'open' || path !== selectedPath) return;
+      if (operation !== 'open' || selectedPath === null || !path.endsWith(selectedPath)) return;
       selectedPath = null;
       reached.resolve();
       await release.promise;
@@ -373,7 +378,7 @@ test('restore CAS rejects a concurrent head change without losing either source 
     revisionId: first.revisionId,
     expectedRevisionId: second.revisionId,
   };
-  selectedPath = join(canvas.root, canvas.canvasId, 'revisions', first.revisionId, 'revision.json');
+  selectedPath = join(canvas.canvasId, 'revisions', first.revisionId, 'revision.json');
   const restoring = restoreRevision(canvas.workspace, canvas.scope, input);
   await reached.promise;
   const third = await canvas.write('three', second.revisionId, { 'main.tsx': 'three' });
@@ -387,34 +392,29 @@ test('restore CAS rejects a concurrent head change without losing either source 
   assert.equal((await canvas.workspace.readFiles(canvas.canvasId, restored))['main.tsx'], 'one');
 });
 
-test('a removed design refuses restore with not_found while its immutable revisions remain', async (t) => {
+test('a removed design refuses history and restore until Undo brings its history back', async (t) => {
   const canvas = await harness(t);
+  const { workspace, scope, canvasId, designId } = canvas;
   const revision = await canvas.write('one', null, { 'main.tsx': 'one' });
-  const files = new CanvasFiles(canvas.root);
-  const loaded = await files.loadManifest(canvas.canvasId);
-  assert.ok(loaded.state === 'loaded');
-  // 09c will own tombstones; absence from the current board is the history boundary.
-  loaded.manifest.designs = [];
-  await files.writeManifest(loaded.manifest, () => undefined);
-  const builds = quietBuilds();
-  const reopened = await CanvasWorkspace.open(canvas.root, builds, canvas.deps);
-  t.after(async () => {
-    await builds.close();
-    await reopened.close();
+  const { undoId } = await workspace.removeFrames(scope, 'remove', [designId]);
+  const input = {
+    mutationId: 'restore',
+    designId,
+    revisionId: revision.revisionId,
+    expectedRevisionId: revision.revisionId,
+  };
+  await assert.rejects(workspace.history.listRevisions(canvasId, designId, { limit: 50 }), {
+    code: 'not_found',
   });
-  await assert.rejects(
-    restoreRevision(reopened, canvas.scope, {
-      mutationId: 'restore',
-      designId: canvas.designId,
-      revisionId: revision.revisionId,
-      expectedRevisionId: revision.revisionId,
-    }),
-    { code: 'not_found' },
+  await assert.rejects(restoreRevision(workspace, scope, input), { code: 'not_found' });
+  assert.deepEqual(await readdir(join(canvas.root, canvasId, 'revisions')), [revision.revisionId]);
+  await workspace.undoRemoval(scope, 'undo', undoId);
+  assert.deepEqual(
+    (await workspace.history.listRevisions(canvasId, designId, { limit: 50 })).map(
+      (entry) => entry.revisionId,
+    ),
+    [revision.revisionId],
   );
-  assert.equal((await files.readRevision(canvas.canvasId, revision)).get('main.tsx'), 'one');
-  assert.deepEqual(await readdir(join(canvas.root, canvas.canvasId, 'revisions')), [
-    revision.revisionId,
-  ]);
 });
 
 test('history excludes orphan revisions left by a refused manifest commit', async (t) => {
@@ -454,15 +454,15 @@ test('history bridge validates bounded reads and authorizes restore through the 
   const first = await canvas.write('one', null, { 'main.tsx': 'one' });
   const second = await canvas.write('two', first.revisionId, { 'main.tsx': 'two' });
   const events: ServerEvent[] = [];
-  const handle = createCanvasCommandHandler(
-    Promise.resolve(canvas.workspace),
-    canvas.scopes,
-    canvas.builds,
-    (event) => events.push(event),
-    () => () => undefined,
-  );
+  const { handle } = canvasCommandHandler({
+    ready: Promise.resolve(canvas.workspace),
+    scopes: canvas.scopes,
+    builds: canvas.builds,
+    events,
+    root: canvas.root,
+  });
   const request = async (command: CanvasCommand | Record<string, unknown>) => {
-    await handle(command, 'page-1');
+    await handle(command);
     const reply = events.find(
       (event) => event.type === 'canvas.result' && event.requestId === command.requestId,
     );
@@ -479,14 +479,12 @@ test('history bridge validates bounded reads and authorizes restore through the 
   });
   assert.ok(listed.ok && listed.reply.kind === 'revisions' && listed.reply.revisions.length === 2);
   const read = await request({
-    type: 'canvas.readRevision',
+    type: 'canvas.readSource',
     requestId: 'read',
     ...target,
     revisionId: first.revisionId,
   });
-  assert.ok(
-    read.ok && read.reply.kind === 'revisionFiles' && read.reply.files['main.tsx'] === 'one',
-  );
+  assert.ok(read.ok && read.reply.kind === 'source' && read.reply.files['main.tsx'] === 'one');
   const diff = await request({
     type: 'canvas.diffRevisions',
     requestId: 'diff',
@@ -517,10 +515,11 @@ test('history bridge validates bounded reads and authorizes restore through the 
   });
   assert.ok(!invalid.ok && invalid.error.code === 'invalid_input');
   const badPath = await request({
-    type: 'canvas.readRevision',
+    type: 'canvas.diffRevisions',
     requestId: 'bad-path',
     ...target,
-    revisionId: '../escape',
+    from: '../escape',
+    to: second.revisionId,
   });
   assert.ok(!badPath.ok && badPath.error.code === 'invalid_input');
   const detached = await request({

@@ -3,6 +3,7 @@ import { posix } from 'node:path';
 import ts from 'typescript';
 import type { ElementEdit, SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
+import { inlineSourceMap } from './sourceInstrumentationMap.js';
 
 export class SourceElementError extends Error {
   constructor(
@@ -27,6 +28,11 @@ interface Site {
   element: SourceElement;
   node: ElementNode;
   source: ts.SourceFile;
+}
+interface SourceReplacement {
+  start: number;
+  end: number;
+  replacement: string;
 }
 const MARKER = 'data-droidex-element';
 const TOKEN_PROPERTIES = new Set([
@@ -109,78 +115,94 @@ export function applyElementEdit(
   if (site.element.editability !== 'literal') throw ambiguous();
   const { node, source } = site;
   const opening = ts.isJsxElement(node) ? node.openingElement : node;
-  let start: number;
-  let end: number;
-  let replacement: string;
+  let changed: SourceReplacement;
   switch (edit.change.kind) {
-    case 'text': {
-      if (!ts.isJsxElement(node) || node.children.length > 1) throw ambiguous();
-      if (node.children.length === 0) {
-        start = node.openingElement.end;
-        end = start;
-        replacement = escapeJsxText(edit.change.value);
-        break;
-      }
-      const child = node.children.at(0);
-      if (!child) throw ambiguous();
-      if (ts.isJsxText(child)) {
-        start = child.pos;
-        end = child.end;
-        replacement = escapeJsxText(edit.change.value);
-      } else if (ts.isJsxExpression(child) && child.expression && isLiteral(child.expression)) {
-        start = child.expression.getStart(source);
-        end = child.expression.end;
-        replacement = JSON.stringify(edit.change.value);
-      } else throw ambiguous();
+    case 'text':
+      changed = replaceText(node, source, edit.change.value);
       break;
-    }
-    case 'token': {
-      if (
-        !TOKEN_PROPERTIES.has(edit.change.property) ||
-        !/^--[a-z0-9]+(-[a-z0-9]+)*$/.test(edit.change.token)
-      )
-        throw new SourceElementError(
-          'invalid_edit',
-          'Choose a supported style property and a design-system token.',
-        );
-      const style = attributeValue(attribute(opening, 'style'));
-      if (!style || !ts.isObjectLiteralExpression(style)) throw ambiguous();
-      const propertyNameToEdit = edit.change.property;
-      const properties = style.properties.filter(
-        (property) => property.name && propertyName(property.name) === propertyNameToEdit,
-      );
-      const property = properties.at(0);
-      if (
-        properties.length !== 1 ||
-        !property ||
-        !ts.isPropertyAssignment(property) ||
-        !isLiteral(property.initializer) ||
-        !/^var\(--[a-z0-9]+(-[a-z0-9]+)*\)$/.test(property.initializer.text)
-      )
-        throw ambiguous();
-      start = property.initializer.getStart(source);
-      end = property.initializer.end;
-      replacement = JSON.stringify(`var(${edit.change.token})`);
+    case 'token':
+      changed = replaceToken(opening, source, edit.change);
       break;
-    }
-    case 'image': {
-      if (!/^[A-Za-z0-9_-]{1,128}$/.test(edit.change.assetId))
-        throw new SourceElementError('invalid_edit', 'Choose an owned Canvas image.');
-      const src = attributeValue(attribute(opening, 'src'));
-      if (
-        site.element.tagName !== 'img' ||
-        !src ||
-        !isLiteral(src) ||
-        !/^canvas-asset:[A-Za-z0-9_-]{1,128}$/.test(src.text)
-      )
-        throw ambiguous();
-      start = src.getStart(source);
-      end = src.end;
-      replacement = JSON.stringify(`canvas-asset:${edit.change.assetId}`);
+    case 'image':
+      changed = replaceImage(opening, source, edit.change.assetId);
       break;
-    }
   }
+  const { start, end, replacement } = changed;
   return { [source.fileName]: source.text.slice(0, start) + replacement + source.text.slice(end) };
+}
+
+function replaceText(node: ElementNode, source: ts.SourceFile, value: string): SourceReplacement {
+  if (!ts.isJsxElement(node) || node.children.length > 1) throw ambiguous();
+  if (node.children.length === 0)
+    return {
+      start: node.openingElement.end,
+      end: node.openingElement.end,
+      replacement: escapeJsxText(value),
+    };
+  const child = node.children.at(0);
+  if (!child) throw ambiguous();
+  if (ts.isJsxText(child))
+    return { start: child.pos, end: child.end, replacement: escapeJsxText(value) };
+  if (ts.isJsxExpression(child) && child.expression && isLiteral(child.expression))
+    return {
+      start: child.expression.getStart(source),
+      end: child.expression.end,
+      replacement: JSON.stringify(value),
+    };
+  throw ambiguous();
+}
+
+function replaceToken(
+  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  source: ts.SourceFile,
+  change: Extract<ElementEdit['change'], { kind: 'token' }>,
+): SourceReplacement {
+  if (!TOKEN_PROPERTIES.has(change.property) || !/^--[a-z0-9]+(-[a-z0-9]+)*$/.test(change.token))
+    throw new SourceElementError(
+      'invalid_edit',
+      'Choose a supported style property and a design-system token.',
+    );
+  const style = attributeValue(attribute(opening, 'style'));
+  if (!style || !ts.isObjectLiteralExpression(style)) throw ambiguous();
+  const properties = style.properties.filter(
+    (property) => property.name && propertyName(property.name) === change.property,
+  );
+  const property = properties.at(0);
+  if (
+    properties.length !== 1 ||
+    !property ||
+    !ts.isPropertyAssignment(property) ||
+    !isLiteral(property.initializer) ||
+    !/^var\(--[a-z0-9]+(-[a-z0-9]+)*\)$/.test(property.initializer.text)
+  )
+    throw ambiguous();
+  return {
+    start: property.initializer.getStart(source),
+    end: property.initializer.end,
+    replacement: JSON.stringify(`var(${change.token})`),
+  };
+}
+
+function replaceImage(
+  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  source: ts.SourceFile,
+  assetId: string,
+): SourceReplacement {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(assetId))
+    throw new SourceElementError('invalid_edit', 'Choose an owned Canvas image.');
+  const src = attributeValue(attribute(opening, 'src'));
+  if (
+    opening.tagName.getText(source) !== 'img' ||
+    !src ||
+    !isLiteral(src) ||
+    !/^canvas-asset:[A-Za-z0-9_-]{1,128}$/.test(src.text)
+  )
+    throw ambiguous();
+  return {
+    start: src.getStart(source),
+    end: src.end,
+    replacement: JSON.stringify(`canvas-asset:${assetId}`),
+  };
 }
 
 function sourceSites(files: SourceFiles, revisionId: string): Site[] {
@@ -330,25 +352,28 @@ function referencedElsewhere(source: ts.SourceFile, name: ts.Identifier | undefi
 function isShared(node: ElementNode, root: ts.Node | undefined): boolean {
   for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
     if (parent === root) return false;
-    if (
-      ts.isFunctionLike(parent) ||
-      ts.isVariableDeclaration(parent) ||
-      ts.isCallExpression(parent) ||
-      ts.isArrayLiteralExpression(parent) ||
-      ts.isPropertyAssignment(parent) ||
-      ts.isForStatement(parent) ||
-      ts.isForOfStatement(parent) ||
-      ts.isForInStatement(parent) ||
-      ts.isWhileStatement(parent) ||
-      ts.isDoStatement(parent)
-    )
-      return true;
-    if (ts.isJsxElement(parent)) {
-      const tag = parent.openingElement.tagName;
+    if (canReuseJsx(parent)) return true;
+    if (ts.isJsxElement(parent) || ts.isJsxSelfClosingElement(parent)) {
+      const tag = ts.isJsxElement(parent) ? parent.openingElement.tagName : parent.tagName;
       if (!ts.isIdentifier(tag) || !/^[a-z]/.test(tag.text)) return true;
     }
   }
   return true;
+}
+
+function canReuseJsx(node: ts.Node): boolean {
+  return (
+    ts.isFunctionLike(node) ||
+    ts.isVariableDeclaration(node) ||
+    ts.isCallExpression(node) ||
+    ts.isArrayLiteralExpression(node) ||
+    ts.isPropertyAssignment(node) ||
+    ts.isForStatement(node) ||
+    ts.isForOfStatement(node) ||
+    ts.isForInStatement(node) ||
+    ts.isWhileStatement(node) ||
+    ts.isDoStatement(node)
+  );
 }
 
 function isComputed(node: ElementNode): boolean {
@@ -359,36 +384,7 @@ function isComputed(node: ElementNode): boolean {
         return true;
     }
   }
-  const names = new Set<string>();
-  for (const attr of opening.attributes.properties) {
-    if (ts.isJsxSpreadAttribute(attr)) return true;
-    const name = attr.name.getText();
-    if (names.has(name)) return true;
-    names.add(name);
-    if (
-      name === 'children' ||
-      name === 'dangerouslySetInnerHTML' ||
-      name.toLowerCase() === 'srcset'
-    )
-      return true;
-    const value = attributeValue(attr);
-    if ((name === 'className' || name === 'src') && value && !isLiteral(value)) return true;
-    if (name === 'style') {
-      if (!value || !ts.isObjectLiteralExpression(value)) return true;
-      const keys = new Set<string>();
-      for (const property of value.properties) {
-        if (
-          !ts.isPropertyAssignment(property) ||
-          !propertyName(property.name) ||
-          (!isLiteral(property.initializer) && !ts.isNumericLiteral(property.initializer))
-        )
-          return true;
-        const key = propertyName(property.name);
-        if (keys.has(key)) return true;
-        keys.add(key);
-      }
-    }
-  }
+  if (hasComputedAttributes(opening.attributes)) return true;
   if (ts.isJsxSelfClosingElement(node)) return false;
   if (node.children.length > 1 && node.children.some(ts.isJsxExpression)) return true;
   return node.children.some(
@@ -401,6 +397,42 @@ function isComputed(node: ElementNode): boolean {
         isLiteral(child.expression)
       ),
   );
+}
+
+function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
+  const names = new Set<string>();
+  for (const attr of attributes.properties) {
+    if (ts.isJsxSpreadAttribute(attr)) return true;
+    const name = attr.name.getText();
+    if (names.has(name)) return true;
+    names.add(name);
+    if (
+      name === 'children' ||
+      name === 'dangerouslySetInnerHTML' ||
+      name.toLowerCase() === 'srcset'
+    )
+      return true;
+    const value = attributeValue(attr);
+    if ((name === 'className' || name === 'src') && value && !isLiteral(value)) return true;
+    if (name === 'style' && hasComputedStyle(value)) return true;
+  }
+  return false;
+}
+
+function hasComputedStyle(value: ts.Expression | undefined): boolean {
+  if (!value || !ts.isObjectLiteralExpression(value)) return true;
+  const keys = new Set<string>();
+  for (const property of value.properties) {
+    if (
+      !ts.isPropertyAssignment(property) ||
+      (!isLiteral(property.initializer) && !ts.isNumericLiteral(property.initializer))
+    )
+      return true;
+    const key = propertyName(property.name);
+    if (!key || keys.has(key)) return true;
+    keys.add(key);
+  }
+  return false;
 }
 
 function attribute(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement, name: string) {
@@ -445,52 +477,6 @@ function escapeJsxText(text: string): string {
     else escaped += char;
   }
   return escaped;
-}
-
-// Map every UTF-16 column, including both edges of an insertion. A line-only
-// map would silently collapse later token columns when esbuild composes it.
-function inlineSourceMap(source: ts.SourceFile, inserts: { at: number; text: string }[]): string {
-  const lines = source.getLineStarts();
-  let index = 0;
-  let previousColumn = 0;
-  const mappings = lines
-    .map((start, line) => {
-      const segments = [vlq(0) + vlq(0) + vlq(line === 0 ? 0 : 1) + vlq(-previousColumn)];
-      previousColumn = 0;
-      const nextLine = lines.at(line + 1);
-      while (index < inserts.length) {
-        const insert = inserts.at(index);
-        if (!insert || insert.at >= (nextLine ?? Infinity)) break;
-        const column = insert.at - start;
-        segments.push(',CAAC'.repeat(column - previousColumn), ',', vlq(insert.text.length), 'AAA');
-        previousColumn = column;
-        index++;
-      }
-      const lastColumn = (nextLine === undefined ? source.text.length : nextLine - 1) - start;
-      segments.push(',CAAC'.repeat(lastColumn - previousColumn));
-      previousColumn = lastColumn;
-      return segments.join('');
-    })
-    .join(';');
-  const map = {
-    version: 3,
-    sources: [`canvas-design:${source.fileName}`],
-    sourcesContent: [source.text],
-    names: [],
-    mappings,
-  };
-  return `\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')}\n`;
-}
-function vlq(value: number): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let encoded = '';
-  let rest = value < 0 ? -value * 2 + 1 : value * 2;
-  do {
-    const digit = rest % 32;
-    rest = Math.floor(rest / 32);
-    encoded += alphabet[digit + (rest ? 32 : 0)];
-  } while (rest);
-  return encoded;
 }
 
 function comparePaths(left: string, right: string): number {

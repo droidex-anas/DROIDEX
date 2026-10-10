@@ -16,15 +16,24 @@ export interface Committed<T> {
   change?: CanvasChange;
 }
 
+/** Cancels queued work and fences only the durable operation that starts. */
+export interface CanvasCommitOwner {
+  readonly signal: AbortSignal;
+  readonly isCurrent: () => boolean;
+  commit<T>(operation: () => Promise<T>): Promise<T>;
+}
+
 export class CanvasCommits {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly admitted = new Set<Promise<void>>();
+  private readonly queued = new Set<(error: Error) => void>();
   private closing = false;
 
   constructor(private readonly changes: CanvasChangeFeed) {}
 
   /** Admits one mutation, so `drain` knows what it still has to wait for. */
   admit<T>(work: () => Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(canvasError('storage_failed', CLOSING));
     const running = (async () => work())();
     const settled = running.then(ignoreOutcome, ignoreOutcome);
     this.admitted.add(settled);
@@ -33,13 +42,34 @@ export class CanvasCommits {
   }
 
   /** One commit at a time; a failed commit never poisons the queue. */
-  run<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.queue.catch(ignoreOutcome).then(() => {
-      this.requireOpen();
-      return work();
+  run<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (this.closing) return Promise.reject(canvasError('storage_failed', CLOSING));
+    const cancelled = () =>
+      canvasError('scope_expired', 'The session closed before its first turn.');
+    if (signal?.aborted) return Promise.reject(cancelled());
+    return new Promise<T>((resolve, reject) => {
+      const release = (): void => {
+        this.queued.delete(refuse);
+        signal?.removeEventListener('abort', abort);
+      };
+      const refuse = (error: Error): void => {
+        release();
+        reject(error);
+      };
+      const abort = (): void => {
+        refuse(cancelled());
+      };
+      this.queued.add(refuse);
+      signal?.addEventListener('abort', abort, { once: true });
+      const next = this.queue.then(() => {
+        release();
+        if (signal?.aborted) throw cancelled();
+        this.requireOpen();
+        return work();
+      });
+      this.queue = next.then(ignoreOutcome, ignoreOutcome);
+      void next.then(resolve, reject);
     });
-    this.queue = next.catch(ignoreOutcome);
-    return next;
   }
 
   /**
@@ -61,6 +91,8 @@ export class CanvasCommits {
   /** Resolves once every admitted mutation has settled, staging included. */
   async drain(): Promise<void> {
     this.closing = true;
+    for (const reject of this.queued) reject(canvasError('storage_failed', CLOSING));
+    this.queued.clear();
     while (this.admitted.size > 0) await Promise.all([...this.admitted]);
   }
 }

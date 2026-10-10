@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 import type { Autonomy } from '../../protocol.js';
 import { normalizeAutonomy } from '../../values.js';
 import type { FactoryRuntime, FactorySession } from '../../DroidRuntime.js';
@@ -34,6 +35,7 @@ export class DroidProvider implements Provider {
     mcpServers,
     interactions,
     droidLaunch,
+    sessionPurpose,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // A created session mints the identity DROIDEX adopts as its own, and the
     // daemon can ask for permission before it is known, so the handlers read it
@@ -46,6 +48,7 @@ export class DroidProvider implements Provider {
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
       autonomyLevel: autonomy,
       mcpServers,
+      ...(sessionPurpose === 'design' ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE } : {}),
       ...droidLaunch,
       ...droidInteractionHandlers(ref, interactions),
     });
@@ -56,7 +59,7 @@ export class DroidProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { appSessionId, interactions, cwd, mcpServers, autonomy }: ProviderResumeInput,
+    { appSessionId, interactions, cwd, mcpServers, autonomy, sessionPurpose }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // Droid resumes by session id, so the generic resume handle is not needed.
     const ref: { id: string; autonomy: Autonomy } = {
@@ -66,6 +69,7 @@ export class DroidProvider implements Provider {
     const session = await this.runtime.loadSession(providerSessionId, {
       cwd,
       mcpServers,
+      ...(sessionPurpose === 'design' ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE } : {}),
       ...droidInteractionHandlers(ref, interactions),
     });
     this.onAvailableModels(session.initResult.availableModels ?? []);

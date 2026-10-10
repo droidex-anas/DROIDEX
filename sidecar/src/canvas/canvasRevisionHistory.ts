@@ -3,6 +3,7 @@ import { CanvasBuildCache } from './canvasBuildCache.js';
 import { canvasError } from './canvasError.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasHeads } from './canvasHeads.js';
+import { requireDesign, type CanvasManifest } from './canvasManifest.js';
 import type {
   CanvasScope,
   RestoreRevisionInput,
@@ -37,8 +38,9 @@ export class CanvasRevisionHistory {
         'invalid_input',
         'Choose a revision page size from 1 to 50 and a nonnegative sequence cursor.',
       );
-    this.requireDesign(canvasId, designId);
-    const history = this.records(canvasId);
+    const manifest = this.manifest(canvasId);
+    requireDesign(manifest, designId);
+    const history = manifest.revisions;
     const records: typeof history = [];
     for (let index = history.length - 1; index >= 0 && records.length < page.limit; index -= 1) {
       const record = history[index];
@@ -112,24 +114,17 @@ export class CanvasRevisionHistory {
     return result;
   }
 
-  private records(canvasId: string) {
+  private manifest(canvasId: string): CanvasManifest {
     const manifest = this.heads.find(canvasId);
     if (!manifest) throw canvasError('not_found', 'That canvas is not available.');
-    return manifest.revisions;
-  }
-
-  private requireDesign(canvasId: string, designId: string): void {
-    if (!this.workspace.snapshot(canvasId).frames.some((frame) => frame.designId === designId))
-      throw canvasError(
-        'not_found',
-        'That design was removed. Restore it to the board before using its revision history.',
-      );
+    return manifest;
   }
 
   private requireRevision(canvasId: string, designId: string, revisionId: string): void {
-    this.requireDesign(canvasId, designId);
+    const manifest = this.manifest(canvasId);
+    requireDesign(manifest, designId);
     if (
-      !this.records(canvasId).some(
+      !manifest.revisions.some(
         (record) => record.designId === designId && record.revisionId === revisionId,
       )
     )
@@ -140,18 +135,16 @@ export class CanvasRevisionHistory {
 /** Restore is a normal source commit, including scope validation, CAS and retry receipts. */
 export async function restoreRevision(
   workspace: CanvasWorkspace,
-  scope: CanvasScope,
+  scope: Extract<CanvasScope, { origin: 'user' }>,
   input: RestoreRevisionInput,
 ): Promise<WriteReceipt> {
   const canvasId = scope.canvasId;
-  if (canvasId === null)
-    throw canvasError('not_found', 'Attach this chat to the canvas before restoring a revision.');
-  const target = workspace.buildTarget(canvasId, input.designId);
-  if (!target)
-    throw canvasError('not_found', 'That design was removed. Restore it to the board first.');
   const mutation = { kind: 'restore', input } as const;
   const recorded = workspace.recordedSourceMutation(scope, input.designId, mutation);
   if (recorded) return recorded;
+  const target = workspace.buildTarget(canvasId, input.designId);
+  if (!target)
+    throw canvasError('not_found', 'That frame is not on this canvas. Use Undo if it was removed.');
   const selected = await workspace.history.readRevisionMetadata(
     canvasId,
     input.designId,
@@ -179,7 +172,7 @@ export async function restoreRevision(
       deletedPaths: Object.keys(current).filter((path) => !Object.hasOwn(source, path)),
       designSystem: selected.designSystem,
     },
-    mutation,
+    { mutation },
   );
 }
 

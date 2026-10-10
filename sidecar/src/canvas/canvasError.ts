@@ -1,7 +1,10 @@
 import type { CanvasError, CanvasErrorCode } from './protocol.js';
+import type { FrameRect } from './schema.js';
 
 /** What every expired turn lease answers, wherever it is checked (spec §8). */
 export const EXPIRED_TURN = 'That request belongs to a turn that already ended.';
+export const UNKNOWN_SCOPE =
+  'That scopeId is unknown for this chat. Call canvas_read with no arguments first and use its returned scopeId for this turn. Never invent a scopeId.';
 
 /**
  * The only failure Canvas storage and the workspace throw. The message reaches
@@ -12,14 +15,19 @@ export class CanvasCommandError extends Error implements CanvasError {
   constructor(
     readonly code: CanvasErrorCode,
     message: string,
+    readonly currentRect?: FrameRect,
   ) {
     super(message);
     this.name = 'CanvasCommandError';
   }
 }
 
-export function canvasError(code: CanvasErrorCode, message: string): CanvasCommandError {
-  return new CanvasCommandError(code, message);
+export function canvasError(
+  code: CanvasErrorCode,
+  message: string,
+  currentRect?: FrameRect,
+): CanvasCommandError {
+  return new CanvasCommandError(code, message, currentRect);
 }
 
 /** The cause goes to the sidecar log; the caller learns only what to retry. */

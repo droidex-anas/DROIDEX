@@ -46,6 +46,12 @@ work in a running app.
 **Keep terminals and files next to the chat.** Terminals, a file browser, and
 previews live in the same window as the conversation that needs them.
 
+**Design working interfaces on a canvas.** Switch to **Design** and describe
+what you want. Droid, Claude Code, and Codex work as design engineers, creating
+named interactive frames with the selected design system. Your project stays
+available as context; generated interfaces belong on the canvas unless you ask
+for repository changes.
+
 **Stay on top of pull requests.** For GitHub repositories, DROIDEX shows pull
 requests, checks, and review comments inside the app. It links chats to their
 pull requests automatically and lets you group the sidebar by pull request.

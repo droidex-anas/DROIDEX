@@ -71,6 +71,7 @@ import {
   type MainView,
   type MissionRole,
   type ModelSelectorStyle,
+  type ProductMode,
   type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
@@ -238,6 +239,18 @@ export interface QueuedPrompt {
   design?: QueuedDesignContext;
 }
 
+/** What a design draft's next prompt owes Canvas (spec §4). */
+export interface CanvasDraft {
+  /** Null asks for a new canvas; otherwise the chat joins that one. */
+  canvasId: string | null;
+}
+
+/** The pane to open once this submitted Design create names its chat. */
+export interface CanvasChatRequest {
+  /** Null until `session.created` names the chat this request made. */
+  appSessionId: string | null;
+}
+
 export interface AppState {
   // Connection
   connection: 'idle' | 'connecting' | 'connected' | 'error';
@@ -329,6 +342,25 @@ export interface AppState {
   // UI flags
   rightPanelOpen: boolean;
   utilityPanels: Record<string, UtilityPanelState>;
+  // The canvas each chat is attached to, as the sidecar last reported it. A
+  // missing entry means nobody has asked yet. The manifest owns the attachment,
+  // so this is only what keeps a reopened Canvas pane from blinking through its
+  // empty state; everything else about a canvas is feature-local.
+  canvasAttachments: Record<string, string | null>;
+  // The canvas the design draft on screen will attach its chat to; `canvasId`
+  // null asks for a new one. This is unsent intent: leaving the draft or
+  // returning to Chat abandons it. The Design home declares it on every entry
+  // path, so a restored window or a new tab promises a canvas too (spec §4).
+  canvasDraft: CanvasDraft | null;
+  // The pane requests a Design send has handed to a create request, keyed
+  // by that request's `clientRef`. `appSessionId` is null until `session.created`
+  // names the chat. Navigation and later drafts never touch one: only its own
+  // settlement, a create that failed, or deleting its chat discharges it.
+  canvasChatRequests: Record<string, CanvasChatRequest>;
+  // The chat Chat returns to after a visit to Design, captured on the way in so
+  // the design draft cannot lose it (spec §4). Runtime-only: a restarted window
+  // in Design has no chat to go back to.
+  chatModeAppSessionId: string | null;
   // The Review diff tab: a wide right-side pane, opened from the Context panel's
   // changes button. Scope + view mode persist; open state is per-session — we
   // track the session it was opened for so switching chats doesn't carry it over.
@@ -350,6 +382,9 @@ export interface AppState {
   // per-row effort dots, or the card that drills into the effort slider.
   modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
+  // Which product the sidebar is in: ordinary Chat, or Design (the canvases
+  // list and the Design home). A sidebar preference, not a session mode.
+  productMode: ProductMode;
   mainView: MainView;
   // Header tabs. The active tab's page, or its focused tile, is the live one
   // above (mainView, activeAppSessionId, draftChat); see features/tabs/tabStrip.
@@ -516,6 +551,8 @@ export type Action =
       // The hold whose place the compose takes, read here rather than by the
       // caller so a tile closed in the meantime is already forgotten.
       originHoldId: string | null;
+      // The draft captured by this send, before asynchronous preparation.
+      canvas?: CanvasDraft;
     }
   // A send holds the place it was made from until its pending compose takes it.
   | { type: 'HOLD_COMPOSE_ORIGIN'; holdId: string }
@@ -660,12 +697,16 @@ export type Action =
   | {
       type: 'OPEN_UTILITY_TOOL';
       tool: UtilityTool;
+      // The chat the pane belongs to, when it is not the one on screen.
+      appSessionId?: string;
       tabId?: string;
       terminalId?: string;
       cwd?: string;
       filePath?: string;
       agentId?: string;
       threadId?: string;
+      canvasId?: string | null;
+      frameId?: string | null;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -681,6 +722,13 @@ export type Action =
       threadId?: string | null;
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
+  | { type: 'SET_CANVAS_ATTACHMENT'; appSessionId: string; canvasId: string | null }
+  // The Design home declaring what it will ask for, on whichever entry path the
+  // user reached it by. The switcher's own draft is the ordinary START_CHAT.
+  | { type: 'SET_CANVAS_DRAFT'; canvasId: string | null }
+  // The design bootstrap finished with this chat, either way; it must not run again.
+  | { type: 'CANVAS_CHAT_SETTLED'; appSessionId: string }
+  | { type: 'SET_PRODUCT_MODE'; mode: ProductMode }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_SCOPE'; scope: DiffScope }
   | OpenReviewAtAction
@@ -715,6 +763,10 @@ export type Action =
       executionMode: 'worktree' | 'local';
       branch?: string;
       project?: true;
+      // A design draft: the session this chat creates is attached to this
+      // canvas, or to a new one when `canvasId` is null. Absent for an
+      // ordinary New chat, which starts with no canvas at all (spec §4).
+      canvas?: { canvasId: string | null };
     }
   | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
   | { type: 'CLEAR_COMPOSER_SEED' }
@@ -848,7 +900,12 @@ export const initialState: AppState = {
   agentProcesses: {},
   rightPanelOpen: persistedUiState.rightPanelOpen ?? true,
   utilityPanels: persistedUiState.utilityPanels ?? {},
+  canvasAttachments: {},
+  canvasDraft: null,
+  canvasChatRequests: {},
+  chatModeAppSessionId: null,
   sidebarCollapsed: persistedUiState.sidebarCollapsed ?? false,
+  productMode: persistedUiState.productMode ?? 'chat',
   mainView: persistedUiState.mainView ?? 'session',
   tabStrip: restoredTabStrip,
   automationEditorRequest: null,
@@ -1041,7 +1098,56 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
   const close = closeLiveChat(state, appSessionId);
   const closed = close ? reducer(state, close) : state;
   const tabStrip = withoutChats(closed.tabStrip, (id) => id === appSessionId);
-  return tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
+  const dropped = tabStrip === closed.tabStrip ? closed : { ...closed, tabStrip };
+  // Deleting a chat removes its attachment, not its designs (spec §4). The
+  // sidecar owns that removal; this only drops the cache that pointed at it,
+  // any attachment still on its way to that chat, and its claim on Chat.
+  const canvasChatRequests = withoutCanvasRequests(
+    dropped.canvasChatRequests,
+    (request) => request.appSessionId === appSessionId,
+  );
+  const chatModeAppSessionId =
+    dropped.chatModeAppSessionId === appSessionId ? null : dropped.chatModeAppSessionId;
+  const canvasAttachments =
+    appSessionId in dropped.canvasAttachments
+      ? Object.fromEntries(
+          Object.entries(dropped.canvasAttachments).filter(([id]) => id !== appSessionId),
+        )
+      : dropped.canvasAttachments;
+  if (
+    canvasChatRequests === dropped.canvasChatRequests &&
+    chatModeAppSessionId === dropped.chatModeAppSessionId &&
+    canvasAttachments === dropped.canvasAttachments
+  )
+    return dropped;
+  return { ...dropped, canvasAttachments, canvasChatRequests, chatModeAppSessionId };
+}
+
+/**
+ * Tells one pane-opening request which chat its create made. Only that
+ * request's entry moves; every other one keeps waiting for its own reply.
+ */
+function namedCanvasChatRequest(
+  requests: Record<string, CanvasChatRequest>,
+  clientRef: string,
+  appSessionId: string,
+): Record<string, CanvasChatRequest> {
+  if (!(clientRef in requests)) return requests;
+  const request = requests[clientRef];
+  if (request.appSessionId !== null) return requests;
+  return { ...requests, [clientRef]: { appSessionId } };
+}
+
+/** The pane requests left once the ones this names are settled. */
+function withoutCanvasRequests(
+  requests: Record<string, CanvasChatRequest>,
+  settled: (request: CanvasChatRequest, clientRef: string) => boolean,
+): Record<string, CanvasChatRequest> {
+  const remaining = Object.entries(requests).filter(
+    ([clientRef, request]) => !settled(request, clientRef),
+  );
+  if (remaining.length === Object.keys(requests).length) return requests;
+  return Object.fromEntries(remaining);
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -1155,6 +1261,15 @@ export function reducer(state: AppState, action: Action): AppState {
         lastCreatedSessionRequest: shouldActivate
           ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
           : state.lastCreatedSessionRequest,
+        // This create's own pane request, if it had one, now knows the chat
+        // it opens on. Another create in flight keeps its own target.
+        canvasChatRequests: namedCanvasChatRequest(
+          state.canvasChatRequests,
+          action.clientRef,
+          action.session.appSessionId,
+        ),
+        // The draft became a chat, so nothing is owed a canvas by it any more.
+        canvasDraft: shouldActivate ? null : state.canvasDraft,
         // A foreground chat just created by this renderer is already seen. A
         // chat this client just learned of starts seen at its creation, so its
         // first reply reads as unread.
@@ -1331,6 +1446,14 @@ export function reducer(state: AppState, action: Action): AppState {
                 : (state.heldComposeOrigins[action.originHoldId] ?? null),
           },
         },
+        // Only this send consumes its draft; navigation may have started another.
+        canvasDraft: state.canvasDraft === action.canvas ? null : state.canvasDraft,
+        canvasChatRequests: action.canvas
+          ? {
+              ...state.canvasChatRequests,
+              [action.clientRef]: { appSessionId: null },
+            }
+          : state.canvasChatRequests,
       };
     case 'HOLD_COMPOSE_ORIGIN':
       return {
@@ -1765,6 +1888,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SESSION_CREATE_FAILED':
       return {
         ...state,
+        // No chat was made, so the canvas this prompt asked for is cancelled.
+        canvasChatRequests: withoutCanvasRequests(
+          state.canvasChatRequests,
+          (_request, clientRef) => clientRef === action.clientRef,
+        ),
         pendingCompose: withoutKey(state.pendingCompose, action.clientRef),
         pendingForks: withoutKey(state.pendingForks, action.clientRef),
         sideChats: settleSideChatStart(state.sideChats, action.clientRef, null),
@@ -1982,6 +2110,10 @@ export function reducer(state: AppState, action: Action): AppState {
           mainView: 'session',
           automationEditorRequest: null,
           tabStrip,
+          // Leaving the draft abandons the canvas it was going to make. One a
+          // send already handed to a create is an obligation, not intent, so it
+          // stays until its own chat settles it.
+          canvasDraft: null,
         },
         now,
       );
@@ -2010,8 +2142,14 @@ export function reducer(state: AppState, action: Action): AppState {
         : { ...state, rightPanelOpen: false };
 
     case 'OPEN_UTILITY_TOOL': {
-      const appSessionId = state.activeAppSessionId;
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
       if (!appSessionId) return state;
+      if (
+        action.tool === 'canvas' &&
+        state.listConfirmedSessionIds !== null &&
+        !(appSessionId in state.sessions)
+      )
+        return state;
       const panel = openUtilityTool(
         state.utilityPanels[appSessionId],
         action.tool,
@@ -2022,6 +2160,8 @@ export function reducer(state: AppState, action: Action): AppState {
           filePath: action.filePath,
           agentId: action.agentId,
           threadId: action.threadId,
+          canvasId: action.canvasId,
+          frameId: action.frameId,
         },
       );
       return {
@@ -2103,6 +2243,59 @@ export function reducer(state: AppState, action: Action): AppState {
         rightPanelOpen: action.open ? false : state.rightPanelOpen,
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
       };
+    }
+
+    case 'SET_CANVAS_ATTACHMENT': {
+      const { appSessionId, canvasId } = action;
+      if (state.listConfirmedSessionIds !== null && !(appSessionId in state.sessions)) return state;
+      if (state.canvasAttachments[appSessionId] === canvasId) return state;
+      return {
+        ...state,
+        canvasAttachments: { ...state.canvasAttachments, [appSessionId]: canvasId },
+      };
+    }
+
+    case 'SET_CANVAS_DRAFT':
+      if (state.canvasDraft?.canvasId === action.canvasId) return state;
+      return { ...state, canvasDraft: { canvasId: action.canvasId } };
+
+    case 'CANVAS_CHAT_SETTLED': {
+      const canvasChatRequests = withoutCanvasRequests(
+        state.canvasChatRequests,
+        (request) => request.appSessionId === action.appSessionId,
+      );
+      if (canvasChatRequests === state.canvasChatRequests) return state;
+      return { ...state, canvasChatRequests };
+    }
+
+    case 'SET_PRODUCT_MODE': {
+      if (state.productMode === action.mode) return state;
+      if (action.mode === 'design') {
+        const session = state.activeAppSessionId
+          ? state.sessions[state.activeAppSessionId]
+          : undefined;
+        const cwd = session?.cwd ?? state.draftChat?.cwd ?? '';
+        // Design keeps the selected project as context, without cutting a new
+        // worktree. Chat remembers the conversation it was left on.
+        return reducer(
+          { ...state, productMode: 'design', chatModeAppSessionId: state.activeAppSessionId },
+          { type: 'START_CHAT', cwd, executionMode: 'local' },
+        );
+      }
+      // Leaving Design abandons a canvas no send has taken yet, so the next
+      // ordinary message cannot mint one. Obligations already handed to a
+      // create still have to land.
+      const chat: AppState = {
+        ...state,
+        productMode: 'chat',
+        canvasDraft: null,
+        chatModeAppSessionId: null,
+      };
+      const target = state.chatModeAppSessionId;
+      // Chat restores the chat it was left on (spec §4); with none, it opens on
+      // the draft it would have shown anyway.
+      if (target === null || !(target in state.sessions)) return chat;
+      return reducer(chat, { type: 'SET_ACTIVE_SESSION', id: target });
     }
 
     case 'SET_REVIEW_OPEN':
@@ -2353,6 +2546,7 @@ export function reducer(state: AppState, action: Action): AppState {
         mainView: 'session',
         automationEditorRequest: null,
         tabStrip: showNewChat(state),
+        canvasDraft: action.canvas ? { canvasId: action.canvas.canvasId } : null,
       };
     }
 

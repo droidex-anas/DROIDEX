@@ -3,13 +3,18 @@
 // labeled surface, and a failed build shows its diagnostics above the last
 // revision that still works.
 //
-// Task 5 owns the board, the live-preview slots and the real Retry; this
-// component owns one frame and reports only bounded preview facts upward.
+// This component owns one guest and reports only bounded preview facts upward.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { canvasPreviewUrl, terminateCanvasPreviewGuest } from '../../lib/desktop';
+import {
+  bindCanvasPreviewGuest,
+  canvasPreviewUrl,
+  terminateCanvasPreviewGuest,
+} from '../../lib/desktop';
 import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
+import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
+import { useCanvasMotion } from './useCanvasMotion';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame, PreviewArtifact } from './protocol';
 
 export interface DesignPreviewProps {
@@ -43,9 +48,11 @@ export function DesignPreview({ canvasId, frame, readArtifact, onResize }: Desig
     return <PreviewPlacard label={missingLabel(read.state, frame.build)} diagnostics={failures} />;
   return (
     <PreviewGuestFrame
-      key={`${frame.designId}:${read.artifact.artifactId}`}
+      key={`${frame.designId}:${read.artifact.artifactId}:${String(frame.build.generation)}`}
+      canvasId={canvasId}
       designId={frame.designId}
       revisionId={revisionId}
+      generation={frame.build.generation}
       // Spec §5: a failed revision labels the older working preview it is showing.
       showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
       html={read.artifact.html}
@@ -114,21 +121,26 @@ function useArtifact(
  * element API, and removing it on unmount is what releases the guest's processes.
  */
 export function PreviewGuestFrame({
+  canvasId,
   designId,
   revisionId,
+  generation,
   showingRevisionId,
   html,
   diagnostics,
   onResize,
 }: {
+  canvasId: string;
   designId: string;
   revisionId: string;
+  generation: number;
   /** Named when this is an older working revision rather than the frame's own. */
   showingRevisionId: string | null;
   html: string;
   diagnostics: CanvasDiagnostic[];
   onResize: DesignPreviewProps['onResize'];
 }) {
+  const motion = useCanvasMotion();
   const host = useRef<HTMLDivElement>(null);
   const resized = useRef(onResize);
   resized.current = onResize;
@@ -142,44 +154,145 @@ export function PreviewGuestFrame({
     const guest = createGuestElement(url);
     let run: PreviewRun | null = null;
     let mounted = true;
+    let releaseCapture: (() => void) | null = null;
+    let captureSize = '';
+    const mountGeneration = (previewMounts += 1);
+    const thumbnailCapture = new AbortController();
+    let thumbnailTimer: ReturnType<typeof setTimeout> | null = null;
+    const updateCapture = () => {
+      const width = guest.offsetWidth;
+      const height = guest.offsetHeight;
+      const scaleFactor = window.devicePixelRatio;
+      const size = `${String(width)}:${String(height)}:${String(scaleFactor)}`;
+      if (captureSize === size) return;
+      captureSize = size;
+      if (thumbnailTimer) clearTimeout(thumbnailTimer);
+      releaseCapture?.();
+      releaseCapture = null;
+      if (width < 1 || height < 1) return;
+      let guestId: number;
+      try {
+        guestId = guest.getWebContentsId();
+      } catch {
+        return;
+      }
+      if (!Number.isSafeInteger(guestId) || guestId < 1) return;
+      releaseCapture = registerCanvasPreview(
+        canvasId,
+        { designId, revisionId },
+        {
+          guestId,
+          generation: mountGeneration,
+          width,
+          height,
+          scaleFactor,
+        },
+      );
+      thumbnailTimer = setTimeout(() => {
+        thumbnailTimer = null;
+        void captureCanvasImage(canvasId, { designId, revisionId }, thumbnailCapture.signal).catch(
+          (error: unknown) => {
+            if (!(error instanceof CanvasImageError))
+              console.error('A Canvas thumbnail could not be captured:', error);
+          },
+        );
+      }, 150);
+    };
+    const sizeObserver = new ResizeObserver(updateCapture);
+
+    // Main binds the guest to this canvas before a design runs in it, so the
+    // design can only ever read its own canvas's assets. A guest main refuses
+    // to bind never gets a design at all.
+    async function bindAndStart() {
+      const guestId = guest.getWebContentsId();
+      let bound = false;
+      try {
+        bound = await bindCanvasPreviewGuest(guestId, canvasId);
+      } catch (error) {
+        console.error('A Canvas preview could not be bound to its canvas:', error);
+      }
+      if (!mounted) return;
+      if (!bound) {
+        setPhase('guest_gone');
+        void terminateCanvasPreviewGuest(guestId);
+        return;
+      }
+      run = startPreview({
+        guest,
+        designId,
+        revisionId,
+        generation: mountGeneration,
+        html,
+        terminate: terminateCanvasPreviewGuest,
+        observer: {
+          onReady: () => {
+            setPhase('ready');
+            updateCapture();
+            sizeObserver.observe(guest);
+          },
+          onResize: (size) => resized.current?.(designId, size),
+          onDiagnostics: (entries) => {
+            setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+          },
+          onLost: (reason) => {
+            thumbnailCapture.abort();
+            if (thumbnailTimer) clearTimeout(thumbnailTimer);
+            releaseCapture?.();
+            releaseCapture = null;
+            sizeObserver.disconnect();
+            setPhase(reason);
+          },
+        },
+      });
+    }
+
     guest.addEventListener(
       'dom-ready',
       () => {
         if (!mounted) return;
-        run = startPreview({
-          guest,
-          designId,
-          revisionId,
-          generation: (previewMounts += 1),
-          html,
-          terminate: terminateCanvasPreviewGuest,
-          observer: {
-            onReady: () => {
-              setPhase('ready');
-            },
-            onResize: (size) => resized.current?.(designId, size),
-            onDiagnostics: (entries) => {
-              setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
-            },
-            onLost: setPhase,
-          },
-        });
+        void bindAndStart();
       },
       { once: true },
     );
     container.append(guest);
     return () => {
       mounted = false;
+      thumbnailCapture.abort();
+      if (thumbnailTimer) clearTimeout(thumbnailTimer);
+      releaseCapture?.();
+      sizeObserver.disconnect();
       run?.stop();
       guest.remove();
     };
-  }, [designId, revisionId, html]);
+  }, [canvasId, designId, revisionId, generation, html]);
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
+  const isReady = phase === 'ready';
+  const transition =
+    isReady && motion.readyMs > 0
+      ? `opacity ${String(motion.readyMs)}ms ${motion.easeCss}`
+      : undefined;
   return (
-    <div className="flex h-full w-full flex-col gap-2">
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-droid-bg">
-        <div ref={host} className="h-full w-full" hidden={lost !== null} />
+    <div data-preview-phase={phase} className="flex h-full w-full flex-col gap-2">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl bg-droid-bg">
+        <div
+          ref={host}
+          className="h-full w-full"
+          hidden={lost !== null}
+          style={{
+            opacity: isReady ? 1 : 0,
+            transition,
+          }}
+        />
+        {lost === null && (
+          <div
+            aria-hidden={isReady}
+            className="pointer-events-none absolute inset-0"
+            style={{ opacity: isReady ? 0 : 1, transition }}
+          >
+            <PreviewPlacard label="Loading this preview…" />
+          </div>
+        )}
         {lost ? <PreviewPlacard label={lostLabel(lost)} /> : null}
       </div>
       {showingRevisionId ? (

@@ -115,6 +115,10 @@ import {
   LazyAutomationsRoute,
   LazyProjectsRoute,
   LazyBrowserFocusWorkspace,
+  LazyCanvasChatBootstrap,
+  LazyCanvasHeader,
+  LazyCanvasWorkspace,
+  LazyDesignHome,
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
@@ -151,6 +155,16 @@ function ContextListIcon({ className }: { className?: string }) {
 }
 
 const UTILITY_PANE_MIN = 420;
+// Spec §4: the canvas workspace's docked chat column. Narrower than the pane's
+// own minimum, because here the board takes the rest of the row.
+const DESIGN_CHAT_COLUMN = 360;
+
+/** How wide an expanded pane is: the whole row, or the row beside the board's
+ * chat column. */
+function expandedPaneWidth(contentRowWidth: number, besideChatColumn: boolean): number {
+  if (!besideChatColumn) return contentRowWidth;
+  return Math.max(contentRowWidth - DESIGN_CHAT_COLUMN, Math.round(contentRowWidth / 2));
+}
 const UTILITY_PANE_MAX = 980;
 const UTILITY_PANE_DEFAULT = 560;
 const UTILITY_PANE_CONTENT_RESERVE = 520;
@@ -194,6 +208,9 @@ export default function App() {
         : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
+      productMode: current.productMode,
+      // A design draft's canvas lands only once its chat exists.
+      canvasChatRequests: current.canvasChatRequests,
       tabStripShown: showsTabStrip(current),
       theme: current.theme,
       utilityPanels: current.utilityPanels,
@@ -227,6 +244,9 @@ export default function App() {
   const hasProjects = useStoreSelector((current) => current.projects.length > 0);
   useThreadsPaneAutoOpen();
   const activeSession = state.activeSession;
+  const canvasAttachment = useStoreSelector((current) =>
+    activeSession ? (current.canvasAttachments[activeSession.appSessionId] ?? null) : null,
+  );
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);
   const documentVisible = useDocumentVisible();
@@ -263,6 +283,10 @@ export default function App() {
       state.mainView === 'projects');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
+  // Design mode shows the Design home until one of its chats is open; from
+  // then on the chat and its board are the workspace (spec §4).
+  const designHomeShown =
+    !embedded && state.productMode === 'design' && !activeSession && !showWizard;
   // An expanded browser or agent covers the full content row; the utility pane
   // already stays out of the full-content routes, so the expansion follows it.
   const paneExpanded =
@@ -270,6 +294,16 @@ export default function App() {
     showUtilityPane &&
     isExpandableTool(activeUtilityTab?.tool) &&
     expandedPaneAppSessionId === activeSession.appSessionId;
+  // The expanded board is the canvas workspace, not a full-content takeover:
+  // the chat column stays beside it at its docked width so the transcript and
+  // composer never move (spec §4). Every other expandable tool still covers
+  // the row and leaves the chat behind it inert.
+  const canvasExpanded = paneExpanded && activeUtilityTab?.tool === 'canvas';
+  const chatObscured = paneExpanded && !canvasExpanded;
+  // Only a request whose create has replied has a canvas pane to open.
+  const canvasRequests = Object.entries(state.canvasChatRequests).filter(
+    (entry): entry is [string, { appSessionId: string }] => entry[1].appSessionId !== null,
+  );
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
   // been sent (the first transcript is seeded from the opening prompt).
@@ -304,6 +338,13 @@ export default function App() {
       for (const cleanup of cleanups) cleanup();
     };
   }, []);
+  // Stable so the Canvas pane's attachment read does not re-run every render.
+  const setCanvasAttachment = useCallback(
+    (appSessionId: string, canvasId: string | null) => {
+      dispatch({ type: 'SET_CANVAS_ATTACHMENT', appSessionId, canvasId });
+    },
+    [dispatch],
+  );
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
 
@@ -845,9 +886,10 @@ export default function App() {
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
-              aria-hidden={paneExpanded}
+              aria-hidden={chatObscured}
+              style={canvasExpanded ? { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` } : undefined}
               className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
-                paneExpanded ? 'pointer-events-none' : ''
+                chatObscured ? 'pointer-events-none' : ''
               }`}
             >
               {!embedded && state.mainView === 'projects' ? (
@@ -865,6 +907,15 @@ export default function App() {
                     workspaceScopesReady={workspaceScopesReady}
                   />
                 </Suspense>
+              ) : designHomeShown ? (
+                <>
+                  {!state.tabStripShown && (
+                    <div data-electron-drag-region className="h-9 shrink-0" />
+                  )}
+                  <Suspense fallback={null}>
+                    <LazyDesignHome />
+                  </Suspense>
+                </>
               ) : isMissionControlView ? (
                 <motion.div
                   key="mission-control"
@@ -881,7 +932,7 @@ export default function App() {
                 <>
                   <ChatTiles
                     rightInset={rightPanelVisible}
-                    isObscured={paneExpanded}
+                    isObscured={chatObscured}
                     besidePane={showUtilityPane}
                   />
                   {activeSession && state.sideChatPlacement === 'floating' ? (
@@ -899,7 +950,10 @@ export default function App() {
                   key="utility-pane"
                   initial={{ width: 0, opacity: 0 }}
                   animate={{
-                    width: paneExpanded && contentRowWidth > 0 ? contentRowWidth : utilityPaneWidth,
+                    width:
+                      paneExpanded && contentRowWidth > 0
+                        ? expandedPaneWidth(contentRowWidth, canvasExpanded)
+                        : utilityPaneWidth,
                     opacity: 1,
                   }}
                   exit={{ width: 0, opacity: 0 }}
@@ -909,6 +963,20 @@ export default function App() {
                   <UtilityPane
                     panel={utilityPanel}
                     expanded={paneExpanded}
+                    {...(paneExpanded && activeUtilityTab?.tool === 'canvas'
+                      ? {
+                          header: (
+                            <Suspense fallback={<div className="min-w-0 flex-1" />}>
+                              <LazyCanvasHeader
+                                canvasId={activeUtilityTab.canvasId ?? canvasAttachment}
+                                onDock={() => {
+                                  setExpandedPaneAppSessionId(null);
+                                }}
+                              />
+                            </Suspense>
+                          ),
+                        }
+                      : {})}
                     width={utilityPaneWidth}
                     minWidth={UTILITY_PANE_MIN}
                     maxWidth={utilityPaneMax}
@@ -1010,6 +1078,25 @@ export default function App() {
                         return (
                           <Suspense fallback={utilityToolFallback('threads')}>
                             <LazyThreadsWorkspace tab={tab} />
+                          </Suspense>
+                        );
+                      }
+                      if (tab.tool === 'canvas') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('canvas')}>
+                            <LazyCanvasWorkspace
+                              appSessionId={activeSession.appSessionId}
+                              canvasId={canvasAttachment}
+                              namedCanvasId={tab.canvasId ?? undefined}
+                              frameId={tab.frameId ?? undefined}
+                              isExpanded={paneExpanded}
+                              onToggleExpanded={() => {
+                                setExpandedPaneAppSessionId(
+                                  paneExpanded ? null : activeSession.appSessionId,
+                                );
+                              }}
+                              onAttachmentChange={setCanvasAttachment}
+                            />
                           </Suspense>
                         );
                       }
@@ -1147,6 +1234,15 @@ export default function App() {
       <Suspense fallback={null}>
         <LazySpecWikiModal />
       </Suspense>
+      {/* Each design draft whose chat now exists: the canvas it was started
+          for is already committed and the board opens beside it (spec §4). Two drafts
+          sent in a row each keep their own canvas. */}
+      {!embedded &&
+        canvasRequests.map(([clientRef, request]) => (
+          <Suspense key={clientRef} fallback={null}>
+            <LazyCanvasChatBootstrap appSessionId={request.appSessionId} />
+          </Suspense>
+        ))}
       {/* Watches project threads for a block that needs the user. Nothing to
           watch until a project exists, so it loads with the first one. */}
       {hasProjects && !embedded && !showWizard && (

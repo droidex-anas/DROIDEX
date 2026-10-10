@@ -111,6 +111,12 @@ export function createSessionManagerTestContext(
     agentProcessHost?: SessionManagerDependencies['agentProcessHost'];
     onEvent?: (event: Protocol.ServerEvent) => void;
     onSessionAvailable?: (appSessionId: string) => void;
+    canvasTurns?: NonNullable<ConstructorParameters<typeof SessionManager>[1]>['canvasTurns'];
+    beforeFirstTurn?: NonNullable<
+      ConstructorParameters<typeof SessionManager>[1]
+    >['beforeFirstTurn'];
+    configuredMcpServers?: McpServerConfig[];
+    createLocalMcpResource?: SessionManagerDependencies['createLocalMcpResource'];
   } = {},
 ): SessionManagerTestContext {
   const calls: RecordedCall[] = [];
@@ -129,10 +135,11 @@ export function createSessionManagerTestContext(
     runtime,
     history,
     browsers,
-    createLocalMcpResource: () => new FakeLocalMcpResource(calls),
+    createLocalMcpResource:
+      options.createLocalMcpResource ?? (() => new FakeLocalMcpResource(calls)),
     createAutomationMcpResource: () => new FakeAutomationMcpResource(),
     createSessionsMcpResource: () => new FakeInAppMcpResource(SESSIONS_MCP_CONFIG),
-    loadConfiguredMcpServers: () => [CLI_MCP_CONFIG],
+    loadConfiguredMcpServers: () => options.configuredMcpServers ?? [CLI_MCP_CONFIG],
     mcpConfiguration: {
       add: (server, cwd) => {
         calls.push({ target: 'runtime', method: 'mcp.addConfigured', args: [server, cwd] });
@@ -187,6 +194,8 @@ export function createSessionManagerTestContext(
       dependencies,
       initialModels: INITIAL_MODELS,
       providerProbes: NO_PROVIDER_PROBES,
+      ...(options.canvasTurns ? { canvasTurns: options.canvasTurns } : {}),
+      ...(options.beforeFirstTurn ? { beforeFirstTurn: options.beforeFirstTurn } : {}),
       ...(options.onSessionAvailable ? { onSessionAvailable: options.onSessionAvailable } : {}),
     });
   } catch (error) {

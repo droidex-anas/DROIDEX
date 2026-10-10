@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DroidRuntime, createInitializeSessionParams } from './DroidRuntime.js';
@@ -72,6 +72,54 @@ test('names the owning organization when Droid refuses a session file it has on 
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('native guidance belongs to exec launch arguments on create and resume, never session requests', async (t) => {
+  if (process.platform === 'win32') return t.skip('the fake daemon is a shebang script');
+  const dir = mkdtempSync(join(tmpdir(), 'droid-runtime-guidance-'));
+  const daemon = join(dir, 'droid');
+  const capture = join(dir, 'requests.jsonl');
+  const previousDroidPath = process.env.DROID_PATH;
+  const guidance = 'Internal Design context for this process only.';
+  writeFileSync(
+    daemon,
+    `#!${process.execPath}\n` +
+      SESSION_NOT_FOUND_DAEMON.replace(
+        'const request = JSON.parse(line);',
+        `const request = JSON.parse(line);
+require('node:fs').appendFileSync(${JSON.stringify(capture)}, JSON.stringify({
+  args: process.argv.slice(2), request,
+}) + '\\n');`,
+      ),
+  );
+  chmodSync(daemon, 0o755);
+  process.env.DROID_PATH = daemon;
+  try {
+    const runtime = new DroidRuntime();
+    await assert.rejects(
+      runtime.createSession({
+        cwd: dir,
+        interactionMode: 'auto',
+        systemPromptAppend: guidance,
+      }),
+      /Session not found/,
+    );
+    await assert.rejects(
+      runtime.loadSession('design-session', { cwd: dir, systemPromptAppend: guidance }),
+      /Session not found/,
+    );
+    const captured = readFileSync(capture, 'utf8').trim().split('\n');
+    assert.equal(captured.length, 2);
+    for (const raw of captured) {
+      const entry = JSON.parse(raw) as { args: string[]; request: Record<string, unknown> };
+      assert.deepEqual(entry.args.slice(0, 3), ['exec', '--append-system-prompt', guidance]);
+      assert.equal(JSON.stringify(entry.request).includes(guidance), false);
+    }
+  } finally {
+    if (previousDroidPath === undefined) delete process.env.DROID_PATH;
+    else process.env.DROID_PATH = previousDroidPath;
     rmSync(dir, { recursive: true, force: true });
   }
 });

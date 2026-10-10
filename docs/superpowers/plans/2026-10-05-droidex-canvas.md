@@ -976,12 +976,13 @@ Also require the owning lifecycle to remain active after each await; this predic
 
 - [x] `canvas/04a-canvas-turn-scope`: Implement `canvasTurnContext.ts` mint/check/revoke at the §6 lifecycle seams and carry context beside prompt text through send, queue, send-now and steer.
   Done: Tests preserve pinned contexts and reject expired or replaced-provider scopes after awaits.
-- [ ] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
+- [x] `canvas/04b-canvas-mcp-server`: Implement the six tool schemas/descriptions, HTTP resource for Droid/Claude, Codex `inAppServers`, Claude PreToolUse read binding, collision checks and cleanup.
   Done: Extend `codexTools.test.ts`; stale calls, reserved-name collisions and startup failure clean up correctly.
-- [ ] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
+- [x] `canvas/04c-canvas-transcript-projection`: Implement `canvasToolPresentation.ts` and wire its projector through event flow, timeline, native parsers, search and export.
   Done: All three provider canaries stay absent from app-owned surfaces while matching user text remains visible.
-- [ ] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
+- [x] `canvas/04d-harness-smoke`: Run live discovery/create/write/inspect/resume with cheap models on each harness and retain conformance fixtures.
   Done: Each provider records live scope/routing results; unavailable account access remains explicitly unverified.
+  Result: Droid, Claude Code and Codex each verified with real model turns through the production SessionManager path (13/13 conformance checks, identity stable across resume); per-provider fixtures in `reports/canvas-04d-live-smoke/`, summarized into the 12c conformance table.
 
 **Files:** Create `sidecar/src/canvas/{canvasMcpServer.ts,canvasTurnContext.ts,canvasToolPresentation.ts,canvasMcpServer.test.ts,canvasTurnContext.test.ts,canvasToolPresentation.test.ts}`. Modify `sidecar/src/{SessionManager.ts,SessionLifecycle.ts,SessionEventFlow.ts,SessionTimeline.ts,timelineTranscripts.ts,sessionTranscriptParser.ts,sessionSearch.ts,protocol.ts}`, `sidecar/src/providers/{session.ts,primaryTurn.ts,ProviderTranscriptFile.ts}`, `sidecar/src/providers/codex/{CodexProvider.ts,codexSession.ts,appServer.ts}`, `src/{types/bridge.ts,lib/promptSend.ts}`, and owning queue/send/steer callers. Extend existing `SessionManager.mcp.test.ts`, race/queued-delivery tests, native-parser tests and `providers/codex/appServer.test.ts`.
 
@@ -1142,15 +1143,15 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/05a-canvas-pane-and-empty-state`: Add the Canvas pane surface without a utility-picker entry, one programmatic open path `openCanvas({ appSessionId, canvasId, frameId? })`, `CanvasWorkspace.tsx` shell, the all-frames-deleted empty state and atomic attachment bootstrap.
+- [x] `canvas/05a-canvas-pane-and-empty-state`: Add the Canvas pane surface without a utility-picker entry, one programmatic open path `openCanvas({ appSessionId, canvasId, frameId? })`, `CanvasWorkspace.tsx` shell, the all-frames-deleted empty state and atomic attachment bootstrap.
   Done: `canvasState.ts` snapshot/change subscriptions reconcile state; opening the pane creates no design or compiler; Canvas never appears in the utility picker.
-- [ ] `canvas/05b-board-geometry-and-gestures`: Implement `canvasGeometry.ts` and tests plus `CanvasBoard.tsx` pan/zoom/fit, pointer capture and transient frame dragging.
+- [x] `canvas/05b-board-geometry-and-gestures`: Implement `canvasGeometry.ts` and tests plus `CanvasBoard.tsx` pan/zoom/fit, pointer capture and transient frame dragging.
   Done: Zoom anchors correctly; drag commits once on release and cancellation restores acknowledged geometry.
-- [ ] `canvas/05c-frames-selection-previews`: Implement `DesignFrame.tsx`, Select/Interact, Escape/Enter, multiselect/align/nudge/resize and four live slots with placeholders using `DesignPreview`.
+- [x] `canvas/05c-frames-selection-previews`: Implement `DesignFrame.tsx`, Select/Interact, Escape/Enter, multiselect/align/nudge/resize and four live slots with placeholders using `DesignPreview`.
   Done: Running-board transformed input, clipping, ongoing gestures and layout conflicts preserve source and mounted preview state.
 - [ ] `canvas/05d-navigator-and-toolbar`: Build virtualized `CanvasNavigator.tsx` search, `CanvasToolbar.tsx`, completed context actions and zoom readout.
   Done: Named/status-labeled controls work in empty/loading/error states and search focuses the requested frame.
-- [ ] `canvas/05e-design-mode-and-canvas-header`: Add the Chat | Design product switcher at the sidebar wordmark, the Design home (large composer, example chips, design-system picker, “Your canvases” grid), the canvases sidebar list, new-canvas-per-prompt, “New chat with this canvas” in the docked composer menu, and the expanded board's top row.
+- [x] `canvas/05e-design-mode-and-canvas-header`: Add the Chat | Design product switcher at the sidebar wordmark, the Design home (large composer, example chips, design-system picker, “Your canvases” grid), the canvases sidebar list, new-canvas-per-prompt, “New chat with this canvas” in the docked composer menu, and the expanded board's top row.
   Done: Light/dark inspection and `tests/integration/canvas.spec.ts` verify the switcher, a Design home prompt creating a new canvas and attached chat, pane transitions, real CTA input and persisted attachments.
 
 **Files:** Create `src/features/canvas/{CanvasWorkspace.tsx,CanvasBoard.tsx,DesignFrame.tsx,CanvasToolbar.tsx,CanvasNavigator.tsx,canvasState.ts,canvasGeometry.ts,canvasGeometry.test.ts,canvasState.test.ts}` and `tests/integration/canvas.spec.ts`. Modify `src/lib/{utilityPanel.ts,lazySurfaces.tsx}`, `src/components/utility/{UtilityPane.tsx,utilityToolOptions.ts}`, `src/App.tsx`, `src/hooks/{useStore.tsx,persistedUiPreferences.ts}`, `src/components/Sidebar.tsx` and their existing focused tests. Reuse Task 3 `DesignPreview.tsx`.
@@ -1158,6 +1159,24 @@ and `src/{types/bridge.ts,lib/commands.ts}`):
 **Interfaces:** `CanvasWorkspace` consumes `{ appSessionId: string; canvasId: string | null; isExpanded: boolean }` plus focused bridge callbacks using the existing connection pattern. `applyCanvasChange(snapshot: CanvasSnapshot, change: CanvasChange): CanvasSnapshot` updates the feature-local projection. Geometry exports `screenToCanvas(viewport: Viewport, point: Point): Point`, `zoomAtPoint(viewport: Viewport, point: Point, scale: number): Viewport` and `fitFrames(rects: FrameRect[], viewportSize: Point): Viewport`, with `Point = { x: number; y: number }` and `Viewport = { x: number; y: number; scale: number }`. Frame/source ownership remains in Task 2.
 
 - [ ] Add the Canvas pane as a lazy, expandable singleton surface that is never listed in the utility picker; the only way in is `openCanvas({ appSessionId, canvasId, frameId? })`, called by the artifact card, the agent's first artifact in a chat, and Design mode. Keep only attachment IDs/pane preferences in shared state; viewport/selection/inspector state belong to the Canvas feature. A canvas whose frames were all deleted presents the empty state (“Ask your agent to design something” plus example requests). Bootstrap an empty canvas/attachment atomically on explicit Create or the first `canvas_create`, following the unattached-chat sequence in spec §6: the turn's lease already exists with `canvasId: null`, the first create commits canvas, attachment and the lease's canvas binding together under the workspace commit owner, and a retry with the same mutation ID returns the same canvas and frames. Merely opening the pane does not start a compiler or create a design.
+Settled by 05a (landed in `src/features/canvas/{CanvasWorkspace.tsx,canvasState.ts}`, `src/lib/{utilityPanel.ts,lazySurfaces.tsx}`, `src/components/utility/{utilityToolOptions.ts,UtilityToolPicker.tsx}`, `src/App.tsx`, `src/hooks/useStore.tsx`):
+
+- `CanvasWorkspace` takes `onToggleExpanded` and `onAttachmentChange` beside the three props the Interfaces paragraph names. Canvas is an expandable tool, and an expandable pane with no control to expand it is dead wiring, so the pane carries the same `AgentPaneExpand` the agents and side-chat panes use until 05e gives it a header. It reaches the bridge the way the other feature clients do: one module-level `CanvasClient` over the app `bridge`, not callbacks passed from `App`, which cannot import the Canvas chunk without putting it in the entry bundle.
+- `canvasState.ts` is the pane's projection and nothing more. Change reconciliation — gaps, duplicates, out-of-order sequences and resync — already has an owner in `client.ts` (02c), which hands subscribers reconciled snapshots, so the reducer guards only what can still reach it: a snapshot for another canvas, and one whose sequence is at or behind the projection already held. `applyCanvasChange` stays `client.ts`'s to call.
+- The root store holds `canvasAttachments: Record<string, string | null>`, a missing key meaning nobody has asked. It is not persisted: the manifest owns the attachment, and a localStorage copy could point at a canvas that no longer exists. Its only job is to stop a reopened pane blinking through the empty state; the pane still reads `canvas.attachment` on every mount and the sidecar's answer wins. Deleting or archiving a chat drops its entry.
+- An authoritative `SESSION_LIST` prunes both pane and attachment cache for a removed chat. Late Canvas Open and attachment callbacks cannot recreate either entry once that list has removed the chat. `SESSION_CLOSED` retires only the runtime and keeps its pane. The sidecar checks the canonical chat registry before attachment mutations and again at the manifest commit gate; an unknown chat receives `unknown_chat` with a recovery message.
+- Explicit Create carries a client-held `mutationId`. The workspace records it with the newly committed manifest and returns that canvas on replay, including when the first reply is lost while its commit is still in flight. The Canvas chunk keeps an unsettled key across pane unmounts, and the pane offers only Retry with that key in its recovery state; an attachment read cannot re-offer Create before the outcome is known.
+- `Open saved canvas` lists real canvases through `canvas.list` and attaches with `canvas.attach`; no new bridge command was needed for 05a.
+- Canvas is **not** in the utility-tool picker (user decision, 2026-10-06; supersedes spec §4's "Add Canvas to the utility-tool picker", which the user is updating separately). It keeps the tool type, the singleton rule, the expandable pane, the lazy surface and the persisted preference, and it opens programmatically only. `useOpenCanvasPane()` in `src/features/canvas/openCanvasPane.ts` is the single exported way in; it takes `{ appSessionId, canvasId: string | null, frameId? }` and is what an artifact card's Open (06a) and the design entry point will call. Creating an artifact does not open the pane.
+- `OPEN_UTILITY_TOOL` takes an optional `appSessionId`, as `CLOSE_UTILITY_TAB` and `UPDATE_UTILITY_TAB` already did, so an opener can name the chat rather than assuming the one on screen. Its Canvas tab carries a named `canvasId` and optional `frameId` as transient targets; `canvasId: null` clears the target and reads the chat attachment. Opening canvas A while the chat is attached to B shows A without changing B's attachment. `openUtilityTool`'s retarget ids share one list. Transient targets are excluded from the raw persisted tab fields.
+- Canvas persists and restores with its chat like Review and Files (`isRestoredTool`), because a canvas reconstructs from durable state. It has no keyboard shortcut.
+- The empty state follows spec §4: "Ask your agent to design something", three example requests, then Create and Open saved canvas as secondary actions. The examples are working controls, not prose — they dispatch the existing `SEED_COMPOSER`, which seeds the chat's composer without sending, so nothing in `PromptInput.tsx` or `promptSend.ts` was touched. It is the same invitation for a chat with no canvas and for an attached canvas with no designs.
+- Nothing assumes one chat per canvas: the renderer's attachment cache is keyed by `appSessionId`, so "New chat with this canvas" leaves the original chat attached and adds a second key for the same canvasId. Nothing reads the map in the other direction.
+- Controls on the pane's card use a low-alpha accent tint, not `bg-droid-elevated`: on a dark theme `raisedSurfaceColor` resolves to the elevated rung, so an elevated fill inside a `bg-droid-raised` card leaves buttons looking like plain text. Verified in the running app in both modes.
+- Verified directly that opening the pane creates nothing: after opening Canvas on a chat with no attachment in an isolated profile, `<profile>/canvases/` is empty and the pane shows the Create / Open saved canvas state.
+- Entry-chunk cost of the registration is +1335 bytes of initial JS (1431743 → 1433078 against a 1434000 budget). 05b–05e have ~900 bytes of headroom and must stay out of the entry chunk.
+- The board, frames, gestures, navigator and toolbar are not stubbed. An attached canvas renders a `data-canvas-board` mount point that states what the snapshot holds; `CanvasBoard` replaces it in 05b.
+
 - [ ] Implement background pan, wheel/pinch zoom, Fit/focus and frame dragging with pointer capture. Use one world-to-screen transform. Clamp zoom to 0.1–4 and retain the world point under the cursor:
 
 ```ts
@@ -1178,8 +1197,105 @@ assert.deepEqual(screenToCanvas(zoomAtPoint(before, pointer, 1.6), pointer), scr
 - [ ] Build virtualized Components search/focus, useful empty/loading/error views and the compact frame toolbar. Expose only completed actions at each local milestone; Task 12 requires the complete menu. Use actual design names and statuses as accessible labels, not icon-only discoverability.
 - [ ] Add Design mode (spec §4). Turn the `BrandMark` in `Sidebar.tsx`'s brand row into a product switcher: a `bg-droid-raised` popover with Chat and Design, current one checked, keyboard-accessible, the same quiet tone as the Codex app's ChatGPT | Codex switcher. The mode is a persisted sidebar preference, not a `SessionInteractionMode`. In Design mode the sidebar lists canvases (Recent, Favorites, Libraries) and the main area shows the Design home: a large centered composer reusing the existing composer and its model/harness/autonomy controls, a design-system picker chip, example-request chips, and a “Your canvases” grid of thumbnail cards (name, last edit, attached-chat count, search). Sending from Design home creates a new canvas and a new chat attached to it in one commit, then opens the workspace with the spec §4 layout (sidebar, ~360 px docked chat column with Agent / Components / Library tabs, board) through the §4 transition: the home composer travels into the chat column's composer slot as one shared-layout animation (180–220 ms), chips and grid fade out, the prompt is the first message, and the pending frame is already placed and blooming when the board fades in. Opening a card opens that canvas with its most recent attached chat. The chat column header's attached-chats menu lists every chat on this canvas and offers “New chat with this canvas”: a fresh session with fresh context attached to the same canvas, the original chat still attached. The canvas takes a provisional name from the prompt and adopts the first design's name unless the user renamed it.
 - [ ] Give the expanded board its own top row. When the board is expanded, `UtilityPane`'s header already owns the window's top row (with `WINDOW_CONTROLS_LEAD_PX` for the traffic lights); replace its tab strip there with a small DROIDEX mark and the canvas name on the left in the same tone and weight as the chat title pill, a `Chat | Canvas` segmented control in the existing soft `bg-droid-elevated` pill style beside it, and rename/Open saved canvas as a popover off the name. Chat returns the pane to its docked width; the composer stays where it is. Zoom readout sits bottom-left and Fit plus Select/Interact bottom-right of the board. No new palette, no second brand; verify light and dark in the running app before polishing.
+Settled by 05e (landed in `src/components/ProductSwitcher.tsx`, `src/features/canvas/{DesignHome,DesignSidebar,CanvasHeader,CanvasMenu,CanvasChatBootstrap}.tsx`, `src/features/canvas/{canvasChats,canvasClient,useCanvases,useOpenCanvas}.ts`, `src/{App,components/Sidebar,components/utility/UtilityPane}.tsx`, `src/hooks/{useStore,persistedUiPreferences,storePersistence}.ts`, `src/lib/{lazySurfaces,transcriptStoreMemory}.ts`, `sidecar/src/canvas/{protocol,canvasManifest}.ts`):
+
+- The subtask grew past its original "full canvas header" title into design mode as a whole, and is named `canvas/05e-design-mode-and-canvas-header` on `thread/canvas-05e-design-mode`.
+- **The switcher lives at the sidebar wordmark, not in settings** (user decision, 2026-10-07). `ProductSwitcher` replaces `BrandMark` in the brand row and reads `DROIDEX Chat` / `DROIDEX Design`; its popover is a two-row `role="menu"` with arrow-key walking and a check mark for the current product. Design mode hides the unread filter, which reads the chat list that Design replaces.
+- **Store keys.** `productMode: 'chat' | 'design'` is a persisted sidebar preference: it is in `UI_STATE_FIELDS` and in `PersistedUiState`, and only `'design'` restores (chat is the default, so nothing else is worth keeping). `canvasChatRequest: { appSessionId: string | null; canvasId: string | null } | null` is **not** persisted: it is the in-flight attachment a design draft owes the chat it is about to create. `appSessionId: null` means the chat does not exist yet; `canvasId: null` means mint a new canvas. `SESSION_CREATED` stamps the chat onto it, `CANVAS_CHAT_SETTLED` clears it, and leaving the draft (`SET_ACTIVE_SESSION`, `START_CHAT`, returning to Chat) drops it only while `appSessionId` is still null. Archive/delete and an authoritative `SESSION_LIST` prune it like `canvasAttachments`.
+- **Every Design-home prompt is a new canvas** (user decision; no "add to current"). Entering Design mode dispatches `SET_PRODUCT_MODE` and then `START_CHAT` with `canvas: { canvasId: null }`, so the Design home *is* the new-canvas draft: folder-less (`cwd: ''`, `executionMode: 'local'`), because designing needs no repository and a worktree is a side effect nobody asked for. `attachCanvasToChat` keys the create by a retained mutation ID per chat, so a lost or failed reply retries into the same canvas instead of a second one.
+- **The 7b design-system picker slot** is `DesignSystemChip` in `DesignHome.tsx`: a single chip above the composer, today a static `Design system · DROIDEX` label stating the kit every request is pinned to. 7b replaces that one function with `DesignSystemControl`; it receives the current `DesignSystemRef` and a change callback, and owns its own popover. Nothing else in 05e reads the kit.
+- Canvas stays **out of the utility-tool picker** (05a's decision holds); `UtilityPane.tsx` does not list it. The pane gained one optional `header` prop: a tool that owns the window's top row in place of the tab strip. Only the expanded Canvas tab passes it, and Hide-pane stays beside it.
+- `CanvasHeader` is that header: DROIDEX mark, the `Canvas` wordmark that opens `CanvasMenu`, and a `Chat | Canvas` radiogroup in the soft `bg-droid-elevated` pill. `Chat` returns the pane to its docked width and leaves the composer where it is.
+- `CanvasMenu` is the picker in both widths: the wordmark is the trigger in the expanded header, and the docked board shows it in the overlay beside `AgentPaneExpand`. **"New chat with this canvas" lives there**, with the canvas name, the chats on it, New canvas and the saved canvases. It reads `canvas.list` only while open, so the pane costs no bridge round-trip to render. A chat on the canvas that this window does not hold is listed disabled rather than hidden, so the count on a card and the rows in the menu agree.
+- `CanvasSummary` gained `attachedAppSessionIds: string[]` across `sidecar/src/canvas/protocol.ts`, `canvasManifest.ts`, the renderer mirror and `wireValidation.ts` in one commit; the chat id is bounded the way the manifest bounds it (1..200). A canvas card opens through the most recently active of those chats, and starts a fresh chat on the canvas when none of them is loaded here.
+- Entry-chunk cost is +5_242 bytes (1_433_429 → 1_438_671), and `initialRendererJsBytes` is raised 1_434_000 → 1_442_000 with the accounting in `tools/check-bundle-budgets.mjs`. All of it is app frame: the switcher paints at first frame, plus App's workspace branches, the store state, and the four lazy-surface registrations that keep the Design home, canvases sidebar, board header and chat bootstrap out of the entry. No `src/features/canvas` module is in the entry chunk; 05b-05d must stay inside the Canvas chunk.
+- Verified light and dark in the running app (screenshots in `reports/canvas-05e-shots/`). Deferred to later subtasks: canvas card thumbnails wait on captured frames (5c), and `tests/integration/canvas.spec.ts` is still 05's closing item.
+
 - [ ] Add integration behavior: create a frame through the real bridge owner, click its CTA, pan/zoom and expand the pane, then confirm the CTA stays changed while its preview remains mounted. Close/reopen the pane and confirm source/geometry survive; preview-local React state may reset by contract. Start a new chat with this canvas and an ordinary new chat and assert their attachments differ as specified.
 - [ ] Run focused geometry/state/utility tests and `rtk proxy npx playwright test tests/integration/canvas.spec.ts`. Manually inspect light/dark placement with a real chat, narrow utility pane and expanded board. The working create→build→click→reload flow is milestone one, not the final release.
+
+Settled by 05b (`canvas/05b-board-geometry-and-gestures`, landed in
+`src/features/canvas/{canvasGeometry.ts,boardCoordinates.ts,useBoardGestures.ts,CanvasBoard.tsx}`):
+
+- One world-to-screen transform owns the board. `canvasGeometry.ts` exports `screenToCanvas`, `canvasToScreen`, `zoomAtPoint` (clamped 0.1–4), `wheelZoomScale`, `fitFrames`, `moveRect` and `interpolateViewport`; the board applies it as a single `translate()/scale()` on one world layer with `transform-origin: 0 0`, and frames are positioned at world coordinates inside it. `boardCoordinates.ts` converts client points and pixel deltas at the input boundary using the board's bounding rect versus offset size, so app CSS zoom at font sizes 13/14/16 does not change anchoring or 1:1 movement.
+- Fit and focus are the same call. `fitFrames(rects, viewportSize)` centres the union of the rects with 48 px of screen padding and never magnifies past 100%. 5d's public entry point is `CanvasBoardHandle.focusFrame(frameId)`, exposed through the board's React ref; it fits that frame's acknowledged rect and gives keyboard focus to the board. The board fits once before the user has navigated.
+- `useBoardGestures.ts` owns pointer capture, coalesced movement and transient layout. Moving never commits; release sends one `arrangeFrames` with the starting `expectedLayoutVersion`. Escape, pointer cancellation, capture loss, window blur and focus leaving the board's scope cancel through that owner, release capture and restore acknowledged geometry without another write. Focus moving to a control inside the board stays in scope. The same owner holds the Space pan modifier and releases it on either kind of focus loss, with or without a live pointer, because Space released in another app sends the board no keyup.
+- Released drags have separate per-frame holds keyed by the layout version they were sent against. A successful arrange reply alone does not release a hold; a newer snapshot for that frame does, whatever rect it acknowledges. Hold applicability is derived during render, before lifecycle pruning. Cancellation of a re-drag drops its earlier unacknowledged hold; a current rejection drops its own hold and reports the failure. Superseded rejections cannot report stale errors.
+- Plain wheel and two-finger scroll pan with both axes; pinch (`ctrlKey` trackpad wheel) and ctrl/cmd+wheel zoom under the pointer. Pixel, line and page wheel units are normalized before geometry. A gesture stays open until 140 ms of quiet, independently of pan versus zoom. Fit suppresses the pre-Fit gesture until that quiet window ends, independently of its animation or reduced motion. The Select input overlay's hit-test flip waits for quiet and then the frame that paints it.
+- 5a must replace `CanvasBoardMount({ frameCount })` directly with `CanvasBoard({ snapshot, onArrangeFrames })`. Bind `onArrangeFrames` to `(input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, snapshot.canvasId, input)`; preserve the empty invitation, key by canvas identity and retain the board across resize/expansion. No compatibility adapter is needed.
+- `capturePointer` is the hook point 5c toggles for Select and Interact; the board renders the transparent per-frame overlay and owns when flipping it is safe, and implements no modes. Frame headers are the drag handle in both modes and sit outside the overlay. Frame bodies render the `waitingLabel` placeholder until 5c mounts `DesignPreview` under the overlay.
+- Programmatic fit and focus animate 220 ms on `cubic-bezier(0.22, 1, 0.36, 1)`, solved in JS so the viewport stays the one authority; reduced motion lands immediately. Drag and pan coalesce into one transform per animation frame with the pointer followed 1:1 and no easing behind the hand.
+- The zoom readout is bottom-left and Fit bottom-right in the existing soft `bg-droid-elevated` pill. The board has a low-alpha inset keyboard-focus ring and arrow-key pan when `onNudgeSelection` is absent; 5c supplies that callback only with a selection and owns nudging. Descendant controls keep their keyboard input. Permanent `will-change: transform` was removed, not replaced with another compositing hint.
+- `tests/smoke/electronCanvasBoard.smoke.spec.ts` exercises the real board in the existing Playwright Canvas runner, with `page.clock` and controlled arrange replies. The real Fit-click regression fails against `c0974cdf` and passes against `c98acf67`; retained cases cover UI zoom, focus loss including a Space hold left latched by window blur, independent holds, re-drag cancellation, obsolete rejections, trailing wheels, wheel units, keyboard pan and public frame focus. Initial-render unit tests do not claim gesture coverage. The board remains unmounted in this branch's production entry; 5a must rerun bundle budgets after mounting it lazily, and full app/webview composition and 50-frame performance remain integration verification.
+- Left to 5c and 5d: Select/Interact and the mode that drives `capturePointer`, selection, multiselect, resize, align/distribute, keyboard nudge, the frame context menu, the live `DesignPreview` slots, and the navigator.
+
+Settled by 05c (`canvas/05c-frames-selection-previews`, composed onto the
+reviewed 05b owners and landed in
+`src/features/canvas/{DesignFrame.tsx,BoardControls.tsx,CanvasPaneStates.tsx,previewSlots.ts,useBoardGestures.ts,useBoardViewport.ts,canvasGeometry.ts,canvasState.ts,CanvasBoard.tsx,CanvasWorkspace.tsx,previewLabels.ts}`):
+
+- The names 5d consumes are in `canvasState.ts`: `BoardInteraction` holds `mode`
+  (`'select' | 'interact'`), `selectedFrameIds` (in pick order) and
+  `interactedFrameId`; `reduceBoardInteraction` is the only way to change them;
+  `SELECT_MODE` is the resting value. `CanvasBoardHandle.focusFrame(designId)`,
+  which 05b established and `CanvasBoard.tsx` still exports, is how a sibling
+  moves the board — the navigator calls it through the board's `ref`, as the pane
+  already does for an opener's `frameId`. `CanvasWorkspace` owns mode and
+  selection and passes `interaction` / `onInteractionChange` down, so the toolbar
+  and the navigator read the same values the board does without reaching into it.
+- Spec §4's two steps out of Interact are literal: Escape leaves Interact and
+  keeps the selection, Escape again clears it, and an Escape with a gesture in
+  flight is spent cancelling that gesture instead. Picking while interacting
+  moves Interact to the frame picked; picking several leaves Interact, because
+  it drives one frame. Nothing may point at a design the canvas has lost.
+- Slot policy (spec §11, at most four live previews): the interacted frame
+  first, then selected frames that are visible, then frames already live and
+  still visible, then the rest of what is visible, nearest the board's centre
+  first. Keeping a mounted preview mounted outranks mounting a nearer one, so
+  panning does not churn guests. A frame that held a slot and lost it says so
+  rather than silently reloading, because the design restarts from its own
+  beginning; `unmountedLabel` carries that line and the honest waiting line for
+  a frame with nothing built yet. `visibleDesignIds` is the only input that
+  measures the board, so the policy itself is pure.
+- The frame header is the keyboard's way onto the board: it is a `role="button"`
+  tab stop reporting `aria-pressed`, Enter picks it and Enter on the frame
+  already picked starts interacting, Space toggles it in a multiple selection,
+  and the board reads arrows, Escape and Enter from whichever header holds focus.
+  A control, an input or an editor inside the board keeps its own keys. The
+  frame body is never board background either: in Interact the pointer belongs
+  to the preview, and in Select the overlay above it has already decided what
+  the press meant.
+- Every layout write — a released drag or resize, a nudge, an align, a
+  distribute — is one `arrangeFrames` carrying the `expectedLayoutVersion` each
+  frame was read at, and `useBoardGestures` is its single owner, because 05b's
+  review left the deferred holds and error settlement with the hook that owns
+  pointer capture. 05c's separate `useFrameLayout` was therefore not taken: its
+  `reducePendingRects` dropped 05b's reviewed suppression of an obsolete refusal,
+  so the hook's per-frame holds, mutation-ID identity and operation counter stand
+  as the renderer's side of the CAS. A commit is drawn until the sidecar
+  publishes a newer layout version for that frame; a refusal restores only the
+  frames it still describes and names the failure only when no newer operation
+  has started; a frame the canvas has lost keeps nothing. Frames an operation did
+  not actually move are left out of the write.
+- Nudge is 1 world unit, 10 with Shift, in world units rather than screen
+  pixels so a nudge means the same thing at every zoom. Arrows pan the board by
+  32 board-local pixels only while nothing is selected, which is the contract
+  05b's `onNudgeSelection` prop expressed; with `interaction` now a board prop
+  the selection itself is the signal, so that prop is gone and the board writes
+  the nudge through the layout owner that holds the drawn rects. Resize is east,
+  south and southeast, clamped to the dimensions the sidecar accepts (120 to
+  8192). Align uses the selection's own bounds and never resizes; distribute
+  equalises the gaps between the outermost two and leaves fewer than three
+  frames alone.
+- `CanvasBoard` owns no state: the viewport is `useBoardViewport`, the hand's
+  gesture and every layout write `useBoardGestures`, mode and selection
+  `canvasState`, slots `previewSlots`, the strip `BoardControls`.
+  `useBoardViewport` is 05b's reviewed viewport moved out of `CanvasBoard`
+  unchanged, so `boardCoordinates` still normalises app CSS zoom and pixel/line/
+  page wheel units, the wheel and pinch zoom rates stay separate, and Fit's
+  quiet-window suppression still outlives its own animation and holds under
+  reduced motion. 05c's single-rate `wheelZoomScale` and `panBy` were not taken
+  for the same reason. `CanvasPaneStates` took the pane's non-board states out of
+  `CanvasWorkspace`; every production file here is under 500 lines.
 
 ## Task 6: Canvas artifacts in every chat
 
@@ -1213,13 +1329,13 @@ Settled by 06b (`canvas/06b-chart-runtime`):
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
+- [x] `canvas/07a-design-kits`: Complete the DROIDEX, OpenAI-inspired and Claude-inspired executable kits, virtual modules, primitives, guidance and licensed fonts, retaining the Task 6 chart allowlist entry.
   Done: Every kit/mode compiles its working example offline and passes the focused accessibility/contrast check.
 - [ ] `canvas/07b-design-system-picker`: Add the composer picker popover (search, light/dark preview toggle, presets then user kits with two swatches each, “Manage design systems” footer) and removable system/reference chips with persisted future-request selection; wire the image drop/picker path to 07d's `importCanvasImage`.
   Done: A queued request retains its pinned kit version after the user changes selection; the picker matches spec §10 and V3 in light and dark.
-- [ ] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
+- [x] `canvas/07c-canvas-theme-tool`: Complete `canvas_theme` list/read/save/apply and source-owned extraction with provenance.
   Done: Apply uses normal revision/CAS, preserves behavior and reports incompatible mappings without mutating the global kit.
-- [ ] `canvas/07d-image-references`: Sidecar and Electron owner for validated image import into owned content-addressed storage, offline `canvas-asset:` serving in the preview host, and kit fonts served once by the host.
+- [x] `canvas/07d-image-references`: Sidecar and Electron owner for validated image import into owned content-addressed storage, offline `canvas-asset:` serving in the preview host, and kit fonts served once by the host.
   Done: Invalid image/path inputs fail; owned images/fonts render offline without exposing private paths.
 - [ ] `canvas/07e-manage-design-systems`: Add the manage dialog from spec §10: Presets and Yours list, New from DESIGN.md or CSS/Tailwind config, Colors / Typography / Spacing & Radius / Shadows detail tabs with light/dark toggle, Export and Save a copy, unmapped-token diagnostics, through the same `readDesignSystem`/`saveDesignSystem` owner as `canvas_theme`.
   Done: A kit authored from a pasted DESIGN.md compiles the starter example with the shared primitives; presets stay read-only; web import is absent.
@@ -1250,15 +1366,112 @@ The actual primitives must export those signatures and use pinned kit tokens. Do
 - [ ] Import images through the real file/drop path, enforce 10 MiB/image and decoded dimension limits of 8192 × 8192, reject SVG/script-bearing formats for the initial image-import contract, and accept PNG/JPEG/WebP after content validation. Save once by content ID; preview URLs expose only that asset and render offline. Feed the provider bounded existing multimodal attachments without appending internal asset paths to user text.
 - [ ] Test executable examples in every kit/mode, one meaningful accessibility/contrast check against the token pairs actually used, immutable kit version pinning and invalid image/path inputs. Run focused tests plus the actual Electron offline image/font smoke; inspect all three kits visually. Do not call an inspired kit an official OpenAI/Claude preset.
 
+Settled by 07d (`canvas/07d-image-references`):
+
+- Electron main is the file permission boundary. Its picker chooses the path, and its drop API accepts only a native `File` path obtained by preload. Main matches the extension to the PNG/JPEG/WebP content, bounds the file, decodes PNG/JPEG with `nativeImage` and WebP with `@napi-rs/canvas`, then sends the path, SHA-256 digest and dimensions over a private loopback bridge route. The sidecar opens that exact file without following its final link and refuses a changed digest; a renderer WebSocket command or agent tool cannot submit a path. Import failures return a curated code and recovery message without the private path.
+- The sidecar stores each accepted image as `canvases/<canvasId>/assets/<sha256>` with a durable metadata record and 10 MiB and 8192 × 8192 limits. Identical bytes return the same asset ID. `canvas.listAssets` recovers IDs after a lost reply or deleted source file. The durable-listing crash/reopen case was not red-run. Canvas deletion in 09d must remove these assets; chat deletion or detachment keeps them with the canvas. Composer picker/drop chips and provider multimodal attachment wiring remain owned by 07b; this branch adds no text path to a prompt.
+- `canvas-asset:<assetId>` is the source spelling. The artifact read signs each owned reference for its canvas; main also binds each generated preview frame to its canvas and refuses images owned by other canvases. Fonts are global content-addressed kit resources; any bound frame may request an installed kit font by hash. Main refuses image and font requests from unbound guests and the default session. The guest keeps its opaque origin and network-denied session.
+- Asset URLs are canvas-scoped by design, so owned image references survive guest replacement and source revisions.
+- The three 07a presets import Inter/Lora WOFF2 source and OFL notices from `presets/fonts/*.json`. The stylesheet writer replaces their kit font data URLs with content-addressed host URLs and saves each font once under the profile; no second font loader is needed.
+- Known decode limit: Electron `nativeImage` accepts a PNG missing its final CRC byte. The image is still decoded and bounded, but this is not a complete file-integrity check.
+
+Settled by 07a (`canvas/07a-design-kits`):
+
+- The three built-in version-1 kits are `droidex`, `openai-inspired` and
+  `claude-inspired`. The latter two are locally authored interpretations, not official
+  presets. Each owns complete matching light/dark token maps, including typography,
+  spacing, radius, shadow and motion. App chrome is unchanged.
+- `readDesignSystem` returns a detached snapshot of the exact pinned version. Built-ins
+  are validated and snapshotted on load; user saves retain the existing atomic immutable
+  version contract. Schema validation also refuses unmatched mode token names.
+- Shared source primitives are copied into each executable kit: native-prop Button
+  (`primary | secondary | quiet`), Input (required visible `label`, optional `hint/error`),
+  Card and Badge; controlled Tabs (`label`, `items`, `value`, `onValueChange`) with
+  Arrow/Home/End navigation skipping disabled tabs; controlled Dialog (`open`, `onClose`,
+  `title`, `children`, optional `returnFocusId`/`fallbackFocusId`) using native modal
+  behavior, explicit focus cycling at the preview-frame edge, Escape and enabled,
+  visible-destination restoration.
+  Full signatures, composition rules and an interactive `Hey.tsx` ship with every kit.
+  Universal plus kit guidance stays below 2 KiB, inside the existing 16 KiB limit.
+- Each light/dark kit provides translucent `--ds-lift` and `--ds-press` layers for
+  control hover and press over its own background; hover-only accent colours are gone.
+  The guest stylesheet reserves a stable scrollbar gutter so opening a dialog does
+  not move the card, and primitives do not lock `body` scrolling.
+- Inter Latin variable is embedded in every kit; Claude-inspired adds Lora Latin variable
+  for headings. Unmodified Fontsource 5.3.0 WOFF2 subsets use data URLs and ship their
+  SIL OFL files both in the repository and the kit's virtual source files. Provenance is
+  in `presets/fonts/README.md`; other scripts use the local font stack.
+  The kit source retains those data URLs; 07d's stylesheet writer now serves each
+  immutable font once through a preview-host asset URL instead of repeating 64 KB
+  of Inter, or 115 KB of Inter plus Lora, in every artifact.
+- `lucide-react` is pinned to 0.460.0, the app's existing version. The shared browser
+  module graph stages its ESM files, package metadata and ISC licence alongside Recharts;
+  unused Lucide CJS is absent. The flat design import allowlist includes `lucide-react`
+  and `recharts`, resolving their internal ESM entries through the owned runtime while
+  refusing public deep imports. `designStylesheet.ts` already scans the complete
+  snapshot with Tailwind 3 and needed no replacement path or dynamic-class guessing.
+- Compiler coverage exercises all six kit/mode starters and bounds a single named icon's
+  incremental output to 10 KiB. Contrast coverage checks the actual primitive foreground,
+  muted, primary, lifted, pressed, badge and error pairs against AA 4.5:1. The staged
+  offline probe compiles all six starters and the chart, checks font and Lucide notices,
+  and retains both damaged-runtime and resolver-isolation checks. Electron interaction
+  checks cover state, disabled controls, tabs, dialog focus cycling, Escape, restoration
+  and font load.
+
+
+Settled by 07c (`thread/canvas-07c-canvas-theme`):
+
+- 04b wires `listDesignSystems()` and the existing `readDesignSystem(ref)` /
+  `saveDesignSystem(system)` from `sidecar/src/canvas/designSystems.ts` directly.
+  Listing returns presets followed by each user's latest immutable version, with
+  `{ id, version, name, kind: 'preset' | 'user', swatches: { light, dark } }`;
+  each mode has `{ surface, accent }`. Missing semantic swatches are transparent.
+  The bounded summary header publishes atomically with the kit in the same version
+  file. There is no second storage tree or metadata index. Preset saves throw
+  `preset_read_only`; unavailable pinned versions throw `version_mismatch`.
+- The existing MCP apply operation calls `applyDesignSystem(workspace, scope, input)` from
+  `sidecar/src/canvas/applyDesignSystem.ts`, where input is
+  `{ designId, expectedRevisionId: string | null, system: DesignSystemRef, mutationId }`.
+  It returns `{ status: 'applied', receipt: WriteReceipt }` or
+  `{ status: 'refused', diagnostics: CanvasDiagnostic[] }`. Authorization, CAS,
+  mutation replay and build admission remain in `workspace.write`; its async
+  source validator runs after replay/CAS and before any revision is published.
+  Missing tokens report `unmapped_token` once per token with a source file/line.
+  A missing kit version reports `version_mismatch`. Ordinary scope/CAS/storage
+  failures remain `CanvasCommandError` for 04b's shared error boundary. MCP keeps
+  its receipt success envelope and payload-free code/message refusal envelope;
+  token/CSS diagnostics use `invalid_source`, missing versions use `version_mismatch`.
+- The pure extraction helper is `extractDesignSystem(files, { name, sourceCanvasId, from })`
+  from `sidecar/src/canvas/extractDesignSystem.ts`, with `from: RevisionRef`.
+  `sourceCanvasId` is required because `RevisionRef` contains only design/revision
+  IDs. Extraction is not yet an MCP operation or pane action. Its future boundary
+  must supply the authorized canvas identity, never a model-selected canvas, and
+  read the revision under the original live scope; it must not remint authority.
+  MCP-authored saves exclude provenance rather than accepting model claims.
+  The result is `{ status: 'extracted', system, diagnostics }` or
+  `{ status: 'refused', diagnostics }`. Saving the extracted draft uses the same
+  `saveDesignSystem(system)` owner. Provenance is
+  `{ sourceCanvasId, revision: from }` on the immutable kit.
+- Extraction accepts explicit global CSS tokens (`:root`, `html`, and root
+  `data-mode` light/dark selectors), primitive `.ds-*` CSS overrides and dedicated
+  modules with explicit named Button/Input/Card/Badge/Tabs/Dialog exports plus
+  their owned relative dependencies. Imported kit implementations, inline/scoped
+  token interpretations and ambiguous exports are reported instead of inferred.
+  Missing primitives use the shared implementations and base styles; required
+  tokens use the shared DROIDEX defaults with owned values overlaid in each mode,
+  not values inherited from the source canvas's selected kit.
+  Missing mode counterparts, competing values and guidance over 16 KiB are refused;
+  source-owned `DESIGN.md` guidance is never truncated. No checklist items are ticked.
+
 ## Task 8: Element selection, direct edits and source/history UI
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
+- [x] `canvas/08a-source-elements`: Implement AST-based `sourceElements.ts` instrumentation with source maps and revision-scoped editability.
   Done: Round-trip tests preserve surrounding source and reject stale, repeated or computed edits honestly.
 - [ ] `canvas/08b-element-selection`: Add bounded preview selection events, board overlays and the direct inspector with scoped composer references.
   Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
-- [ ] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
+- [x] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
   Done: Agent updates preserve the local buffer; explicit Save creates a source revision.
 - [ ] `canvas/08d-revision-history`: Add canonical revision history/diff, read-only viewing and restore through the normal commit/build path.
   Done: Restore creates a new head, retains later history and reports system version/build status.
@@ -1326,6 +1539,71 @@ Settled by 08a (`sidecar/src/canvas/sourceElements.ts` and the compiler/cache pa
   This independent bound also applies at the worker reply and cache boundaries. These are
   probes, not timing assertions in unit tests.
 
+Settled by 08c (`src/features/canvas/{canvasSourceState.ts,CanvasSourcePanel.tsx,CanvasSourceEditor.tsx,CanvasSourceSlot.tsx}`
+and `canvas.readSource`):
+
+- The drawer is not CodeMirror. The repository ships `@codemirror/{state,view,commands,language,lang-markdown}`
+  for the composer, but no JavaScript, TypeScript, JSX or CSS grammar, and this plan asks for
+  explicit justification before a new grammar dependency. A CodeMirror core editor would
+  therefore show a design's `.tsx` and `.css` with no colour at all. The app's code colour is
+  `prism-react-renderer`, which already highlights TSX, CSS and JSON in the files pane, so the
+  editor is a transparent textarea laid over that highlight: the caret, selection, native undo
+  and platform keyboard behaviour come free, Cmd/Ctrl+S saves, Tab indents, and the colour is the
+  one shared theme. The Prism theme moved from `FilePreviewPane.tsx` to `src/lib/codeTheme.ts` so
+  the two surfaces cannot drift. Lines never wrap: that is what keeps the gutter, the highlight
+  and the caret on the same line as a build's diagnostics, and the textarea's own scrolling is
+  translated into the single shared scroller so the two layers cannot slide apart. The editor is
+  one 190-line file behind a lazy boundary with a six-prop contract, so swapping in CodeMirror
+  plus a grammar later is a contained change.
+- `canvasSourceState.ts` is a pure reducer and the drawer's only state. Buffers are keyed by frame
+  and then by path, so leaving a frame and coming back cannot lose an edit; only closing the
+  drawer discards them, and that asks first. A buffer holds the draft, the revision the edit began
+  from and the file as it read at that revision. `pendingWrite` is the single place a Save is
+  assembled: one write, one `expectedRevisionId`, every dirty path, and null while a conflict is
+  open or while a save is in flight.
+- A revision that lands while a buffer is dirty never replaces it. If the revision left that file
+  alone, only the buffer's base moves, because a Save naming the revision the text was typed on
+  would be refused for a change somewhere else in the tree. If the revision changed the file, the
+  buffer becomes a conflict carrying that revision's text (or null when it deleted the file) and
+  the drawer shows "Updated by agent" with Keep mine and Take theirs. Both texts are held — theirs
+  in `files`, the user's in the buffer — until the user picks. Keep mine rebases onto the
+  superseding revision so the next Save is accepted instead of rejected again; the agent's text
+  stays in its own revision either way. Text typed while a save is in flight stays dirty on top of
+  the revision that save produced.
+- Diagnostics are placed from the real build result, not re-derived. `buildDiagnostics` returns
+  nothing for a build that has not produced any yet, so a `building` frame never shows the last
+  failure as current. `placeIssues` pins a diagnostic to a file and a 1-based line only when the
+  file is one the frame actually lists: esbuild reports the pinned kit as `@droidex/design-system/...`
+  and a failure inside a generated module with no file at all, and both are listed without a place
+  rather than landing on the wrong line. `column` is esbuild's 0-based UTF-8 byte offset, so it is
+  shown in no caret and used for no mapping.
+- `canvas.readSource` is the drawer's read: the renderer had no way to read a revision's files, and
+  `CanvasWorkspace.readFiles` already existed for the agent. It is a derived read authorized like
+  `canvas.subscribe` by the page asking, bounded by `canvasIdentifierSchema` on all three
+  identifiers, it leaves the design's head alone, and `canvasFiles.readRevision` already refuses a
+  revision belonging to another design. The renderer's inbound validator bounds the reply at the
+  sidecar's own 64 files and 256-character paths.
+- `openSourcePanel(designId)` in `canvasState.ts` is the event 5d's toolbar dispatches. The drawer
+  follows its frame across every board change and closes only once that frame leaves the board, so
+  a rebuild or an arrange cannot strand it on a design that is gone. `CanvasSourceSlot` owns the
+  lazy boundary and the two bridge calls, which keeps `CanvasWorkspace.tsx` at 488 lines.
+- 08c merged `thread/canvas-05a-canvas-pane` because 08a's base has no Canvas pane: nothing could
+  import the drawer, so it could be neither seen in the running app nor measured in the bundle.
+  Until the board mounts in 5b, 05a's placeholder plate offers Source per frame; 5c and 5d replace
+  that placeholder wholesale.
+- Measured: entry 1,433,651 bytes against the 1,434,000 line, largest lazy chunk 691,095, and the
+  drawer's own chunks 10,671 (panel) and 2,822 (editor), both lazy. Prism lands in one shared
+  chunk, so the duplicate-dependency scan stays clean. CSS is 102,189, which needed
+  `initialCssBytes` raised from 101,500 to 103,200: the Canvas pane alone measures 100,978 — 522
+  under the old line before the drawer existed — and the drawer's chrome is ~1,350. Trimming its
+  one-off utilities to the shared scale recovered 42 bytes, so the raise is the honest accounting,
+  and `tools/check-bundle-budgets.mjs` carries it. `reduceCanvasPane` goes from a complexity
+  warning of 18 to 22 for the two drawer events, and `isReply` from 17 to 18 for the `source`
+  reply; both were already over the advisory line and neither is an error.
+- Deferred to 08d and later: revision comparison and the side-by-side diff a conflict could offer
+  (the drawer states both sides and keeps them, but does not draw a diff yet), creating, deleting
+  or renaming files from the drawer, and a read-only view of an older revision. Nothing autosaves.
+
 - [ ] Use the TypeScript parser already present in the build toolchain for an AST-based source transform. Package the needed parser in the worker after dependency/bundle review. Instrument owned native JSX elements, preserve source maps and mark computed/shared sites honestly. Avoid regex rewriting or mandatory model-authored IDs. IDs live within a revision; reject a selection from another revision and ask the user to reselect.
 - [ ] Have the preview report element bounds, source element ID and runtime instance path when selection mode requests it. Validate the event as untrusted; no arbitrary DOM/property evaluation RPC. Render overlays in board coordinates with correct scale/scroll conversion. Selection does not hijack clicks while in Interact.
 - [ ] Add a focused round-trip regression whose meaningful contract is source preservation:
@@ -1372,13 +1650,15 @@ Settled by 08d (sidecar) (`sidecar/src/canvas/canvasRevisionHistory.ts`):
 
 ## Task 9: Variants, local library and durable board undo
 
+**Settled by 09a (sidecar):** `create` copies pinned revision seeds into independent first revisions, persists source canvas/design/revision provenance, and answers mutation retries without adding frames. `placeBeside: { designId }` reserves collision-free two-column rows below the source with the existing 80 px gap; placement uses the live board at commit and never moves existing frames. The bridge validates seeds, placement and the 1–4 count. Current leases authorize one canvas, so cross-canvas seeds are refused. Follow-up turns already pin the returned designs/revisions through `CanvasTurnContext.designs` and `allowedDesignIds`; no additional targets or presence field was added. The renderer popover still needs layout/style/color choices, direction, count (default two), one pinned source revision/system, one creation request and one ordinary composer action targeting the returned designs. Task 04b still needs to expose `seed` and `placeBeside` through `canvas_create` MCP wiring and bind tool calls to the existing turn scope. UI, MCP and end-to-end acceptance remain open; no checklist items are ticked here.
+
 **Subtasks (one branch and PR each, merged in order):**
 
 - [ ] `canvas/09a-variants`: Add pinned layout/style/color variant requests, deterministic adjacent placement and explicit target scopes.
   Done: Idempotent creation leaves the original and siblings independent, including a failed sibling build.
 - [ ] `canvas/09b-duplicate-rename-library`: Implement duplicate/rename and searchable immutable local library copies with independent insertion.
   Done: Reuse still works after original-canvas deletion and empty-library guidance explains Add to library.
-- [ ] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
+- [x] `canvas/09c-delete-undo`: Implement persisted frame tombstones, reopen-safe Undo and inverse board geometry with layout CAS.
   Done: Undo restores source/location and surfaces remote-layout conflicts without replaying stale moves.
 - [ ] `canvas/09d-saved-canvases-and-deletion`: Add Open saved canvas and explicit whole-canvas deletion with affected attachment disclosure.
   Done: Deletion unlinks attachments and cancels work while preserving independent library items; chat deletion retains canvas source.
@@ -1386,6 +1666,13 @@ Settled by 08d (sidecar) (`sidecar/src/canvas/canvasRevisionHistory.ts`):
 **Files:** Create `src/features/canvas/CanvasVariants.tsx` and `sidecar/src/canvas/{canvasLibrary.ts,canvasLibrary.test.ts}`. Extend Task 2 workspace/schema/protocol, Task 5 navigator/toolbar and Task 8 history UI. Add focused cases to `CanvasWorkspace.test.ts` and `tests/integration/canvas.spec.ts`.
 
 **Interfaces:** `LibraryItem = { itemId: string; name: string; sourceCanvasId: string; source: RevisionRef; designSystem: DesignSystemRef }`. `saveLibraryItem(input: Omit<LibraryItem, 'itemId'>): Promise<LibraryItem>` stores an independent immutable copy of source/assets plus revision provenance; `listLibraryItems(query: string): Promise<LibraryItem[]>` returns bounded summaries. Insertion uses `create` with `{ kind: 'library', itemId }` and makes an independent design. Workspace additions: `removeFrames(scope: CanvasScope, mutationId: string, designIds: string[]): Promise<{ undoId: string }>`, `undoRemoval(scope: CanvasScope, mutationId: string, undoId: string): Promise<CanvasChange>`, `renameFrame(scope: CanvasScope, mutationId: string, designId: string, name: string): Promise<CanvasChange>`, and `removeCanvas(canvasId: string): Promise<void>` behind an explicit app deletion action.
+
+Settled by 09c (sidecar workspace and protocol):
+
+- Delete and Undo commit persisted tombstones and retry receipts through the existing scope gate and sequence queue; deleting a frame cancels its build, and Undo restores its revision, name and rect after checking for new or moved occupants under that rect (`layout_conflict` carries the current occupant rect).
+- Rename takes `expectedManifestVersion` as a fifth workspace argument and on the bridge input, since the four-argument draft had no caller-supplied CAS token; source, layout and build commits advance that version.
+- The last 50 removals retain Undo; retiring an older tombstone drops only its Undo entry. Undo is bounded by count, not time, and survives reopening. Canonical revisions and assets remain until explicit deletion of the owning canvas or library item; derived-cache cleanup never touches source (spec §7).
+- `canvas_read` is owned by Task 4 and is absent on this base; `CanvasWorkspace.readFiles` already returns a curated not-found with an Undo hint for a removed frame, which that tool must pass through.
 
 - [ ] Implement a variants popover with layout/style/color choices, user direction and count 1–4 (default two). Capture the original revision/system once, reserve all sibling frames through one idempotent `create`, then submit one user-requested action through the current composer/session machinery with those explicit targets. This action is ordinary user intent, not hidden system text.
 - [ ] Place variants adjacent to their source with collision-free deterministic spacing. Never move the source or existing user-arranged frames. Child agents may be assigned separate frame scopes when the current harness supports them; sequential generation remains a complete supported flow. Derive presence from actual actors and mutations.
@@ -1415,12 +1702,20 @@ Then write to one returned variant and assert the source and other variant remai
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/10a-source-export`: Export the selected source revision, owned assets, kit/fonts/licenses and minimal locked-runtime README to a chosen directory.
+- [x] `canvas/10a-source-export`: Export the selected source revision, owned assets, pinned kit source/guidance/examples/fonts/licenses and a buildable project with exact runtime versions to a chosen directory.
   Done: The exported Hey example runs outside checkout; path escapes and overwrite collisions leave existing content intact.
-- [ ] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
+- [x] `canvas/10b-image-capture`: Implement one bounded rendered-revision capture for PNG export and inspect screenshots.
   Done: Timeout/abort/generation-change tests settle independently; unavailable capture returns an honest error.
-- [ ] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
+- [x] `canvas/10c-lifecycle-recovery`: Complete profile isolation and queue/worker/preview/subscription/MCP/waiter shutdown ownership.
   Done: Repeated close is harmless and reused provider handles reject old writes/events; committed source survives failures.
+
+Settled by 10a (`thread/canvas-10a-source-export`):
+
+- Source export reads the immutable revision and its pinned kit version from Canvas storage. It writes the source unchanged under `src/`, all kit files under `design-system/`, guidance and examples under `canvas-export/`, selected mode values under `canvas-export/`, referenced owned images under `assets/`, and embedded kit fonts under `fonts/`. Conversation records and build artifacts are excluded.
+- Electron main alone chooses the destination through `showOpenDialog` and calls the sidecar's validated HTTP route with a separate per-sidecar secret. The renderer receives only the result; that secret is stripped from agent and terminal child environments. The ordinary Canvas WebSocket has no export command.
+- The export includes a local build/preview script, a README and exact direct dependency versions resolved from the owned Canvas runtime. Generating a complete lockfile would require package resolution at export time, so export does not invoke npm or the network; the README explains that transitive packages resolve during installation. `lucide-react` uses the exact version in the root lockfile until Task 7 stages it in the Canvas runtime. An export requires an empty chosen folder, stages beside it, and publishes the complete project by rename.
+- An in-flight export pins an immutable revision and completes as that snapshot even if the whole canvas is deleted; deletion must not cancel it.
+- The current integration branch has no Canvas board controls yet. Task 5's board context action must call `exportCanvasSource` from `src/lib/desktop.ts` for its selected revision when that branch lands. The 10a test builds and serves the Hey starter from a temporary directory with local installed packages; it does not exercise a browser render or a packaged runtime.
 
 **Files:** Create `sidecar/src/canvas/{canvasExport.ts,canvasExport.test.ts}`. Extend the existing Electron file-save/capture bridge at its actual owner and Canvas context actions; inspect `electron/main.cjs` and `electron/preload.cjs` before placing code. Extend runtime smoke and workspace/build teardown tests.
 
@@ -1433,11 +1728,31 @@ Then write to one returned variant and assert the source and other variant remai
 - [ ] Complete shutdown/profile isolation: cancel queues before awaiting external cleanup, terminate compiler workers, stop preview hosts/subscriptions, revoke MCP scopes, and release all waiters. Verify repeated close is harmless and a new session with a reused provider handle cannot accept old writes/events. Run failure cases with locked/unavailable capture, not only a visible happy-path window.
 - [ ] Run focused export, teardown and runtime tests; manually export a stateful design and confirm PNG and source describe the selected revision. Record capture limitations honestly.
 
+Settled by 10b (`thread/canvas-10b-image-capture`):
+
+- Electron main captures the already attached preview guest through `webContents.capturePage`, after reading that guest's mounted design, revision and mount generation from the trusted intermediate. It captures the guest's CSS rectangle at its device scale, refuses more than 4,096 physical pixels on either edge, 16 million pixels total or 8 MiB of PNG, refuses a display Electron reports as locked, and settles after six seconds. Guest destruction, main's watchdog, renderer abort, a resized or replaced preview and canvas-pane unmount cancel pending work. No generated code, source write or agent turn participates in capture.
+- `captureCanvasImage(canvasId, ref, signal)` is the renderer operation over that Electron boundary. A ready preview populates a 32 MiB bounded thumbnail cache keyed by canvas, design and revision; `canvasThumbnailRead` exposes its exact-revision read through the preload bridge. `exportCanvasImage` sends captured PNG bytes to the OS save dialog and writes only its selected path. Unavailable capture returns `capture_unavailable`; a save failure returns `storage_failed`. The kit starter and a transparent design captured in the real Electron host; the starter's 720×720 CSS capture at 2× produced a 1,440×1,440 PNG in 56.02 ms in the final full arm64 smoke.
+- This base (`84480d9a`) has no Canvas board/context actions, artifact card or `canvas_inspect` MCP tool yet. Their controls and model screenshot delivery remain with Tasks 05, 06a and 04 respectively; the capture API and cache read are available for those owners. Task 10's checkbox stays open, as source export and lifecycle recovery are separate subtasks.
+
+Settled by 10c (builds/shutdown):
+
+- Shutdown refuses new Canvas commands, revokes turn scopes before session-file reconciliation settles, and starts Canvas cleanup without waiting for sessions or automation persistence.
+- Abandoning a compile cancels cooperatively, then uses bounded compiler termination; replacement work never reuses the abandoned child.
+- Build close starts compiler termination before draining storage, still waits for its runs, and publishes no late ready outcome.
+- Concurrent compiler termination joins one promise that settles on child exit, including the controlled grace-kill path. The worker flushes `stopped` before exiting.
+- Failing-first regressions cover held reconciliation/session cleanup, abandoned child ownership, held artifact storage, and acknowledgement versus exit. Storage exclusion, watches, and commit-queue recovery belong to the parallel 10c thread; no Task 10 checkbox is completed here.
+
+Settled by 10c (storage/bridge):
+
+- Physical Canvas roots have one atomic writer lease, including linked roots across profiles; live writers are refused before loading or cleanup, and close, failed open and confirmed process death release ownership.
+- Last-pane unsubscribe/page loss cancels pane-only queued and running builds; a live turn on that canvas retains its accepted work, and other panes or canvases keep theirs. Pending subscriptions revalidate their own identity after storage opens, so unsubscribe cannot resurrect a watch or rebuild.
+- Closing the commit queue rejects queued and new callers without waiting for active I/O, while still awaiting admitted staging and durable writes. Single commit ownership, flush-before-publish and publication-time CAS remain unchanged.
+
 ## Task 11: Motion, accessibility and measured performance
 
 **Subtasks (one branch and PR each, merged in order):**
 
-- [ ] `canvas/11a-canvas-motion`: Implement feature-local motion tokens and truthful bloom, ready reveal and actor presence from real events.
+- [x] `canvas/11a-canvas-motion`: Implement feature-local motion tokens and truthful bloom, ready reveal and actor presence from real events.
   Done: Busy animation stops offscreen, hidden, settled and under reduced motion; direct input stays immediate.
 - [ ] `canvas/11b-keyboard-and-identity`: Preserve mounted frame identity and add roving focus, restoration and concise accessible status announcements.
   Done: Pane/inspector transitions retain state and text inputs keep ordinary editing shortcuts.
@@ -1471,6 +1786,86 @@ Direct pointer input bypasses easing. First ready content crossfades without a m
 - [ ] Seed 50 mixed frames and run a repeatable drag→zoom→focus→interact→resize→variants sequence on recorded hardware. Log p95 frame time, main-thread long tasks, live-preview count, memory after close/reopen and idle animation work. Require four-or-fewer live previews, no idle Canvas loop and targets from spec §11; investigate misses rather than hiding them with a larger budget.
 - [ ] Run `rtk proxy npm run perf:replay -- --scenario idle`, then `streaming`, `multi-agent` and `session-switch`; compare with `origin/main` using existing `perf:compare`, `perf:report` and `perf:gates`. Run `quality:bundle-budgets` and compare startup/lazy chunk size. Canvas closed must not load the compiler, kit source or preview bundle into the renderer's startup path.
 - [ ] Watch both supplied videos alongside the local app. Check pending bloom, ready reveal, toolbar positioning, variant placement, cursor-anchored zoom and pane expansion. Record the app in light and dark plus reduced motion. Visual acceptance is actual observed behavior, not a passing build or an animation screenshot.
+
+
+**Settled by 11a** (landed in `src/features/canvas/{canvasMotion.ts,useCanvasMotion.ts,PendingBloom.tsx}`
+and the `canvas-bloom` keyframes in `src/index.css`). The exported surface, in full:
+
+```ts
+// canvasMotion.ts — no React, no DOM.
+canvasMotion: CanvasMotion;
+motionFor(reducedMotion: boolean): CanvasMotion;
+canvasActivity: Readonly<Record<CanvasActivityStage, { label: string; bloom: boolean }>>;
+activityStageOf(status: CanvasBuildState['status']): CanvasActivityStage;
+type CanvasActivityStage = 'queued' | 'writing' | 'building' | 'ready' | 'failed' | 'cancelled';
+interface CanvasMotion {
+  focusMs; paneMs; popoverMs; frameArrivalMs; readyMs; presenceMs; busyLoopMs;
+  popoverTravelPx; frameArrivalTravelPx;
+  ease: readonly [number, number, number, number];
+  easeCss: string;
+}
+
+// useCanvasMotion.ts
+useCanvasMotion(): CanvasMotion;
+
+// PendingBloom.tsx
+PendingBloom(props: { stage: CanvasActivityStage; visible: boolean; motion: CanvasMotion }): JSX;
+```
+
+- **One token object, one preference read.** `canvasMotion` holds the §11 timings plus the two
+  travel distances the table caps (`popoverTravelPx` 4, `frameArrivalTravelPx` 8) and the easing
+  twice, as `ease` for a framer-motion `transition` and `easeCss` for a CSS shorthand.
+  `motionFor(reducedMotion)` returns the reduced variant, which is the same object shape with
+  every `*Ms` and `*Px` token at zero, so a component writes `duration: motion.focusMs / 1000`
+  and gets immediate behavior without a conditional. `useCanvasMotion()` is the renderer entry
+  point and reads framer-motion's `useReducedMotion`, the app's existing reader; an unread
+  preference means full motion. Pan, drag and resize have no token on purpose: direct pointer
+  input stays 1:1 and never consults this module.
+- **Stages are the event vocabulary.** `CanvasActivityStage` is exactly `queued | writing |
+  building | ready | failed | cancelled`, and `canvasActivity` maps each to its label and
+  whether the bloom runs (`writing` and `building` only). There is no `verifying`.
+  `activityStageOf` is the whole bridge from the wire to that vocabulary: a build's `pending`
+  is `queued`, every other status keeps its name, and `writing` is unreachable from a build
+  state on purpose — see the presence note below.
+- **The bloom owns no timer.** `PendingBloom` is a CSS animation whose duration, per-dot delay
+  and `animation-play-state` come from the tokens and a `visible` prop, so an offscreen frame
+  pauses and a settled or reduced-motion frame drops the animation class and renders the stage
+  label over static dots. A `prefers-reduced-motion` rule beside the keyframes repeats that
+  under CSS, so a caller that passes the wrong tokens still cannot make the dots move. The
+  existing `html[data-window-hidden='true']` rule covers a hidden window. The component takes
+  resolved tokens as a prop rather than calling the hook, which keeps it pure and lets the
+  static reduced-motion render be asserted directly.
+- **Presence has no event source yet, so 11a ships no presence UI.** `presenceMs` (140 ms, zero
+  under reduced motion) is the token the spec's agent-presence row asks for, but nothing on the
+  Canvas wire names an actor or a tool target: `CanvasChange` and `CanvasFrame` carry build
+  state only. Inventing a cursor or a `writing` badge from build state would be exactly the
+  fake progress §11 forbids, so the actor label, the 140 ms interpolation and the reduced-motion
+  static badge land with whichever task first carries a real actor event (agent tool target,
+  user source edit) to the renderer. `activityStageOf` is written so that task adds `writing`
+  by passing an actor fact, not by reinterpreting a build.
+
+**Consumers wired by the board composition** (11a stays unticked: presence, the artifact card
+and the pane transition are still outstanding):
+
+- Board fit and focus read `focusMs` and `ease`. `useBoardViewport` evaluates the token's own
+  cubic-bezier control points rather than restating the curve, and a zero `focusMs` is how
+  reduced motion asks for an immediate fit, so there is no second preference read.
+- A frame arriving uses `frameArrivalMs`/`frameArrivalTravelPx`, and the first working preview
+  crossfades on `readyMs`. Both are attached by a class whose `animation-name` lives in
+  `index.css` beside `canvas-bloom`, with duration, easing and travel set inline from the tokens;
+  zeroed tokens attach no animation, and a `prefers-reduced-motion` rule holds the same line.
+- The board's align/distribute strip reveals on `popoverMs`/`popoverTravelPx`.
+- `activityStageOf` and `PendingBloom` are inside the frame, with `visible` taken from the same
+  `visibleDesignIds` query that hands out live preview slots, so an off-screen frame's dots pause.
+  A frame with nothing built shows `Queued` or `Building`; `writing` is still unreachable, and a
+  failed or cancelled frame gets its existing sentence rather than a stage.
+
+**Still outstanding:**
+
+- `canvas/6a` artifact card: `readyMs` for the inline thumbnail reveal and `popoverMs` for the
+  card's own controls.
+- `paneMs` for pane expand/collapse, which belongs to the utility pane rather than the board.
+- Presence: `presenceMs` still has no actor event to interpolate toward, so no presence UI ships.
 
 ## Task 12: Full acceptance, documentation and implementation handoff
 

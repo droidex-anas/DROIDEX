@@ -38,7 +38,8 @@ function createHarness(): Harness {
     });
   const registry: SessionCompactionDependencies['registry'] = {
     getLive: () => undefined,
-    resolveSummary: () => undefined,
+    getCanonicalSummary: () => undefined,
+    hasPersistedSession: () => false,
     replaceProvider: async () => undefined,
     updateSummary: (appSessionId, patch) => {
       patches.push({ appSessionId, patch });

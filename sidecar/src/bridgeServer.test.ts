@@ -70,6 +70,56 @@ function resumeQuery(batch: ServerEventBatch): string {
   return `&resumeGeneration=${encodeURIComponent(batch.generation)}&resumeSeq=${String(batch.lastSeq)}`;
 }
 
+test('only Electron main can submit a validated Canvas image import', async (t) => {
+  const imports: string[] = [];
+  const server = startBridgeServer({
+    requestedPort: 0,
+    token: 'renderer-token',
+    assetToken: 'browser-token',
+    canvasImages: {
+      secret: 'main-only-secret',
+      importImage: async (request) => {
+        imports.push(request.filePath);
+        return {
+          assetId: request.digest,
+          mediaType: 'image/png',
+          byteLength: 1,
+          width: 1,
+          height: 1,
+        };
+      },
+    },
+    onCommand: async () => undefined,
+  });
+  await server.ready;
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${String(server.port)}/canvas/import-image`;
+  const request = {
+    canvasId: 'canvas-one',
+    filePath: '/chosen/image.png',
+    digest: 'a'.repeat(64),
+    width: 1,
+    height: 1,
+  };
+  const send = (body: object, secret: string) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-canvas-secret': secret },
+      body: JSON.stringify(body),
+    });
+
+  assert.equal((await send(request, 'renderer-token')).status, 401);
+  const invalid = await send({ ...request, width: 9000 }, 'main-only-secret');
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(await invalid.json(), {
+    code: 'invalid_input',
+    message: 'The image could not be imported. Choose it again.',
+  });
+  assert.deepEqual(imports, []);
+  assert.equal((await send(request, 'main-only-secret')).status, 200);
+  assert.deepEqual(imports, ['/chosen/image.png']);
+});
+
 test('voice ownership moves only on a successful start, and only the owner can stop', async (t) => {
   const commands: string[] = [];
   const harness = await bridgeServer(t, async (command) => {
@@ -558,6 +608,41 @@ test('a malformed pinned Canvas context is refused with its stable code and noth
   assert.ok(command.type === 'session.send');
   assert.deepEqual(command.canvasContext?.designs, [{ designId: 'dsg_hey', revisionId: null }]);
   assert.equal(command.text, 'hi');
+});
+
+test('session creation validates Canvas intent before admitting the command', async (t) => {
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(t, async (command) => {
+    commands.push(command);
+  });
+  const { socket } = await connect(t, harness);
+  for (const canvas of [
+    null,
+    { canvasId: null },
+    { canvasId: '../outside', mutationId: 'm' },
+    { canvasId: null, mutationId: 'x'.repeat(129) },
+    { canvasId: null, mutationId: 'm', name: 'x'.repeat(121) },
+    { canvasId: null, mutationId: 'm', name: 'bad\u0000name' },
+  ]) {
+    const received = new Promise<string>((resolve) =>
+      socket.once('message', (raw) => resolve(String(raw))),
+    );
+    socket.send(JSON.stringify({ type: 'session.create', clientRef: 'design', canvas }));
+    const refusal = JSON.parse(await received);
+    assert.equal(refusal.type, 'error');
+    assert.equal(refusal.code, 'canvas.invalid_input');
+  }
+  assert.equal(commands.length, 0);
+  socket.send(
+    JSON.stringify({
+      type: 'session.create',
+      canvas: { canvasId: null, mutationId: 'create-1', name: ' Pricing ' },
+    }),
+  );
+  await waitFor(() => commands.length === 1);
+  const [command] = commands;
+  assert.ok(command.type === 'session.create');
+  assert.deepEqual(command.canvas, { canvasId: null, mutationId: 'create-1', name: 'Pricing' });
 });
 
 function socketOpen(socket: WebSocket): Promise<void> {

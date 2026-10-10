@@ -30,7 +30,8 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from '../sidecar/src/canvas/designSystems.js';
+import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
+import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
@@ -56,7 +57,7 @@ const DAMAGE: [string, (runtime: string) => void, string?][] = [
     (runtime) => linkOutside(runtime, 'node_modules/picocolors/picocolors.js'),
   ],
   [
-    // The tree agrees with its manifest and all seven specifiers resolve, so
+    // The tree agrees with its manifest and all supported specifiers resolve, so
     // only loading the packages finds it.
     'one file of a package PostCSS loads, with a manifest that agrees',
     (runtime) => {
@@ -261,7 +262,7 @@ function compileInput(files?: CompileInput['files']): CompileInput {
 async function runWorker(
   target: ProbeTarget,
   runtimeDir: string | null,
-  files?: CompileInput['files'],
+  input = compileInput(),
 ): Promise<WorkerRun> {
   // A design compile reads nothing from the profile, so the child gets an empty
   // one rather than the machine's.
@@ -331,7 +332,7 @@ async function runWorker(
   }
 
   try {
-    const compiled = await answer(1, { type: 'compile', requestId: 1, input: compileInput(files) });
+    const compiled = await answer(1, { type: 'compile', requestId: 1, input });
     const stopped = await answer(2, { type: 'shutdown', requestId: 2 });
     return {
       compiled,
@@ -407,6 +408,11 @@ function artifactOf(
     ['a sha256 artifact id', /^[0-9a-f]{64}$/.test(artifactId)],
     ['the preview root', html.includes('id="canvas-root"')],
     ['the example content', html.includes(content)],
+    [
+      'the hosted offline font',
+      /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/.test(html) &&
+        !html.includes('data:font/woff2;base64,'),
+    ],
     ['the kit tokens', html.includes('--ds-accent')],
     ['Tailwind preflight', html.includes('box-sizing: border-box')],
     ['the bundled React', html.includes('useState')],
@@ -454,24 +460,51 @@ try {
   fail(error instanceof Error ? error.message : String(error));
 }
 
-const shipped = await runWorker(target, target.runtimeDir);
-assertClean(shipped, target.label);
-const kitArtifact = artifactOf(shipped.compiled);
-process.stdout.write(
-  `Compiled the design kit's example offline from the ${target.label}: ${kitArtifact.label}\n`,
-);
+if (existsSync(join(target.runtimeDir, 'node_modules/lucide-react/dist/cjs')))
+  fail('the runtime still carries unused Lucide CJS');
+const notices: string[] = JSON.parse(
+  readFileSync(join(target.runtimeDir, 'manifest.json'), 'utf8'),
+).notices;
+if (!notices.includes('node_modules/lucide-react/LICENSE'))
+  fail('the runtime is missing the Lucide license notice');
 
-const chart = await runWorker(target, target.runtimeDir, CHART_DESIGN);
+const kitArtifacts: { label: string; bytes: number }[] = [];
+for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
+  for (const mode of ['light', 'dark'] as const) {
+    const ref: DesignSystemRef = { id, version: 1, mode };
+    const kit = await readDesignSystem(ref);
+    const example = kit.examples['Hey.tsx'];
+    if (example === undefined) fail(`${id} ships no starter example`);
+    for (const family of id === 'claude-inspired' ? ['Inter', 'Lora'] : ['Inter']) {
+      if (!kit.files[`fonts/${family}-OFL.txt`]?.includes('SIL OPEN FONT LICENSE'))
+        fail(`${id} ships no ${family} font notice`);
+    }
+    const input = { ...compileInput(), files: { 'main.tsx': example }, designSystem: ref };
+    const shipped = await runWorker(target, target.runtimeDir, input);
+    assertClean(shipped, target.label);
+    if (shipped.compiled.status !== 'ready' || !shipped.compiled.design.html.includes('"ArrowRight"'))
+      fail(`${id}/${mode} did not bundle its named Lucide icon`);
+    const artifact = artifactOf(shipped.compiled);
+    kitArtifacts.push(artifact);
+    process.stdout.write(
+      `Compiled ${id}/${mode} offline from ${target.label}: ${artifact.label}\n`,
+    );
+  }
+}
+const kitBytes = kitArtifacts[0]?.bytes;
+if (kitBytes === undefined) fail('no kit example compiled');
+
+const chart = await runWorker(target, target.runtimeDir, compileInput(CHART_DESIGN));
 assertClean(chart, `${target.label} chart`);
 const chartArtifact = artifactOf(chart.compiled, 'Weekly visits');
 process.stdout.write(
   `Compiled the chart offline from the ${target.label}: ${chartArtifact.label}; ` +
-    `artifact delta ${String(chartArtifact.bytes - kitArtifact.bytes)} bytes versus the kit example.\n`,
+    `artifact delta ${String(chartArtifact.bytes - kitBytes)} bytes versus the kit example.\n`,
 );
 
 const isolated = copiedLayout(target, null);
 drop(isolated.layout, 'node_modules');
-const isolatedChart = await runWorker(isolated.target, isolated.target.runtimeDir, CHART_DESIGN);
+const isolatedChart = await runWorker(isolated.target, isolated.target.runtimeDir, compileInput(CHART_DESIGN));
 rmSync(isolated.layout, { recursive: true, force: true });
 assertClean(isolatedChart, 'an isolated chart runtime');
 if (artifactOf(isolatedChart.compiled, 'Weekly visits').label !== chartArtifact.label)

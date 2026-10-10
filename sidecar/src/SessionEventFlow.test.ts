@@ -178,6 +178,45 @@ test('notification ingress converges on the same transcript gating and side-effe
   assert.equal(harness.sideEffects[0]?.value.childSession?.providerSessionId, 'worker-2');
 });
 
+test('a new primary turn preserves an admitted child Canvas call while clearing primary bindings', () => {
+  const { eventFlow, transcripts } = createHarness({
+    childScope: { childSessionId: 'child-1', role: 'worker' },
+  });
+  const call: TranscriptEvent = {
+    ...childRow('canvas-child-turn').transcript,
+    toolUseId: 'same',
+    toolName: 'mcp__droidex-canvas__canvas_write',
+    toolArgs: { designId: 'design-1' },
+  };
+  eventFlow.beginTurn('canvas-child-turn', 'canvas-child-turn');
+  eventFlow.apply('canvas-child-turn', 'canvas-child-turn', 'primary', { transcript: call });
+  eventFlow.apply('canvas-child-turn', 'canvas-child-turn', 'primary', {
+    transcript: call,
+    childOwner: { kind: 'tool-use', id: 'spawn-1' },
+  });
+  eventFlow.beginTurn('canvas-child-turn', 'canvas-child-turn');
+  const result: TranscriptEvent = {
+    ...call,
+    id: 'result',
+    kind: 'tool_result',
+    toolName: undefined,
+    toolArgs: undefined,
+    text: 'CANVAS_INTERNAL_GUIDANCE_7E4B',
+  };
+  eventFlow.apply('canvas-child-turn', 'canvas-child-turn', 'primary', {
+    transcript: result,
+    childOwner: { kind: 'tool-use', id: 'spawn-1' },
+  });
+  assert.equal(transcripts.at(-1)?.text, 'Updated design');
+  assert.equal(transcripts.at(-1)?.sourceSessionId, 'child-1');
+  assert.deepEqual(transcripts.at(-1)?.canvasActivity?.designIds, ['design-1']);
+  eventFlow.apply('canvas-child-turn', 'canvas-child-turn', 'primary', {
+    transcript: { ...result, text: 'ordinary output' },
+  });
+  assert.equal(transcripts.at(-1)?.text, 'ordinary output');
+  assert.equal(transcripts.at(-1)?.canvasActivity, undefined);
+});
+
 test('post-terminal errors plus child, Mission, and token side effects still flow', () => {
   const harness = createHarness();
   harness.eventFlow.applyStreamEvent(

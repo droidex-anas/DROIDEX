@@ -229,6 +229,15 @@ export interface TranscriptEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
+  // Safe Canvas tool snapshot. Tool-call merges prefer the latest activity,
+  // but missing or untargeted snapshots cannot replace a targeted activity.
+  canvasActivity?: {
+    toolUseId: string;
+    action: 'create' | 'write' | 'inspect' | 'arrange' | 'theme';
+    designIds: string[];
+    state: 'running' | 'completed' | 'failed';
+    message: string;
+  };
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already
   // tracking: polling that agent for output, or stopping it. The same tool
@@ -789,6 +798,8 @@ export type ClientCommand =
   | {
       type: 'session.create';
       clientRef: string;
+      // Establishes Design purpose; commit attachment before publication and the first turn.
+      canvas?: { canvasId: string | null; name?: string; mutationId: string };
       cwd?: string;
       title: string;
       goal: string;

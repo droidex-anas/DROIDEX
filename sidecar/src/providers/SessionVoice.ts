@@ -17,8 +17,8 @@ export interface SessionVoiceDependencies {
   liveSession: (appSessionId: string) => ProviderSession | undefined;
   emit: (event: ServerEvent) => void;
   appendTranscript: (event: TranscriptEvent) => void;
-  // Brings a chat whose runtime was released back up, so it can be talked to.
-  ensureRunning: (appSessionId: string) => Promise<void>;
+  // Returns the admitted runtime, reopening a released chat when needed.
+  ensureRunning: (appSessionId: string) => Promise<ProviderSession | undefined>;
   // A conversation started or ended, which changes whether its chat counts as
   // idle. Commands say so themselves; this is for the provider's own hang-ups.
   liveChanged: () => void;
@@ -81,8 +81,10 @@ export class SessionVoice {
         // The chat has to be running before it can be talked to, and idle
         // retirement may have released it. Resuming takes long enough for the
         // user to change their mind, so what they want now is what decides.
-        await this.d.ensureRunning(cmd.appSessionId);
+        const captured = await this.d.ensureRunning(cmd.appSessionId);
         if (!this.wanted.has(cmd.appSessionId)) return;
+        if (!captured || this.d.liveSession(cmd.appSessionId) !== captured || captured.isClosed)
+          throw new Error('The chat closed or changed while voice was starting. Try again.');
       }
       const voice = this.voiceFor(cmd.appSessionId);
       switch (cmd.type) {

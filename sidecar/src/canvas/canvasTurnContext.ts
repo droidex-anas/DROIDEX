@@ -2,12 +2,12 @@
 // when the user composes it; this module checks them where they cross into the
 // sidecar, mints the lease when that request is admitted to run, registers it
 // with `CanvasScopes` for the workspace to check, and revokes it wherever the
-// turn ends. It keeps no scopes of its own: the registry holds them, and this
+// turn ends. It keeps no scope payloads: the registry holds them, and this
 // holds which turn and which provider era minted which.
 
 import { randomUUID } from 'node:crypto';
 
-import { canvasError, EXPIRED_TURN } from './canvasError.js';
+import { canvasError, EXPIRED_TURN, UNKNOWN_SCOPE } from './canvasError.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import type { CanvasScope, CanvasTurnContext } from './protocol.js';
@@ -39,7 +39,9 @@ interface ChatLeases {
 
 export class CanvasTurns {
   private readonly chats = new Map<string, ChatLeases>();
-  // New eras stay ordered without retaining a record for every closed chat.
+  // Keep live chats' issued identities to distinguish turn revocation from invention.
+  private readonly scopeOwners = new Map<string, string>();
+  // Provider eras stay ordered across closed chats.
   private nextGeneration = 1;
 
   constructor(
@@ -87,6 +89,9 @@ export class CanvasTurns {
     if (!chat) return;
     for (const lease of chat.live) this.scopes.revoke(lease.scopeId);
     chat.live = [];
+    for (const [scopeId, owner] of this.scopeOwners) {
+      if (owner === appSessionId) this.scopeOwners.delete(scopeId);
+    }
     this.chats.delete(appSessionId);
   }
 
@@ -102,13 +107,13 @@ export class CanvasTurns {
   }
 
   /**
-   * The immutable scope that ID names, while the turn that minted it still holds
-   * it. A lease is registered exactly while it is live: every settlement path
-   * revokes, and a provider replacement revokes the whole chat, so presence here
-   * is the whole answer and the lease's `generation` is the era it records
-   * rather than a second thing to check.
+   * Resolve an issued turn lease. A model call also names its endpoint's chat;
+   * unknown and foreign IDs are invalid input, while revoked leases are expired.
    */
-  requireScope(scopeId: string): CanvasScope {
+  requireScope(scopeId: string, appSessionId?: string): Extract<CanvasScope, { origin: 'turn' }> {
+    const owner = this.scopeOwners.get(scopeId);
+    if (!owner || (appSessionId !== undefined && owner !== appSessionId))
+      throw canvasError('invalid_input', UNKNOWN_SCOPE);
     const scope = this.scopes.get(scopeId);
     if (scope?.origin !== 'turn') throw canvasError('scope_expired', EXPIRED_TURN);
     return scope;
@@ -132,6 +137,7 @@ export class CanvasTurns {
       allowedDesignIds: pinnedDesignIds(context),
     };
     this.scopes.register(scope);
+    this.scopeOwners.set(scope.scopeId, appSessionId);
     chat.live.push({ scopeId: scope.scopeId, turn });
   }
 

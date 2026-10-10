@@ -1,3 +1,4 @@
+import { canvasIntentForDraft } from '../features/canvas/canvasChatIntent';
 import {
   Suspense,
   lazy,
@@ -80,6 +81,7 @@ import {
   offersContextWindow,
 } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
+import { DesignComposerFrame } from './composer/DesignComposerFrame';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
@@ -194,6 +196,14 @@ const ACCENT = 'var(--droid-accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
+
+/**
+ * Whether this composer is the one Design mode moves between its home and the
+ * canvas workspace: the live one, never a background tile's (spec §4).
+ */
+function travelsWithDesign(state: AppState, appSessionId: string | null): boolean {
+  return state.productMode === 'design' && appSessionId === state.activeAppSessionId;
+}
 const accentMix = (pct: number) =>
   `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'steer';
@@ -287,9 +297,11 @@ export default function PromptInput({
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
       composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
+      designComposer: travelsWithDesign(current, appSessionId),
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
+      canvasDraft: current.canvasDraft,
       draftContextWindowTokens: current.draftContextWindowTokens,
       draftFastMode: current.draftFastMode,
       draftProvider: current.draftProvider,
@@ -1374,7 +1386,7 @@ export default function PromptInput({
       ),
       sideChatReplies,
     );
-    const registerPending = (ref: string) => {
+    const registerPending = (ref: string, canvas?: { canvasId: string | null }) => {
       if (turnStartingClientRef.current === ref) {
         turnStartingPendingRegisteredRef.current = true;
       }
@@ -1385,6 +1397,7 @@ export default function PromptInput({
         skills: skillNames,
         files: allFiles,
         originHoldId,
+        canvas,
       });
     };
 
@@ -1476,7 +1489,7 @@ export default function PromptInput({
         releaseProjectStart(clientRef);
         return;
       }
-      registerPending(clientRef);
+      registerPending(clientRef, state.canvasDraft ?? undefined);
       // Whether this send empties the composer: an edit made while it was
       // preparing is kept, and a failure must not replace it.
       const clearsDraft = composerRevisionRef.current === composerRevision;
@@ -1517,6 +1530,7 @@ export default function PromptInput({
           cwd: dir,
           title,
           goal: composed,
+          canvas: canvasIntentForDraft(state.canvasDraft, displayText, clientRef),
           ...(mentions.length > 0 ? { mentions } : {}),
           sessionPurpose: 'chat',
           provider: draftProvider,
@@ -1946,6 +1960,7 @@ export default function PromptInput({
         skills: [],
         files: [],
         originHoldId,
+        canvas: state.canvasDraft ?? undefined,
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
@@ -1971,6 +1986,7 @@ export default function PromptInput({
         cwd: preparation.path,
         title: placeholder,
         goal: '',
+        canvas: canvasIntentForDraft(state.canvasDraft, '', clientRef),
         sessionPurpose: 'chat',
         provider: draftProvider,
         interactionMode: isSpecMode ? 'spec' : 'auto',
@@ -2054,7 +2070,8 @@ export default function PromptInput({
   );
 
   return (
-    <div
+    <DesignComposerFrame
+      travels={state.designComposer}
       className={`w-full min-w-0 shrink-0 ${compact ? 'px-3 pb-3 pt-2' : 'px-6 pb-5 pt-2'}`}
       // The transcript keeps its own 24px padding inside the panel inset; the
       // composer must too, or its centre drifts 12px off the transcript's.
@@ -2553,6 +2570,6 @@ export default function PromptInput({
             />
           </Suspense>
         )}
-    </div>
+    </DesignComposerFrame>
   );
 }

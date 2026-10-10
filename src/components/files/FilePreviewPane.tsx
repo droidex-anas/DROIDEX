@@ -8,7 +8,7 @@ import {
   FolderSearch,
   Spinner,
 } from '@droidex/icons';
-import { Highlight, type PrismTheme } from 'prism-react-renderer';
+import { Highlight } from 'prism-react-renderer';
 import { readFilePreview, type FilePreviewPayload } from '../../lib/desktop';
 import {
   createSanitizedDocxElementFactory,
@@ -19,9 +19,9 @@ import {
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
 import { resolveFilePresentation } from '../../lib/filePresentation';
+import { CODE_THEME, HIGHLIGHT_CHAR_LIMIT } from '../../lib/codeTheme';
 
 const TEXT_CHAR_LIMIT = 250_000;
-const HIGHLIGHT_CHAR_LIMIT = 120_000;
 const TABLE_ROW_LIMIT = 500;
 const TABLE_COL_LIMIT = 50;
 const PDF_RENDER_SCALE = 1.4;
@@ -64,33 +64,6 @@ function extensionOf(name: string): string {
 
 export const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
 const TABULAR_EXTENSIONS = new Set(['csv', 'tsv']);
-const CODE_THEME: PrismTheme = {
-  plain: { color: 'var(--droid-text-secondary)' },
-  styles: [
-    {
-      types: ['comment', 'prolog', 'doctype', 'cdata'],
-      style: { color: 'var(--droid-text-muted)' },
-    },
-    {
-      types: ['property', 'tag', 'boolean', 'number', 'constant', 'symbol', 'deleted'],
-      style: { color: 'var(--droid-red)' },
-    },
-    {
-      types: ['selector', 'attr-name', 'string', 'char', 'builtin', 'inserted'],
-      style: { color: 'var(--droid-green)' },
-    },
-    {
-      types: ['operator', 'entity', 'url', 'string-variable'],
-      style: { color: 'var(--droid-text-secondary)' },
-    },
-    {
-      types: ['atrule', 'attr-value', 'keyword'],
-      style: { color: 'var(--droid-orange)' },
-    },
-    { types: ['function', 'class-name'], style: { color: 'var(--droid-accent)' } },
-    { types: ['regex', 'important', 'variable'], style: { color: 'var(--droid-orange)' } },
-  ],
-};
 
 export function FilePreviewPane({
   accessToken,

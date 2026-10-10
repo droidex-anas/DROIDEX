@@ -4,6 +4,10 @@ import test from 'node:test';
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 import type * as Protocol from './protocol.js';
+import type { SessionFileWatcherOptions } from './sessionFileWatcher.js';
+import { CanvasScopes } from './canvas/canvasScopes.js';
+import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { deferred } from './testing/canvasStorageSupport.js';
 import {
   nativeSnapshot,
   nativeSuccess,
@@ -35,6 +39,52 @@ const send = (h: SessionManagerTestContext, text: string): Promise<void> =>
   h.handle({ type: 'session.send', appSessionId: 'provider-1', text });
 
 const latestSummary = (h: SessionManagerTestContext) => sessionUpdates(h.events).at(-1);
+
+test('a fresh chat can read Canvas through its configured endpoint while its turn runs', async () => {
+  const h = createSessionManagerTestContext();
+  let gate;
+  try {
+    await h.create(chatCommand('canvas-admission', { goal: '' }));
+    const created = h.events.find((event) => event.type === 'session.created');
+    assert.ok(created);
+    const id = created.session.appSessionId;
+    gate = h.provider.deferNextStream(id);
+    const sending = h.handle({ type: 'session.send', appSessionId: id, text: 'Explore Canvas' });
+    await h.provider.waitForPrompts(id, 1);
+    const config = h.runtime.createCalls[0].mcpServers?.find(
+      (entry) => entry.name === 'droidex-canvas',
+    );
+    assert.ok(config && 'url' in config);
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'canvas_read', arguments: {} },
+      }),
+    });
+    const text = await response.text();
+    const data =
+      text
+        .split('\n')
+        .find((line) => line.startsWith('data: '))
+        ?.slice(6) ?? text;
+    const reply = JSON.parse(JSON.parse(data).result.content[0].text);
+    assert.equal(reply.ok, true);
+    assert.equal(reply.attached, false);
+    assert.ok(reply.scopeId);
+    gate.resolve();
+    await sending;
+  } finally {
+    gate?.resolve();
+    await h.dispose();
+  }
+});
 
 function taskRun(toolUseId: string, subagentType: string, result: string): DroidStreamEvent[] {
   return [
@@ -513,6 +563,52 @@ test('shutdown is single-flight and finalizers continue after failure', async ()
   );
 
   await h.dispose().catch(() => undefined);
+});
+
+test('shutdown revokes turn scopes before held session-file reconciliation settles', async (t) => {
+  const turns = new CanvasTurns(new CanvasScopes(), () => null);
+  const watchers: SessionFileWatcherOptions[] = [];
+  const h = createSessionManagerTestContext({
+    canvasTurns: turns,
+    startSessionFileWatcher: (options) => {
+      watchers.push(options);
+      return {
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+        close: () => undefined,
+      };
+    },
+  });
+  const reconcile = deferred();
+  const reached = deferred();
+  const stream = h.runtime.deferNextCreateStream('provider-1');
+  try {
+    await h.create(chatCommand('canvas-shutdown', { goal: 'keep the turn open' }));
+    await h.provider.waitForPrompts('provider-1', 1);
+    const scope = turns.activeScope('provider-1');
+    assert.ok(scope);
+    await h.handle({ type: 'sessions.list' });
+    t.mock.method(h.history, 'reconcileSessionFiles', async () => {
+      reached.resolve();
+      await reconcile.promise;
+      return 0;
+    });
+    assert.ok(watchers[0]);
+    watchers[0].onExternalChange(null);
+    await reached.promise;
+    const closing = h.shutdown();
+    try {
+      assert.throws(() => turns.requireScope(scope.scopeId), { code: 'invalid_input' });
+    } finally {
+      reconcile.resolve();
+      stream.resolve();
+      await closing;
+    }
+  } finally {
+    reconcile.resolve();
+    stream.resolve();
+    await h.dispose();
+  }
 });
 
 test('the browser stays bound to the stable session across a provider swap', async () => {

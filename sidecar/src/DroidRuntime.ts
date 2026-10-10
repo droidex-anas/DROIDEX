@@ -31,6 +31,8 @@ export interface RuntimeHandlers {
   askUserHandler?: AskUserHandler;
   mcpServers?: McpServerConfig[];
   cwd?: string;
+  /** Process-native context, never part of a user message. */
+  systemPromptAppend?: string;
 }
 
 export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
@@ -224,7 +226,12 @@ export class DroidRuntime implements FactoryRuntime {
     cwd?: string,
     handlers: RuntimeHandlers = {},
   ): Promise<{ client: DroidClient; transport: ConnectableDroidTransport }> {
-    const { execPath, execArgs } = buildDroidInvocation(EXEC_ARGS);
+    // Droid's exec subcommand owns this option; its top-level equivalent is
+    // not applied to sessions initialized through stream-jsonrpc.
+    const args = handlers.systemPromptAppend
+      ? [EXEC_ARGS[0], '--append-system-prompt', handlers.systemPromptAppend, ...EXEC_ARGS.slice(1)]
+      : EXEC_ARGS;
+    const { execPath, execArgs } = buildDroidInvocation(args);
     const transport = createDroidTransport({
       execPath,
       execArgs,

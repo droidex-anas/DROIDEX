@@ -8,12 +8,15 @@ import {
   DecompSessionType,
   InitializeSessionResultSchema,
   McpServerStatus,
+  McpServerConfigSchema,
   McpServerType,
   SettingsLevel,
 } from '@factory/droid-sdk';
 
 import type * as Protocol from './protocol.js';
+import type { HistoricalSummaryFilter } from './history.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
+import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
 import { assistantTextDelta, FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
@@ -182,7 +185,7 @@ test('ordinary create initializes CLI and DROIDEX MCP servers without persisting
     assert.equal(options.autonomyLevel, 'low');
     assert.deepEqual(
       options.mcpServers?.map((server) => server.name),
-      ['test-cli', 'test-browser', 'droidex-automations', 'droidex-sessions'],
+      ['test-cli', 'test-browser', 'droidex-canvas', 'droidex-automations', 'droidex-sessions'],
       'the effective CLI MCP config and DROIDEX’s own tool servers must initialize together',
     );
     assert.equal(
@@ -192,6 +195,66 @@ test('ordinary create initializes CLI and DROIDEX MCP servers without persisting
     );
     assert.deepEqual(h.provider.session('provider-1').prompts, ['hello']);
   } finally {
+    await h.dispose();
+  }
+});
+
+test('a configured Canvas name collision closes servers started earlier in admission', async () => {
+  const h = createSessionManagerTestContext({
+    configuredMcpServers: [
+      McpServerConfigSchema.parse({
+        type: 'http',
+        name: 'DROIDEX_CANVAS',
+        url: 'https://example.test/mcp',
+      }),
+    ],
+  });
+  try {
+    await h.create(chatCommand('collision'));
+    assert.equal(h.runtime.createCalls.length, 0);
+    assert.equal(h.mcpServerCloseCalls, 1);
+    assert.match(JSON.stringify(errorEvents(h.events)), /reserved by DROIDEX/);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('closing while a local MCP server starts releases it before a provider opens', async () => {
+  let releaseStart = (): void => undefined;
+  let signalStart = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    releaseStart = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    signalStart = resolve;
+  });
+  let closes = 0;
+  const h = createSessionManagerTestContext({
+    createLocalMcpResource: () => ({
+      start: async () => {
+        signalStart();
+        await held;
+        return McpServerConfigSchema.parse({
+          type: 'http',
+          name: 'test-browser',
+          url: 'http://127.0.0.1/test',
+        });
+      },
+      close: async () => {
+        closes += 1;
+      },
+    }),
+  });
+  try {
+    const opening = h.create(chatCommand('closing'));
+    await started;
+    const closing = h.shutdown();
+    releaseStart();
+    await Promise.all([opening, closing]);
+    assert.equal(closes, 1);
+    assert.equal(h.runtime.createCalls.length, 0);
+  } finally {
+    releaseStart();
     await h.dispose();
   }
 });
@@ -334,6 +397,89 @@ test('App response formats enrich the provider prompt and unsupported ones never
       /Unsupported response format: future-app-format/,
     );
     assert.equal(h.provider.session('provider-1').prompts.length, 2);
+  } finally {
+    await h.dispose();
+  }
+});
+
+for (const outcome of ['resume', 'close', 'shutdown'] as const) {
+  test(`cold resume preserves Design metadata through history reconciliation and ${outcome}`, async (t) => {
+    const h = createSessionManagerTestContext();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let reconciled = false;
+    const listHistorical = h.history.listHistoricalSessions.bind(h.history);
+    t.mock.method(h.history, 'listHistoricalSessions', (options?: HistoricalSummaryFilter) =>
+      reconciled ? listHistorical(options) : [],
+    );
+    t.mock.method(h.history, 'reconcileSessionFiles', async () => {
+      started();
+      await held;
+      reconciled = true;
+      return 1;
+    });
+    try {
+      h.fixture.seedHistorySummaries([
+        { ...historicalSummary('design-session', 'design-session'), sessionPurpose: 'design' },
+      ]);
+      writeProviderConversation(h.home, 'design-session', 'Design chat');
+      const listing = h.handle({ type: 'sessions.list' });
+      await entered;
+      const resume = h.handle({ type: 'session.resume', appSessionId: 'design-session' });
+      const duplicate = h.handle({ type: 'session.resume', appSessionId: 'design-session' });
+      let stopping = Promise.resolve();
+      if (outcome === 'close')
+        stopping = h.handle({ type: 'session.close', appSessionId: 'design-session' });
+      if (outcome === 'shutdown') stopping = h.shutdown();
+      release();
+      await Promise.all([listing, resume, duplicate, stopping]);
+      const restored = h.events.find((event) => event.type === 'session.created')?.session;
+      if (outcome === 'resume') {
+        assert.equal(restored?.sessionPurpose, 'design');
+        assert.equal(h.runtime.loadCalls.length, 1);
+        assert.equal(h.runtime.loadCalls[0]?.handlers.systemPromptAppend, DESIGN_SESSION_GUIDANCE);
+      } else {
+        assert.equal(restored, undefined);
+        assert.equal(h.runtime.loadCalls.length, 0);
+      }
+      assert.equal(
+        h.history.summaryPatchesAndHidden().patches.get('design-session')?.sessionPurpose,
+        'design',
+      );
+    } finally {
+      release();
+      await h.dispose();
+    }
+  });
+}
+
+test('an app-owned chat with incomplete native history refuses resume without losing Design metadata', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    const id = 'unfinished-design';
+    h.fixture.seedHistorySummaries([{ ...historicalSummary(id, id), sessionPurpose: 'design' }]);
+    writeProviderConversation(h.home, id, 'Unfinished design');
+    writeFileSync(
+      path.join(h.home, '.factory', 'sessions', `${id}.jsonl`),
+      JSON.stringify({ type: 'session_start', sessionId: id, cwd: '/workspace' }) + '\n',
+    );
+    const before = h.history.summaryPatchesAndHidden().patches.get(id);
+
+    await h.handle({ type: 'session.resume', appSessionId: id });
+
+    assert.equal(h.runtime.loadCalls.length, 0);
+    assert.equal(
+      h.events.some((event) => event.type === 'session.created'),
+      false,
+    );
+    assert.match(errorEvents(h.events)[0]?.message ?? '', /missing or incomplete/);
+    assert.deepEqual(h.history.summaryPatchesAndHidden().patches.get(id), before);
   } finally {
     await h.dispose();
   }

@@ -6,6 +6,7 @@ import type {
   ContextWindowTokens,
   ReasoningEffort,
   SessionInteractionMode,
+  SessionPurpose,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
@@ -16,6 +17,7 @@ import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
   cwd: string;
+  sessionPurpose?: SessionPurpose;
   interactionMode: SessionInteractionMode;
   autonomy: Autonomy;
   modelId?: string;
@@ -24,6 +26,8 @@ export interface ProviderOpenInput {
   contextWindowTokens?: ContextWindowTokens;
   mcpServers: McpServerConfig[];
   inAppMcpServers?: SdkMcpServer[];
+  /** Claude's session-local PreToolUse binds a read to this turn's Canvas lease. */
+  canvasScopeForRead?: () => string | undefined;
   interactions: ProviderInteractions;
   // Set only when the session opens on Droid.
   droidLaunch?: DroidLaunchSettings;
@@ -33,12 +37,14 @@ export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session
   // does not carry and which stamps everything the session streams.
   appSessionId: string;
+  sessionPurpose?: SessionPurpose;
   // The provider's own resume handle when it differs from providerSessionId
   // (a Codex thread id); absent for providers that resume by session id.
   resumeId?: string;
   cwd?: string;
   mcpServers?: McpServerConfig[];
   inAppMcpServers?: SdkMcpServer[];
+  canvasScopeForRead?: () => string | undefined;
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;

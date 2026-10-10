@@ -18,6 +18,7 @@ import type { Declaration, Root } from 'postcss';
 import valueParser from 'postcss-value-parser';
 import type { Config } from 'tailwindcss';
 import { canvasRuntime } from './canvasRuntime.js';
+import { hostKitFonts } from './canvasFontAssets.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -53,6 +54,17 @@ export async function buildDesignStylesheet(
   const refusals = sources.flatMap(([file, css]) => reviewCss(file, css));
   if (refusals.length > 0) return { ok: false, diagnostics: refusals };
 
+  try {
+    for (const source of sources) {
+      if (source[0].startsWith(`${KIT_SPECIFIER}/`)) source[1] = await hostKitFonts(source[1]);
+    }
+  } catch {
+    return {
+      ok: false,
+      diagnostics: [{ code: 'css_error', message: 'A kit font could not be installed locally.' }],
+    };
+  }
+
   const segments: Segment[] = [];
   let sheet = PREAMBLE;
   for (const [file, css] of sources) {
@@ -82,9 +94,8 @@ export async function buildDesignStylesheet(
 // anything legitimate to reach for.
 const LOADING_AT_RULES = new Set(['config', 'plugin', 'import', 'use', 'forward']);
 
-// A preview loads with no network, so a remote asset would silently fail and a
-// remote font would report the preview's existence. Inline data is all a design
-// can carry until Task 7 adds owned image references.
+// A preview loads with no network. Its only URL resources are owned images and
+// locally installed kit fonts served by the preview host.
 const RESOURCE_SETS = new Set(['image-set', '-webkit-image-set']);
 const REFERENCE_IN_MESSAGE = 80;
 
@@ -134,14 +145,14 @@ function refuseExternalResources(
     if (reference === null) return;
     refusals.push({
       code: 'css_error',
-      message: `"${declaration.prop}" refers to ${shorten(reference)}, which is outside the design. A preview loads with no network, so only inline data: values render.`,
+      message: `"${declaration.prop}" refers to ${shorten(reference)}, which is outside the design. Use data: or an owned canvas-asset: image.`,
       ...locate(declaration),
     });
   });
   return refusals;
 }
 
-/** The first resource in a declaration value that is not inline data. */
+/** The first resource in a declaration value that the preview cannot serve. */
 function externalReference(value: string): string | null {
   const direct = resourceOutsideDesign(value);
   if (direct !== null) return direct;
@@ -160,13 +171,13 @@ function resourceOutsideDesign(value: string): string | null {
     if (name === 'url') {
       // Everything between the parentheses is the one reference.
       const reference = node.nodes.map((child) => child.value).join('');
-      if (!isInlineData(reference)) external = reference;
+      if (!isOwnedResource(reference)) external = reference;
       return false;
     }
     if (!RESOURCE_SETS.has(name)) return true;
     // A bare string in an image set is a reference; `1x` and friends are not.
     for (const child of node.nodes) {
-      if (child.type !== 'string' || isInlineData(child.value)) continue;
+      if (child.type !== 'string' || isOwnedResource(child.value)) continue;
       external = child.value;
       return false;
     }
@@ -175,8 +186,13 @@ function resourceOutsideDesign(value: string): string | null {
   return external;
 }
 
-function isInlineData(reference: string): boolean {
-  return decodeCssEscapes(reference).trimStart().toLowerCase().startsWith('data:');
+function isOwnedResource(reference: string): boolean {
+  const value = decodeCssEscapes(reference).trim().toLowerCase();
+  return (
+    value.startsWith('data:') ||
+    /^canvas-asset:[0-9a-f]{64}$/.test(value) ||
+    /^droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}$/.test(value)
+  );
 }
 
 // A CSS escape is a backslash followed by up to six hex digits and one optional
@@ -221,15 +237,18 @@ function modeTokens(system: DesignSystem): string {
     .join('\n');
 }
 
+export const CANVAS_TAILWIND_OPTIONS = {
+  darkMode: ['selector', "[data-mode='dark']"],
+  theme: {},
+  plugins: [],
+} satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
+
 function tailwindConfig(files: SourceFiles, system: DesignSystem): Config {
   return {
     // Every design and kit file is scanned, so a class only appears when some
     // source literally spells it out; no partial class names are guessed.
     content: [...rawSources(system.files), ...rawSources(files)],
-    // The kit's dark values live under the same attribute the document carries.
-    darkMode: ['selector', "[data-mode='dark']"],
-    theme: {},
-    plugins: [],
+    ...CANVAS_TAILWIND_OPTIONS,
   };
 }
 

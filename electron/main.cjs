@@ -7,6 +7,7 @@ const {
   WebContentsView,
   dialog,
   ipcMain,
+  nativeImage,
   nativeTheme,
   powerMonitor,
   protocol,
@@ -36,6 +37,11 @@ const attachments = require('./attachments.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
+const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
+const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
+const { createCanvasImageSave } = require('./canvasImageSave.cjs');
+const { createCanvasSourceExport } = require('./canvasSourceExport.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -101,6 +107,7 @@ const sidecarSupervisor = createSidecarSupervisor({
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
 });
+const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
@@ -119,8 +126,15 @@ const appUpdater = createAppUpdater({
   logError: (message, error) => console.error('[update] %s:', message, error),
 });
 const rendererOomRecovery = createRendererOomRecovery();
-const canvasPreviewHosts = canvasPreview.createCanvasPreviewHosts({
+const canvasPreviewHosts = createCanvasPreviewHosts({
   log: (message) => console.warn('[canvas-preview] %s', message),
+  canCapture: () => powerMonitor.getSystemIdleState(1) !== 'locked',
+});
+const saveCanvasImage = createCanvasImageSave({
+  dialog,
+  fs: fsp,
+  readThumbnail: canvasPreviewHosts.readThumbnail,
+  getWindow: () => mainWindow,
 });
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via
@@ -179,11 +193,12 @@ protocol.registerSchemesAsPrivileged([
     scheme: favicons.FAVICON_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
   },
-  // The trusted intermediate a Canvas live preview loads (see canvasPreview.cjs).
-  // No `supportFetchAPI`: nothing in that guest may fetch anything.
+  // The trusted intermediate and its owned image/font subresources. Font
+  // loading from an opaque srcdoc needs CORS, while connect-src still denies
+  // generated fetches.
   {
     scheme: canvasPreview.CANVAS_PREVIEW_SCHEME,
-    privileges: { standard: true, secure: true },
+    privileges: { standard: true, secure: true, corsEnabled: true },
   },
 ]);
 // Overridable so a second dev instance (e.g. a feature worktree) can run beside
@@ -361,6 +376,7 @@ function createMainWindow() {
     terminalManager.closeAll();
     terminalSubscriptions.clear();
     filesRootAccess.clear();
+    canvasPreviewHosts.clear();
     mainWindow = null;
   });
   powerTier.attachWindow(mainWindow);
@@ -523,7 +539,27 @@ function previewGuestSession() {
 
 function registerCanvasPreviewProtocol() {
   const document = canvasPreview.canvasPreviewDocument();
-  const serve = (request) => {
+  const assetRequest = /^droidex-canvas-preview:\/\/preview\/(?:asset|font)\//;
+  const serve = async (request) => {
+    if (assetRequest.test(request.url)) {
+      const asset = await readCanvasPreviewAsset(request.url, {
+        canvasRoot: path.join(app.getPath('userData'), 'canvases'),
+        fontRoot: path.join(app.getPath('userData'), 'canvas-fonts'),
+        secret: sidecarSupervisor.canvasAssetSecret(),
+      });
+      if (!asset) return new Response('Not found', { status: 404 });
+      return new Response(asset.data, {
+        headers: {
+          'content-type': asset.mime,
+          'cache-control':
+            asset.mime === 'font/woff2' ? 'public, max-age=31536000, immutable' : 'no-store',
+          'x-content-type-options': 'nosniff',
+          ...(asset.mime === 'font/woff2' ? { 'access-control-allow-origin': '*' } : {}),
+        },
+      });
+    }
+    if (request.url === 'droidex-canvas-preview://preview/not-found')
+      return new Response('Not found', { status: 404 });
     if (request.url !== canvasPreview.CANVAS_PREVIEW_URL) {
       console.warn('Refused a Canvas preview request for %s', request.url);
       return new Response('Forbidden', { status: 403, headers: { 'content-type': 'text/plain' } });
@@ -537,14 +573,41 @@ function registerCanvasPreviewProtocol() {
       },
     });
   };
-  // Guests live in their own in-memory partition, which is where the preview's
-  // network is shut off; the default session serves the scheme too, so a
-  // mis-partitioned guest fails to attach rather than failing to load.
-  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, serve);
-  return canvasPreview.configureCanvasPreviewSession(previewGuestSession(), serve);
+  // The default session can load the owned document for a failed attachment,
+  // but it has no bound frame and may never read an asset.
+  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, (request) => {
+    if (assetRequest.test(request.url)) return new Response('Not found', { status: 404 });
+    return serve(request);
+  });
+  const guestSession = previewGuestSession();
+  guestSession.webRequest.onBeforeRequest(
+    { urls: ['droidex-canvas-preview://preview/*'] },
+    (details, callback) => {
+      if (!assetRequest.test(details.url)) return callback({});
+      const canvasId = canvasPreviewHosts.canvasForFrame(details.webContentsId, details.frame);
+      const requestedCanvas = /^\/asset\/([A-Za-z0-9_-]{1,128})\//.exec(
+        new URL(details.url).pathname,
+      )?.[1];
+      if (canvasId !== null && (requestedCanvas === undefined || requestedCanvas === canvasId))
+        return callback({});
+      callback({ redirectURL: 'droidex-canvas-preview://preview/not-found' });
+    },
+  );
+  return canvasPreview.configureCanvasPreviewSession(guestSession, serve);
 }
 
 function registerIpc() {
+  const exportCanvasSource = createCanvasSourceExport({
+    chooseDirectory: () =>
+      dialog.showOpenDialog(mainWindow, {
+        title: 'Export Canvas source',
+        buttonLabel: 'Export here',
+        properties: ['openDirectory'],
+      }),
+    getBridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
+    exportToken: () => sidecarSupervisor.canvasExportToken(),
+    fetchRequest: fetch,
+  });
   ipcMain.handle('bridge-info', (event) => {
     assertMainRenderer(event);
     return sidecarSupervisor.getBridgeInfo();
@@ -564,6 +627,19 @@ function registerIpc() {
     assertMainRenderer(event);
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
+  });
+  ipcMain.handle('canvas-pick-image', async (event, { canvasId }) => {
+    assertMainRenderer(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return canvasImageImportResult(importCanvasImage, canvasId, result.filePaths[0]);
+  });
+  ipcMain.handle('canvas-drop-image', (event, { canvasId, filePath }) => {
+    assertMainRenderer(event);
+    return canvasImageImportResult(importCanvasImage, canvasId, filePath);
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
@@ -652,6 +728,38 @@ function registerIpc() {
   ipcMain.handle('canvas-preview-terminate', (event, { guestId }) => {
     assertMainRenderer(event);
     return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
+  });
+  ipcMain.handle('canvas-preview-bind', (event, { guestId, canvasId }) => {
+    assertMainRenderer(event);
+    return (
+      Number.isSafeInteger(guestId) &&
+      /^[A-Za-z0-9_-]{1,128}$/.test(canvasId) &&
+      canvasPreviewHosts.bindCanvas(guestId, canvasId)
+    );
+  });
+  ipcMain.handle('canvas-preview-capture', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.capture(request);
+  });
+  ipcMain.handle('canvas-preview-cancel-capture', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.cancelCapture(request?.requestId);
+  });
+  ipcMain.handle('canvas-thumbnail-read', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.readThumbnail(
+      request?.canvasId,
+      request?.designId,
+      request?.revisionId,
+    );
+  });
+  ipcMain.handle('canvas-image-save', (event, request) => {
+    assertMainRenderer(event);
+    return saveCanvasImage(request);
+  });
+  ipcMain.handle('canvas-export-source', (event, input) => {
+    assertMainRenderer(event);
+    return exportCanvasSource(input);
   });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);
