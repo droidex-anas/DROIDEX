@@ -428,7 +428,19 @@ or an HTML page in its place) before staging a revision, then waits
 for that revision's build, at most the build deadline plus queueing, and answers a
 compact report: status, diagnostics with file and line, the last working revision and
 the next step. The compiler also fails a design that renders a component or calls a
-hook it never imports or declares. Once the build is ready, the write waits 1.5 s for
+hook it never imports or declares.
+Once a design bundles, `designSystemAdherence.ts` reads its own files, never the
+kit's, for hard-coded colours (hex, colour functions, named colours, Tailwind palette
+and arbitrary colour classes), font families the kit does not provide, and a design
+that uses none of the kit's primitives; a `--ds-*` token set in source is an override,
+noted once. The canvas manifest's `designSystemAdherence` rule (`off`, default `guide`,
+or `strict`) is set by an attached chat with `canvas.setDesignSystemAdherence` and
+reported in `CanvasSummary`; a change rebuilds every frame with source, and a cached
+outcome holds only under the rule it was built with. Under `guide` the findings ride a
+ready build as the report's `designSystem` notes; under `strict` they fail it. A turn's
+opening `canvas_read` carries the pinned kit's name, mode, token and primitive names and
+guidance (`designSystemBrief.ts`, under 21 KiB) and the canvas's rule; `canvas_theme`
+reads full kits. Once the build is ready, the write waits 1.5 s for
 an open pane to start the preview and then one 13 s deadline for it to render. The pane reports
 `loading`, `rendered` or `failed` through `canvas.reportPreview`; `CanvasPreviewReports`
 keeps the latest per design, so a design that compiles and then throws reaches the

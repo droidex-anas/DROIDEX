@@ -20,6 +20,7 @@ import {
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
 import { designEntryDiagnostic } from './designEntry.js';
+import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
@@ -72,6 +73,9 @@ export async function compileDesign(
   // Checked once every import resolves, so the missing name is the only fault left.
   const unbound = unboundNameDiagnostics(input.files);
   if (unbound.length > 0) throw new CompileFailedError(unbound);
+  // The design's own files, never the kit's: the kit is the standard they are held to.
+  const adherence = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
+  if (adherence.status === 'failed') throw new CompileFailedError(adherence.diagnostics);
 
   const stylesheet = await buildDesignStylesheet(input.files, system);
   stopIfCancelled(signal);
@@ -81,7 +85,11 @@ export async function compileDesign(
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
-    diagnostics: boundDiagnostics([...selectionDiagnostics, ...bundle.warnings]),
+    diagnostics: boundDiagnostics([
+      ...selectionDiagnostics,
+      ...bundle.warnings,
+      ...adherence.diagnostics,
+    ]),
     elements: instrumented.elements,
   };
 }

@@ -212,6 +212,7 @@ export function standIn(builds: CanvasBuilds) {
         build: builds.stateOf(canvasId, designId),
       },
       lastWorkingRevisionId: null,
+      designSystemAdherence: 'guide',
     };
   };
   const host: CanvasBuildHost = {

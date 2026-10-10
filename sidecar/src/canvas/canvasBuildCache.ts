@@ -9,11 +9,21 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
-import type { CanvasBuildOutcome, PreviewArtifact, SourceElement } from './protocol.js';
-import { CANVAS_LIMITS, canvasIdentifierSchema, sourceElementSchema } from './schema.js';
+import type {
+  CanvasBuildOutcome,
+  DesignSystemAdherence,
+  PreviewArtifact,
+  SourceElement,
+} from './protocol.js';
+import {
+  CANVAS_LIMITS,
+  canvasIdentifierSchema,
+  designSystemAdherenceSchema,
+  sourceElementSchema,
+} from './schema.js';
 import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
 
-const BUILD_OUTCOME_VERSION = 2;
+const BUILD_OUTCOME_VERSION = 3;
 
 const diagnosticSchema = z
   .object({
@@ -50,6 +60,8 @@ const buildOutcomeSchema = z
     version: z.literal(BUILD_OUTCOME_VERSION),
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
+    // The rule decides whether a straying design built, so an outcome holds only under it.
+    designSystemAdherence: designSystemAdherenceSchema,
     result: z.discriminatedUnion('status', [
       readyResultSchema.extend({ sourceMapDigest: z.string().regex(/^[0-9a-f]{64}$/) }),
       failedResultSchema,
@@ -64,6 +76,7 @@ export type BuildResult = z.infer<typeof readyResultSchema> | z.infer<typeof fai
 interface CachedOutcome {
   designId: string;
   revisionId: string;
+  designSystemAdherence: DesignSystemAdherence;
   result: BuildResult;
 }
 
@@ -95,6 +108,7 @@ export class CanvasBuildCache {
     canvasId: string,
     designId: string,
     revisionId: string,
+    designSystemAdherence: DesignSystemAdherence,
     result: BuildResult,
   ): Promise<void> {
     const stored =
@@ -107,7 +121,13 @@ export class CanvasBuildCache {
             ),
           }
         : result;
-    const document = { version: BUILD_OUTCOME_VERSION, designId, revisionId, result: stored };
+    const document = {
+      version: BUILD_OUTCOME_VERSION,
+      designId,
+      revisionId,
+      designSystemAdherence,
+      result: stored,
+    };
     await this.files.writeBuildOutput(
       canvasId,
       outcomeName(revisionId),
@@ -182,6 +202,7 @@ export class CanvasBuildCache {
         if (revisionId === null || !present.has(outcomeName(revisionId))) continue;
         const outcome = await this.readOutcome(manifest.canvasId, outcomeName(revisionId));
         if (outcome?.designId !== design.designId || outcome.revisionId !== revisionId) continue;
+        if (outcome.designSystemAdherence !== manifest.designSystemAdherence) continue;
         const vouched = vouchedState(design, revisionId, outcome.result, present);
         if (!vouched) continue;
         restored.push({ canvasId: manifest.canvasId, designId: design.designId, outcome: vouched });
@@ -202,7 +223,7 @@ export class CanvasBuildCache {
     }
     const parsed = buildOutcomeSchema.safeParse(value);
     if (!parsed.success) return null;
-    const { designId, revisionId, result } = parsed.data;
+    const { designId, revisionId, designSystemAdherence, result } = parsed.data;
     if (result.status === 'ready') {
       const source = await this.files
         .readRevision(canvasId, { designId, revisionId })
@@ -214,7 +235,7 @@ export class CanvasBuildCache {
         if (!file || element.end > file.length) return null;
       }
     }
-    return { designId, revisionId, result };
+    return { designId, revisionId, designSystemAdherence, result };
   }
 }
 
@@ -262,8 +283,25 @@ function vouchedState(
   if (result.status === 'ready') {
     if (design.lastWorkingRevisionId !== revisionId) return null;
     if (!present.has(artifactName(result.artifactId))) return null;
+  } else if (design.lastWorkingRevisionId === revisionId) {
+    // That failure's commit would have cleared the pointer: it never happened.
+    return null;
   }
   return builtState(revisionId, result, design.lastWorkingRevisionId);
+}
+
+/**
+ * The revision a design falls back to once `revisionId` reached `result`: its own
+ * when it built, none when the fallback itself stopped building (a stricter kit
+ * rule, a kit that is gone), and otherwise the one it had.
+ */
+export function fallbackAfter(
+  revisionId: string,
+  result: BuildResult,
+  lastWorkingRevisionId: string | null,
+): string | null {
+  if (result.status === 'ready') return revisionId;
+  return lastWorkingRevisionId === revisionId ? null : lastWorkingRevisionId;
 }
 
 /** The state one outcome describes, which only ever names its own revision. */

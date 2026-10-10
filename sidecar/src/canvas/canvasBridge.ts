@@ -172,6 +172,13 @@ class CanvasDispatch {
       case 'canvas.detach':
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
+      case 'canvas.setDesignSystemAdherence':
+        await workspace.settings.setDesignSystemAdherence(
+          command.appSessionId,
+          command.canvasId,
+          command.designSystemAdherence,
+        );
+        return { kind: 'ok' };
       case 'canvas.reportPreview':
         // The canvas has to be open; the report itself is only the pane's word.
         workspace.snapshot(command.canvasId);
@@ -288,11 +295,12 @@ class CanvasDispatch {
   }
 }
 
-/** The commands that change the saved canvases, their names or their contents. */
+/** The commands that change the saved canvases, their names, settings or contents. */
 const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
   'canvas.createCanvas',
   'canvas.attach',
   'canvas.detach',
+  'canvas.setDesignSystemAdherence',
   'canvas.create',
   'canvas.remove',
   'canvas.undoRemoval',
