@@ -95,9 +95,8 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
       capture.settle(captureFailure());
       capture.finish();
     }
-    for (const [key, thumbnail] of thumbnails) {
-      if (thumbnail.guestId === guestId) releaseThumbnail(key);
-    }
+    // A thumbnail outlives its guest: it is what the board shows for a frame
+    // that lost its live slot. The byte bound and window close release them.
   }
 
   function end(guestId, reason) {
@@ -144,9 +143,9 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     thumbnails.delete(key);
   }
 
-  function cache(key, bytes, guestId) {
+  function cache(key, bytes) {
     releaseThumbnail(key);
-    thumbnails.set(key, { bytes, guestId });
+    thumbnails.set(key, { bytes });
     cachedBytes += bytes.length;
     while (cachedBytes > MAX_CACHED_BYTES) {
       const oldest = thumbnails.keys().next().value;
@@ -198,6 +197,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
 
     clear() {
       for (const guestId of guests.keys()) forget(guestId);
+      for (const key of [...thumbnails.keys()]) releaseThumbnail(key);
     },
 
     /** Caller settlement cannot release the deadline of unfinished native work. */
@@ -298,7 +298,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
                 complete(captureFailure());
                 return;
               }
-              cache(key, bytes, guestId);
+              cache(key, bytes);
               complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })
