@@ -10,6 +10,8 @@
 /* ── Frames ─────────────────────────────────────────────────────────────── */
 
 .canvas-frame {
+  /* Not --droid-border: dark themes blend that into the board until it reads
+     1.04:1, which loses the sheet's edge against the board it sits on. */
   --canvas-sheet-edge: color-mix(in srgb, var(--droid-text) 9%, transparent);
   --canvas-chrome-font: var(--ui-font-family, system-ui, sans-serif);
 }
