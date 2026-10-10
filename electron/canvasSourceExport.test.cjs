@@ -71,14 +71,39 @@ test('a design system export names only a kit version, and posts to its own rout
     { ref: { id: '../escape', version: 1 } },
     { ref: { id: 'droidex', version: 1 }, destinationDirectory: '/elsewhere' },
   ]) {
-    await assert.rejects(exportKit(input), /Choose a design system to export/);
+    assert.deepEqual(await exportKit(input), {
+      ok: false,
+      code: 'invalid_input',
+      message: 'Choose a design system to export.',
+    });
   }
   assert.equal(chooserCalls, 0);
-  assert.deepEqual(await exportKit({ ref: { id: 'droidex', version: 1 } }), { filesWritten: 7 });
+  assert.deepEqual(await exportKit({ ref: { id: 'droidex', version: 1 } }), {
+    ok: true,
+    filesWritten: 7,
+  });
   assert.deepEqual(posted, [
     {
       url: 'http://127.0.0.1:1234/canvas/design-system-export',
       body: { ref: { id: 'droidex', version: 1 }, destinationDirectory: '/tmp/kit' },
     },
   ]);
+});
+
+test('a design system export answers a sidecar refusal as a result, with its own message', async () => {
+  const exportKit = createDesignSystemExport({
+    chooseDirectory: async () => ({ canceled: false, filePaths: ['/tmp/kit'] }),
+    getBridgeInfo: async () => ({ port: 1234 }),
+    exportToken: () => 'host-token',
+    fetchRequest: async () =>
+      new Response(
+        JSON.stringify({ code: 'invalid_input', message: 'The chosen folder is not empty.' }),
+        { status: 400 },
+      ),
+  });
+  assert.deepEqual(await exportKit({ ref: { id: 'droidex', version: 1 } }), {
+    ok: false,
+    code: 'invalid_input',
+    message: 'The chosen folder is not empty.',
+  });
 });

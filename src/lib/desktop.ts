@@ -21,7 +21,12 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
-import type { DesignSystemVersionRef, OwnedAsset, RevisionRef } from '../features/canvas/protocol';
+import type {
+  CanvasErrorCode,
+  DesignSystemVersionRef,
+  OwnedAsset,
+  RevisionRef,
+} from '../features/canvas/protocol';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -89,6 +94,11 @@ export interface CanvasPreviewCaptureRequest {
 export type CanvasPreviewCaptureResult =
   | { ok: true; mediaType: 'image/png'; bytes: Uint8Array }
   | { ok: false; error: { code: 'capture_unavailable'; message: string } };
+
+export type DesignSystemExportResult =
+  | { ok: true; filesWritten: number }
+  | { ok: false; cancelled: true }
+  | { ok: false; code: CanvasErrorCode; message: string };
 
 export type CanvasImageSaveResult =
   | { ok: true }
@@ -252,9 +262,7 @@ interface DroidControlApi {
     canvasId: string,
     ref: RevisionRef,
   ) => Promise<{ filesWritten: number } | null>;
-  canvasExportDesignSystem: (
-    ref: DesignSystemVersionRef,
-  ) => Promise<{ filesWritten: number } | null>;
+  canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<DesignSystemExportResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -798,11 +806,16 @@ export function exportCanvasSource(
   );
 }
 
-/** Opens the host's folder chooser, then writes one kit version there; null when cancelled. */
-export function exportDesignSystem(
+/** Opens the host's folder chooser, then writes one kit version there. */
+export async function exportDesignSystem(
   ref: DesignSystemVersionRef,
-): Promise<{ filesWritten: number } | null> {
-  return requireDesktopApi('Design system export needs the desktop app.').canvasExportDesignSystem(
-    ref,
-  );
+): Promise<DesignSystemExportResult> {
+  const api = desktopApi();
+  if (!api)
+    return {
+      ok: false,
+      code: 'storage_failed',
+      message: 'Open DROIDEX to export a design system.',
+    };
+  return api.canvasExportDesignSystem(ref);
 }

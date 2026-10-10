@@ -109,11 +109,10 @@ function KitDetail({
         return;
       }
       const exported = await exportDesignSystem({ id: system.id, version: system.version });
-      setStatus(
-        exported
-          ? { state: 'done', message: `Exported ${String(exported.filesWritten)} files.` }
-          : { state: 'idle' },
-      );
+      if (exported.ok)
+        setStatus({ state: 'done', message: `Exported ${String(exported.filesWritten)} files.` });
+      else if ('cancelled' in exported) setStatus({ state: 'idle' });
+      else setStatus({ state: 'failed', message: exported.message });
     } catch (error) {
       // A refusal saved nothing, so the next copy is a new one.
       if (error instanceof CanvasRequestError) copyMutationId.current = crypto.randomUUID();
