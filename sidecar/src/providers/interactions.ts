@@ -13,9 +13,10 @@ export interface ProviderApprovalRequest {
   confirmationType: string;
   // Stable key for an always-allow grant; absent when the request cannot earn one.
   signature?: string;
-  // The MCP server and tool, when the request is for one. The policies for
-  // DROIDEX's own servers approve their tools by the chat's autonomy.
-  mcpTool?: { serverName: string; toolName: string };
+  // The MCP server and tool of every tool the request covers, when each is one.
+  // The policies for DROIDEX's own servers approve their tools by the chat's
+  // autonomy, and a request only when they approve every tool in it.
+  mcpTools?: { serverName: string; toolName: string }[];
 }
 
 export interface ProviderQuestionAnswers {

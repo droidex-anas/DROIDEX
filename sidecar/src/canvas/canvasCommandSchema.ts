@@ -2,6 +2,7 @@
 // renderer mirror in protocol.ts must describe exactly what this accepts.
 
 import { z } from 'zod';
+import { DESIGN_SYSTEM_LIMITS } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import type { CanvasCommand } from './protocol.js';
 import {
@@ -9,6 +10,7 @@ import {
   canvasIdentifierSchema,
   canvasNameSchema,
   createFramesInputSchema,
+  designSystemVersionRefSchema,
   designSystemAdherenceSchema,
   editElementInputSchema,
   removeFramesInputSchema,
@@ -26,6 +28,21 @@ import {
 const request = { requestId: canvasIdentifierSchema };
 const session = { appSessionId: z.string().min(1).max(200) };
 const target = { ...session, canvasId: canvasIdentifierSchema };
+const kitName = {
+  name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
+};
+// A DESIGN.md becomes kit guidance, so it shares the guidance bound; pasted
+// CSS or a config is only read for tokens.
+const MAX_PASTED_TOKEN_SOURCE_BYTES = 64 * 1024;
+const designSystemSourceSchema = z
+  .object({ kind: z.enum(['designMd', 'cssOrTailwind']), text: z.string() })
+  .strict()
+  .refine(
+    ({ kind, text }) =>
+      Buffer.byteLength(text) <=
+      (kind === 'designMd' ? DESIGN_SYSTEM_LIMITS.maxGuidanceBytes : MAX_PASTED_TOKEN_SOURCE_BYTES),
+    { message: 'That source is too large for a design system. Shorten it and try again.' },
+  );
 
 export const canvasCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('canvas.list'), ...request }).strict(),
@@ -173,6 +190,32 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ...target,
       input: renameFrameInputSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal('canvas.listDesignSystems'), ...request }).strict(),
+  z
+    .object({
+      type: z.literal('canvas.readDesignSystem'),
+      ...request,
+      ref: designSystemVersionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.copyDesignSystem'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      source: designSystemVersionRefSchema,
+      ...kitName,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.importDesignSystem'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      ...kitName,
+      source: designSystemSourceSchema,
     })
     .strict(),
   z

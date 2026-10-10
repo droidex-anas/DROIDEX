@@ -537,10 +537,42 @@ test('Canvas tools proceed without a card at autonomy off under either harness n
         raw: {},
       },
       confirmationType: 'mcp_tool',
-      mcpTool,
+      mcpTools: [mcpTool],
     });
     assert.equal(outcome, 'proceed_once');
   }
+  assert.equal(approvalRequests(harness.emitted).length, 0);
+});
+
+function canvasWriteUse(toolUseId: string): RequestPermissionRequestParams['toolUses'][number] {
+  return {
+    toolUse: {
+      type: 'tool_use',
+      id: toolUseId,
+      name: 'droidex-canvas___canvas_write',
+      input: { mutationId: toolUseId },
+    },
+    confirmationType: ToolConfirmationType.McpTool,
+    details: {
+      type: ToolConfirmationType.McpTool,
+      toolName: 'canvas_write',
+      serverName: 'droidex-canvas',
+      impactLevel: 'low',
+    },
+  };
+}
+
+test('a Droid bundle of only Canvas tools proceeds without a card at autonomy off', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('design').summary.autonomy = 'off';
+  const bundle: RequestPermissionRequestParams = {
+    toolUses: ['write-light', 'write-dark', 'write-hero', 'write-footer'].map(canvasWriteUse),
+    options: [],
+  };
+  assert.equal(
+    await harness.permissionHandler({ id: 'design' })(bundle),
+    ToolConfirmationOutcome.ProceedOnce,
+  );
   assert.equal(approvalRequests(harness.emitted).length, 0);
 });
 
@@ -548,28 +580,13 @@ test('a Droid bundle led by a Canvas tool still asks for the whole request', asy
   const harness = createHarness();
   harness.addLiveSession('design').summary.autonomy = 'off';
   const bundle: RequestPermissionRequestParams = {
-    toolUses: [
-      {
-        toolUse: {
-          type: 'tool_use',
-          id: 'canvas-1',
-          name: 'droidex-canvas___canvas_write',
-          input: {},
-        },
-        confirmationType: ToolConfirmationType.McpTool,
-        details: {
-          type: ToolConfirmationType.McpTool,
-          toolName: 'canvas_write',
-          serverName: 'droidex-canvas',
-          impactLevel: 'low',
-        },
-      },
-      ...permissionInput('exec-1').toolUses,
-    ],
+    toolUses: [canvasWriteUse('write-light'), ...permissionInput('exec-1').toolUses],
     options: [],
   };
   const pending = Promise.resolve(harness.permissionHandler({ id: 'design' })(bundle));
   const request = latestApprovalRequest(harness.emitted);
+  assert.equal(request.title, 'droidex-canvas · canvas_write, Run command');
+  assert.equal(request.canAlwaysAllow, false);
   await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
   assert.equal(await pending, ToolConfirmationOutcome.Cancel);
   assert.equal(approvalRequests(harness.emitted).length, 1);

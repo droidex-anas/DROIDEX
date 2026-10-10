@@ -99,12 +99,15 @@ export class SessionInteractions {
   ): Promise<PermissionOutcome> {
     const liveSession = this.dependencies.getLiveSession(sessionId);
     const autonomy = liveSession?.summary.autonomy;
-    const tool = approval.mcpTool;
+    const tools = approval.mcpTools ?? [];
     const autoApproved = (unattended: boolean) =>
-      tool !== undefined &&
-      (shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
-        shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended) ||
-        shouldAutoApproveCanvasTool(tool.serverName, tool.toolName));
+      tools.length > 0 &&
+      tools.every(
+        (tool) =>
+          shouldAutoApproveAutomationTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+          shouldAutoApproveSessionsTool(tool.serverName, tool.toolName, autonomy, unattended) ||
+          shouldAutoApproveCanvasTool(tool.serverName, tool.toolName),
+      );
     const safeForUnattended = autoApproved(true);
     const safeForInteractive = autoApproved(false);
     if (

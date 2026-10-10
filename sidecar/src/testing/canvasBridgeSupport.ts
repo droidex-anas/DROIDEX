@@ -36,7 +36,7 @@ export const HEY = 'export default function Hey(){return <h1>Hey</h1>}';
 const KNOWN_CHATS = new Set([APP, 'agent-1', 'app-2']);
 
 /** The asset secret the Canvas suites sign their preview URLs with. */
-export const ASSET_SECRET = 'test-canvas-secret';
+const ASSET_SECRET = 'test-canvas-secret';
 
 /**
  * One bridge handler over a workspace, collecting the events it emits. Owned

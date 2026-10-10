@@ -8,6 +8,7 @@ const ERROR_CODES = new Set([
   'capture_unavailable',
   'scope_expired',
   'storage_failed',
+  'version_mismatch',
 ]);
 
 function isRecord(value) {
@@ -36,6 +37,16 @@ function isExportRequest(input) {
   );
 }
 
+function isDesignSystemExportRequest(input) {
+  return (
+    hasKeys(input, ['ref']) &&
+    hasKeys(input.ref, ['id', 'version']) &&
+    isCanvasId(input.ref.id) &&
+    Number.isSafeInteger(input.ref.version) &&
+    input.ref.version >= 0
+  );
+}
+
 function isExportResult(answer) {
   return (
     hasKeys(answer, ['filesWritten']) &&
@@ -54,37 +65,89 @@ function isExportError(answer) {
   );
 }
 
-function createCanvasSourceExport({ chooseDirectory, getBridgeInfo, exportToken, fetchRequest }) {
+const EXPORT_TIMEOUT_MS = 60_000;
+
+function refusal(code, message) {
+  return { ok: false, code, message };
+}
+
+// Main chooses the folder, then the sidecar's host-only route writes there; the
+// renderer only ever names what to export. The answer is a result, never a
+// throw, so a refusal reaches the renderer as its own message:
+// { ok: true, filesWritten } | { ok: false, cancelled: true } | { ok: false, code, message }.
+function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
+  const { chooseDirectory, getBridgeInfo, exportToken, fetchRequest } = host;
   return async (input) => {
-    if (!isExportRequest(input)) throw new Error('Choose a Canvas revision to export.');
+    if (!isRequest(input)) return refusal('invalid_input', invalidRequest);
     const result = await chooseDirectory();
-    if (result.canceled || !result.filePaths[0]) return null;
-    const { port } = await getBridgeInfo();
-    const response = await fetchRequest(`http://127.0.0.1:${String(port)}/canvas/source-export`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-canvas-export-token': exportToken(),
-      },
-      body: JSON.stringify({ ...input, destinationDirectory: result.filePaths[0] }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (response.status === 404) throw new Error('Canvas export service changed. Try again.');
+    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    let port;
+    try {
+      ({ port } = await getBridgeInfo());
+    } catch (error) {
+      // The supervisor's own reason ("Sidecar is stopped.") is what the user can act on.
+      console.error('Canvas export could not reach the sidecar:', error);
+      return refusal(
+        'storage_failed',
+        error instanceof Error && error.message ? error.message : failed,
+      );
+    }
+    let response;
+    try {
+      response = await fetchRequest(`http://127.0.0.1:${String(port)}${route}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-canvas-export-token': exportToken(),
+        },
+        body: JSON.stringify({ ...input, destinationDirectory: result.filePaths[0] }),
+        signal: AbortSignal.timeout(EXPORT_TIMEOUT_MS),
+      });
+    } catch (error) {
+      console.error('Canvas export request failed:', error);
+      const timedOut = error?.name === 'TimeoutError';
+      return refusal(
+        'storage_failed',
+        timedOut ? 'The export did not finish within a minute. Try again.' : failed,
+      );
+    }
+    if (response.status === 404)
+      return refusal('storage_failed', 'Canvas export service changed. Try again.');
     let answer;
     try {
       answer = await response.json();
     } catch {
-      throw new Error('Canvas export service returned an invalid response. Try again.');
-    }
-    if (!response.ok) {
-      throw new Error(
-        isExportError(answer) ? answer.message : 'Canvas source could not be exported.',
+      return refusal(
+        'storage_failed',
+        'Canvas export service returned an invalid response. Try again.',
       );
     }
+    if (!response.ok)
+      return isExportError(answer)
+        ? refusal(answer.code, answer.message)
+        : refusal('storage_failed', failed);
     if (!isExportResult(answer))
-      throw new Error('Canvas export returned an invalid result. Try again.');
-    return answer;
+      return refusal('storage_failed', 'Canvas export returned an invalid result. Try again.');
+    return { ok: true, filesWritten: answer.filesWritten };
   };
 }
 
-module.exports = { createCanvasSourceExport };
+function createCanvasSourceExport(host) {
+  return createHostExport(host, {
+    route: '/canvas/source-export',
+    isRequest: isExportRequest,
+    invalidRequest: 'Choose a Canvas revision to export.',
+    failed: 'Canvas source could not be exported.',
+  });
+}
+
+function createDesignSystemExport(host) {
+  return createHostExport(host, {
+    route: '/canvas/design-system-export',
+    isRequest: isDesignSystemExportRequest,
+    invalidRequest: 'Choose a design system to export.',
+    failed: 'The design system could not be exported.',
+  });
+}
+
+module.exports = { createCanvasSourceExport, createDesignSystemExport };

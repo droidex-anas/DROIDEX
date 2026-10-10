@@ -121,7 +121,7 @@ export class CodexToolBridge {
           raw: { toolName: `mcp__${serverName}__${tool.name}`, input },
         },
         confirmationType: 'mcp_tool',
-        mcpTool: { serverName, toolName: tool.name },
+        mcpTools: [{ serverName, toolName: tool.name }],
         ...(signature ? { signature } : {}),
       }),
     );

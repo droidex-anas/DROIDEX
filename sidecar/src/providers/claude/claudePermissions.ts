@@ -140,7 +140,7 @@ async function approveTool(
     },
     confirmationType: CONFIRMATION_TYPES[kind],
     ...(signature ? { signature } : {}),
-    ...(mcp ? { mcpTool: mcp } : {}),
+    ...(mcp ? { mcpTools: [mcp] } : {}),
   });
   if (outcome === 'cancel')
     return { behavior: 'deny', message: 'The user stopped this tool.', interrupt: true };

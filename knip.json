@@ -14,7 +14,7 @@
   "project": ["src/**/*.{ts,tsx}", "electron/**/*.cjs", "*.config.{js,ts}"],
   "ignore": ["sidecar/**"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
-  "ignoreBinaries": ["iconutil", "xdotool"],
+  "ignoreBinaries": ["iconutil", "ps", "xdotool"],
   "ignoreDependencies": [
     "@types/react",
     "@types/react-dom",

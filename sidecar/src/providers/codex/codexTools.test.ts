@@ -273,10 +273,9 @@ test('a known tool runs through approval; unknown tools, other threads, and deni
   });
   assert.equal(state.calls(), 1);
   assert.equal(state.approvals[0].signature, 'mcp::droidex-sessions::thread_spawn::thread');
-  assert.deepEqual(state.approvals[0].mcpTool, {
-    serverName: 'droidex-sessions',
-    toolName: 'thread_spawn',
-  });
+  assert.deepEqual(state.approvals[0].mcpTools, [
+    { serverName: 'droidex-sessions', toolName: 'thread_spawn' },
+  ]);
 
   state.deny();
   assert.deepEqual(await state.bridge.call(spawn), {

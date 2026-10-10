@@ -470,6 +470,55 @@ test('every serialized event the sidecar emits passes the renderer validator', (
     { type: 'canvas.summaries', summaries },
     { type: 'canvas.change', change: wire.change },
     {
+      type: 'canvas.result',
+      requestId: 'req_03',
+      ok: true,
+      reply: {
+        kind: 'designSystems',
+        systems: [
+          {
+            id: 'droidex',
+            version: 1,
+            name: 'DROIDEX',
+            kind: 'preset',
+            swatches: {
+              light: { surface: '#fdfbf7', accent: '#8a5a1f' },
+              dark: { surface: '#191817', accent: '#e3a857' },
+            },
+          },
+        ],
+      },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_03',
+      ok: true,
+      reply: {
+        kind: 'designSystem',
+        system: {
+          id: 'paper',
+          version: 2,
+          name: 'Paper',
+          modes: {
+            light: { '--ds-accent': 'hsl(222 47% 11%)', '--brand-ink': '#2b2118' },
+            dark: { '--ds-accent': '#e3a857', '--brand-ink': '#2b2118' },
+          },
+          unmapped: ['--brand-ink'],
+          provenance: { copiedFrom: { id: 'droidex', version: 1 } },
+        },
+      },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_03',
+      ok: true,
+      reply: {
+        kind: 'designSystemSaved',
+        ref: { id: 'paper', version: 1 },
+        diagnostics: [{ code: 'single_mode_token', message: 'Both modes use it.', line: 4 }],
+      },
+    },
+    {
       type: 'canvas.captureRequest',
       captureId: '0b6b9f3e-7c1d-4f43-9a5e-2f1c8d4e6a70',
       canvasId: 'cv_01',

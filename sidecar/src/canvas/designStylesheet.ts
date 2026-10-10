@@ -226,7 +226,7 @@ const TOKENS_FILE = `${KIT_SPECIFIER}/tokens`;
  * Both modes are emitted, and `data-mode` on the document picks one. Switching
  * mode is then an attribute change rather than a rebuild.
  */
-function modeTokens(system: DesignSystem): string {
+export function modeTokens(system: Pick<DesignSystem, 'modes'>): string {
   return (['light', 'dark'] as const)
     .map((mode) => {
       const declarations = Object.entries(system.modes[mode])
