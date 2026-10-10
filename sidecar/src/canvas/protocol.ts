@@ -45,7 +45,6 @@ export type {
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
-export type { DesignSystemProvenance, DesignSystemSummary } from './designSystems.js';
 
 export interface ElementEdit {
   element: ElementRef;

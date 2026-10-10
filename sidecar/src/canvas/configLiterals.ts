@@ -11,7 +11,7 @@ export type ConfigValue =
   | { kind: 'computed'; line: number };
 
 /** A property, or a spread or computed key, which has no name to report. */
-export interface ConfigEntry {
+interface ConfigEntry {
   key: string | null;
   value: ConfigValue;
 }
