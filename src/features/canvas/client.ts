@@ -4,6 +4,7 @@
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import { applyCanvasChange } from './applyCanvasChange';
 import { reply, wrongReply, type ReplyEvent } from './canvasReply';
+import { DesignSystemRequests } from './designSystemRequests';
 import type {
   ArrangeFramesInput,
   CanvasChange,
@@ -85,6 +86,8 @@ export class CanvasClient {
   private listening = false;
 
   constructor(private readonly transport: CanvasTransport) {}
+
+  readonly designSystems = new DesignSystemRequests((command) => this.request(command));
 
   listCanvases(): Promise<CanvasSummary[]> {
     return this.request({ type: 'canvas.list', requestId: requestId() }).then(
@@ -372,8 +375,7 @@ export class CanvasClient {
     });
   }
 
-  /** One correlated request: its reply, or the sidecar's refusal as a CanvasRequestError. */
-  request(command: CanvasCommand): Promise<ReplyEvent> {
+  private request(command: CanvasCommand): Promise<ReplyEvent> {
     this.listen();
     if (this.pending.size >= MAX_PENDING_REQUESTS)
       return Promise.reject(new Error('Wait for the current Canvas requests to finish.'));

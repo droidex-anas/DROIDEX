@@ -3,21 +3,11 @@
 
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { canvasClient } from './canvasClient';
-import { reply } from './canvasReply';
 import { canvasMessage } from './client';
+import type { SavedDesignSystem } from './designSystemRequests';
 import { designSystemsReducer, initialDesignSystemsState } from './designSystemsState';
 import { MAX_KIT_NAME_LENGTH } from './wireValidation';
-import type {
-  CanvasDiagnostic,
-  DesignSystemDetail,
-  DesignSystemSource,
-  DesignSystemVersionRef,
-} from './protocol';
-
-interface SavedKit {
-  ref: DesignSystemVersionRef;
-  diagnostics: CanvasDiagnostic[];
-}
+import type { DesignSystemDetail, DesignSystemSource } from './protocol';
 
 export function useDesignSystems() {
   const [state, dispatch] = useReducer(designSystemsReducer, initialDesignSystemsState);
@@ -27,17 +17,14 @@ export function useDesignSystems() {
   useEffect(() => {
     let active = true;
     dispatch({ type: 'listing' });
-    canvasClient
-      .request({ type: 'canvas.listDesignSystems', requestId: crypto.randomUUID() })
-      .then((event) => reply(event, 'designSystems').systems)
-      .then(
-        (systems) => {
-          if (active) dispatch({ type: 'listed', systems });
-        },
-        (error: unknown) => {
-          if (active) dispatch({ type: 'listFailed', message: canvasMessage(error) });
-        },
-      );
+    canvasClient.designSystems.list().then(
+      (systems) => {
+        if (active) dispatch({ type: 'listed', systems });
+      },
+      (error: unknown) => {
+        if (active) dispatch({ type: 'listFailed', message: canvasMessage(error) });
+      },
+    );
     return () => {
       active = false;
     };
@@ -50,23 +37,20 @@ export function useDesignSystems() {
     const ref = { id: selectedId, version: selectedVersion };
     let active = true;
     dispatch({ type: 'reading' });
-    canvasClient
-      .request({ type: 'canvas.readDesignSystem', requestId: crypto.randomUUID(), ref })
-      .then((event) => reply(event, 'designSystem').system)
-      .then(
-        (system) => {
-          if (active) dispatch({ type: 'read', system });
-        },
-        (error: unknown) => {
-          if (active) dispatch({ type: 'readFailed', ref, message: canvasMessage(error) });
-        },
-      );
+    canvasClient.designSystems.read(ref).then(
+      (system) => {
+        if (active) dispatch({ type: 'read', system });
+      },
+      (error: unknown) => {
+        if (active) dispatch({ type: 'readFailed', ref, message: canvasMessage(error) });
+      },
+    );
     return () => {
       active = false;
     };
   }, [selectedId, selectedVersion, readAttempt]);
 
-  const showSaved = useCallback((saved: SavedKit) => {
+  const showSaved = useCallback((saved: SavedDesignSystem) => {
     dispatch({ type: 'saved', ...saved });
     setListAttempt((attempt) => attempt + 1);
   }, []);
@@ -74,14 +58,7 @@ export function useDesignSystems() {
   /** Rejects with the sidecar's reason; the form keeps its text. */
   const create = useCallback(
     async (mutationId: string, name: string, source: DesignSystemSource) => {
-      const event = await canvasClient.request({
-        type: 'canvas.importDesignSystem',
-        requestId: crypto.randomUUID(),
-        mutationId,
-        name,
-        source,
-      });
-      showSaved(reply(event, 'designSystemSaved'));
+      showSaved(await canvasClient.designSystems.import(mutationId, name, source));
     },
     [showSaved],
   );
@@ -90,14 +67,9 @@ export function useDesignSystems() {
   const copy = useCallback(
     async (system: DesignSystemDetail, mutationId: string) => {
       const suffix = ' copy';
-      const event = await canvasClient.request({
-        type: 'canvas.copyDesignSystem',
-        requestId: crypto.randomUUID(),
-        mutationId,
-        source: { id: system.id, version: system.version },
-        name: system.name.slice(0, MAX_KIT_NAME_LENGTH - suffix.length) + suffix,
-      });
-      showSaved(reply(event, 'designSystemSaved'));
+      const name = system.name.slice(0, MAX_KIT_NAME_LENGTH - suffix.length) + suffix;
+      const source = { id: system.id, version: system.version };
+      showSaved(await canvasClient.designSystems.copy(mutationId, source, name));
     },
     [showSaved],
   );
