@@ -315,6 +315,14 @@ test('a design without an entry says which file is missing', async () => {
   assert.match(diagnostic?.message ?? '', /main\.tsx/);
 });
 
+test('an HTML page names the React entry contract instead of a TSX parse error', async () => {
+  const page: SourceFiles = { 'index.html': '<!DOCTYPE html>\n<html><body>Hi</body></html>\n' };
+  for (const files of [page, { ...page, 'main.tsx': 'export default () => null;\n' }]) {
+    const [diagnostic] = await diagnosticsFor(files);
+    assert.match(diagnostic?.message ?? '', /^index\.html is not compiled.*main\.tsx.*React/);
+  }
+});
+
 test('aborting an in-flight compile is a cancellation, not a failure', async () => {
   const controller = new AbortController();
   const pending = shared.compile(compileInput(STATEFUL_DESIGN), controller.signal);

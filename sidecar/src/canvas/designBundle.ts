@@ -115,10 +115,25 @@ const EXPANDED_GLOB_IMPORT = /^Could not resolve (?:import|require)\(".*\*.*"\)$
 const BUNDLE_RECOVERY = 'The design could not be compiled. Check main.tsx and retry.';
 const MISSING_ENTRY_MESSAGE = `A design needs ${DESIGN_ENTRY}, which default-exports its component.`;
 
-export async function bundleDesign(sources: DesignSources): Promise<DesignBundleResult> {
-  if (!Object.hasOwn(sources.files, DESIGN_ENTRY))
-    return { ok: false, diagnostics: [{ code: 'missing_module', message: MISSING_ENTRY_MESSAGE }] };
+/**
+ * Why `files` is not a design at all, checked before any file is parsed. A model
+ * that writes an HTML page would otherwise learn only that HTML is not TSX.
+ */
+export function designEntryDiagnostic(files: SourceFiles): CanvasDiagnostic | null {
+  const page = Object.keys(files).find((file) => file.endsWith('.html'));
+  if (page !== undefined)
+    return {
+      code: 'compile_failed',
+      message: `${page} is not compiled. A design is ${DESIGN_ENTRY}, which default-exports a React component; write the page as that component's JSX.`,
+      file: page,
+    };
+  if (!Object.hasOwn(files, DESIGN_ENTRY))
+    return { code: 'missing_module', message: MISSING_ENTRY_MESSAGE };
+  return null;
+}
 
+/** Bundles a tree `designEntryDiagnostic` accepted. */
+export async function bundleDesign(sources: DesignSources): Promise<DesignBundleResult> {
   let build: esbuild.BuildResult;
   try {
     build = await canvasRuntime().esbuild.build({

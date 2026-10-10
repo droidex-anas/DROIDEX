@@ -18,7 +18,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from './compiler.js';
-import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
+import { ROOT_ELEMENT_ID, bundleDesign, designEntryDiagnostic } from './designBundle.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
@@ -37,6 +37,8 @@ export async function compileDesign(
   input: CompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
+  const entryDiagnostic = designEntryDiagnostic(input.files);
+  if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
   stopIfCancelled(signal);
 
