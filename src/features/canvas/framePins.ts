@@ -20,13 +20,16 @@ export interface FramePin {
 }
 
 const NONE: readonly FramePin[] = [];
+// Only chats holding pins have an entry, and only boards on screen are kept, so
+// neither grows with the chats a session has visited.
 let pinsByChat: Readonly<Record<string, readonly FramePin[]>> = {};
-/** The attached board each chat's pane last showed, which decides what a pin can name. */
+/** The attached board each chat's pane is showing, which decides what a pin can name. */
 const boards = new Map<string, CanvasSnapshot>();
 const listeners = new Set<() => void>();
 
 function publish(appSessionId: string, pins: readonly FramePin[]) {
-  pinsByChat = { ...pinsByChat, [appSessionId]: pins };
+  const others = Object.entries(pinsByChat).filter(([id]) => id !== appSessionId);
+  pinsByChat = Object.fromEntries(pins.length > 0 ? [...others, [appSessionId, pins]] : others);
   for (const listener of listeners) listener();
 }
 
@@ -122,10 +125,14 @@ export function restoreFramePins(appSessionId: string, pins: readonly FramePin[]
  * resized or rebuilt is pinned as it is now, and a deleted frame, or one from a
  * canvas the chat has left, is dropped. Only a change publishes.
  */
-export function syncFramePins(appSessionId: string, attached: CanvasSnapshot): void {
+export function syncFramePins(appSessionId: string, attached: CanvasSnapshot): () => void {
   boards.set(appSessionId, attached);
   const held = framePins(appSessionId);
   publishChanged(appSessionId, held, onBoard(held, attached));
+  // Called when the board goes, so a closed pane does not keep its whole snapshot.
+  return () => {
+    if (boards.get(appSessionId) === attached) boards.delete(appSessionId);
+  };
 }
 
 /** The pins that name a frame on the attached board, as that frame now is. */

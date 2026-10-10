@@ -142,7 +142,19 @@ test('an edited queued prompt brings back only frames still on the attached boar
     [{ designId: 'd1', revisionId: 'r3' }],
   );
   unpinFrames('chat-e');
-  syncFramePins('chat-e', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1', 'r1')] });
+  const closePane = syncFramePins('chat-e', {
+    canvasId: 'cv_2',
+    sequence: 1,
+    frames: [frame('d1', 'r1')],
+  });
   restoreFramePins('chat-e', queued);
   assert.equal(framePins('chat-e').length, 0);
+
+  // A pane that closed keeps no board: the prompt's own canvas decides again.
+  closePane();
+  restoreFramePins('chat-e', queued);
+  assert.deepEqual(
+    framePins('chat-e').map((pin) => pin.designId),
+    ['d1', 'd2'],
+  );
 });

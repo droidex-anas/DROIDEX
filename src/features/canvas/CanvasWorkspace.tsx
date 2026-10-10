@@ -361,9 +361,10 @@ function CanvasBoardMount({
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
     [pins, canvasId],
   );
-  useEffect(() => {
-    if (pinnable) syncFramePins(appSessionId, snapshot);
-  }, [appSessionId, pinnable, snapshot]);
+  useEffect(
+    () => (pinnable ? syncFramePins(appSessionId, snapshot) : undefined),
+    [appSessionId, pinnable, snapshot],
+  );
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">
