@@ -108,6 +108,15 @@
   transform-origin: 100% 100%;
 }
 
+/* A frame too narrow on screen for both keeps its label and lifts its actions
+   above the label row, starting where the label does. */
+.canvas-frame-tools[data-stacked] {
+  right: auto;
+  left: 0;
+  bottom: calc(100% + 32px / var(--board-scale));
+  transform-origin: 0 100%;
+}
+
 .canvas-frame-toolbar {
   display: flex;
   gap: 2px;

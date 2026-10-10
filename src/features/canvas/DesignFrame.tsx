@@ -20,6 +20,8 @@ import type { CanvasFrame, FrameRect } from './protocol';
 
 /** Screen room the selected frame's actions take at the right of its label row. */
 const TOOLS_PX = 168;
+/** Below this on screen the label keeps its row and the actions sit above it. */
+const SIDE_BY_SIDE_PX = TOOLS_PX + 120;
 /** Below this on screen a sheet shows its title alone, without the detail. */
 const COMPACT_SHEET_PX = { width: 220, height: 140 };
 
@@ -68,6 +70,8 @@ export function DesignFrame(props: DesignFrameProps) {
   const { frame, rect, scale, motion, arriving, mode, selected, showTools, held } = props;
   const { capturePointer, onHold, onPick, onInteract } = props;
   const animated = arriving && motion.frameArrivalMs > 0;
+  const screenWidth = rect.width * scale;
+  const toolsBeside = showTools && screenWidth >= SIDE_BY_SIDE_PX;
   return (
     <div
       data-design-frame={frame.designId}
@@ -81,7 +85,7 @@ export function DesignFrame(props: DesignFrameProps) {
         ...(animated ? arrival(motion) : {}),
       }}
     >
-      <FrameLabel {...props} width={rect.width * scale - (showTools ? TOOLS_PX : 0)} />
+      <FrameLabel {...props} width={screenWidth - (toolsBeside ? TOOLS_PX : 0)} />
 
       <div
         // The sheet is the design's, never the board's background: in Interact
@@ -113,7 +117,7 @@ export function DesignFrame(props: DesignFrameProps) {
         )}
       </div>
 
-      {showTools && <FrameTools {...props} />}
+      {showTools && <FrameTools {...props} stacked={!toolsBeside} />}
 
       {selected && (
         <div className="canvas-frame-size canvas-chrome">
@@ -202,12 +206,14 @@ function FrameLabel({
 function FrameTools({
   frame,
   interacted,
+  stacked,
   onInteract,
   onExitInteract,
   onOpenSource,
-}: DesignFrameProps) {
+}: DesignFrameProps & { stacked: boolean }) {
   return (
     <div
+      data-stacked={stacked || undefined}
       className="canvas-frame-tools canvas-chrome"
       onPointerDown={(event) => {
         event.stopPropagation();
