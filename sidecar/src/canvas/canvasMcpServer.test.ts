@@ -30,12 +30,19 @@ type Reply = {
   receipt?: { revisionId: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number }[];
-  build?: { status: string; diagnostics?: { file?: string; line?: number }[]; next?: string };
+  build?: {
+    status: string;
+    diagnostics?: { file?: string; line?: number }[];
+    errors?: string[];
+    rendered?: boolean;
+    next?: string;
+  };
 };
 
 /**
  * A compiler that answers at once, because canvas_write waits for its build:
- * every design builds, except one whose main.tsx names `BROKEN`.
+ * every design builds, except one whose main.tsx names `BROKEN`. One that names
+ * `THROWS` builds an artifact the stand-in pane below cannot render.
  */
 function answeringBuilds(): CanvasBuilds {
   const compile = (input: CompileInput) =>
@@ -46,7 +53,7 @@ function answeringBuilds(): CanvasBuilds {
           ]),
         )
       : Promise.resolve({
-          artifactId: input.revisionId,
+          artifactId: `${input.files['main.tsx']?.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`,
           html: '<html></html>',
           diagnostics: [],
           elements: [],
@@ -71,6 +78,19 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
   store.closing.push(async () => {
     await builds.close();
     await workspace.close();
+  });
+  // The open pane: it runs every build that lands and says what the preview did.
+  workspace.changes.subscribe((change) => {
+    for (const { designId, build } of change.frames) {
+      if (build.status !== 'ready') continue;
+      const throws = build.artifactId.startsWith('throws');
+      workspace.previews.record(change.canvasId, {
+        designId,
+        revisionId: build.revisionId,
+        outcome: throws ? 'failed' : 'rendered',
+        errors: throws ? ['total is not defined'] : [],
+      });
+    }
   });
   const server = createCanvasMcpServer(
     () => Promise.resolve(workspace),
@@ -439,9 +459,16 @@ test('canvas_write refuses a tree with no entry and reports its build in the sam
   ]);
   assert.match(broken.build.next ?? '', /main\.tsx line 3/);
 
+  // A build that compiles can still stop while it renders; the pane says so.
   assert.ok(broken.receipt);
-  const fixed = await write('fixed', broken.receipt.revisionId, 'export default () => <p>Hey</p>');
+  const throws = await write('throws', broken.receipt.revisionId, 'export default () => THROWS');
+  assert.equal(throws.build?.status, 'render_failed');
+  assert.deepEqual(throws.build.errors, ['total is not defined']);
+
+  assert.ok(throws.receipt);
+  const fixed = await write('fixed', throws.receipt.revisionId, 'export default () => <p>Hey</p>');
   assert.equal(fixed.build?.status, 'ready');
+  assert.equal(fixed.build.rendered, true);
   assert.equal(
     (await h.call('canvas_inspect', { designId: frames[0].designId })).build?.status,
     'ready',

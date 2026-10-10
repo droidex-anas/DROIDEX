@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
 import './canvasAnimations.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
-import { canvasClient as canvas } from './canvasClient';
+import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
@@ -308,7 +308,12 @@ function CanvasBoardMount({
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           renderPreview={(frame) => (
-            <DesignPreview canvasId={canvasId} frame={frame} readArtifact={readArtifact} />
+            <DesignPreview
+              canvasId={canvasId}
+              frame={frame}
+              readArtifact={readArtifact}
+              reportPreview={reportPreview}
+            />
           )}
         />
       )}

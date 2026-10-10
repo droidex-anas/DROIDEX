@@ -45,6 +45,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.reportPreview'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      report: z
+        .object({
+          designId: canvasIdentifierSchema,
+          revisionId: canvasIdentifierSchema,
+          outcome: z.enum(['loading', 'rendered', 'failed']),
+          // The preview's own caps: eight diagnostics of at most 512 bytes each.
+          errors: z.array(z.string().max(512)).max(8),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.readSource'),
       ...request,
       canvasId: canvasIdentifierSchema,

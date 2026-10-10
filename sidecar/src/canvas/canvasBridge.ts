@@ -159,6 +159,11 @@ class CanvasDispatch {
       case 'canvas.detach':
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
+      case 'canvas.reportPreview':
+        // The canvas has to be open; the report itself is only the pane's word.
+        workspace.snapshot(command.canvasId);
+        workspace.previews.record(command.canvasId, command.report);
+        return { kind: 'ok' };
       case 'canvas.readSource': {
         // The source drawer's read. It is bounded by the revision the asking
         // page already holds, and it never moves the design's head.

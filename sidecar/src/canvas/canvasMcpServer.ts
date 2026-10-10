@@ -2,7 +2,7 @@ import { CanvasMcpServer } from './canvasMcpTransport.js';
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
-import { agentFrame, buildReport, settledFrame } from './canvasAgentReport.js';
+import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvasAgentReport.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
@@ -164,6 +164,7 @@ export function createCanvasMcpServer(
           const snapshot = await board(scope);
           if (!snapshot)
             return { scopeId: scope.scopeId, attached: false, pinned: scope.context, frames: [] };
+          const { previews } = await workspace();
           if (input.view === 'summary')
             return {
               scopeId: scope.scopeId,
@@ -174,7 +175,7 @@ export function createCanvasMcpServer(
               totalFrames: snapshot.frames.length,
               frames: snapshot.frames
                 .slice(input.offset, input.offset + input.limit)
-                .map(agentFrame),
+                .map((frame) => agentFrame(frame, previews.reportFor(snapshot.canvasId, frame))),
             };
           if (!input.designId || !input.revisionId)
             throw canvasError('invalid_input', 'Name a designId and revisionId to read source.');
@@ -230,7 +231,10 @@ export function createCanvasMcpServer(
             await workspace()
           ).create(scope, { mutationId, frames, placeBeside });
           return {
-            created: { canvasId: created.canvasId, frames: created.frames.map(agentFrame) },
+            created: {
+              canvasId: created.canvasId,
+              frames: created.frames.map((frame) => agentFrame(frame, null)),
+            },
             next: 'Write each frame’s main.tsx with canvas_write, expectedRevisionId null.',
           };
         }),
@@ -262,7 +266,12 @@ export function createCanvasMcpServer(
               owner.snapshot(canvasId).frames.find((entry) => entry.designId === receipt.designId),
             receipt.revisionId,
           );
-          return frame ? { receipt, build: buildReport(frame) } : { receipt };
+          if (!frame) return { receipt };
+          const preview =
+            frame.revisionId === receipt.revisionId && frame.build.status === 'ready'
+              ? await renderedPreview(owner.previews, canvasId, frame)
+              : null;
+          return { receipt, build: buildReport(frame, preview) };
         }),
     ),
     tool(
@@ -282,7 +291,7 @@ export function createCanvasMcpServer(
             );
           const snapshot = await board(scope);
           const frame = snapshot?.frames.find((entry) => entry.designId === input.designId);
-          if (!frame)
+          if (!snapshot || !frame)
             throw canvasError(
               'invalid_input',
               'That design is not on this canvas. Read the canvas summary again.',
@@ -297,10 +306,11 @@ export function createCanvasMcpServer(
               'capture_unavailable',
               'Agent element and screenshot capture is unavailable. Use build diagnostics and source for now.',
             );
+          const { previews } = await workspace();
           return {
             designId: frame.designId,
             revisionId: frame.revisionId,
-            build: buildReport(frame),
+            build: buildReport(frame, previews.reportFor(snapshot.canvasId, frame)),
           };
         }),
     ),

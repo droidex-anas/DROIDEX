@@ -15,6 +15,7 @@ import { CanvasFrameEdits } from './CanvasFrameEdits.js';
 import { placeFrames, requireSeedFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { CanvasPreviewReports } from './canvasPreviewReports.js';
 import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
   canvasChange,
@@ -56,6 +57,8 @@ const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 export class CanvasWorkspace {
   /** Every committed change, in sequence, for the pane to project. */
   readonly changes = new CanvasChangeFeed();
+  /** What the pane's previews last did, which only the agent reads. */
+  readonly previews = new CanvasPreviewReports();
   private readonly commits = new CanvasCommits(this.changes);
   private readonly attachments: CanvasAttachments;
   private readonly frameEdits: CanvasFrameEdits;
