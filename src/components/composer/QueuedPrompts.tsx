@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
+import { Frame, GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
 import type { QueuedPrompt } from '../../lib/promptQueue';
 import { PendingPromptPreview } from './PendingPromptPreview';
 
@@ -71,6 +71,14 @@ export function QueuedPrompts({
                   <MousePointerSquareDashed className="w-3 h-3" />
                   {p.design.references.length} reference
                   {p.design.references.length === 1 ? '' : 's'}
+                </span>
+              )}
+              {p.framePins && p.framePins.length > 0 && (
+                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-droid-active px-1.5 py-0.5 text-[11px] text-droid-text-muted">
+                  <Frame className="w-3 h-3" />
+                  {p.framePins.length === 1
+                    ? p.framePins[0].name
+                    : `${String(p.framePins.length)} frames`}
                 </span>
               )}
             </PendingPromptPreview>
