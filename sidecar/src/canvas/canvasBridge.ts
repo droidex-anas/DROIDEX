@@ -166,12 +166,13 @@ class CanvasDispatch {
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
       case 'canvas.readSource': {
-        // The source drawer's read. It is bounded by the revision the asking
-        // page already holds, and it never moves the design's head.
-        const files = await workspace.readFiles(command.canvasId, {
-          designId: command.designId,
-          revisionId: command.revisionId,
-        });
+        // The source drawer and history read one committed revision; an
+        // uncommitted tree on disk is refused, and the head never moves.
+        const files = await workspace.history.readRevisionFiles(
+          command.canvasId,
+          command.designId,
+          command.revisionId,
+        );
         return { kind: 'source', files };
       }
       default:

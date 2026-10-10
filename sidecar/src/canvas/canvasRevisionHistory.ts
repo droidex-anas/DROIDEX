@@ -52,6 +52,7 @@ export class CanvasRevisionHistory {
     );
   }
 
+  /** Only revisions in the commit index; a staged tree that never committed is refused. */
   async readRevisionFiles(
     canvasId: string,
     designId: string,
@@ -150,7 +151,7 @@ export class CanvasRevisionHistory {
         (record) => record.designId === designId && record.revisionId === revisionId,
       )
     )
-      throw canvasError('not_found', 'That revision is not in this design’s saved history.');
+      throw canvasError('invalid_input', 'That revision is not in this design’s saved history.');
   }
 }
 

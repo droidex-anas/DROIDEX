@@ -407,7 +407,7 @@ test('a removed design refuses history and restore until Undo brings its history
   );
 });
 
-test('history excludes orphan revisions left by a refused manifest commit', async (t) => {
+test('history and source reads exclude orphan revisions left by a refused manifest commit', async (t) => {
   let failing = false;
   const canvas = await harness(
     t,
@@ -427,10 +427,23 @@ test('history excludes orphan revisions left by a refused manifest commit', asyn
   assert.equal(revisions.length, 2);
   const orphan = revisions.find((revisionId) => revisionId !== first.revisionId);
   assert.ok(orphan);
-  await assert.rejects(
-    canvas.workspace.history.readRevisionFiles(canvas.canvasId, canvas.designId, orphan),
-    { code: 'not_found' },
-  );
+  const events: ServerEvent[] = [];
+  const { handle } = canvasCommandHandler({
+    ready: Promise.resolve(canvas.workspace),
+    scopes: canvas.scopes,
+    builds: canvas.builds,
+    events,
+    root: canvas.root,
+  });
+  await handle({
+    type: 'canvas.readSource',
+    requestId: 'read-orphan',
+    canvasId: canvas.canvasId,
+    designId: canvas.designId,
+    revisionId: orphan,
+  });
+  const read = events.find((event) => event.type === 'canvas.result');
+  assert.ok(read?.type === 'canvas.result' && !read.ok && read.error.code === 'invalid_input');
   assert.deepEqual(
     (
       await canvas.workspace.history.listRevisions(canvas.canvasId, canvas.designId, { limit: 50 })
