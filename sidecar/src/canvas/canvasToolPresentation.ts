@@ -47,7 +47,7 @@ const VERBS = {
   theme: ['Reading design system', 'Read design system', 'Could not read design system'],
 } as const;
 
-export function canvasToolName(name: string | undefined): CanvasToolName | undefined {
+function canvasToolName(name: string | undefined): CanvasToolName | undefined {
   if (!name) return undefined;
   let prefix = `mcp__${CANVAS_MCP_SERVER_NAME}__`;
   if (!name.startsWith(prefix)) prefix = `${CANVAS_MCP_SERVER_NAME}___`;

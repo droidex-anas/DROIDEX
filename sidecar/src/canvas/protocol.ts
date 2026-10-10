@@ -433,7 +433,7 @@ export type CanvasCommand =
  * A page's answer to one `canvas.captureRequest`: the base64 PNG its live
  * preview of exactly that revision produced, or why it could not capture it.
  */
-export type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
+type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
 
 /** What a successful command answers with, one kind per command. */
 export type CanvasReply =

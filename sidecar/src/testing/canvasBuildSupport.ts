@@ -192,7 +192,7 @@ export function fakeDeadlines() {
  * A stand-in for the canvas, for the cases a real workspace cannot reach: a
  * design that leaves its frame mid-build, and one design ID on two canvases.
  */
-export function standIn(builds: CanvasBuilds) {
+function standIn(builds: CanvasBuilds) {
   const revisions = new Map<string, string>();
   /** One `<canvasId>/<designId>:<status>` per commit this canvas published. */
   const committed: string[] = [];

@@ -2,7 +2,7 @@ import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
 
-export interface TokenReference {
+interface TokenReference {
   token: string;
   file: string;
   line: number;
