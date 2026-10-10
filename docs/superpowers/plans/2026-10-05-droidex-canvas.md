@@ -1494,6 +1494,13 @@ Settled by 07e (`thread/canvas-07e-manage-design-systems`, 2026-10-10):
   A pasted DESIGN.md kit compiles the Hey starter in both modes in
   `designSystemCommands.test.ts`. Light and dark were checked in an isolated app;
   Export's native folder chooser was not driven there, only its route and host factory.
+- Review round (2026-10-10): `designSystemTokens.ts` now owns the root/`data-mode` rule,
+  hex expansion and competing values for extraction and import alike, and the import
+  refuses competing values. Config/stylesheet nesting, token count (128) and value
+  nesting are bounded before recursion, refusing as `invalid_input`. Requests live on
+  `canvasClient.designSystems`; the kit export IPC answers
+  `{ ok, filesWritten } | { ok: false, cancelled } | { ok: false, code, message }`; the
+  dialog keeps focus inside after Cancel, Create, Save a copy and Try again.
 
 ## Task 8: Element selection, direct edits and source/history UI
 
