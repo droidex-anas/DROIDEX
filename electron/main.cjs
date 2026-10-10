@@ -41,7 +41,7 @@ const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
 const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
-const { createCanvasSourceExport } = require('./canvasSourceExport.cjs');
+const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -597,17 +597,19 @@ function registerCanvasPreviewProtocol() {
 }
 
 function registerIpc() {
-  const exportCanvasSource = createCanvasSourceExport({
+  const exportHost = (chooserOptions) => ({
     chooseDirectory: () =>
-      dialog.showOpenDialog(mainWindow, {
-        title: 'Export Canvas source',
-        buttonLabel: 'Export here',
-        properties: ['openDirectory'],
-      }),
+      dialog.showOpenDialog(mainWindow, { buttonLabel: 'Export here', ...chooserOptions }),
     getBridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
     exportToken: () => sidecarSupervisor.canvasExportToken(),
     fetchRequest: fetch,
   });
+  const exportCanvasSource = createCanvasSourceExport(
+    exportHost({ title: 'Export Canvas source', properties: ['openDirectory'] }),
+  );
+  const exportDesignSystem = createDesignSystemExport(
+    exportHost({ title: 'Export design system', properties: ['openDirectory', 'createDirectory'] }),
+  );
   ipcMain.handle('bridge-info', (event) => {
     assertMainRenderer(event);
     return sidecarSupervisor.getBridgeInfo();
@@ -760,6 +762,10 @@ function registerIpc() {
   ipcMain.handle('canvas-export-source', (event, input) => {
     assertMainRenderer(event);
     return exportCanvasSource(input);
+  });
+  ipcMain.handle('canvas-export-design-system', (event, input) => {
+    assertMainRenderer(event);
+    return exportDesignSystem(input);
   });
   ipcMain.handle('power-tier', (event) => {
     assertMainRenderer(event);

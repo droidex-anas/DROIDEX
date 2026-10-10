@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createCanvasSourceExport } = require('./canvasSourceExport.cjs');
+const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
 
 const validRequest = {
   canvasId: 'canvas_1',
@@ -47,4 +47,38 @@ test('rejects malformed sidecar replies before forwarding the export result', as
     status: 400,
   });
   await assert.rejects(exportSource(validRequest), /Canvas source could not be exported/);
+});
+
+test('a design system export names only a kit version, and posts to its own route', async () => {
+  let chooserCalls = 0;
+  const posted = [];
+  const exportKit = createDesignSystemExport({
+    chooseDirectory: async () => {
+      chooserCalls += 1;
+      return { canceled: false, filePaths: ['/tmp/kit'] };
+    },
+    getBridgeInfo: async () => ({ port: 1234 }),
+    exportToken: () => 'host-token',
+    fetchRequest: async (url, init) => {
+      posted.push({ url, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ filesWritten: 7 }));
+    },
+  });
+
+  for (const input of [
+    null,
+    { ref: { id: 'droidex' } },
+    { ref: { id: '../escape', version: 1 } },
+    { ref: { id: 'droidex', version: 1 }, destinationDirectory: '/elsewhere' },
+  ]) {
+    await assert.rejects(exportKit(input), /Choose a design system to export/);
+  }
+  assert.equal(chooserCalls, 0);
+  assert.deepEqual(await exportKit({ ref: { id: 'droidex', version: 1 } }), { filesWritten: 7 });
+  assert.deepEqual(posted, [
+    {
+      url: 'http://127.0.0.1:1234/canvas/design-system-export',
+      body: { ref: { id: 'droidex', version: 1 }, destinationDirectory: '/tmp/kit' },
+    },
+  ]);
 });

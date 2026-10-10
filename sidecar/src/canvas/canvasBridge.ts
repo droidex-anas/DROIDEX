@@ -11,6 +11,11 @@ import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import { canvasCommandSchema, type CanvasMutation } from './canvasCommandSchema.js';
+import {
+  answerDesignSystemCommand,
+  isDesignSystemCommand,
+  type DesignSystemCommand,
+} from './designSystemCommands.js';
 import { editCanvasElement } from './canvasElementEdit.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
@@ -73,6 +78,14 @@ class CanvasDispatch {
       if (command.type === 'canvas.subscribe' || command.type === 'canvas.unsubscribe')
         return await this.watch(command, pageId);
       if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
+      // Kits are not a canvas's, so they stay reachable when Canvas storage is not.
+      if (isDesignSystemCommand(command))
+        return {
+          type: 'canvas.result',
+          requestId: command.requestId,
+          ok: true,
+          reply: await answerDesignSystemCommand(command),
+        };
       const workspace = await this.workspace;
       const reply = await this.answer(workspace, command);
       if (CHANGES_SUMMARIES.has(command.type))
@@ -117,7 +130,7 @@ class CanvasDispatch {
     workspace: CanvasWorkspace,
     command: Exclude<
       CanvasCommand,
-      { type: `canvas.${'subscribe' | 'unsubscribe' | 'readArtifact'}` }
+      { type: `canvas.${'subscribe' | 'unsubscribe' | 'readArtifact'}` } | DesignSystemCommand
     >,
   ): Promise<CanvasReply> {
     switch (command.type) {

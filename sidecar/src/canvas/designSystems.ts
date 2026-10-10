@@ -14,8 +14,12 @@ import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { canvasDir } from '../droidexPaths.js';
-import type { DesignSystemRef } from './protocol.js';
-import { canvasIdentifierSchema, sourceFilesSchema } from './schema.js';
+import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
+import {
+  canvasIdentifierSchema,
+  designSystemVersionRefSchema,
+  sourceFilesSchema,
+} from './schema.js';
 
 /** The file a kit exports its primitives from, and the only entry it may have. */
 export const KIT_ENTRY = 'index.tsx';
@@ -43,7 +47,7 @@ const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
 
 // A token value is pasted into a stylesheet, so it may not close the rule it
 // sits in or open a comment.
-const tokenValueSchema = z
+export const tokenValueSchema = z
   .string()
   .trim()
   .min(1, TOKEN_VALUE_MESSAGE)
@@ -87,19 +91,25 @@ export const designSystemSchema = z
         message: GUIDANCE_MESSAGE,
       }),
     examples: sourceFilesSchema,
+    // Extracted from a canvas revision, or saved as a copy of another kit version.
     provenance: z
-      .object({
-        sourceCanvasId: canvasIdentifierSchema,
-        revision: z
-          .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
+      .union([
+        z
+          .object({
+            sourceCanvasId: canvasIdentifierSchema,
+            revision: z
+              .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
+              .strict(),
+          })
           .strict(),
-      })
-      .strict()
+        z.object({ copiedFrom: designSystemVersionRefSchema }).strict(),
+      ])
       .optional(),
   })
   .strict();
 
 export type DesignSystem = z.infer<typeof designSystemSchema>;
+export type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
 
 const swatchesSchema = z.object({ surface: tokenValueSchema, accent: tokenValueSchema }).strict();
 const summarySchema = z
@@ -184,8 +194,13 @@ export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
   }
 }
 
-/** Exactly the pinned version, from the built-in kits or the user's saved ones. */
-export async function readDesignSystem(ref: DesignSystemRef): Promise<DesignSystem> {
+/**
+ * Exactly the pinned version, from the built-in kits or the user's saved ones.
+ * A design's reference also names its preview mode, which selects nothing here.
+ */
+export async function readDesignSystem(
+  ref: DesignSystemRef | DesignSystemVersionRef,
+): Promise<DesignSystem> {
   const builtIn = BUILT_IN_DESIGN_SYSTEMS.find(
     (system) => system.id === ref.id && system.version === ref.version,
   );

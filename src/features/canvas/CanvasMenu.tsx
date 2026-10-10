@@ -1,8 +1,9 @@
 // The Canvas wordmark, and the picker it opens: the canvas on screen, New
-// canvas, and the saved ones (spec §4). The wordmark stays the label so the row
-// reads the same before and after the list is read; the canvas's own name heads
-// the popover. Which chats work on that canvas is the chat column header's
-// menu (`AttachedChatsMenu`), beside the transcript they write.
+// canvas, the saved ones (spec §4), and Manage design systems (spec §10). The
+// wordmark stays the label so the row reads the same before and after the list
+// is read; the canvas's own name heads the popover. Which chats work on that
+// canvas is the chat column header's menu (`AttachedChatsMenu`), beside the
+// transcript they write.
 
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
@@ -11,6 +12,7 @@ import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRow } from './menuRows';
 import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';
 import { useOpenCanvas } from './useOpenCanvas';
+import { useManageDesignSystems } from './useManageDesignSystems';
 
 export function CanvasMenu({ canvasId }: { canvasId: string | null }) {
   const [open, setOpen] = useState(false);
@@ -19,6 +21,7 @@ export function CanvasMenu({ canvasId }: { canvasId: string | null }) {
     setOpen(false);
   }, []);
   const { openCanvas, startCanvasChat } = useOpenCanvas();
+  const designSystems = useManageDesignSystems();
   // Read only while the picker is open: the list is a request, not pane state.
   const { canvases } = useCanvases(open);
   const summaries = canvases.status === 'listed' ? searchCanvases(canvases.summaries, '') : [];
@@ -78,8 +81,18 @@ export function CanvasMenu({ canvasId }: { canvasId: string | null }) {
                 }}
               />
             ))}
+
+          <MenuHeading>Design systems</MenuHeading>
+          <MenuRow
+            label="Manage design systems…"
+            onRun={() => {
+              close();
+              designSystems.open();
+            }}
+          />
         </div>
       </Popover>
+      {designSystems.dialog}
     </div>
   );
 }

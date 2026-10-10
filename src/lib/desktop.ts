@@ -21,7 +21,7 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
-import type { OwnedAsset, RevisionRef } from '../features/canvas/protocol';
+import type { DesignSystemVersionRef, OwnedAsset, RevisionRef } from '../features/canvas/protocol';
 import type {
   CommitOptions,
   CreateBranchOptions,
@@ -251,6 +251,9 @@ interface DroidControlApi {
   canvasExportSource: (
     canvasId: string,
     ref: RevisionRef,
+  ) => Promise<{ filesWritten: number } | null>;
+  canvasExportDesignSystem: (
+    ref: DesignSystemVersionRef,
   ) => Promise<{ filesWritten: number } | null>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
@@ -791,6 +794,15 @@ export function exportCanvasSource(
 ): Promise<{ filesWritten: number } | null> {
   return requireDesktopApi('Canvas source export needs the desktop app.').canvasExportSource(
     canvasId,
+    ref,
+  );
+}
+
+/** Opens the host's folder chooser, then writes one kit version there; null when cancelled. */
+export function exportDesignSystem(
+  ref: DesignSystemVersionRef,
+): Promise<{ filesWritten: number } | null> {
+  return requireDesktopApi('Design system export needs the desktop app.').canvasExportDesignSystem(
     ref,
   );
 }

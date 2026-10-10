@@ -378,7 +378,8 @@ export class CanvasClient {
     });
   }
 
-  private request(command: CanvasCommand): Promise<ReplyEvent> {
+  /** One correlated request: its reply, or the sidecar's refusal as a CanvasRequestError. */
+  request(command: CanvasCommand): Promise<ReplyEvent> {
     this.listen();
     if (this.pending.size >= MAX_PENDING_REQUESTS)
       return Promise.reject(new Error('Wait for the current Canvas requests to finish.'));
@@ -480,7 +481,7 @@ function requestId(): string {
 }
 
 // TypeScript needs a narrow assertion after checking the generic reply kind.
-function reply<K extends CanvasReply['kind']>(
+export function reply<K extends CanvasReply['kind']>(
   event: ReplyEvent,
   kind: K,
 ): Extract<CanvasReply, { kind: K }> {

@@ -42,6 +42,9 @@ const REPLY_KINDS = new Set([
   'source',
   'revisions',
   'revisionDiff',
+  'designSystems',
+  'designSystem',
+  'designSystemSaved',
 ]);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
@@ -55,6 +58,11 @@ const MAX_SOURCE_PATHS = 64;
 const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
+// A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
+export const MAX_KIT_NAME_LENGTH = 120;
+const MAX_KIT_TOKENS = 128;
+const MAX_TOKEN_VALUE_LENGTH = 160;
+const TOKEN_NAME = /^--[a-z0-9]+(-[a-z0-9]+)*$/;
 const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
@@ -123,9 +131,72 @@ function isReply(value: unknown): boolean {
       return boundedList(value.revisions, MAX_REVISION_PAGE_SIZE, isRevisionSummary);
     case 'revisionDiff':
       return isRevisionDiff(value.diff);
+    case 'designSystems':
+      return list(value.systems, isKitSummary);
+    case 'designSystem':
+      return isKitDetail(value.system);
+    case 'designSystemSaved':
+      return (
+        isKitVersion(value.ref) &&
+        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
+      );
     default:
       return true;
   }
+}
+
+function isKitVersion(value: unknown): value is Record<string, unknown> {
+  return record(value) && id(value.id) && count(value.version);
+}
+
+function isKitSummary(value: unknown): boolean {
+  if (!isKitVersion(value) || !record(value.swatches)) return false;
+  const { light, dark } = value.swatches;
+  return (
+    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
+    (value.kind === 'preset' || value.kind === 'user') &&
+    [light, dark].every(
+      (swatch) =>
+        record(swatch) &&
+        boundedText(swatch.surface, MAX_TOKEN_VALUE_LENGTH) &&
+        boundedText(swatch.accent, MAX_TOKEN_VALUE_LENGTH),
+    )
+  );
+}
+
+function isKitDetail(value: unknown): boolean {
+  if (!isKitVersion(value) || !record(value.modes)) return false;
+  return (
+    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
+    isKitTokens(value.modes.light) &&
+    isKitTokens(value.modes.dark) &&
+    boundedList(
+      value.unmapped,
+      MAX_KIT_TOKENS,
+      (name) => typeof name === 'string' && TOKEN_NAME.test(name),
+    ) &&
+    (value.provenance === null || isKitProvenance(value.provenance))
+  );
+}
+
+function isKitTokens(value: unknown): boolean {
+  if (!record(value)) return false;
+  const names = Object.keys(value);
+  return (
+    names.length <= MAX_KIT_TOKENS &&
+    names.every((name) => TOKEN_NAME.test(name) && boundedText(value[name], MAX_TOKEN_VALUE_LENGTH))
+  );
+}
+
+function isKitProvenance(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.copiedFrom !== undefined) return isKitVersion(value.copiedFrom);
+  return (
+    id(value.sourceCanvasId) &&
+    record(value.revision) &&
+    id(value.revision.designId) &&
+    id(value.revision.revisionId)
+  );
 }
 
 function isSourceTree(value: unknown): boolean {

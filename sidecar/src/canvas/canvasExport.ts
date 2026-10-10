@@ -17,10 +17,13 @@ import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
 const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';
 const UNSAFE_PATH = 'The export contains an unsafe path. Check the saved source and try again.';
-const EXPORT_FAILED = 'The source could not be exported. Check the folder and try again.';
+const EXPORT_FAILED = 'The export could not be written. Check the folder and try again.';
 const ASSET_FAILED = 'A referenced Canvas image is unavailable. Restore it and try again.';
 const ASSET_REFERENCE = /canvas-asset:([0-9a-f]{64})\b/g;
 const FONT_REFERENCE = /data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g;
+
+/** The folder Electron main chose; each export also requires it to be absolute. */
+export const exportDestinationSchema = z.string().min(1).max(4096);
 
 const exportRequestSchema = z
   .object({
@@ -28,11 +31,11 @@ const exportRequestSchema = z
     ref: z
       .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
       .strict(),
-    destinationDirectory: z.string().min(1).max(4096),
+    destinationDirectory: exportDestinationSchema,
   })
   .strict();
 
-interface ExportFile {
+export interface ExportFile {
   path: string;
   content: string | Buffer;
 }
@@ -164,7 +167,8 @@ function exportPackageJson(): string {
   }
 }
 
-async function writeExport(
+/** Publishes the files into an empty, unlinked folder in one rename, or leaves it untouched. */
+export async function writeExport(
   directory: string,
   files: ExportFile[],
   signal?: AbortSignal,
@@ -286,17 +290,42 @@ export function serveCanvasSourceExport(
   token: string | undefined,
 ): boolean {
   if (request.url !== '/canvas/source-export') return false;
+  serveExportRequest(request, response, token, (input, signal) => {
+    const parsed = exportRequestSchema.safeParse(input);
+    if (!parsed.success) throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
+    return exportCanvasSource(
+      parsed.data.canvasId,
+      parsed.data.ref,
+      parsed.data.destinationDirectory,
+      signal,
+    );
+  });
+  return true;
+}
+
+type ExportRun = (input: unknown, signal: AbortSignal) => Promise<{ filesWritten: number }>;
+
+/**
+ * Answers one host-only export route: Electron main's token, a bounded JSON
+ * body, and an abort when main stops waiting for the answer.
+ */
+export function serveExportRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  token: string | undefined,
+  run: ExportRun,
+): void {
   if (!token || request.method !== 'POST' || request.headers['x-canvas-export-token'] !== token) {
     response.writeHead(404).end();
-    return true;
+    return;
   }
-  void answerExportRequest(request, response);
-  return true;
+  void answerExportRequest(request, response, run);
 }
 
 async function answerExportRequest(
   request: IncomingMessage,
   response: ServerResponse,
+  run: ExportRun,
 ): Promise<void> {
   const abort = new AbortController();
   const onClose = () => {
@@ -316,16 +345,9 @@ async function answerExportRequest(
     try {
       input = JSON.parse(body);
     } catch {
-      throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
+      throw canvasError('invalid_input', 'That Canvas export request is not valid. Try again.');
     }
-    const parsed = exportRequestSchema.safeParse(input);
-    if (!parsed.success) throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
-    const result = await exportCanvasSource(
-      parsed.data.canvasId,
-      parsed.data.ref,
-      parsed.data.destinationDirectory,
-      abort.signal,
-    );
+    const result = await run(input, abort.signal);
     if (!response.destroyed)
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
   } catch (error) {

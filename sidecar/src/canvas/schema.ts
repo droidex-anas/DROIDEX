@@ -89,6 +89,11 @@ export const designSystemRefSchema = z
   })
   .strict();
 
+/** One immutable kit version, without the mode a design previews it in. */
+export const designSystemVersionRefSchema = z
+  .object({ id: canvasIdentifierSchema, version: versionSchema })
+  .strict();
+
 const revisionRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
@@ -355,6 +360,7 @@ export function mergedRevisionViolation(files: ReadonlyMap<string, string>): str
 }
 
 export type DesignSystemRef = z.infer<typeof designSystemRefSchema>;
+export type DesignSystemVersionRef = z.infer<typeof designSystemVersionRefSchema>;
 export type DesignRef = z.infer<typeof designRefSchema>;
 export type ElementRef = z.infer<typeof elementRefSchema>;
 export type CanvasTurnContext = z.infer<typeof canvasTurnContextSchema>;

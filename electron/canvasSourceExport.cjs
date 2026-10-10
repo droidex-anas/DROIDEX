@@ -8,6 +8,7 @@ const ERROR_CODES = new Set([
   'capture_unavailable',
   'scope_expired',
   'storage_failed',
+  'version_mismatch',
 ]);
 
 function isRecord(value) {
@@ -36,6 +37,16 @@ function isExportRequest(input) {
   );
 }
 
+function isDesignSystemExportRequest(input) {
+  return (
+    hasKeys(input, ['ref']) &&
+    hasKeys(input.ref, ['id', 'version']) &&
+    isCanvasId(input.ref.id) &&
+    Number.isSafeInteger(input.ref.version) &&
+    input.ref.version >= 0
+  );
+}
+
 function isExportResult(answer) {
   return (
     hasKeys(answer, ['filesWritten']) &&
@@ -54,13 +65,16 @@ function isExportError(answer) {
   );
 }
 
-function createCanvasSourceExport({ chooseDirectory, getBridgeInfo, exportToken, fetchRequest }) {
+// Main chooses the folder, then the sidecar's host-only route writes there; the
+// renderer only ever names what to export.
+function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
+  const { chooseDirectory, getBridgeInfo, exportToken, fetchRequest } = host;
   return async (input) => {
-    if (!isExportRequest(input)) throw new Error('Choose a Canvas revision to export.');
+    if (!isRequest(input)) throw new Error(invalidRequest);
     const result = await chooseDirectory();
     if (result.canceled || !result.filePaths[0]) return null;
     const { port } = await getBridgeInfo();
-    const response = await fetchRequest(`http://127.0.0.1:${String(port)}/canvas/source-export`, {
+    const response = await fetchRequest(`http://127.0.0.1:${String(port)}${route}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -76,15 +90,29 @@ function createCanvasSourceExport({ chooseDirectory, getBridgeInfo, exportToken,
     } catch {
       throw new Error('Canvas export service returned an invalid response. Try again.');
     }
-    if (!response.ok) {
-      throw new Error(
-        isExportError(answer) ? answer.message : 'Canvas source could not be exported.',
-      );
-    }
+    if (!response.ok) throw new Error(isExportError(answer) ? answer.message : failed);
     if (!isExportResult(answer))
       throw new Error('Canvas export returned an invalid result. Try again.');
     return answer;
   };
 }
 
-module.exports = { createCanvasSourceExport };
+function createCanvasSourceExport(host) {
+  return createHostExport(host, {
+    route: '/canvas/source-export',
+    isRequest: isExportRequest,
+    invalidRequest: 'Choose a Canvas revision to export.',
+    failed: 'Canvas source could not be exported.',
+  });
+}
+
+function createDesignSystemExport(host) {
+  return createHostExport(host, {
+    route: '/canvas/design-system-export',
+    isRequest: isDesignSystemExportRequest,
+    invalidRequest: 'Choose a design system to export.',
+    failed: 'The design system could not be exported.',
+  });
+}
+
+module.exports = { createCanvasSourceExport, createDesignSystemExport };
