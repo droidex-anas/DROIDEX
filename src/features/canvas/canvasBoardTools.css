@@ -53,7 +53,7 @@
 
 .canvas-tool[aria-pressed='true'] {
   background: color-mix(in srgb, var(--droid-selection) 16%, transparent);
-  color: var(--droid-selection);
+  color: var(--droid-selection-label);
 }
 
 .canvas-tool:disabled {
