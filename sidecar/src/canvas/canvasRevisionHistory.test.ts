@@ -204,7 +204,9 @@ test('diff reports canonical added, removed and modified files without moving th
 test('diff truncation respects the total UTF-8 cap across files and keeps every changed path', async (t) => {
   const canvas = await harness(t);
   const source = '界'.repeat(100) + '\n';
+  // A revision has to be a design; the entry stays unchanged, so it is no part of the diff.
   const first = await canvas.write('one', null, {
+    'main.tsx': 'export default () => null;\n',
     'a.txt': source.repeat(800),
     'b.txt': source.repeat(800),
   });

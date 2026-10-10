@@ -9,6 +9,7 @@ import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest, PersistedDesign, SourceRevisionMutation } from './canvasManifest.js';
 import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMetadata.js';
 import { stageSeed } from './canvasSeeds.js';
+import { designEntryDiagnostic } from './designEntry.js';
 import { FRAME_GAP_PX, placeVariants } from './canvasVariantPlacement.js';
 import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation, type FrameRect } from './schema.js';
@@ -71,6 +72,8 @@ export async function stageRevision(
   const merged = mergeSource(await currentSource(files, canvasId, design), input);
   const violation = mergedRevisionViolation(merged);
   if (violation) throw canvasError('invalid_input', violation);
+  const entry = designEntryDiagnostic([...merged.keys()]);
+  if (entry) throw canvasError('invalid_source', entry.message);
   if (validateSource) await validateSource(merged);
   const revision: NewRevision = {
     version: REVISION_METADATA_VERSION,

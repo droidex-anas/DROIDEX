@@ -85,7 +85,14 @@ let snapshot: CanvasSnapshot = { canvasId: 'cv_recover', sequence: 1, frames: []
 
 const show = () => {
   const [frame] = snapshot.frames;
-  root.render(createElement(DesignPreview, { canvasId: snapshot.canvasId, frame, readArtifact }));
+  root.render(
+    createElement(DesignPreview, {
+      canvasId: snapshot.canvasId,
+      frame,
+      readArtifact,
+      reportPreview: () => undefined,
+    }),
+  );
 };
 
 Object.assign(window, {

@@ -18,10 +18,12 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from './compiler.js';
-import { ROOT_ELEMENT_ID, bundleDesign, designEntryDiagnostic } from './designBundle.js';
+import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
+import { designEntryDiagnostic } from './designEntry.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
+import { unboundNameDiagnostics } from './unboundNames.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
@@ -37,7 +39,7 @@ export async function compileDesign(
   input: CompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
-  const entryDiagnostic = designEntryDiagnostic(input.files);
+  const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
   stopIfCancelled(signal);
@@ -67,6 +69,9 @@ export async function compileDesign(
   const bundle = await bundleDesign({ files: instrumented.files, kitFiles: system.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
+  // Checked once every import resolves, so the missing name is the only fault left.
+  const unbound = unboundNameDiagnostics(input.files);
+  if (unbound.length > 0) throw new CompileFailedError(unbound);
 
   const stylesheet = await buildDesignStylesheet(input.files, system);
   stopIfCancelled(signal);
@@ -95,6 +100,9 @@ function previewDocument(css: string, js: string, mode: DesignSystemRef['mode'])
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+${EARLY_FAILURE_SCRIPT}
+</script>
 <style>
 ${escapeClosingTag(css, 'style')}
 </style>

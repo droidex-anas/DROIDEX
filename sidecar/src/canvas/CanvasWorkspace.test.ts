@@ -349,7 +349,7 @@ test('the source limits and path rules hold against the whole revision', async (
   const full = await workspace.write(
     scope,
     writeInput('bulk', designId, null, {
-      'a.txt': quarter,
+      'main.tsx': quarter,
       'b.txt': quarter,
       'c.txt': quarter,
       'd.txt': quarter,
@@ -368,7 +368,7 @@ test('the source limits and path rules hold against the whole revision', async (
     writeInput('swap', designId, full.revisionId, { 'e.txt': 'x' }, ['d.txt']),
   );
   assert.deepEqual(Object.keys(await workspace.readFiles(canvasId, swapped)), [
-    'a.txt',
+    'main.tsx',
     'b.txt',
     'c.txt',
     'e.txt',
@@ -382,7 +382,7 @@ test('the source limits and path rules hold against the whole revision', async (
   assert.ok(cards);
   const sixtyFour = Object.fromEntries(
     Array.from({ length: 64 }, (_, index) => [
-      `f${String(index)}.tsx`,
+      index === 0 ? 'main.tsx' : `f${String(index)}.tsx`,
       'export default () => null',
     ]),
   );

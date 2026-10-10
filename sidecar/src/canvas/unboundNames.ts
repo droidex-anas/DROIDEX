@@ -1,0 +1,110 @@
+// Components and hooks a design uses without importing or declaring them.
+// esbuild bundles such a file without complaint and the preview then stops with
+// "X is not defined" the moment it renders, which is the most common way a
+// generated design breaks. Caught at build time, the agent gets the file and
+// line in its write reply instead of a blank frame.
+//
+// Deliberately narrow: capitalised JSX tags, the root of a member tag, `use*`
+// calls and a `React.` root, none of which a browser global satisfies. A name
+// declared anywhere in the file counts as bound, and a type-only import binds
+// nothing at run time. Every script file is checked, as instrumentation parses
+// every one, so a broken module the entry never imports fails too.
+
+import ts from 'typescript';
+import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
+
+const SCRIPT_FILE = /\.(tsx|ts|jsx|js)$/;
+const HOOK_NAME = /^use[A-Z0-9]/;
+
+export function unboundNameDiagnostics(files: SourceFiles): CanvasDiagnostic[] {
+  const diagnostics: CanvasDiagnostic[] = [];
+  for (const [file, text] of Object.entries(files)) {
+    if (!SCRIPT_FILE.test(file)) continue;
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const declared = declaredNames(source);
+    const reported = new Set<string>();
+    const visit = (node: ts.Node): void => {
+      const used = usedName(node);
+      if (used && !declared.has(used.text) && !reported.has(used.text)) {
+        reported.add(used.text);
+        const { line } = source.getLineAndCharacterOfPosition(used.getStart(source));
+        diagnostics.push({
+          code: 'undefined_name',
+          message: `${used.text} is used but never imported or declared, so the preview would stop with "${used.text} is not defined". Import it or define it.`,
+          file,
+          line: line + 1,
+        });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return diagnostics;
+}
+
+/** A name that has to be bound for this node to run: a component tag or a bare hook call. */
+function usedName(node: ts.Node): ts.Identifier | null {
+  if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+    const tag = node.tagName;
+    // A lowercase bare tag is an HTML element; a member tag is an expression.
+    if (ts.isIdentifier(tag)) return /^[A-Z]/.test(tag.text) ? tag : null;
+    return ts.isPropertyAccessExpression(tag) ? memberRoot(tag) : null;
+  }
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
+    return HOOK_NAME.test(node.expression.text) ? node.expression : null;
+  // `React.useState` with the automatic JSX runtime still needs React imported.
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression))
+    return node.expression.text === 'React' ? node.expression : null;
+  return null;
+}
+
+function memberRoot(tag: ts.PropertyAccessExpression): ts.Identifier | null {
+  let target: ts.Expression = tag.expression;
+  while (ts.isPropertyAccessExpression(target)) target = target.expression;
+  return ts.isIdentifier(target) ? target : null;
+}
+
+/** Declarations whose own `name` is the one name they bind. */
+const NAMED_DECLARATIONS: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.ImportClause,
+  ts.SyntaxKind.NamespaceImport,
+  ts.SyntaxKind.ImportEqualsDeclaration,
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ClassDeclaration,
+  ts.SyntaxKind.ClassExpression,
+  ts.SyntaxKind.EnumDeclaration,
+  ts.SyntaxKind.ModuleDeclaration,
+]);
+
+/**
+ * Every name the file binds at run time, at any depth: value imports, variables,
+ * parameters, functions, classes, enums and namespaces.
+ */
+function declaredNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    // A type-only import binds nothing at run time, and neither do its names.
+    if (ts.isImportClause(node) && node.phaseModifier === ts.SyntaxKind.TypeKeyword) return;
+    if (ts.isImportSpecifier(node) && node.isTypeOnly) return;
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node)) addBindings(node.name, names);
+    else if (ts.isImportSpecifier(node)) names.add(node.name.text);
+    else if (NAMED_DECLARATIONS.has(node.kind)) {
+      const { name } = node as ts.NamedDeclaration;
+      if (name && ts.isIdentifier(name)) names.add(name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return names;
+}
+
+function addBindings(name: ts.BindingName, names: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    names.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (!ts.isOmittedExpression(element)) addBindings(element.name, names);
+  }
+}

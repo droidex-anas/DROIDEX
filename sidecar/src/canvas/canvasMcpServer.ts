@@ -2,6 +2,7 @@ import { CanvasMcpServer } from './canvasMcpTransport.js';
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
+import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvasAgentReport.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
@@ -155,7 +156,7 @@ export function createCanvasMcpServer(
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, submit complete working files, then inspect the result. Preserve unrelated frames and cite revision IDs when updating existing work.',
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work.',
       readSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -163,8 +164,8 @@ export function createCanvasMcpServer(
           const snapshot = await board(scope);
           if (!snapshot)
             return { scopeId: scope.scopeId, attached: false, pinned: scope.context, frames: [] };
-          const frames = snapshot.frames.slice(input.offset, input.offset + input.limit);
-          if (input.view === 'summary')
+          if (input.view === 'summary') {
+            const { previews } = await workspace();
             return {
               scopeId: scope.scopeId,
               attached: true,
@@ -172,8 +173,11 @@ export function createCanvasMcpServer(
               pinned: scope.context,
               sequence: snapshot.sequence,
               totalFrames: snapshot.frames.length,
-              frames,
+              frames: snapshot.frames
+                .slice(input.offset, input.offset + input.limit)
+                .map((frame) => agentFrame(frame, previews.reportFor(snapshot.canvasId, frame))),
             };
+          }
           if (!input.designId || !input.revisionId)
             throw canvasError('invalid_input', 'Name a designId and revisionId to read source.');
           if (
@@ -219,19 +223,25 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_create',
-      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read. Use placeBeside to place variants below an existing frame and seed to copy a revision from this canvas. Create a small working composition first; retry with the same mutationId and scopeId after a lost response.',
+      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read, then write each one with canvas_write: its entry is main.tsx, which default-exports a React component. Use placeBeside to place variants below an existing frame and seed to copy a revision from this canvas. Create a small working composition first; retry with the same mutationId and scopeId after a lost response.',
       createSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, frames, placeBeside } = createSchema.parse(raw);
+          const created = await (
+            await workspace()
+          ).create(scope, { mutationId, frames, placeBeside });
           return {
-            created: await (await workspace()).create(scope, { mutationId, frames, placeBeside }),
+            created: {
+              canvasId: created.canvasId,
+              frames: created.frames.map((frame) => agentFrame(frame, null)),
+            },
           };
         }),
     ),
     tool(
       'canvas_write',
-      'Submit complete changed React/TSX files (the canvas compiles them with Tailwind available; a plain HTML document is not a frame) for a named frame using the scopeId from this turn’s canvas_read and its current revisionId. Preserve unrelated frames and reuse mutationId and scopeId on retry.',
+      'Submit complete changed React/TSX files for a named frame using the scopeId from this turn’s canvas_read and the frame’s current revisionId (null for a new frame). The entry is main.tsx, which must default-export a React component; other relative .tsx, .ts and .css files are optional modules it imports. Imports may name react, lucide-react, recharts and @droidex/design-system (Tailwind available; a plain HTML document is not a frame). A tree without main.tsx is refused. The reply waits for the build: when it failed, fix the named file and line and write again in this turn. Use a new mutationId for each change and reuse it, with its scopeId, only to retry a lost response.',
       writeSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
@@ -245,12 +255,29 @@ export function createCanvasMcpServer(
             deletedPaths,
             designSystem,
           });
-          return { receipt: await (await workspace()).write(scope, input) };
+          const owner = await workspace();
+          const receipt = await owner.write(scope, input);
+          // The workspace refuses a write under a lease with no canvas; this narrows the type.
+          const { canvasId } = scope;
+          if (canvasId === null) return { receipt };
+          const frame = await settledFrame(
+            owner.changes,
+            () =>
+              owner.snapshot(canvasId).frames.find((entry) => entry.designId === receipt.designId),
+            receipt.revisionId,
+          );
+          if (!frame) return { receipt };
+          // A newer write moved the frame on; report the build it is on now.
+          const preview =
+            frame.revisionId === receipt.revisionId && frame.build.status === 'ready'
+              ? await renderedPreview(owner.previews, canvasId, frame)
+              : owner.previews.reportFor(canvasId, frame);
+          return { receipt, build: buildReport(frame, preview) };
         }),
     ),
     tool(
       'canvas_inspect',
-      'Inspect a design build and its diagnostics before revising it. Omit scopeId to read the active turn, or use only a scopeId this turn’s canvas_read returned. Screenshot and element capture report when no agent capture is available.',
+      'Read a frame’s build: its status, diagnostics with file and line, and the next step. canvas_write already reports the build it started, so inspect a build that was still running or a frame from an earlier turn. Omit scopeId to read the active turn, or use only a scopeId this turn’s canvas_read returned. Screenshot and element capture are not available yet.',
       inspectSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -265,7 +292,7 @@ export function createCanvasMcpServer(
             );
           const snapshot = await board(scope);
           const frame = snapshot?.frames.find((entry) => entry.designId === input.designId);
-          if (!frame)
+          if (!snapshot || !frame)
             throw canvasError(
               'invalid_input',
               'That design is not on this canvas. Read the canvas summary again.',
@@ -280,7 +307,12 @@ export function createCanvasMcpServer(
               'capture_unavailable',
               'Agent element and screenshot capture is unavailable. Use build diagnostics and source for now.',
             );
-          return { designId: frame.designId, revisionId: frame.revisionId, build: frame.build };
+          const { previews } = await workspace();
+          return {
+            designId: frame.designId,
+            revisionId: frame.revisionId,
+            build: buildReport(frame, previews.reportFor(snapshot.canvasId, frame)),
+          };
         }),
     ),
     tool(

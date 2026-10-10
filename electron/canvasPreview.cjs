@@ -86,8 +86,9 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 /**
  * The reporter that runs inside the generated frame: readiness once it has
  * painted, its content size, and its own uncaught failures as bounded
- * diagnostics. It is the only code the host adds to a design, it talks to its
- * parent and nothing else, and the nonce it carries is a correlator the
+ * diagnostics, with a root render that failed before painting marked
+ * `render_failed`. It is the only code the host adds to a design, it talks to
+ * its parent and nothing else, and the nonce it carries is a correlator the
  * generated code can read (spec §6), not an authorization token.
  *
  * Task 8 adds `selection` and `interaction` here; the intermediate below already
@@ -100,9 +101,9 @@ const GENERATED_FRAME_REPORTER = `(() => {
       parent.postMessage(Object.assign({ canvasPreview: nonce, event: event }, payload), '*');
     } catch {}
   };
-  const report = (message) => {
+  const report = (message, code = 'preview_error') => {
     post('diagnostics', {
-      diagnostics: [{ code: 'preview_error', message: String(message) }],
+      diagnostics: [{ code: code, message: String(message) }],
     });
   };
   addEventListener('error', (event) => report(event.message || 'The preview stopped with an error.'));
@@ -123,7 +124,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
   const renderState = () => {
     const result = globalThis.__droidexCanvasRenderState;
     if (result?.state === 'failed') {
-      if (!reportedError) report(result.message || 'The preview stopped with an error.');
+      if (!reportedError) report(result.message || 'The preview stopped with an error.', 'render_failed');
       reportedError = true;
       return;
     }
