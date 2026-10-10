@@ -40,6 +40,8 @@ const REPLY_KINDS = new Set([
   'renamed',
   'artifact',
   'source',
+  'revisions',
+  'revisionDiff',
 ]);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
@@ -51,6 +53,9 @@ const MAX_SOURCE_FILE_BYTES = 256 * 1024;
 // schema: 64 files, each path at most 256 characters.
 const MAX_SOURCE_PATHS = 64;
 const MAX_SOURCE_PATH_LENGTH = 256;
+const MAX_REVISION_PAGE_SIZE = 50;
+const MAX_REVISION_DIFF_BYTES = 256 * 1024;
+const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
   switch (value.type) {
@@ -114,6 +119,10 @@ function isReply(value: unknown): boolean {
       return value.artifact === null || isArtifact(value.artifact);
     case 'source':
       return isSourceTree(value.files);
+    case 'revisions':
+      return boundedList(value.revisions, MAX_REVISION_PAGE_SIZE, isRevisionSummary);
+    case 'revisionDiff':
+      return isRevisionDiff(value.diff);
     default:
       return true;
   }
@@ -133,6 +142,51 @@ function isSourceTree(value: unknown): boolean {
       );
     })
   );
+}
+
+function isRevisionSummary(value: unknown): boolean {
+  if (!isRevisionCommit(value)) return false;
+  if (value.state === 'damaged') return true;
+  return (
+    value.state === 'saved' &&
+    (value.restoredFromRevisionId === undefined || id(value.restoredFromRevisionId)) &&
+    count(value.createdAt) &&
+    isDesignSystem(value.designSystem) &&
+    typeof value.buildStatus === 'string' &&
+    ['ready', 'failed', 'building', 'unbuilt'].includes(value.buildStatus)
+  );
+}
+
+function isRevisionCommit(value: unknown): value is Record<string, unknown> {
+  if (!record(value) || !record(value.author)) return false;
+  return (
+    id(value.revisionId) &&
+    count(value.sequence) &&
+    (value.author.kind === 'user' ||
+      (value.author.kind === 'agent' && id(value.author.scopeRef))) &&
+    typeof value.mutationKind === 'string' &&
+    ['create', 'write', 'edit', 'restore'].includes(value.mutationKind)
+  );
+}
+
+// Two revisions can name up to twice one tree's paths; the diff text shares one byte cap.
+function isRevisionDiff(value: unknown): boolean {
+  if (!record(value) || !id(value.from) || !id(value.to)) return false;
+  let bytes = 0;
+  return boundedList(value.files, MAX_SOURCE_PATHS * 2, (file) => {
+    if (
+      !record(file) ||
+      !boundedText(file.path, MAX_SOURCE_PATH_LENGTH) ||
+      typeof file.diff !== 'string' ||
+      typeof file.truncated !== 'boolean' ||
+      typeof file.kind !== 'string' ||
+      !['added', 'removed', 'modified'].includes(file.kind)
+    )
+      return false;
+    if (file.diff.length > MAX_REVISION_DIFF_BYTES) return false;
+    bytes += utf8.encode(file.diff).byteLength;
+    return bytes <= MAX_REVISION_DIFF_BYTES;
+  });
 }
 
 function isArtifact(value: unknown): boolean {

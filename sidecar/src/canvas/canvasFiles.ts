@@ -8,11 +8,16 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
-import { z } from 'zod';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasManifestSchema, type CanvasManifest } from './canvasManifest.js';
 import type { RevisionRef } from './protocol.js';
-import { canvasIdentifierSchema, designSystemRefSchema, sourcePathSchema } from './schema.js';
+import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
+import {
+  revisionMetadataSchema,
+  type NewRevision,
+  type RevisionMetadata,
+  type SavedRevision,
+} from './canvasRevisionMetadata.js';
 
 const MANIFEST_FILE = 'manifest.json';
 const REVISIONS_DIRECTORY = 'revisions';
@@ -39,32 +44,6 @@ const PROFILE_OWNED = false;
 const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
 const CREATE_FLAGS =
   constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
-
-export const REVISION_METADATA_VERSION = 1;
-
-// Every file in a revision is listed here, so a read never walks the directory
-// and never discovers a name the workspace did not write.
-const revisionMetadataSchema = z
-  .object({
-    version: z.literal(REVISION_METADATA_VERSION),
-    designId: canvasIdentifierSchema,
-    revisionId: canvasIdentifierSchema,
-    parentRevisionId: canvasIdentifierSchema.nullable(),
-    designSystem: designSystemRefSchema,
-    createdAt: z.number().int().nonnegative(),
-    files: z.array(sourcePathSchema),
-  })
-  .strict();
-
-type RevisionMetadata = z.infer<typeof revisionMetadataSchema>;
-
-export interface SavedRevision {
-  files: Map<string, string>;
-  designSystem: RevisionMetadata['designSystem'];
-}
-
-/** A revision to publish: its file list is whatever tree is handed over with it. */
-export type NewRevision = Omit<RevisionMetadata, 'files'>;
 
 export type ManifestLoad =
   | { state: 'missing' }
@@ -304,12 +283,7 @@ export class CanvasFiles {
    * is there but whose files are not is damaged storage. The caller decides
    * which of the two its own context makes it.
    */
-  async readRevision(canvasId: string, ref: RevisionRef): Promise<Map<string, string>> {
-    return (await this.readRevisionDetails(canvasId, ref)).files;
-  }
-
-  /** The source and the kit ref committed with that exact immutable revision. */
-  async readRevisionDetails(canvasId: string, ref: RevisionRef): Promise<SavedRevision> {
+  async readRevisionMetadata(canvasId: string, ref: RevisionRef): Promise<RevisionMetadata> {
     const revision = this.revisionPath(canvasId, ref.revisionId);
     const checked = new Set<string>();
     let metadata: RevisionMetadata;
@@ -323,8 +297,22 @@ export class CanvasFiles {
         throw canvasError('invalid_input', 'That revision is not available.');
       throw storageFailure(REVISION_RECOVERY, error);
     }
+    if (metadata.revisionId !== ref.revisionId)
+      throw canvasError('storage_failed', 'The saved revision names another revision.');
     if (metadata.designId !== ref.designId)
       throw canvasError('invalid_input', 'That revision belongs to another design.');
+    return metadata;
+  }
+
+  async readRevision(canvasId: string, ref: RevisionRef): Promise<Map<string, string>> {
+    return (await this.readRevisionDetails(canvasId, ref)).files;
+  }
+
+  /** The source and the kit ref committed with that exact immutable revision. */
+  async readRevisionDetails(canvasId: string, ref: RevisionRef): Promise<SavedRevision> {
+    const metadata = await this.readRevisionMetadata(canvasId, ref);
+    const revision = this.revisionPath(canvasId, ref.revisionId);
+    const checked = new Set<string>();
     try {
       const files = new Map<string, string>();
       for (const path of metadata.files) {

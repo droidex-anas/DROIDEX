@@ -76,6 +76,10 @@ export function mcpPermissionTarget(
   const raw = recordValue(params);
   if (!raw) return null;
   const toolUses: unknown[] = Array.isArray(raw.toolUses) ? raw.toolUses : [];
+  // A request covering several tools names no single one, so no tool policy
+  // may approve it on the first tool's behalf: the whole bundle asks.
+  const confirmations: unknown[] = Array.isArray(raw.confirmations) ? raw.confirmations : [];
+  if (toolUses.length > 1 || confirmations.length > 1) return null;
   const firstToolUse = recordValue(toolUses[0]);
   const details =
     (firstToolUse ? recordValue(firstToolUse.details) : null) ?? confirmationDetail(raw);

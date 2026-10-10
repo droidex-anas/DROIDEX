@@ -10,7 +10,9 @@ import type { ServerEvent } from '../protocol.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
+import { canvasCommandSchema, type CanvasMutation } from './canvasCommandSchema.js';
 import { editCanvasElement } from './canvasElementEdit.js';
+import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type {
@@ -21,27 +23,12 @@ import type {
   OwnedAsset,
   PreviewArtifact,
 } from './protocol.js';
-import { canvasCommandSchema } from './canvasCommandSchema.js';
 
 const MAX_PENDING_REQUESTS = 128;
 
 const UNAVAILABLE = 'Canvas storage is unavailable. Reopen DROIDEX to try again.';
 const NO_PAGE = 'Canvas needs a renderer page ID. Reload DROIDEX.';
 const WATCH_ENDED = 'That Canvas pane is no longer subscribed.';
-
-type Mutation = Extract<
-  CanvasCommand,
-  {
-    type: `canvas.${
-      | 'create'
-      | 'write'
-      | 'editElement'
-      | 'arrange'
-      | 'remove'
-      | 'undoRemoval'
-      | 'renameFrame'}`;
-  }
->;
 
 /** Validates requests and owns their workspace, scopes and page watches. */
 class CanvasDispatch {
@@ -139,6 +126,25 @@ class CanvasDispatch {
       case 'canvas.listAssets':
         workspace.snapshot(command.canvasId);
         return { kind: 'assets', assets: await this.assets.list(command.canvasId) };
+      case 'canvas.listRevisions':
+        return {
+          kind: 'revisions',
+          revisions: await workspace.history.listRevisions(
+            command.canvasId,
+            command.designId,
+            command.page,
+          ),
+        };
+      case 'canvas.diffRevisions':
+        return {
+          kind: 'revisionDiff',
+          diff: await workspace.history.diffRevisions(
+            command.canvasId,
+            command.designId,
+            command.from,
+            command.to,
+          ),
+        };
       case 'canvas.attachment':
         return { kind: 'attachment', canvasId: workspace.attachedCanvasId(command.appSessionId) };
       case 'canvas.createCanvas': {
@@ -165,12 +171,13 @@ class CanvasDispatch {
         workspace.previews.record(command.canvasId, command.report);
         return { kind: 'ok' };
       case 'canvas.readSource': {
-        // The source drawer's read. It is bounded by the revision the asking
-        // page already holds, and it never moves the design's head.
-        const files = await workspace.readFiles(command.canvasId, {
-          designId: command.designId,
-          revisionId: command.revisionId,
-        });
+        // The source drawer and history read one committed revision; an
+        // uncommitted tree on disk is refused, and the head never moves.
+        const files = await workspace.history.readRevisionFiles(
+          command.canvasId,
+          command.designId,
+          command.revisionId,
+        );
         return { kind: 'source', files };
       }
       default:
@@ -206,7 +213,7 @@ class CanvasDispatch {
    * the chat has left is as stale as a settled turn's lease, and the workspace
    * checks that again in its final commit gate.
    */
-  private async mutate(workspace: CanvasWorkspace, command: Mutation): Promise<CanvasReply> {
+  private async mutate(workspace: CanvasWorkspace, command: CanvasMutation): Promise<CanvasReply> {
     const { appSessionId, canvasId } = command;
     if (workspace.attachedCanvasId(appSessionId) !== canvasId)
       throw canvasError('scope_expired', 'This chat is not attached to that canvas.');
@@ -230,6 +237,11 @@ class CanvasDispatch {
           return {
             kind: 'written',
             receipt: await editCanvasElement(workspace, this.builds, scope, command.input),
+          };
+        case 'canvas.restoreRevision':
+          return {
+            kind: 'written',
+            receipt: await restoreRevision(workspace, scope, command.input),
           };
         case 'canvas.arrange':
           return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };

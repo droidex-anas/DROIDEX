@@ -15,7 +15,8 @@ export async function editCanvasElement(
   input: EditElementInput,
 ): Promise<WriteReceipt> {
   // A successful edit advanced this revision, so its retry must be answered first.
-  const recorded = workspace.recordedEdit(scope, input);
+  const mutation = { kind: 'edit', input } as const;
+  const recorded = workspace.recordedSourceMutation(scope, input.edit.element.designId, mutation);
   if (recorded) return recorded;
   const { element, change } = input.edit;
   const target = workspace.buildTarget(scope.canvasId, element.designId);
@@ -65,7 +66,7 @@ export async function editCanvasElement(
         files: changed,
         deletedPaths: [],
       },
-      { edit: input },
+      { mutation },
     );
   } catch (error) {
     if (error instanceof CanvasCommandError && error.code === 'revision_conflict')

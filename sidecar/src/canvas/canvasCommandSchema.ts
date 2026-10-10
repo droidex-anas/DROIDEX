@@ -1,7 +1,8 @@
-// The wire shape of every `canvas.*` request the pane may send. Parsing here is
-// the bridge's whole validation: past it, `canvasBridge.ts` trusts the command.
+// The validated shape of every `canvas.*` request the pane may send. The
+// renderer mirror in protocol.ts must describe exactly what this accepts.
 
 import { z } from 'zod';
+import type { CanvasCommand } from './protocol.js';
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
@@ -10,6 +11,8 @@ import {
   editElementInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
+  restoreRevisionInputSchema,
+  revisionPageSchema,
   undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
@@ -28,6 +31,25 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .object({ type: z.literal('canvas.listAssets'), ...request, canvasId: canvasIdentifierSchema })
     .strict(),
   z.object({ type: z.literal('canvas.attachment'), ...request, ...session }).strict(),
+  z
+    .object({
+      type: z.literal('canvas.listRevisions'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      page: revisionPageSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.diffRevisions'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      designId: canvasIdentifierSchema,
+      from: canvasIdentifierSchema,
+      to: canvasIdentifierSchema,
+    })
+    .strict(),
   z
     .object({ type: z.literal('canvas.subscribe'), ...request, canvasId: canvasIdentifierSchema })
     .strict(),
@@ -105,6 +127,14 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.restoreRevision'),
+      ...request,
+      ...target,
+      input: restoreRevisionInputSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.arrange'),
       ...request,
       ...target,
@@ -136,3 +166,19 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     })
     .strict(),
 ]);
+
+/** The commands that run under a request-scoped user lease. */
+export type CanvasMutation = Extract<
+  CanvasCommand,
+  {
+    type: `canvas.${
+      | 'create'
+      | 'write'
+      | 'editElement'
+      | 'restoreRevision'
+      | 'arrange'
+      | 'remove'
+      | 'undoRemoval'
+      | 'renameFrame'}`;
+  }
+>;

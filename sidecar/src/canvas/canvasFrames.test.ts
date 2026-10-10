@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { canvasRoot } from '../testing/canvasStorageSupport.js';
-import { CanvasFiles, REVISION_METADATA_VERSION } from './canvasFiles.js';
+import { CanvasFiles } from './canvasFiles.js';
+import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
 import { stageFrames } from './canvasFrames.js';
 import type { CreateFramesInput } from './protocol.js';
 
