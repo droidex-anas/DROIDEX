@@ -165,7 +165,8 @@ export function PreviewGuestFrame({
   const reported = useRef(reportPreview);
   reported.current = reportPreview;
   const [phase, setPhase] = useState<'mounting' | 'ready' | PreviewLostReason>('mounting');
-  const [shown, setShown] = useState<CanvasDiagnostic[]>([]);
+  // Only what the design threw: the host's own notes would crowd it out.
+  const [thrown, setThrown] = useState<CanvasDiagnostic[]>([]);
 
   useEffect(() => {
     const container = host.current;
@@ -268,13 +269,13 @@ export function PreviewGuestFrame({
           },
           onResize: (size) => resized.current?.(designId, size),
           onDiagnostics: (entries) => {
-            setShown((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
-            const thrown = entries.filter((entry) => THROWN_CODES.has(entry.code));
-            if (thrown.length === 0) return;
-            const stopped = thrown.some((entry) => entry.code === RENDER_FAILED);
+            const fresh = entries.filter((entry) => THROWN_CODES.has(entry.code));
+            if (fresh.length === 0) return;
+            setThrown((held) => [...held, ...fresh].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+            const stopped = fresh.some((entry) => entry.code === RENDER_FAILED);
             report(
               stopped ? 'failed' : (sent ?? 'loading'),
-              thrown.map((entry) => entry.message),
+              fresh.map((entry) => entry.message),
             );
           },
           onLost: (reason) => {
@@ -318,7 +319,6 @@ export function PreviewGuestFrame({
     isReady && motion.readyMs > 0
       ? `opacity ${String(motion.readyMs)}ms ${motion.easeCss}`
       : undefined;
-  const thrown = shown.filter((entry) => THROWN_CODES.has(entry.code));
   return (
     <div data-preview-phase={phase} className="relative h-full w-full">
       <div
