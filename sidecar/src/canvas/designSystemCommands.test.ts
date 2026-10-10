@@ -215,6 +215,57 @@ test('references resolve however deep they fan out, and what cannot be read is n
   );
 });
 
+test('pasted sources are bounded before they are read, and competing values are refused', async (t) => {
+  const canvas = await harness(t);
+  const refusal = async (requestId: string, text: string) => {
+    await canvas.handle({
+      type: 'canvas.importDesignSystem',
+      requestId,
+      mutationId: requestId,
+      name: requestId,
+      source: { kind: 'cssOrTailwind', text },
+    });
+    return errorOf(canvas, requestId);
+  };
+  // Each of these would otherwise overflow a recursive reader and surface as
+  // storage damage rather than as the paste's own fault.
+  assert.deepEqual(
+    await refusal('deep-config', `module.exports={theme:{colors:{a:${'['.repeat(4000)}`),
+    {
+      code: 'invalid_input',
+      message: 'That config nests its values too deeply to read.',
+    },
+  );
+  // Short names keep 3000 links under the 64 KiB paste bound.
+  const chain = Array.from(
+    { length: 3000 },
+    (_, index) => `--${String(index)}:var(--${String(index + 1)});`,
+  );
+  assert.deepEqual(await refusal('long-chain', `:root{${chain.join('')}}`), {
+    code: 'invalid_input',
+    message: 'That source declares 3000 tokens; a kit holds at most 128 in each mode.',
+  });
+  assert.deepEqual(
+    await refusal('competing', ':root { --primary: #123; }\n:root { --primary: #456; }'),
+    {
+      code: 'invalid_input',
+      message: '--primary has competing shared values. Choose one explicitly.',
+    },
+  );
+
+  const nested = `${'var(--missing, '.repeat(40)}red${')'.repeat(40)}`;
+  const { ref, diagnostics } = await importKit(canvas, 'bounded-values', {
+    kind: 'cssOrTailwind',
+    text: `:root { --primary: #abc; --primary: #aabbcc; --wash: ${nested}; }`,
+  });
+  // Hex shorthand agrees with its long form, so the repeat is not competing.
+  assert.equal((await readKit(canvas, ref)).modes.light['--ds-accent'], '#aabbcc');
+  assert.deepEqual(
+    diagnostics.map(({ message }) => message),
+    ['--wash was not imported. It nests functions too deeply.'],
+  );
+});
+
 test('saving a copy of a preset makes the user’s own kit with provenance', async (t) => {
   const canvas = await harness(t);
   const copy = {

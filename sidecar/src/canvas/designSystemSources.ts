@@ -5,11 +5,24 @@
 
 import postcss, { type AtRule, type Declaration, type Node, type Rule } from 'postcss';
 import { readConfigTheme, type ConfigValue } from './configLiterals.js';
+import {
+  declareToken,
+  rootSelectorScope,
+  selectorScopes,
+  type TokenScope,
+} from './designSystemTokens.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
 export type Mode = 'light' | 'dark';
-type Scope = 'shared' | Mode;
-export type Declared = Map<string, { values: Partial<Record<Scope, string>>; line: number }>;
+
+/** Each scope's token values, and the line that first declared each name. */
+export interface Declared {
+  scopes: Record<TokenScope, Record<string, string>>;
+  lines: Map<string, number>;
+}
+
+// Recursive readers see a pasted source only after its nesting is bounded.
+const MAX_STYLESHEET_NESTING = 32;
 
 // A stylesheet cannot start with a brace or a declaration keyword, or hold an
 // object after `theme:`; a config can.
@@ -45,6 +58,11 @@ export function readCss(
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): CanvasDiagnostic | null {
+  if (nestingDepth(text, '{', '}') > MAX_STYLESHEET_NESTING)
+    return {
+      code: 'invalid_input',
+      message: 'That stylesheet nests its rules too deeply to read.',
+    };
   let root;
   try {
     root = postcss.parse(text, { from: undefined, map: false });
@@ -56,47 +74,52 @@ export function readCss(
   root.walkDecls((declaration) => {
     if (!declaration.prop.startsWith('--')) return;
     const line = lineOffset + (declaration.source?.start?.line ?? 1);
-    const scope = declarationScope(declaration);
-    if (scope === null)
+    const name = tokenName(declaration.prop);
+    const scopes = declarationScopes(declaration);
+    if (name === null || scopes.length === 0)
       diagnostics.push({
         code: 'manual_interpretation_required',
         message: `${declaration.prop} is set outside :root, html, @theme and the light and dark rules, so it was not imported.`,
         line,
       });
-    else declare(declared, declaration.prop, scope, declaration.value, line);
+    else declare(declared, { name, value: declaration.value, targets: scopes, line }, diagnostics);
   });
   return null;
 }
 
-const ROOT_SELECTOR = /^(?::root|html|:host)$/;
+// Beyond the kit's own root and `data-mode` rules, pasted CSS commonly scopes
+// modes with a class or `data-theme`, and web components use `:host`.
 const CLASS_MODE_SELECTOR = /^(?::root|html)?\.(light|dark)$/;
-const ATTRIBUTE_MODE_SELECTOR = /^(?::root|html)?\[data-(?:mode|theme)=["']?(light|dark)["']?\]$/;
+const THEME_MODE_SELECTOR = /^(?::root|html)?\[data-theme\s*=\s*['"]?(light|dark)['"]?\]$/;
 
-function declarationScope(declaration: Declaration): Scope | null {
-  const parent = declaration.parent;
-  if (isAtRule(parent))
-    return parent.name === 'theme' && outside(parent)?.type === 'root' ? 'shared' : null;
-  if (!isRule(parent)) return null;
-  const scope = selectorScope(parent.selector);
-  const outer = outside(parent);
-  if (scope === null || outer?.type === 'root') return scope;
-  if (!isAtRule(outer) || outer.name !== 'media' || outside(outer)?.type !== 'root') return null;
-  const scheme = /^\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)$/i.exec(outer.params.trim());
-  return scheme && scope === 'shared' ? (scheme[1].toLowerCase() as Mode) : null;
+function pastedSelectorScope(selector: string): TokenScope | null {
+  if (selector === ':host') return 'shared';
+  const mode = (CLASS_MODE_SELECTOR.exec(selector) ?? THEME_MODE_SELECTOR.exec(selector))?.[1];
+  if (mode !== undefined) return mode === 'light' ? 'light' : 'dark';
+  return rootSelectorScope(selector);
 }
 
-/** The one scope every selector in a list names, or null when they disagree or name another rule. */
-function selectorScope(selectors: string): Scope | null {
-  const scopes = new Set<Scope | null>();
-  for (const selector of selectors.split(',')) {
-    const compact = selector.replace(/\s+/g, '');
-    const mode = (CLASS_MODE_SELECTOR.exec(compact) ?? ATTRIBUTE_MODE_SELECTOR.exec(compact))?.[1];
-    if (ROOT_SELECTOR.test(compact)) scopes.add('shared');
-    else scopes.add(mode === undefined ? null : (mode as Mode));
-  }
-  // `:root, .light` is the usual way to say the root doubles as light mode.
-  if (scopes.size === 2 && scopes.has('shared') && scopes.has('light')) scopes.delete('light');
-  return scopes.size === 1 ? [...scopes][0] : null;
+function declarationScopes(declaration: Declaration): TokenScope[] {
+  const parent = declaration.parent;
+  if (isAtRule(parent))
+    return parent.name === 'theme' && outside(parent)?.type === 'root' ? ['shared'] : [];
+  if (!isRule(parent)) return [];
+  const scopes = selectorScopes(parent.selector, pastedSelectorScope);
+  const outer = outside(parent);
+  if (outer?.type === 'root') return scopes;
+  return isAtRule(outer) && outside(outer)?.type === 'root'
+    ? colourSchemeScopes(outer, scopes)
+    : [];
+}
+
+/** A root rule inside a colour-scheme query belongs to that mode. */
+function colourSchemeScopes(media: AtRule, scopes: TokenScope[]): TokenScope[] {
+  const scheme =
+    media.name === 'media'
+      ? /^\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)$/i.exec(media.params.trim())
+      : null;
+  if (!scheme || scopes.length !== 1 || scopes[0] !== 'shared') return [];
+  return [scheme[1].toLowerCase() === 'light' ? 'light' : 'dark'];
 }
 
 /** The container a node sits in, looking through `@layer` blocks, which do not scope tokens. */
@@ -114,6 +137,19 @@ function isRule(node: Node['parent']): node is Rule {
   return node?.type === 'rule';
 }
 
+/** The deepest nesting of the given brackets, counted without recursion. */
+export function nestingDepth(text: string, open: string, close: string): number {
+  let depth = 0;
+  let deepest = 0;
+  for (const character of text) {
+    if (open.includes(character)) {
+      depth += 1;
+      deepest = Math.max(deepest, depth);
+    } else if (close.includes(character) && depth > 0) depth -= 1;
+  }
+  return deepest;
+}
+
 // Tailwind 4's theme variable names, so a config and its CSS name tokens alike.
 const TAILWIND_SECTIONS = new Map([
   ['colors', 'color'],
@@ -124,18 +160,24 @@ const TAILWIND_SECTIONS = new Map([
   ['spacing', 'spacing'],
 ]);
 
-/** Reads literal theme values; the config is parsed, never run. */
+/** Reads literal theme values; the config is parsed, never run. Answers a refusal for a config too deep to read. */
 export function readTailwind(
   text: string,
   lineOffset: number,
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
-): void {
-  const theme = readConfigTheme(text);
+): CanvasDiagnostic | null {
+  const config = readConfigTheme(text);
+  if (config.status === 'tooDeep')
+    return { code: 'invalid_input', message: 'That config nests its values too deeply to read.' };
+  const theme = config.theme;
   if (theme?.kind !== 'object') {
     diagnostics.push({ code: 'no_tokens', message: 'That config has no literal theme object.' });
-    return;
+    return null;
   }
+  // `theme.extend` overrides `theme` for the same name, as Tailwind merges them,
+  // so values are gathered first and each name is declared once.
+  const values = new Map<string, { value: string; line: number }>();
   const collect = (value: ConfigValue, name: string, path: string, section: string): void => {
     if (value.kind === 'object') {
       for (const entry of value.entries) {
@@ -151,12 +193,13 @@ export function readTailwind(
       return;
     }
     const literal = literalValue(value, section);
-    if (literal !== null) declare(declared, name, 'shared', literal, lineOffset + value.line);
+    const tokenLine = lineOffset + value.line;
+    if (literal !== null) values.set(name, { value: literal, line: tokenLine });
     else
       diagnostics.push({
         code: 'manual_interpretation_required',
         message: `${path} is computed in the config. Paste its values as CSS variables instead.`,
-        line: lineOffset + value.line,
+        line: tokenLine,
       });
   };
   const extend = theme.entries.find((entry) => entry.key === 'extend')?.value;
@@ -171,6 +214,11 @@ export function readTailwind(
         collect(value, `--${prefix}`, `${path}.${key}`, key);
     }
   }
+  for (const [rawName, { value, line }] of values) {
+    const name = tokenName(rawName);
+    if (name !== null) declare(declared, { name, value, targets: ['shared'], line }, diagnostics);
+  }
+  return null;
 }
 
 function literalValue(value: ConfigValue, section: string): string | null {
@@ -196,17 +244,16 @@ export function tokenName(raw: string): string | null {
   return words === '' ? null : `--${words}`;
 }
 
-// A later declaration of a name wins, as it would in a stylesheet.
+// Pasted values may wrap across lines; a token value is a single line.
 function declare(
   declared: Declared,
-  rawName: string,
-  scope: Scope,
-  value: string,
-  line: number,
+  token: { name: string; value: string; targets: TokenScope[]; line: number },
+  diagnostics: CanvasDiagnostic[],
 ): void {
-  const name = tokenName(rawName);
-  if (name === null) return;
-  const entry = declared.get(name) ?? { values: {}, line };
-  entry.values[scope] = value.replace(/\s+/g, ' ').trim();
-  declared.set(name, entry);
+  if (!declared.lines.has(token.name)) declared.lines.set(token.name, token.line);
+  declareToken(
+    declared.scopes,
+    { ...token, value: token.value.replace(/\s+/g, ' ').trim() },
+    diagnostics,
+  );
 }

@@ -26,15 +26,34 @@ interface Token {
 const TOKEN =
   /\s+|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\[\s\S]|[^`\\])*(?:`|$)|\.\.\.|[A-Za-z_$][\w$]*|\d[\w.]*|[\s\S]/y;
 
+// The reader recurses once per object or array, so deeper input is refused first.
+const MAX_NESTING = 32;
+
 /** The object a `theme:` property holds, wherever the config declares it. */
-export function readConfigTheme(source: string): ConfigValue | null {
+export function readConfigTheme(
+  source: string,
+): { status: 'read'; theme: ConfigValue | null } | { status: 'tooDeep' } {
   const tokens = tokenize(source);
+  if (nesting(tokens) > MAX_NESTING) return { status: 'tooDeep' };
   for (let index = 0; index + 2 < tokens.length; index += 1) {
     const [key, colon, open] = tokens.slice(index, index + 3);
     if (key.kind !== 'punct' && key.text === 'theme' && colon.text === ':' && open.text === '{')
-      return new LiteralReader(tokens, index + 2).value();
+      return { status: 'read', theme: new LiteralReader(tokens, index + 2).value() };
   }
-  return null;
+  return { status: 'read', theme: null };
+}
+
+function nesting(tokens: Token[]): number {
+  let depth = 0;
+  let deepest = 0;
+  for (const { kind, text } of tokens) {
+    if (kind !== 'punct') continue;
+    if (text === '{' || text === '[' || text === '(') {
+      depth += 1;
+      deepest = Math.max(deepest, depth);
+    } else if ((text === '}' || text === ']' || text === ')') && depth > 0) depth -= 1;
+  }
+  return deepest;
 }
 
 function tokenize(source: string): Token[] {

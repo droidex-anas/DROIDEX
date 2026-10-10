@@ -15,6 +15,7 @@ import { UNIVERSAL_GUIDANCE } from './presets/starter.js';
 import {
   fencedBlocks,
   looksLikeConfig,
+  nestingDepth,
   readCss,
   readTailwind,
   tokenName,
@@ -35,6 +36,8 @@ const MAX_DIAGNOSTICS = 64;
 const MAX_MESSAGE_LENGTH = 300;
 const UNDEFINED_REFERENCE = 'It refers to a token this source does not define.';
 const UNUSABLE_REFERENCE = 'It refers to a token that was not imported.';
+// Fallbacks nest inside `var()`, and resolving recurses once per level.
+const MAX_VALUE_NESTING = 16;
 
 const color = (...names: string[]) => names.flatMap((name) => [name, `color-${name}`]);
 // Common names for each contract token, in priority order. A source name maps
@@ -88,12 +91,14 @@ export function importDesignSystem(
   kit: { id: string; name: string },
 ): ImportDesignSystemResult {
   const diagnostics: CanvasDiagnostic[] = [];
-  const declared: Declared = new Map();
+  const declared: Declared = { scopes: { shared: {}, light: {}, dark: {} }, lines: new Map() };
   const read =
     source.kind === 'designMd'
       ? readDesignMd(source.text, declared, diagnostics)
       : readTokenSource(source.text, declared, diagnostics);
   if (read.status === 'refused') return read;
+  const unreadable = tokenRefusal(declared, diagnostics);
+  if (unreadable) return unreadable;
 
   const parsed = designSystemSchema.safeParse({
     id: kit.id,
@@ -111,6 +116,18 @@ export function importDesignSystem(
 
 type SourceRead = { status: 'read'; guidance: string } | Refused;
 
+// Competing values are refused, as extraction refuses them: neither is the
+// kit's. Bounding the token count also bounds how deep a reference chain runs.
+function tokenRefusal(declared: Declared, diagnostics: CanvasDiagnostic[]): Refused | null {
+  const competing = diagnostics.find((entry) => entry.code === 'ambiguous_token');
+  if (competing) return failed([competing, ...diagnostics.filter((entry) => entry !== competing)]);
+  const { maxTokensPerMode } = DESIGN_SYSTEM_LIMITS;
+  if (declared.lines.size <= maxTokensPerMode) return null;
+  return refused(
+    `That source declares ${String(declared.lines.size)} tokens; a kit holds at most ${String(maxTokensPerMode)} in each mode.`,
+  );
+}
+
 /** The whole text becomes guidance beside the primitive notes; its css and config blocks set tokens. */
 function readDesignMd(
   text: string,
@@ -126,14 +143,13 @@ function readDesignMd(
     );
   }
   for (const block of fencedBlocks(text)) {
-    if (block.language === 'css') {
-      const failure = readCss(block.text, block.line, declared, diagnostics);
-      if (failure) return failed([failure, ...diagnostics]);
-    } else if (/\btheme\s*:/.test(block.text)) {
-      readTailwind(block.text, block.line, declared, diagnostics);
-    }
+    let failure: CanvasDiagnostic | null = null;
+    if (block.language === 'css') failure = readCss(block.text, block.line, declared, diagnostics);
+    else if (/\btheme\s*:/.test(block.text))
+      failure = readTailwind(block.text, block.line, declared, diagnostics);
+    if (failure) return failed([failure, ...diagnostics]);
   }
-  if (declared.size === 0)
+  if (declared.lines.size === 0)
     diagnostics.push({
       code: 'no_tokens',
       message:
@@ -149,13 +165,11 @@ function readTokenSource(
   diagnostics: CanvasDiagnostic[],
 ): SourceRead {
   if (text.trim() === '') return refused('Paste CSS variables or a Tailwind config first.');
-  if (looksLikeConfig(text)) {
-    readTailwind(text, 0, declared, diagnostics);
-  } else {
-    const failure = readCss(text, 0, declared, diagnostics);
-    if (failure) return failed([failure, ...diagnostics]);
-  }
-  if (declared.size === 0)
+  const failure = looksLikeConfig(text)
+    ? readTailwind(text, 0, declared, diagnostics)
+    : readCss(text, 0, declared, diagnostics);
+  if (failure) return failed([failure, ...diagnostics]);
+  if (declared.lines.size === 0)
     return refused(
       diagnostics.length > 0
         ? `No tokens could be imported. ${diagnostics[0].message}`
@@ -210,7 +224,7 @@ function mapOntoContract(
     if (alias) assign(contractName, `--${alias}`);
   }
 
-  for (const [name, { line }] of declared) {
+  for (const [name, line] of declared.lines) {
     if (claimed.has(name)) continue;
     const light = resolved.light.get(name);
     const dark = resolved.dark.get(name);
@@ -244,22 +258,21 @@ function resolveValues(
     const resolve = (name: string): Resolution | undefined => {
       const known = resolutions.get(name);
       if (known) return known;
-      const values = declared.get(name)?.values;
-      const raw = values?.[mode] ?? values?.shared;
+      const raw = scopedValue(declared, name, mode);
       if (raw === undefined) return undefined;
       resolutions.set(name, { problem: UNUSABLE_REFERENCE });
       const resolution = usableValue(raw, resolve);
       resolutions.set(name, resolution);
       return resolution;
     };
-    for (const name of declared.keys()) {
+    for (const name of declared.lines.keys()) {
       const resolution = resolve(name);
       if (resolution === undefined) continue;
       if ('value' in resolution) resolved[mode].set(name, resolution.value);
       else if (!problems.has(name)) problems.set(name, resolution.problem);
     }
   }
-  for (const [name, { line }] of declared) {
+  for (const [name, line] of declared.lines) {
     const problem = problems.get(name);
     if (problem !== undefined)
       diagnostics.push({
@@ -271,7 +284,15 @@ function resolveValues(
   return resolved;
 }
 
+function scopedValue(declared: Declared, name: string, mode: Mode): string | undefined {
+  const { scopes } = declared;
+  if (Object.hasOwn(scopes[mode], name)) return scopes[mode][name];
+  return Object.hasOwn(scopes.shared, name) ? scopes.shared[name] : undefined;
+}
+
 function usableValue(raw: string, resolve: (name: string) => Resolution | undefined): Resolution {
+  if (nestingDepth(raw, '(', ')') > MAX_VALUE_NESTING)
+    return { problem: 'It nests functions too deeply.' };
   const inlined = inlineReferences(raw, resolve);
   if ('problem' in inlined) return inlined;
   const value = bareHsl(inlined.value);
