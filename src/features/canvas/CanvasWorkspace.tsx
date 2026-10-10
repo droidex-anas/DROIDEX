@@ -12,6 +12,7 @@ import './canvasBoard.css';
 import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useSessionLive } from '../../hooks/useSessionLive';
+import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
@@ -92,10 +93,16 @@ export function CanvasWorkspace({
     [appSessionId, onAttachmentChange],
   );
 
+  // A Canvas request made while DROIDEX is not connected is refused, not
+  // queued, so the attachment is read once the bridge is up and again each time
+  // it comes back: a cold start or a renderer reload needs no Try again.
+  const connected = useStoreSelector((current) => current.connection === 'connected');
+
   // The sidecar owns the attachment; a named Open views its target directly.
   useEffect(() => {
     if (namedCanvasId !== undefined) {
       dispatch({ type: 'selected', canvasId: namedCanvasId });
+      if (!connected) return;
       // The app still learns the attachment without the view moving to it: it
       // decides whether this canvas's frames can be pinned to the chat. A read
       // that fails leaves them unpinnable, which is all it costs.
@@ -117,6 +124,7 @@ export function CanvasWorkspace({
       dispatch({ type: 'attach-failed', message: owed.message });
       return;
     }
+    if (!connected) return;
     let active = true;
     canvas
       .attachedCanvasId(appSessionId)
@@ -129,7 +137,7 @@ export function CanvasWorkspace({
     return () => {
       active = false;
     };
-  }, [appSessionId, attach, namedCanvasId, onAttachmentChange, reopenCount]);
+  }, [appSessionId, attach, connected, namedCanvasId, onAttachmentChange, reopenCount]);
 
   const watched = watchedCanvasId(state);
   useEffect(() => {
