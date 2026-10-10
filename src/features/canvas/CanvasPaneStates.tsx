@@ -3,6 +3,7 @@ import { LayoutTemplate, Spinner } from '@droidex/icons';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { canvasClient as canvas } from './canvasClient';
 import { canvasMessage } from './client';
+import { outdatedCanvasMessage } from './canvasState';
 import type { CanvasSummary } from './protocol';
 
 // Starting points for a canvas with nothing on it. Each one seeds the chat's
@@ -77,8 +78,7 @@ export function CanvasEmptyState({
     <CanvasInvitation>
       {outdatedName && (
         <CanvasNote>
-          This chat’s canvas, “{outdatedName}”, was made by an earlier DROIDEX and can’t be opened
-          here. Create a new one to keep designing in this chat.
+          {outdatedCanvasMessage(outdatedName)} Create a new canvas to keep designing in this chat.
         </CanvasNote>
       )}
       {error && <CanvasFailure>{error}</CanvasFailure>}

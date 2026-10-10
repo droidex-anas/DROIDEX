@@ -12,6 +12,7 @@ import {
   type BoardInteractionEvent,
   watchedCanvasId,
   type CanvasPaneState,
+  outdatedCanvasMessage,
 } from './canvasState';
 import type { CanvasFrame, CanvasSnapshot } from './protocol';
 
@@ -70,6 +71,9 @@ test('a chat whose canvas an earlier DROIDEX made is unattached and says which i
     outdated,
   );
   assert.equal(reduceCanvasPane(outdated, { type: 'settled', canvasId: 'cv_2' }).status, 'loading');
+  // Its name is often a whole first prompt, so only the start is quoted.
+  assert.match(outdatedCanvasMessage('Pricing'), /^“Pricing” was made by an earlier DROIDEX/);
+  assert.match(outdatedCanvasMessage('x'.repeat(60)), /^“x{47}…” was made/);
 });
 
 test('reopening a pane with an unsettled attachment keeps recovery ahead of the cache', () => {

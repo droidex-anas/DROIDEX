@@ -476,9 +476,9 @@ function hasDuplicate(values: readonly string[]): boolean {
 }
 
 /**
- * What a manifest an earlier DROIDEX wrote, before revision history, still says:
- * whole and this canvas's own, but with no revisions. It is not opened or
- * repaired; its name and the chats it held are kept so they can be told why.
+ * Supported case: a manifest an earlier DROIDEX wrote before revision history,
+ * whole and this canvas's own but with no revisions. It is never opened; its name
+ * and chats are kept to say why. Remove with the next CANVAS_MANIFEST_VERSION bump.
  */
 export function outdatedManifest(
   written: unknown,

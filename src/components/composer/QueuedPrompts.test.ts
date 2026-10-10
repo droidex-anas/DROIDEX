@@ -53,3 +53,19 @@ test('queued duplicate native paths still render two chips', () => {
   const html = render([prompt({ files: ['/tmp/notes.pdf', '/tmp/notes.pdf'] })]);
   assert.equal(html.split('>PDF<').length - 1, 2);
 });
+
+test('a queued prompt names the canvas frame it was sent with, or counts several', () => {
+  const pin = (designId: string, name: string) => ({
+    canvasId: 'cv_1',
+    designId,
+    revisionId: 'r1',
+    name,
+    size: '720 × 520',
+    designSystem: { id: 'droidex', version: 1, mode: 'dark' as const },
+  });
+  assert.match(render([prompt({ framePins: [pin('d1', 'Pricing · Mono')] })]), /Pricing · Mono/);
+  assert.match(
+    render([prompt({ framePins: [pin('d1', 'Pricing · Mono'), pin('d2', 'Pricing · Wide')] })]),
+    />2 frames</,
+  );
+});
