@@ -9,7 +9,7 @@
 // properties (`fill`, `stroke`, `color`, `backgroundColor`, ...). Prose, data
 // and computed values are not read, and a `var()` fallback is not a literal.
 
-import postcss from 'postcss';
+import postcss, { CssSyntaxError, type Root } from 'postcss';
 import valueParser from 'postcss-value-parser';
 import ts from 'typescript';
 import { ADHERENCE_CODES } from './canvasDiagnostics.js';
@@ -92,25 +92,35 @@ export function checkDesignSystemAdherence(
   rule: DesignSystemAdherence,
 ): AdherenceResult {
   if (rule === 'off') return { status: 'passed', diagnostics: [] };
-  const check = new DesignCheck(readKit(system));
+  const kit = readKit(system);
+  if (!kit.ok) return { status: 'failed', diagnostics: [kit.diagnostic] };
+  const check = new DesignCheck(kit.kit);
   for (const [file, text] of Object.entries(files)) {
     if (file.endsWith('.css')) check.stylesheet(file, text);
     else if (SCRIPT_FILE.test(file)) check.script(file, text);
   }
-  const violations = check.findings;
-  if (!check.usesKit)
-    violations.push({
-      code: ADHERENCE_CODES.unused,
-      message: `The design imports nothing from ${KIT_SPECIFIER}. Build its controls from the kit's primitives (${check.kit.primitives.join(', ')}) so their states and tokens apply.`,
-      file: DESIGN_ENTRY,
-    });
+  // A design that ignores the kit has one problem worth naming first.
+  const unused = {
+    code: ADHERENCE_CODES.unused,
+    message: `The design imports nothing from ${KIT_SPECIFIER}. Build its controls from the kit's primitives (${kit.kit.primitives.join(', ')}) so their states and tokens apply.`,
+    file: DESIGN_ENTRY,
+  };
+  const violations = check.usesKit
+    ? check.findings
+    : [unused, ...check.findings].slice(0, MAX_FINDINGS);
   if (rule === 'strict' && violations.length > 0)
     return { status: 'failed', diagnostics: violations };
   const note = overrideNote(check.overrides);
   return { status: 'passed', diagnostics: note ? [...violations, note] : violations };
 }
 
-function readKit(system: DesignSystem): Kit {
+/**
+ * A saved kit's CSS is first parsed here, before the stylesheet build reviews it,
+ * so a syntax error is reported as that build would: the kit file and its line.
+ */
+function readKit(
+  system: DesignSystem,
+): { ok: true; kit: Kit } | { ok: false; diagnostic: CanvasDiagnostic } {
   const families = new Set(GENERIC_FAMILIES);
   const fontTokens: string[] = [];
   for (const [name, value] of Object.entries({ ...system.modes.light, ...system.modes.dark })) {
@@ -121,7 +131,15 @@ function readKit(system: DesignSystem): Kit {
   const classes = new Set<string>();
   for (const [path, css] of Object.entries(system.files)) {
     if (!path.endsWith('.css')) continue;
-    const root = postcss.parse(css);
+    let root: Root;
+    try {
+      root = postcss.parse(css);
+    } catch (error) {
+      if (!(error instanceof CssSyntaxError)) throw error;
+      const file = `${KIT_SPECIFIER}/${path}`;
+      const at = error.line === undefined ? { file } : { file, line: error.line };
+      return { ok: false, diagnostic: { code: 'css_error', message: error.reason, ...at } };
+    }
     root.walkAtRules('font-face', (rule) => {
       rule.walkDecls('font-family', (declaration) => {
         for (const family of fontFamilies(declaration.value)) families.add(family.toLowerCase());
@@ -132,7 +150,10 @@ function readKit(system: DesignSystem): Kit {
     });
   }
   const tokens = new Set(Object.keys(system.modes.light));
-  return { tokens, families, fontTokens, classes, primitives: kitPrimitives(system) };
+  return {
+    ok: true,
+    kit: { tokens, families, fontTokens, classes, primitives: kitPrimitives(system) },
+  };
 }
 
 /** One design's findings, and whether any of its files reaches for the kit. */
@@ -281,6 +302,8 @@ function styledProperty(literal: ts.Node): string | null {
   if (ts.isJsxNamespacedName(name)) text = name.name.text;
   else if (ts.isIdentifier(name) || ts.isStringLiteral(name)) text = name.text;
   else return null;
+  // Data and accessibility attributes carry data, whatever their name says.
+  if (/^(?:data|aria)-/.test(text)) return null;
   // `backgroundColor` and `stopColor` style what `background-color` and `stop-color` do.
   if (text.startsWith('--')) return text;
   return text.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
@@ -322,7 +345,8 @@ function colorLiterals(value: string): string[] {
   valueParser(value).walk((node) => {
     if (node.type === 'function') {
       const name = node.value.toLowerCase();
-      if (name === 'var') return false;
+      // `var()` names a token and `url(#fade)` a gradient, not a colour.
+      if (name === 'var' || name === 'url') return false;
       if (!COLOR_FUNCTIONS.has(name)) return undefined;
       found.push(valueParser.stringify(node));
       return false;

@@ -20,7 +20,7 @@ export interface DesignSystemBrief {
   guidance: string;
 }
 
-/** A pinned kit this machine no longer has; its builds report the same. */
+/** A pinned kit this machine cannot read, missing or damaged; its builds report the same. */
 interface UnavailableDesignSystem {
   ref: DesignSystemRef;
   unavailable: string;
@@ -33,9 +33,9 @@ export async function designSystemBrief(
   try {
     system = await readDesignSystem(ref);
   } catch (error) {
-    // The turn still needs its scope, so a missing kit is reported rather than thrown.
-    if (error instanceof CanvasCommandError && error.code === 'version_mismatch')
-      return { ref, unavailable: error.message };
+    // The turn still needs its scope, if only to apply another kit, so an
+    // unreadable kit is reported rather than thrown.
+    if (error instanceof CanvasCommandError) return { ref, unavailable: error.message };
     throw error;
   }
   const primitives = kitPrimitives(system);

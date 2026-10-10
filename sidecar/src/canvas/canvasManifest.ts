@@ -187,7 +187,8 @@ export const canvasManifestSchema = z
       .object({ mutationId: canvasIdentifierSchema, appSessionId: appSessionIdSchema })
       .strict()
       .nullable(),
-    // Canvases saved before the setting existed hold their designs to the default.
+    // Supported case: canvases created in development before this setting existed.
+    // Remove the default with the next CANVAS_MANIFEST_VERSION bump.
     designSystemAdherence: designSystemAdherenceSchema.default('guide'),
     designs: z.array(persistedDesignSchema),
     tombstones: z.array(tombstoneSchema).max(CANVAS_TOMBSTONE_LIMIT),

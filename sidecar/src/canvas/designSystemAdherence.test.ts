@@ -20,6 +20,7 @@ export default function Report() {
       <LineChart width={320} height={120} data={points}>
         <Line dataKey="value" stroke="var(--ds-accent)" />
       </LineChart>
+      <svg data-color="red" aria-label="Fade"><path fill="url(#fade)" stroke="url(#bad)" /></svg>
       <Button style={{ color: 'var(--ds-accent-fg)' }}>Export</Button>
     </Card>
   );
@@ -92,6 +93,14 @@ test('hard-coded colours and fonts are reported by file and line, an override on
   assert.match(arbitrary.message, /^text-\[#e2e8f0\] .*text-\[color:var\(--ds-fg\)\]/);
   assert.match(result.diagnostics[7].message, /"Georgia".*var\(--ds-font-sans\)/);
   assert.match(result.diagnostics[8].message, /--ds-accent\. They stay as deliberate overrides/);
+});
+
+test('a kit whose CSS does not parse is reported at its own file and line', () => {
+  const broken = { ...DROIDEX_DESIGN_SYSTEM.files, 'tokens.css': '.x {\n  color: red;\n' };
+  const kit = { ...DROIDEX_DESIGN_SYSTEM, files: broken };
+  const result = checkDesignSystemAdherence(ON_KIT, kit, 'guide');
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(places(result.diagnostics), ['css_error @droidex/design-system/tokens.css:1']);
 });
 
 test('a design that uses nothing from the kit says which primitives it offers', () => {
