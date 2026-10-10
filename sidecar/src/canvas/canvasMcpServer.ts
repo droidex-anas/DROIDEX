@@ -164,8 +164,8 @@ export function createCanvasMcpServer(
           const snapshot = await board(scope);
           if (!snapshot)
             return { scopeId: scope.scopeId, attached: false, pinned: scope.context, frames: [] };
-          const { previews } = await workspace();
-          if (input.view === 'summary')
+          if (input.view === 'summary') {
+            const { previews } = await workspace();
             return {
               scopeId: scope.scopeId,
               attached: true,
@@ -177,6 +177,7 @@ export function createCanvasMcpServer(
                 .slice(input.offset, input.offset + input.limit)
                 .map((frame) => agentFrame(frame, previews.reportFor(snapshot.canvasId, frame))),
             };
+          }
           if (!input.designId || !input.revisionId)
             throw canvasError('invalid_input', 'Name a designId and revisionId to read source.');
           if (
@@ -235,7 +236,6 @@ export function createCanvasMcpServer(
               canvasId: created.canvasId,
               frames: created.frames.map((frame) => agentFrame(frame, null)),
             },
-            next: 'Write each frame’s main.tsx with canvas_write, expectedRevisionId null.',
           };
         }),
     ),
@@ -257,7 +257,7 @@ export function createCanvasMcpServer(
           });
           const owner = await workspace();
           const receipt = await owner.write(scope, input);
-          // A write needs its lease's canvas, so a receipt always has one.
+          // The workspace refuses a write under a lease with no canvas; this narrows the type.
           const { canvasId } = scope;
           if (canvasId === null) return { receipt };
           const frame = await settledFrame(
@@ -267,10 +267,11 @@ export function createCanvasMcpServer(
             receipt.revisionId,
           );
           if (!frame) return { receipt };
+          // A newer write moved the frame on; report the build it is on now.
           const preview =
             frame.revisionId === receipt.revisionId && frame.build.status === 'ready'
               ? await renderedPreview(owner.previews, canvasId, frame)
-              : null;
+              : owner.previews.reportFor(canvasId, frame);
           return { receipt, build: buildReport(frame, preview) };
         }),
     ),

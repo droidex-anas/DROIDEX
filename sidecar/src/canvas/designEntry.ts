@@ -1,7 +1,7 @@
-// What makes a source tree a design: `main.tsx`, which default-exports its
-// component, with no HTML page standing in for it. A write that breaks this is
-// refused while the agent's tool call is still open, so it fixes the tree in
-// the same turn; the compiler checks again for any tree that reaches it.
+// Whether a source tree can be a design at all: it has `main.tsx` and no HTML
+// page standing in for it. A write that breaks this is refused while the
+// agent's tool call is still open, so it fixes the tree in the same turn; the
+// compiler checks again, and the bundler reports a missing default export.
 
 import type { CanvasDiagnostic } from './protocol.js';
 
@@ -16,7 +16,7 @@ export function designEntryDiagnostic(paths: readonly string[]): CanvasDiagnosti
   if (page !== undefined)
     return {
       code: 'compile_failed',
-      message: `${page} is not compiled. A design is ${DESIGN_ENTRY}, which default-exports a React component; write the page as that component's JSX.`,
+      message: `${page} is not compiled. A design is ${DESIGN_ENTRY}, which default-exports a React component; write the page as that component's JSX and put ${page} in deletedPaths.`,
       file: page,
     };
   if (paths.includes(DESIGN_ENTRY)) return null;

@@ -4,9 +4,11 @@
 // generated design breaks. Caught at build time, the agent gets the file and
 // line in its write reply instead of a blank frame.
 //
-// Deliberately narrow: capitalised JSX tags, the root of a member tag, and
-// `use*` calls, which no browser global satisfies. A name declared anywhere in
-// the file counts as bound, so nothing that runs is ever refused.
+// Deliberately narrow: capitalised JSX tags, the root of a member tag, `use*`
+// calls and a `React.` root, none of which a browser global satisfies. A name
+// declared anywhere in the file counts as bound, and a type-only import binds
+// nothing at run time. Every script file is checked, as instrumentation parses
+// every one, so a broken module the entry never imports fails too.
 
 import ts from 'typescript';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
@@ -50,6 +52,9 @@ function usedName(node: ts.Node): ts.Identifier | null {
   }
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
     return HOOK_NAME.test(node.expression.text) ? node.expression : null;
+  // `React.useState` with the automatic JSX runtime still needs React imported.
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression))
+    return node.expression.text === 'React' ? node.expression : null;
   return null;
 }
 
@@ -59,12 +64,19 @@ function memberRoot(tag: ts.PropertyAccessExpression): ts.Identifier | null {
   return ts.isIdentifier(target) ? target : null;
 }
 
-/** Every name the file declares, at any depth: imports, variables, parameters, functions, classes. */
+/**
+ * Every name the file binds at run time, at any depth: value imports, variables,
+ * parameters, functions, classes, enums and namespaces.
+ */
 function declaredNames(source: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   const visit = (node: ts.Node): void => {
+    if (ts.isImportClause(node) && node.phaseModifier === ts.SyntaxKind.TypeKeyword) return;
     if (ts.isImportClause(node) && node.name) names.add(node.name.text);
-    else if (ts.isNamespaceImport(node) || ts.isImportSpecifier(node)) names.add(node.name.text);
+    else if (ts.isImportSpecifier(node) && !node.isTypeOnly) names.add(node.name.text);
+    else if (ts.isNamespaceImport(node) || ts.isImportEqualsDeclaration(node))
+      names.add(node.name.text);
+    else if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) names.add(node.name.text);
     else if (ts.isVariableDeclaration(node) || ts.isParameter(node)) addBindings(node.name, names);
     else if (
       (ts.isFunctionDeclaration(node) ||

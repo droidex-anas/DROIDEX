@@ -15,19 +15,22 @@ import type { CanvasDiagnostic, CanvasFrame, PreviewReport } from './protocol.js
 import { CANVAS_LIMITS } from './schema.js';
 
 /** The build deadline plus room for a build queued behind the other slots. */
-export const BUILD_WAIT_MS = CANVAS_LIMITS.buildDeadlineMs + 5_000;
+const BUILD_WAIT_MS = CANVAS_LIMITS.buildDeadlineMs + 5_000;
 
 /** How soon an open pane starts the preview of a build it was just sent. */
 const PREVIEW_START_MS = 1_500;
-/** The pane's own ten-second ready deadline, and a moment for its report. */
-const PREVIEW_RENDER_MS = 11_000;
+/**
+ * From the pane's first `loading`: the guest's own ten-second ready deadline,
+ * which starts only once the guest is bound, and a moment for its report.
+ */
+const PREVIEW_RENDER_MS = 13_000;
 
 /** The first few diagnostics are the ones worth fixing; the rest repeat them. */
 const REPORTED_DIAGNOSTICS = 8;
 
 export type BuildReport =
   | { status: 'empty'; next: string }
-  | { status: 'building'; revisionId: string; next: string }
+  | { status: 'queued' | 'building'; revisionId: string; next: string }
   | {
       status: 'ready';
       revisionId: string;
@@ -96,6 +99,13 @@ export function buildReport(frame: CanvasFrame, preview: PreviewReport | null): 
       revisionId,
       next: 'The build was cancelled, so nothing new rendered. Write the frame again to rebuild it.',
     };
+  // A restored frame whose artifact is gone waits here until a pane opens it.
+  if (build.status === 'pending')
+    return {
+      status: 'queued',
+      revisionId,
+      next: 'Not built yet. It builds when a canvas pane shows it; writing it again rebuilds it now.',
+    };
   return {
     status: 'building',
     revisionId,
@@ -119,7 +129,9 @@ function readyReport(
   const warnings = diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic);
   const rendered = preview?.outcome === 'rendered';
   const errors = rendered ? preview.errors : [];
-  let next = `Built; no preview is open to confirm it renders. To change it, ${again}.`;
+  let next = `Built; no open preview has confirmed it renders. To change it, ${again}.`;
+  if (preview?.outcome === 'loading')
+    next = `Built; its preview is still loading. Call canvas_inspect in a moment to read whether it rendered.`;
   if (rendered) next = `Built and rendered. To change it, ${again}.`;
   if (errors.length > 0) next = `It rendered, then threw. Fix the error and ${again}.`;
   return {
@@ -133,9 +145,10 @@ function readyReport(
 }
 
 /**
- * The open pane's verdict on a frame that just built: what its preview did once
- * it rendered or failed, or null when no pane starts one soon or it never
- * settles in time. A pane that is loading the preview extends the wait.
+ * The open pane's latest word on a frame that just built, once its preview
+ * rendered or failed or the wait ran out: null when no pane started a preview
+ * soon, `loading` when one never settled. The first `loading` fixes the one
+ * deadline, so remounts cannot stretch the call.
  */
 export function renderedPreview(
   previews: CanvasPreviewReports,
@@ -150,30 +163,35 @@ export function renderedPreview(
     }
     let unsubscribe = (): void => undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let loading = current !== null;
     const finish = (report: PreviewReport | null) => {
       unsubscribe();
       clearTimeout(timer);
-      resolve(report?.outcome === 'loading' ? null : report);
+      resolve(report);
     };
+    // Unref'd like the build wait: a pending report is never why the sidecar stays up.
     const waitFor = (ms: number) => {
       clearTimeout(timer);
       timer = setTimeout(() => {
         finish(previews.reportFor(canvasId, frame));
-      }, ms);
+      }, ms).unref();
     };
-    waitFor(current ? PREVIEW_RENDER_MS : PREVIEW_START_MS);
+    waitFor(loading ? PREVIEW_RENDER_MS : PREVIEW_START_MS);
     unsubscribe = previews.subscribe((reported, report) => {
       if (reported !== canvasId || report.designId !== frame.designId) return;
       if (report.revisionId !== frame.revisionId) return;
-      if (report.outcome === 'loading') waitFor(PREVIEW_RENDER_MS);
-      else finish(report);
+      if (report.outcome !== 'loading') finish(report);
+      else if (!loading) {
+        loading = true;
+        waitFor(PREVIEW_RENDER_MS);
+      }
     });
   });
 }
 
 /**
  * The frame once the build of `revisionId` settles, it is superseded or removed,
- * or `timeoutMs` passes; nothing once the workspace closes. Read and subscribed
+ * or the wait runs out; nothing once the workspace closes. Read and subscribed
  * in one tick, so an outcome that landed before the call is read and one that
  * lands after it is heard.
  */
@@ -181,7 +199,6 @@ export function settledFrame(
   changes: CanvasChangeFeed,
   readFrame: () => CanvasFrame | undefined,
   revisionId: string,
-  timeoutMs = BUILD_WAIT_MS,
 ): Promise<CanvasFrame | undefined> {
   return new Promise((resolve) => {
     const current = safely(readFrame);
@@ -199,7 +216,7 @@ export function settledFrame(
     // Unref'd so a write waiting on its build is never why the sidecar stays up.
     const timer = setTimeout(() => {
       finish(safely(readFrame));
-    }, timeoutMs).unref();
+    }, BUILD_WAIT_MS).unref();
     unsubscribe = changes.subscribe(
       (change) => {
         const frame = change.frames.find((entry) => entry.designId === designId);

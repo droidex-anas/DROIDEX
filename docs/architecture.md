@@ -423,13 +423,13 @@ A validation refusal has no publication receipt, so its diagnostics revalidate
 the captured lease before delivery. Authored kit saves cannot claim extraction
 provenance; extracted kits retain their source-owned provenance.
 `canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
-`canvas_write` refuses a tree that cannot be a design (`designEntry.ts`: `main.tsx`
-default-exporting its component, no HTML page) before staging a revision, then waits
+`canvas_write` refuses a tree that cannot be a design (`designEntry.ts`: no `main.tsx`,
+or an HTML page in its place) before staging a revision, then waits
 for that revision's build, at most the build deadline plus queueing, and answers a
 compact report: status, diagnostics with file and line, the last working revision and
 the next step. The compiler also fails a design that renders a component or calls a
 hook it never imports or declares. Once the build is ready, the write waits 1.5 s for
-an open pane to start the preview and up to 11 s for it to render. The pane reports
+an open pane to start the preview and then one 13 s deadline for it to render. The pane reports
 `loading`, `rendered` or `failed` through `canvas.reportPreview`; `CanvasPreviewReports`
 keeps the latest per design, so a design that compiles and then throws reaches the
 agent as `render_failed`. Reports are the pane's word, never canonical state. Read,

@@ -46,6 +46,8 @@ const SHOWN_PREVIEW_DIAGNOSTICS = 8;
 
 /** The diagnostics a design throws itself, as opposed to the host's own notes. */
 const THROWN_CODES = new Set(['preview_error', 'render_failed']);
+/** The host's word for a root render that failed before the design painted. */
+const RENDER_FAILED = 'render_failed';
 
 export function DesignPreview({
   canvasId,
@@ -221,19 +223,19 @@ export function PreviewGuestFrame({
       }, 150);
     };
     const sizeObserver = new ResizeObserver(updateCapture);
-    // What the agent hears: loading as the guest mounts, then whether the
-    // design painted, and anything it throws. An error before the first paint
-    // means it stopped (or raced) its render, so it reports a failure.
+    // What the agent hears: loading as the guest mounts, rendered once the
+    // design paints, failed when its root render failed or it stalled before
+    // painting, and the first few errors it throws. A design that throws in a
+    // loop sends nothing new once those are held.
     let painted = false;
+    let sent: PreviewReport['outcome'] | null = null;
     const errors: string[] = [];
     const report = (outcome: PreviewReport['outcome'], thrown: string[] = []) => {
-      errors.push(...thrown);
-      reported.current(canvasId, {
-        designId,
-        revisionId,
-        outcome,
-        errors: errors.slice(-SHOWN_PREVIEW_DIAGNOSTICS),
-      });
+      const fresh = thrown.slice(0, SHOWN_PREVIEW_DIAGNOSTICS - errors.length);
+      if (outcome === sent && fresh.length === 0) return;
+      errors.push(...fresh);
+      sent = outcome;
+      reported.current(canvasId, { designId, revisionId, outcome, errors: [...errors] });
     };
 
     // Main binds the guest to this canvas before a design runs in it, so the
@@ -272,11 +274,12 @@ export function PreviewGuestFrame({
           onDiagnostics: (entries) => {
             setShown((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
             const thrown = entries.filter((entry) => THROWN_CODES.has(entry.code));
-            if (thrown.length > 0)
-              report(
-                painted ? 'rendered' : 'failed',
-                thrown.map((entry) => entry.message),
-              );
+            if (thrown.length === 0) return;
+            const stopped = thrown.some((entry) => entry.code === RENDER_FAILED);
+            report(
+              stopped ? 'failed' : (sent ?? 'loading'),
+              thrown.map((entry) => entry.message),
+            );
           },
           onLost: (reason) => {
             // A guest the board lost is not the design's fault; a stall is.

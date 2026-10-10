@@ -79,16 +79,20 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
     await builds.close();
     await workspace.close();
   });
-  // The open pane: it runs every build that lands and says what the preview did.
+  // The open pane: it starts a preview of every build that lands and, a turn of
+  // the event loop later, says what the design did.
   workspace.changes.subscribe((change) => {
     for (const { designId, build } of change.frames) {
       if (build.status !== 'ready') continue;
+      const ran = { designId, revisionId: build.revisionId };
+      workspace.previews.record(change.canvasId, { ...ran, outcome: 'loading', errors: [] });
       const throws = build.artifactId.startsWith('throws');
-      workspace.previews.record(change.canvasId, {
-        designId,
-        revisionId: build.revisionId,
-        outcome: throws ? 'failed' : 'rendered',
-        errors: throws ? ['total is not defined'] : [],
+      setImmediate(() => {
+        workspace.previews.record(change.canvasId, {
+          ...ran,
+          outcome: throws ? 'failed' : 'rendered',
+          errors: throws ? ['total is not defined'] : [],
+        });
       });
     }
   });
