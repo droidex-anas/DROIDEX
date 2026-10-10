@@ -23,6 +23,7 @@ import { designEntryDiagnostic } from './designEntry.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
+import { unboundNameDiagnostics } from './unboundNames.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
@@ -68,6 +69,9 @@ export async function compileDesign(
   const bundle = await bundleDesign({ files: instrumented.files, kitFiles: system.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
+  // Checked once every import resolves, so the missing name is the only fault left.
+  const unbound = unboundNameDiagnostics(input.files);
+  if (unbound.length > 0) throw new CompileFailedError(unbound);
 
   const stylesheet = await buildDesignStylesheet(input.files, system);
   stopIfCancelled(signal);
