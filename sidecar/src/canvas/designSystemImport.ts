@@ -15,7 +15,6 @@ import { UNIVERSAL_GUIDANCE } from './presets/starter.js';
 import {
   fencedBlocks,
   looksLikeConfig,
-  nestingDepth,
   readCss,
   readTailwind,
   tokenName,
@@ -36,7 +35,7 @@ const MAX_DIAGNOSTICS = 64;
 const MAX_MESSAGE_LENGTH = 300;
 const UNDEFINED_REFERENCE = 'It refers to a token this source does not define.';
 const UNUSABLE_REFERENCE = 'It refers to a token that was not imported.';
-// Fallbacks nest inside `var()`, and resolving recurses once per level.
+// Fallbacks nest inside `var()`, and resolving recurses once per function level.
 const MAX_VALUE_NESTING = 16;
 
 const color = (...names: string[]) => names.flatMap((name) => [name, `color-${name}`]);
@@ -291,8 +290,7 @@ function scopedValue(declared: Declared, name: string, mode: Mode): string | und
 }
 
 function usableValue(raw: string, resolve: (name: string) => Resolution | undefined): Resolution {
-  if (nestingDepth(raw, '(', ')') > MAX_VALUE_NESTING)
-    return { problem: 'It nests functions too deeply.' };
+  if (functionDepth(raw) > MAX_VALUE_NESTING) return { problem: 'It nests functions too deeply.' };
   const inlined = inlineReferences(raw, resolve);
   if ('problem' in inlined) return inlined;
   const value = bareHsl(inlined.value);
@@ -301,6 +299,25 @@ function usableValue(raw: string, resolve: (name: string) => Resolution | undefi
     return { problem: checked.error.issues[0]?.message ?? 'That is not a token value.' };
   if (/\burl\(|image-set\(/i.test(value)) return { problem: 'A kit token cannot load a resource.' };
   return { value };
+}
+
+/**
+ * How deeply a value nests functions, on the parsed value and without
+ * recursion: a `)` inside a string closes nothing, so counting text would
+ * understate what the recursive walk below goes through.
+ */
+function functionDepth(value: string): number {
+  let deepest = 0;
+  const pending: [valueParser.Node[], number][] = [[valueParser(value).nodes, 1]];
+  for (let next = pending.pop(); next; next = pending.pop()) {
+    const [nodes, depth] = next;
+    for (const node of nodes) {
+      if (node.type !== 'function') continue;
+      deepest = Math.max(deepest, depth);
+      pending.push([node.nodes, depth + 1]);
+    }
+  }
+  return deepest;
 }
 
 /** Inlines `var()` references, so a value still holds after its tokens are renamed. */

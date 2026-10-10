@@ -26,7 +26,7 @@ interface Token {
 const TOKEN =
   /\s+|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\[\s\S]|[^`\\])*(?:`|$)|\.\.\.|[A-Za-z_$][\w$]*|\d[\w.]*|[\s\S]/y;
 
-// The reader recurses once per object or array, so deeper input is refused first.
+// The reader recurses once per object or array it opens; past this it refuses.
 const MAX_NESTING = 32;
 
 /** The object a `theme:` property holds, wherever the config declares it. */
@@ -34,26 +34,15 @@ export function readConfigTheme(
   source: string,
 ): { status: 'read'; theme: ConfigValue | null } | { status: 'tooDeep' } {
   const tokens = tokenize(source);
-  if (nesting(tokens) > MAX_NESTING) return { status: 'tooDeep' };
   for (let index = 0; index + 2 < tokens.length; index += 1) {
     const [key, colon, open] = tokens.slice(index, index + 3);
-    if (key.kind !== 'punct' && key.text === 'theme' && colon.text === ':' && open.text === '{')
-      return { status: 'read', theme: new LiteralReader(tokens, index + 2).value() };
+    if (key.kind !== 'punct' && key.text === 'theme' && colon.text === ':' && open.text === '{') {
+      const reader = new LiteralReader(tokens, index + 2);
+      const theme = reader.value();
+      return reader.tooDeep ? { status: 'tooDeep' } : { status: 'read', theme };
+    }
   }
   return { status: 'read', theme: null };
-}
-
-function nesting(tokens: Token[]): number {
-  let depth = 0;
-  let deepest = 0;
-  for (const { kind, text } of tokens) {
-    if (kind !== 'punct') continue;
-    if (text === '{' || text === '[' || text === '(') {
-      depth += 1;
-      deepest = Math.max(deepest, depth);
-    } else if ((text === '}' || text === ']' || text === ')') && depth > 0) depth -= 1;
-  }
-  return deepest;
 }
 
 function tokenize(source: string): Token[] {
@@ -80,6 +69,11 @@ function tokenize(source: string): Token[] {
 }
 
 class LiteralReader {
+  /** Set when a value opens deeper than MAX_NESTING; the caller refuses the whole read. */
+  tooDeep = false;
+  // What this reader has actually opened: a stray closer it steps over closes nothing.
+  private depth = 0;
+
   constructor(
     private readonly tokens: Token[],
     private index: number,
@@ -88,14 +82,25 @@ class LiteralReader {
   value(): ConfigValue {
     const token = this.tokens.at(this.index);
     if (!token) return { kind: 'computed', line: this.tokens.at(-1)?.line ?? 1 };
-    if (this.at('{')) return this.object();
-    if (this.at('[')) return this.list();
+    if (this.at('{') || this.at('[')) return this.nested(token.line);
     if (token.kind === 'text' && this.endsValue(this.index + 1)) {
       this.index += 1;
       return { kind: 'text', value: token.text, line: token.line };
     }
     this.skipExpression();
     return { kind: 'computed', line: token.line };
+  }
+
+  private nested(line: number): ConfigValue {
+    if (this.depth === MAX_NESTING) {
+      this.tooDeep = true;
+      this.skipExpression();
+      return { kind: 'computed', line };
+    }
+    this.depth += 1;
+    const value = this.at('{') ? this.object() : this.list();
+    this.depth -= 1;
+    return value;
   }
 
   private object(): ConfigValue {

@@ -3,7 +3,14 @@
 // set it. Nothing here runs the source: CSS is parsed by PostCSS, and a config
 // is read for its literals only.
 
-import postcss, { type AtRule, type Declaration, type Node, type Rule } from 'postcss';
+import postcss, {
+  type AtRule,
+  type ChildNode,
+  type Declaration,
+  type Node,
+  type Root,
+  type Rule,
+} from 'postcss';
 import { readConfigTheme, type ConfigValue } from './configLiterals.js';
 import {
   declareToken,
@@ -58,11 +65,6 @@ export function readCss(
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): CanvasDiagnostic | null {
-  if (nestingDepth(text, '{', '}') > MAX_STYLESHEET_NESTING)
-    return {
-      code: 'invalid_input',
-      message: 'That stylesheet nests its rules too deeply to read.',
-    };
   let root;
   try {
     root = postcss.parse(text, { from: undefined, map: false });
@@ -71,6 +73,11 @@ export function readCss(
     const at = error.line === undefined ? '' : ` at line ${String(error.line + lineOffset)}`;
     return { code: 'css_error', message: `Fix this stylesheet${at}: ${error.reason}.` };
   }
+  if (ruleDepth(root) > MAX_STYLESHEET_NESTING)
+    return {
+      code: 'invalid_input',
+      message: 'That stylesheet nests its rules too deeply to read.',
+    };
   root.walkDecls((declaration) => {
     if (!declaration.prop.startsWith('--')) return;
     const line = lineOffset + (declaration.source?.start?.line ?? 1);
@@ -137,15 +144,18 @@ function isRule(node: Node['parent']): node is Rule {
   return node?.type === 'rule';
 }
 
-/** The deepest nesting of the given brackets, counted without recursion. */
-export function nestingDepth(text: string, open: string, close: string): number {
-  let depth = 0;
+/**
+ * How deeply a parsed stylesheet nests its rules, measured without recursion.
+ * PostCSS parses iteratively but walks recursively, so this runs between them;
+ * counting braces in the text would miss a brace inside a string.
+ */
+function ruleDepth(root: Root): number {
   let deepest = 0;
-  for (const character of text) {
-    if (open.includes(character)) {
-      depth += 1;
-      deepest = Math.max(deepest, depth);
-    } else if (close.includes(character) && depth > 0) depth -= 1;
+  const pending: [Root | ChildNode, number][] = [[root, 0]];
+  for (let next = pending.pop(); next; next = pending.pop()) {
+    const [node, depth] = next;
+    deepest = Math.max(deepest, depth);
+    if ('nodes' in node) for (const child of node.nodes ?? []) pending.push([child, depth + 1]);
   }
   return deepest;
 }

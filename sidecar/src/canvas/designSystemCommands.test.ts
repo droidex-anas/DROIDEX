@@ -230,14 +230,17 @@ test('pasted sources are bounded before they are read, and competing values are 
     return errorOf(canvas, requestId);
   };
   // Each of these would otherwise overflow a recursive reader and surface as
-  // storage damage rather than as the paste's own fault.
+  // storage damage rather than as the paste's own fault. The closers do not
+  // match what they would close, so only depth counted as the readers open
+  // does, never a count of brackets in the text, refuses them.
   assert.deepEqual(
-    await refusal('deep-config', `module.exports={theme:{colors:{a:${'['.repeat(4000)}`),
-    {
-      code: 'invalid_input',
-      message: 'That config nests its values too deeply to read.',
-    },
+    await refusal('deep-config', `module.exports={theme:{colors:{${'a:{]'.repeat(15000)}`),
+    { code: 'invalid_input', message: 'That config nests its values too deeply to read.' },
   );
+  assert.deepEqual(await refusal('deep-rules', `${'a{b:"}";'.repeat(6000)}${'}'.repeat(6000)}`), {
+    code: 'invalid_input',
+    message: 'That stylesheet nests its rules too deeply to read.',
+  });
   // Short names keep 3000 links under the 64 KiB paste bound.
   const chain = Array.from(
     { length: 3000 },
@@ -255,7 +258,8 @@ test('pasted sources are bounded before they are read, and competing values are 
     },
   );
 
-  const nested = `${'var(--missing, '.repeat(40)}red${')'.repeat(40)}`;
+  // A `)` inside a string closes nothing, so these functions nest 9000 deep.
+  const nested = `var(--missing, ${'f(")"'.repeat(9000)}${')'.repeat(9000)})`;
   const { ref, diagnostics } = await importKit(canvas, 'bounded-values', {
     kind: 'cssOrTailwind',
     text: `:root { --primary: #abc; --primary: #aabbcc; --wash: ${nested}; }`,
