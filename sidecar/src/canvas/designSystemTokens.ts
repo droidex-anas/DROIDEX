@@ -1,4 +1,4 @@
-import postcss, { type Declaration } from 'postcss';
+import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
 
@@ -7,6 +7,8 @@ export interface TokenReference {
   file: string;
   line: number;
 }
+
+export type TokenScope = 'shared' | 'light' | 'dark';
 
 export interface SourceTokens {
   modes: Record<'light' | 'dark', Record<string, string>>;
@@ -17,12 +19,16 @@ export interface SourceTokens {
 
 /** Only global declarations with an explicit mode (or an explicit shared value) become kit tokens. */
 export function sourceTokens(files: SourceFiles): SourceTokens {
-  const sharedTokens: Record<string, string> = {};
   const result: SourceTokens = {
     modes: { light: {}, dark: {} },
     references: [],
     diagnostics: [],
     localTokens: new Set(),
+  };
+  const scopes: Record<TokenScope, Record<string, string>> = {
+    shared: {},
+    light: result.modes.light,
+    dark: result.modes.dark,
   };
   for (const [file, content] of Object.entries(files)) {
     if (!/\.(?:css|[jt]sx?)$/.test(file)) continue;
@@ -76,7 +82,11 @@ export function sourceTokens(files: SourceFiles): SourceTokens {
         result.references.push({ token, file, line: valueLine });
       });
       if (!declaration.prop.startsWith('--')) return;
-      const modes = declarationModes(declaration);
+      const rule = declaration.parent;
+      const modes =
+        rule?.type === 'rule' && rule.parent?.type === 'root'
+          ? selectorScopes(rule.selector, rootSelectorScope)
+          : [];
       if (modes.length === 0) {
         result.localTokens.add(declaration.prop);
         result.diagnostics.push({
@@ -87,45 +97,73 @@ export function sourceTokens(files: SourceFiles): SourceTokens {
         });
         return;
       }
-      const value = declaration.value.replace(
-        /^#([\da-f]{3,4})$/i,
-        (_match, hex: string) =>
-          '#' + hex.replace(/[\da-f]/gi, (digit) => digit.repeat(2)).toLowerCase(),
+      declareToken(
+        scopes,
+        {
+          name: declaration.prop,
+          value: declaration.value,
+          targets: modes,
+          file,
+          line: declaration.source?.start?.line,
+        },
+        result.diagnostics,
       );
-      for (const mode of modes) {
-        const tokens = mode === 'shared' ? sharedTokens : result.modes[mode];
-        const existing = tokens[declaration.prop];
-        if (Object.hasOwn(tokens, declaration.prop) && existing !== value) {
-          result.diagnostics.push({
-            code: 'ambiguous_token',
-            message: `${declaration.prop} has competing ${mode} values. Choose one explicitly before extraction.`,
-            file,
-            line: declaration.source?.start?.line,
-          });
-        }
-        tokens[declaration.prop] = value;
-      }
     });
   }
   for (const mode of ['light', 'dark'] as const)
-    result.modes[mode] = { ...sharedTokens, ...result.modes[mode] };
+    result.modes[mode] = { ...scopes.shared, ...result.modes[mode] };
   return result;
 }
 
-function declarationModes(declaration: Declaration): ('shared' | 'light' | 'dark')[] {
-  const rule = declaration.parent;
-  if (rule?.type !== 'rule' || rule.parent?.type !== 'root') return [];
-  const modes = new Set<'shared' | 'light' | 'dark'>();
-  for (const selector of rule.selector.split(',').map((part) => part.trim())) {
-    if (selector === ':root' || selector === 'html') {
-      modes.add('shared');
-      continue;
-    }
-    const match = /^(?::root|html)?\[data-mode\s*=\s*['"]?(light|dark)['"]?\]$/.exec(selector);
-    if (!match) return [];
-    modes.add(match[1] === 'light' ? 'light' : 'dark');
+/** The kit scope one selector names: `:root` or `html` is shared, and a root `data-mode` rule is that mode. */
+export function rootSelectorScope(selector: string): TokenScope | null {
+  if (selector === ':root' || selector === 'html') return 'shared';
+  const match = /^(?::root|html)?\[data-mode\s*=\s*['"]?(light|dark)['"]?\]$/.exec(selector);
+  if (!match) return null;
+  return match[1] === 'light' ? 'light' : 'dark';
+}
+
+/** Every scope a rule's selector list names, or none when any selector names another rule. */
+export function selectorScopes(
+  selectors: string,
+  scopeOf: (selector: string) => TokenScope | null,
+): TokenScope[] {
+  const scopes = new Set<TokenScope>();
+  for (const selector of selectors.split(',')) {
+    const scope = scopeOf(selector.trim());
+    if (scope === null) return [];
+    scopes.add(scope);
   }
-  return [...modes];
+  return [...scopes];
+}
+
+/**
+ * Records one custom property in each scope it applies to. Hex shorthand is
+ * expanded, so `#abc` and `#aabbcc` agree; a different value in a scope that
+ * already has one is reported as competing, and callers refuse it.
+ */
+export function declareToken(
+  scopes: Record<TokenScope, Record<string, string>>,
+  token: { name: string; value: string; targets: TokenScope[]; file?: string; line?: number },
+  diagnostics: CanvasDiagnostic[],
+): void {
+  const { name, targets, file, line } = token;
+  const value = token.value.replace(
+    /^#([\da-f]{3,4})$/i,
+    (_match, hex: string) =>
+      '#' + hex.replace(/[\da-f]/gi, (digit) => digit.repeat(2)).toLowerCase(),
+  );
+  for (const scope of targets) {
+    const tokens = scopes[scope];
+    if (Object.hasOwn(tokens, name) && tokens[name] !== value)
+      diagnostics.push({
+        code: 'ambiguous_token',
+        message: `${name} has competing ${scope} values. Choose one explicitly.`,
+        file,
+        line,
+      });
+    tokens[name] = value;
+  }
 }
 
 export function lineAt(text: string, offset: number): number {

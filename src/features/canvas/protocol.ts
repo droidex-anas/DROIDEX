@@ -12,6 +12,45 @@ export interface DesignSystemRef {
   mode: 'light' | 'dark';
 }
 
+/** One immutable kit version, without the mode a design previews it in. */
+export interface DesignSystemVersionRef {
+  id: string;
+  version: number;
+}
+
+/** A row of the design-system list: presets first, then each user kit's latest version. */
+export interface DesignSystemSummary {
+  id: string;
+  version: number;
+  name: string;
+  kind: 'preset' | 'user';
+  swatches: {
+    light: { surface: string; accent: string };
+    dark: { surface: string; accent: string };
+  };
+}
+
+export type DesignSystemProvenance =
+  | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
+  | { copiedFrom: { id: string; version: number } };
+
+/** One kit version as the Manage dialog shows it: its tokens, without source files. */
+export interface DesignSystemDetail {
+  id: string;
+  version: number;
+  name: string;
+  modes: { light: Record<string, string>; dark: Record<string, string> };
+  /** Tokens the shared primitives do not read, kept under their own names (spec §10). */
+  unmapped: string[];
+  provenance: DesignSystemProvenance | null;
+}
+
+/** A new kit's source from the dialog's New menu. */
+export interface DesignSystemSource {
+  kind: 'designMd' | 'cssOrTailwind';
+  text: string;
+}
+
 /** How a canvas holds its designs to their pinned kit; `guide` is the default. */
 export type DesignSystemAdherence = 'off' | 'guide' | 'strict';
 
@@ -435,6 +474,25 @@ export type CanvasCommand =
       canvasId: string;
       input: RenameFrameInput;
     }
+  // The Manage design systems dialog (spec §10). Kits are global, not a
+  // canvas's. A new kit is named by its mutationId, so a retry finds the
+  // version it already saved.
+  | { type: 'canvas.listDesignSystems'; requestId: string }
+  | { type: 'canvas.readDesignSystem'; requestId: string; ref: DesignSystemVersionRef }
+  | {
+      type: 'canvas.copyDesignSystem';
+      requestId: string;
+      mutationId: string;
+      source: DesignSystemVersionRef;
+      name: string;
+    }
+  | {
+      type: 'canvas.importDesignSystem';
+      requestId: string;
+      mutationId: string;
+      name: string;
+      source: DesignSystemSource;
+    }
   // A page's answer to an agent's inspect screenshot; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
@@ -461,7 +519,12 @@ export type CanvasReply =
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }
   | { kind: 'artifact'; artifact: PreviewArtifact | null }
-  | { kind: 'source'; files: SourceFiles };
+  | { kind: 'source'; files: SourceFiles }
+  | { kind: 'designSystems'; systems: DesignSystemSummary[] }
+  | { kind: 'designSystem'; system: DesignSystemDetail }
+  // Import diagnostics name what could not become a token; unmapped tokens are
+  // read from the saved kit instead.
+  | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

@@ -3,14 +3,14 @@
 
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import { applyCanvasChange } from './applyCanvasChange';
+import { reply, wrongReply, type ReplyEvent } from './canvasReply';
+import { DesignSystemRequests } from './designSystemRequests';
 import type {
   ArrangeFramesInput,
   CanvasChange,
   CanvasCommand,
   CanvasErrorCode,
   FrameRect,
-  CanvasEvent,
-  CanvasReply,
   CanvasSnapshot,
   CanvasSummary,
   CreateCanvasResult,
@@ -60,11 +60,6 @@ export class CanvasRequestError extends Error {
   }
 }
 
-/** Everything a successful request is answered with. */
-type ReplyEvent =
-  | Extract<CanvasEvent, { type: 'canvas.result'; ok: true }>
-  | Extract<CanvasEvent, { type: 'canvas.snapshot' }>;
-
 interface Waiter {
   settle: (event: ReplyEvent) => void;
   fail: (error: Error) => void;
@@ -91,6 +86,8 @@ export class CanvasClient {
   private listening = false;
 
   constructor(private readonly transport: CanvasTransport) {}
+
+  readonly designSystems = new DesignSystemRequests((command) => this.request(command));
 
   listCanvases(): Promise<CanvasSummary[]> {
     return this.request({ type: 'canvas.list', requestId: requestId() }).then(
@@ -477,19 +474,6 @@ export class CanvasClient {
 
 function requestId(): string {
   return crypto.randomUUID();
-}
-
-// TypeScript needs a narrow assertion after checking the generic reply kind.
-function reply<K extends CanvasReply['kind']>(
-  event: ReplyEvent,
-  kind: K,
-): Extract<CanvasReply, { kind: K }> {
-  if (event.type !== 'canvas.result' || event.reply.kind !== kind) throw wrongReply();
-  return event.reply as Extract<CanvasReply, { kind: K }>;
-}
-
-function wrongReply(): Error {
-  return new Error('The runtime answered a Canvas request with the wrong reply.');
 }
 
 /** A resync this client started for itself has no caller to report to. */

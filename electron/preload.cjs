@@ -184,6 +184,7 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('canvas-image-save', { canvasId, designId, revisionId, suggestedName }),
   canvasExportSource: (canvasId, ref) =>
     ipcRenderer.invoke('canvas-export-source', { canvasId, ref }),
+  canvasExportDesignSystem: (ref) => ipcRenderer.invoke('canvas-export-design-system', { ref }),
   systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),
   powerTier: () => ipcRenderer.invoke('power-tier'),
   onPowerTier: (handler) => on('power-tier', handler),
