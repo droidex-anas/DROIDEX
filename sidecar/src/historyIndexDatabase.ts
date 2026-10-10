@@ -4,6 +4,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 
 import { createHistorySessionFileCache, SESSION_SEARCH_INDEX_FILENAME } from './history.js';
 import { HistorySearchIndex } from './historySearchIndex.js';
+import { PERMISSION_SEMANTICS_REVISION } from './permissionSemantics.js';
 import { initializeSessionFileCacheSchema } from './sessionFileCacheSchema.js';
 import {
   HistorySearchUnavailableError,
@@ -489,6 +490,11 @@ function salvageSessionFileCache(path: string, damagedPath: string): void {
   try {
     initializeSessionFileCacheSchema(db);
     db.prepare('ATTACH DATABASE ? AS damaged').run(damagedPath);
+    // Rows written under older permission meanings are dropped, as on any open.
+    const revision = db
+      .prepare('SELECT permission_semantics_revision FROM damaged.session_file_cache_metadata')
+      .get()?.permission_semantics_revision;
+    if (revision !== PERMISSION_SEMANTICS_REVISION) return;
     const insert = db.prepare(
       `INSERT OR IGNORE INTO session_file_cache (${SALVAGED_COLUMNS})
        VALUES (${SALVAGED_COLUMNS.split(', ')
