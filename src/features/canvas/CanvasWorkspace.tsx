@@ -5,6 +5,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type RefObject,
 } from 'react';
 import './canvasAnimations.css';
@@ -12,7 +13,7 @@ import './canvasBoard.css';
 import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useSessionLive } from '../../hooks/useSessionLive';
-import { useStoreSelector } from '../../hooks/useStore';
+import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
 import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
@@ -93,10 +94,10 @@ export function CanvasWorkspace({
     [appSessionId, onAttachmentChange],
   );
 
-  // A Canvas request made while DROIDEX is not connected is refused, not
-  // queued, so the attachment is read once the bridge is up and again each time
-  // it comes back: a cold start or a renderer reload needs no Try again.
-  const connected = useStoreSelector((current) => current.connection === 'connected');
+  // A Canvas request made while the bridge's socket is closed is refused, not
+  // queued, so the attachment is read once the socket opens and again each time
+  // it reopens: a cold start, a reload or a sidecar restart needs no Try again.
+  const connected = useSyncExternalStore(subscribeRuntimeHealth, transportOpen);
 
   // The sidecar owns the attachment; a named Open views its target directly.
   useEffect(() => {
@@ -243,6 +244,11 @@ export function CanvasWorkspace({
       />
     </div>
   );
+}
+
+/** The socket's own state, which `sendIfConnected` reads, as the bridge reports it. */
+function transportOpen(): boolean {
+  return getRuntimeHealth().transport === 'connected';
 }
 
 function CanvasBody({
