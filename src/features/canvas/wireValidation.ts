@@ -73,6 +73,10 @@ export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEv
       return id(value.requestId) && isSnapshot(value.snapshot);
     case 'canvas.change':
       return isChange(value.change);
+    case 'canvas.captureRequest':
+      return (
+        id(value.captureId) && id(value.canvasId) && id(value.designId) && id(value.revisionId)
+      );
     case 'canvas.result':
       if (!id(value.requestId)) return false;
       return value.ok === true ? isReply(value.reply) : value.ok === false && isError(value.error);

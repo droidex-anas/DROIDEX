@@ -1761,7 +1761,7 @@ Settled by 10a (`thread/canvas-10a-source-export`):
 
 - [ ] Export the selected revision's source tree, owned assets, kit source/tokens/fonts/licenses and a minimal README explaining its locked runtime imports and entry point. Include sufficient build metadata to run that source with the repository's supported toolchain; no private prompts, session logs, credentials or absolute local paths. Refuse overwrite collisions until the user chooses another directory or explicitly confirms replacement through the app's normal file flow.
 - [ ] Export PNG through the proven preview host at the frame's CSS size/device scale, bound dimensions and result bytes, and preserve transparent content when present. If capture is unavailable or times out, report it and keep source export available. Do not return a previous revision's thumbnail as a current screenshot.
-- [ ] Add inspect screenshot support using the same bounded capture operation; no second capture engine. The model gets a real image or `capture_unavailable`. Test timeout, abort and generation change during capture with controlled promises; source writes and chat completion must settle independently of capture.
+- [x] Add inspect screenshot support using the same bounded capture operation; no second capture engine. The model gets a real image or `capture_unavailable`. Test timeout, abort and generation change during capture with controlled promises; source writes and chat completion must settle independently of capture.
 - [ ] Validate exported paths/content in a temporary directory and run the exported Hey example outside the app's source checkout. Assert no path escape and no internal canary in exported metadata. Refusing an existing destination file must leave it byte-identical.
 - [ ] Complete shutdown/profile isolation: cancel queues before awaiting external cleanup, terminate compiler workers, stop preview hosts/subscriptions, revoke MCP scopes, and release all waiters. Verify repeated close is harmless and a new session with a reused provider handle cannot accept old writes/events. Run failure cases with locked/unavailable capture, not only a visible happy-path window.
 - [ ] Run focused export, teardown and runtime tests; manually export a stateful design and confirm PNG and source describe the selected revision. Record capture limitations honestly.
@@ -1779,6 +1779,12 @@ Settled by 10c (builds/shutdown):
 - Build close starts compiler termination before draining storage, still waits for its runs, and publishes no late ready outcome.
 - Concurrent compiler termination joins one promise that settles on child exit, including the controlled grace-kill path. The worker flushes `stopped` before exiting.
 - Failing-first regressions cover held reconciliation/session cleanup, abandoned child ownership, held artifact storage, and acknowledgement versus exit. Storage exclusion, watches, and commit-queue recovery belong to the parallel 10c thread; no Task 10 checkbox is completed here.
+
+Settled by inspect screenshots (`thread/canvas-inspect-screenshot`, 2026-10-10):
+
+- `canvas_inspect` with `kind: 'screenshot'` returns the PNG of the frame's current revision as MCP image content beside its build facts, and as an `inputImage` data URL for Codex. The sidecar broadcasts `canvas.captureRequest`; pages answer `canvas.reportCapture` from `captureCanvasImage` over their registered live preview, so the main-process capture path is unchanged. Only pages watching the canvas when it asked count; with none, a refusal from each, or no answer within seven seconds, the model gets `capture_unavailable` saying the design must be open in DROIDEX.
+- An unbuilt or failed current revision is refused before asking, so another revision's image is never returned. Revoking the turn's lease aborts the wait and the read revalidates before delivery. Relays above 8 MiB or without a PNG signature are refused. Element capture stays unavailable.
+- Limit: the board's own thumbnail capture holds a guest for about 60 ms after it becomes ready, and main refuses a second capture of a busy guest, so a screenshot requested at that moment returns `capture_unavailable` and the model retries.
 
 Settled by 10c (storage/bridge):
 

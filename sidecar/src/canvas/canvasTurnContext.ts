@@ -45,7 +45,7 @@ export class CanvasTurns {
   private nextGeneration = 1;
 
   constructor(
-    private readonly scopes: Pick<CanvasScopes, 'get' | 'register' | 'revoke'>,
+    private readonly scopes: Pick<CanvasScopes, 'get' | 'register' | 'revoke' | 'ended'>,
     /** The canvas the chat is attached to now, or null for an unattached chat. */
     private readonly attachedCanvasId: (appSessionId: string) => string | null,
   ) {}
@@ -117,6 +117,11 @@ export class CanvasTurns {
     const scope = this.scopes.get(scopeId);
     if (scope?.origin !== 'turn') throw canvasError('scope_expired', EXPIRED_TURN);
     return scope;
+  }
+
+  /** Aborts when this lease is revoked: its turn settled or its provider era ended. */
+  scopeEnded(scopeId: string): AbortSignal {
+    return this.scopes.ended(scopeId);
   }
 
   private mint(
