@@ -1,9 +1,10 @@
 import { existsSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 
 import { createHistorySessionFileCache, SESSION_SEARCH_INDEX_FILENAME } from './history.js';
 import { HistorySearchIndex } from './historySearchIndex.js';
+import { initializeSessionFileCacheSchema } from './sessionFileCacheSchema.js';
 import {
   HistorySearchUnavailableError,
   isHistorySearchUnavailableError,
@@ -416,6 +417,9 @@ function minimumDefined(left: number | undefined, right: number | undefined): nu
   return Math.min(left, right);
 }
 
+const SALVAGED_COLUMNS =
+  'provider_session_id, path, birthtime_ms, mtime_ms, size_bytes, settings_mtime_ms, summary_json, launch_settings_json';
+
 function openDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   try {
     return createDerivedStorage(path, canonicalDb);
@@ -424,8 +428,8 @@ function openDerivedStorage(path: string, canonicalDb: DatabaseSync) {
     if (isHistorySearchUnavailableError(error) || !isDatabaseCorruption(error)) throw error;
     // This file also holds admitted summaries that missing transcripts cannot
     // reconstruct, so it is set aside for repair rather than deleted, and the
-    // chat list is rebuilt from the canonical index.
-    setAsideDerivedStorage(path);
+    // rebuild keeps every cached session row the damaged copy still yields.
+    salvageSessionFileCache(path, setAsideDerivedStorage(path));
     try {
       return createDerivedStorage(path, canonicalDb);
     } catch (rebuildError) {
@@ -471,10 +475,35 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   }
 }
 
-function setAsideDerivedStorage(path: string): void {
-  const suffix = `.corrupt-${String(Date.now())}`;
-  for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
-    if (existsSync(candidate)) renameSync(candidate, `${candidate}${suffix}`);
+// Keeps SQLite's -wal/-shm naming so the set-aside copy still opens whole.
+function setAsideDerivedStorage(path: string): string {
+  const setAside = `${path}.corrupt-${String(Date.now())}`;
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (existsSync(`${path}${suffix}`)) renameSync(`${path}${suffix}`, `${setAside}${suffix}`);
+  }
+  return setAside;
+}
+
+function salvageSessionFileCache(path: string, damagedPath: string): void {
+  const db = new DatabaseSync(path);
+  try {
+    initializeSessionFileCacheSchema(db);
+    db.prepare('ATTACH DATABASE ? AS damaged').run(damagedPath);
+    const insert = db.prepare(
+      `INSERT OR IGNORE INTO session_file_cache (${SALVAGED_COLUMNS})
+       VALUES (${SALVAGED_COLUMNS.split(', ')
+         .map(() => '?')
+         .join(', ')})`,
+    );
+    const rows = db
+      .prepare(`SELECT ${SALVAGED_COLUMNS} FROM damaged.session_file_cache`)
+      .iterate() as Iterable<Record<string, SQLInputValue>>;
+    // Rows read before a damaged page are kept; the cache revalidates each one.
+    for (const row of rows) insert.run(...Object.values(row));
+  } catch {
+    // Whatever could not be read is gone from the rebuild, not from the copy.
+  } finally {
+    db.close();
   }
 }
 

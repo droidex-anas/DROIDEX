@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test, { type TestContext } from 'node:test';
 
@@ -346,6 +346,56 @@ test('search initialization corruption preserves an owned summary whose transcri
     assert.deepEqual(restarted.sessionFileSnapshot(), persisted);
   } finally {
     await restarted.close();
+  }
+});
+
+test('a corrupt search file keeps owned chats whose transcripts are missing', async (t) => {
+  let path = '';
+  const { database, clock, dbPath } = indexDatabase(t, (directory, now) => {
+    path = writeSession(directory, 'owned-provider', 'retained catalog summary', now);
+  });
+  const canonical = new DatabaseSync(dbPath);
+  try {
+    canonical.exec(`
+      ALTER TABLE app_sessions ADD COLUMN session_purpose TEXT;
+      ALTER TABLE app_sessions ADD COLUMN title TEXT;
+      INSERT INTO app_sessions (app_session_id, provider_session_id, updated_at, session_purpose, title)
+      VALUES ('owned-chat', 'owned-provider', ${clock.now}, 'chat', 'DROIDEX title');
+    `);
+  } finally {
+    canonical.close();
+  }
+  database.reconcileSessionFiles();
+  rmSync(path);
+  database.reconcileSessionFiles();
+  const retained = JSON.parse(JSON.stringify(database.sessionFileSnapshot()));
+  await database.close();
+
+  let corruptOnce = true;
+  const exec = DatabaseSync.prototype.exec;
+  t.mock.method(DatabaseSync.prototype, 'exec', function (this: DatabaseSync, sql: string) {
+    if (corruptOnce && sql === 'PRAGMA journal_mode = WAL') {
+      corruptOnce = false;
+      throw new Error('database disk image is malformed');
+    }
+    return exec.call(this, sql);
+  });
+  const rebuilt = new HistoryIndexDatabase(dbPath);
+  try {
+    rebuilt.reconcileSessionFiles();
+    assert.deepEqual(
+      rebuilt.sessionFileSnapshot().entries.map((entry) => entry.summary?.providerSessionId),
+      retained.entries.map(
+        (entry: { summary?: { providerSessionId?: string } }) => entry.summary?.providerSessionId,
+      ),
+    );
+    assert.ok(
+      readdirSync(dirname(dbPath)).some((name) =>
+        name.startsWith(`${SESSION_SEARCH_INDEX_FILENAME}.corrupt-`),
+      ),
+    );
+  } finally {
+    await rebuilt.close();
   }
 });
 
