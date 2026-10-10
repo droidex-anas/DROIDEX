@@ -22,7 +22,6 @@ import {
   framesInBand,
   nudgeStep,
   visibleDesignIds,
-  zoomStep,
   type AlignEdge,
   type DistributeAxis,
   type PlacedFrame,
@@ -239,7 +238,7 @@ export function CanvasBoard({
           .map(({ rect }) => rect),
       );
     else if (command === 'actual') view.zoomTo(1);
-    else view.zoomTo(zoomStep(scale, command === 'in' ? 1 : -1));
+    else view.stepZoom(command === 'in' ? 1 : -1);
   };
 
   const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
