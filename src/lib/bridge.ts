@@ -304,6 +304,10 @@ function eventsFromSnapshot(message: BridgeSnapshotMessage): ServerEvent[] {
       processes: message.snapshot.processes,
     },
   ];
+  // A new sidecar starts with healthy storage until it reports otherwise; a
+  // replay gap from the same sidecar keeps whatever it already reported.
+  if (message.reason === 'generation_changed')
+    events.push({ type: 'history.persistenceRecovered' });
   const unavailableReason = message.snapshot.persistence.unavailableReason;
   if (unavailableReason !== undefined) {
     events.push({

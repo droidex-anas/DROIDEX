@@ -370,7 +370,12 @@ test('a generation-changed snapshot restores the cursor without a hard resync er
   first.message(snapshotMessage('generation-2', 42, 'generation_changed'));
 
   assert.deepEqual(eventsWhenReplaced, [[]]);
-  assert.deepEqual(seenTypes(), ['connection', 'runtime.updated', 'sessions.processes']);
+  assert.deepEqual(seenTypes(), [
+    'connection',
+    'runtime.updated',
+    'sessions.processes',
+    'history.persistenceRecovered',
+  ]);
   first.close();
   assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-2', seq: '42' });
 });
@@ -545,6 +550,7 @@ test('snapshot storage failures reach clients without an earlier error event', a
     'connection',
     'runtime.updated',
     'sessions.processes',
+    'history.persistenceRecovered',
     'error',
     'connection',
   ]);

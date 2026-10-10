@@ -1,3 +1,4 @@
+import { existsSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -422,8 +423,14 @@ function openDerivedStorage(path: string, canonicalDb: DatabaseSync) {
     // Missing FTS5 is a host capability gap, not a corrupt derived file.
     if (isHistorySearchUnavailableError(error) || !isDatabaseCorruption(error)) throw error;
     // This file also holds admitted summaries that missing transcripts cannot
-    // reconstruct. Preserve it for repair instead of deleting it to rebuild FTS.
-    throw new Error(corruptSearchStorageMessage(path), { cause: error });
+    // reconstruct, so it is set aside for repair rather than deleted, and the
+    // chat list is rebuilt from the canonical index.
+    setAsideDerivedStorage(path);
+    try {
+      return createDerivedStorage(path, canonicalDb);
+    } catch (rebuildError) {
+      throw new Error(corruptSearchStorageMessage(path), { cause: rebuildError });
+    }
   }
 }
 
@@ -461,6 +468,13 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
       // Preserve the initialization failure.
     }
     throw error;
+  }
+}
+
+function setAsideDerivedStorage(path: string): void {
+  const suffix = `.corrupt-${String(Date.now())}`;
+  for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
+    if (existsSync(candidate)) renameSync(candidate, `${candidate}${suffix}`);
   }
 }
 

@@ -3,6 +3,7 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -253,7 +254,7 @@ test(
   },
 );
 
-test('a corrupt history search database fails without deleting storage', (t) => {
+test('a corrupt history search database is set aside and rebuilt', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'droidex-derived-corruption-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const dbPath = join(directory, 'session-index.sqlite');
@@ -261,8 +262,12 @@ test('a corrupt history search database fails without deleting storage', (t) => 
   createCanonicalDatabase(dbPath);
   writeFileSync(derivedPath, 'not a sqlite database');
 
-  assert.throws(() => new HistoryIndexDatabase(dbPath), /corrupt/);
-  assert.equal(readFileSync(derivedPath, 'utf8'), 'not a sqlite database');
+  await new HistoryIndexDatabase(dbPath).close();
+  const setAside = readdirSync(directory).filter((name) =>
+    name.startsWith(`${SESSION_SEARCH_INDEX_FILENAME}.corrupt-`),
+  );
+  assert.equal(setAside.length, 1);
+  assert.equal(readFileSync(join(directory, setAside[0]), 'utf8'), 'not a sqlite database');
   const canonical = new DatabaseSync(dbPath, { readOnly: true });
   try {
     assert.equal(

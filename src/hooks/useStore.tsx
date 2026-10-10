@@ -3146,7 +3146,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bridgeActionBatcherRef.current = batcher;
     const unsub = bridge.subscribeBatch((events, fromSnapshot) => {
       const actions: Action[] = fromSnapshot ? [{ type: 'BRIDGE_SNAPSHOT' }] : [];
-      if (fromSnapshot) applyHistoryServerEvent({ type: 'history.persistenceRecovered' });
       for (const ev of events) {
         // Verbose per-event logging runs on every streaming token and eagerly
         // deep-clones + redacts the whole event, so keep it to dev builds only;
