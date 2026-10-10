@@ -251,6 +251,7 @@ function compileInput(files?: CompileInput['files']): CompileInput {
     generation: 1,
     files: files ?? { 'main.tsx': example },
     designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystemAdherence: 'guide',
   };
 }
 

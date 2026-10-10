@@ -9,7 +9,7 @@
 // its gate runs again after every await there, so nothing lands once a newer
 // attempt, a cancellation or shutdown has taken the frame.
 
-import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
+import { builtState, CanvasBuildCache, fallbackAfter } from './canvasBuildCache.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { buildFailure, unsavedBuild, type BuildOutcome } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
@@ -23,6 +23,7 @@ import type {
   CanvasBuildState,
   CanvasFrame,
   CanvasSnapshot,
+  DesignSystemAdherence,
   DesignSystemRef,
   PreviewArtifact,
   SourceFiles,
@@ -60,6 +61,7 @@ interface BuildPin {
 interface RunningBuild extends BuildPin {
   readonly canvasId: string;
   readonly designSystem: DesignSystemRef;
+  readonly designSystemAdherence: DesignSystemAdherence;
   readonly abort: AbortController;
   /** Released the moment compilation settles; saving is bounded by storage. */
   cancelDeadline: (() => void) | null;
@@ -305,6 +307,7 @@ export class CanvasBuilds {
       revisionId: job.revisionId,
       generation,
       designSystem: target.frame.designSystem,
+      designSystemAdherence: target.designSystemAdherence,
       abort: new AbortController(),
       cancelDeadline: null,
       overdue: false,
@@ -318,7 +321,7 @@ export class CanvasBuilds {
   private announce(job: QueuedBuild | RunningBuild): void {
     const publish = (): Promise<BuildCommit> =>
       Promise.resolve({
-        workingRevisionId: null,
+        kind: 'state',
         isCurrent: () => !this.closed,
       });
     void this.owner.host.commitBuild(job.canvasId, job.designId, publish);
@@ -358,6 +361,7 @@ export class CanvasBuilds {
       generation: job.generation,
       files,
       designSystem: job.designSystem,
+      designSystemAdherence: job.designSystemAdherence,
     };
     const compiler = this.processes.of(slot);
     job.cancelDeadline = this.deadline(() => {
@@ -409,13 +413,11 @@ export class CanvasBuilds {
         if (persists) await this.owner.cache.discardOutcome(job.canvasId, job.revisionId);
         return null;
       }
-      this.states.set(
-        job.canvasId,
-        job.designId,
-        builtState(job.revisionId, result, target.lastWorkingRevisionId),
-      );
+      const fallback = fallbackAfter(job.revisionId, result, target.lastWorkingRevisionId);
+      this.states.set(job.canvasId, job.designId, builtState(job.revisionId, result, fallback));
       return {
-        workingRevisionId: result.status === 'ready' ? job.revisionId : null,
+        kind: 'outcome',
+        lastWorkingRevisionId: fallback,
         isCurrent: () => !this.closed && slot.job === job,
       };
     });
@@ -423,7 +425,13 @@ export class CanvasBuilds {
 
   private async saveOutcome(job: RunningBuild, result: BuildResult): Promise<void> {
     try {
-      await this.owner.cache.saveOutcome(job.canvasId, job.designId, job.revisionId, result);
+      await this.owner.cache.saveOutcome(
+        job.canvasId,
+        job.designId,
+        job.revisionId,
+        job.designSystemAdherence,
+        result,
+      );
     } catch (error) {
       // The frame still reports what the build did; a restart rebuilds it.
       console.error('A Canvas build outcome was not saved:', error);

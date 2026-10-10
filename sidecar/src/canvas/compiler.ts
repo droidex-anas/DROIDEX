@@ -14,7 +14,13 @@ import { fileURLToPath } from 'node:url';
 import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError } from './canvasError.js';
-import type { CanvasDiagnostic, DesignSystemRef, ElementEdit, SourceElement } from './protocol.js';
+import type {
+  CanvasDiagnostic,
+  DesignSystemAdherence,
+  DesignSystemRef,
+  ElementEdit,
+  SourceElement,
+} from './protocol.js';
 import {
   CANVAS_LIMITS,
   sourceElementSchema,
@@ -29,6 +35,8 @@ export interface CompileInput {
   generation: number;
   files: SourceFiles;
   designSystem: DesignSystemRef;
+  /** The canvas's rule at the time the build started. */
+  designSystemAdherence: DesignSystemAdherence;
 }
 
 export interface CompiledDesign {

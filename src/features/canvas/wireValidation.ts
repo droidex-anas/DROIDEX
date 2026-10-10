@@ -44,6 +44,8 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
 ]);
 
+const ADHERENCE_RULES = new Set<unknown>(['off', 'guide', 'strict']);
+
 /** An artifact document, bounded well above a realistic design (spec §5). */
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_ELEMENTS = 8192;
@@ -220,7 +222,8 @@ function isSummary(value: unknown): boolean {
     text(value.name) &&
     count(value.updatedAt) &&
     count(value.designCount) &&
-    list(value.attachedAppSessionIds, isAppSessionId)
+    list(value.attachedAppSessionIds, isAppSessionId) &&
+    ADHERENCE_RULES.has(value.designSystemAdherence)
   );
 }
 

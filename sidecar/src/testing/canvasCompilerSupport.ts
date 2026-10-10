@@ -1,7 +1,24 @@
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
-import type { CompilerRequest } from '../canvas/compiler.js';
+import type { CompileInput, CompilerRequest } from '../canvas/compiler.js';
+import { DEFAULT_DESIGN_SYSTEM_REF } from '../canvas/designSystems.js';
+import type { SourceFiles } from '../canvas/protocol.js';
+
+/** One design's compile request on the default kit, with the kit rule off unless named. */
+export function compileInput(
+  files: SourceFiles,
+  designSystemAdherence: CompileInput['designSystemAdherence'] = 'off',
+): CompileInput {
+  return {
+    designId: 'design-1',
+    revisionId: 'revision-1',
+    generation: 1,
+    files,
+    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystemAdherence,
+  };
+}
 
 /** IPC replies, kill delivery and process exit are independent events. */
 export class ControlledCompilerProcess extends childProcess.ChildProcess {

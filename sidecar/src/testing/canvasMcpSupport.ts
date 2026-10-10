@@ -13,6 +13,8 @@ import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import { CompileFailedError, type CompileInput } from '../canvas/compiler.js';
+import { checkDesignSystemAdherence } from '../canvas/designSystemAdherence.js';
+import { readDesignSystem } from '../canvas/designSystems.js';
 import { storage } from './canvasBuildSupport.js';
 
 /** No renderer page answers a screenshot here, so capture is always refused. */
@@ -29,11 +31,14 @@ export interface Reply {
   receipt?: { revisionId: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number }[];
+  designSystem?: { primitives: string[] };
+  designSystemAdherence?: string;
   build?: {
     status: string;
     diagnostics?: { file?: string; line?: number }[];
     errors?: string[];
     rendered?: boolean;
+    designSystem?: { diagnostics: { code: string }[]; next: string };
     next?: string;
   };
 }
@@ -88,25 +93,32 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
   return { scopes, turns, workspace, server, call };
 }
 
+/** A harness whose chat is in a turn that opened with canvas_read, as every turn does. */
+export async function openTurn(t: TestContext) {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  return { ...h, scopeId: (await h.call('canvas_read', {})).scopeId };
+}
+
 /**
  * A compiler that answers at once, because canvas_write waits for its build:
- * every design builds, except one whose main.tsx names `BROKEN`. One that names
- * `THROWS` builds an artifact the stand-in pane below cannot render.
+ * every design builds under the real kit rule, except one whose main.tsx names
+ * `BROKEN`. One that names `THROWS` builds an artifact the stand-in pane below
+ * cannot render.
  */
 function answeringBuilds(): CanvasBuilds {
-  const compile = (input: CompileInput) =>
-    input.files['main.tsx'].includes('BROKEN')
-      ? Promise.reject(
-          new CompileFailedError([
-            { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
-          ]),
-        )
-      : Promise.resolve({
-          artifactId: `${input.files['main.tsx'].includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`,
-          html: '<html></html>',
-          diagnostics: [],
-          elements: [],
-        });
+  const compile = async (input: CompileInput) => {
+    const main = input.files['main.tsx'] ?? '';
+    if (main.includes('BROKEN'))
+      throw new CompileFailedError([
+        { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+      ]);
+    const system = await readDesignSystem(input.designSystem);
+    const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
+    if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
+    const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
+    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements: [] };
+  };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),
     deadline: () => () => undefined,
