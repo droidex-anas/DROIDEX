@@ -1,0 +1,165 @@
+/* The tools that float on the board: the rail, the zoom readout and the
+   selection bar. Imported by the lazy Canvas surface, so they load with the
+   board rather than on every app start. */
+
+/* The tool rail floats at the board's top left, the zoom at its bottom left,
+   and the selection bar at its bottom centre while it has work. */
+.canvas-rail,
+.canvas-zoom,
+.canvas-selection-bar {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  font-family: var(--ui-font-family, system-ui, sans-serif);
+}
+
+.canvas-rail {
+  top: 12px;
+  left: 12px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.canvas-rail-divider {
+  height: 1px;
+  margin: 3px 6px;
+  background: color-mix(in srgb, var(--droid-text) 10%, transparent);
+}
+
+.canvas-tool {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--droid-text-secondary);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-tool:hover:not(:disabled),
+.canvas-tool:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--droid-text) 8%, transparent);
+  color: var(--droid-text);
+}
+
+.canvas-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--droid-selection) 16%, transparent);
+  color: var(--droid-selection-label);
+}
+
+.canvas-tool:disabled {
+  opacity: 0.4;
+}
+
+/* A tool names itself and its key beside the rail, the way a design tool's do. */
+.canvas-tool[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  color: var(--droid-text);
+  font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-4px, -50%);
+  transition:
+    opacity 120ms,
+    transform 120ms;
+}
+
+.canvas-tool[data-tip]:hover::after,
+.canvas-tool[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+  transition-delay: 300ms;
+}
+
+.canvas-tool[data-tip]:focus-visible::after {
+  transition-delay: 0ms;
+}
+
+.canvas-zoom {
+  left: 12px;
+  bottom: 12px;
+  align-items: center;
+  padding: 3px;
+  border-radius: 10px;
+}
+
+.canvas-zoom-value {
+  min-width: 56px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--droid-text-secondary);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-zoom-value:hover,
+.canvas-zoom-value:focus-visible,
+.canvas-zoom-value[aria-expanded='true'] {
+  outline: none;
+  background: color-mix(in srgb, var(--droid-text) 8%, transparent);
+  color: var(--droid-text);
+}
+
+.canvas-selection-bar {
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  width: max-content;
+  margin-inline: auto;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.canvas-selection-bar .canvas-tool {
+  width: 28px;
+  height: 28px;
+}
+
+.canvas-selection-bar .canvas-rail-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+}
+
+.canvas-board-alert {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 60px;
+  width: max-content;
+  max-width: 60%;
+  margin-inline: auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  color: var(--droid-red);
+  font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
+}

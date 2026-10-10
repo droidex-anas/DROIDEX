@@ -1,31 +1,27 @@
 // One frame's live preview. A built revision is mounted in a `<webview>` guest
-// holding the owned intermediate (spec §6); every other build state is a quiet
-// labeled surface, and a failed build shows its diagnostics above the last
-// revision that still works.
+// holding the owned intermediate (spec §6), filling the frame's sheet; a failed
+// latest build shows its diagnostics over the last revision that still works,
+// and so does a design that throws while it runs.
 //
 // This component owns one guest and reports only bounded preview facts upward.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   bindCanvasPreviewGuest,
   canvasPreviewUrl,
   terminateCanvasPreviewGuest,
 } from '../../lib/desktop';
-import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
+import { diagnosticPlace, missingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import { useCanvasMotion } from './useCanvasMotion';
-import type {
-  CanvasBuildState,
-  CanvasDiagnostic,
-  CanvasFrame,
-  PreviewArtifact,
-  PreviewReport,
-} from './protocol';
+import type { CanvasDiagnostic, CanvasFrame, PreviewArtifact, PreviewReport } from './protocol';
 
 export interface DesignPreviewProps {
   canvasId: string;
   frame: CanvasFrame;
+  /** The revision on show: the frame's working one, or the one it showed before a newer build. */
+  revisionId: string;
   /** The artifact for one revision, or null once the derived cache lost it. */
   readArtifact: (
     canvasId: string,
@@ -52,30 +48,27 @@ const RENDER_FAILED = 'render_failed';
 export function DesignPreview({
   canvasId,
   frame,
+  revisionId,
   readArtifact,
   reportPreview,
   onResize,
 }: DesignPreviewProps) {
-  const revisionId = previewRevisionId(frame.build);
-  const read = useArtifact(canvasId, frame.designId, revisionId, frame.build, readArtifact);
-  const failures = frame.build.status === 'failed' ? frame.build.diagnostics : [];
+  const read = useArtifact(canvasId, frame, revisionId, readArtifact, reportPreview);
+  const { build } = frame;
 
-  // A build that failed with nothing to fall back to still says why.
-  if (revisionId === null)
-    return <PreviewPlacard label={waitingLabel(frame.build)} diagnostics={failures} />;
-  if (read.state !== 'found')
-    return <PreviewPlacard label={missingLabel(read.state, frame.build)} diagnostics={failures} />;
+  if (read.state !== 'found') return <PreviewPlacard label={missingLabel(read.state, build)} />;
   return (
     <PreviewGuestFrame
-      key={`${frame.designId}:${read.artifact.artifactId}:${String(frame.build.generation)}`}
+      // A revision's artifact never changes, so a newer build attempt is no
+      // reason to tear down the design someone may be using.
+      key={`${frame.designId}:${read.artifact.artifactId}`}
       canvasId={canvasId}
       designId={frame.designId}
       revisionId={revisionId}
-      generation={frame.build.generation}
       // Spec §5: a failed revision labels the older working preview it is showing.
-      showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
+      showingRevisionId={build.status === 'failed' ? revisionId : null}
       html={read.artifact.html}
-      diagnostics={failures}
+      diagnostics={build.status === 'failed' ? build.diagnostics : []}
       reportPreview={reportPreview}
       onResize={onResize}
     />
@@ -94,45 +87,50 @@ type ArtifactRead =
 const LOADING: ArtifactRead = { state: 'loading' };
 
 /**
- * The artifact for one revision, read again whenever that revision's build
- * actually moves. The signal is `generation` — the registry's per-design attempt
- * counter — and the status, never the build object's identity: an arrange
- * re-sends every frame it touches with a fresh object and an unchanged build, and
- * re-reading there would tear down a loaded preview and lose its state.
+ * The artifact for one revision. Starting the read is when this pane tells the
+ * agent a preview is on its way, well inside the moment a write waits to hear it.
  *
- * It is not the artifact ID either, because a rebuild of identical source is
- * content-addressed to the same ID: a recovered document arrives under a new
- * attempt, not under a new name.
+ * A found artifact is kept: a revision's document never changes, and re-reading
+ * on every build move would tear down the preview each time a newer revision
+ * starts building. A miss is read again whenever the frame's build actually
+ * moves, by `generation` and status rather than the build object's identity,
+ * because a recovered document arrives under a new attempt, not a new name, and
+ * an arrange re-sends every frame with a fresh object and an unchanged build.
  */
 function useArtifact(
   canvasId: string,
-  designId: string,
-  revisionId: string | null,
-  build: CanvasBuildState,
+  { designId, build }: CanvasFrame,
+  revisionId: string,
   readArtifact: DesignPreviewProps['readArtifact'],
+  reportPreview: DesignPreviewProps['reportPreview'],
 ): ArtifactRead {
-  const [read, setRead] = useState<ArtifactRead>(LOADING);
+  const [read, setRead] = useState<{ revisionId: string; result: ArtifactRead } | null>(null);
+  const found = read?.revisionId === revisionId && read.result.state === 'found';
+  const attempt = found ? 'found' : `${build.status}:${String(build.generation)}`;
 
   useEffect(() => {
-    if (revisionId === null) return;
+    if (found) return;
     let wanted = true;
-    setRead(LOADING);
+    reportPreview(canvasId, { designId, revisionId, outcome: 'loading', errors: [] });
     readArtifact(canvasId, designId, revisionId).then(
       (artifact) => {
-        if (wanted) setRead(artifact ? { state: 'found', artifact } : { state: 'missing' });
+        if (wanted)
+          setRead({
+            revisionId,
+            result: artifact ? { state: 'found', artifact } : { state: 'missing' },
+          });
       },
       (error: unknown) => {
         console.error('A Canvas preview artifact could not be read:', error);
-        if (wanted) setRead({ state: 'unreadable' });
+        if (wanted) setRead({ revisionId, result: { state: 'unreadable' } });
       },
     );
     return () => {
       wanted = false;
     };
-    // Values, not the build object: see the note above.
-  }, [canvasId, designId, revisionId, build.generation, build.status, readArtifact]);
+  }, [canvasId, designId, revisionId, attempt, found, readArtifact, reportPreview]);
 
-  return read;
+  return read?.revisionId === revisionId ? read.result : LOADING;
 }
 
 /**
@@ -144,7 +142,6 @@ export function PreviewGuestFrame({
   canvasId,
   designId,
   revisionId,
-  generation,
   showingRevisionId,
   html,
   diagnostics,
@@ -154,7 +151,6 @@ export function PreviewGuestFrame({
   canvasId: string;
   designId: string;
   revisionId: string;
-  generation: number;
   /** Named when this is an older working revision rather than the frame's own. */
   showingRevisionId: string | null;
   html: string;
@@ -169,7 +165,8 @@ export function PreviewGuestFrame({
   const reported = useRef(reportPreview);
   reported.current = reportPreview;
   const [phase, setPhase] = useState<'mounting' | 'ready' | PreviewLostReason>('mounting');
-  const [shown, setShown] = useState<CanvasDiagnostic[]>([]);
+  // Only what the design threw: the host's own notes would crowd it out.
+  const [thrown, setThrown] = useState<CanvasDiagnostic[]>([]);
 
   useEffect(() => {
     const container = host.current;
@@ -223,10 +220,10 @@ export function PreviewGuestFrame({
       }, 150);
     };
     const sizeObserver = new ResizeObserver(updateCapture);
-    // What the agent hears: loading as the guest mounts, rendered once the
-    // design paints, failed when its root render failed or it stalled before
-    // painting, and the first few errors it throws. A design that throws in a
-    // loop sends nothing new once those are held.
+    // What the agent hears once the artifact read has said `loading`: rendered
+    // once the design paints, failed when its root render failed or it stalled
+    // before painting, and the first few errors it throws. A design that throws
+    // in a loop sends nothing new once those are held.
     let painted = false;
     let sent: PreviewReport['outcome'] | null = null;
     const errors: string[] = [];
@@ -272,13 +269,13 @@ export function PreviewGuestFrame({
           },
           onResize: (size) => resized.current?.(designId, size),
           onDiagnostics: (entries) => {
-            setShown((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
-            const thrown = entries.filter((entry) => THROWN_CODES.has(entry.code));
-            if (thrown.length === 0) return;
-            const stopped = thrown.some((entry) => entry.code === RENDER_FAILED);
+            const fresh = entries.filter((entry) => THROWN_CODES.has(entry.code));
+            if (fresh.length === 0) return;
+            setThrown((held) => [...held, ...fresh].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+            const stopped = fresh.some((entry) => entry.code === RENDER_FAILED);
             report(
               stopped ? 'failed' : (sent ?? 'loading'),
-              thrown.map((entry) => entry.message),
+              fresh.map((entry) => entry.message),
             );
           },
           onLost: (reason) => {
@@ -305,7 +302,6 @@ export function PreviewGuestFrame({
       { once: true },
     );
     container.append(guest);
-    report('loading');
     return () => {
       mounted = false;
       thumbnailCapture.abort();
@@ -315,7 +311,7 @@ export function PreviewGuestFrame({
       run?.stop();
       guest.remove();
     };
-  }, [canvasId, designId, revisionId, generation, html]);
+  }, [canvasId, designId, revisionId, html]);
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
   const isReady = phase === 'ready';
@@ -324,34 +320,37 @@ export function PreviewGuestFrame({
       ? `opacity ${String(motion.readyMs)}ms ${motion.easeCss}`
       : undefined;
   return (
-    <div data-preview-phase={phase} className="flex h-full w-full flex-col gap-2">
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl bg-droid-bg">
+    <div data-preview-phase={phase} className="relative h-full w-full">
+      <div
+        ref={host}
+        className="h-full w-full"
+        hidden={lost !== null}
+        style={{
+          opacity: isReady ? 1 : 0,
+          transition,
+        }}
+      />
+      {lost === null && (
         <div
-          ref={host}
-          className="h-full w-full"
-          hidden={lost !== null}
-          style={{
-            opacity: isReady ? 1 : 0,
-            transition,
-          }}
+          aria-hidden={isReady}
+          className="pointer-events-none absolute inset-0"
+          style={{ opacity: isReady ? 0 : 1, transition }}
+        >
+          <PreviewPlacard label="Loading this preview…" />
+        </div>
+      )}
+      {lost ? <PreviewPlacard label={lostLabel(lost)} /> : null}
+      {/* Spec §5: a failed revision labels the older working preview it shows. */}
+      {showingRevisionId !== null && (
+        <PreviewNotice
+          title="Latest change didn’t build"
+          diagnostics={diagnostics}
+          note="Showing the last version that built."
         />
-        {lost === null && (
-          <div
-            aria-hidden={isReady}
-            className="pointer-events-none absolute inset-0"
-            style={{ opacity: isReady ? 0 : 1, transition }}
-          >
-            <PreviewPlacard label="Loading this preview…" />
-          </div>
-        )}
-        {lost ? <PreviewPlacard label={lostLabel(lost)} /> : null}
-      </div>
-      {showingRevisionId ? (
-        <p className="text-[11px] leading-4 text-droid-text-muted">
-          Showing revision {showingRevisionId}
-        </p>
-      ) : null}
-      <PreviewDiagnostics diagnostics={[...diagnostics, ...shown]} />
+      )}
+      {showingRevisionId === null && thrown.length > 0 && (
+        <PreviewNotice title="This design threw an error" diagnostics={thrown} />
+      )}
     </div>
   );
 }
@@ -373,35 +372,41 @@ function lostLabel(reason: PreviewLostReason): string {
   return 'This preview is no longer running.';
 }
 
-/** A quiet surface for every state that has nothing to render yet. */
-function PreviewPlacard({
-  label,
-  diagnostics = [],
-  children,
-}: {
-  label: string;
-  diagnostics?: CanvasDiagnostic[];
-  children?: ReactNode;
-}) {
+/** A quiet line, centred on the sheet at screen size, while there is nothing to see. */
+function PreviewPlacard({ label }: { label: string }) {
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl bg-droid-surface p-4 text-center">
-      <p className="text-[12px] leading-5 text-droid-text-secondary">{label}</p>
-      {children}
-      <PreviewDiagnostics diagnostics={diagnostics} />
+    <div className="canvas-sheet-state">
+      <div className="canvas-sheet-message canvas-chrome">
+        <p className="canvas-sheet-detail">{label}</p>
+      </div>
     </div>
   );
 }
 
-function PreviewDiagnostics({ diagnostics }: { diagnostics: CanvasDiagnostic[] }) {
-  if (diagnostics.length === 0) return null;
+/** What went wrong, across the sheet's bottom edge, over the design it concerns. */
+function PreviewNotice({
+  title,
+  diagnostics,
+  note,
+}: {
+  title: string;
+  diagnostics: CanvasDiagnostic[];
+  note?: string;
+}) {
+  const first = diagnostics.at(0);
+  const more = diagnostics.length - 1;
+  const place = first ? diagnosticPlace(first) : null;
   return (
-    <ul className="max-h-28 w-full overflow-y-auto rounded-lg bg-droid-elevated px-3 py-2 text-left font-mono text-[11px] leading-[18px] text-droid-text-secondary">
-      {diagnostics.map((diagnostic, index) => (
-        <li key={`${diagnostic.code}-${String(index)}`} className="whitespace-pre-wrap break-words">
-          {diagnostic.file ? `${diagnostic.file}: ` : ''}
-          {diagnostic.message}
-        </li>
-      ))}
-    </ul>
+    <div role="status" className="canvas-sheet-banner">
+      <p className="canvas-sheet-title">{title}</p>
+      {first && (
+        <p className="canvas-sheet-detail canvas-sheet-clamp">
+          {place && <strong>{place} · </strong>}
+          {first.message}
+          {more > 0 ? ` (and ${String(more)} more)` : ''}
+        </p>
+      )}
+      {note && <p className="canvas-sheet-detail">{note}</p>}
+    </div>
   );
 }

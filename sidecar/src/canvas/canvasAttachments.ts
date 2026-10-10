@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { CanvasCommits } from './canvasCommits.js';
 import { canvasError } from './canvasError.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
+import type { OutdatedCanvas } from './protocol.js';
 import { emptyCanvasManifest } from './canvasManifest.js';
 
 export class CanvasAttachments {
@@ -13,6 +14,11 @@ export class CanvasAttachments {
     private readonly commits: CanvasCommits,
     private readonly isChatKnown: (appSessionId: string) => boolean,
   ) {}
+
+  /** The canvas an earlier DROIDEX made for a chat that has none of its own now. */
+  outdatedCanvas(appSessionId: string): OutdatedCanvas | null {
+    return this.heads.outdatedCanvas(appSessionId);
+  }
 
   /**
    * Leave the old canvas first: a crash between the two manifest writes must

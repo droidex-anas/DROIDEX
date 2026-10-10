@@ -1,0 +1,380 @@
+/* The board's chrome: frames drawn as sheets with their labels, selection and
+   states. It is imported by the lazy Canvas surface, so it loads with the board
+   rather than on every app start, in Chat as in Design; the tools that float
+   on the board have their own sheet, canvasBoardTools.css.
+
+   The world layer sets --board-scale. Chrome drawn inside it divides by that,
+   so a frame's edge, label, handles and badges keep their screen size at any
+   zoom while the design itself scales. */
+
+/* ── Frames ─────────────────────────────────────────────────────────────── */
+
+.canvas-frame {
+  /* Not --droid-border: dark themes blend that into the board until it reads
+     1.04:1, which loses the sheet's edge against the board it sits on. */
+  --canvas-sheet-edge: color-mix(in srgb, var(--droid-text) 9%, transparent);
+  --canvas-chrome-font: var(--ui-font-family, system-ui, sans-serif);
+}
+
+/* A frame is a sheet: the design's viewport on a raised surface with a soft
+   shadow and a hairline edge, which is what separates a dark design from a
+   dark board. */
+.canvas-sheet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: calc(4px / var(--board-scale));
+  background: var(--droid-raised);
+  box-shadow:
+    0 0 0 calc(1px / var(--board-scale)) var(--canvas-sheet-edge),
+    var(--droid-shadow-sm);
+  transition: box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.canvas-frame:hover > .canvas-sheet {
+  box-shadow:
+    0 0 0 calc(1px / var(--board-scale)) color-mix(in srgb, var(--droid-selection) 55%, transparent),
+    var(--droid-shadow-sm);
+}
+
+.canvas-frame[data-selected] > .canvas-sheet {
+  box-shadow:
+    0 0 0 calc(1.5px / var(--board-scale)) var(--droid-selection),
+    var(--droid-shadow-sm);
+}
+
+/* Anything drawn at screen size inside a frame: labels, notes, handles. */
+.canvas-chrome {
+  transform: scale(calc(1 / var(--board-scale)));
+  font-family: var(--canvas-chrome-font);
+}
+
+/* The name above the sheet, which is also the frame's drag handle and tab stop. */
+.canvas-frame-label {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  transform-origin: 0 100%;
+  outline: none;
+  touch-action: none;
+}
+
+.canvas-frame-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--droid-text-secondary);
+  transition:
+    color 120ms,
+    box-shadow 120ms;
+}
+
+.canvas-frame:hover .canvas-frame-name {
+  color: var(--droid-text);
+}
+
+.canvas-frame[data-selected] .canvas-frame-name {
+  color: var(--droid-selection-label);
+}
+
+.canvas-frame-label:focus-visible .canvas-frame-name {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--droid-selection) 35%, transparent),
+    var(--droid-shadow-sm);
+}
+
+.canvas-frame-note {
+  flex-shrink: 0;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--droid-selection-label);
+}
+
+/* The selected frame's actions, at the right end of the label row. The
+   wrapper is what scales, so the gap under the bar is in screen pixels. */
+.canvas-frame-tools {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  padding-bottom: 6px;
+  transform-origin: 100% 100%;
+}
+
+/* A frame too narrow on screen for both keeps its label and lifts its actions
+   above the label row, starting where the label does, or ending where the
+   frame does when the board would cut them off. */
+.canvas-frame-tools[data-stacked] {
+  bottom: calc(100% + 32px / var(--board-scale));
+}
+
+.canvas-frame-tools[data-stacked='start'] {
+  right: auto;
+  left: 0;
+  transform-origin: 0 100%;
+}
+
+.canvas-frame-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+}
+
+.canvas-frame-tool {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--droid-text-secondary);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-frame-tool:hover,
+.canvas-frame-tool:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--droid-text) 8%, transparent);
+  color: var(--droid-text);
+}
+
+/* The selected frame's size, under its bottom edge. The wrapper scales about
+   the frame's centre line, and the badge centres itself on it. */
+.canvas-frame-size {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.canvas-frame-size > span {
+  display: block;
+  margin-top: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--droid-selection);
+  color: var(--droid-selection-text);
+  font: 500 11px / 16px var(--canvas-chrome-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* Resize: a square at the corner, and the two edges as invisible strips. */
+.canvas-frame-handle {
+  position: absolute;
+  touch-action: none;
+}
+
+.canvas-frame-handle[data-handle='southeast'] {
+  left: 100%;
+  top: 100%;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--droid-selection);
+  border-radius: 2px;
+  background: var(--droid-raised);
+  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
+  cursor: nwse-resize;
+}
+
+.canvas-frame-handle[data-handle='east'] {
+  top: 0;
+  left: 100%;
+  width: calc(10px / var(--board-scale));
+  height: 100%;
+  margin-left: calc(-5px / var(--board-scale));
+  cursor: ew-resize;
+}
+
+.canvas-frame-handle[data-handle='south'] {
+  left: 0;
+  top: 100%;
+  width: 100%;
+  height: calc(10px / var(--board-scale));
+  margin-top: calc(-5px / var(--board-scale));
+  cursor: ns-resize;
+}
+
+/* What a sheet says when it has no live preview: centred, at screen size. It
+   sits above the Select overlay yet lets presses through to it, so only its
+   own action takes a click. */
+.canvas-sheet-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.canvas-sheet-message {
+  display: flex;
+  /* Screen pixels, so never wider than the sheet it is centred on. */
+  max-width: min(280px, calc(100% * var(--board-scale)));
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px;
+  text-align: center;
+  transform-origin: 50% 50%;
+}
+
+.canvas-sheet-title {
+  font: 500 13px / 20px var(--canvas-chrome-font);
+  color: var(--droid-text);
+}
+
+.canvas-sheet-detail {
+  font: 400 12px / 18px var(--canvas-chrome-font);
+  color: var(--droid-text-muted);
+}
+
+.canvas-sheet-state[data-compact] .canvas-sheet-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No room for words: the label above names the frame, and a failure keeps its mark. */
+.canvas-sheet-state[data-tiny] .canvas-sheet-message > :not(svg) {
+  display: none;
+}
+
+.canvas-sheet-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.canvas-sheet-detail strong {
+  font-weight: 500;
+  color: var(--droid-text-secondary);
+}
+
+.canvas-sheet-action {
+  pointer-events: auto;
+  margin-top: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--droid-text);
+  background: color-mix(in srgb, var(--droid-text) 7%, transparent);
+  transition: background 120ms;
+}
+
+.canvas-sheet-action:hover,
+.canvas-sheet-action:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--droid-text) 12%, transparent);
+}
+
+/* A preview's notice across the sheet's bottom edge: full width, screen-size
+   type, and transparent to the pointer so the design under it still works. */
+.canvas-sheet-banner {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  width: calc(100% * var(--board-scale));
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--droid-raised) 94%, transparent);
+  box-shadow: 0 -1px 0 var(--canvas-sheet-edge);
+  font-family: var(--canvas-chrome-font);
+  text-align: left;
+  transform: scale(calc(1 / var(--board-scale)));
+  transform-origin: 0 100%;
+  pointer-events: none;
+}
+
+/* A newer revision's stage, in the sheet's corner over the design still shown. */
+.canvas-sheet-badge {
+  position: absolute;
+  top: calc(8px / var(--board-scale));
+  right: calc(8px / var(--board-scale));
+  z-index: 1;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  transform-origin: 100% 0;
+  pointer-events: none;
+}
+
+.canvas-sheet-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+
+/* Canvas pending bloom: the stage name of a frame the agent is still writing
+   or building, in the activity shimmer the chat uses. Duration and play state
+   come from the component, which decides from the motion tokens and the
+   frame's visibility whether the loop runs; the media query below makes the
+   reduced-motion half of that true even if a caller gets it wrong. */
+@keyframes canvas-bloom {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.canvas-bloom-label {
+  background: linear-gradient(
+    90deg,
+    var(--droid-text-muted) 0%,
+    var(--droid-text) 50%,
+    var(--droid-text-muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation-name: canvas-bloom;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-bloom-label {
+    animation: none;
+    background: none;
+    color: var(--droid-text-muted);
+  }
+}
+
+/* The rubber band, in screen space above the world layer. */
+.canvas-band {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+  border: 1px solid var(--droid-selection);
+  background: color-mix(in srgb, var(--droid-selection) 8%, transparent);
+}

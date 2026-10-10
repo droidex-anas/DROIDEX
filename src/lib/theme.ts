@@ -396,6 +396,18 @@ const LINK_COLORS = {
   light: '#1d4ed8',
 } as const;
 
+// A design board's selection reads by hue in both schemes, as a design tool's
+// does: the neutral accent is near-white or near-black, so an accent outline
+// around a frame reads as a hard box rather than "this one is selected".
+// `line` draws the outline and handles and fills the size badge, whose `text`
+// keeps AA on it; `label` is the blue a selected name is written in, AA on the
+// board and its raised chrome in every built-in preset. On dark, a blue light
+// enough for that is too light to carry white, so the two part.
+export const SELECTION_COLORS = {
+  dark: { line: '#1d6cff', label: '#7cb2ff', text: '#ffffff' },
+  light: { line: '#1a64dc', label: '#1a64dc', text: '#ffffff' },
+} as const;
+
 // One rung of the tint ramp (hover, selection, user bubbles, code blocks),
 // `amount` steps away from the canvas.
 //
@@ -419,7 +431,7 @@ export function elevatedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>)
 // a grey hole in the page, so they lift to near-white and rely on the hairline
 // border and shadow. Dark themes already lighten upward, so they share the
 // elevated rung.
-function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
+export function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
   return colorLuminance(theme.bg) < 0.4
     ? elevatedSurfaceColor(theme)
     : mixHex(theme.surface, '#ffffff', 0.6);
@@ -489,6 +501,10 @@ export function applyTheme(theme: ThemeSettings) {
   const markShade = bgIsDark ? 'dark' : 'light';
   root.style.setProperty('--droid-skill-mark', MARK_COLORS.skill[markShade]);
   root.style.setProperty('--droid-visualize-mark', MARK_COLORS.visualize[markShade]);
+  const selection = SELECTION_COLORS[markShade];
+  root.style.setProperty('--droid-selection', selection.line);
+  root.style.setProperty('--droid-selection-label', selection.label);
+  root.style.setProperty('--droid-selection-text', selection.text);
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
   // Light themes lead with a faint 1px ring: a white card on near-white paper

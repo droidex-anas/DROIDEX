@@ -474,3 +474,26 @@ function canonicalJson(value: unknown): string {
 function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
+
+/**
+ * What a manifest an earlier DROIDEX wrote, before revision history, still says:
+ * whole and this canvas's own, but with no revisions. It is not opened or
+ * repaired; its name and the chats it held are kept so they can be told why.
+ */
+export function outdatedManifest(
+  written: unknown,
+  canvasId: string,
+): { name: string; attachedAppSessionIds: string[] } | null {
+  if (typeof written !== 'object' || written === null || 'revisions' in written) return null;
+  const {
+    version,
+    canvasId: ownId,
+    name,
+    attachedAppSessionIds,
+  } = written as Record<string, unknown>;
+  if (version !== CANVAS_MANIFEST_VERSION || ownId !== canvasId || typeof name !== 'string')
+    return null;
+  if (!Array.isArray(attachedAppSessionIds)) return null;
+  const chats = attachedAppSessionIds.filter((id): id is string => typeof id === 'string');
+  return { name, attachedAppSessionIds: chats };
+}

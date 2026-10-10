@@ -86,8 +86,8 @@ test('fit centres every frame with padding and never magnifies past 100%', () =>
   const size = { x: 1000, y: 800 };
   const wide = fitFrames([rect(0, 0, 2000, 400), rect(2200, 600, 800, 400)], size);
 
-  // 48 px of padding each side leaves 904 px for a 3000 px span.
-  assert.ok(Math.abs(wide.scale - 904 / 3000) < 1e-12);
+  // 72 px of padding each side leaves 856 px for a 3000 px span.
+  assert.ok(Math.abs(wide.scale - 856 / 3000) < 1e-12);
   // The bounds centre lands on the viewport centre.
   assert.deepEqual(canvasToScreen(wide, { x: 1500, y: 500 }), { x: 500, y: 400 });
 

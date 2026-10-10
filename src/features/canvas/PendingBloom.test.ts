@@ -12,15 +12,15 @@ function render(stage: CanvasActivityStage, visible: boolean, reducedMotion: boo
   );
 }
 
-test('a busy visible frame blooms on the spec loop', () => {
+test('a busy visible frame shimmers its stage on the spec loop', () => {
   const markup = render('building', true, false);
-  assert.match(markup, /canvas-bloom-dot/);
+  assert.match(markup, /canvas-bloom-label/);
   assert.match(markup, /animation-duration:1600ms/);
   assert.match(markup, /animation-play-state:running/);
   assert.match(markup, /Building/);
 });
 
-test('an offscreen frame pauses the bloom instead of looping', () => {
+test('an offscreen frame pauses the shimmer instead of looping', () => {
   const markup = render('building', false, false);
   assert.match(markup, /animation-play-state:paused/);
   assert.doesNotMatch(markup, /animation-play-state:running/);
@@ -28,13 +28,13 @@ test('an offscreen frame pauses the bloom instead of looping', () => {
 
 test('reduced motion leaves a static stage label', () => {
   const markup = render('building', true, true);
-  assert.doesNotMatch(markup, /canvas-bloom-dot/);
+  assert.doesNotMatch(markup, /canvas-bloom-label/);
   assert.doesNotMatch(markup, /animation/);
   assert.match(markup, /Building/);
 });
 
-test('a settled stage does not bloom', () => {
+test('a settled stage does not shimmer', () => {
   const markup = render('ready', true, false);
-  assert.doesNotMatch(markup, /canvas-bloom-dot/);
+  assert.doesNotMatch(markup, /canvas-bloom-label/);
   assert.match(markup, /Ready/);
 });

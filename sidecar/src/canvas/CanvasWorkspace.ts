@@ -69,7 +69,7 @@ export class CanvasWorkspace {
   /** What the pane's previews last did, which only the agent reads. */
   readonly previews = new CanvasPreviewReports();
   private readonly commits = new CanvasCommits(this.changes);
-  private readonly attachments: CanvasAttachments;
+  readonly attachments: CanvasAttachments;
   private readonly frameEdits: CanvasFrameEdits;
   readonly history: CanvasRevisionHistory;
   readonly settings: CanvasSettings;

@@ -55,6 +55,31 @@ test('a head whose storage cannot be cleaned is unserved but keeps its chat', as
   assert.equal(heads.attachedCanvasId('app-1'), 'cv_01');
 });
 
+test('a canvas an earlier DROIDEX made is not opened, but its chats are told its name', async (t) => {
+  t.mock.method(console, 'error', () => undefined);
+  const root = await saved(t);
+  const files = new CanvasFiles(root);
+  // Before revision history: the same manifest without its revisions.
+  const earlier: Record<string, unknown> = { ...manifest('cv_02', 'app-2') };
+  delete earlier.revisions;
+  await files.writeManifest(manifest('cv_02', 'app-2'), keepGoing);
+  await files.writeManifest(manifest('cv_03', 'app-3'), keepGoing);
+  await writeFile(join(root, 'cv_02', 'manifest.json'), JSON.stringify(earlier));
+  await writeFile(join(root, 'cv_03', 'manifest.json'), '{ not json');
+
+  const heads = await reopen(root);
+  assert.deepEqual(
+    heads.all().map((head) => head.canvasId),
+    ['cv_01'],
+  );
+  assert.equal(heads.attachedCanvasId('app-2'), null);
+  assert.deepEqual(heads.outdatedCanvas('app-2'), { canvasId: 'cv_02', name: 'Components' });
+  // A manifest that broke is damaged, as before, and says nothing about a name.
+  assert.deepEqual(heads.damagedIds(), ['cv_03']);
+  assert.equal(heads.outdatedCanvas('app-3'), null);
+  assert.equal(heads.outdatedCanvas('app-1'), null);
+});
+
 test('a readable head is served with exactly the attachments it records', async (t) => {
   const root = await saved(t);
   const heads = await reopen(root);

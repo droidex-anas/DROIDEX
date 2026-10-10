@@ -127,7 +127,7 @@ test('child sessions replay their prompts as the child, and never a skill activa
     assert.deepEqual(replay(activation, 'child-provider', role), []);
 });
 
-test('a prompt wrapped in DROIDEX guidance or side-chat answers replays as only what the user typed', () => {
+test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames replays as only what the user typed', () => {
   const question = 'Why does the chart dip on Wednesday?';
   const conversation = `**User:** earlier question\n\n**Assistant:** ${'long answer '.repeat(10_000)}`;
   const cases: [string, string][] = [
@@ -167,6 +167,32 @@ test('a prompt wrapped in DROIDEX guidance or side-chat answers replays as only 
   const [event] = replay(userText(withReplies));
   assert.equal(event?.text, 'Use this');
   assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
+
+  // Pinned canvas frames follow, as the renderer's promptWithFramePins writes them.
+  const withFrames = [
+    withReplies,
+    '',
+    '<canvas_frames>',
+    'The user pinned these canvas frames to this request; "this" and "it" mean them.',
+    '<frame id="d1">Pricing · Compact</frame>',
+    '</canvas_frames>',
+  ].join('\n');
+  const [pinned] = replay(userText(withFrames));
+  assert.equal(pinned?.text, 'Use this');
+  assert.deepEqual(pinned?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
+  assert.deepEqual(pinned?.canvasFrames, ['Pricing · Compact']);
+  // A user who only writes the tags keeps every word of it.
+  const typed = 'Wrap it in <canvas_frames></canvas_frames>';
+  assert.equal(replay(userText(typed))[0]?.text, typed);
+  // An App request wraps the composed prompt, frames included, before its guidance.
+  const [app] = replay(
+    userText(
+      `DROIDEX App request:\n${withFrames}\n\nPrivate generation guidance:\nReturn one fenced app block.`,
+    ),
+  );
+  assert.equal(app?.text, 'Use this');
+  assert.deepEqual(app?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
+  assert.deepEqual(app?.canvasFrames, ['Pricing · Compact']);
 });
 
 test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {

@@ -24,8 +24,11 @@ export interface Viewport {
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 4;
 
-/** Screen padding Fit and focus leave around what they frame. */
-const FIT_PADDING_PX = 48;
+/**
+ * Screen padding Fit and focus leave around what they frame: room for the tool
+ * rail at the board's left and for the labels above the top row of frames.
+ */
+const FIT_PADDING_PX = 72;
 
 /**
  * Fit never magnifies past 100%: one small frame focused into a wide pane should
@@ -64,6 +67,15 @@ export function zoomAtPoint(viewport: Viewport, point: Point, requestedScale: nu
   const scale = clampScale(requestedScale);
   const anchor = screenToCanvas(viewport, point);
   return { x: point.x - anchor.x * scale, y: point.y - anchor.y * scale, scale };
+}
+
+/** The stops the zoom menu and its keys step through, as a design tool's do. */
+const ZOOM_STOPS: readonly number[] = [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+
+/** The next stop past `scale` in `direction`, so stepping lands on round values. */
+export function zoomStep(scale: number, direction: 1 | -1): number {
+  if (direction > 0) return ZOOM_STOPS.find((stop) => stop > scale + 0.001) ?? MAX_SCALE;
+  return [...ZOOM_STOPS].reverse().find((stop) => stop < scale - 0.001) ?? MIN_SCALE;
 }
 
 /**

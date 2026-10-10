@@ -1,40 +1,16 @@
-/* Canvas animations. This file is imported by the lazy Canvas surface, so
-   these rules load with the board rather than on every app start. */
+/* Canvas motion: frame arrival and toolbar reveal. This file is imported by the
+   lazy Canvas surface, so these rules load with the board rather than on every
+   app start. The pending shimmer lives with the sheet it sits on, in
+   canvasBoard.css. */
 
-/* Canvas pending bloom: a quiet dither of dots inside a frame the agent is
-   still building. Duration, per-dot delay and play state come from the
-   component, which decides from the resolved motion tokens and the frame's
-   visibility whether the loop runs at all; the media query below makes the
-   reduced-motion half of that true even if a caller gets it wrong. */
-@keyframes canvas-bloom {
-  0%,
-  100% {
-    opacity: 0.16;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-.canvas-bloom-dot {
-  animation-name: canvas-bloom;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .canvas-bloom-dot {
-    animation: none;
-  }
-}
-
-/* Canvas frame arrival and toolbar reveal. Duration, easing and travel are set
-   inline from the motion tokens, so the curve is stated once in canvasMotion.ts
-   rather than again here, and reduced motion attaches no class at all. */
+/* Frame arrival and toolbar reveal. Duration, easing and travel are set
+   inline from the motion tokens, so the curve is stated once in
+   canvasMotion.ts rather than again here, and reduced motion attaches no
+   class at all. */
 @keyframes canvas-frame-arrival {
   from {
     opacity: 0;
-    transform: translateY(var(--canvas-frame-travel, 8px));
+    transform: translateY(var(--canvas-frame-travel, 8px)) scale(0.985);
   }
   to {
     opacity: 1;

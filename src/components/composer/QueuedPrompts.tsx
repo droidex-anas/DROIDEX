@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
-import type { QueuedPrompt } from '../../hooks/useStore';
+import type { QueuedPrompt } from '../../lib/promptQueue';
 import { PendingPromptPreview } from './PendingPromptPreview';
 
 // Prompts staged while the model is busy; they send one at a time after the

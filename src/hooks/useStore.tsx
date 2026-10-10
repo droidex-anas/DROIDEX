@@ -96,17 +96,16 @@ import type {
   SessionQuestion,
   ModelInfo,
   ProviderKind,
-  ProviderMention,
   ProviderStatus,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
   ContextStatsSnapshot,
   BrowserState,
-  DesignReference,
   VoiceNarration,
 } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
+import type { QueuedPrompt } from '../lib/promptQueue';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
 import { loadDefaultPermissionMode } from '../lib/permissionSemantics';
@@ -219,25 +218,6 @@ import {
 } from './storeSessionRestore';
 
 export type { ImagePasteQuality } from '../lib/images';
-
-interface QueuedDesignContext {
-  browserKey: string;
-  references: DesignReference[];
-  referenceIds: string[];
-}
-
-export interface QueuedPrompt {
-  id: string;
-  text: string;
-  skills: string[];
-  files: string[];
-  /** Catalog rows the harness receives beside the text rather than inside it. */
-  mentions?: ProviderMention[];
-  /** The staged rows' catalog identities, so editing restores the same chips. */
-  rowKeys?: string[];
-  sideChatReplies?: string[];
-  design?: QueuedDesignContext;
-}
 
 /** What a design draft's next prompt owes Canvas (spec §4). */
 export interface CanvasDraft {

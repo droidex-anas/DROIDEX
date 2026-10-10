@@ -1,5 +1,6 @@
 // The board: one transformed world layer holding the frames, the keyboard
-// commands over it, and the control strip along its bottom edge.
+// commands over it, the tool rail in its top-left corner and the zoom readout
+// in its bottom-left.
 //
 // The board owns preview-slot retention and when the Select overlay can flip:
 // the hit-test change waits for an active wheel gesture to finish.
@@ -14,7 +15,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { BoardControls } from './BoardControls';
+import { BoardControls, type ZoomCommand } from './BoardControls';
 import {
   alignRects,
   arrowDirection,
@@ -36,6 +37,7 @@ import {
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import { useCanvasMotion } from './useCanvasMotion';
+import { NO_SHOWN_REVISIONS, shownRevisions } from './previewLabels';
 import { NO_PREVIEW_SLOTS, reducePreviewSlots, type PreviewSlotRequest } from './previewSlots';
 import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardViewport } from './useBoardViewport';
@@ -58,12 +60,18 @@ export interface CanvasBoardProps {
    * `CanvasClient.arrangeFrames` for this canvas.
    */
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
-  /** One frame's live preview, mounted only while that frame holds a slot. */
-  renderPreview: (frame: CanvasFrame) => ReactNode;
+  /** One frame's live preview of `revisionId`, mounted only while it holds a slot. */
+  renderPreview: (frame: CanvasFrame, revisionId: string) => ReactNode;
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
+  /** This chat's agent has a turn running, so frames with no source are being written. */
+  agentWorking: boolean;
   onOpenSource?: (designId: string) => void;
+  /** The frames pinned to the chat's next prompt. */
+  pinnedIds?: ReadonlySet<string>;
+  /** Pins a frame to the chat's next prompt or takes it off; absent where frames cannot be pinned. */
+  onToggleChat?: (frame: CanvasFrame) => void;
 }
 
 export function CanvasBoard({
@@ -73,15 +81,21 @@ export function CanvasBoard({
   renderPreview,
   interaction,
   onInteractionChange,
+  agentWorking,
   onOpenSource,
+  pinnedIds,
+  onToggleChat,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
   const { frames } = snapshot;
+  // The frames the board opened with are simply there; later ones arrive.
+  const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
   const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
   const [retainedSlots, setRetainedSlots] = useState(NO_PREVIEW_SLOTS);
+  const [retainedShown, setRetainedShown] = useState(NO_SHOWN_REVISIONS);
   const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
@@ -161,10 +175,12 @@ export function CanvasBoard({
   }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
+  // A frame keeps showing its last design while a newer revision builds, and
+  // only a frame with something to show has a document to run.
+  const shown = shownRevisions(retainedShown, frames);
+  if (shown !== retainedShown) setRetainedShown(shown);
   const slotRequest: PreviewSlotRequest = {
-    designIds: frames
-      .filter((frame) => frame.build.status === 'ready' || frame.build.status === 'failed')
-      .map((frame) => frame.designId),
+    designIds: frames.filter((frame) => shown.has(frame.designId)).map((frame) => frame.designId),
     visible,
     interacted: interaction.interactedFrameId,
     selected: interaction.selectedFrameIds,
@@ -186,6 +202,13 @@ export function CanvasBoard({
     };
   }, [capturePointer, overlayCapture, view.scrolling]);
 
+  const preview = (frame: CanvasFrame): ReactNode | null => {
+    const revisionId = shown.get(frame.designId);
+    return revisionId !== undefined && slots.live.includes(frame.designId)
+      ? renderPreview(frame, revisionId)
+      : null;
+  };
+
   /**
    * One layout write for the selection, computed from the rects it is drawn at.
    */
@@ -203,6 +226,28 @@ export function CanvasBoard({
     );
   };
 
+  const onMode = (next: BoardMode) => {
+    if (next === interaction.mode) return;
+    if (next === 'select') {
+      dispatch({ type: 'escape' });
+      return;
+    }
+    const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
+    if (target !== undefined) dispatch({ type: 'interact', designId: target });
+  };
+
+  const onZoom = (command: ZoomCommand) => {
+    if (command === 'fit') fitTo(drawn.map(({ rect }) => rect));
+    else if (command === 'selection')
+      fitTo(
+        drawn
+          .filter(({ designId }) => interaction.selectedFrameIds.includes(designId))
+          .map(({ rect }) => rect),
+      );
+    else if (command === 'actual') view.zoomTo(1);
+    else view.stepZoom(command === 'in' ? 1 : -1);
+  };
+
   const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     // Inputs and editors keep their shortcuts, including Escape.
     if (isBoardEditor(event.target)) return;
@@ -212,8 +257,24 @@ export function CanvasBoard({
       if (!gestures.cancel()) dispatch({ type: 'escape' });
       return;
     }
-    // Other board commands belong to the board and its frame headers.
-    if (event.target !== event.currentTarget && !isFrameHeader(event.target)) return;
+    // Other board commands belong to the board and its frame headers. Its own
+    // tools take the zoom and mode keys too, so a key still works after one was
+    // clicked; Space, Enter and the arrows stay theirs.
+    const onBoard = event.target === event.currentTarget || isFrameHeader(event.target);
+    if (!onBoard && !isBoardControl(event.target)) return;
+    const zoom = zoomShortcut(event);
+    if (zoom) {
+      event.preventDefault();
+      onZoom(zoom);
+      return;
+    }
+    const mode = modeShortcut(event);
+    if (mode) {
+      event.preventDefault();
+      onMode(mode);
+      return;
+    }
+    if (!onBoard) return;
     if (event.key === ' ') {
       event.preventDefault();
       gestures.holdSpace(true);
@@ -237,16 +298,6 @@ export function CanvasBoard({
     placeSelection((rects) =>
       rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
     );
-  };
-
-  const onMode = (next: BoardMode) => {
-    if (next === interaction.mode) return;
-    if (next === 'select') {
-      dispatch({ type: 'escape' });
-      return;
-    }
-    const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
-    if (target !== undefined) dispatch({ type: 'interact', designId: target });
   };
 
   return (
@@ -276,31 +327,43 @@ export function CanvasBoard({
     >
       <div
         className="absolute left-0 top-0"
-        style={{
-          transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
-          transformOrigin: '0 0',
-        }}
+        style={
+          {
+            transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
+            transformOrigin: '0 0',
+            // The board stylesheet divides frame chrome by this, so it keeps its size.
+            '--board-scale': String(scale),
+          } as React.CSSProperties
+        }
       >
         {frames.map((frame, index) => (
           <DesignFrame
             key={frame.designId}
+            canvasId={snapshot.canvasId}
             frame={frame}
             rect={drawn[index].rect}
             scale={scale}
+            roomRight={view.size.x - (view.viewport.x + drawn[index].rect.x * scale)}
             motion={motion}
+            arriving={!openedWith.has(frame.designId)}
             visible={visible.includes(frame.designId)}
             mode={interaction.mode}
             selected={interaction.selectedFrameIds.includes(frame.designId)}
+            showTools={showsTools(interaction, frame.designId)}
             interacted={interaction.interactedFrameId === frame.designId}
             held={gestures.heldDesignId === frame.designId}
+            agentWorking={agentWorking}
             capturePointer={overlayCapture}
-            preview={slots.live.includes(frame.designId) ? renderPreview(frame) : null}
+            shownRevisionId={shown.get(frame.designId) ?? null}
+            preview={preview(frame)}
             released={slots.released.includes(frame.designId)}
             onExitInteract={() => {
               dispatch({ type: 'escape' });
               board.current?.focus({ preventScroll: true });
             }}
             onOpenSource={onOpenSource}
+            inChat={pinnedIds?.has(frame.designId) ?? false}
+            onToggleChat={onToggleChat}
             onHold={gestures.onFramePointerDown}
             onPick={(picked, additive) => {
               dispatch({ type: 'pick', designId: picked.designId, additive });
@@ -322,9 +385,7 @@ export function CanvasBoard({
         hasFrames={frames.length > 0}
         error={gestures.layoutError}
         onMode={onMode}
-        onFit={() => {
-          fitTo(drawn.map(({ rect }) => rect));
-        }}
+        onZoom={onZoom}
         onAlign={(edge: AlignEdge) => {
           placeSelection((rects) => alignRects(rects, edge));
         }}
@@ -341,7 +402,7 @@ function RubberBand({ band: { origin, current } }: { band: Band }) {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute rounded-md bg-droid-accent/10 ring-1 ring-droid-accent/30"
+      className="canvas-band"
       style={{
         left: Math.min(origin.x, current.x),
         top: Math.min(origin.y, current.y),
@@ -358,8 +419,40 @@ interface BoardReads {
   viewport: Viewport;
 }
 
+/** A frame shows its actions while it is the one selection, or Interact drives it. */
+function showsTools(interaction: BoardInteraction, designId: string): boolean {
+  if (interaction.interactedFrameId === designId) return true;
+  return interaction.mode === 'select' && interaction.selectedFrameIds.length === 1
+    ? interaction.selectedFrameIds[0] === designId
+    : false;
+}
+
+/** The zoom keys a design tool uses: + and −, and ⇧1, ⇧2 and ⇧0. */
+function zoomShortcut(event: React.KeyboardEvent): ZoomCommand | null {
+  if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  // The shifted digits go by key position first: on some layouts ⇧1 types +.
+  if (event.shiftKey && event.code === 'Digit1') return 'fit';
+  if (event.shiftKey && event.code === 'Digit2') return 'selection';
+  if (event.shiftKey && event.code === 'Digit0') return 'actual';
+  if (event.key === '+' || event.key === '=') return 'in';
+  if (event.key === '-' || event.key === '_') return 'out';
+  return null;
+}
+
+/** V for Select and I for Interact, as the rail's tips say. */
+function modeShortcut(event: React.KeyboardEvent): BoardMode | null {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+  if (event.key === 'v' || event.key === 'V') return 'select';
+  if (event.key === 'i' || event.key === 'I') return 'interact';
+  return null;
+}
+
 function isFrameHeader(target: EventTarget): boolean {
   return target instanceof HTMLElement && target.dataset.frameHeader !== undefined;
+}
+
+function isBoardControl(target: EventTarget): boolean {
+  return target instanceof HTMLElement && target.closest('[data-board-controls]') !== null;
 }
 
 function isBoardEditor(target: EventTarget): boolean {

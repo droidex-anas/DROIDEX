@@ -10,9 +10,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CanvasBoard } from './CanvasBoard';
-import { DesignFrame } from './DesignFrame';
 import { DesignPreview } from './DesignPreview';
-import { motionFor } from './canvasMotion';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
 import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
@@ -39,17 +37,25 @@ function snapshotOf(...frames: CanvasFrame[]): CanvasSnapshot {
   return { canvasId: 'cv_01', sequence: 7, frames };
 }
 
-function render(snapshot: CanvasSnapshot, interaction: BoardInteraction = SELECT_MODE): string {
+function render(
+  snapshot: CanvasSnapshot,
+  interaction: BoardInteraction = SELECT_MODE,
+  agentWorking = false,
+  pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onToggleChat'> = {},
+): string {
   return renderToStaticMarkup(
     createElement(CanvasBoard, {
+      ...pins,
       snapshot,
       interaction,
+      agentWorking,
       onInteractionChange: () => undefined,
       onArrangeFrames: () => Promise.resolve(),
-      renderPreview: (frame) =>
+      renderPreview: (frame, revisionId) =>
         createElement(DesignPreview, {
           canvasId: snapshot.canvasId,
           frame,
+          revisionId,
           readArtifact: () => Promise.resolve(null),
           reportPreview: () => undefined,
         }),
@@ -103,8 +109,8 @@ test('the board opens at 100% with Fit live only when there is something to fit'
   const filled = render(snapshotOf(frame('dsg_hey', ACKNOWLEDGED)));
 
   assert.match(empty, /100%/);
-  assert.match(empty, /<button type="button" disabled=""/);
-  assert.match(filled, /Fit<\/button>/);
+  assert.match(empty, /aria-label="Fit"[^>]*disabled=""/);
+  assert.match(filled, /aria-label="Fit"/);
   assert.equal(filled.includes('disabled=""'), false);
 });
 
@@ -127,9 +133,11 @@ test('align and distribute appear only when a selection gives them work', () => 
   assert.match(pair, /aria-label="Space evenly across" disabled=""/);
 });
 
-test('a frame with nothing built shows its real stage and never invents one', () => {
+test('a frame with no live preview says only what is true of it', () => {
   const base = frame('dsg_hey', ACKNOWLEDGED);
-  const queued = render(snapshotOf(base));
+  const reserved = { ...base, revisionId: null };
+  const empty = render(snapshotOf(reserved));
+  const writing = render(snapshotOf(reserved), SELECT_MODE, true);
   const building = render(snapshotOf(withBuild(base, { status: 'building', generation: 2 })));
   const cancelled = render(snapshotOf(withBuild(base, { status: 'cancelled', generation: 2 })));
   const failed = render(
@@ -138,52 +146,45 @@ test('a frame with nothing built shows its real stage and never invents one', ()
         status: 'failed',
         generation: 2,
         lastWorkingRevisionId: null,
-        diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
+        diagnostics: [
+          { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+        ],
       }),
     ),
-    { mode: 'interact', selectedFrameIds: [base.designId], interactedFrameId: base.designId },
   );
 
-  // A queued build is 'Queued': the wire cannot prove an agent is writing, so
-  // the board does not claim it.
-  assert.match(queued, /Queued/);
-  assert.equal(queued.includes('Writing'), false);
+  // A reserved frame shimmers as written only while its chat's agent works.
+  assert.match(empty, /Empty frame/);
+  assert.equal(empty.includes('canvas-bloom-label'), false);
+  assert.match(writing, /Writing/);
+  assert.match(writing, /canvas-bloom-label/);
+  assert.match(building, /canvas-bloom-label/);
   assert.match(building, /Building/);
-  // A settled frame has a sentence to say instead of a stage with dots.
-  assert.match(cancelled, /This build was cancelled\./);
-  assert.equal(cancelled.includes('canvas-bloom-dot'), false);
-  assert.match(building, /canvas-bloom-dot/);
+  assert.match(cancelled, /Build cancelled/);
+  assert.equal(cancelled.includes('canvas-bloom-label'), false);
+  // A failure with nothing older to show says where and why, and mounts no guest.
+  assert.match(failed, /Didn’t build/);
+  assert.match(failed, /main\.tsx · line 3/);
   assert.match(failed, /Unexpected token/);
+  assert.equal(failed.includes('data-preview-phase'), false);
 });
 
-test('a slot with a building preview retains the bloom until a working revision exists', () => {
-  const building = withBuild(frame('a', ACKNOWLEDGED), { status: 'building', generation: 2 });
-  const markup = renderToStaticMarkup(
-    createElement(DesignFrame, {
-      frame: building,
-      rect: building.rect,
-      scale: 1,
-      motion: motionFor(false),
-      visible: true,
-      mode: 'select',
-      selected: false,
-      interacted: false,
-      held: false,
-      capturePointer: true,
-      released: false,
-      preview: createElement(DesignPreview, {
-        canvasId: 'cv_01',
-        frame: building,
-        readArtifact: () => Promise.resolve(null),
-        reportPreview: () => undefined,
-      }),
-      onHold: () => undefined,
-      onPick: () => undefined,
-      onInteract: () => undefined,
-      onExitInteract: () => undefined,
-    }),
+test('a selected frame offers Add to chat only on its chat’s own canvas, and says when it is in', () => {
+  const picked: BoardInteraction = {
+    mode: 'select',
+    selectedFrameIds: ['a'],
+    interactedFrameId: null,
+  };
+  const snapshot = snapshotOf(frame('a', ACKNOWLEDGED));
+  const onToggleChat = () => undefined;
+
+  assert.equal(render(snapshot, picked).includes('Add to chat'), false);
+  assert.match(
+    render(snapshot, picked, false, { onToggleChat }),
+    /aria-pressed="false" aria-label="Add Design a to the chat"/,
   );
-  assert.match(markup, /canvas-bloom-dot/);
-  assert.equal(markup.includes('Building this design'), false);
-  assert.equal(markup.includes('opacity 120ms'), false);
+  assert.match(
+    render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
+    /aria-pressed="true" aria-label="Take Design a out of the chat"[^>]*>.*In chat/,
+  );
 });

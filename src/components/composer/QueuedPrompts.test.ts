@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueuedPrompts } from './QueuedPrompts';
-import type { QueuedPrompt } from '../../hooks/useStore';
+import type { QueuedPrompt } from '../../lib/promptQueue';
 
 const prompt = (overrides: Partial<QueuedPrompt> = {}): QueuedPrompt => ({
   id: 'q1',

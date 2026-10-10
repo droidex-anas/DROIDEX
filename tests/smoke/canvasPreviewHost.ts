@@ -100,7 +100,7 @@ container.id = 'canvas-zoom-probe';
 container.style.cssText = 'position:fixed;left:0;top:0;width:720px;height:720px;transform:scale(0.5);transform-origin:top left;z-index:99999';
 document.body.append(container);
 createRoot(container).render(createElement(PreviewGuestFrame, {
-  canvasId: 'cv_zoom', designId: 'dsg_zoom', revisionId: 'rev_zoom', generation: 1,
+  canvasId: 'cv_zoom', designId: 'dsg_zoom', revisionId: 'rev_zoom',
   showingRevisionId: null, html: ${JSON.stringify(html)}, diagnostics: [],
   reportPreview: () => undefined,
 }));

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BUILT_IN_THEMES,
+  SELECTION_COLORS,
   SKILL_COLORS,
   ULTRA_COLORS,
   UPDATE_COLORS,
@@ -13,6 +14,7 @@ import {
   newCustomThemeId,
   parseCustomThemes,
   parseThemePresetImport,
+  raisedSurfaceColor,
   relativeLuminance,
   removeCustomTheme,
   resolveVariant,
@@ -195,6 +197,24 @@ describe('fixed label colors', () => {
           contrastRatio(ULTRA_COLORS[scheme], elevated) >= 4.5,
           `${preset.id} ${scheme} ultra label should reach 4.5:1`,
         );
+      }
+    }
+  });
+
+  it('keeps a board selection readable on every built-in board and its chrome', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const { line, label, text } = SELECTION_COLORS[scheme];
+        const board = preset[scheme].bg;
+        for (const ground of [board, raisedSurfaceColor(preset[scheme])]) {
+          assert.ok(
+            contrastRatio(label, ground) >= 4.5,
+            `${preset.id} ${scheme} selected label should reach 4.5:1 on ${ground}`,
+          );
+        }
+        // An outline is not text: WCAG asks 3:1 of it against the board.
+        assert.ok(contrastRatio(line, board) >= 3, `${preset.id} ${scheme} selection outline`);
+        assert.ok(contrastRatio(text, line) >= 4.5, `${scheme} size badge text`);
       }
     }
   });

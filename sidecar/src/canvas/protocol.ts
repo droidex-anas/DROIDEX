@@ -435,12 +435,25 @@ export type CanvasCommand =
  */
 type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
 
+/** A canvas an earlier DROIDEX made, before revision history; it is not opened. */
+export interface OutdatedCanvas {
+  canvasId: string;
+  name: string;
+}
+
+/** The canvas a chat works on, or null while it is unattached (spec §6). */
+export interface CanvasAttachment {
+  canvasId: string | null;
+  /** A canvas an earlier DROIDEX made for this chat, which cannot be opened. */
+  outdated?: OutdatedCanvas;
+}
+
 /** What a successful command answers with, one kind per command. */
 export type CanvasReply =
   | { kind: 'ok' }
   | { kind: 'summaries'; summaries: CanvasSummary[] }
   | { kind: 'assets'; assets: OwnedAsset[] }
-  | { kind: 'attachment'; canvasId: string | null }
+  | ({ kind: 'attachment' } & CanvasAttachment)
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }

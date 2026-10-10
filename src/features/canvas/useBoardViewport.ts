@@ -14,6 +14,7 @@ import {
   interpolateViewport,
   wheelZoomScale,
   zoomAtPoint,
+  zoomStep,
   type Point,
   type Viewport,
 } from './canvasGeometry';
@@ -34,6 +35,10 @@ export interface BoardViewport {
   panByScreen: (screenDelta: Point) => void;
   /** Fit and focus are the same operation; focus just passes one rect. */
   fitTo: (rects: readonly FrameRect[]) => void;
+  /** Eases to `scale` about the board's centre, as the zoom menu and keys ask. */
+  zoomTo: (scale: number) => void;
+  /** Eases to the next zoom stop in `direction`, as + and − ask. */
+  stepZoom: (direction: 1 | -1) => void;
   /** Ends any running focus animation, so a hand gesture is never fought. */
   stopAnimating: () => void;
   /** True while a wheel gesture is still arriving. */
@@ -54,6 +59,9 @@ export function useBoardViewport(
   const [size, setSize] = useState<Point>({ x: 0, y: 0 });
 
   const animation = useRef<number | null>(null);
+  // Where a running animation is headed. A zoom command starts from there, so
+  // pressing + twice lands two stops in, not one stop past wherever it had got.
+  const heading = useRef<Viewport | null>(null);
   const scroll = useRef<ScrollGesture>({ active: false, suppressed: false, idle: null });
   const measured = useRef<Point>({ x: 0, y: 0 });
   const opening = useRef({ fitted: false, navigated: false });
@@ -66,6 +74,7 @@ export function useBoardViewport(
   const stopAnimating = useCallback(() => {
     if (animation.current !== null) cancelAnimationFrame(animation.current);
     animation.current = null;
+    heading.current = null;
   }, []);
 
   const markNavigated = useCallback(() => {
@@ -80,12 +89,11 @@ export function useBoardViewport(
     }));
   }, []);
 
-  const fitTo = useCallback(
-    (rects: readonly FrameRect[]) => {
-      if (rects.length === 0) return;
-      const target = fitFrames(rects, measured.current);
-      // Fit owns the rest of an arriving wheel gesture, whether or not it
-      // animates, so trailing momentum cannot undo what the user just asked for.
+  /** Every programmatic move: fit, focus and the zoom commands. */
+  const animateTo = useCallback(
+    (target: Viewport) => {
+      // A programmatic move owns the rest of an arriving wheel gesture, whether
+      // or not it animates, so trailing momentum cannot undo what was asked for.
       if (scroll.current.active) scroll.current.suppressed = true;
       stopAnimating();
       opening.current.navigated = true;
@@ -95,14 +103,38 @@ export function useBoardViewport(
       }
       const from = latest.current.viewport;
       const started = performance.now();
+      heading.current = target;
       const step = () => {
         const progress = Math.min(1, (performance.now() - started) / motion.focusMs);
         setViewport(interpolateViewport(from, target, easeProgress(progress, motion.ease)));
         animation.current = progress < 1 ? requestAnimationFrame(step) : null;
+        if (progress === 1) heading.current = null;
       };
       animation.current = requestAnimationFrame(step);
     },
     [motion, stopAnimating],
+  );
+
+  const fitTo = useCallback(
+    (rects: readonly FrameRect[]) => {
+      if (rects.length > 0) animateTo(fitFrames(rects, measured.current));
+    },
+    [animateTo],
+  );
+
+  const zoomTo = useCallback(
+    (scale: number) => {
+      const centre = { x: measured.current.x / 2, y: measured.current.y / 2 };
+      animateTo(zoomAtPoint(heading.current ?? latest.current.viewport, centre, scale));
+    },
+    [animateTo],
+  );
+
+  const stepZoom = useCallback(
+    (direction: 1 | -1) => {
+      zoomTo(zoomStep((heading.current ?? latest.current.viewport).scale, direction));
+    },
+    [zoomTo],
   );
 
   /** Spec §4: the board may fit once, before the user has navigated. */
@@ -196,7 +228,17 @@ export function useBoardViewport(
     [],
   );
 
-  return { viewport, size, panByScreen, fitTo, stopAnimating, scrolling, markNavigated };
+  return {
+    viewport,
+    size,
+    panByScreen,
+    fitTo,
+    zoomTo,
+    stepZoom,
+    stopAnimating,
+    scrolling,
+    markNavigated,
+  };
 }
 
 interface ScrollGesture {

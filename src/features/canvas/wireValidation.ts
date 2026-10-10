@@ -114,7 +114,11 @@ function isReply(value: unknown): boolean {
           asset.height <= 8192,
       );
     case 'attachment':
-      return value.canvasId === null || id(value.canvasId);
+      return (
+        (value.canvasId === null || id(value.canvasId)) &&
+        (value.outdated === undefined ||
+          (record(value.outdated) && id(value.outdated.canvasId) && text(value.outdated.name)))
+      );
     case 'canvasCreated':
       return id(value.canvasId) && (value.attachedCanvasId === null || id(value.attachedCanvasId));
     case 'created':

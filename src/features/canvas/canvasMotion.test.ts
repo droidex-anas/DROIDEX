@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  activityStageOf,
-  canvasActivity,
-  canvasMotion,
-  motionFor,
-  type CanvasActivityStage,
-} from './canvasMotion';
-import type { CanvasBuildState } from './protocol';
+import { canvasActivity, canvasMotion, motionFor, type CanvasActivityStage } from './canvasMotion';
 
 // Typed as a full record so adding a stage without deciding its bloom fails
 // typecheck rather than silently inheriting a neighbour's behavior.
@@ -66,22 +59,4 @@ test('every activity stage decides its own label and bloom', () => {
     assert.equal(activity.bloom, bloom, `${stage} bloom`);
     assert.ok(activity.label.length > 0, `${stage} label`);
   }
-});
-
-// Typed as a full record for the same reason: a new build status has to be given
-// a stage here rather than defaulting to one.
-const stageOfStatus: Record<CanvasBuildState['status'], CanvasActivityStage> = {
-  pending: 'queued',
-  building: 'building',
-  ready: 'ready',
-  failed: 'failed',
-  cancelled: 'cancelled',
-};
-
-test('a build status becomes its stage and never claims writing', () => {
-  for (const [status, stage] of Object.entries(stageOfStatus)) {
-    assert.equal(activityStageOf(status as CanvasBuildState['status']), stage, status);
-  }
-  // Writing is an actor fact. No build state may stand in for one.
-  assert.ok(!Object.values(stageOfStatus).includes('writing'));
 });

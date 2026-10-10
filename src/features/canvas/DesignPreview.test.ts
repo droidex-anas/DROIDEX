@@ -27,11 +27,16 @@ function frameWith(build: CanvasBuildState): CanvasFrame {
   };
 }
 
-function render(build: CanvasBuildState, overrides: Partial<DesignPreviewProps> = {}): string {
+function render(
+  build: CanvasBuildState,
+  revisionId: string,
+  overrides: Partial<DesignPreviewProps> = {},
+): string {
   return renderToStaticMarkup(
     createElement(DesignPreview, {
       canvasId: CANVAS,
       frame: frameWith(build),
+      revisionId,
       readArtifact: () => Promise.resolve(null),
       reportPreview: () => undefined,
       ...overrides,
@@ -39,56 +44,39 @@ function render(build: CanvasBuildState, overrides: Partial<DesignPreviewProps> 
   );
 }
 
-test('each build state without an artifact says what the frame is waiting for', () => {
-  const labels = {
-    pending: render({ status: 'pending' }),
-    building: render({ status: 'building', revisionId: 'rev_02', generation: 1 }),
-    cancelled: render({ status: 'cancelled', revisionId: 'rev_02' }),
-    neverBuilt: render({
-      status: 'failed',
-      revisionId: 'rev_02',
-      diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
-      lastWorkingRevisionId: null,
-    }),
-  };
-
-  assert.match(labels.pending, /Waiting to build/);
-  assert.match(labels.building, /Building this design/);
-  assert.match(labels.cancelled, /cancelled/);
-  assert.match(labels.neverBuilt, /no working preview yet/);
-  // A failure with nothing to fall back to still shows why.
-  assert.match(labels.neverBuilt, /Unexpected token/);
-  for (const markup of Object.values(labels)) assert.equal(markup.includes('<button'), false);
-});
-
 test('a revision with an artifact to load waits for it rather than guessing', () => {
   // Reading the artifact is an effect, so a first paint can only say it is
   // loading; previewRuntime.test.ts owns what happens once the guest is up.
-  const ready = render({
-    status: 'ready',
-    revisionId: 'rev_02',
-    artifactId: 'a'.repeat(64),
-    elements: [],
-    diagnostics: [],
-  });
-  const fallback = render({
-    status: 'failed',
-    revisionId: 'rev_03',
-    diagnostics: [],
-    lastWorkingRevisionId: 'rev_01',
-  });
+  const ready = render(
+    {
+      status: 'ready',
+      revisionId: 'rev_02',
+      artifactId: 'a'.repeat(64),
+      elements: [],
+      diagnostics: [],
+    },
+    'rev_02',
+  );
+  const fallback = render(
+    {
+      status: 'failed',
+      revisionId: 'rev_03',
+      diagnostics: [],
+      lastWorkingRevisionId: 'rev_01',
+    },
+    'rev_01',
+  );
 
   assert.match(ready, /Loading this preview/);
   assert.match(fallback, /Loading this preview/);
 });
 
-test('a mounted fallback names the older working revision beside its diagnostics', () => {
+test('a mounted fallback says the latest change did not build, over the older revision', () => {
   const markup = renderToStaticMarkup(
     createElement(PreviewGuestFrame, {
       canvasId: CANVAS,
       designId: 'dsg_hey',
       revisionId: 'rev_01',
-      generation: 1,
       showingRevisionId: 'rev_01',
       html: '<!doctype html><body>x</body>',
       diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
@@ -98,7 +86,8 @@ test('a mounted fallback names the older working revision beside its diagnostics
   );
 
   // Spec §5: the frame labels the older working preview it is showing.
-  assert.match(markup, /Showing revision rev_01/);
+  assert.match(markup, /Latest change didn’t build/);
+  assert.match(markup, /Showing the last version that built/);
   assert.match(markup, /Unexpected token/);
   // The frame's own revision is not a fallback, so it is not labelled.
   assert.equal(
@@ -107,14 +96,13 @@ test('a mounted fallback names the older working revision beside its diagnostics
         canvasId: CANVAS,
         designId: 'dsg_hey',
         revisionId: 'rev_02',
-        generation: 1,
         showingRevisionId: null,
         html: '<!doctype html><body>x</body>',
         diagnostics: [],
         reportPreview: () => undefined,
         onResize: undefined,
       }),
-    ).includes('Showing revision'),
+    ).includes('Latest change'),
     false,
   );
 });
@@ -207,7 +195,6 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
     canvasId: CANVAS,
     designId: 'dsg_zoom',
     revisionId: 'rev_zoom',
-    generation: 1,
     html: '',
     diagnostics: [],
     reportPreview: () => undefined,

@@ -257,6 +257,8 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   // Side-chat answers the user attached to this prompt.
   sideChatReplies?: string[];
+  // Names of the canvas frames the user pinned to this prompt.
+  canvasFrames?: string[];
   steered?: boolean;
   // Set on a row whose text was said out loud in a voice conversation.
   spoken?: boolean;

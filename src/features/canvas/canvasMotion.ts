@@ -4,8 +4,6 @@
 // conditional in every component. Pan, drag and resize are absent on purpose:
 // direct pointer input follows the hand 1:1 and never passes through a token.
 
-import type { CanvasBuildState } from './protocol';
-
 /** Stages that come from real session events. There is no "verifying" stage. */
 export type CanvasActivityStage =
   | 'queued'
@@ -30,16 +28,6 @@ export const canvasActivity: Readonly<Record<CanvasActivityStage, CanvasActivity
   failed: Object.freeze({ label: 'Failed', bloom: false }),
   cancelled: Object.freeze({ label: 'Cancelled', bloom: false }),
 });
-
-/**
- * The stage a frame's own build reports, which is the only stage the Canvas wire
- * can currently prove. `writing` is deliberately unreachable from here: a build
- * state cannot tell whether an agent is still writing the source, so claiming it
- * needs an actor event that no change feed carries yet.
- */
-export function activityStageOf(status: CanvasBuildState['status']): CanvasActivityStage {
-  return status === 'pending' ? 'queued' : status;
-}
 
 export interface CanvasMotion {
   /** Programmatic focus, fit and zoom-to-frame. */

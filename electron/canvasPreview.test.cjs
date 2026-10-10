@@ -580,7 +580,7 @@ test('a locked display refuses capture before and after the compositor answers',
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), null);
 });
 
-test('forgotten guests release only their thumbnails, and window close releases the rest', async () => {
+test('a forgotten guest leaves its thumbnail for the board, and window close releases them', async () => {
   const { hosts, clock } = createHosts();
   const first = createGuest(41);
   const second = createGuest(42);
@@ -599,8 +599,9 @@ test('forgotten guests release only their thumbnails, and window close releases 
   assert.ok(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'));
   assert.ok(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'));
 
+  // The board shows a frame that lost its live slot by its last capture.
   first.emit('destroyed');
-  assert.equal(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'), null);
+  assert.ok(hosts.readThumbnail('cv_41', 'dsg_01', 'rev_01'));
   assert.ok(hosts.readThumbnail('cv_42', 'dsg_01', 'rev_01'));
   hosts.clear();
   hosts.clear();

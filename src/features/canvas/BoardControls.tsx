@@ -1,15 +1,19 @@
-// The board's own control strip: the zoom readout bottom-left, and Select /
-// Interact, Fit, align and distribute bottom-right (spec §4). Every control
-// here works on the board behind it; 5d's frame toolbar gathers the rest of the
-// context actions, and 5e gives the expanded board its top row.
-//
-// Align and distribute appear only when a multiple selection gives them
-// something to do, so the resting board stays quiet.
+// The board's own tools, floating on it the way a design tool's do: Select,
+// Interact and Fit in a raised rail at the top left, the zoom readout and its
+// menu at the bottom left, and align and distribute centred at the bottom while
+// a multiple selection gives them work (spec §4). Every control works on the
+// board behind it, and each names its keyboard shortcut.
 
-import type { CSSProperties, ReactNode } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Maximize, MousePointer, Play } from '@droidex/icons';
+import { Popover } from '../../components/environment/Popover';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
+import { MenuRow } from './menuRows';
+
+/** What the zoom menu and its shortcuts can ask the board to do. */
+export type ZoomCommand = 'in' | 'out' | 'fit' | 'selection' | 'actual';
 
 /** A guide line with two bars sitting against it: every align glyph in one shape. */
 function guided(guide: string, bars: ReactNode[]): ReactNode {
@@ -81,9 +85,17 @@ const DISTRIBUTE_ACTIONS: { axis: DistributeAxis; label: string; glyph: ReactNod
   },
 ];
 
+const ZOOM_ACTIONS: { command: ZoomCommand; label: string; hint: string }[] = [
+  { command: 'in', label: 'Zoom in', hint: '+' },
+  { command: 'out', label: 'Zoom out', hint: '−' },
+  { command: 'fit', label: 'Zoom to fit', hint: '⇧1' },
+  { command: 'selection', label: 'Zoom to selection', hint: '⇧2' },
+  { command: 'actual', label: 'Zoom to 100%', hint: '⇧0' },
+];
+
 export interface BoardControlsProps {
   scale: number;
-  /** Spec §11's timings; the strip reveals on the popover token. */
+  /** Spec §11's timings; the selection bar reveals on the popover token. */
   motion: CanvasMotion;
   mode: BoardMode;
   selectedCount: number;
@@ -92,7 +104,7 @@ export interface BoardControlsProps {
   /** The last refused layout write, named for the user. */
   error: string;
   onMode: (mode: BoardMode) => void;
-  onFit: () => void;
+  onZoom: (command: ZoomCommand) => void;
   onAlign: (edge: AlignEdge) => void;
   onDistribute: (axis: DistributeAxis) => void;
 }
@@ -105,95 +117,162 @@ export function BoardControls({
   hasFrames,
   error,
   onMode,
-  onFit,
+  onZoom,
   onAlign,
   onDistribute,
 }: BoardControlsProps) {
   return (
     <div
-      // The strip is not background: a pan started here would capture the
+      data-board-controls
+      // The tools are not background: a pan started here would capture the
       // pointer and the buttons would never see their clicks.
       onPointerDown={(event) => {
         event.stopPropagation();
       }}
-      className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-between gap-3"
     >
-      <span className="rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text-secondary">
-        {Math.round(scale * 100)}%
-      </span>
-      <div className="flex min-w-0 flex-col items-end gap-2">
-        {selectedCount >= 2 && (
-          <div
-            style={reveal(motion)}
-            className={`pointer-events-auto flex items-center gap-0.5 rounded-full bg-droid-elevated p-1 ${
-              motion.popoverMs > 0 ? 'canvas-popover-reveal' : ''
-            }`}
-          >
-            {ALIGN_ACTIONS.map(({ edge, label, glyph }) => (
-              <GlyphButton
-                key={edge}
-                label={label}
-                glyph={glyph}
-                onClick={() => {
-                  onAlign(edge);
-                }}
-              />
-            ))}
-            <span aria-hidden className="mx-0.5 h-4 w-px bg-droid-border" />
-            {DISTRIBUTE_ACTIONS.map(({ axis, label, glyph }) => (
-              <GlyphButton
-                key={axis}
-                label={label}
-                glyph={glyph}
-                // Two frames have no space between them to spread.
-                disabled={selectedCount < 3}
-                onClick={() => {
-                  onDistribute(axis);
-                }}
-              />
-            ))}
-          </div>
-        )}
-        <div className="flex min-w-0 items-center gap-2">
-          {error && (
-            <p
-              role="alert"
-              className="truncate rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-red"
-            >
-              {error}
-            </p>
-          )}
-          <div
-            role="group"
-            aria-label="Board input mode"
-            className="pointer-events-auto flex items-center gap-0.5 rounded-full bg-droid-elevated p-0.5"
-          >
-            <ModeOption
-              label="Select"
-              active={mode === 'select'}
-              onClick={() => {
-                onMode('select');
-              }}
-            />
-            <ModeOption
-              label="Interact"
-              active={mode === 'interact'}
-              disabled={!hasFrames}
-              onClick={() => {
-                onMode('interact');
-              }}
-            />
-          </div>
-          <button
-            type="button"
-            disabled={!hasFrames}
-            onClick={onFit}
-            className="pointer-events-auto rounded-full bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-active disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-          >
-            Fit
-          </button>
-        </div>
+      <div role="group" aria-label="Board input mode" className="canvas-rail">
+        <Tool
+          label="Select"
+          tip="Select  V"
+          pressed={mode === 'select'}
+          onClick={() => {
+            onMode('select');
+          }}
+        >
+          <MousePointer className="h-4 w-4" aria-hidden />
+        </Tool>
+        <Tool
+          label="Interact"
+          tip="Interact  I"
+          pressed={mode === 'interact'}
+          disabled={!hasFrames}
+          onClick={() => {
+            onMode('interact');
+          }}
+        >
+          <Play className="h-4 w-4" aria-hidden />
+        </Tool>
+        <span aria-hidden className="canvas-rail-divider" />
+        <Tool
+          label="Fit"
+          tip="Zoom to fit  ⇧1"
+          disabled={!hasFrames}
+          onClick={() => {
+            onZoom('fit');
+          }}
+        >
+          <Maximize className="h-4 w-4" aria-hidden />
+        </Tool>
       </div>
+
+      <ZoomReadout
+        scale={scale}
+        hasFrames={hasFrames}
+        hasSelection={selectedCount > 0}
+        onZoom={onZoom}
+      />
+
+      {selectedCount >= 2 && (
+        <div
+          style={reveal(motion)}
+          className={`canvas-selection-bar ${motion.popoverMs > 0 ? 'canvas-popover-reveal' : ''}`}
+        >
+          {ALIGN_ACTIONS.map(({ edge, label, glyph }) => (
+            <GlyphTool
+              key={edge}
+              label={label}
+              glyph={glyph}
+              onClick={() => {
+                onAlign(edge);
+              }}
+            />
+          ))}
+          <span aria-hidden className="canvas-rail-divider" />
+          {DISTRIBUTE_ACTIONS.map(({ axis, label, glyph }) => (
+            <GlyphTool
+              key={axis}
+              label={label}
+              glyph={glyph}
+              // Two frames have no space between them to spread.
+              disabled={selectedCount < 3}
+              onClick={() => {
+                onDistribute(axis);
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <p role="alert" className="canvas-board-alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The zoom readout, which opens the zoom menu. */
+function ZoomReadout({
+  scale,
+  hasFrames,
+  hasSelection,
+  onZoom,
+}: {
+  scale: number;
+  hasFrames: boolean;
+  hasSelection: boolean;
+  onZoom: (command: ZoomCommand) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const enabled: Record<ZoomCommand, boolean> = {
+    in: true,
+    out: true,
+    fit: hasFrames,
+    selection: hasSelection,
+    actual: true,
+  };
+  return (
+    <div className="canvas-zoom">
+      <button
+        ref={trigger}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Zoom ${String(Math.round(scale * 100))}%`}
+        className="canvas-zoom-value"
+        onClick={() => {
+          setOpen((current) => !current);
+        }}
+      >
+        {Math.round(scale * 100)}%
+      </button>
+      <Popover
+        open={open}
+        onClose={() => {
+          setOpen(false);
+        }}
+        anchorRef={trigger}
+        label="Zoom"
+        align="left"
+        width={208}
+      >
+        <div role="menu" aria-label="Zoom" className="p-1">
+          {ZOOM_ACTIONS.map(({ command, label, hint }) => (
+            <MenuRow
+              key={command}
+              label={label}
+              hint={hint}
+              disabled={!enabled[command]}
+              onRun={() => {
+                setOpen(false);
+                onZoom(command);
+              }}
+            />
+          ))}
+        </div>
+      </Popover>
     </div>
   );
 }
@@ -208,35 +287,38 @@ function reveal(motion: CanvasMotion): CSSProperties | undefined {
   } as CSSProperties;
 }
 
-function ModeOption({
+/** One rail tool: its accessible name is the plain label, its tip adds the key. */
+function Tool({
   label,
-  active,
+  tip,
+  pressed,
   disabled = false,
   onClick,
+  children,
 }: {
   label: string;
-  active: boolean;
+  tip: string;
+  pressed?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      aria-pressed={active}
+      aria-label={label}
+      aria-pressed={pressed}
+      data-tip={tip}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-full px-2 py-0.5 text-[11px] transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
-        active
-          ? 'bg-droid-accent/15 font-medium text-droid-text'
-          : 'text-droid-text-secondary hover:bg-droid-active'
-      }`}
+      className="canvas-tool"
     >
-      {label}
+      {children}
     </button>
   );
 }
 
-function GlyphButton({
+function GlyphTool({
   label,
   glyph,
   disabled = false,
@@ -254,7 +336,7 @@ function GlyphButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="flex h-6 w-6 items-center justify-center rounded-full text-droid-text-secondary transition-colors hover:bg-droid-active hover:text-droid-text disabled:opacity-40 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+      className="canvas-tool"
     >
       <svg viewBox="0 0 24 24" width={14} height={14} fill="none" aria-hidden>
         {glyph}

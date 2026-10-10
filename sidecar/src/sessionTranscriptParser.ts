@@ -11,6 +11,7 @@ import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
 import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
+import { canvasFramesFromPrompt } from './canvas/canvasFramesPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -177,24 +178,38 @@ function nonAssistantBlockEvent(
 }
 
 // A stored prompt as the chat shows it: plain text, never a runnable App, and
-// without the side-chat answers or the branch, design, app and side-chat
-// framing it was sent with.
+// without the pinned frames, the side-chat answers or the branch, design, app
+// and side-chat framing it was sent with.
 export function userPromptDisplay(storedText: string) {
-  const withReplies = sideChatRepliesFromPrompt(storedText);
-  const promptText = withReplies?.text ?? storedText;
+  const outer = attachedToPrompt(storedText);
   // A branch prompt carries a whole copied conversation after its request; it
   // is cut back to the request before the cap could cut the request off.
-  const rawText = trimText(branchPromptDisplayFromText(promptText) ?? promptText, MAX_TEXT_CHARS);
+  const rawText = trimText(branchPromptDisplayFromText(outer.text) ?? outer.text, MAX_TEXT_CHARS);
   const designDisplay = designPromptDisplayFromText(rawText);
-  const text =
+  // An App request wraps the whole composed prompt, frames and answers included.
+  const inner = attachedToPrompt(
     designDisplay?.text ??
-    appPromptDisplayFromText(rawText) ??
-    sideChatPromptDisplayFromText(rawText) ??
-    rawText;
+      appPromptDisplayFromText(rawText) ??
+      sideChatPromptDisplayFromText(rawText) ??
+      rawText,
+  );
   return {
-    text,
+    text: inner.text,
     browserRefs: designDisplay?.browserRefs,
+    sideChatReplies: outer.sideChatReplies ?? inner.sideChatReplies,
+    canvasFrames: outer.canvasFrames ?? inner.canvasFrames,
+  };
+}
+
+// The pinned frames and side-chat answers at the end of a composed prompt, split
+// off the words they were sent with.
+function attachedToPrompt(text: string) {
+  const withFrames = canvasFramesFromPrompt(text);
+  const withReplies = sideChatRepliesFromPrompt(withFrames?.text ?? text);
+  return {
+    text: withReplies?.text ?? withFrames?.text ?? text,
     sideChatReplies: withReplies?.sideChatReplies,
+    canvasFrames: withFrames?.canvasFrames,
   };
 }
 

@@ -13,6 +13,8 @@ import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
 import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
+import '../../../src/features/canvas/canvasBoard.css';
+import '../../../src/features/canvas/canvasBoardTools.css';
 
 interface BoardHarness {
   calls: ArrangeFramesInput[];
@@ -24,6 +26,8 @@ interface BoardHarness {
   interaction: () => BoardInteraction;
   previewClicks: string[];
   buildReady: () => void;
+  /** A frame joins the open board, the way an agent's create lands. */
+  arrive: () => void;
 }
 
 declare global {
@@ -67,7 +71,7 @@ const initial: CanvasSnapshot = {
       ...frame,
       layoutVersion: 3,
       manifestVersion: 1,
-      revisionId: null,
+      revisionId: 'rev_01',
       designSystem: { id: 'droidex', version: 1, mode: scheme },
       build: params.has('building')
         ? { status: 'building', generation: 1 }
@@ -115,6 +119,21 @@ function Harness() {
     },
     interaction: () => live.current,
     previewClicks,
+    arrive: () => {
+      setSnapshot((current) => ({
+        ...current,
+        sequence: current.sequence + 1,
+        frames: [
+          ...current.frames,
+          {
+            ...current.frames[0],
+            designId: 'arrived',
+            name: 'Design Arrived',
+            rect: { x: 100, y: 650, width: 400, height: 300 },
+          },
+        ],
+      }));
+    },
     buildReady: () =>
       setSnapshot((current) => ({
         ...current,
@@ -141,12 +160,14 @@ function Harness() {
           ref={board}
           snapshot={snapshot}
           interaction={interaction}
+          agentWorking={false}
           onInteractionChange={setInteraction}
-          renderPreview={(frame) =>
+          renderPreview={(frame, revisionId) =>
             params.get('preview') === 'guest' ? (
               <DesignPreview
                 canvasId={snapshot.canvasId}
                 frame={frame}
+                revisionId={revisionId}
                 readArtifact={readArtifact}
                 reportPreview={() => undefined}
               />

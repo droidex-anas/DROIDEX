@@ -1,6 +1,19 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react';
 import './canvasAnimations.css';
+import './canvasBoard.css';
+import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
+import { useSessionLive } from '../../hooks/useSessionLive';
+import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
 import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
@@ -31,6 +44,7 @@ import {
   type CanvasPaneState,
 } from './canvasState';
 import { CanvasSourceSlot } from './CanvasSourceSlot';
+import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
 import type { ArrangeFramesInput, CanvasSnapshot } from './protocol';
 
 const readArtifact = canvas.readArtifact.bind(canvas);
@@ -73,18 +87,40 @@ export function CanvasWorkspace({
   }, []);
 
   const attach = useCallback(
-    (attached: string | null) => {
-      dispatch({ type: 'attached', canvasId: attached });
+    (attached: string | null, outdatedName?: string) => {
+      dispatch({ type: 'attached', canvasId: attached, outdatedName });
       onAttachmentChange(appSessionId, attached);
     },
     [appSessionId, onAttachmentChange],
   );
 
+  // A Canvas request made while the bridge's socket is closed is refused, not
+  // queued, so the attachment is read once the socket opens and again each time
+  // it reopens: a cold start, a reload or a sidecar restart needs no Try again.
+  const connected = useSyncExternalStore(subscribeRuntimeHealth, transportOpen);
+
   // The sidecar owns the attachment; a named Open views its target directly.
   useEffect(() => {
     if (namedCanvasId !== undefined) {
       dispatch({ type: 'selected', canvasId: namedCanvasId });
-      return;
+      if (!connected) return;
+      // The app still learns the attachment without the view moving to it: it
+      // decides whether this canvas's frames can be pinned to the chat. A read
+      // that fails leaves them unpinnable, which is all it costs.
+      let active = true;
+      canvas.attachment(appSessionId).then(
+        ({ canvasId: attached, outdated }) => {
+          if (!active) return;
+          onAttachmentChange(appSessionId, attached);
+          // A restored tab can name the chat's own old canvas, whose board never comes.
+          if (outdated?.canvasId === namedCanvasId)
+            dispatch({ type: 'failed', message: outdatedMessage(outdated.name) });
+        },
+        () => undefined,
+      );
+      return () => {
+        active = false;
+      };
     }
     // An attachment this chat still owes decides what the pane shows: reading
     // the sidecar now would report the state that operation has not reached.
@@ -93,11 +129,12 @@ export function CanvasWorkspace({
       dispatch({ type: 'attach-failed', message: owed.message });
       return;
     }
+    if (!connected) return;
     let active = true;
     canvas
-      .attachedCanvasId(appSessionId)
-      .then((attached) => {
-        if (active) attach(attached);
+      .attachment(appSessionId)
+      .then(({ canvasId: attached, outdated }) => {
+        if (active) attach(attached, outdated?.name);
       })
       .catch((error: unknown) => {
         if (active) dispatch({ type: 'failed', message: canvasMessage(error) });
@@ -105,7 +142,7 @@ export function CanvasWorkspace({
     return () => {
       active = false;
     };
-  }, [appSessionId, attach, namedCanvasId, reopenCount]);
+  }, [appSessionId, attach, connected, namedCanvasId, onAttachmentChange, reopenCount]);
 
   const watched = watchedCanvasId(state);
   useEffect(() => {
@@ -186,6 +223,8 @@ export function CanvasWorkspace({
       <CanvasBody
         state={state}
         appSessionId={appSessionId}
+        // Only the chat's own canvas can be pinned: its turn's lease is there.
+        pinnable={namedCanvasId === undefined || namedCanvasId === canvasId}
         interaction={interaction}
         onInteractionChange={setInteraction}
         boardRef={boardRef}
@@ -211,9 +250,19 @@ export function CanvasWorkspace({
   );
 }
 
+function outdatedMessage(name: string): string {
+  return `“${name}” was made by an earlier DROIDEX and can’t be opened here.`;
+}
+
+/** The socket's own state, which `sendIfConnected` reads, as the bridge reports it. */
+function transportOpen(): boolean {
+  return getRuntimeHealth().transport === 'connected';
+}
+
 function CanvasBody({
   state,
   appSessionId,
+  pinnable,
   interaction,
   onInteractionChange,
   boardRef,
@@ -224,6 +273,7 @@ function CanvasBody({
 }: {
   state: CanvasPaneState;
   appSessionId: string;
+  pinnable: boolean;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
@@ -254,12 +304,20 @@ function CanvasBody({
         </CanvasPlate>
       );
     case 'unattached':
-      return <CanvasEmptyState error={state.error} onCreate={onAttachOwed} onChoose={onChoose} />;
+      return (
+        <CanvasEmptyState
+          error={state.error}
+          outdatedName={state.outdatedName}
+          onCreate={onAttachOwed}
+          onChoose={onChoose}
+        />
+      );
     case 'ready':
       return (
         <CanvasBoardMount
           appSessionId={appSessionId}
           snapshot={state.snapshot}
+          pinnable={pinnable}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           boardRef={boardRef}
@@ -277,6 +335,7 @@ function CanvasBody({
 function CanvasBoardMount({
   appSessionId,
   snapshot,
+  pinnable,
   interaction,
   onInteractionChange,
   boardRef,
@@ -284,16 +343,27 @@ function CanvasBoardMount({
 }: {
   appSessionId: string;
   snapshot: CanvasSnapshot;
+  /** It is the chat's own canvas, so its frames can be pinned to the chat's next prompt. */
+  pinnable: boolean;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
   onOpenSource: (designId: string) => void;
 }) {
   const { canvasId } = snapshot;
+  const agentWorking = useSessionLive(appSessionId);
   const arrangeFrames = useCallback(
     (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
     [appSessionId, canvasId],
   );
+  const pins = useFramePins(appSessionId);
+  const pinnedIds = useMemo(
+    () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
+    [pins, canvasId],
+  );
+  useEffect(() => {
+    if (pinnable) syncFramePins(appSessionId, snapshot);
+  }, [appSessionId, pinnable, snapshot]);
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">
@@ -307,10 +377,20 @@ function CanvasBoardMount({
           onArrangeFrames={arrangeFrames}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
-          renderPreview={(frame) => (
+          agentWorking={agentWorking}
+          pinnedIds={pinnedIds}
+          onToggleChat={
+            pinnable
+              ? (frame) => {
+                  toggleFramePin(appSessionId, canvasId, frame);
+                }
+              : undefined
+          }
+          renderPreview={(frame, revisionId) => (
             <DesignPreview
               canvasId={canvasId}
               frame={frame}
+              revisionId={revisionId}
               readArtifact={readArtifact}
               reportPreview={reportPreview}
             />

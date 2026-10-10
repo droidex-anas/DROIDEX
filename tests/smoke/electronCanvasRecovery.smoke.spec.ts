@@ -89,6 +89,7 @@ const show = () => {
     createElement(DesignPreview, {
       canvasId: snapshot.canvasId,
       frame,
+      revisionId: 'r',
       readArtifact,
       reportPreview: () => undefined,
     }),
