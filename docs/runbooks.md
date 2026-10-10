@@ -117,6 +117,12 @@ The local index uses one canonical schema and has no migration or compatibility 
 These commands do not remove raw Factory session history. Do not delete the broader `~/.factory` directory.
 Do not remove `index.sqlite`; that filename remains reserved for older app/worktree schemas.
 
+## Mission Control role model change fails
+
+Changing a worker or validator model applies the model to matching live children and re-arms each child's automatic compaction limit. The parent role-model summary changes only after all matching live children accept the update. Completed children are skipped.
+
+If a live child rejects the change, DROIDEX reports its provider error and a parent-level error asking you to retry. Successfully updated siblings keep their accepted model. Resolve the provider error, then select the requested role model again; the retry reapplies the requested model and publishes the parent preference once all matching live children accept it. Resetting to Default fails immediately if the provider has no effective default model; choose an explicit model instead.
+
 ## Verify child navigation without Factory authentication
 
 Run the deterministic local Electron smoke:
@@ -125,7 +131,17 @@ Run the deterministic local Electron smoke:
 npm run test:smoke:electron-child-sessions
 ```
 
-The smoke uses the real Electron main process, preload, and built renderer with a local fixture sidecar. It strips `FACTORY_API_KEY` and `DROID_PATH`, makes no Factory/Droid calls, and verifies parent-only left navigation, parent-scoped child rows, exact transcripts, stale-open isolation, steer, and Stop targeting.
+The smoke uses the real Electron main process, preload, and built renderer with a local fixture sidecar. It strips `FACTORY_API_KEY` and `DROID_PATH`, makes no Factory/Droid calls, and verifies parent-only left navigation, parent-scoped child rows, isolated agent transcripts in the Subagents pane, long-conversation virtualization, pane expansion, and preservation of the primary chat. Reading an agent must not open or mutate its runtime.
+
+## Verify an authenticated desktop round trip
+
+Run `FACTORY_API_KEY=... npm run test:smoke:electron-droid` with a key supplied securely in your environment, or explicitly reuse your current Droid CLI login:
+
+```bash
+DROIDEX_SMOKE_AUTH=cli npm run test:smoke:electron-droid
+```
+
+CLI mode requires an existing `droid` sign-in and explicitly uses its current home and keychain. Droid records the smoke sessions in the normal Factory history. Electron app data remains in a private temporary profile. The smoke disables updates, completes onboarding, verifies the authenticated bridge, creates an idle Mission Control runtime, and updates worker and validator models while checking that the primary model and compaction limit remain unchanged. It also requests exactly `E1_OK` from a real chat. It closes the sessions and deletes the temporary app profile on completion or failure. It does not copy or log credentials. API-key mode remains the default, isolates the CLI home too, and fails immediately without `FACTORY_API_KEY`.
 
 ## Droid CLI cannot be found
 

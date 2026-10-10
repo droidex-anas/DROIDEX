@@ -198,17 +198,16 @@ function send(socket, event) {
 }
 
 function history(socket, appSessionId) {
-  const primaryTranscript = (transcripts[appSessionId] ?? []).filter(
-    (event) => event.sourceSessionId === 'user' || event.sourceSessionId === appSessionId,
-  );
+  // The current agents pane reads child events interleaved in the parent timeline.
+  const transcript = transcripts[appSessionId] ?? [];
   send(socket, {
     type: 'session.history',
     appSessionId,
     progress: [],
-    transcripts: primaryTranscript,
+    transcripts: transcript,
     childSessions: children[appSessionId] ?? [],
     mode: 'replace',
-    loadedCount: primaryTranscript.length,
+    loadedCount: transcript.length,
     hasMore: false,
   });
 }

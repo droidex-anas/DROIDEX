@@ -2318,6 +2318,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
     isShutdownStarted: () => false,
     refreshPrimary: async () => undefined,
     onPrimaryModelChanged: () => Promise.resolve(),
+    updateChildAgentModel: async () => true,
     onSettled: () => {
       stored.splice(0, stored.length, { ...live.summary });
     },
