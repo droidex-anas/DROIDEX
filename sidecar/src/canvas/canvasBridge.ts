@@ -153,7 +153,7 @@ class CanvasDispatch {
           ),
         };
       case 'canvas.attachment': {
-        const outdated = workspace.attachments.outdatedCanvas(command.appSessionId);
+        const outdated = workspace.outdatedCanvas(command.appSessionId);
         return {
           kind: 'attachment',
           canvasId: workspace.attachedCanvasId(command.appSessionId),

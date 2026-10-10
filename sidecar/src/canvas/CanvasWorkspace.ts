@@ -49,6 +49,7 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  OutdatedCanvas,
   OwnedAsset,
   RevisionRef,
   SourceFiles,
@@ -69,7 +70,8 @@ export class CanvasWorkspace {
   /** What the pane's previews last did, which only the agent reads. */
   readonly previews = new CanvasPreviewReports();
   private readonly commits = new CanvasCommits(this.changes);
-  readonly attachments: CanvasAttachments;
+  private readonly attachments: CanvasAttachments;
+  private readonly leases: CanvasLeases;
   private readonly frameEdits: CanvasFrameEdits;
   readonly history: CanvasRevisionHistory;
   readonly settings: CanvasSettings;
@@ -77,13 +79,13 @@ export class CanvasWorkspace {
   private constructor(
     private readonly files: CanvasFiles,
     private readonly heads: CanvasHeads,
-    private readonly leases: CanvasLeases,
     private readonly builds: CanvasBuilds,
     private readonly writerLease: CanvasWriterLease,
-    isChatKnown: (appSessionId: string) => boolean,
+    deps: CanvasWorkspaceDeps,
   ) {
-    this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
-    this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
+    this.attachments = new CanvasAttachments(heads, this.commits, deps.isChatKnown);
+    this.leases = new CanvasLeases(deps, heads);
+    this.frameEdits = new CanvasFrameEdits(heads, this.leases, builds, this.commits);
     this.history = new CanvasRevisionHistory(this, heads, files);
     this.settings = new CanvasSettings(heads, this.commits, builds);
   }
@@ -98,15 +100,7 @@ export class CanvasWorkspace {
     try {
       const files = new CanvasFiles(writerLease.directory, deps.fs);
       const heads = await CanvasHeads.load(files);
-      const leases = new CanvasLeases(deps, heads);
-      const workspace = new CanvasWorkspace(
-        files,
-        heads,
-        leases,
-        builds,
-        writerLease,
-        deps.isChatKnown,
-      );
+      const workspace = new CanvasWorkspace(files, heads, builds, writerLease, deps);
       await builds.load(workspace, files, heads.all());
       return workspace;
     } catch (error) {
@@ -139,6 +133,11 @@ export class CanvasWorkspace {
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */
   attachedCanvasId(appSessionId: string): string | null {
     return this.heads.attachedCanvasId(appSessionId);
+  }
+
+  /** A canvas an earlier DROIDEX made for a chat that has none of its own now. */
+  outdatedCanvas(appSessionId: string): OutdatedCanvas | null {
+    return this.heads.outdatedCanvas(appSessionId);
   }
 
   /** Explicit creation retries return the same durable identity, without reattaching. */
