@@ -442,7 +442,7 @@ export interface OutdatedCanvas {
 }
 
 /** The canvas a chat works on, or null while it is unattached (spec §6). */
-export interface CanvasAttachment {
+interface CanvasAttachment {
   canvasId: string | null;
   /** A canvas an earlier DROIDEX made for this chat, which cannot be opened. */
   outdated?: OutdatedCanvas;
