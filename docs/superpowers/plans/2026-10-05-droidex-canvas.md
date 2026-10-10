@@ -1337,7 +1337,7 @@ Settled by 06b (`canvas/06b-chart-runtime`):
   Done: Apply uses normal revision/CAS, preserves behavior and reports incompatible mappings without mutating the global kit.
 - [x] `canvas/07d-image-references`: Sidecar and Electron owner for validated image import into owned content-addressed storage, offline `canvas-asset:` serving in the preview host, and kit fonts served once by the host.
   Done: Invalid image/path inputs fail; owned images/fonts render offline without exposing private paths.
-- [ ] `canvas/07e-manage-design-systems`: Add the manage dialog from spec §10: Presets and Yours list, New from DESIGN.md or CSS/Tailwind config, Colors / Typography / Spacing & Radius / Shadows detail tabs with light/dark toggle, Export and Save a copy, unmapped-token diagnostics, through the same `readDesignSystem`/`saveDesignSystem` owner as `canvas_theme`.
+- [x] `canvas/07e-manage-design-systems`: Add the manage dialog from spec §10: Presets and Yours list, New from DESIGN.md or CSS/Tailwind config, Colors / Typography / Spacing & Radius / Shadows detail tabs with light/dark toggle, Export and Save a copy, unmapped-token diagnostics, through the same `readDesignSystem`/`saveDesignSystem` owner as `canvas_theme`.
   Done: A kit authored from a pasted DESIGN.md compiles the starter example with the shared primitives; presets stay read-only; web import is absent.
 
 **Files:** Extend Task 3 `sidecar/src/canvas/{designSystems.ts,designSystems.test.ts}` and `sidecar/src/canvas/presets/droidex.ts`; create `sidecar/src/canvas/presets/{openai-inspired.ts,claude-inspired.ts}` and `src/features/canvas/DesignSystemPicker.tsx`. Extend compiler virtual modules, Canvas storage/schema and existing composer attachment/reference code in `src/components/PromptInput.tsx`, `src/lib/promptSend.ts` and its callers. Extract cohesive composer UI if needed instead of growing its existing monolith.
@@ -1462,6 +1462,38 @@ Settled by 07c (`thread/canvas-07c-canvas-theme`):
   not values inherited from the source canvas's selected kit.
   Missing mode counterparts, competing values and guidance over 16 KiB are refused;
   source-owned `DESIGN.md` guidance is never truncated. No checklist items are ticked.
+
+Settled by 07e (`thread/canvas-07e-manage-design-systems`, 2026-10-10):
+
+- The dialog's Canvas WebSocket commands are `canvas.listDesignSystems`,
+  `canvas.readDesignSystem { ref: { id, version } }`, `canvas.copyDesignSystem
+  { mutationId, source, name }` and `canvas.importDesignSystem { mutationId, name,
+  source: { kind: 'designMd' | 'cssOrTailwind', text } }`, answered by
+  `designSystemCommands.ts` without a canvas or scope. Replies are `designSystems`
+  (the 07c summaries), `designSystem` (`{ id, version, name, modes, unmapped,
+  provenance }`, no files) and `designSystemSaved { ref, diagnostics }`. Saves use
+  `saveDesignSystem`; a new kit's id is its mutation ID, so a retry replays.
+  Provenance is now `{ sourceCanvasId, revision }` or `{ copiedFrom: { id, version } }`.
+- `designSystemImport.ts` maps familiar names (shadcn, Tailwind 4 theme variables,
+  plain `--primary`/`--background` style names) onto the DROIDEX `--ds-*` contract in
+  priority order, inlines `var()` references per mode, wraps bare HSL channels and
+  fills unset contract tokens with DROIDEX values. Everything else is kept under its
+  own name and read back as `unmapped`. Scoped rules, computed config values,
+  unresolved references and single-mode tokens are reported with lines; a stylesheet
+  that does not parse, an empty source or a DESIGN.md over the guidance budget is
+  refused and saves nothing. A DESIGN.md's text becomes guidance after the universal
+  primitive notes, and its css or Tailwind blocks set tokens. Configs are read for
+  literals by `configLiterals.ts`; the TypeScript parser stays out of the sidecar's
+  main process. Website import is absent.
+- Export is a host action on `/canvas/design-system-export` with the existing export
+  token and empty-folder writer: kit files under `src/`, examples, `DESIGN.md`,
+  `modes.css` (which From CSS reads back unchanged) and `design-system.json`.
+- `useManageDesignSystems()` (`src/features/canvas/useManageDesignSystems.tsx`) is the
+  one opener; the canvas menu uses it, and the 07b picker and Design settings can
+  render its `dialog` the same way. The dialog and its data code are a lazy chunk.
+  A pasted DESIGN.md kit compiles the Hey starter in both modes in
+  `designSystemCommands.test.ts`. Light and dark were checked in an isolated app;
+  Export's native folder chooser was not driven there, only its route and host factory.
 
 ## Task 8: Element selection, direct edits and source/history UI
 
