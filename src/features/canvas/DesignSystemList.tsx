@@ -114,7 +114,7 @@ export function DesignSystemList({
             <button
               type="button"
               onClick={onRetry}
-              className="rounded-lg bg-droid-accent/[0.07] px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+              className="rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
             >
               Try again
             </button>
@@ -163,7 +163,7 @@ function KitRow({
         <span
           key={index}
           aria-hidden
-          className="h-3 w-3 shrink-0 rounded-full ring-1 ring-inset ring-droid-text/10"
+          className="h-3 w-3 shrink-0 rounded-full ring-1 ring-inset ring-droid-border"
           style={{ background: paintable(color) }}
         />
       ))}

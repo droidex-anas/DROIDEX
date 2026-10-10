@@ -56,14 +56,15 @@ function TokenSample({ tab, name, value }: { tab: TokenTab; name: string; value:
     return (
       <span
         aria-hidden
-        className="h-8 w-8 shrink-0 rounded-lg ring-1 ring-inset ring-droid-text/10"
+        className="h-8 w-8 shrink-0 rounded-lg ring-1 ring-inset ring-droid-border"
         style={{ background: paint }}
       />
     );
   if (tab === 'typography') {
+    // A weight is unitless, so it is told apart by name before any length check.
     let style: CSSProperties = { fontFamily: paint };
-    if (paint && LENGTH_VALUE.test(paint)) style = { fontSize: `min(${paint}, 32px)` };
-    else if (name.includes('weight')) style = { fontWeight: paint };
+    if (name.includes('weight')) style = { fontWeight: paint };
+    else if (paint && LENGTH_VALUE.test(paint)) style = { fontSize: `min(${paint}, 32px)` };
     return (
       <span
         aria-hidden

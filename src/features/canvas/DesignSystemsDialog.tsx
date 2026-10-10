@@ -35,6 +35,20 @@ export function DesignSystemsDialog({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
+  // Cancel, a save that selects the kit it made, and Try again all unmount the
+  // focused control. Focus would fall to the page behind the scrim, so it moves
+  // to the selected kit, the New button or the dialog instead.
+  const readStatus = state.read?.status;
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.contains(document.activeElement)) return;
+    const target =
+      dialog.querySelector<HTMLElement>('nav [aria-current="true"]') ??
+      dialog.querySelector<HTMLElement>('nav [aria-haspopup="menu"]') ??
+      dialog;
+    target.focus();
+  }, [state.composing, state.selected, readStatus, state.list.status]);
+
   const nameOf = (id: string) =>
     state.list.status === 'listed'
       ? (state.list.systems.find((kit) => kit.id === id)?.name ?? null)

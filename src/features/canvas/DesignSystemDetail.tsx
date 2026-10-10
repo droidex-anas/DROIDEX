@@ -14,7 +14,7 @@ import type { CanvasDiagnostic, DesignSystemDetail, DesignSystemSummary } from '
 export type PreviewMode = 'light' | 'dark';
 
 const ACTION_CLASS =
-  'flex items-center gap-1.5 rounded-lg bg-droid-accent/[0.07] px-2.5 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default disabled:opacity-60';
+  'flex items-center gap-1.5 rounded-lg bg-droid-active px-2.5 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default disabled:opacity-60';
 const MAX_NOTES_SHOWN = 6;
 
 export function DesignSystemDetailPane({
@@ -191,7 +191,7 @@ function KitDetail({
           role="tablist"
           aria-label="Token groups"
           onKeyDown={moveTab}
-          className="flex items-center gap-0.5 rounded-lg bg-droid-elevated/60 p-0.5"
+          className="flex items-center gap-0.5 rounded-lg bg-droid-active/60 p-0.5"
         >
           {TOKEN_TABS.map((entry, index) => (
             <button
@@ -210,7 +210,7 @@ function KitDetail({
               }}
               className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 ${
                 tab === entry.id
-                  ? 'bg-droid-active text-droid-text'
+                  ? 'bg-droid-accent/15 text-droid-text'
                   : 'text-droid-text-muted hover:text-droid-text'
               }`}
             >
@@ -269,7 +269,7 @@ function ModeToggle({
     <div
       role="radiogroup"
       aria-label="Preview mode"
-      className="ml-auto flex items-center gap-0.5 rounded-lg bg-droid-elevated/60 p-0.5"
+      className="ml-auto flex items-center gap-0.5 rounded-lg bg-droid-active/60 p-0.5"
     >
       {(['light', 'dark'] as const).map((option) => (
         <button
@@ -282,7 +282,7 @@ function ModeToggle({
           }}
           className={`cursor-pointer rounded-md px-2 py-0.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 ${
             mode === option
-              ? 'bg-droid-active text-droid-text'
+              ? 'bg-droid-accent/15 text-droid-text'
               : 'text-droid-text-muted hover:text-droid-text'
           }`}
         >
