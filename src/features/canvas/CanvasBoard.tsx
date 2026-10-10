@@ -1,5 +1,6 @@
 // The board: one transformed world layer holding the frames, the keyboard
-// commands over it, and the control strip along its bottom edge.
+// commands over it, the tool rail in its top-left corner and the zoom readout
+// in its bottom-left.
 //
 // The board owns preview-slot retention and when the Select overlay can flip:
 // the hit-test change waits for an active wheel gesture to finish.
@@ -250,18 +251,11 @@ export function CanvasBoard({
       if (!gestures.cancel()) dispatch({ type: 'escape' });
       return;
     }
-    // Other board commands belong to the board and its frame headers.
-    if (event.target !== event.currentTarget && !isFrameHeader(event.target)) return;
-    if (event.key === ' ') {
-      event.preventDefault();
-      gestures.holdSpace(true);
-      return;
-    }
-    if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
-      event.preventDefault();
-      dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
-      return;
-    }
+    // Other board commands belong to the board and its frame headers. Its own
+    // tools take the zoom and mode keys too, so a key still works after one was
+    // clicked; Space, Enter and the arrows stay theirs.
+    const onBoard = event.target === event.currentTarget || isFrameHeader(event.target);
+    if (!onBoard && !isBoardControl(event.target)) return;
     const zoom = zoomShortcut(event);
     if (zoom) {
       event.preventDefault();
@@ -272,6 +266,17 @@ export function CanvasBoard({
     if (mode) {
       event.preventDefault();
       onMode(mode);
+      return;
+    }
+    if (!onBoard) return;
+    if (event.key === ' ') {
+      event.preventDefault();
+      gestures.holdSpace(true);
+      return;
+    }
+    if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
+      event.preventDefault();
+      dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
       return;
     }
     const direction = arrowDirection(event.key);
@@ -416,12 +421,12 @@ function showsTools(interaction: BoardInteraction, designId: string): boolean {
 /** The zoom keys a design tool uses: + and −, and ⇧1, ⇧2 and ⇧0. */
 function zoomShortcut(event: React.KeyboardEvent): ZoomCommand | null {
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  // The shifted digits go by key position first: on some layouts ⇧1 types +.
+  if (event.shiftKey && event.code === 'Digit1') return 'fit';
+  if (event.shiftKey && event.code === 'Digit2') return 'selection';
+  if (event.shiftKey && event.code === 'Digit0') return 'actual';
   if (event.key === '+' || event.key === '=') return 'in';
   if (event.key === '-' || event.key === '_') return 'out';
-  if (!event.shiftKey) return null;
-  if (event.code === 'Digit1') return 'fit';
-  if (event.code === 'Digit2') return 'selection';
-  if (event.code === 'Digit0') return 'actual';
   return null;
 }
 
@@ -435,6 +440,10 @@ function modeShortcut(event: React.KeyboardEvent): BoardMode | null {
 
 function isFrameHeader(target: EventTarget): boolean {
   return target instanceof HTMLElement && target.dataset.frameHeader !== undefined;
+}
+
+function isBoardControl(target: EventTarget): boolean {
+  return target instanceof HTMLElement && target.closest('[data-board-controls]') !== null;
 }
 
 function isBoardEditor(target: EventTarget): boolean {

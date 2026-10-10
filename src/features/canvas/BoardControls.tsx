@@ -123,6 +123,7 @@ export function BoardControls({
 }: BoardControlsProps) {
   return (
     <div
+      data-board-controls
       // The tools are not background: a pan started here would capture the
       // pointer and the buttons would never see their clicks.
       onPointerDown={(event) => {
