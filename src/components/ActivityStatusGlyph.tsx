@@ -4,7 +4,15 @@ import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActiv
 // ticket queue does: a dashed ring for nothing pending, a half ring for a
 // turn that needs the user, a clock for a wait on their decision, a check
 // once it is settled. One 14px stroke family, tinted by urgency.
-const TONE: Record<SessionActivityStatus, string> = {
+type GlyphStatus = SessionActivityStatus | 'queued' | 'waiting';
+const LABELS: Record<GlyphStatus, string> = {
+  ...ACTIVITY_LABELS,
+  queued: 'Queued',
+  waiting: 'Waiting',
+};
+const TONE: Record<GlyphStatus, string> = {
+  queued: 'text-droid-text-muted',
+  waiting: 'text-droid-text-muted',
   working: 'text-droid-text',
   approval: 'text-droid-orange',
   input: 'text-droid-orange',
@@ -20,7 +28,9 @@ const TONE: Record<SessionActivityStatus, string> = {
 
 type Shape = 'open' | 'active' | 'half' | 'clock' | 'failed' | 'paused' | 'done';
 
-const SHAPE: Record<SessionActivityStatus, Shape> = {
+const SHAPE: Record<GlyphStatus, Shape> = {
+  queued: 'clock',
+  waiting: 'clock',
   working: 'active',
   approval: 'clock',
   input: 'clock',
@@ -88,7 +98,7 @@ export function ActivityStatusGlyph({
   className = '',
   decorative = false,
 }: {
-  status: SessionActivityStatus;
+  status: GlyphStatus;
   className?: string;
   // The menu's view icon stands for the view, not a status: no announcement.
   decorative?: boolean;
@@ -105,7 +115,7 @@ export function ActivityStatusGlyph({
       strokeLinejoin="round"
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative || undefined}
-      aria-label={decorative ? undefined : ACTIVITY_LABELS[status]}
+      aria-label={decorative ? undefined : LABELS[status]}
       className={`shrink-0 ${TONE[status]} ${className}`}
     >
       <ShapePath shape={SHAPE[status]} />

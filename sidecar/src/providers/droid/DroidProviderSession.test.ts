@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  AutonomyLevel,
   DroidClient,
   DroidSession,
   InitializeSessionResultSchema,
   ReasoningEffort,
+  ToolConfirmationOutcome,
+  ToolConfirmationType,
   type DroidClientTransport,
+  type RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
 
 import { DroidRuntime, type FactorySession } from '../../DroidRuntime.js';
@@ -14,6 +18,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import { successfulResultEvent } from '../../testing/fakeFactoryRuntime.js';
 import { UsageLimitError } from '../usageLimit.js';
 import { DroidProviderSession } from './DroidProviderSession.js';
+import { droidInteractionHandlers } from './droidInteractions.js';
 
 type RawListener = (note: Record<string, unknown>) => void;
 
@@ -23,7 +28,10 @@ function droidOn(modelId: string) {
   const listeners = new Set<RawListener>();
   const cli = {
     turn: (): unknown => undefined,
-    onSettingsWrite: (): void => undefined,
+    onSettingsWrite: (settings: Parameters<FactorySession['updateSettings']>[0]): unknown =>
+      void settings,
+    onInterrupt: (): unknown => undefined,
+    closed: false,
     notify(notification: Record<string, unknown>): void {
       for (const listener of listeners)
         listener({ method: 'droid.session_notification', params: { notification } });
@@ -31,14 +39,20 @@ function droidOn(modelId: string) {
   };
   const droid = {
     sessionId: 'droid-1',
-    initResult: { settings: { modelId } },
+    initResult: { settings: { modelId, autonomyLevel: AutonomyLevel.Off } },
     onNotification(listener: RawListener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    updateSettings() {
-      cli.onSettingsWrite();
-      return Promise.resolve({});
+    async updateSettings(settings: Parameters<FactorySession['updateSettings']>[0]) {
+      await cli.onSettingsWrite(settings);
+      return {};
+    },
+    async interrupt() {
+      await cli.onInterrupt();
+    },
+    async close() {
+      cli.closed = true;
     },
     async *stream() {
       await cli.turn();
@@ -76,6 +90,190 @@ async function turnEvents(turn: AsyncGenerator<NormalizedEvent>): Promise<Normal
 
 const switches = (events: NormalizedEvent[]) =>
   events.flatMap((event) => (event.harnessModelSwitch ? [event.harnessModelSwitch] : []));
+
+test('Droid coalesces queued High into Off and waits for the native revocation before a turn', async () => {
+  const { cli, session } = droidOn('model');
+  const writes: unknown[] = [];
+  let acceptMedium = () => {};
+  let markStarted = () => {};
+  const held = new Promise<void>((resolve) => {
+    acceptMedium = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let finishInterrupt = () => {};
+  let markInterrupted = () => {};
+  let interrupted = false;
+  const interrupt = new Promise<void>((resolve) => {
+    finishInterrupt = resolve;
+  });
+  const interruptStarted = new Promise<void>((resolve) => {
+    markInterrupted = resolve;
+  });
+  cli.onInterrupt = () => {
+    markInterrupted();
+    return interrupt.then(() => {
+      interrupted = true;
+    });
+  };
+  cli.onSettingsWrite = async (settings) => {
+    writes.push(settings.autonomyLevel);
+    if (settings.autonomyLevel === AutonomyLevel.Medium) {
+      markStarted();
+      await held;
+    } else assert.equal(interrupted, true, 'repair must wait for interruption');
+  };
+  const medium = session.setAutonomy('medium');
+  await started;
+  assert.equal(session.autonomy, 'off');
+  const high = session.setAutonomy('high');
+  const off = session.setAutonomy('off');
+  let turns = 0;
+  cli.turn = () => {
+    assert.equal(writes.at(-1), AutonomyLevel.Off);
+    turns += 1;
+  };
+  const turn = turnEvents(session.stream('go'));
+  assert.equal(turns, 0);
+  acceptMedium();
+  await interruptStarted;
+  assert.deepEqual(writes, [AutonomyLevel.Medium]);
+  assert.equal(turns, 0);
+  finishInterrupt();
+  await Promise.all([medium, high, off, turn]);
+  assert.deepEqual(writes, [AutonomyLevel.Medium, AutonomyLevel.Off]);
+  assert.equal(session.autonomy, 'off');
+  assert.equal(turns, 1);
+  await session.close();
+});
+
+test('Droid disarms a refused escalation before the next ordinary prompt', async () => {
+  const { cli, session } = droidOn('model');
+  const writes: unknown[] = [];
+  let refuse = true;
+  cli.onSettingsWrite = (settings) => {
+    writes.push(settings.autonomyLevel);
+    if (refuse) throw new Error('escalation refused');
+  };
+  await assert.rejects(session.setAutonomy('high'), /escalation refused/);
+  assert.equal(session.autonomy, 'off');
+  refuse = false;
+  let turns = 0;
+  cli.turn = () => {
+    turns += 1;
+  };
+  await turnEvents(session.stream('continue'));
+  assert.equal(turns, 1);
+  assert.deepEqual(writes, [AutonomyLevel.High, AutonomyLevel.High]);
+  assert.equal(session.autonomy, 'off');
+  await session.close();
+});
+
+test('Droid keeps refused Low to Off revocations for edit approval callbacks', async () => {
+  const { cli, session } = droidOn('model');
+  await session.setAutonomy('low');
+  let asked = 0;
+  const { permissionHandler } = droidInteractionHandlers(
+    {
+      id: 'app-1',
+      get autonomy() {
+        return session.autonomy;
+      },
+    },
+    {
+      requestApproval: async () => {
+        asked += 1;
+        return 'cancel';
+      },
+      requestQuestion: async () => ({ cancelled: true, answers: [] }),
+      isActive: () => true,
+      cancelPending: () => undefined,
+    },
+  );
+  const edit: RequestPermissionRequestParams = {
+    toolUses: [
+      {
+        toolUse: {
+          type: 'tool_use',
+          id: 'edit-1',
+          name: 'Edit',
+          input: { file_path: '/workspace/a' },
+        },
+        confirmationType: ToolConfirmationType.Edit,
+        details: { type: ToolConfirmationType.Edit, filePath: '/workspace/a', fileName: 'a' },
+      },
+    ],
+    options: [],
+  };
+  assert.equal(await permissionHandler(edit), ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(asked, 0);
+  cli.onSettingsWrite = (settings) => {
+    assert.equal(settings.autonomyLevel, AutonomyLevel.Off);
+    throw new Error('revocation refused');
+  };
+  await assert.rejects(session.setAutonomy('off'), /revocation refused/);
+  assert.equal(await permissionHandler(edit), ToolConfirmationOutcome.Cancel);
+  assert.equal(asked, 1);
+  assert.equal(session.autonomy, 'off');
+  await session.close();
+});
+
+test('Droid closes the runtime if a failed downgrade cannot be interrupted or remains unapplied', async () => {
+  for (const interruptFails of [true, false]) {
+    const { cli, session } = droidOn('model');
+    await session.setAutonomy('high');
+    cli.onSettingsWrite = () => {
+      throw new Error('revocation refused');
+    };
+    cli.onInterrupt = () => {
+      if (interruptFails) throw new Error('interrupt refused');
+    };
+    await assert.rejects(session.setAutonomy('off'), /revocation refused/);
+    assert.equal(cli.closed, true);
+    assert.equal(session.isClosed, true);
+    assert.equal(session.autonomy, 'off');
+    await session.closed;
+    let turns = 0;
+    cli.turn = () => {
+      turns += 1;
+    };
+    await assert.rejects(turnEvents(session.stream('blocked')), /closed/);
+    assert.equal(turns, 0);
+  }
+});
+
+test('Droid retires an obsolete successful escalation if interruption fails before repair', async () => {
+  const { cli, session } = droidOn('model');
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markStarted = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const writes: unknown[] = [];
+  cli.onSettingsWrite = async (settings) => {
+    writes.push(settings.autonomyLevel);
+    markStarted();
+    await held;
+  };
+  cli.onInterrupt = () => {
+    throw new Error('interrupt refused');
+  };
+  const high = session.setAutonomy('high');
+  const highFailure = assert.rejects(high, /closed/);
+  await started;
+  const off = session.setAutonomy('off');
+  const offFailure = assert.rejects(off, /closed/);
+  release();
+  await Promise.all([highFailure, offFailure]);
+  assert.equal(session.isClosed, true);
+  assert.equal(session.autonomy, 'off');
+  assert.deepEqual(writes, [AutonomyLevel.High]);
+  await assert.rejects(turnEvents(session.stream('blocked')), /closed/);
+});
 
 test('a switch Droid makes on the usage limit is reported once, and never for our own write', async () => {
   const { cli, session } = droidOn('opus-5-5');
@@ -223,6 +421,40 @@ const turnCatchesUp = () => new Promise<void>((resolve) => setImmediate(resolve)
 const texts = (events: NormalizedEvent[]) =>
   events.flatMap((event) => (event.transcript?.text ? [event.transcript.text] : []));
 
+test('a delivered steer follows earlier output in both the main stream and the tail', async () => {
+  for (const consumer of ['main', 'tail']) {
+    const h = await droidOverMemory();
+    try {
+      const prompt = h.nextRequest('droid.add_user_message', () => {
+        h.state('streaming_assistant_message');
+      });
+      const rows: string[] = [];
+      const stream = (async () => {
+        for await (const event of h.session.stream('hello'))
+          if (event.transcript?.text) rows.push(event.transcript.text);
+      })();
+      await prompt;
+      if (consumer === 'tail') h.state('idle');
+      h.nextRequest('droid.add_user_message', ({ messageId }) => {
+        h.state('streaming_assistant_message');
+        h.answer('before1');
+        h.answer('before2');
+        h.showUserMessage(messageId, 'steer');
+        h.answer('after');
+        h.state('idle');
+      });
+      await h.session.steer('steer', undefined, 'steer').then((delivered) => {
+        assert.equal(delivered, true);
+        rows.push('steer');
+      });
+      await stream;
+      assert.deepEqual(rows, ['before1', 'before2', 'steer', 'after'], consumer);
+    } finally {
+      await h.session.close();
+    }
+  }
+});
+
 // The SDK drops Droid's "thinking" state, so it never settles a loop that only
 // thought; the runtime must end it.
 test('a turn that thinks, fails and goes idle ends', { timeout: 2000 }, async () => {
@@ -253,7 +485,7 @@ test(
       h.showUserMessage(messageId, 'try again');
       h.state('idle');
     });
-    const steered = h.session.steer('try again');
+    const steered = h.session.steer('try again', undefined, 'try again');
     await steer;
     assert.equal(await steered, true);
     // The turn reads the idle before the reply loop starts.
@@ -278,7 +510,7 @@ test(
     const events = turnEvents(h.session.stream('hello'));
     await prompt;
     const steer = h.nextRequest('droid.add_user_message');
-    const steered = h.session.steer('try again');
+    const steered = h.session.steer('try again', undefined, 'try again');
     const { messageId } = await steer;
     h.state('idle');
     await turnCatchesUp();
@@ -310,7 +542,7 @@ test(
         h.fail();
         h.state('idle');
       });
-      const steered = h.session.steer('try again');
+      const steered = h.session.steer('try again', undefined, 'try again');
       await steer;
       assert.equal(await steered, true);
       await turnCatchesUp();
@@ -345,7 +577,7 @@ test(
       h.fail();
       h.state('idle');
     });
-    const steered = h.session.steer('try again');
+    const steered = h.session.steer('try again', undefined, 'try again');
     await steer;
     assert.equal(await steered, true);
     await turnCatchesUp();

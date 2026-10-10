@@ -11,7 +11,7 @@ import type {
 
 import { mcpGrantSignature } from '../../mcpGrant.js';
 import type { Autonomy, PermissionKind, SessionQuestion } from '../../protocol.js';
-import { SESSIONS_MCP_SERVER_NAME } from '../../sessionsMcpPolicy.js';
+import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplay } from '../../sessionsMcpPolicy.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
 export function claudePermissionMode(autonomy: Autonomy): PermissionMode {
@@ -49,6 +49,7 @@ const TOOL_KINDS: Record<string, PermissionKind> = {
 };
 
 const INTERRUPTED = Symbol('interrupted');
+const AUTOMATIC_ALLOW = Symbol('automatic allow');
 
 const WAIT_FOR_REVIEW = 'Stop here and wait for the user to review the plan.';
 
@@ -58,23 +59,45 @@ export function claudeCanUseTool(
   appSessionId: string,
   interactions: ProviderInteractions,
   isPlanning: () => boolean,
+  getAutonomy: () => Autonomy,
 ): CanUseTool {
+  const allowsAutomatically = (toolName: string, options: CanUseToolOptions): boolean => {
+    const level = getAutonomy();
+    const kind = permissionKind(toolName);
+    return (
+      !isPlanning() &&
+      (level === 'high' ||
+        (level === 'low' && !options.matchedAskRule && (kind === 'edit' || kind === 'create')))
+    );
+  };
   const decide = (
     toolName: string,
     input: Record<string, unknown>,
     options: CanUseToolOptions,
-  ): Promise<PermissionResult> => {
+  ): Promise<PermissionResult | typeof AUTOMATIC_ALLOW> => {
     if (toolName === 'ExitPlanMode')
       return reviewPlan(appSessionId, input, interactions, isPlanning());
     if (toolName === 'AskUserQuestion') return askUserQuestion(input, interactions);
+    // A callback can arrive while the live mode control request is in flight.
+    // Auto classifier refusals and Spec still need their existing review path.
+    if (allowsAutomatically(toolName, options)) return Promise.resolve(AUTOMATIC_ALLOW);
     return approveTool(appSessionId, toolName, input, options, interactions);
   };
   return async (toolName, input, options): Promise<PermissionResult> => {
-    const decision = await Promise.race([
-      decide(toolName, input, options),
-      interrupted(options.signal),
-    ]);
-    if (decision !== INTERRUPTED) return decision;
+    let decision = options.signal.aborted
+      ? INTERRUPTED
+      : await Promise.race([decide(toolName, input, options), interrupted(options.signal)]);
+    if (decision === AUTOMATIC_ALLOW) {
+      // Revocation can cross the await even when no approval card was needed.
+      if (options.signal.aborted) decision = INTERRUPTED;
+      else if (allowsAutomatically(toolName, options)) return { behavior: 'allow' };
+      else
+        decision = await Promise.race([
+          approveTool(appSessionId, toolName, input, options, interactions),
+          interrupted(options.signal),
+        ]);
+    }
+    if (decision !== INTERRUPTED && !options.signal.aborted) return decision;
     // The turn ended with the card still open. Settling only the SDK's side
     // would leave the prompt and its waiter behind, under the next turn.
     interactions.cancelPending();
@@ -127,6 +150,7 @@ async function approveTool(
   const kind = permissionKind(toolName);
   const mcp = kind === 'mcp' ? mcpTarget(toolName) : undefined;
   const signature = permissionSignature(kind, mcp, input);
+  const display = mcp ? sessionsToolDisplay(mcp.serverName, mcp.toolName, input) : null;
   const canAlwaysAllow = Boolean(signature) && !options.suppressAlwaysAllowRule;
   const outcome = await interactions.requestApproval({
     request: {
@@ -134,11 +158,20 @@ async function approveTool(
       requestId: nextInteractionRequestId(),
       kind,
       canAlwaysAllow,
-      title: options.title ?? options.description ?? options.displayName ?? toolName,
-      detail: describeInput(input),
+      title:
+        display?.title ?? options.title ?? options.description ?? options.displayName ?? toolName,
+      detail: display?.detail ?? describeInput(input),
       raw: { toolName, input },
     },
     confirmationType: CONFIRMATION_TYPES[kind],
+    signal: options.signal,
+    canApproveFor: (actor) =>
+      actor.provider === 'claude' &&
+      !options.blockedPath &&
+      !options.defaultToNo &&
+      input.dangerouslyDisableSandbox !== true &&
+      ((actor.autonomy !== 'off' && ['edit', 'create'].includes(kind)) ||
+        (actor.autonomy === 'high' && kind === 'exec')),
     ...(signature ? { signature } : {}),
     ...(mcp ? { mcpTool: mcp } : {}),
   });

@@ -218,7 +218,22 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
+    case 'session.steerWithdrawn':
+      return (
+        hasStrings(value, ['appSessionId', 'steerId', 'requestId']) &&
+        typeof value.withdrawn === 'boolean' &&
+        (value.text === undefined || typeof value.text === 'string') &&
+        (value.mentions === undefined ||
+          (Array.isArray(value.mentions) &&
+            value.mentions.every(
+              (mention: unknown) =>
+                isRecord(mention) &&
+                typeof mention.name === 'string' &&
+                typeof mention.kind === 'string',
+            )))
+      );
     case 'session.model_update_applied':
+    case 'session.autonomy_update_applied':
       return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
     case 'browser.closed':
@@ -398,7 +413,10 @@ function isSessionSummary(value: unknown): boolean {
     (value.pendingSteers === undefined ||
       (Array.isArray(value.pendingSteers) &&
         value.pendingSteers.every(
-          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+          (steer) =>
+            isRecord(steer) &&
+            hasStrings(steer, ['id', 'text']) &&
+            typeof steer.canWithdraw === 'boolean',
         ))) &&
     (value.lineage === undefined || isSessionLineage(value.lineage)) &&
     (value.usageLimit === undefined || isUsageLimit(value.usageLimit))
@@ -470,6 +488,7 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.interrupted === undefined || value.interrupted === true) &&
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
+    isOptionalString(value.steerId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
   );
 }

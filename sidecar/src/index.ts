@@ -49,6 +49,9 @@ const manager = new SessionManager(
     server.broadcast(event);
   },
   {
+    onUserPrompt: (appSessionId) => {
+      void projects?.userContinued(appSessionId).catch(reportProjectError);
+    },
     requestBrowser: createDesktopBrowserChannel(),
     beforeFirstTurn: async (session, clientRef) => {
       await projectSessions.beforeFirstTurn(session, clientRef);

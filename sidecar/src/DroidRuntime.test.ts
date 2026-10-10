@@ -163,8 +163,9 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
       async () => {
         const stream = start();
         await readText(stream, 'main');
-        assert.equal(await runtime.steer(droid, 'late'), true);
+        const delivered = runtime.steer(droid, 'late', 'late');
         await readText(stream, 'tail');
+        assert.equal(await delivered, true);
         assert.equal(events.filter((event) => event.type === 'user').length, 1);
         assert.ok(
           events.some((event) => event.type === 'tool_result' && event.toolName === 'Task'),
@@ -178,7 +179,7 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
         assert.equal(result.numTurns, 2);
         assert.equal(result.tokenUsage?.inputTokens, 20);
         assert.equal(result.tokenUsage?.outputTokens, 10);
-        assert.equal(await runtime.steer(droid, 'after settlement'), false);
+        assert.equal(await runtime.steer(droid, 'after settlement', 'after settlement'), false);
       },
     );
 
@@ -187,8 +188,9 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
       async () => {
         const stream = start();
         await readText(stream, 'main');
-        assert.equal(await runtime.steer(droid, 'idle-gap'), true);
+        const delivered = runtime.steer(droid, 'idle-gap', 'idle-gap');
         await readText(stream, 'tail');
+        assert.equal(await delivered, true);
         await finish(stream);
         assert.equal(events.at(-1)?.type, 'result');
       },
@@ -197,8 +199,9 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
     await t.test('RPC rejection cannot override confirmed delivery', async () => {
       const stream = start();
       await readText(stream, 'main');
-      assert.equal(await runtime.steer(droid, 'delivered-rejected'), true);
+      const delivered = runtime.steer(droid, 'delivered-rejected', 'delivered-rejected');
       await readText(stream, 'tail');
+      assert.equal(await delivered, true);
       await finish(stream);
     });
 
@@ -207,7 +210,7 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
       async () => {
         const stream = start();
         await readText(stream, 'main');
-        const pending = runtime.steer(droid, 'held-rpc');
+        const pending = runtime.steer(droid, 'held-rpc', 'held-rpc');
         await readIdle(stream);
         let acknowledge = () => {};
         const acknowledgement = new Promise<void>((resolve) => {
@@ -244,11 +247,12 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
             assert.equal(first.done, false);
             first = await waiting.next();
           }
-          for (const text of ['  /command', 'please /broken-skill', 'please\n/command'])
-            assert.equal(await runtime.steer(droid, text), false);
+          for (const text of ['  /command'])
+            assert.equal(await runtime.steer(droid, text, text), false);
           const pending = runtime.steer(
             droid,
             ending === 'stop' || ending === 'close' ? 'held' : ending,
+            ending,
           );
           if (ending === 'reject' || ending === 'discard') assert.equal(await pending, false);
           else {

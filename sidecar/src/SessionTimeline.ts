@@ -302,7 +302,7 @@ export class SessionTimeline {
    * The newest events of a conversation's stored transcript, for a caller that
    * only looks at it: nothing is recorded or sent to the window.
    */
-  async tail(appSessionId: string, limit: number): Promise<TranscriptEvent[]> {
+  async tail(appSessionId: string, limit: number, fullText = false): Promise<TranscriptEvent[]> {
     const summary = this.dependencies.registry.resolveSummary(appSessionId);
     if (!summary) throw new Error(`Session history not found for ${appSessionId}`);
     const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
@@ -314,8 +314,9 @@ export class SessionTimeline {
     // Lines still in the write queue land before either file is read.
     await this.transcripts.written(summary.appSessionId);
     if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
-      return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit);
-    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit).transcripts;
+      return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit, fullText);
+    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit, fullText)
+      .transcripts;
   }
 
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
@@ -331,8 +332,8 @@ export class SessionTimeline {
   }
 
   // The renderer already showed the prompt; only persist it here.
-  recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
-    return this.transcripts.recordPrompt(appSessionId, prompt);
+  recordPrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
+    return this.transcripts.recordPrompt(appSessionId, prompt, steered);
   }
 
   append(event: TranscriptEvent): void {
@@ -494,7 +495,12 @@ export class SessionTimeline {
   // it in, into the running turn (steered) or as a turn of its own. It is
   // stored the way an ordinary prompt is and shown the way its replay will
   // read, so a restored chat sees the two as one row.
-  announcePrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
+  announcePrompt(
+    appSessionId: string,
+    prompt: string,
+    steered = false,
+    steerId?: string,
+  ): void | Promise<void> {
     const ts = this.clock();
     this.streaming.flushSource(appSessionId, appSessionId);
     this.emitRecordedEvent({
@@ -507,8 +513,9 @@ export class SessionTimeline {
       author: 'user',
       ...userPromptDisplay(prompt),
       ...(steered ? { steered: true } : {}),
+      ...(steerId ? { steerId } : {}),
     });
-    return this.recordPrompt(appSessionId, prompt);
+    return this.recordPrompt(appSessionId, prompt, steered);
   }
 
   // A status row that is only true right now — a CLI booting, a turn stopping
@@ -584,13 +591,14 @@ export class SessionTimeline {
     providerSessionId: string,
     cursor?: string,
     limit?: number,
+    fullText = false,
   ): ReturnType<typeof hydrateHistoricalSession> {
     const chain = this.loaders.resolveChain(appSessionId, providerSessionId);
     if (chain.length === 0) throw new Error(`Session history not found for ${providerSessionId}`);
     const window = this.loaders.transcriptWindow(
       appSessionId,
       chain,
-      historyWindowOptions(cursor, limit),
+      fullText ? { cursor, limit, fullText: true } : historyWindowOptions(cursor, limit),
     );
     return {
       progress: [],

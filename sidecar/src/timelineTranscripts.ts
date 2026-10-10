@@ -7,7 +7,7 @@ import { errMsg } from './errors.js';
 export interface TimelineTranscript {
   /** The file it writes, which the history index learns of when the session closes. */
   readonly path: string;
-  appendPrompt(text: string): Promise<void>;
+  appendPrompt(text: string, steered?: boolean): Promise<void>;
   append(event: TranscriptEvent): void | Promise<void>;
   flush(): Promise<void>;
   // Every line queued so far is on disk; the message still streaming stays open.
@@ -37,8 +37,8 @@ export class TimelineTranscripts {
     return this.byId.get(appSessionId)?.path;
   }
 
-  recordPrompt(appSessionId: string, prompt: string): void | Promise<void> {
-    return this.byId.get(appSessionId)?.appendPrompt(prompt);
+  recordPrompt(appSessionId: string, prompt: string, steered = false): void | Promise<void> {
+    return this.byId.get(appSessionId)?.appendPrompt(prompt, steered);
   }
 
   // After coalescing, so one stored block is one settled run of output. A write

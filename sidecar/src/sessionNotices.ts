@@ -44,6 +44,12 @@ export function parseStoredNotice(
   const text = stringValue(line.text);
   const ts = dateMs(stringValue(line.timestamp));
   if (!id || text === undefined || !Number.isFinite(ts)) return undefined;
+  if (
+    line.type === 'status' &&
+    text ===
+      'Session runtime released after 30 minutes idle to free memory. Sending a message restores it.'
+  )
+    return undefined;
   const modelSwitch = objectValue(line.modelSwitch);
   const from = stringValue(modelSwitch?.from);
   const to = stringValue(modelSwitch?.to);

@@ -1,5 +1,4 @@
 import { threadCounts, type ThreadCounts, type ThreadRow } from './threadBoard';
-import { plural } from './threadGreeting';
 import type { ProjectView } from './types';
 
 /* What a project looks like on the Projects list: whether anything is waiting
@@ -33,25 +32,20 @@ export function projectPulse(
   };
 }
 
+// One phrase for where the project stands, never a sentence of counts: the
+// project's own page has the detail.
 function summarize(
   project: ProjectView,
   counts: ThreadCounts,
   lead: ThreadCounts,
   total: number,
 ): string {
-  const parts: string[] = [];
-  // A held project is not idle: nothing moves until it is resumed, and only
-  // its own page says so otherwise.
-  if (project.paused) parts.push('Held');
-  else if (project.done) parts.push('Done');
-  if (lead.attention > 0) parts.push('Main chat needs you');
-  else if (lead.working > 0) parts.push('Main chat working');
-  if (counts.attention > 0)
-    parts.push(plural(counts.attention, 'thread needs you', 'threads need you'));
-  if (counts.working > 0) parts.push(plural(counts.working, 'thread working', 'threads working'));
-  if (project.launching > 0) parts.push('Starting a thread');
-  if (parts.length === 0)
-    parts.push(total === 0 ? 'No threads yet' : plural(total, 'thread idle', 'threads idle'));
-  if (project.queued > 0) parts.push(`${String(project.queued)} queued`);
-  return parts.join(' · ');
+  if (project.paused) return 'Paused';
+  if (project.done) return 'Done';
+  if (project.leadStopped) return 'Lead stopped';
+  if (lead.attention + counts.attention > 0) return 'Needs an answer';
+  if (lead.working + counts.working > 0) return 'Working';
+  if (counts.queued + counts.waiting + project.queued > 0) return 'Waiting for a slot';
+  if (project.launching > 0) return 'Starting a thread';
+  return total === 0 ? 'No threads yet' : 'Idle';
 }

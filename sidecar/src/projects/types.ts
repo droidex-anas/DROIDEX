@@ -1,5 +1,29 @@
 import type { Autonomy, ContextWindowTokens, ReasoningEffort } from '../protocol.js';
 import type { ProviderKind } from '../providers/providerKind.js';
+import type { ThreadState } from './projectTurns.js';
+import type { ThreadCheckout } from './threadStart.js';
+
+export interface RuntimeLoad {
+  /** Runtimes in use (running or starting), including reserved opens and resumes. */
+  live: number;
+  /** Limit for automatic runtime opens and resumes. */
+  limit: number;
+}
+
+export type ThreadWait =
+  | { kind: 'slot'; position: number }
+  | { kind: 'turn' }
+  | { kind: 'start'; position: number };
+
+export interface ProjectTodo {
+  id: string;
+  text: string;
+  after?: string;
+  dueAt?: number;
+  due?: true;
+  /** A report or reminder already carries this follow-up. */
+  notified?: true;
+}
 
 export interface ThreadInput {
   title: string;
@@ -41,18 +65,14 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
     step?: string;
   };
 
-/* The plan the lead keeps for the user: what this project intends to do, in
-   order. A step that names a thread has no state of its own: it reports the
-   state of that conversation, so the table can never claim progress the app
-   cannot see. */
+/** The lead owns step progress independently of a linked conversation. */
 export interface ProjectStep {
   id: string;
   title: string;
   /** Optional grouping, the way a mission groups features under milestones. */
   milestone?: string;
-  /** Only for a step no thread carries yet. */
-  state?: 'planned' | 'doing' | 'done' | 'blocked';
-  /** The thread carrying the step; its live state wins over `state`. */
+  state?: 'planned' | 'doing' | 'review' | 'done' | 'blocked';
+  /** The thread carrying the step. */
   threadAppSessionId?: string;
   /** One line of outcome or blocker, in the lead's words. */
   note?: string;
@@ -68,6 +88,8 @@ export interface ProjectThread {
   /** Its latest final reply, which its report only excerpts. The lead's stays
       empty, because nothing reads it back. */
   reply: string;
+  /** Identifies the latest reply independently of its text or read state. */
+  replyId?: string;
   /** The final replies before that one, oldest first, so an owner that lost the
       thread of a conversation can read further back than its last answer. */
   earlierReplies?: string[];
@@ -76,44 +98,70 @@ export interface ProjectThread {
   /** Why that turn failed. The session summary keeps the phase, not the reason. */
   error?: string;
   /** Its newest report, kept here while the project's inbox is full. */
-  owedReport?: string;
+  owedReport?: { text: string; replyId?: string };
+  /** A nested failure also owes the project lead this report. */
+  owedLeadAlert?: true;
+  /** Its latest final reply has not been read or acknowledged by its owner. */
+  unread?: true;
   waiting: boolean;
+  /** Explicit Stop prevents restart recovery until another turn starts. */
+  stopped?: true;
+  /** Original task and selected checkout until this thread's first turn starts. */
+  queuedSpawn?: {
+    phase: 'queued' | 'opening' | 'failed';
+    input: ThreadInput;
+    order: number;
+    workspace?: ThreadCheckout;
+  };
 }
 
 /** How a lead's message reaches a thread: into its running turn at the
     harness's next step, in place of the rest of that turn, or after it. */
-export type ThreadDelivery = 'steer' | 'now' | 'queue';
+export type ThreadDelivery = 'steer' | 'interrupt' | 'queue';
 
 export interface ThreadMessage {
   id: string;
   from: string;
   to: string;
-  kind: 'result' | 'question' | 'message';
+  kind: 'result' | 'question' | 'approval' | 'idle' | 'message';
   text: string;
   /** The harness question a routed question carries, which its answers must name. */
   questionId?: string;
+  approvalId?: string;
+  /** The reply represented by this report, absent when the turn had no reply. */
+  replyId?: string;
 }
 
 /** A harness question a thread is blocked on, routed to the chat that owns it. */
 interface ThreadAsk {
   requestId: string;
   questions: { index: number; question: string; options: string[] }[];
+  /** Its owner update is queued or handed off; a refusal can make it owed again. */
+  notified?: true;
 }
 
 export interface Project {
   id: string;
   title: string;
   paused: boolean;
-  /** The hold is the user's Stop on the main chat alone, which that chat's own next spawn lifts. */
+  /** Reports to the lead wait until the user continues it. Workers keep running. */
   leadStopped?: true;
-  /** The hold is the main chat's failed turn alone, which its next successful turn lifts. */
+  /** A failed lead waits for the user to continue coordination; workers keep running. */
   leadFailed?: true;
+  /** Turns stopped by project Pause, continued once on Resume. */
+  interrupted?: string[];
+  /** A coordination wake still owed while the inbox is full. */
+  wakePending?: 'team-idle' | 'resume';
   /** When it began. Projects from before this was kept show their lead's start. */
   startedAt?: number;
   /** Set when the lead marks the goal achieved; new work clears it. */
   done?: ProjectDone;
   launching: number;
+  brief?: string;
+  /** Largest assigned plan id, retained when steps are removed. */
+  lastStepId?: number;
   plan: ProjectStep[];
+  todos: ProjectTodo[];
   threads: ProjectThread[];
   pending: ThreadMessage[];
   delivery?: { state: 'sending' | 'uncertain'; messages: ThreadMessage[] };
@@ -134,9 +182,21 @@ export interface ProjectView {
   // The main conversation's workspace, when its session is still known.
   cwd?: string;
   paused: boolean;
+  leadStopped?: true;
   launching: number;
+  brief?: string;
   plan: ProjectStep[];
-  threads: Pick<ProjectThread, 'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId'>[];
+  todos: Omit<ProjectTodo, 'notified'>[];
+  runtimeLoad: RuntimeLoad;
+  threads: (Pick<
+    ProjectThread,
+    'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId' | 'unread'
+  > & {
+    state: ThreadState;
+    wait?: ThreadWait;
+    approval?: { requestId: string; summary: string };
+    resetsAt?: number;
+  })[];
   queued: number;
   uncertain: number;
   error?: string;

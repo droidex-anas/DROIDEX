@@ -393,9 +393,8 @@ export interface AppState {
   // Context window the current unsent draft will be created with. Null means
   // the provider's own, and it resets with the rest of the draft lifecycle.
   draftContextWindowTokens: ContextWindowTokens | null;
-  // Live-session autonomy changes awaiting provider confirmation, keyed by
-  // appSessionId. The UI keeps showing the confirmed value while pending.
-  pendingAutonomy: Record<string, Autonomy>;
+  // Only the latest request can settle the autonomy shown ahead of confirmation.
+  pendingAutonomy: Partial<Record<string, { requestId: string; autonomy: Autonomy }>>;
   // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
   // One-shot text seeded into a composer (welcome-screen suggestion cards,
@@ -730,6 +729,7 @@ export type Action =
       appSessionId?: string;
       send?: boolean;
       focus?: boolean;
+      prompt?: QueuedPrompt;
     }
   | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
@@ -787,8 +787,13 @@ export type Action =
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
   | { type: 'SET_DRAFT_CONTEXT_WINDOW'; contextWindowTokens: ContextWindowTokens | null }
-  | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
-  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
+  | {
+      type: 'AUTONOMY_UPDATE_REQUESTED';
+      appSessionId: string;
+      requestId: string;
+      autonomy: Autonomy;
+    }
+  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string; requestId: string }
   | {
       type: 'MODEL_UPDATE_REQUESTED';
       appSessionId: string;
@@ -798,7 +803,7 @@ export type Action =
   | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
   // The sidecar was replaced: nothing it was working on will be answered.
   | {
-      type: 'MODEL_UPDATES_UNANSWERED';
+      type: 'SETTINGS_UPDATES_UNANSWERED';
       liveAppSessionIds: ReadonlySet<string>;
       resentRequestIds: ReadonlySet<string>;
     };
@@ -1414,19 +1419,6 @@ function reduceAction(state: AppState, action: Action): AppState {
               ),
             }
           : state.contextStats;
-      // A pending autonomy change settles when the confirmed summary reaches
-      // the requested level, or when the level changed through another path.
-      const requestedAutonomy =
-        m.appSessionId in state.pendingAutonomy ? state.pendingAutonomy[m.appSessionId] : undefined;
-      const autonomySettled =
-        requestedAutonomy !== undefined &&
-        (m.autonomy === requestedAutonomy ||
-          (m.appSessionId in state.sessions && m.autonomy !== previous.autonomy));
-      const pendingAutonomy = autonomySettled
-        ? Object.fromEntries(
-            Object.entries(state.pendingAutonomy).filter(([id]) => id !== m.appSessionId),
-          )
-        : state.pendingAutonomy;
       const inView = isChatInView(state, m.appSessionId);
       // The active chat is never unread; a tile beside it is read as it changes.
       const seenInTile =
@@ -1437,7 +1429,6 @@ function reduceAction(state: AppState, action: Action): AppState {
         ...state,
         sessions: { ...state.sessions, [m.appSessionId]: m },
         contextStats,
-        pendingAutonomy,
         sessionLastSeen: seenInTile
           ? { ...state.sessionLastSeen, [m.appSessionId]: m.updatedAt }
           : state.sessionLastSeen,
@@ -2394,6 +2385,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         draftTileId,
         send: action.send,
         focus: action.focus,
+        prompt: action.prompt,
       });
       return { ...state, composerSeeds: [...state.composerSeeds, seed] };
     }
@@ -2725,11 +2717,14 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'AUTONOMY_UPDATE_REQUESTED':
       return {
         ...state,
-        pendingAutonomy: { ...state.pendingAutonomy, [action.appSessionId]: action.autonomy },
+        pendingAutonomy: {
+          ...state.pendingAutonomy,
+          [action.appSessionId]: { requestId: action.requestId, autonomy: action.autonomy },
+        },
       };
 
     case 'AUTONOMY_UPDATE_SETTLED': {
-      if (!(action.appSessionId in state.pendingAutonomy)) return state;
+      if (state.pendingAutonomy[action.appSessionId]?.requestId !== action.requestId) return state;
       return {
         ...state,
         pendingAutonomy: Object.fromEntries(
@@ -2753,7 +2748,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         },
       };
 
-    case 'MODEL_UPDATES_UNANSWERED': {
+    case 'SETTINGS_UPDATES_UNANSWERED': {
       // Only a live chat's change the old sidecar took is lost: the snapshot
       // carries that chat's confirmed settings, which then show. A closed chat
       // gets no summary here, and a request resent on reconnect is answered by
@@ -2763,9 +2758,20 @@ function reduceAction(state: AppState, action: Action): AppState {
           !action.liveAppSessionIds.has(appSessionId) ||
           (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
       );
-      return kept.length === Object.keys(state.pendingModelUpdates).length
-        ? state
-        : { ...state, pendingModelUpdates: Object.fromEntries(kept) };
+      // Unresent autonomy requests cannot settle in the replacement, even for absent chats.
+      const keptAutonomy = Object.entries(state.pendingAutonomy).filter(
+        ([, pending]) => pending !== undefined && action.resentRequestIds.has(pending.requestId),
+      );
+      if (
+        kept.length === Object.keys(state.pendingModelUpdates).length &&
+        keptAutonomy.length === Object.keys(state.pendingAutonomy).length
+      )
+        return state;
+      return {
+        ...state,
+        pendingModelUpdates: Object.fromEntries(kept),
+        pendingAutonomy: Object.fromEntries(keptAutonomy),
+      };
     }
 
     case 'MODEL_UPDATE_SETTLED': {
@@ -2826,6 +2832,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_FORKED', clientRef: ev.clientRef, session: ev.session };
     case 'session.updated':
       return { type: 'SESSION_UPDATED', session: ev.session };
+    case 'session.autonomy_update_applied':
+      return {
+        type: 'AUTONOMY_UPDATE_SETTLED',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'session.model_update_applied':
       return {
         type: 'MODEL_UPDATE_SETTLED',
@@ -2895,12 +2907,13 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       if (ev.code === 'bridge.resync_required' && !ev.recoverable) {
         return { type: 'SET_CONNECTION', status: 'error', message: ev.message };
       }
-      // A failed autonomy change is recoverable: the session keeps its last
-      // confirmed level, the pending state settles, and the toast carries the
-      // message (see toastMessageForEvent).
       if (ev.code === 'session.autonomy_update_failed') {
-        return ev.appSessionId
-          ? { type: 'AUTONOMY_UPDATE_SETTLED', appSessionId: ev.appSessionId }
+        return ev.appSessionId && ev.requestId
+          ? {
+              type: 'AUTONOMY_UPDATE_SETTLED',
+              appSessionId: ev.appSessionId,
+              requestId: ev.requestId,
+            }
           : null;
       }
       if (ev.code === 'session.model_update_failed') {
@@ -3156,7 +3169,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Queued ahead of the snapshot's own events, through the same batcher.
     const unsubReplaced = bridge.subscribeRuntimeReplaced((liveAppSessionIds, resentRequestIds) => {
       batcher.pushBridgeBatch([
-        { type: 'MODEL_UPDATES_UNANSWERED', liveAppSessionIds, resentRequestIds },
+        { type: 'SETTINGS_UPDATES_UNANSWERED', liveAppSessionIds, resentRequestIds },
       ]);
     });
     return () => {

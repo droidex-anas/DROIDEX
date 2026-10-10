@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { EffortLevel, Options } from '@anthropic-ai/claude-agent-sdk';
 
-import type { ReasoningEffort } from '../../protocol.js';
+import type { Autonomy, ReasoningEffort } from '../../protocol.js';
 import type { ClaudeSessionInput } from './claudeSession.js';
 import { childEnv } from '../../childEnv.js';
 import { claudeContextEnv } from './claudeContextWindow.js';
@@ -16,6 +16,7 @@ export function sessionOptions(
   abortController: AbortController,
   isPlanning: () => boolean,
   onSpawn: (process: ChildProcess) => void,
+  getAutonomy: () => Autonomy,
 ): Options {
   const effort = claudeEffort(input.reasoningEffort);
   return {
@@ -32,7 +33,7 @@ export function sessionOptions(
       ...(effort ? { ultracode: effort.ultracode } : {}),
       fastMode: input.fastMode ?? false,
     },
-    ...(input.resume ? { resume: input.appSessionId } : { sessionId: input.appSessionId }),
+    ...(input.resumeId ? { resume: input.resumeId } : { sessionId: input.appSessionId }),
     systemPrompt: { type: 'preset', preset: 'claude_code' },
     // 'project' is what loads the repository's CLAUDE.md.
     settingSources: ['user', 'project', 'local'],
@@ -52,7 +53,7 @@ export function sessionOptions(
     // permissionMode. Raising autonomy to high mid-session switches the mode
     // with setPermissionMode, which the CLI refuses without this.
     allowDangerouslySkipPermissions: true,
-    canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning),
+    canUseTool: claudeCanUseTool(input.appSessionId, input.interactions, isPlanning, getAutonomy),
     hooks: CLAUDE_SESSIONS_TOOL_HOOKS,
     // The SDK would otherwise own the subprocess privately; spawning it here is
     // what gives the session a pid for the agent-process monitor to track and

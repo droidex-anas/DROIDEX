@@ -17,6 +17,7 @@ import { providerSessionsDir } from '../droidexPaths.js';
 import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
 import type { ContextWindowTokens, SessionSummary, TranscriptEvent } from '../protocol.js';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
+import { STEER_MESSAGE_PREFIX } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';
 
 // The head line: a StoredSessionStart plus the settings readSessionModelSettings
@@ -87,11 +88,16 @@ export class ProviderTranscriptFile {
 
   // A turn's prompt. The renderer already showed it, so it is persisted here
   // rather than replayed as a live event.
-  appendPrompt(text: string): Promise<void> {
+  appendPrompt(text: string, steered = false): Promise<void> {
     if (!text) return this.writes;
     const ts = Date.now();
     return this.sealThenWrite(
-      messageLine('user', [{ type: 'text', text }], `prompt-${this.nextPromptId(ts)}`, ts),
+      messageLine(
+        'user',
+        [{ type: 'text', text }],
+        `${steered ? STEER_MESSAGE_PREFIX : 'prompt-'}${this.nextPromptId(ts)}`,
+        ts,
+      ),
     );
   }
 
@@ -99,7 +105,12 @@ export class ProviderTranscriptFile {
     if (event.role !== 'primary' && !this.parentAppSessionId) return this.appendToChild(event);
     if (event.kind === 'text' && event.author === 'user' && !event.spoken) {
       return this.sealThenWrite(
-        messageLine('user', [{ type: 'text', text: event.text ?? '' }], event.id, event.ts),
+        messageLine(
+          'user',
+          [{ type: 'text', text: event.text ?? '' }],
+          event.steered ? `${STEER_MESSAGE_PREFIX}${event.id}` : event.id,
+          event.ts,
+        ),
       );
     }
     if (event.spoken) return this.sealThenWrite(spokenLine(event));

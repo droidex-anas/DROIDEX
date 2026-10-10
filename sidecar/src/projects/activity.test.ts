@@ -31,7 +31,7 @@ test('only the bounded final primary reply survives a turn, never thinking or to
   emit('text', ' finished');
   const turn = activity.finish('thread');
   assert.equal(turn?.text.length, 8_192);
-  assert.ok(turn?.text.endsWith(' finished'));
+  assert.equal(turn?.text, 'x'.repeat(8_192));
   assert.doesNotMatch(turn?.text ?? '', /SECRET|PRIVATE|Before|Foreign/);
   assert.equal(activity.finish('thread'), undefined);
 

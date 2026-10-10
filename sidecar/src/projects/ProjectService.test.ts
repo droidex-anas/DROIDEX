@@ -8,14 +8,17 @@ import {
   git,
   gitRepository,
   harness,
+  idleProject,
+  ordinaryChat,
+  projectWithThread,
   input,
   summary,
   tick,
+  waitForThreadStarts,
 } from '../testing/projectServiceHarness.js';
 
 test('idle projects produce no turns; one completed child wakes its owner once', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   await drain();
   assert.equal(h.sent.length, 0);
   const child = await h.projects.spawn(main, {
@@ -40,29 +43,33 @@ test('idle projects produce no turns; one completed child wakes its owner once',
   assert.equal(h.launched[1]?.cwd, '/workspace');
 });
 
-test('busy owners retain messages; sibling completions batch into one later turn', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+test('running owners receive sibling reports through one steer without a competing turn', async (t) => {
+  const { h, main } = await idleProject(t);
   const a = await h.projects.spawn(main, input);
   const b = await h.projects.spawn(main, input);
+  const later = await h.projects.addTodo(main, { text: 'Tell the user' });
+  const after = await h.projects.addTodo(main, { text: 'Review A', after: a.appSessionId });
   await h.streaming(main, true);
   await h.finish(a.appSessionId, 'A');
   await h.finish(b.appSessionId, 'B');
   await drain();
   assert.equal(h.sent.length, 0);
-  assert.equal(h.projects.list()[0]?.queued, 2);
+  assert.equal(h.steered.length, 1);
+  assert.match(h.steered[0]?.prompt ?? '', /\bA\b/);
+  assert.match(h.steered[0]?.prompt ?? '', /\bB\b/);
+  assert.match(h.steered[0]?.prompt ?? '', /\[DUE\].*Review A/);
+  assert.deepEqual(
+    h.projects.listThreads(main).todos.map((todo) => todo.id),
+    [after.id, later.id],
+  );
   await h.finish(main);
   await drain();
-  assert.equal(h.sent.length, 1);
-  // One wake, carrying both: batching them is the point, so assert the text.
-  assert.match(h.sent[0]?.prompt ?? '', /\bA\b/);
-  assert.match(h.sent[0]?.prompt ?? '', /\bB\b/);
+  assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('a thread that settles reports either way: an empty turn, or the failure that ended it', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const quiet = await h.projects.spawn(main, input);
   // A model that answers nothing must still wake its lead, or the project
   // stalls with the lead believing the thread is still working.
@@ -72,32 +79,22 @@ test('a thread that settles reports either way: an empty turn, or the failure th
   // The lead is mid-turn on that wake; its next one waits for it to settle.
   await h.finish(main);
 
-  const broken = await h.projects.spawn(main, input);
-  const session = h.sessions.get(broken.appSessionId);
-  assert.ok(session);
-  await h.projects.observe({
-    type: 'event.appended',
-    event: {
-      id: 'boom',
-      appSessionId: broken.appSessionId,
-      sourceSessionId: broken.appSessionId,
-      role: 'primary',
-      ts: 1,
-      kind: 'error',
-      text: 'Model provider refused the request.',
-      isError: true,
-    },
-  });
-  session.phase = 'failed';
-  await h.streaming(broken.appSessionId, false);
+  const broken = await h.projects.spawn(quiet.appSessionId, input);
+  await h.streaming(quiet.appSessionId, true);
+  await h.fail(broken.appSessionId, 'Model provider refused the request.', { resetsAt: 2_000_000 });
   await drain();
-  assert.match(h.sent.at(-1)?.prompt ?? '', /failed before finishing/);
-  assert.match(h.sent.at(-1)?.prompt ?? '', /provider refused/);
+  const failure = h.sent.slice(1).find((message) => message.id === main)?.prompt ?? '';
+  assert.match(failure, /failed: Model provider refused the request/);
+  assert.match(h.steered.at(-1)?.prompt ?? '', /provider refused/);
+  const failed = h.projects.read(main, broken.appSessionId);
+  assert.equal(failed.state, 'rate-limited');
+  assert.equal(failed.resetsAt, 2_000_000);
+  assert.match(failure, /Continue it with thread_send/);
+  assert.match(failure, /Send again after 1970-01-01T00:33:20.000Z/);
 });
 
 test('ordinary chats adopt a project, with scoped ownership and no autonomy escalation', async (t) => {
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary'));
+  const h = await ordinaryChat(t);
   const child = await h.projects.spawn('ordinary', input);
   const grandchild = await h.projects.spawn(child.appSessionId, input);
   const other = await h.root();
@@ -115,12 +112,16 @@ test('ordinary chats adopt a project, with scoped ownership and no autonomy esca
   h.sessions.set('side', { ...summary('side'), lineage });
   await assert.rejects(h.projects.spawn('side', input), /side chat/);
   await assert.rejects(h.projects.setPlan('side', [{ title: 'Port' }]), /side chat/);
+  const owner = h.sessions.get('ordinary');
+  assert.ok(owner);
+  owner.autonomy = 'high';
+  await h.projects.spawn('ordinary', { title: 'Default autonomy', prompt: 'Work' });
+  assert.equal(h.launched.at(-1)?.autonomy, 'high');
   assert.equal(h.projects.list().length, 2);
 });
 
 test('a first spawn that fails leaves no project behind, wherever it failed', async (t) => {
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary'));
+  const h = await ordinaryChat(t);
   await assert.rejects(h.projects.spawn('ordinary', { ...input, step: '1' }), /keeps no plan yet/);
   // Its checkout cannot be cut, so nothing launches.
   await assert.rejects(
@@ -158,8 +159,7 @@ test('a first spawn that fails leaves no project behind, wherever it failed', as
 
 test('threads started together each get a checkout of their own', async (t) => {
   const repository = await gitRepository(t);
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  const h = await ordinaryChat(t, { ...input, cwd: repository });
   const spawn = (title: string) => h.projects.spawn('ordinary', { ...input, title });
   // A start that fails gives the checkout back.
   h.state.createFailure = 'before-bind';
@@ -181,9 +181,52 @@ test('threads started together each get a checkout of their own', async (t) => {
   assert.notEqual(lexer.cwd, printer.cwd);
 });
 
+test('queued spawns reserve their checkouts until they launch or are cancelled', async (t) => {
+  const repository = await gitRepository(t);
+  const h = await harness(t, [], false);
+  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  h.state.capacity = 'busy';
+  const first = await h.projects.spawn('ordinary', { ...input, title: 'Parser' });
+  const second = await h.projects.spawn('ordinary', { ...input, title: 'Lexer' });
+  assert.equal(first.delivery, 'queued');
+  assert.equal(second.delivery, 'queued');
+  const secondCheckout = h.state.saved[0]?.threads.find(
+    (thread) => thread.appSessionId === second.appSessionId,
+  )?.queuedSpawn?.input.cwd;
+  assert.notEqual(secondCheckout, repository);
+  h.state.capacity = 'free';
+  const firstTurn = deferred();
+  h.state.firstTurnGate = firstTurn.promise;
+  h.projects.historyReady();
+  await drain();
+  const third = await h.projects.spawn('ordinary', { ...input, title: 'Printer' });
+  const thirdCheckout = h.state.saved[0]?.threads.find(
+    (thread) => thread.appSessionId === third.appSessionId,
+  )?.queuedSpawn?.input.cwd;
+  assert.notEqual(thirdCheckout, repository, 'binding does not release a starting checkout');
+  firstTurn.resolve();
+  await drain();
+  assert.equal(h.sessions.get(first.appSessionId)?.cwd, repository);
+  assert.equal(h.sessions.get(second.appSessionId)?.cwd, secondCheckout);
+  assert.equal(
+    h.state.saved[0]?.threads.some((thread) => thread.queuedSpawn),
+    false,
+  );
+  await h.projects.stop('ordinary', first.appSessionId);
+  await h.projects.stop('ordinary', second.appSessionId);
+  await h.projects.stop('ordinary', third.appSessionId);
+  h.state.capacity = 'busy';
+  const cancelled = await h.projects.spawn('ordinary', { ...input, title: 'Cancelled' });
+  await h.projects.stop('ordinary', cancelled.appSessionId);
+  const replacement = await h.projects.spawn('ordinary', { ...input, title: 'Replacement' });
+  const checkout = h.state.saved[0]?.threads.find(
+    (thread) => thread.appSessionId === replacement.appSessionId,
+  )?.queuedSpawn?.input.cwd;
+  assert.equal(checkout, repository);
+});
+
 test('stopping a chat while its first spawn starts cancels that spawn, and only that one', async (t) => {
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary'));
+  const h = await ordinaryChat(t);
   const named = { ...input, modelId: 'droid-core' };
   // No project exists yet for the Stop to hold. The spawn is caught while its
   // thread binds or while it resolves the model, for a thread's first spawn and
@@ -215,16 +258,16 @@ test('stopping a chat while its first spawn starts cancels that spawn, and only 
 
 test('stopping a thread while its own spawn cuts a checkout cancels that spawn', async (t) => {
   const repository = await gitRepository(t);
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary', { ...input, cwd: repository }));
+  const h = await ordinaryChat(t, { ...input, cwd: repository });
   const thread = await h.projects.spawn('ordinary', input);
   // The user stops the thread once its spawn is past its settings and choosing a checkout.
   const get = h.port.get;
   h.port.get = (id) => {
+    const intercepted = h.port.get;
+    h.port.get = get;
     if (id === thread.appSessionId && h.projects.list()[0]?.launching) {
-      h.port.get = get;
       void h.projects.userStopped(thread.appSessionId);
-    }
+    } else h.port.get = intercepted;
     return get(id);
   };
   await assert.rejects(
@@ -240,8 +283,7 @@ test('stopping a thread while its own spawn cuts a checkout cancels that spawn',
 });
 
 test('a failed spawn never removes a project started in Projects', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   h.state.createFailure = 'after-bind';
   await assert.rejects(h.projects.spawn(main, input), /exited on start/);
   assert.equal(h.projects.list().length, 1);
@@ -249,24 +291,29 @@ test('a failed spawn never removes a project started in Projects', async (t) => 
 });
 
 test('pause cancels a pending wake after asynchronous admission work', async (t) => {
-  const h = await harness(t);
-  const { id, main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, id, main, child } = await projectWithThread(t);
+  const running = await h.projects.spawn(main, { ...input, title: 'Running' });
   const gate = deferred();
   h.state.gate = gate.promise;
-  await h.finish(child.appSessionId);
+  await h.projects.stop(main, child.appSessionId);
   await tick();
   await h.projects.setPaused(id, true);
   gate.resolve();
   await drain();
   assert.equal(h.sent.length, 0);
-  assert.equal(h.projects.list()[0]?.queued, 1);
+  assert.deepEqual(h.state.saved[0].interrupted, [running.appSessionId]);
+  const resumed = await h.projects.resume(main);
+  assert.deepEqual(resumed.resumed, [running.appSessionId]);
+  await drain();
+  assert.ok(h.sent.some((message) => message.id === running.appSessionId));
+  assert.equal(
+    h.sent.some((message) => message.id === child.appSessionId),
+    false,
+  );
 });
 
 test('stop waits for a cancelled claim before removing target messages', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   const gate = deferred();
   h.state.gate = gate.promise;
   await h.projects.send(main, child.appSessionId, 'Do not deliver after stop.');
@@ -285,38 +332,33 @@ test('stop waits for a cancelled claim before removing target messages', async (
   );
 });
 
-test('holding a project cancels every spawn still starting before it reaches the provider', async (t) => {
-  const h = await harness(t);
-  const { id, main } = await h.root();
+test('holding a project cancels in-flight starts and holds queued threads', async (t) => {
+  const { h, id, main } = await idleProject(t);
   const gate = deferred();
+  const admitted = waitForThreadStarts(h.port, 19);
   h.state.bindGate = gate.promise;
-  // No count caps a project: all twelve are admitted and starting at once.
-  const requests = Array.from({ length: 12 }, () => h.projects.spawn(main, input));
-  await tick();
-  assert.equal(h.projects.list()[0]?.launching, 12);
+  // The lead occupies one slot; nineteen starts reserve the rest and the last queues.
+  const requests = Array.from({ length: 19 }, () => h.projects.spawn(main, input));
+  await admitted;
+  // Hold after the queued request has durably answered; the other nineteen are still binding.
+  requests.push(h.projects.spawn(main, input));
+  await requests[19];
+  assert.equal(h.projects.list()[0]?.launching, 19);
   await h.projects.setPaused(id, true);
   gate.resolve();
   const outcomes = await Promise.allSettled(requests);
-  assert.ok(outcomes.every((result) => result.status === 'rejected'));
+  assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 19);
+  assert.equal(h.state.saved[0]?.threads.filter((thread) => thread.queuedSpawn).length, 1);
   assert.equal(h.launched.length, 1, 'no child goal reached the provider');
   assert.equal(h.projects.list()[0]?.launching, 0);
 });
 
 test("a lead's message reaches a working thread's turn, or starts an idle one", async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   assert.equal(await h.projects.send(main, child.appSessionId, 'Also cover the tests'), 'steered');
   assert.equal(
-    await h.projects.send(
-      main,
-      child.appSessionId,
-      'Stop, wrong branch',
-      undefined,
-      undefined,
-      'now',
-    ),
-    'sent-now',
+    await h.projects.send(main, child.appSessionId, 'Stop, wrong branch', 'interrupt'),
+    'interrupt',
   );
   assert.deepEqual(
     h.steered.map(({ now }) => now),
@@ -325,79 +367,23 @@ test("a lead's message reaches a working thread's turn, or starts an idle one", 
   await h.finish(child.appSessionId);
   await drain();
   const reported = h.sent.length;
-  assert.equal(await h.projects.send(main, child.appSessionId, 'One more thing'), 'queued');
+  assert.equal(await h.projects.send(main, child.appSessionId, 'One more thing'), 'started');
   await drain();
   assert.ok(h.sent.slice(reported).some(({ id }) => id === child.appSessionId));
 });
 
 test('persistence failure fails closed without delivering a queued wake', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   h.state.failSave = true;
-  await assert.rejects(
-    h.projects.send(main, child.appSessionId, 'Work', undefined, undefined, 'queue'),
-    /Disk full/,
-  );
+  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work', 'queue'), /Disk full/);
   await drain();
   assert.equal(h.sent.length, 0);
   assert.equal(h.projects.list()[0]?.paused, true);
   assert.match(h.projects.list()[0]?.error ?? '', /Disk full/);
 });
 
-test('restart preserves an uncertain delivery and never replays it implicitly', async (t) => {
-  const h = await harness(t);
-  const { id, main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  const gate = deferred();
-  h.state.gate = gate.promise;
-  await h.finish(child.appSessionId);
-  await tick();
-  const disk = structuredClone(h.state.saved);
-  assert.equal(disk[0]?.delivery?.state, 'sending');
-  const recovered = await harness(t, disk);
-  assert.equal(recovered.projects.list()[0]?.paused, true);
-  assert.equal(recovered.projects.list()[0]?.uncertain, 1);
-  await assert.rejects(recovered.projects.setPaused(id, false), /uncertain/);
-  await recovered.projects.setPaused(id, false, true);
-  await drain();
-  assert.equal(recovered.sent.length, 0);
-  assert.equal(recovered.projects.list()[0]?.uncertain, 0);
-  h.projects.close();
-  gate.resolve();
-  await h.projects.flush();
-});
-
-test('messages a restart left queued go out once session history is ready, and not before', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  // The lead is busy, so the thread's report is still queued when DROIDEX stops.
-  await h.streaming(main, true);
-  await h.finish(child.appSessionId, 'Parsed the config.');
-  await drain();
-  const disk = structuredClone(h.state.saved);
-  assert.equal(disk[0]?.pending.length, 1);
-  assert.equal(disk[0]?.delivery, undefined);
-
-  const recovered = await harness(t, disk, false);
-  recovered.sessions.set(main, summary(main));
-  // The lead settling would wake it, but history does not know its threads yet.
-  await recovered.streaming(main, false);
-  await drain();
-  assert.equal(recovered.sent.length, 0);
-
-  recovered.projects.historyReady();
-  await drain();
-  assert.equal(recovered.sent.at(-1)?.id, main);
-  assert.match(recovered.sent.at(-1)?.prompt ?? '', /Parsed the config/);
-  assert.equal(recovered.projects.list()[0]?.paused, false);
-});
-
 test('work keeps flowing, and only a runaway loop holds the project', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   const report = async (index: number) => {
     await h.streaming(child.appSessionId, true);
     await h.finish(child.appSessionId, `Result ${String(index)}`);
@@ -411,13 +397,14 @@ test('work keeps flowing, and only a runaway loop holds the project', async (t) 
   // Past the pace any real turn could keep, DROIDEX holds it for a person.
   for (let i = 40; i < 62; i += 1) await report(i);
   assert.equal(h.projects.list()[0]?.paused, true);
-  assert.match(h.projects.list()[0]?.error ?? '', /talking in circles/);
+  assert.match(
+    h.projects.list()[0]?.error ?? '',
+    /delivery loop exceeded 60 deliveries in 5 minutes/,
+  );
 });
 
 test('a released runtime unparks a delivery that was waiting for a slot', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, child } = await projectWithThread(t);
   // The runtime limit, not the recipient, is what turned this delivery away.
   h.state.capacity = 'busy';
   await h.finish(child.appSessionId, 'Done');
@@ -434,8 +421,7 @@ test('a released runtime unparks a delivery that was waiting for a slot', async 
 });
 
 test('stopping one thread by hand quiets that thread, not the project', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const stopped = await h.projects.spawn(main, input);
   const working = await h.projects.spawn(main, input);
   await h.projects.send(main, stopped.appSessionId, 'Drop this.');
@@ -450,30 +436,33 @@ test('stopping one thread by hand quiets that thread, not the project', async (t
   await drain();
   assert.equal(h.sent.at(-1)?.id, main);
 
-  // Stopping the main thread still holds the whole project.
+  // Stopping the lead leaves worker coordination running, but holds its reports.
   await h.projects.userStopped(main);
-  assert.equal(h.projects.list()[0]?.paused, true);
+  assert.equal(h.projects.list()[0]?.paused, false);
+  assert.equal(h.projects.list()[0]?.leadStopped, true);
 });
 
-test("the main chat's next spawn lifts the hold its Stop put on, and no other hold", async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  // A spawn already under way when the user pressed Stop does not undo it.
+test('a new spawn never resumes a stopped lead; only the user continues it', async (t) => {
+  const { h, main } = await idleProject(t);
   const underway = h.projects.spawn(main, input);
   await h.projects.userStopped(main);
   await assert.rejects(underway, /cancelled/);
-  assert.equal(h.state.saved[0]?.leadStopped, true);
-
   const child = await h.projects.spawn(main, input);
   assert.equal(h.projects.list()[0]?.paused, false);
+  assert.equal(h.state.saved[0]?.leadStopped, true);
+  await h.finish(child.appSessionId, 'Work finished while the lead was stopped.');
+  await drain();
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.state.saved[0]?.pending.length, 1);
+  await h.projects.userContinued(main);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].prompt, /Work finished while the lead was stopped/);
   assert.equal(h.state.saved[0]?.leadStopped, undefined);
 
   // A failure's hold stays the user's to lift, even after a later Stop.
   h.state.failSave = true;
-  await assert.rejects(
-    h.projects.send(main, child.appSessionId, 'Work', undefined, undefined, 'queue'),
-    /Disk full/,
-  );
+  await assert.rejects(h.projects.send(main, child.appSessionId, 'Work', 'queue'), /Disk full/);
   h.state.failSave = false;
   await h.projects.userStopped(main);
   await assert.rejects(h.projects.spawn(main, input), /held/);
@@ -483,24 +472,20 @@ test('a closed recipient unparks the delivery that waited on its turn', async (t
   const h = await harness(t);
   const { main } = await h.root();
   const child = await h.projects.spawn(main, input);
-  const owner = h.sessions.get(main);
-  assert.ok(owner);
-  owner.streaming = true;
-  await h.finish(child.appSessionId, 'Done');
+  await h.projects.send(main, child.appSessionId, 'Continue', 'queue');
   await drain();
   assert.equal(h.sent.length, 0);
-
-  // The owner closes mid-turn, so no settlement ever frees the delivery.
-  owner.streaming = false;
-  await h.projects.observe({ type: 'session.closed', appSessionId: main });
+  const recipient = h.sessions.get(child.appSessionId);
+  assert.ok(recipient);
+  recipient.streaming = false;
+  await h.projects.observe({ type: 'session.closed', appSessionId: child.appSessionId });
   await drain();
-  assert.equal(h.sent.at(-1)?.id, main);
+  assert.equal(h.sent.at(-1)?.id, child.appSessionId);
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('a model named the way a chat names its own resolves to that one, not its hosted twin', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const lead = h.sessions.get(main);
   assert.ok(lead);
   // The lead runs the user's own key for this model. The harness carries the
@@ -524,13 +509,12 @@ test('a model named the way a chat names its own resolves to that one, not its h
 });
 
 test('a lead reads a thread in full and retunes it within its own autonomy', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
-  await h.finish(child.appSessionId, 'x'.repeat(2_000));
+  const { h, main, child } = await projectWithThread(t);
+  await h.finish(child.appSessionId, 'Conclusion.' + 'x'.repeat(1_989));
   await drain();
   // The report is an excerpt; reading the thread gives the whole reply back.
-  assert.match(h.sent.at(-1)?.prompt ?? '', /last 1,200 characters/);
+  assert.match(h.sent.at(-1)?.prompt ?? '', /first 1,200 characters.*thread_read full: true/);
+  assert.match(h.sent.at(-1)?.prompt ?? '', /Conclusion\./);
   const read = h.projects.read(main, child.appSessionId);
   assert.deepEqual(read.replies.length, 1);
   assert.equal(read.replies[0]?.length, 2_000);
@@ -567,8 +551,7 @@ test('a lead reads a thread in full and retunes it within its own autonomy', asy
 });
 
 test('only the threads that moved most recently keep earlier replies in the ledger', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const threads: string[] = [];
   for (let index = 0; index < 10; index += 1)
     threads.push((await h.projects.spawn(main, input)).appSessionId);
@@ -593,8 +576,7 @@ test('only the threads that moved most recently keep earlier replies in the ledg
 });
 
 test("a lead cannot retune a thread's own thread past the chat that started it", async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const lead = h.sessions.get(main);
   assert.ok(lead);
   lead.autonomy = 'high';
@@ -612,9 +594,7 @@ test(
   "retuning a thread's model never waits on a turn that may be waiting on its lead",
   { timeout: 10_000 },
   async (t) => {
-    const h = await harness(t);
-    const { main } = await h.root();
-    const child = await h.projects.spawn(main, input);
+    const { h, main, child } = await projectWithThread(t);
     // A Claude thread takes a new model or effort only once its running turn
     // ends, and that turn may be blocked on a question to this lead.
     h.port.configure = () => new Promise(() => undefined);
@@ -624,25 +604,26 @@ test(
 );
 
 test('a spawn carries a settled plan step, or none at all', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /no plan yet/);
-  await h.projects.setPlan(main, [{ title: 'Port the payments client' }]);
+  await h.projects.setPlan(main, [{ title: 'Port the payments client', state: 'review' }]);
   await assert.rejects(h.projects.spawn(main, { ...input, step: 'Ship the moon' }), /No plan step/);
   const started = await h.projects.spawn(main, { ...input, step: 'Port the payments client' });
   assert.equal(h.projects.list()[0]?.plan[0]?.threadAppSessionId, started.appSessionId);
+  assert.equal(h.projects.list()[0]?.plan[0]?.state, 'review');
 
-  // A step named by number keeps that step when two share a title.
+  // A stable step id picks the intended step when two share a title.
   await h.projects.setPlan(main, [{ title: 'Review' }, { title: 'Review' }]);
-  const second = await h.projects.spawn(main, { ...input, step: '2' });
+  const stepId = h.projects.list()[0]?.plan[1]?.id;
+  assert.ok(stepId);
+  const second = await h.projects.spawn(main, { ...input, step: stepId });
   const plan = h.projects.list()[0]?.plan;
   assert.equal(plan?.[0]?.threadAppSessionId, undefined);
   assert.equal(plan?.[1]?.threadAppSessionId, second.appSessionId);
 });
 
 test('an ordinary chat that writes a plan becomes a project and spawns for its steps', async (t) => {
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary'));
+  const h = await ordinaryChat(t);
   await assert.rejects(
     h.projects.setPlan('ordinary', [{ title: 'Port', threadAppSessionId: 'someone' }]),
     /started no threads yet/,
@@ -661,8 +642,7 @@ test('an ordinary chat that writes a plan becomes a project and spawns for its s
 });
 
 test('a chat started without reportBack belongs to no project and reports nowhere', async (t) => {
-  const h = await harness(t);
-  h.sessions.set('ordinary', summary('ordinary', { ...input, title: 'Payments' }));
+  const h = await ordinaryChat(t, { ...input, title: 'Payments' });
   const chat = await h.projects.startChat('ordinary', { ...input, prompt: 'Port the client.' });
   assert.equal(
     h.launched.at(-1)?.prompt,
@@ -678,8 +658,7 @@ test('a chat started without reportBack belongs to no project and reports nowher
 });
 
 test('threads and started chats cannot start chats, and one chat runs at most eight', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const thread = await h.projects.spawn(main, input);
   await assert.rejects(h.projects.startChat(thread.appSessionId, input), /always report back/);
 
@@ -714,9 +693,7 @@ test('durable project request identity avoids a duplicate root', async (t) => {
 });
 
 test('a thread’s own question reaches its lead with its options, and the answer goes back at once', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   await h.ask(child.appSessionId, 'ask-1', 'Which storage format?', [
     { label: 'JSON' },
     { label: 'SQLite' },
@@ -733,16 +710,17 @@ test('a thread’s own question reaches its lead with its options, and the answe
     /waiting on the question/,
   );
   // Answering must reach the waiting harness call, not the delivery queue.
-  assert.equal(await h.projects.send(main, child.appSessionId, '', ['JSON'], 'ask-1'), 'answered');
+  assert.equal(
+    (await h.projects.answer(main, child.appSessionId, 'ask-1', ['JSON'])).answered,
+    true,
+  );
   assert.equal(h.answered.at(-1)?.requestId, 'ask-1');
   assert.equal(h.projects.list()[0]?.threads[1]?.waiting, false);
   assert.equal(h.projects.list()[0]?.queued, 0);
 });
 
 test('a question answered in its thread stops asking the owner, and a late answer never lands on a newer one', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, main, child } = await projectWithThread(t);
   await h.ask(child.appSessionId, 'ask-1');
   // Mid-turn, but stopped on its question: the owner is told it is waiting.
   assert.equal(h.projects.read(main, child.appSessionId).questionId, 'ask-1');
@@ -757,17 +735,16 @@ test('a question answered in its thread stops asking the owner, and a late answe
 
   // The lead decided the first question, so its answer must not settle the second.
   await assert.rejects(
-    h.projects.send(main, child.appSessionId, '', ['JSON'], 'ask-1'),
+    h.projects.answer(main, child.appSessionId, 'ask-1', ['JSON']),
     /no longer waiting on that question/,
   );
-  await assert.rejects(h.projects.send(main, child.appSessionId, '', ['yes']), /questionId/);
+  await assert.rejects(h.projects.answer(main, child.appSessionId, '', ['yes']), /questionId/);
   assert.deepEqual(h.answered, []);
-  assert.equal(await h.projects.send(main, child.appSessionId, '', ['no'], 'ask-2'), 'answered');
+  assert.equal((await h.projects.answer(main, child.appSessionId, 'ask-2', ['no'])).answered, true);
 });
 
 test('threads stopped on questions for their lead leave it a delivery slot', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   const threads = [
     (await h.projects.spawn(main, input)).appSessionId,
     (await h.projects.spawn(main, input)).appSessionId,
@@ -790,9 +767,7 @@ test('threads stopped on questions for their lead leave it a delivery slot', asy
 });
 
 test('an outsized harness question is bounded to what the ledger will load', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, child } = await projectWithThread(t);
   await h.projects.observe({
     type: 'question.requested',
     question: {
@@ -820,9 +795,7 @@ test('an outsized harness question is bounded to what the ledger will load', asy
 });
 
 test('a question that dies with its turn takes its wake off the queue', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, child } = await projectWithThread(t);
   await h.ask(child.appSessionId, 'ask-dead', 'Which format?', [{ label: 'JSON' }], false);
   assert.equal(h.projects.list()[0]?.queued, 1);
 
@@ -840,8 +813,7 @@ test('a question that dies with its turn takes its wake off the queue', async (t
 });
 
 test('a delivery withdrawn before dispatch holds nothing and keeps what is still wanted', async (t) => {
-  const h = await harness(t);
-  const { id, main } = await h.root();
+  const { h, id, main } = await idleProject(t);
   const reporter = await h.projects.spawn(main, input);
   const asker = await h.projects.spawn(main, input);
   const gate = deferred();
@@ -872,9 +844,7 @@ test('a delivery withdrawn before dispatch holds nothing and keeps what is still
 });
 
 test('a question the thread replaced during admission never reaches the owner', async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
-  const child = await h.projects.spawn(main, input);
+  const { h, child } = await projectWithThread(t);
   const gate = deferred();
   h.state.gate = gate.promise;
   await h.ask(child.appSessionId, 'ask-1');
@@ -891,8 +861,7 @@ test('a question the thread replaced during admission never reaches the owner', 
 });
 
 test("permission requests and the main chat's own question stay with the user", async (t) => {
-  const h = await harness(t);
-  const { main } = await h.root();
+  const { h, main } = await idleProject(t);
   await h.projects.observe({
     type: 'approval.requested',
     request: {
@@ -908,4 +877,29 @@ test("permission requests and the main chat's own question stay with the user", 
   await h.ask(main, 'question', 'User decision?', [], false);
   await drain();
   assert.equal(h.sent.length, 0);
+});
+
+test('a queued startup failure wakes the lead and waits for thread_send to retry', async (t) => {
+  const { h, main } = await projectWithThread(t);
+  h.state.capacity = 'busy';
+  const queued = await h.projects.spawn(main, { ...input, title: 'Queued' });
+  h.state.createFailure = 'before-bind';
+  h.state.capacity = 'free';
+  h.projects.capacityChanged();
+  await drain();
+  assert.equal(h.projects.read(main, queued.appSessionId).state, 'failed');
+  assert.equal(h.projects.list()[0].paused, false);
+  assert.match(
+    h.sent[0].prompt,
+    /Queued failed: The harness refused to start.*Continue it with thread_send/,
+  );
+  assert.equal(
+    h.state.saved[0].threads.find((thread) => thread.appSessionId === queued.appSessionId)
+      ?.queuedSpawn?.phase,
+    'failed',
+  );
+  h.state.createFailure = undefined;
+  await h.projects.send(main, queued.appSessionId, 'Retry opening the session.');
+  await drain();
+  assert.equal(h.projects.read(main, queued.appSessionId).state, 'working');
 });
