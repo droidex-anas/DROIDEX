@@ -145,17 +145,25 @@ function isSourceTree(value: unknown): boolean {
 }
 
 function isRevisionSummary(value: unknown): boolean {
+  if (!isRevisionCommit(value)) return false;
+  if (value.state === 'damaged') return true;
+  return (
+    value.state === 'saved' &&
+    (value.restoredFromRevisionId === undefined || id(value.restoredFromRevisionId)) &&
+    count(value.createdAt) &&
+    isDesignSystem(value.designSystem) &&
+    typeof value.buildStatus === 'string' &&
+    ['ready', 'failed', 'building', 'unbuilt'].includes(value.buildStatus)
+  );
+}
+
+function isRevisionCommit(value: unknown): value is Record<string, unknown> {
   if (!record(value) || !record(value.author)) return false;
   return (
     id(value.revisionId) &&
-    (value.restoredFromRevisionId === undefined || id(value.restoredFromRevisionId)) &&
     count(value.sequence) &&
-    count(value.createdAt) &&
     (value.author.kind === 'user' ||
       (value.author.kind === 'agent' && id(value.author.scopeRef))) &&
-    isDesignSystem(value.designSystem) &&
-    typeof value.buildStatus === 'string' &&
-    ['ready', 'failed', 'building'].includes(value.buildStatus) &&
     typeof value.mutationKind === 'string' &&
     ['create', 'write', 'edit', 'restore'].includes(value.mutationKind)
   );

@@ -208,18 +208,26 @@ export interface ArrangeFramesInput {
 
 export type RevisionAuthor = { kind: 'user' } | { kind: 'agent'; scopeRef: string };
 
-export interface RevisionSummary {
+/** What the manifest's commit index holds for every committed revision. */
+interface RevisionCommit {
   revisionId: string;
-  restoredFromRevisionId?: string;
   /** Canvas commit sequence, also used as the exclusive pagination cursor. */
   sequence: number;
-  createdAt: number;
   author: RevisionAuthor;
-  designSystem: DesignSystemRef;
-  /** A cache miss is building; it never borrows another revision's artifact. */
-  buildStatus: 'ready' | 'failed' | 'building';
   mutationKind: 'create' | 'write' | 'edit' | 'restore';
 }
+
+export type RevisionSummary =
+  | (RevisionCommit & {
+      state: 'saved';
+      restoredFromRevisionId?: string;
+      createdAt: number;
+      designSystem: DesignSystemRef;
+      /** Only the head is `building`; an older revision without a build is never built. */
+      buildStatus: 'ready' | 'failed' | 'building' | 'unbuilt';
+    })
+  // Its saved metadata cannot be read; the commit stays listed so paging continues.
+  | (RevisionCommit & { state: 'damaged' });
 
 export interface RevisionDiff {
   from: string;

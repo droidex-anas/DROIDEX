@@ -144,19 +144,22 @@ export class CanvasBuildCache {
     return html === null ? null : { artifactId, html };
   }
 
-  /** Status of this exact revision; an orphan artifact cannot prove a build. */
-  async revisionStatus(
+  /**
+   * What this exact revision's build produced, or null when no usable result is
+   * cached. `outputs` is one listing of the canvas cache, so an artifact's
+   * presence is checked without reading it; an orphan artifact proves nothing.
+   */
+  async revisionResult(
     canvasId: string,
     designId: string,
     revisionId: string,
-  ): Promise<'ready' | 'failed' | 'building'> {
+    outputs: ReadonlySet<string>,
+  ): Promise<'ready' | 'failed' | null> {
+    if (!outputs.has(outcomeName(revisionId))) return null;
     const outcome = await this.readOutcome(canvasId, outcomeName(revisionId));
-    if (outcome?.designId !== designId || outcome.revisionId !== revisionId) return 'building';
+    if (outcome?.designId !== designId || outcome.revisionId !== revisionId) return null;
     if (outcome.result.status === 'failed') return 'failed';
-    const artifact = await this.files
-      .readBuildOutput(canvasId, artifactName(outcome.result.artifactId))
-      .catch(() => null);
-    return artifact === null ? 'building' : 'ready';
+    return outputs.has(artifactName(outcome.result.artifactId)) ? 'ready' : null;
   }
 
   /**

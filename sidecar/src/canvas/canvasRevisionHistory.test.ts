@@ -16,10 +16,15 @@ import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import { CanvasScopes } from './canvasScopes.js';
-import type { CanvasCommand, CanvasScope, SourceFiles } from './protocol.js';
+import type { CanvasCommand, CanvasScope, RevisionSummary, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+
+function saved(summary: RevisionSummary | undefined) {
+  assert.ok(summary?.state === 'saved');
+  return summary;
+}
 
 async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const root = await canvasRoot(t);
@@ -99,10 +104,11 @@ test('history pages committed revisions newest first with safe authors and pinne
     ],
   );
   assert.deepEqual(page[0]?.author, { kind: 'user' });
-  assert.deepEqual(page[0]?.designSystem, { ...designSystem, version: 2, mode: 'dark' });
+  assert.deepEqual(saved(page[0]).designSystem, { ...designSystem, version: 2, mode: 'dark' });
   assert.ok(page[1]?.author.kind === 'agent');
   assert.match(page[1].author.scopeRef, /^scope-[0-9a-f]{64}$/);
-  assert.ok(page.every((revision) => revision.createdAt > 0 && revision.mutationKind === 'write'));
+  assert.ok(page.every((revision) => saved(revision).createdAt > 0));
+  assert.ok(page.every((revision) => revision.mutationKind === 'write'));
   assert.deepEqual(
     (
       await workspace.history.listRevisions(canvasId, designId, {
@@ -115,12 +121,6 @@ test('history pages committed revisions newest first with safe authors and pinne
   assert.deepEqual(
     await workspace.history.listRevisions(canvasId, designId, { limit: 2, before: first.sequence }),
     [],
-  );
-  await assert.rejects(
-    workspace.history.listRevisions(canvasId, designId, {
-      limit: CANVAS_LIMITS.maxRevisionPageSize + 1,
-    }),
-    { code: 'invalid_input' },
   );
   // Retry receipts may retire without retiring the canonical commit index.
   const files = new CanvasFiles(canvas.root);
@@ -238,34 +238,31 @@ test('build status belongs to the exact cached revision, including misses and fa
   const [designId] = await canvas.create('Hey');
   assert.ok(designId);
   const first = await canvas.write(designId, null, 'one');
-  const history = () =>
-    canvas.workspace.history.listRevisions(canvas.canvasId, designId, { limit: 50 });
-  assert.equal((await history())[0]?.buildStatus, 'building');
+  const history = async () =>
+    (await canvas.workspace.history.listRevisions(canvas.canvasId, designId, { limit: 50 })).map(
+      (revision) => saved(revision).buildStatus,
+    );
+  assert.deepEqual(await history(), ['building']);
   const ready = canvas.reported(designId, 'ready');
   (await canvas.fleet.compile(1)).ready('artifact-one');
   await ready;
-  assert.equal((await history())[0]?.buildStatus, 'ready');
+  assert.deepEqual(await history(), ['ready']);
   const second = await canvas.write(designId, first.revisionId, 'two');
-  assert.deepEqual(
-    (await history()).map((revision) => revision.buildStatus),
-    ['building', 'ready'],
-  );
+  assert.deepEqual(await history(), ['building', 'ready']);
   const failed = canvas.reported(designId, 'failed');
   (await canvas.fleet.compile(2)).failed('invalid_source');
   await failed;
-  assert.deepEqual(
-    (await history()).map((revision) => revision.buildStatus),
-    ['failed', 'ready'],
-  );
+  assert.deepEqual(await history(), ['failed', 'ready']);
   const builds = join(canvas.store.root, canvas.canvasId, 'builds');
   await rm(join(builds, `${first.revisionId}.json`));
-  assert.equal(
-    (await history())[1]?.buildStatus,
-    'building',
-    'a stale artifact alone cannot prove readiness',
-  );
+  // A stale artifact alone cannot prove readiness, and only the head is ever rebuilt.
+  assert.deepEqual(await history(), ['failed', 'unbuilt']);
   await writeFile(join(builds, `${second.revisionId}.json`), '{ damaged cache');
-  assert.equal((await history())[0]?.buildStatus, 'building');
+  assert.deepEqual(await history(), ['building', 'unbuilt']);
+  // A revision superseded before its build ran is never built, so it is not "building".
+  const third = await canvas.write(designId, second.revisionId, 'three');
+  await canvas.write(designId, third.revisionId, 'four');
+  assert.deepEqual(await history(), ['building', 'unbuilt', 'unbuilt', 'unbuilt']);
 });
 
 test('restore commits a new head and build, retaining later history and its original replay receipt', async (t) => {
@@ -335,18 +332,12 @@ test('restore commits a new head and build, retaining later history and its orig
   );
   assert.equal(metadata.restoredFromRevisionId, first.revisionId);
   assert.equal(metadata.parentRevisionId, third.revisionId);
-  const loaded = await new CanvasFiles(canvas.root).loadManifest(canvas.canvasId);
-  assert.ok(loaded.state === 'loaded');
-  assert.equal(
-    loaded.manifest.revisions.find((revision) => revision.revisionId === restored.revisionId)
-      ?.restoredFromRevisionId,
-    first.revisionId,
-  );
   const history = await reopened.history.listRevisions(canvas.canvasId, canvas.designId, {
     limit: 50,
   });
   assert.equal(
-    history.find((revision) => revision.revisionId === restored.revisionId)?.restoredFromRevisionId,
+    saved(history.find((revision) => revision.revisionId === restored.revisionId))
+      .restoredFromRevisionId,
     first.revisionId,
   );
   assert.deepEqual(await restoreRevision(reopened, canvas.scope, input), restored);
@@ -446,6 +437,33 @@ test('history excludes orphan revisions left by a refused manifest commit', asyn
       await canvas.workspace.history.listRevisions(canvas.canvasId, canvas.designId, { limit: 50 })
     ).map((revision) => revision.revisionId),
     [first.revisionId],
+  );
+});
+
+test('a damaged saved revision is listed as damaged without failing its page', async (t) => {
+  const canvas = await harness(t);
+  const first = await canvas.write('one', null, { 'main.tsx': 'one' });
+  const second = await canvas.write('two', first.revisionId, { 'main.tsx': 'two' });
+  const third = await canvas.write('three', second.revisionId, { 'main.tsx': 'three' });
+  await rm(join(canvas.root, canvas.canvasId, 'revisions', second.revisionId, 'revision.json'));
+  const page = await canvas.workspace.history.listRevisions(canvas.canvasId, canvas.designId, {
+    limit: 50,
+  });
+  assert.deepEqual(
+    page.map((revision) => [revision.revisionId, revision.state]),
+    [
+      [third.revisionId, 'saved'],
+      [second.revisionId, 'damaged'],
+      [first.revisionId, 'saved'],
+    ],
+  );
+  assert.ok(
+    isCanvasEvent({
+      type: 'canvas.result',
+      requestId: 'list',
+      ok: true,
+      reply: { kind: 'revisions', revisions: page },
+    }),
   );
 });
 

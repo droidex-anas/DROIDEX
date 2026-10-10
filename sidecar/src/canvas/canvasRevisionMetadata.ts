@@ -31,12 +31,12 @@ export interface SavedRevision {
   designSystem: RevisionMetadata['designSystem'];
 }
 
-// One manifest commit-index entry; the author never exposes a raw scope ID.
+// One manifest commit-index entry; the author never exposes a raw scope ID. Restore
+// provenance lives only in the immutable revision metadata above.
 export const revisionRecordSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
-    restoredFromRevisionId: canvasIdentifierSchema.optional(),
     sequence: z.number().int().positive(),
     author: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('user') }).strict(),
@@ -51,11 +51,7 @@ export function recordRevisions(
   manifest: CanvasManifest,
   scope: CanvasScope,
   mutationKind: RevisionSummary['mutationKind'],
-  designs: readonly {
-    designId: string;
-    revisionId: string | null;
-    restoredFromRevisionId?: string;
-  }[],
+  designs: readonly { designId: string; revisionId: string | null }[],
 ): void {
   const author: RevisionAuthor =
     scope.origin === 'user'
@@ -69,7 +65,6 @@ export function recordRevisions(
     manifest.revisions.push({
       designId: design.designId,
       revisionId: design.revisionId,
-      restoredFromRevisionId: design.restoredFromRevisionId,
       sequence: manifest.sequence,
       author,
       mutationKind,

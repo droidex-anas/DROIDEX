@@ -1,9 +1,10 @@
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import { CanvasBuildCache } from './canvasBuildCache.js';
-import { canvasError } from './canvasError.js';
+import { canvasError, CanvasCommandError } from './canvasError.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import { requireDesign, type CanvasManifest } from './canvasManifest.js';
+import type { RevisionMetadata } from './canvasRevisionMetadata.js';
 import type {
   CanvasScope,
   RestoreRevisionInput,
@@ -13,7 +14,9 @@ import type {
   SourceFiles,
   WriteReceipt,
 } from './protocol.js';
-import { CANVAS_LIMITS, revisionPageSchema } from './schema.js';
+import { CANVAS_LIMITS } from './schema.js';
+
+type RevisionRecord = CanvasManifest['revisions'][number];
 
 /** Reads the canonical commit index and source; it owns no separate history state. */
 export class CanvasRevisionHistory {
@@ -32,36 +35,20 @@ export class CanvasRevisionHistory {
     designId: string,
     page: RevisionPage,
   ): Promise<RevisionSummary[]> {
-    const parsed = revisionPageSchema.safeParse(page);
-    if (!parsed.success)
-      throw canvasError(
-        'invalid_input',
-        'Choose a revision page size from 1 to 50 and a nonnegative sequence cursor.',
-      );
     const manifest = this.manifest(canvasId);
-    requireDesign(manifest, designId);
+    const design = requireDesign(manifest, designId);
     const history = manifest.revisions;
-    const records: typeof history = [];
+    const records: RevisionRecord[] = [];
     for (let index = history.length - 1; index >= 0 && records.length < page.limit; index -= 1) {
       const record = history[index];
       if (record.designId !== designId) continue;
       if (page.before !== undefined && record.sequence >= page.before) continue;
       records.push(record);
     }
+    // An unreadable cache holds nothing to show; the heads rebuild it.
+    const outputs = await this.files.listBuildOutputs(canvasId).catch(() => new Set<string>());
     return Promise.all(
-      records.map(async (record) => {
-        const metadata = await this.files.readRevisionMetadata(canvasId, record);
-        return {
-          revisionId: record.revisionId,
-          restoredFromRevisionId: record.restoredFromRevisionId,
-          sequence: record.sequence,
-          createdAt: metadata.createdAt,
-          author: { ...record.author },
-          designSystem: metadata.designSystem,
-          buildStatus: await this.cache.revisionStatus(canvasId, designId, record.revisionId),
-          mutationKind: record.mutationKind,
-        };
-      }),
+      records.map((record) => this.summary(canvasId, design.revisionId, record, outputs)),
     );
   }
 
@@ -112,6 +99,40 @@ export class CanvasRevisionHistory {
       result.files.push({ path, kind, diff });
     }
     return result;
+  }
+
+  /** A revision whose saved metadata cannot be read is listed as damaged, not dropped. */
+  private async summary(
+    canvasId: string,
+    headRevisionId: string | null,
+    record: RevisionRecord,
+    outputs: ReadonlySet<string>,
+  ): Promise<RevisionSummary> {
+    const commit = {
+      revisionId: record.revisionId,
+      sequence: record.sequence,
+      author: { ...record.author },
+      mutationKind: record.mutationKind,
+    };
+    let metadata: RevisionMetadata;
+    try {
+      metadata = await this.files.readRevisionMetadata(canvasId, record);
+    } catch (error) {
+      if (error instanceof CanvasCommandError) return { ...commit, state: 'damaged' };
+      throw error;
+    }
+    const { designId, revisionId } = record;
+    const result = await this.cache.revisionResult(canvasId, designId, revisionId, outputs);
+    // Only the head is ever built, so an older revision without a result stays unbuilt.
+    const pending = revisionId === headRevisionId ? 'building' : 'unbuilt';
+    return {
+      ...commit,
+      state: 'saved',
+      restoredFromRevisionId: metadata.restoredFromRevisionId,
+      createdAt: metadata.createdAt,
+      designSystem: metadata.designSystem,
+      buildStatus: result ?? pending,
+    };
   }
 
   private manifest(canvasId: string): CanvasManifest {

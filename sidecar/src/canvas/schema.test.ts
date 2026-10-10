@@ -281,6 +281,7 @@ const wire: SidecarWire = {
   },
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
   revision: {
+    state: 'saved',
     revisionId: 'rev_02',
     restoredFromRevisionId: 'rev_01',
     sequence: 7,
