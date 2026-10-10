@@ -64,6 +64,19 @@ function memberRoot(tag: ts.PropertyAccessExpression): ts.Identifier | null {
   return ts.isIdentifier(target) ? target : null;
 }
 
+/** Declarations whose own `name` is the one name they bind. */
+const NAMED_DECLARATIONS: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.ImportClause,
+  ts.SyntaxKind.NamespaceImport,
+  ts.SyntaxKind.ImportEqualsDeclaration,
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ClassDeclaration,
+  ts.SyntaxKind.ClassExpression,
+  ts.SyntaxKind.EnumDeclaration,
+  ts.SyntaxKind.ModuleDeclaration,
+]);
+
 /**
  * Every name the file binds at run time, at any depth: value imports, variables,
  * parameters, functions, classes, enums and namespaces.
@@ -71,22 +84,15 @@ function memberRoot(tag: ts.PropertyAccessExpression): ts.Identifier | null {
 function declaredNames(source: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   const visit = (node: ts.Node): void => {
+    // A type-only import binds nothing at run time, and neither do its names.
     if (ts.isImportClause(node) && node.phaseModifier === ts.SyntaxKind.TypeKeyword) return;
-    if (ts.isImportClause(node) && node.name) names.add(node.name.text);
-    else if (ts.isImportSpecifier(node) && !node.isTypeOnly) names.add(node.name.text);
-    else if (ts.isNamespaceImport(node) || ts.isImportEqualsDeclaration(node))
-      names.add(node.name.text);
-    else if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) names.add(node.name.text);
-    else if (ts.isVariableDeclaration(node) || ts.isParameter(node)) addBindings(node.name, names);
-    else if (
-      (ts.isFunctionDeclaration(node) ||
-        ts.isFunctionExpression(node) ||
-        ts.isClassDeclaration(node) ||
-        ts.isClassExpression(node) ||
-        ts.isEnumDeclaration(node)) &&
-      node.name
-    )
-      names.add(node.name.text);
+    if (ts.isImportSpecifier(node) && node.isTypeOnly) return;
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node)) addBindings(node.name, names);
+    else if (ts.isImportSpecifier(node)) names.add(node.name.text);
+    else if (NAMED_DECLARATIONS.has(node.kind)) {
+      const { name } = node as ts.NamedDeclaration;
+      if (name && ts.isIdentifier(name)) names.add(name.text);
+    }
     ts.forEachChild(node, visit);
   };
   visit(source);
