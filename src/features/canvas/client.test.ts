@@ -185,7 +185,7 @@ test('asset listing round trips through the renderer boundary and rejects a refu
   });
   const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
-  const handle = createCanvasCommandHandler(
+  const { handle } = createCanvasCommandHandler(
     Promise.resolve(workspace),
     scopes,
     builds,
@@ -226,7 +226,7 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
   t.after(() => workspace.close());
   const transport = fakeCanvasBridge();
   const client = new CanvasClient(transport.transport);
-  const handle = createCanvasCommandHandler(
+  const { handle } = createCanvasCommandHandler(
     Promise.resolve(workspace),
     scopes,
     builds,

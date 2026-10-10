@@ -149,6 +149,7 @@ function isServerEvent(value: unknown): value is ServerEvent {
     case 'canvas.snapshot':
     case 'canvas.change':
     case 'canvas.result':
+    case 'canvas.captureRequest':
       return isCanvasEvent(value);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
