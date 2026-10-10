@@ -24,11 +24,8 @@ import {
   type CompileInput,
 } from '../canvas/compiler.js';
 import type { DesignCompiler } from '../canvas/canvasCompilerProcesses.js';
-import {
-  CanvasFiles,
-  REVISION_METADATA_VERSION,
-  type CanvasFileSystem,
-} from '../canvas/canvasFiles.js';
+import { CanvasFiles, type CanvasFileSystem } from '../canvas/canvasFiles.js';
+import { REVISION_METADATA_VERSION } from '../canvas/canvasRevisionMetadata.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import type {

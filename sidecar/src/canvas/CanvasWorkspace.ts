@@ -12,9 +12,17 @@ import { CanvasCommits, CLOSING, type CanvasCommitOwner } from './canvasCommits.
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasFrameEdits } from './CanvasFrameEdits.js';
-import { placeFrames, requireSeedFrames, stageFrames, stageRevision } from './canvasFrames.js';
+import {
+  placeFrames,
+  requireSeedFrames,
+  stageFrames,
+  stageRevision,
+  type SourceWriteOptions,
+} from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
+import { recordRevisions } from './canvasRevisionMetadata.js';
 import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
   canvasChange,
@@ -29,6 +37,7 @@ import {
   requireExpectedRevision,
   toFrame,
   type CanvasManifest,
+  type SourceRevisionMutation,
 } from './canvasManifest.js';
 import type {
   ArrangeFramesInput,
@@ -38,7 +47,6 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
-  EditElementInput,
   OwnedAsset,
   RevisionRef,
   SourceFiles,
@@ -60,6 +68,7 @@ export class CanvasWorkspace {
   private readonly attachments: CanvasAttachments;
   private readonly frameEdits: CanvasFrameEdits;
   private readonly root: string;
+  readonly history: CanvasRevisionHistory;
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -72,6 +81,7 @@ export class CanvasWorkspace {
     this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
     this.root = writerLease.directory;
     this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
+    this.history = new CanvasRevisionHistory(this, heads, files);
   }
 
   /** Claims the physical storage root before loading heads or cleaning staging. */
@@ -228,6 +238,7 @@ export class CanvasWorkspace {
         next.layoutSequence += 1;
         next.sequence += 1;
         next.updatedAt = Date.now();
+        recordRevisions(next, scope, 'create', designs);
         recordMutation(
           next,
           {
@@ -265,34 +276,36 @@ export class CanvasWorkspace {
     });
   }
 
-  recordedEdit(scope: CanvasScope, input: EditElementInput): WriteReceipt | null {
+  recordedSourceMutation(
+    scope: CanvasScope,
+    designId: string,
+    mutation: SourceRevisionMutation,
+  ): WriteReceipt | null {
     this.commits.requireOpen();
-    const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
-    return recordedRevision(manifest, input.mutationId, 'edit', mutationFingerprint(input));
+    const manifest = this.leases.requireDesigns(scope, [designId]);
+    const fingerprint = mutationFingerprint(mutation.input);
+    return recordedRevision(manifest, mutation.input.mutationId, mutation.kind, fingerprint);
   }
 
-  // Direct edits retain their original request fingerprint, not the derived file write.
+  // Edits and restores retain their original request fingerprint, not the derived file write.
   write(
     scope: CanvasScope,
     input: WriteFilesInput,
-    options: {
-      edit?: EditElementInput;
-      validateSource?: (files: ReadonlyMap<string, string>) => void | Promise<void>;
-    } = {},
+    options: SourceWriteOptions = {},
   ): Promise<WriteReceipt> {
-    const { edit, validateSource } = options;
+    const { mutation } = options;
     return this.commits.admit(async () => {
       this.commits.requireOpen();
       const manifest = this.leases.requireDesigns(scope, [input.designId]);
       const canvasId = manifest.canvasId;
-      const kind = edit ? 'edit' : 'write';
-      const fingerprint = mutationFingerprint(edit ?? input);
+      const kind = mutation?.kind ?? 'write';
+      const fingerprint = mutationFingerprint(mutation?.input ?? input);
       const recorded = recordedRevision(manifest, input.mutationId, kind, fingerprint);
       if (recorded) return recorded;
 
       const design = requireDesign(manifest, input.designId);
       requireExpectedRevision(design, input.expectedRevisionId);
-      const revision = await stageRevision(this.files, canvasId, design, input, validateSource);
+      const revision = await stageRevision(this.files, canvasId, design, input, options);
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, [input.designId]);
@@ -311,6 +324,7 @@ export class CanvasWorkspace {
           revisionId: revision.revisionId,
           sequence: next.sequence,
         };
+        recordRevisions(next, scope, kind, [revision]);
         recordMutation(
           next,
           {

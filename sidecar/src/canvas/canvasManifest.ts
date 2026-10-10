@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { canvasError } from './canvasError.js';
+import { hasOrderedRevisions, revisionRecordSchema } from './canvasRevisionMetadata.js';
 import type {
   CanvasBuildState,
   CanvasChange,
@@ -12,6 +13,8 @@ import type {
   CanvasSnapshot,
   CanvasSummary,
   CreateFramesResult,
+  EditElementInput,
+  RestoreRevisionInput,
   WriteReceipt,
 } from './protocol.js';
 import {
@@ -106,6 +109,17 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('restore'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+      sequence: versionSchema,
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('arrange'),
       mutationId: canvasIdentifierSchema,
       scopeId: scopeIdSchema,
@@ -174,6 +188,8 @@ export const canvasManifestSchema = z
       .nullable(),
     designs: z.array(persistedDesignSchema),
     tombstones: z.array(tombstoneSchema).max(CANVAS_TOMBSTONE_LIMIT),
+    // Canonical commit index, retained independently of the bounded retry ledger.
+    revisions: z.array(revisionRecordSchema),
     mutations: z.array(persistedMutationSchema).max(CANVAS_MUTATION_RETENTION.unsettled),
   })
   .strict()
@@ -185,12 +201,22 @@ export const canvasManifestSchema = z
   })
   .refine((manifest) => !hasDuplicate(manifest.tombstones.map((entry) => entry.undoId)), {
     message: 'A canvas manifest holds each Undo ID once.',
+  })
+  .refine((manifest) => !hasDuplicate(manifest.revisions.map((record) => record.revisionId)), {
+    message: 'A canvas manifest holds each revision ID once.',
+  })
+  .refine(hasOrderedRevisions, {
+    message: 'Revision history must follow the canvas commit sequence.',
   });
 
 export type PersistedDesign = z.infer<typeof persistedDesignSchema>;
 export type Placement = z.infer<typeof placementSchema>;
 export type PersistedMutation = z.infer<typeof persistedMutationSchema>;
 export type CanvasManifest = z.infer<typeof canvasManifestSchema>;
+
+export type SourceRevisionMutation =
+  | { kind: 'edit'; input: EditElementInput }
+  | { kind: 'restore'; input: RestoreRevisionInput };
 
 export function emptyCanvasManifest(canvasId: string, name: string, now: number): CanvasManifest {
   return {
@@ -205,6 +231,7 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     creation: null,
     designs: [],
     tombstones: [],
+    revisions: [],
     mutations: [],
   };
 }
@@ -276,15 +303,16 @@ export function recordedCreate(
   };
 }
 
-/** The original receipt for a source write or direct edit. */
+/** The original receipt for a source mutation. */
 export function recordedRevision(
   manifest: CanvasManifest,
   mutationId: string,
-  kind: 'write' | 'edit',
+  kind: 'write' | 'edit' | 'restore',
   fingerprint: string,
 ): WriteReceipt | null {
   const record = findMutation(manifest, mutationId, kind, fingerprint);
-  if (record?.kind !== 'write' && record?.kind !== 'edit') return null;
+  if (record?.kind !== 'write' && record?.kind !== 'edit' && record?.kind !== 'restore')
+    return null;
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
 }
 

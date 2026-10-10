@@ -145,6 +145,24 @@ export class CanvasBuildCache {
   }
 
   /**
+   * What this exact revision's build produced, or null when no usable result is
+   * cached. `outputs` is one listing of the canvas cache, so an artifact's
+   * presence is checked without reading it; an orphan artifact proves nothing.
+   */
+  async revisionResult(
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+    outputs: ReadonlySet<string>,
+  ): Promise<'ready' | 'failed' | null> {
+    if (!outputs.has(outcomeName(revisionId))) return null;
+    const outcome = await this.readOutcome(canvasId, outcomeName(revisionId));
+    if (outcome?.designId !== designId || outcome.revisionId !== revisionId) return null;
+    if (outcome.result.status === 'failed') return 'failed';
+    return outputs.has(artifactName(outcome.result.artifactId)) ? 'ready' : null;
+  }
+
+  /**
    * The build state every design on these canvases can be served with. Only the
    * manifest decides that: an outcome it does not vouch for is ignored, which
    * leaves the frame `pending` and due a rebuild. A design is read for its own

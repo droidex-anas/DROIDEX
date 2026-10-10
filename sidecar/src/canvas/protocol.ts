@@ -14,6 +14,8 @@ import type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
+  RestoreRevisionInput,
+  RevisionPage,
   SourceFiles,
   UndoRemovalInput,
   WriteFilesInput,
@@ -31,6 +33,8 @@ export type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
+  RestoreRevisionInput,
+  RevisionPage,
   RevisionRef,
   SourceFiles,
   UndoRemovalInput,
@@ -181,6 +185,41 @@ export interface WriteReceipt {
   sequence: number;
 }
 
+export type RevisionAuthor = { kind: 'user' } | { kind: 'agent'; scopeRef: string };
+
+/** What the manifest's commit index holds for every committed revision. */
+interface RevisionCommit {
+  revisionId: string;
+  /** Canvas commit sequence, also used as the exclusive pagination cursor. */
+  sequence: number;
+  author: RevisionAuthor;
+  mutationKind: 'create' | 'write' | 'edit' | 'restore';
+}
+
+export type RevisionSummary =
+  | (RevisionCommit & {
+      state: 'saved';
+      restoredFromRevisionId?: string;
+      createdAt: number;
+      designSystem: DesignSystemRef;
+      /** Only the head is `building`; an older revision without a build is never built. */
+      buildStatus: 'ready' | 'failed' | 'building' | 'unbuilt';
+    })
+  // Its saved metadata cannot be read; the commit stays listed so paging continues.
+  | (RevisionCommit & { state: 'damaged' });
+
+export interface RevisionDiff {
+  from: string;
+  to: string;
+  /** A truncated file lost diff lines to the total UTF-8 byte cap. */
+  files: {
+    path: string;
+    kind: 'added' | 'removed' | 'modified';
+    diff: string;
+    truncated: boolean;
+  }[];
+}
+
 // The stable codes from spec §8. Every failure carries a short recovery message
 // and never a stack trace, private path or provider prompt.
 export type CanvasErrorCode =
@@ -222,6 +261,21 @@ export type CanvasCommand =
   | { type: 'canvas.attachment'; requestId: string; appSessionId: string }
   | { type: 'canvas.subscribe'; requestId: string; canvasId: string }
   | { type: 'canvas.unsubscribe'; requestId: string; canvasId: string }
+  | {
+      type: 'canvas.listRevisions';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      page: RevisionPage;
+    }
+  | {
+      type: 'canvas.diffRevisions';
+      requestId: string;
+      canvasId: string;
+      designId: string;
+      from: string;
+      to: string;
+    }
   // A derived read, authorized like `canvas.subscribe` by the page asking: the
   // artifact is a projection of a canvas any renderer page may watch.
   | {
@@ -232,7 +286,7 @@ export type CanvasCommand =
       revisionId: string;
     }
   // A source read, authorized like `canvas.subscribe` by the page asking: the
-  // source drawer is the explicit place to read a revision's files (spec §9).
+  // source drawer and revision history read a committed revision's files (spec §9).
   | {
       type: 'canvas.readSource';
       requestId: string;
@@ -270,6 +324,13 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: EditElementInput;
+    }
+  | {
+      type: 'canvas.restoreRevision';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: RestoreRevisionInput;
     }
   | {
       type: 'canvas.arrange';
@@ -313,6 +374,8 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'revisions'; revisions: RevisionSummary[] }
+  | { kind: 'revisionDiff'; diff: RevisionDiff }
   | { kind: 'artifact'; artifact: PreviewArtifact | null }
   | { kind: 'source'; files: SourceFiles };
 

@@ -5,12 +5,18 @@
 
 import { randomUUID } from 'node:crypto';
 import { canvasError, CanvasCommandError } from './canvasError.js';
-import { REVISION_METADATA_VERSION, type CanvasFiles, type NewRevision } from './canvasFiles.js';
-import type { CanvasManifest, PersistedDesign } from './canvasManifest.js';
+import type { CanvasFiles } from './canvasFiles.js';
+import type { CanvasManifest, PersistedDesign, SourceRevisionMutation } from './canvasManifest.js';
+import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMetadata.js';
 import { stageSeed } from './canvasSeeds.js';
 import { FRAME_GAP_PX, placeVariants } from './canvasVariantPlacement.js';
 import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation, type FrameRect } from './schema.js';
+
+export interface SourceWriteOptions {
+  mutation?: SourceRevisionMutation;
+  validateSource?: (files: ReadonlyMap<string, string>) => void | Promise<void>;
+}
 
 /** One frame's identity and seeded source, before its position is known. */
 export interface StagedFrame {
@@ -60,7 +66,7 @@ export async function stageRevision(
   canvasId: string,
   design: PersistedDesign,
   input: WriteFilesInput,
-  validateSource?: (files: ReadonlyMap<string, string>) => void | Promise<void>,
+  { mutation, validateSource }: SourceWriteOptions,
 ): Promise<NewRevision> {
   const merged = mergeSource(await currentSource(files, canvasId, design), input);
   const violation = mergedRevisionViolation(merged);
@@ -71,6 +77,7 @@ export async function stageRevision(
     designId: input.designId,
     revisionId: randomUUID(),
     parentRevisionId: design.revisionId,
+    restoredFromRevisionId: mutation?.kind === 'restore' ? mutation.input.revisionId : undefined,
     designSystem: input.designSystem ?? design.designSystem,
     createdAt: Date.now(),
   };

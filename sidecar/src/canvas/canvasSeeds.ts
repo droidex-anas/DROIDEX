@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { canvasError } from './canvasError.js';
-import { REVISION_METADATA_VERSION, type CanvasFiles } from './canvasFiles.js';
+import type { CanvasFiles } from './canvasFiles.js';
+import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
 import type { CreateFramesInput } from './protocol.js';
 
 /** A seeded frame owns a complete independent copy; IDs record provenance only. */

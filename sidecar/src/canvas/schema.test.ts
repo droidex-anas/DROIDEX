@@ -24,6 +24,10 @@ import type {
   DesignSystemRef,
   EditElementInput,
   ElementRef,
+  RevisionDiff,
+  RevisionPage,
+  RevisionSummary,
+  RestoreRevisionInput,
   SourceElement,
   WriteFilesInput,
   WriteReceipt,
@@ -63,6 +67,10 @@ type SidecarWire = {
   elementRef: ElementRef;
   element: SourceElement;
   edit: EditElementInput;
+  revision: RevisionSummary;
+  diff: RevisionDiff;
+  page: RevisionPage;
+  restore: RestoreRevisionInput;
   error: CanvasError;
   command: CanvasCommand;
   reply: CanvasReply;
@@ -87,6 +95,10 @@ type RendererWire = {
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
   edit: Renderer.EditElementInput;
+  revision: Renderer.RevisionSummary;
+  diff: Renderer.RevisionDiff;
+  page: Renderer.RevisionPage;
+  restore: Renderer.RestoreRevisionInput;
   error: Renderer.CanvasError;
   command: Renderer.CanvasCommand;
   reply: Renderer.CanvasReply;
@@ -268,6 +280,29 @@ const wire: SidecarWire = {
     },
   },
   error: { code: 'revision_conflict', message: 'Reload the design and reapply your change.' },
+  revision: {
+    state: 'saved',
+    revisionId: 'rev_02',
+    restoredFromRevisionId: 'rev_01',
+    sequence: 7,
+    createdAt: 1_767_225_600_000,
+    author: { kind: 'agent', scopeRef: 'scope-safe' },
+    designSystem,
+    buildStatus: 'ready',
+    mutationKind: 'restore',
+  },
+  diff: {
+    from: 'rev_01',
+    to: 'rev_02',
+    files: [{ path: 'main.tsx', kind: 'modified', diff: '-old\n+new\n', truncated: false }],
+  },
+  page: { limit: 50, before: 7 },
+  restore: {
+    mutationId: 'restore-hey',
+    designId: 'dsg_hey',
+    revisionId: 'rev_01',
+    expectedRevisionId: 'rev_02',
+  },
   command: {
     type: 'canvas.write',
     requestId: 'req_01',
@@ -309,6 +344,10 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     elementRef: true,
     element: true,
     edit: true,
+    revision: true,
+    diff: true,
+    page: true,
+    restore: true,
     error: true,
     command: true,
     reply: true,
@@ -483,6 +522,23 @@ test('the renderer accepts a ready element map and rejects incomplete or unbound
     false,
   );
   assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
+});
+
+test('the renderer bounds restored-from revision identities in history replies', () => {
+  const event = (restoredFromRevisionId: unknown) => ({
+    type: 'canvas.result',
+    requestId: 'req_01',
+    ok: true,
+    reply: {
+      kind: 'revisions',
+      revisions: [{ ...wire.revision, restoredFromRevisionId }],
+    },
+  });
+  assert.equal(isCanvasEvent(event('rev_01')), true);
+  assert.equal(isCanvasEvent(event(undefined)), true);
+  for (const invalid of [null, '', 'r'.repeat(129), 1]) {
+    assert.equal(isCanvasEvent(event(invalid)), false);
+  }
 });
 
 test('the mutation fixtures parse, and the parsed values fit the mirror', () => {
