@@ -403,7 +403,7 @@ function SheetNote({
   );
 }
 
-/** A build that failed with nothing older to show: where, why, and the way in. */
+/** A build that failed: where, why, and the way in. */
 function FailedNote({
   state,
   compact,

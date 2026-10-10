@@ -23,7 +23,7 @@ export function missingLabel(
 }
 
 /** The revision whose artifact this frame shows, if any is worth asking for. */
-export function previewRevisionId(build: CanvasBuildState): string | null {
+function previewRevisionId(build: CanvasBuildState): string | null {
   if (build.status === 'ready') return build.revisionId;
   if (build.status === 'failed') return build.lastWorkingRevisionId;
   return null;
@@ -76,7 +76,9 @@ export type SheetState =
  * `agentWorking` is whether this chat's agent has a turn running. A frame with
  * no source is being written only while it does; otherwise it is empty.
  * `released` means the frame held a live slot and lost it, so returning to it
- * restarts the design from its own beginning.
+ * restarts the design from its own beginning. A failed frame says so even when
+ * an older revision works: that design shows only in a live slot, under the
+ * failure banner.
  */
 export function sheetState(
   frame: Pick<CanvasFrame, 'revisionId' | 'build'>,
@@ -89,6 +91,7 @@ export function sheetState(
     return agentWorking
       ? { kind: 'busy', stage: 'writing' }
       : { kind: 'note', title: 'Empty frame', detail: 'Nothing has been written to it yet.' };
+  if (build.status === 'failed') return { kind: 'failed', diagnostics: build.diagnostics };
   if (shown !== null)
     return {
       kind: 'still',
@@ -100,8 +103,6 @@ export function sheetState(
   switch (build.status) {
     case 'building':
       return { kind: 'busy', stage: 'building' };
-    case 'failed':
-      return { kind: 'failed', diagnostics: build.diagnostics };
     case 'cancelled':
       return { kind: 'note', title: 'Build cancelled', detail: 'Its next change builds it again.' };
     default:
