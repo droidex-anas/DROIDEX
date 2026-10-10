@@ -16,6 +16,7 @@ import {
   revisionMetadataSchema,
   type NewRevision,
   type RevisionMetadata,
+  type SavedRevision,
 } from './canvasRevisionMetadata.js';
 
 const MANIFEST_FILE = 'manifest.json';
@@ -43,11 +44,6 @@ const PROFILE_OWNED = false;
 const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
 const CREATE_FLAGS =
   constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
-
-export interface SavedRevision {
-  files: Map<string, string>;
-  designSystem: RevisionMetadata['designSystem'];
-}
 
 export type ManifestLoad =
   | { state: 'missing' }

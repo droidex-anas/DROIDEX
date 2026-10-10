@@ -5,18 +5,16 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { canvasError } from './canvasError.js';
+import { hasOrderedRevisions, revisionRecordSchema } from './canvasRevisionMetadata.js';
 import type {
   CanvasBuildState,
   CanvasChange,
   CanvasFrame,
   CanvasSnapshot,
   CanvasSummary,
-  CanvasScope,
   CreateFramesResult,
   EditElementInput,
   RestoreRevisionInput,
-  RevisionAuthor,
-  RevisionSummary,
   WriteReceipt,
 } from './protocol.js';
 import {
@@ -66,20 +64,6 @@ const persistedDesignSchema = z
 const fingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
 // A lease ID never reaches a filesystem path, so it is bounded, not charset-checked.
 const scopeIdSchema = z.string().min(1).max(200);
-
-const revisionRecordSchema = z
-  .object({
-    designId: canvasIdentifierSchema,
-    revisionId: canvasIdentifierSchema,
-    restoredFromRevisionId: canvasIdentifierSchema.optional(),
-    sequence: z.number().int().positive(),
-    author: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('user') }).strict(),
-      z.object({ kind: z.literal('agent'), scopeRef: canvasIdentifierSchema }).strict(),
-    ]),
-    mutationKind: z.enum(['create', 'write', 'edit', 'restore']),
-  })
-  .strict();
 
 // What one accepted arrange acknowledged, and all it has to retain: the layout
 // an arrange changes is the layout a retry has to answer for.
@@ -332,34 +316,6 @@ export function recordedRevision(
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
 }
 
-/** Records only revisions whose manifest commit will publish them. */
-export function recordRevisions(
-  manifest: CanvasManifest,
-  scope: CanvasScope,
-  mutationKind: RevisionSummary['mutationKind'],
-  designs: readonly {
-    designId: string;
-    revisionId: string | null;
-    restoredFromRevisionId?: string;
-  }[],
-): void {
-  const author: RevisionAuthor =
-    scope.origin === 'user'
-      ? { kind: 'user' }
-      : { kind: 'agent', scopeRef: `scope-${mutationFingerprint(scope.scopeId)}` };
-  for (const design of designs) {
-    if (design.revisionId === null) continue;
-    manifest.revisions.push({
-      designId: design.designId,
-      revisionId: design.revisionId,
-      restoredFromRevisionId: design.restoredFromRevisionId,
-      sequence: manifest.sequence,
-      author,
-      mutationKind,
-    });
-  }
-}
-
 export function requireDesign(manifest: CanvasManifest, designId: string): PersistedDesign {
   const design = manifest.designs.find((entry) => entry.designId === designId);
   if (!design)
@@ -511,16 +467,4 @@ function canonicalJson(value: unknown): string {
 
 function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
-}
-
-function hasOrderedRevisions(manifest: {
-  sequence: number;
-  revisions: { sequence: number }[];
-}): boolean {
-  let previous = 0;
-  for (const revision of manifest.revisions) {
-    if (revision.sequence < previous || revision.sequence > manifest.sequence) return false;
-    previous = revision.sequence;
-  }
-  return true;
 }

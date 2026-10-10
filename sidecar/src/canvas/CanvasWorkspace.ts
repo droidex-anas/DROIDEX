@@ -22,6 +22,7 @@ import {
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
 import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
+import { recordRevisions } from './canvasRevisionMetadata.js';
 import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
   canvasChange,
@@ -32,7 +33,6 @@ import {
   recordedCreate,
   recordedRevision,
   recordMutation,
-  recordRevisions,
   requireDesign,
   requireExpectedRevision,
   toFrame,
