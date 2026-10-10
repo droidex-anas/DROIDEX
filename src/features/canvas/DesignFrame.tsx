@@ -34,6 +34,8 @@ export interface DesignFrameProps {
   rect: FrameRect;
   /** The board's scale, so the frame's chrome can be laid out in screen pixels. */
   scale: number;
+  /** Screen pixels from the frame's left edge to the board's right edge. */
+  roomRight: number;
   /** Spec §11's timings, resolved against the reduced-motion preference. */
   motion: CanvasMotion;
   /** It joined the board after the board opened, so it arrives with motion. */
@@ -124,7 +126,13 @@ export function DesignFrame(props: DesignFrameProps) {
         )}
       </div>
 
-      {showTools && <FrameTools {...props} stacked={!toolsBeside} />}
+      {showTools && (
+        <FrameTools
+          {...props}
+          // Stacked actions start where the label does, unless the board ends first.
+          stacked={toolsBeside ? undefined : props.roomRight >= toolsPx ? 'start' : 'end'}
+        />
+      )}
 
       {selected && (
         <div className="canvas-frame-size canvas-chrome">
@@ -219,10 +227,10 @@ function FrameTools({
   onExitInteract,
   onOpenSource,
   onToggleChat,
-}: DesignFrameProps & { stacked: boolean }) {
+}: DesignFrameProps & { stacked?: 'start' | 'end' }) {
   return (
     <div
-      data-stacked={stacked || undefined}
+      data-stacked={stacked}
       className="canvas-frame-tools canvas-chrome"
       onPointerDown={(event) => {
         event.stopPropagation();

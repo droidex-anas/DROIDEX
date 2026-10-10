@@ -111,11 +111,15 @@
 }
 
 /* A frame too narrow on screen for both keeps its label and lifts its actions
-   above the label row, starting where the label does. */
+   above the label row, starting where the label does, or ending where the
+   frame does when the board would cut them off. */
 .canvas-frame-tools[data-stacked] {
+  bottom: calc(100% + 32px / var(--board-scale));
+}
+
+.canvas-frame-tools[data-stacked='start'] {
   right: auto;
   left: 0;
-  bottom: calc(100% + 32px / var(--board-scale));
   transform-origin: 0 100%;
 }
 

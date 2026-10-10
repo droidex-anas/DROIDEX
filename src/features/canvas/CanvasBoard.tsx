@@ -343,6 +343,7 @@ export function CanvasBoard({
             frame={frame}
             rect={drawn[index].rect}
             scale={scale}
+            roomRight={view.size.x - (view.viewport.x + drawn[index].rect.x * scale)}
             motion={motion}
             arriving={!openedWith.has(frame.designId)}
             visible={visible.includes(frame.designId)}
