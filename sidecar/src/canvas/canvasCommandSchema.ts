@@ -2,6 +2,7 @@
 // renderer mirror in protocol.ts must describe exactly what this accepts.
 
 import { z } from 'zod';
+import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import type { CanvasCommand } from './protocol.js';
 import {
   arrangeFramesInputSchema,
@@ -147,6 +148,25 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ...target,
       input: renameFrameInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.reportCapture'),
+      ...request,
+      captureId: canvasIdentifierSchema,
+      capture: z.discriminatedUnion('ok', [
+        z
+          .object({
+            ok: z.literal(true),
+            png: z
+              .string()
+              .max(MAX_CAPTURE_BASE64_LENGTH)
+              .regex(/^[A-Za-z0-9+/]*={0,2}$/),
+          })
+          .strict(),
+        z.object({ ok: z.literal(false), message: z.string().min(1).max(300) }).strict(),
+      ]),
     })
     .strict(),
 ]);

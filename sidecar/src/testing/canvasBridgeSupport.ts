@@ -5,6 +5,7 @@ import { CompileCancelledError } from '../canvas/compiler.js';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { listCanvasAssets } from '../canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../canvas/canvasBridge.js';
+import type { CanvasCapture } from '../canvas/canvasCaptures.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
@@ -50,7 +51,7 @@ export function canvasCommandHandler(options: {
   root: string;
 }) {
   const listeners = new Set<(pageId: string) => void>();
-  const handle = createCanvasCommandHandler(
+  const { handle, capture } = createCanvasCommandHandler(
     options.ready,
     options.scopes,
     options.builds,
@@ -68,6 +69,7 @@ export function canvasCommandHandler(options: {
   );
   return {
     listeners,
+    capture,
     handle: (command: unknown, pageId: string | null = PAGE) => handle(command, pageId),
     /** Reports a renderer page's socket closing, the way the bridge server does. */
     pageGone: (pageId: string) => {
@@ -85,6 +87,7 @@ export interface Harness {
   handle: (command: unknown, pageId?: string | null) => Promise<boolean>;
   /** Reports a renderer page's socket closing, the way the bridge server does. */
   pageGone: (pageId: string) => void;
+  capture: CanvasCapture;
 }
 
 export async function harness(
@@ -108,14 +111,14 @@ export async function harness(
     },
     ...(options.fs ? { fs: options.fs } : {}),
   });
-  const { handle, pageGone } = canvasCommandHandler({
+  const { handle, pageGone, capture } = canvasCommandHandler({
     ready: Promise.resolve(workspace),
     scopes,
     builds,
     events,
     root: directory,
   });
-  return { root: directory, workspace, scopes, builds, events, handle, pageGone };
+  return { root: directory, workspace, scopes, builds, events, handle, pageGone, capture };
 }
 
 export async function buildingCanvas(t: TestContext, fs?: CanvasFileSystem) {
@@ -134,6 +137,16 @@ export function readyFrames(canvas: Harness, canvasId: string, designIds: string
       resolve();
     });
   });
+}
+
+/** The nth capture the sidecar asked renderer pages for, once its awaits have run. */
+export async function captureRequest(events: ServerEvent[], index: number) {
+  for (let yields = 0; yields < 100; yields += 1) {
+    const requests = events.filter((event) => event.type === 'canvas.captureRequest');
+    if (requests.length > index) return requests[index];
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  throw new Error('No capture request reached the renderer pages.');
 }
 
 /** The event answering one request, which every command produces exactly one of. */

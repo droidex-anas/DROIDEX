@@ -430,9 +430,20 @@ the per-chat loopback endpoint; Codex declares the same tools through dynamic
 tools on thread start. Claude's session-local `PreToolUse` hook pins both
 `canvas_read` and `canvas_inspect` tool-use IDs to their original leases. Child
 runtimes do not inherit the parent's Canvas endpoint without an assigned child
-scope. Agent inspection currently
-returns build diagnostics; screenshot and element capture report
-`capture_unavailable` until a scoped capture API exists.
+scope.
+
+An inspect screenshot reuses the preview capture below; the sidecar holds no
+pixels. It needs the frame's current revision to have a ready build, then
+`CanvasCaptures` broadcasts `canvas.captureRequest` naming that exact revision
+and waits for `canvas.reportCapture` from the pages watching the canvas when it
+asked. A page answers from its registered live preview of that revision through
+`captureCanvasImage`, or refuses. The first valid PNG, at most 8 MiB, returns to
+the model as image content beside the build facts; Codex receives it as an
+`inputImage` data URL. No watching page, every watching page refusing or leaving,
+or seven seconds without an answer return `capture_unavailable`. Revoking the
+turn's lease aborts the wait, and a read revalidates its lease before delivery,
+so a capture that settles after its turn ended is dropped. Writes and turn
+settlement never wait on a capture. Element capture remains `capture_unavailable`.
 
 ### Canvas live previews
 

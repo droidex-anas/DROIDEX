@@ -59,6 +59,14 @@ export class CanvasWatches {
     return false;
   }
 
+  /** The pages whose subscription to this canvas is installed. */
+  watchingPages(canvasId: string): string[] {
+    const pages: string[] = [];
+    for (const [pageId, open] of this.byPage)
+      if (open.get(canvasId)?.state === 'watching') pages.push(pageId);
+    return pages;
+  }
+
   /** Captures owners now; a replacement pane or turn cannot revive this read. */
   rebuildAuthority(canvasId: string, designId: string): () => boolean {
     const watching: CanvasWatch[] = [];

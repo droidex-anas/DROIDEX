@@ -10,6 +10,7 @@ import type { CanvasScope } from './protocol.js';
 
 export class CanvasScopes implements CanvasLeaseRegistry {
   private readonly active = new Map<string, CanvasScope>();
+  private readonly endings = new Map<string, AbortController>();
 
   /** The scope while it is still authorized, which is all a caller may act on. */
   get(scopeId: string): CanvasScope | undefined {
@@ -32,13 +33,26 @@ export class CanvasScopes implements CanvasLeaseRegistry {
   /** Idempotent, so a turn can revoke in every path that ends it. */
   revoke(scopeId: string): void {
     this.active.delete(scopeId);
+    this.endings.get(scopeId)?.abort();
+    this.endings.delete(scopeId);
   }
 
   /** Pane requests lose their authority as soon as app shutdown starts. */
   revokeUsers(): void {
     for (const [scopeId, scope] of this.active) {
-      if (scope.origin === 'user') this.active.delete(scopeId);
+      if (scope.origin === 'user') this.revoke(scopeId);
     }
+  }
+
+  /** Aborts when the scope is revoked, so work waiting under it stops at once. */
+  ended(scopeId: string): AbortSignal {
+    if (!this.active.has(scopeId)) return AbortSignal.abort();
+    let ending = this.endings.get(scopeId);
+    if (!ending) {
+      ending = new AbortController();
+      this.endings.set(scopeId, ending);
+    }
+    return ending.signal;
   }
 
   isScopeActive(scopeId: string): boolean {

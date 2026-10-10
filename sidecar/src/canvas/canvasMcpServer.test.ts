@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import {
+  CANVAS_PNG,
   canvasRoot,
   deferred,
   observedFileSystem,
@@ -8,12 +9,22 @@ import {
   quietBuilds,
 } from '../testing/canvasStorageSupport.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
+import {
+  APP,
+  buildingCanvas,
+  captureRequest,
+  createCanvas,
+  createFrame,
+  readyFrames,
+  writeFrame,
+} from '../testing/canvasBridgeSupport.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
+import type { CanvasCapture } from './canvasCaptures.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
   DESIGN_SESSION_GUIDANCE,
@@ -32,7 +43,7 @@ type Reply = {
   build?: unknown;
 };
 
-async function harness(t: TestContext, fs?: CanvasFileSystem) {
+async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: CanvasCapture) {
   const scopes = new CanvasScopes();
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
   const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
@@ -45,6 +56,7 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const server = createCanvasMcpServer(
     () => Promise.resolve(workspace),
     turns,
+    capture ?? (() => Promise.reject(new Error('No renderer answers in this suite.'))),
     () => 'chat-one',
   );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
@@ -78,6 +90,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
     const server = createCanvasMcpServer(
       () => Promise.resolve(h.workspace),
       h.turns,
+      () => Promise.reject(new Error('No renderer answers in this suite.')),
       () => 'chat-one',
       purpose,
     );
@@ -377,6 +390,66 @@ test('lost create response retries to the same canvas and invalid source paths h
     ).code,
     'revision_conflict',
   );
+});
+
+test('a screenshot relays the watching page’s PNG of the current revision within its deadline and turn', async (t) => {
+  const canvas = await buildingCanvas(t);
+  const canvasId = await createCanvas(canvas);
+  const designId = await createFrame(canvas, canvasId);
+  await writeFrame(canvas, canvasId, designId);
+  const built = readyFrames(canvas, canvasId, [designId]);
+  (await canvas.fleet.compile(1)).ready('artifact-one');
+  await built;
+  const turn = canvas.turns.beginTurn(APP, undefined);
+  const server = createCanvasMcpServer(
+    () => Promise.resolve(canvas.workspace),
+    canvas.turns,
+    canvas.capture,
+    () => APP,
+  );
+  const inspect = server.tools.find((entry) => entry.name === 'canvas_inspect');
+  assert.ok(inspect);
+  const screenshot = () => inspect.handler({ designId, kind: 'screenshot' });
+  const png = CANVAS_PNG.toString('base64');
+  const report = (captureId: string) =>
+    canvas.handle({
+      type: 'canvas.reportCapture',
+      requestId: `report-${captureId}`,
+      captureId,
+      capture: { ok: true, png },
+    });
+
+  const unopened = toolContent(await screenshot());
+  assert.equal(unopened.length, 1);
+  assert.equal(JSON.parse(unopened[0].text ?? '').code, 'capture_unavailable');
+  assert.match(unopened[0].text ?? '', /Open this design’s canvas in DROIDEX/);
+
+  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
+  const pending = screenshot();
+  const request = await captureRequest(canvas.events, 0);
+  const { revisionId } = canvas.workspace.snapshot(canvasId).frames[0];
+  assert.deepEqual(
+    [request.canvasId, request.designId, request.revisionId],
+    [canvasId, designId, revisionId],
+  );
+  await report(request.captureId);
+  const [facts, image] = toolContent(await pending);
+  assert.equal(JSON.parse(facts.text ?? '').revisionId, revisionId);
+  assert.deepEqual(image, { type: 'image', data: png, mimeType: 'image/png' });
+
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const silent = screenshot();
+  await captureRequest(canvas.events, 1);
+  t.mock.timers.tick(7_000);
+  assert.match(toolContent(await silent)[0].text ?? '', /did not capture this design in time/);
+
+  const expiring = screenshot();
+  const late = await captureRequest(canvas.events, 2);
+  turn.revoke();
+  await report(late.captureId);
+  const dropped = toolContent(await expiring);
+  assert.equal(dropped.length, 1);
+  assert.equal(JSON.parse(dropped[0].text ?? '').code, 'scope_expired');
 });
 
 test('provider replacement while a write is staged refuses its old lease and leaves the head unchanged', async (t) => {
@@ -731,3 +804,9 @@ test('a delayed theme validation refusal cannot disclose source after its turn i
   assert.ok(!JSON.stringify(reply).includes('SOURCE_SENTINEL'));
   assert.deepEqual(h.workspace.snapshot(canvasId), before);
 });
+
+function toolContent(result: unknown): { type: string; text?: string }[] {
+  if (typeof result === 'string') return [{ type: 'text', text: result }];
+  assert.ok(result && typeof result === 'object' && 'content' in result);
+  return result.content as { type: string; text?: string }[];
+}

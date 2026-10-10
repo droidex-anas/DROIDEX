@@ -33,11 +33,20 @@ function harness() {
   });
   const automations = createSdkMcpServer({
     name: 'droidex-automations',
-    tools: [tool('automation_list', 'List automations.', {}, () => 'No automations.')],
+    tools: [
+      tool('automation_list', 'List automations.', {}, () => 'No automations.'),
+      tool('automation_snapshot', 'Show an automation.', {}, () => ({
+        content: [
+          { type: 'text', text: '{"ok":true}' },
+          { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+        ],
+      })),
+    ],
   });
   const canvas = createCanvasMcpServer(
     () => Promise.reject(new Error('Canvas storage unavailable')),
     new CanvasTurns(new CanvasScopes(), () => null),
+    () => Promise.reject(new Error('Canvas capture unavailable')),
     () => 'chat-one',
   );
   const interactions = {
@@ -223,6 +232,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
       createCanvasMcpServer(
         () => Promise.reject(new Error('Canvas storage unavailable')),
         new CanvasTurns(new CanvasScopes(), () => null),
+        () => Promise.reject(new Error('Canvas capture unavailable')),
         () => 'chat-one',
       ),
     ],
@@ -277,6 +287,25 @@ test('a known tool runs through approval; unknown tools, other threads, and deni
   state.switchThread();
   assert.equal((await state.bridge.call(spawn)).success, false);
   state.close();
+});
+
+test('an image a tool returns reaches Codex as an input image beside its text', async () => {
+  const state = harness();
+  assert.deepEqual(
+    await state.bridge.call({
+      ...spawn,
+      namespace: 'droidex_automations',
+      tool: 'automation_snapshot',
+      arguments: {},
+    }),
+    {
+      contentItems: [
+        { type: 'inputText', text: '{"ok":true}' },
+        { type: 'inputImage', imageUrl: 'data:image/png;base64,iVBORw0KGgo=' },
+      ],
+      success: true,
+    },
+  );
 });
 
 test('turn settlement cancels a dynamic-tool approval and refuses a late allow', async () => {

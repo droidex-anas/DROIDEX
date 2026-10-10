@@ -77,6 +77,7 @@ const manager = new SessionManager(
   {
     canvasTurns,
     canvasWorkspace: () => canvasReady,
+    canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
     assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
     beforeFirstTurn: (session, clientRef, canvas, admission): Promise<void> =>
       prepareSessionFirstTurn(
@@ -159,7 +160,7 @@ void canvasReady.catch((error: unknown) => {
   });
 });
 const canvasAdmission = new AbortController();
-const dispatchCanvasCommand = createCanvasCommandHandler(
+const canvasBridge = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
@@ -181,7 +182,7 @@ async function handleCanvasCommand(
     server.broadcast(rejection);
     return true;
   }
-  return dispatchCanvasCommand(command, pageId);
+  return canvasBridge.handle(command, pageId);
 }
 
 automationManager = configureAutomationManager({

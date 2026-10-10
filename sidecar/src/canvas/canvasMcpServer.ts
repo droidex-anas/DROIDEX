@@ -6,10 +6,12 @@ import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js'
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
+import type { ToolHandlerResult } from '../mcpToolUtils.js';
 import type { SessionPurpose } from '../protocol.js';
+import type { CanvasCapture } from './canvasCaptures.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
-import type { CanvasScope } from './protocol.js';
+import type { CanvasFrame, CanvasScope } from './protocol.js';
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
@@ -97,22 +99,22 @@ const themeSchema = z.discriminatedUnion('operation', [
     .strict(),
 ]);
 
-type ToolReply = string | { isError: true; content: [{ type: 'text'; text: string }] };
+/** The facts a tool answers with, and a base64 PNG the model sees beside them. */
+type ToolValue = Record<string, unknown> & { png?: string };
 
 /** One endpoint belongs to one chat; no tool argument can choose another chat. */
 export function createCanvasMcpServer(
   workspace: () => Promise<CanvasWorkspace>,
-  turns: Pick<CanvasTurns, 'activeScope' | 'requireScope'>,
+  turns: Pick<CanvasTurns, 'activeScope' | 'requireScope' | 'scopeEnded'>,
+  capture: CanvasCapture,
   getAppSessionId: () => string,
   purpose?: SessionPurpose,
 ) {
   const dispatch = async (
     input: unknown,
     completion: 'read' | 'mutation',
-    handler: (
-      scope: Extract<CanvasScope, { origin: 'turn' }>,
-    ) => Promise<Record<string, unknown>> | Record<string, unknown>,
-  ): Promise<ToolReply> => {
+    handler: (scope: Extract<CanvasScope, { origin: 'turn' }>) => Promise<ToolValue> | ToolValue,
+  ): Promise<ToolHandlerResult> => {
     try {
       const appSessionId = getAppSessionId();
       const { scopeId } = scopeArgumentSchema.parse(input);
@@ -120,10 +122,17 @@ export function createCanvasMcpServer(
         ? turns.requireScope(scopeId, appSessionId)
         : turns.activeScope(appSessionId);
       if (scope?.origin !== 'turn') throw canvasError('scope_expired', EXPIRED_TURN);
-      const value = await handler(scope);
+      const { png, ...facts } = await handler(scope);
       // Successful mutations have already crossed their owner's publication gate.
       if (completion === 'read') turns.requireScope(scope.scopeId);
-      return JSON.stringify({ ok: true, ...value });
+      const text = JSON.stringify({ ok: true, ...facts });
+      if (!png) return text;
+      return {
+        content: [
+          { type: 'text', text },
+          { type: 'image', data: png, mimeType: 'image/png' },
+        ],
+      };
     } catch (error) {
       const failure = toolFailure(error);
       return {
@@ -150,6 +159,23 @@ export function createCanvasMcpServer(
       ...snapshot,
       frames: snapshot.frames.filter((frame) => allowed.includes(frame.designId)),
     };
+  };
+
+  /** The live preview's PNG of the frame's current revision, never another one. */
+  const screenshot = async (
+    canvasId: string,
+    frame: CanvasFrame,
+    scope: CanvasScope,
+  ): Promise<string> => {
+    const { designId, revisionId, build } = frame;
+    if (revisionId === null)
+      throw canvasError('capture_unavailable', 'That frame has no source yet. Write it first.');
+    if (build.status !== 'ready' || build.revisionId !== revisionId)
+      throw canvasError(
+        'capture_unavailable',
+        'That revision has no working build to capture. Inspect its diagnostics, and capture it once it is ready.',
+      );
+    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId));
   };
 
   const tools = [
@@ -250,7 +276,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_inspect',
-      'Inspect a design build and its diagnostics before revising it. Omit scopeId to read the active turn, or use only a scopeId this turn’s canvas_read returned. Screenshot and element capture report when no agent capture is available.',
+      'Inspect a design build and its diagnostics before revising it, or set kind to screenshot to see a PNG of its current revision as DROIDEX renders it. A screenshot needs a ready build and the design’s canvas open in a DROIDEX window; otherwise it reports capture_unavailable with the reason. Element capture is not available. Omit scopeId to read the active turn, or use only a scopeId this turn’s canvas_read returned.',
       inspectSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -265,7 +291,7 @@ export function createCanvasMcpServer(
             );
           const snapshot = await board(scope);
           const frame = snapshot?.frames.find((entry) => entry.designId === input.designId);
-          if (!frame)
+          if (!snapshot || !frame)
             throw canvasError(
               'invalid_input',
               'That design is not on this canvas. Read the canvas summary again.',
@@ -275,12 +301,18 @@ export function createCanvasMcpServer(
               'revision_conflict',
               'That design has changed. Inspect its current revision.',
             );
-          if (input.kind !== 'diagnostics')
+          if (input.kind === 'element')
             throw canvasError(
               'capture_unavailable',
-              'Agent element and screenshot capture is unavailable. Use build diagnostics and source for now.',
+              'Element capture is unavailable. Request a screenshot, or use build diagnostics and source.',
             );
-          return { designId: frame.designId, revisionId: frame.revisionId, build: frame.build };
+          const facts = {
+            designId: frame.designId,
+            revisionId: frame.revisionId,
+            build: frame.build,
+          };
+          if (input.kind === 'diagnostics') return facts;
+          return { ...facts, png: await screenshot(snapshot.canvasId, frame, scope) };
         }),
     ),
     tool(

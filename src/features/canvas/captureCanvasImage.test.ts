@@ -6,6 +6,7 @@ import type {
   CanvasPreviewCaptureRequest,
 } from '../../lib/desktop';
 import {
+  answerCaptureRequest,
   CanvasImageError,
   captureCanvasImage,
   exportCanvasImage,
@@ -126,6 +127,39 @@ test('export saves the captured revision identifiers without forwarding renderer
     assert.deepEqual(desktop.saves, [['cv_01', 'dsg_01', 'rev_01', 'design']]);
   } finally {
     release();
+    desktop.close();
+  }
+});
+
+test('an agent screenshot is answered only from a live preview of that exact revision', async () => {
+  const desktop = desktopCapture();
+  const request = {
+    type: 'canvas.captureRequest',
+    captureId: 'capture-1',
+    canvasId: 'cv_01',
+    ...ref,
+  } as const;
+  try {
+    const unshown = await answerCaptureRequest(request);
+    assert.equal(unshown.captureId, 'capture-1');
+    assert.equal(unshown.capture.ok, false);
+    assert.equal(desktop.pending.length, 0);
+
+    const release = mount(41);
+    try {
+      const answering = answerCaptureRequest(request);
+      assert.equal(desktop.pending[0].request.revisionId, 'rev_01');
+      desktop.pending[0].answer({
+        ok: true,
+        mediaType: 'image/png',
+        bytes: new Uint8Array([137, 80, 78, 71]),
+      });
+      const shown = await answering;
+      assert.deepEqual(shown.capture, { ok: true, png: btoa('\x89PNG') });
+    } finally {
+      release();
+    }
+  } finally {
     desktop.close();
   }
 });
