@@ -1473,8 +1473,8 @@ Settled by 07c (`thread/canvas-07c-canvas-theme`):
   Done: Scale/scroll mapping is correct; Interact clicks remain intact and ambiguous edits route to the agent.
 - [x] `canvas/08c-source-editor`: Add CodeMirror file editing, Save, diagnostics, dirty state and compare/reapply on CAS conflict.
   Done: Agent updates preserve the local buffer; explicit Save creates a source revision.
-- [ ] `canvas/08d-revision-history`: Add canonical revision history/diff, read-only viewing and restore through the normal commit/build path.
-  Done: Restore creates a new head, retains later history and reports system version/build status.
+- [x] `canvas/08d-revision-history`: Add canonical revision history/diff, read-only viewing and restore through the normal commit/build path.
+  Done: Restore creates a new head, retains later history and reports system version/build status. Sidecar contract only; the `CanvasHistory` UI and diff viewer remain documented below.
 
 **Files:** Create `sidecar/src/canvas/{sourceElements.ts,sourceElements.test.ts}` and `src/features/canvas/{CanvasInspector.tsx,CanvasSourceEditor.tsx}`. Extend `compiler.ts`, preview runtime/event schemas, `CanvasWorkspace.ts`, `canvasMcpServer.ts` and Canvas integration tests.
 
@@ -1634,11 +1634,14 @@ Settled by 08d (sidecar) (`sidecar/src/canvas/canvasRevisionHistory.ts`):
   versions. History pages are newest first, capped at 50, with an exclusive `before`
   canvas commit sequence. Author references expose only user/agent and an opaque scope hash.
   Cache outcomes determine each revision's ready/failed status; a miss is building.
-- `canvas.listRevisions`, `canvas.diffRevisions`, `canvas.readRevision` and
-  `canvas.restoreRevision` are validated bridge commands mirrored by the renderer protocol.
-  Reads do not change the head. Restore copies complete files and the pinned kit through
-  the normal write/CAS/build path, creates a new head, keeps later history and replays the
-  original receipt by mutation ID. Removed designs return `not_found`; 09c owns tombstones.
+- `canvas.listRevisions`, `canvas.diffRevisions` and `canvas.restoreRevision` are validated
+  bridge commands mirrored by the renderer protocol; a revision's files are read with 08c's
+  `canvas.readSource`, so there is one source read. Reads do not change the head. Diff and
+  restore accept only revisions in the commit index. Restore copies complete files and the
+  pinned kit through the normal write/CAS/build path, creates a new head, keeps later history
+  and replays the original receipt by mutation ID. A removed frame returns `not_found` until
+  Undo puts it back, and its history returns with it. `isReply` complexity goes from 22 to 24
+  for the two history replies; it stays an advisory warning.
 - Diffs report added/removed/modified files with exact replacement hunks and three lines
   of surrounding context. Linear prefix/suffix comparison avoids quadratic matching on
   maximum-sized files; hunks need not be minimal. Diff text is capped at 256 KiB total
@@ -1646,7 +1649,7 @@ Settled by 08d (sidecar) (`sidecar/src/canvas/canvasRevisionHistory.ts`):
   No dependency or second source reader was added.
 - Renderer work left: `CanvasHistory` UI, revision picker/read-only source presentation,
   diff viewer and Restore controls, including loading/error/conflict states and Electron
-  interaction/visual verification. No Task 8 checkbox is settled by this sidecar change.
+  interaction/visual verification. The 08d checkbox covers the sidecar contract only.
 
 ## Task 9: Variants, local library and durable board undo
 
