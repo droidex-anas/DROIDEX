@@ -184,6 +184,15 @@ test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames r
   // A user who only writes the tags keeps every word of it.
   const typed = 'Wrap it in <canvas_frames></canvas_frames>';
   assert.equal(replay(userText(typed))[0]?.text, typed);
+  // An App request wraps the composed prompt, frames included, before its guidance.
+  const [app] = replay(
+    userText(
+      `DROIDEX App request:\n${withFrames}\n\nPrivate generation guidance:\nReturn one fenced app block.`,
+    ),
+  );
+  assert.equal(app?.text, 'Use this');
+  assert.deepEqual(app?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
+  assert.deepEqual(app?.canvasFrames, ['Pricing · Compact']);
 });
 
 test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {
