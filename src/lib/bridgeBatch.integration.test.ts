@@ -370,7 +370,12 @@ test('a generation-changed snapshot restores the cursor without a hard resync er
   first.message(snapshotMessage('generation-2', 42, 'generation_changed'));
 
   assert.deepEqual(eventsWhenReplaced, [[]]);
-  assert.deepEqual(seenTypes(), ['connection', 'runtime.updated', 'sessions.processes']);
+  assert.deepEqual(seenTypes(), [
+    'connection',
+    'runtime.updated',
+    'sessions.processes',
+    'history.persistenceRecovered',
+  ]);
   first.close();
   assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-2', seq: '42' });
 });
@@ -527,7 +532,7 @@ test('empty reset generations cannot replace a valid resume cursor', async () =>
   assert.deepEqual(seenTypes(), ['connection']);
 });
 
-test('unflushed persistence in a snapshot is reported rather than treated as durable', async () => {
+test('snapshot storage failures reach clients without an earlier error event', async () => {
   const { socket, seen, seenTypes } = await startBridge();
   socket.message(
     snapshotMessage('generation-9', 8, 'generation_changed', {
@@ -545,6 +550,7 @@ test('unflushed persistence in a snapshot is reported rather than treated as dur
     'connection',
     'runtime.updated',
     'sessions.processes',
+    'history.persistenceRecovered',
     'error',
     'connection',
   ]);
@@ -552,6 +558,39 @@ test('unflushed persistence in a snapshot is reported rather than treated as dur
     seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
     ['history.unflushed_work'],
   );
+  socket.message(
+    snapshotMessage('generation-10', 0, 'generation_changed', {
+      persistence: {
+        durable: false,
+        hadUnflushedWork: false,
+        unavailableReason: 'Cannot open history.',
+      },
+    }),
+  );
+  const unavailable = seen.find(
+    (event) => event.type === 'error' && event.code === 'history.unavailable',
+  );
+  assert.ok(unavailable);
+  assert.equal(unavailable.type, 'error');
+  if (unavailable.type === 'error') assert.match(unavailable.message, /Cannot open history/);
+  const repairInstructions =
+    'Search storage is corrupt. Quit DROIDEX, back up storage, then repair.';
+  socket.message(
+    snapshotMessage('generation-11', 0, 'generation_changed', {
+      persistence: {
+        durable: true,
+        hadUnflushedWork: false,
+        searchUnavailableReason: repairInstructions,
+      },
+    }),
+  );
+  const searchUnavailable = seen.find(
+    (event) => event.type === 'error' && event.code === 'history.search_unavailable',
+  );
+  assert.ok(searchUnavailable);
+  if (searchUnavailable.type === 'error') {
+    assert.ok(searchUnavailable.message.includes(repairInstructions));
+  }
 });
 
 function required<T>(value: T | undefined): T {

@@ -25,7 +25,10 @@ import {
   persistenceChildKey,
   persistenceChildKeyPrefix,
 } from './historyPersistenceQueueValues.js';
-import { isHistorySearchUnavailableError } from './historySearchSchema.js';
+import {
+  HistorySearchUnavailableError,
+  isHistorySearchUnavailableError,
+} from './historySearchSchema.js';
 import { PersistenceDirtyMarker, persistenceDirtyMarkerPath } from './persistenceDirtyMarker.js';
 import type {
   HistorySearchReply,
@@ -47,11 +50,13 @@ export interface HistoryPersistenceOptions {
 export type HistoryPersistenceStatus =
   | { state: 'healthy' }
   | { state: 'degraded'; message: string }
+  | { state: 'unavailable'; message: string }
   | { state: 'search_unavailable'; message: string };
 
 export class HistoryPersistence {
-  private readonly core: HistoryIndex;
-  private readonly queue: HistoryPersistenceQueue;
+  private readonly index: HistoryIndex | null = null;
+  private readonly persistenceQueue: HistoryPersistenceQueue | null = null;
+  private readonly startupError: Error | null = null;
   private searchClient: HistorySearchClient | null;
   private readonly createSearchClient: () => HistorySearchClient;
   private readonly onStatusChanged: HistoryPersistenceOptions['onStatusChanged'];
@@ -78,7 +83,6 @@ export class HistoryPersistence {
     if (options.searchClient && options.createSearchClient) {
       throw new Error('Provide either a history search client or a search client factory.');
     }
-    this.core = new HistoryIndex();
     const dbPath = join(droidexHistoryDir(), SESSION_INDEX_FILENAME);
     this.searchClient = options.searchClient ?? null;
     this.createSearchClient =
@@ -86,7 +90,18 @@ export class HistoryPersistence {
       (() => new HistoryWorkerClient({ workerData: { dbPath, lane: 'search' } }));
     this.onStatusChanged = options.onStatusChanged;
     this.dirtyMarker = new PersistenceDirtyMarker(persistenceDirtyMarkerPath(dirname(dbPath)));
-    this.queue = new HistoryPersistenceQueue({
+    try {
+      this.index = new HistoryIndex();
+    } catch (error) {
+      this.startupError = asError(error);
+      console.error('Canonical history failed to open; history is disabled until restart:', error);
+      // The composition root must finish before its event callback can run.
+      queueMicrotask(() => {
+        this.onStatusChanged?.({ state: 'unavailable', message: asError(error).message });
+      });
+      return;
+    }
+    this.persistenceQueue = new HistoryPersistenceQueue({
       dbPath,
       dirtyMarker: this.dirtyMarker,
       ...(options.persistenceClient ? { client: options.persistenceClient } : {}),
@@ -122,7 +137,19 @@ export class HistoryPersistence {
   }
 
   get sessionFileCacheSize(): number {
-    return this.core.sessionFileCacheSize;
+    return this.index?.sessionFileCacheSize ?? 0;
+  }
+
+  private get core(): HistoryIndex {
+    if (!this.index) throw this.startupError ?? new Error('Canonical history is unavailable.');
+    return this.index;
+  }
+
+  private get queue(): HistoryPersistenceQueue {
+    if (!this.persistenceQueue) {
+      throw this.startupError ?? new Error('Canonical history is unavailable.');
+    }
+    return this.persistenceQueue;
   }
 
   get revision(): number {
@@ -130,7 +157,10 @@ export class HistoryPersistence {
   }
 
   persistenceRecovery(): PersistenceRecovery {
-    return this.dirtyMarker.recovery();
+    const recovery = this.dirtyMarker.recovery();
+    if (this.searchUnavailable) recovery.searchUnavailableReason = this.searchUnavailable.message;
+    if (!this.startupError) return recovery;
+    return { ...recovery, durable: false, unavailableReason: this.startupError.message };
   }
 
   sessionLaunchSettings(
@@ -267,6 +297,7 @@ export class HistoryPersistence {
 
   flush(): Promise<void> {
     if (this.closed) return Promise.reject(new Error('History persistence is closed.'));
+    if (this.startupError) return Promise.reject(this.startupError);
     if (this.boundary) {
       this.extendBoundary();
       return this.boundary;
@@ -303,7 +334,7 @@ export class HistoryPersistence {
     let persistenceError: Error | undefined;
     try {
       await this.boundary?.catch(() => undefined);
-      await this.queue.close();
+      await this.persistenceQueue?.close();
     } catch (error) {
       persistenceError = asError(error);
     } finally {
@@ -312,7 +343,7 @@ export class HistoryPersistence {
       } catch (error) {
         persistenceError ??= asError(error);
       } finally {
-        this.core.close();
+        this.index?.close();
       }
     }
     if (persistenceError) throw persistenceError;
@@ -331,6 +362,7 @@ export class HistoryPersistence {
   }
 
   private getSearchClient(): HistorySearchClient {
+    if (this.startupError) throw this.startupError;
     if (!this.searchClient) {
       this.searchClient = this.createSearchClient();
       if (this.indexingIdle) {
@@ -357,6 +389,9 @@ export class HistoryPersistence {
   }
 
   private async applySearchReconciliation(result: SessionFileReconciliation): Promise<number> {
+    if (result.searchUnavailableReason !== undefined) {
+      this.noteSearchUnavailable(new HistorySearchUnavailableError(result.searchUnavailableReason));
+    }
     let changed = result.changed;
     if (!this.core.applySessionFileReconciliation(result)) {
       const snapshot = await this.getSearchClient().sessionFileSnapshot();

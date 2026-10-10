@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -97,10 +97,6 @@ export function appendSessionNotice(providerSessionId: string, event: Transcript
   if (!line) return;
   mkdirSync(join(droidexUserDataDir(), 'session-notices'), { recursive: true });
   appendFileSync(noticesPath(providerSessionId), `${JSON.stringify(line)}\n`);
-}
-
-export function removeSessionNotices(providerSessionId: string): void {
-  rmSync(noticesPath(providerSessionId), { force: true });
 }
 
 export function sessionNoticesRevision(providerSessionId: string): string {

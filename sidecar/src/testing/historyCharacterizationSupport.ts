@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { droidexHistoryDir } from '../droidexPaths.js';
 
 import type * as Protocol from '../protocol.js';
 import type { SessionFileChange } from '../sessionFileCache.js';
@@ -9,6 +10,7 @@ import {
   applyCachedSummary,
   createHistorySessionFileCache,
   HistoryIndex,
+  SESSION_INDEX_FILENAME,
   type HistoricalSession,
   type HistoricalSummaryFilter,
   type PersistedChildSession,
@@ -19,12 +21,16 @@ import { providerSessionJsonl } from './providerSessionFixtures.js';
 export function reconciledHistorySessions(): HistoricalSession[] {
   const db = new DatabaseSync(':memory:');
   const index = new HistoryIndex();
+  const canonical = new DatabaseSync(path.join(droidexHistoryDir(), SESSION_INDEX_FILENAME), {
+    readOnly: true,
+  });
   try {
-    const cache = createHistorySessionFileCache(db);
+    const cache = createHistorySessionFileCache(db, canonical);
     cache.reconcileChanges();
     index.replaceSessionFileSnapshot(cache.snapshot());
     return index.listHistoricalSessions();
   } finally {
+    canonical.close();
     index.close();
     db.close();
   }

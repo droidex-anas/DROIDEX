@@ -47,7 +47,7 @@ import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
-import { removeSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
+import { sessionNoticesRevision } from './sessionNotices.js';
 
 interface StoredMissionState {
   missionId?: string;
@@ -170,11 +170,9 @@ function historySchemaRecovery(): string {
   const dir = droidexHistoryDir();
   const displayDir = dir.startsWith(`${homedir()}/`) ? `~${dir.slice(homedir().length)}` : dir;
   return (
-    'DROIDEX local history index uses an incompatible schema. Quit DROIDEX, remove ' +
-    `${displayDir}/${SESSION_INDEX_FILENAME}, ` +
-    `${displayDir}/${SESSION_INDEX_FILENAME}-wal, and ` +
-    `${displayDir}/${SESSION_INDEX_FILENAME}-shm, then restart. ` +
-    'Raw Factory session history is not removed.'
+    'DROIDEX canonical history uses an incompatible schema. Quit DROIDEX and back up ' +
+    `${displayDir}, including SQLite WAL/SHM files, before repair or restoring a backup. ` +
+    'Do not delete the canonical database; provider transcripts cannot rebuild DROIDEX records.'
   );
 }
 
@@ -279,10 +277,6 @@ export class HistoryIndex {
     return this.sessionFiles.sessionLaunchSettings(providerSessionId);
   }
 
-  // Serves the historical session list from the worker-maintained file cache
-  // instead of walking and re-reading every session file on each request. The
-  // app_sessions patch overlay remains fresh while file snapshots arrive as
-  // revisioned worker results.
   listHistoricalSessions(options: HistoricalSummaryFilter = {}): HistoricalSession[] {
     const workspaceCwds = options.workspaceCwds
       ? new Set(options.workspaceCwds.filter(Boolean))
@@ -291,10 +285,9 @@ export class HistoryIndex {
     const patches = this.summaryPatches();
     const rows: HistoricalSession[] = [];
     for (const cached of this.sessionFiles.summaries()) {
-      const summary = applyCachedSummary({ ...cached }, patches);
+      const summary = applyCachedSummary(cached, patches);
       if (
         (workspaceCwds || options.includePlainChats) &&
-        // Cached rows are validated to hold a string cwd at load/reconcile.
         !shouldIncludeCwd(summary.cwd, workspaceCwds, options.includePlainChats)
       )
         continue;
@@ -465,8 +458,28 @@ export class HistoryIndex {
   }
 }
 
-export function createHistorySessionFileCache(db: DatabaseSync): SessionFileCache {
-  return new SessionFileCache(db, scanSessionFileTree, summarizeSessionFile, statSessionFile);
+export function createHistorySessionFileCache(
+  db: DatabaseSync,
+  canonicalDb: DatabaseSync,
+): SessionFileCache {
+  const ownedChat = canonicalDb.prepare(`
+    SELECT * FROM app_sessions WHERE provider_session_id = ?
+  `);
+  return new SessionFileCache(
+    db,
+    scanSessionFileTree,
+    summarizeSessionFile,
+    statSessionFile,
+    (summary) => {
+      if (summary.role !== 'primary' || summary.sessionPurpose !== 'chat') return false;
+      const row = ownedChat.get(summary.providerSessionId ?? summary.appSessionId);
+      return (
+        row?.session_purpose === 'chat' &&
+        stringValue(row.title) !== undefined &&
+        numberValue(row.updated_at) !== undefined
+      );
+    },
+  );
 }
 
 const CANONICAL_TABLE_COLUMNS = {
@@ -1484,7 +1497,6 @@ function updateSessionIndex(result: SessionFileReconciliation, files: SessionFil
   sessionIndexMemo ??= files.pathIndex();
   for (const providerSessionId of result.removedProviderSessionIds) {
     sessionIndexMemo.delete(providerSessionId);
-    removeSessionNotices(providerSessionId);
   }
   for (const entry of result.upserts) {
     sessionIndexMemo.set(entry.providerSessionId, entry.path);

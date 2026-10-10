@@ -5,10 +5,12 @@ import {
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig, type SdkMcpServer } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
+import { accessSync, constants } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FactorySession } from './DroidRuntime.js';
 import { droidexUserDataDir } from './droidexPaths.js';
+import { sessionFilePath } from './history.js';
 import type {
   ClientCommand,
   FactoryDefaultSettings,
@@ -543,6 +545,16 @@ export class SessionLifecycle {
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
     try {
+      const transcriptPath = sessionFilePath(providerSessionId);
+      if (transcriptPath) {
+        try {
+          accessSync(transcriptPath, constants.R_OK);
+        } catch {
+          throw new Error(
+            'This chat’s provider transcript is unavailable. Restore the transcript or reconnect the provider account, then try again.',
+          );
+        }
+      }
       // Resolved before any resource starts, so a session bound to a provider
       // this build cannot route fails before it costs anything. A summary that
       // predates the binding has none and resumes on the default provider.

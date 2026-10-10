@@ -119,7 +119,9 @@ function persistenceRecovery(value: unknown): value is PersistenceRecovery {
     isRecord(value) &&
     typeof value.durable === 'boolean' &&
     typeof value.hadUnflushedWork === 'boolean' &&
-    (value.message === undefined || typeof value.message === 'string')
+    isOptionalString(value.message) &&
+    isOptionalString(value.unavailableReason) &&
+    isOptionalString(value.searchUnavailableReason)
   );
 }
 

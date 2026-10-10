@@ -12,6 +12,7 @@ process.env.HOME = home;
 
 const {
   HistoryIndex,
+  SESSION_INDEX_FILENAME,
   SESSION_SEARCH_INDEX_FILENAME,
   createHistorySessionFileCache,
   invalidateSessionIndex,
@@ -26,14 +27,18 @@ function reconcileHistoryIndex(
   changes?: Array<{ providerSessionId: string; path: string }>,
 ): number {
   const db = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_SEARCH_INDEX_FILENAME));
+  const canonical = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
+    readOnly: true,
+  });
   try {
-    const cache = createHistorySessionFileCache(db);
+    const cache = createHistorySessionFileCache(db, canonical);
     const result = changes ? cache.reconcilePathChanges(changes) : cache.reconcileChanges();
     if (!index.applySessionFileReconciliation(result)) {
       index.replaceSessionFileSnapshot(cache.snapshot(result.changed));
     }
     return result.changed;
   } finally {
+    canonical.close();
     db.close();
   }
 }

@@ -17,6 +17,7 @@ import type { HistoryIndex as HistoryIndexType } from './history.js';
 import type * as Protocol from './protocol.js';
 import {
   SessionFileCache,
+  type SessionFileChange,
   type SessionFileStat,
   type SessionFileSummary,
 } from './sessionFileCache.js';
@@ -27,6 +28,8 @@ import {
 } from './testing/providerSessionFixtures.js';
 import { persistTestEvent, persistTestSummaries } from './testing/historyPersistenceFixture.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
+import { appendSessionNotice, readSessionNotices } from './sessionNotices.js';
+import { HistoryIndexDatabase } from './historyIndexDatabase.js';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-history-cache-home-'));
@@ -120,14 +123,19 @@ function reconcile(
   changes?: Array<{ providerSessionId: string; path: string }>,
 ): number {
   const db = new DatabaseSync(searchIndexPath());
+  const canonical = new DatabaseSync(
+    join(process.env.HOME ?? '', '.factory', 'droidex', SESSION_INDEX_FILENAME),
+    { readOnly: true },
+  );
   try {
-    const cache = createHistorySessionFileCache(db);
+    const cache = createHistorySessionFileCache(db, canonical);
     const result = changes ? cache.reconcilePathChanges(changes) : cache.reconcileChanges();
     if (!index.applySessionFileReconciliation(result)) {
       index.replaceSessionFileSnapshot(cache.snapshot(result.changed));
     }
     return result.changed;
   } finally {
+    canonical.close();
     db.close();
   }
 }
@@ -529,6 +537,88 @@ test('reconcileSessionFilePaths touches exactly the reported files', (t) => {
   );
   assert.equal(reconcile(second, keep), 1);
   assert.equal(row('cache-target-keep')?.summary.modelId, 'targeted-settings-model');
+});
+
+test('an admitted owned chat survives a missing transcript and returns with its DROIDEX title', async (t) => {
+  const root = freshHome(t, 'droid-history-owned-');
+  const cwd = join(root, 'workspace');
+  const providerSessionId = 'owned-provider';
+  const appSessionId = 'owned-app';
+  const path = writeSession(root, providerSessionId, cwd);
+  const owned = { ...patchFor(appSessionId, cwd), providerSessionId, title: 'DROIDEX title' };
+  const notice: Protocol.TranscriptEvent = {
+    id: 'owned-notice',
+    appSessionId,
+    sourceSessionId: appSessionId,
+    role: 'primary',
+    kind: 'status',
+    text: 'Saved by DROIDEX',
+    ts: 1,
+  };
+  const index = new HistoryIndex();
+  let search = new HistoryIndexDatabase(join(root, '.factory', 'droidex', SESSION_INDEX_FILENAME));
+  t.after(async () => await search.close());
+  const reconcileOwned = (history: HistoryIndexType, changes?: SessionFileChange[]) => {
+    const result = changes
+      ? search.reconcileSessionFilePaths(changes)
+      : search.reconcileSessionFiles();
+    if (!history.applySessionFileReconciliation(result)) {
+      history.replaceSessionFileSnapshot(search.sessionFileSnapshot());
+    }
+  };
+  try {
+    persistTestSummaries([owned, patchFor('abandoned', cwd)]);
+    writeSession(root, 'abandoned', cwd, {}, ['user']);
+    appendSessionNotice(providerSessionId, notice);
+    reconcileOwned(index);
+    assert.deepEqual(
+      index.listHistoricalSessions().map(({ summary }) => summary.appSessionId),
+      [appSessionId],
+    );
+    unlinkSync(path);
+    reconcileOwned(index, [{ providerSessionId, path }]);
+    search.setIdle(true);
+    assert.equal(search.isIndexingIncomplete(), false);
+    assert.deepEqual(readSessionNotices(appSessionId, providerSessionId, 'primary'), [notice]);
+    const rows = index.listHistoricalSessions({ workspaceCwds: [cwd] });
+    assert.deepEqual(
+      rows.map(({ summary }) => [summary.appSessionId, summary.title]),
+      [[appSessionId, 'DROIDEX title']],
+    );
+  } finally {
+    index.close();
+    await search.close();
+  }
+
+  const restarted = new HistoryIndex();
+  search = new HistoryIndexDatabase(join(root, '.factory', 'droidex', SESSION_INDEX_FILENAME));
+  try {
+    reconcileOwned(restarted);
+    search.setIdle(true);
+    assert.equal(search.isIndexingIncomplete(), false);
+    assert.equal(restarted.listHistoricalSessions()[0]?.summary.appSessionId, appSessionId);
+    writeEmptySession(root, providerSessionId, cwd);
+    reconcileOwned(restarted, [{ providerSessionId, path }]);
+    assert.equal(restarted.listHistoricalSessions()[0]?.summary.appSessionId, appSessionId);
+    unlinkSync(path);
+    reconcileOwned(restarted);
+    assert.equal(search.isIndexingIncomplete(), false);
+    writeEmptySession(root, providerSessionId, cwd);
+    reconcileOwned(restarted);
+    assert.equal(restarted.listHistoricalSessions()[0]?.summary.appSessionId, appSessionId);
+    writeSession(root, providerSessionId, cwd);
+    reconcileOwned(restarted);
+    assert.equal(search.isIndexingIncomplete(), true);
+    assert.deepEqual(
+      restarted
+        .listHistoricalSessions()
+        .map(({ summary }) => [summary.appSessionId, summary.title]),
+      [[appSessionId, 'DROIDEX title']],
+    );
+    assert.deepEqual(readSessionNotices(appSessionId, providerSessionId, 'primary'), [notice]);
+  } finally {
+    restarted.close();
+  }
 });
 
 test('a file that breaks mid-reconcile is skipped without aborting the diff', (t) => {

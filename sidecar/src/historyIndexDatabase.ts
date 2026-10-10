@@ -1,9 +1,11 @@
-import { rmSync } from 'node:fs';
+import { existsSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 
 import { createHistorySessionFileCache, SESSION_SEARCH_INDEX_FILENAME } from './history.js';
 import { HistorySearchIndex } from './historySearchIndex.js';
+import { PERMISSION_SEMANTICS_REVISION } from './permissionSemantics.js';
+import { initializeSessionFileCacheSchema } from './sessionFileCacheSchema.js';
 import {
   HistorySearchUnavailableError,
   isHistorySearchUnavailableError,
@@ -92,13 +94,15 @@ export class HistoryIndexDatabase {
     const result = this.sessionFiles.reconcileChanges();
     const removed = [
       ...result.removedProviderSessionIds,
+      ...this.sessionFiles.unavailableProviderSessionIds,
       ...result.upserts
         .filter((entry) => entry.summary === null)
         .map((entry) => entry.providerSessionId),
     ];
     for (const providerSessionId of removed) this.removeQueued(providerSessionId);
     const searchIndex = this.searchIndex;
-    if (!searchIndex) return result;
+    if (!searchIndex)
+      return { ...result, searchUnavailableReason: this.searchUnavailable?.message };
     const plan = searchIndex.reconcileEntries(this.sessionFiles.searchableEntries());
     this.hasPlannedAll = true;
     this.enqueueEntries(plan.pendingEntries, false);
@@ -108,8 +112,11 @@ export class HistoryIndexDatabase {
   reconcileSessionFilePaths(changes: SessionFileChange[]): SessionFileReconciliation {
     this.assertOpen();
     const result = this.sessionFiles.reconcilePathChanges(changes);
+    const unavailable = this.sessionFiles.unavailableProviderSessionIds;
+    for (const providerSessionId of unavailable) this.removeQueued(providerSessionId);
     const searchIndex = this.searchIndex;
-    if (!searchIndex) return result;
+    if (!searchIndex)
+      return { ...result, searchUnavailableReason: this.searchUnavailable?.message };
     if (!this.hasPlannedAll) {
       const plan = searchIndex.reconcileEntries(this.sessionFiles.searchableEntries());
       this.hasPlannedAll = true;
@@ -119,6 +126,7 @@ export class HistoryIndexDatabase {
     const searchable = result.upserts.filter(isSearchableEntry);
     const removed = [
       ...result.removedProviderSessionIds,
+      ...unavailable,
       ...result.upserts
         .filter((entry) => entry.summary === null)
         .map((entry) => entry.providerSessionId),
@@ -315,6 +323,18 @@ export class HistoryIndexDatabase {
       }
     } catch (error) {
       if (this.closed || activeQueueEntry.superseded) return;
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'ENOENT' &&
+        this.sessionFiles.retainsSummary(entry.providerSessionId)
+      ) {
+        // A missed watcher deletion must stop retries without losing the catalog row.
+        this.reconcileSessionFilePaths([
+          { providerSessionId: entry.providerSessionId, path: entry.path },
+        ]);
+        if (this.activeQueueEntry?.superseded) return;
+      }
       queue.set(entry.providerSessionId, entry);
       const failures = (this.retryFailures.get(entry.providerSessionId) ?? 0) + 1;
       this.retryFailures.set(entry.providerSessionId, failures);
@@ -398,21 +418,23 @@ function minimumDefined(left: number | undefined, right: number | undefined): nu
   return Math.min(left, right);
 }
 
+const SALVAGED_COLUMNS =
+  'provider_session_id, path, birthtime_ms, mtime_ms, size_bytes, settings_mtime_ms, summary_json, launch_settings_json';
+
 function openDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   try {
     return createDerivedStorage(path, canonicalDb);
   } catch (error) {
     // Missing FTS5 is a host capability gap, not a corrupt derived file.
     if (isHistorySearchUnavailableError(error) || !isDatabaseCorruption(error)) throw error;
-    removeDerivedStorage(path);
+    // This file also holds admitted summaries that missing transcripts cannot
+    // reconstruct, so it is set aside for repair rather than deleted, and the
+    // rebuild keeps every cached session row the damaged copy still yields.
+    salvageSessionFileCache(path, setAsideDerivedStorage(path));
     try {
       return createDerivedStorage(path, canonicalDb);
     } catch (rebuildError) {
-      throw new Error(
-        `History search index is corrupt and could not be rebuilt. Quit DROIDEX, delete ${path} ` +
-          `and its -wal/-shm files, then restart. Raw session history is unaffected.`,
-        { cause: rebuildError },
-      );
+      throw new Error(corruptSearchStorageMessage(path), { cause: rebuildError });
     }
   }
 }
@@ -422,7 +444,7 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   try {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA busy_timeout = 5000');
-    const sessionFiles = createHistorySessionFileCache(db);
+    const sessionFiles = createHistorySessionFileCache(db, canonicalDb);
     try {
       return {
         db,
@@ -431,12 +453,17 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
         searchUnavailable: null,
       };
     } catch (error) {
-      if (!isHistorySearchUnavailableError(error)) throw error;
+      if (!isHistorySearchUnavailableError(error) && !isDatabaseCorruption(error)) throw error;
+      // Readable summaries must stay available even when FTS cannot initialize;
+      // deleting this shared file would lose chats whose transcripts are missing.
+      const searchUnavailable = isHistorySearchUnavailableError(error)
+        ? error
+        : new HistorySearchUnavailableError(corruptSearchStorageMessage(path), { cause: error });
       return {
         db,
         sessionFiles,
         searchIndex: null,
-        searchUnavailable: new HistorySearchUnavailableError(),
+        searchUnavailable,
       };
     }
   } catch (error) {
@@ -449,10 +476,49 @@ function createDerivedStorage(path: string, canonicalDb: DatabaseSync) {
   }
 }
 
-function removeDerivedStorage(path: string): void {
-  for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
-    rmSync(candidate, { force: true });
+// Keeps SQLite's -wal/-shm naming so the set-aside copy still opens whole.
+function setAsideDerivedStorage(path: string): string {
+  const setAside = `${path}.corrupt-${String(Date.now())}`;
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (existsSync(`${path}${suffix}`)) renameSync(`${path}${suffix}`, `${setAside}${suffix}`);
   }
+  return setAside;
+}
+
+function salvageSessionFileCache(path: string, damagedPath: string): void {
+  const db = new DatabaseSync(path);
+  try {
+    initializeSessionFileCacheSchema(db);
+    db.prepare('ATTACH DATABASE ? AS damaged').run(damagedPath);
+    // Rows written under older permission meanings are dropped, as on any open.
+    const revision = db
+      .prepare('SELECT permission_semantics_revision FROM damaged.session_file_cache_metadata')
+      .get()?.permission_semantics_revision;
+    if (revision !== PERMISSION_SEMANTICS_REVISION) return;
+    const insert = db.prepare(
+      `INSERT OR IGNORE INTO session_file_cache (${SALVAGED_COLUMNS})
+       VALUES (${SALVAGED_COLUMNS.split(', ')
+         .map(() => '?')
+         .join(', ')})`,
+    );
+    const rows = db
+      .prepare(`SELECT ${SALVAGED_COLUMNS} FROM damaged.session_file_cache`)
+      .iterate() as Iterable<Record<string, SQLInputValue>>;
+    // Rows read before a damaged page are kept; the cache revalidates each one.
+    for (const row of rows) insert.run(...Object.values(row));
+  } catch {
+    // Whatever could not be read is gone from the rebuild, not from the copy.
+  } finally {
+    db.close();
+  }
+}
+
+function corruptSearchStorageMessage(path: string): string {
+  return (
+    `History search storage is corrupt. Quit DROIDEX, back up ${path} and its -wal/-shm files, ` +
+    'then repair the database or restore a known-good backup. Storage was preserved because ' +
+    'missing transcripts cannot reconstruct retained chat summaries.'
+  );
 }
 
 function isDatabaseCorruption(error: unknown): boolean {

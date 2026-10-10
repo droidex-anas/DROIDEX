@@ -3,19 +3,24 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test, { type TestContext } from 'node:test';
 
 import { HistoryIndexDatabase } from './historyIndexDatabase.js';
 import { SESSION_SEARCH_INDEX_FILENAME } from './history.js';
-import { sqliteFts5UnavailableSkipReason, sqliteSupportsFts5 } from './historySearchSchema.js';
+import {
+  HistorySearchUnavailableError,
+  sqliteFts5UnavailableSkipReason,
+} from './historySearchSchema.js';
 
 const needsFts5 = { skip: sqliteFts5UnavailableSkipReason() };
 
@@ -132,7 +137,7 @@ function indexDatabase(t: TestContext, seed: (sessionsDirectory: string, now: nu
     process.env.HOME = previousHome;
     rmSync(home, { recursive: true, force: true });
   });
-  return { database, slices, sessionsDirectory, clock };
+  return { database, slices, sessionsDirectory, clock, dbPath };
 }
 
 function writeOldSession(
@@ -249,7 +254,7 @@ test(
   },
 );
 
-test('a corrupt derived database is deleted and rebuilt without touching canonical history', async (t) => {
+test('a corrupt history search database is set aside and rebuilt', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'droidex-derived-corruption-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const dbPath = join(directory, 'session-index.sqlite');
@@ -257,23 +262,141 @@ test('a corrupt derived database is deleted and rebuilt without touching canonic
   createCanonicalDatabase(dbPath);
   writeFileSync(derivedPath, 'not a sqlite database');
 
-  const database = new HistoryIndexDatabase(dbPath);
-  assert.deepEqual(database.sessionFileSnapshot(), { revision: 0, changed: 0, entries: [] });
+  await new HistoryIndexDatabase(dbPath).close();
+  const setAside = readdirSync(directory).filter((name) =>
+    name.startsWith(`${SESSION_SEARCH_INDEX_FILENAME}.corrupt-`),
+  );
+  assert.equal(setAside.length, 1);
+  assert.equal(readFileSync(join(directory, setAside[0]), 'utf8'), 'not a sqlite database');
+  const canonical = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    assert.equal(
+      canonical
+        .prepare("SELECT count(*) AS count FROM sqlite_schema WHERE name = 'app_sessions'")
+        .get()?.count,
+      1,
+    );
+  } finally {
+    canonical.close();
+  }
+});
+
+test('search initialization corruption preserves an owned summary whose transcript is missing', async (t) => {
+  let path = '';
+  const { database, clock, dbPath } = indexDatabase(t, (directory, now) => {
+    path = writeSession(directory, 'owned-provider', 'retained catalog summary', now);
+  });
+  const canonical = new DatabaseSync(dbPath);
+  try {
+    canonical.exec(`
+      ALTER TABLE app_sessions ADD COLUMN session_purpose TEXT;
+      ALTER TABLE app_sessions ADD COLUMN title TEXT;
+      INSERT INTO app_sessions (app_session_id, provider_session_id, updated_at, session_purpose, title)
+      VALUES ('owned-chat', 'owned-provider', ${clock.now}, 'chat', 'DROIDEX title');
+    `);
+  } finally {
+    canonical.close();
+  }
+  database.reconcileSessionFiles();
+  const retained = database.sessionFileSnapshot();
+  assert.equal(retained.entries[0]?.summary?.title, 'owned-provider');
+  rmSync(path);
+  database.reconcileSessionFiles();
+  assert.deepEqual(database.sessionFileSnapshot(), retained);
+  await database.close();
+  const persisted = JSON.parse(JSON.stringify(retained));
+
+  const exec = DatabaseSync.prototype.exec;
+  const corruption = t.mock.method(
+    DatabaseSync.prototype,
+    'exec',
+    function (this: DatabaseSync, sql: string) {
+      if (sql.includes('droidex_fts5_probe')) throw new Error('database disk image is malformed');
+      return exec.call(this, sql);
+    },
+  );
+  const degraded = new HistoryIndexDatabase(dbPath);
+  try {
+    const reconciliation = degraded.reconcileSessionFiles();
+    assert.match(reconciliation.searchUnavailableReason ?? '', /Quit DROIDEX, back up/);
+    assert.match(reconciliation.searchUnavailableReason ?? '', /repair the database or restore/);
+    assert.deepEqual(degraded.sessionFileSnapshot(), persisted);
+    assert.match(
+      degraded.reconcileSessionFilePaths([{ providerSessionId: 'owned-provider', path }])
+        .searchUnavailableReason ?? '',
+      /corrupt/,
+    );
+    assert.deepEqual(degraded.sessionFileSnapshot(), persisted);
+    assert.throws(
+      () => degraded.search('retained'),
+      (error: unknown) =>
+        error instanceof HistorySearchUnavailableError &&
+        /Quit DROIDEX, back up/.test(error.message),
+    );
+    degraded.setIdle(true);
+    assert.equal(degraded.isIndexingIncomplete(), false);
+  } finally {
+    await degraded.close();
+    corruption.mock.restore();
+  }
+
+  const restarted = new HistoryIndexDatabase(dbPath);
+  try {
+    restarted.reconcileSessionFiles();
+    assert.deepEqual(restarted.sessionFileSnapshot(), persisted);
+  } finally {
+    await restarted.close();
+  }
+});
+
+test('a corrupt search file keeps owned chats whose transcripts are missing', async (t) => {
+  let path = '';
+  const { database, clock, dbPath } = indexDatabase(t, (directory, now) => {
+    path = writeSession(directory, 'owned-provider', 'retained catalog summary', now);
+  });
+  const canonical = new DatabaseSync(dbPath);
+  try {
+    canonical.exec(`
+      ALTER TABLE app_sessions ADD COLUMN session_purpose TEXT;
+      ALTER TABLE app_sessions ADD COLUMN title TEXT;
+      INSERT INTO app_sessions (app_session_id, provider_session_id, updated_at, session_purpose, title)
+      VALUES ('owned-chat', 'owned-provider', ${clock.now}, 'chat', 'DROIDEX title');
+    `);
+  } finally {
+    canonical.close();
+  }
+  database.reconcileSessionFiles();
+  rmSync(path);
+  database.reconcileSessionFiles();
+  const retained = JSON.parse(JSON.stringify(database.sessionFileSnapshot()));
   await database.close();
 
-  const tableCount = (path: string, name: string) => {
-    const db = new DatabaseSync(path, { readOnly: true });
-    try {
-      return db.prepare('SELECT count(*) AS count FROM sqlite_schema WHERE name = ?').get(name)?.[
-        'count'
-      ];
-    } finally {
-      db.close();
+  let corruptOnce = true;
+  const exec = DatabaseSync.prototype.exec;
+  t.mock.method(DatabaseSync.prototype, 'exec', function (this: DatabaseSync, sql: string) {
+    if (corruptOnce && sql === 'PRAGMA journal_mode = WAL') {
+      corruptOnce = false;
+      throw new Error('database disk image is malformed');
     }
-  };
-  assert.equal(tableCount(dbPath, 'app_sessions'), 1);
-  assert.equal(tableCount(derivedPath, 'session_file_cache'), 1);
-  assert.equal(tableCount(derivedPath, 'history_search_fts'), sqliteSupportsFts5() ? 1 : 0);
+    return exec.call(this, sql);
+  });
+  const rebuilt = new HistoryIndexDatabase(dbPath);
+  try {
+    rebuilt.reconcileSessionFiles();
+    assert.deepEqual(
+      rebuilt.sessionFileSnapshot().entries.map((entry) => entry.summary?.providerSessionId),
+      retained.entries.map(
+        (entry: { summary?: { providerSessionId?: string } }) => entry.summary?.providerSessionId,
+      ),
+    );
+    assert.ok(
+      readdirSync(dirname(dbPath)).some((name) =>
+        name.startsWith(`${SESSION_SEARCH_INDEX_FILENAME}.corrupt-`),
+      ),
+    );
+  } finally {
+    await rebuilt.close();
+  }
 });
 
 test('a transient file read failure stays queued for a later slice', needsFts5, async (t) => {

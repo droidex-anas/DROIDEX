@@ -304,6 +304,28 @@ function eventsFromSnapshot(message: BridgeSnapshotMessage): ServerEvent[] {
       processes: message.snapshot.processes,
     },
   ];
+  // A new sidecar starts with healthy storage until it reports otherwise; a
+  // replay gap from the same sidecar keeps whatever it already reported.
+  if (message.reason === 'generation_changed')
+    events.push({ type: 'history.persistenceRecovered' });
+  const unavailableReason = message.snapshot.persistence.unavailableReason;
+  if (unavailableReason !== undefined) {
+    events.push({
+      type: 'error',
+      code: 'history.unavailable',
+      message: `Canonical history could not open: ${unavailableReason} History reads and writes are disabled. Quit DROIDEX, repair storage or restore a backup, then restart. Do not delete the canonical database.`,
+      recoverable: false,
+    });
+  }
+  const searchUnavailableReason = message.snapshot.persistence.searchUnavailableReason;
+  if (searchUnavailableReason !== undefined) {
+    events.push({
+      type: 'error',
+      code: 'history.search_unavailable',
+      message: `History search is unavailable: ${searchUnavailableReason} Canonical session history is unaffected.`,
+      recoverable: false,
+    });
+  }
   for (const session of message.snapshot.sessions) {
     events.push({ type: 'session.updated', session });
   }

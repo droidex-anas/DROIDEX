@@ -98,11 +98,16 @@ test('an origin/main index with a leftover file cache opens, and the first deriv
 
     const upgraded = new HistoryIndex();
     try {
+      assert.equal(
+        upgraded.sessionFileCacheSize,
+        0,
+        'the main-thread mirror does not read the leftover canonical cache',
+      );
       const rows = upgraded.listHistoricalSessions({ workspaceCwds: [workspace] });
       assert.equal(
         rows.some((row) => row.summary.appSessionId === 'kept-chat'),
         false,
-        'the main-thread mirror does not read the leftover canonical cache',
+        'canonical records need an admitted provider-file summary before listing',
       );
     } finally {
       upgraded.close();
