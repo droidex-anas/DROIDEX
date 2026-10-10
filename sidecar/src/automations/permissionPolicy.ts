@@ -69,20 +69,30 @@ export function isAutomationMutationTool(serverName: string, toolName: string): 
   return Boolean(tool) && !ALWAYS_SAFE.has(tool);
 }
 
-/** The server and tool a Droid permission request names, for a tool on any MCP server. */
-export function mcpPermissionTarget(
-  params: unknown,
-): { serverName: string; toolName: string } | null {
+interface McpToolTarget {
+  serverName: string;
+  toolName: string;
+}
+
+/**
+ * The server and tool of every tool a Droid permission request covers, or none
+ * when any of them is not an MCP tool: a request that bundles a command or an
+ * edit with an MCP call must never be approved on the MCP tool's behalf.
+ */
+export function mcpPermissionTargets(params: unknown): McpToolTarget[] {
   const raw = recordValue(params);
-  if (!raw) return null;
-  const toolUses: unknown[] = Array.isArray(raw.toolUses) ? raw.toolUses : [];
-  // A request covering several tools names no single one, so no tool policy
-  // may approve it on the first tool's behalf: the whole bundle asks.
-  const confirmations: unknown[] = Array.isArray(raw.confirmations) ? raw.confirmations : [];
-  if (toolUses.length > 1 || confirmations.length > 1) return null;
-  const firstToolUse = recordValue(toolUses[0]);
-  const details =
-    (firstToolUse ? recordValue(firstToolUse.details) : null) ?? confirmationDetail(raw);
+  const toolUses: unknown[] = raw && Array.isArray(raw.toolUses) ? raw.toolUses : [];
+  const targets: McpToolTarget[] = [];
+  for (const toolUse of toolUses) {
+    const target = mcpToolTarget(toolUse);
+    if (!target) return [];
+    targets.push(target);
+  }
+  return targets;
+}
+
+function mcpToolTarget(toolUse: unknown): McpToolTarget | null {
+  const details = recordValue(recordValue(toolUse)?.details) ?? {};
   if (stringValue(details.type) !== 'mcp_tool') return null;
   const rawToolName = stringValue(details.toolName);
   const explicitServerName = stringValue(details.serverName);
@@ -124,15 +134,6 @@ export function splitNamespacedTool(value: string): { serverName: string; toolNa
     return { serverName, toolName };
   }
   return { serverName: '', toolName: value };
-}
-
-function confirmationDetail(raw: Record<string, unknown>): Record<string, unknown> {
-  if (Array.isArray(raw.confirmations)) {
-    const first: unknown = raw.confirmations[0];
-    const record = recordValue(first);
-    if (record) return recordValue(record.confirmation) ?? record;
-  }
-  return recordValue(raw.confirmation) ?? {};
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {
