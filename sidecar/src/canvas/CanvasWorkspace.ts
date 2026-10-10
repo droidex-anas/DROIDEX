@@ -433,7 +433,7 @@ export class CanvasWorkspace {
   async close(): Promise<void> {
     await this.commits.drain();
     this.leases.forget();
-    this.changes.clear();
+    this.changes.close();
     this.writerLease.release();
   }
 

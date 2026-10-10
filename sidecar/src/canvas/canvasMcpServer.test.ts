@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { storage } from '../testing/canvasBuildSupport.js';
 import {
-  canvasRoot,
   deferred,
   observedFileSystem,
   holdManifestWrite,
-  quietBuilds,
 } from '../testing/canvasStorageSupport.js';
+import { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
+import { CompileFailedError, type CompileInput } from './compiler.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import { CanvasScopes } from './canvasScopes.js';
@@ -29,19 +30,48 @@ type Reply = {
   receipt?: { revisionId: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number }[];
-  build?: unknown;
+  build?: { status: string; diagnostics?: { file?: string; line?: number }[]; next?: string };
 };
+
+/**
+ * A compiler that answers at once, because canvas_write waits for its build:
+ * every design builds, except one whose main.tsx names `BROKEN`.
+ */
+function answeringBuilds(): CanvasBuilds {
+  const compile = (input: CompileInput) =>
+    input.files['main.tsx']?.includes('BROKEN')
+      ? Promise.reject(
+          new CompileFailedError([
+            { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+          ]),
+        )
+      : Promise.resolve({
+          artifactId: input.revisionId,
+          html: '<html></html>',
+          diagnostics: [],
+          elements: [],
+        });
+  return new CanvasBuilds({
+    compiler: () => ({ compile, terminate: () => Promise.resolve() }),
+    deadline: () => () => undefined,
+  });
+}
 
 async function harness(t: TestContext, fs?: CanvasFileSystem) {
   const scopes = new CanvasScopes();
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
-  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
+  const store = await storage(t);
+  const builds = answeringBuilds();
+  const workspace = await CanvasWorkspace.open(store.root, builds, {
     fs,
     isChatKnown: () => true,
     isScopeActive: (id) => scopes.isScopeActive(id),
     bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
   });
-  t.after(() => workspace.close());
+  store.closing.push(async () => {
+    await builds.close();
+    await workspace.close();
+  });
   const server = createCanvasMcpServer(
     () => Promise.resolve(workspace),
     turns,
@@ -376,6 +406,45 @@ test('lost create response retries to the same canvas and invalid source paths h
       })
     ).code,
     'revision_conflict',
+  );
+});
+
+test('canvas_write refuses a tree with no entry and reports its build in the same reply', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', { scopeId, mutationId: 'create', frames: [frame] });
+  assert.ok(created.created);
+  const { canvasId, frames } = created.created;
+  const write = (mutationId: string, expectedRevisionId: string | null, source: string) =>
+    h.call('canvas_write', {
+      scopeId,
+      mutationId,
+      designId: frames[0].designId,
+      expectedRevisionId,
+      files: { [mutationId === 'misnamed' ? 'index.tsx' : 'main.tsx']: source },
+      deletedPaths: [],
+    });
+
+  // The agent learns the entry contract while its call is open, and nothing is stored.
+  const misnamed = await write('misnamed', null, 'export default () => <p>Hey</p>');
+  assert.equal(misnamed.code, 'invalid_source');
+  assert.match(misnamed.message ?? '', /main\.tsx.*index\.tsx/);
+  assert.equal(h.workspace.snapshot(canvasId).frames[0].revisionId, null);
+
+  const broken = await write('broken', null, 'export default () => BROKEN');
+  assert.equal(broken.build?.status, 'failed');
+  assert.deepEqual(broken.build.diagnostics, [
+    { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+  ]);
+  assert.match(broken.build.next ?? '', /main\.tsx line 3/);
+
+  assert.ok(broken.receipt);
+  const fixed = await write('fixed', broken.receipt.revisionId, 'export default () => <p>Hey</p>');
+  assert.equal(fixed.build?.status, 'ready');
+  assert.equal(
+    (await h.call('canvas_inspect', { designId: frames[0].designId })).build?.status,
+    'ready',
   );
 });
 
