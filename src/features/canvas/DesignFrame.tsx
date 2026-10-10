@@ -26,6 +26,8 @@ const CHAT_TOOL_PX = 112;
 const LABEL_ROOM_PX = 120;
 /** Below this on screen a sheet shows its title alone, without the detail. */
 const COMPACT_SHEET_PX = { width: 220, height: 140 };
+/** Below this a sheet has no room for words; the label above still names it. */
+const TINY_SHEET_PX = { width: 120, height: 72 };
 
 export interface DesignFrameProps {
   canvasId: string;
@@ -371,12 +373,13 @@ function FrameBody({
 }: DesignFrameProps) {
   if (preview) return preview;
   const state = sheetState(frame, shownRevisionId, agentWorking, released);
-  const compact =
-    rect.width * scale < COMPACT_SHEET_PX.width || rect.height * scale < COMPACT_SHEET_PX.height;
+  const fits = (box: { width: number; height: number }) =>
+    rect.width * scale >= box.width && rect.height * scale >= box.height;
   const content = (
     <SheetContent
       state={state}
-      compact={compact}
+      compact={!fits(COMPACT_SHEET_PX)}
+      tiny={!fits(TINY_SHEET_PX)}
       motion={motion}
       visible={visible}
       onOpenSource={
@@ -401,18 +404,24 @@ function FrameBody({
 function SheetContent({
   state,
   compact,
+  tiny,
   motion,
   visible,
   onOpenSource,
 }: {
   state: SheetState;
   compact: boolean;
+  tiny: boolean;
   motion: CanvasMotion;
   visible: boolean;
   onOpenSource?: () => void;
 }) {
   return (
-    <div className="canvas-sheet-state">
+    <div
+      className="canvas-sheet-state"
+      data-compact={compact || undefined}
+      data-tiny={tiny || undefined}
+    >
       <div className="canvas-sheet-message canvas-chrome">
         {state.kind === 'busy' && (
           <PendingBloom stage={state.stage} visible={visible} motion={motion} />
