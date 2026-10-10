@@ -4,9 +4,13 @@
    something the user said, so none wears the user's bubble; each reads as a
    quiet notice carrying only what the reader needs. */
 
-// Written by ProjectWakeQueue's wakePrompt, threadStart's briefs, SpawnedChats'
+// Written by projectMessages' wakePrompt, threadStart's briefs, SpawnedChats'
 // opening prompt and SidebarSessions' messagePrompt; each pair must stay in step.
-const REPORT_PREFIX = 'From DROIDEX, not the user: your project threads reported.';
+const REPORT_PREFIXES = [
+  'Project update — lead action required',
+  'From DROIDEX, not the user: your project threads reported.',
+];
+const INSTRUCTION_PREFIX = 'Instructions from your project lead';
 const MESSAGE_PREFIX = 'From DROIDEX, not the user: another chat sent you a message.';
 const THREAD_BRIEF_PREFIX = 'You are an independent DROIDEX thread:';
 const LEAD_BRIEF_PREFIX = 'You lead a DROIDEX project.';
@@ -39,17 +43,27 @@ export interface ThreadSender {
    Splitting on blank lines instead would lose every paragraph after the first
    and merge two threads into one card. */
 const REPORT_HEAD = /^(.+?)\s*\((thread|chat) ([^),]+)[^)]*\):\s*$/;
-// ProjectWakeQueue's VERB, which ends a project message's head.
-const ACTIONS = ['reported back', 'needs a decision', 'sent a message'];
+// projectMessages' VERB, which ends a project message's head.
+const ACTIONS = [
+  'reported back',
+  'needs a decision',
+  'needs approval',
+  'team idle',
+  'sent a message',
+  'gave instructions',
+];
 
 /** Whether a prompt is the project's own threads speaking. */
 export function isThreadReport(text: string | undefined): boolean {
-  return text?.startsWith(REPORT_PREFIX) === true;
+  return (
+    REPORT_PREFIXES.some((prefix) => text?.startsWith(prefix)) ||
+    text?.startsWith(INSTRUCTION_PREFIX) === true
+  );
 }
 
 export function threadReports(text: string | undefined): ThreadReport[] | null {
-  if (!text?.startsWith(REPORT_PREFIX) && !text?.startsWith(MESSAGE_PREFIX)) return null;
-  const project = text.startsWith(REPORT_PREFIX);
+  if (!text || (!isThreadReport(text) && !text.startsWith(MESSAGE_PREFIX))) return null;
+  const project = isThreadReport(text);
   const reports: { lead: string; threadId: string; body: string[] }[] = [];
   for (const line of text.split('\n')) {
     const head = REPORT_HEAD.exec(line);

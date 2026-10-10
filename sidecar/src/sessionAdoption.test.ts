@@ -14,6 +14,8 @@ import { SessionAdoption } from './sessionAdoption.js';
 import { SESSION_RUNTIME_IDLE_RETIREMENT_MS } from './sessionRuntimeRetirement.js';
 import type { SessionSummary } from './protocol.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
+import { drain, harness, summary as projectSummary } from './testing/projectServiceHarness.js';
+import type { Project } from './projects/types.js';
 
 const NOW = 4_000_000_000;
 
@@ -126,6 +128,90 @@ test('a resumed in-flight session is paused with an interrupt reason', async (t)
   assert.equal(typeof live.summary.interruptReason, 'string');
   // A live summary has one owner, so adoption never stores a copy of its own.
   assert.deepEqual(persisted, []);
+});
+
+test('project restart continues only an interrupted turn and preserves a finished project', async (t) => {
+  const finished: Project = {
+    id: 'finished',
+    title: 'Finished project',
+    paused: false,
+    launching: 0,
+    plan: [],
+    todos: [],
+    pending: [],
+    done: { at: NOW - 1, outcome: 'Shipped' },
+    threads: ['finished-lead', 'finished-one', 'finished-two'].map((appSessionId, index) => ({
+      appSessionId,
+      ownerAppSessionId: index ? 'finished-lead' : undefined,
+      title: appSessionId,
+      reply: index ? 'Done' : '',
+      waiting: false,
+    })),
+  };
+  const working: Project = {
+    ...finished,
+    id: 'working',
+    done: undefined,
+    threads: ['working-lead', 'interrupted', 'idle-paused'].map((appSessionId, index) => ({
+      appSessionId,
+      ownerAppSessionId: index ? 'working-lead' : undefined,
+      title: appSessionId,
+      reply: appSessionId === 'idle-paused' ? 'Done' : '',
+      waiting: false,
+    })),
+  };
+  const h = await harness(t, [finished, working], false);
+  for (const thread of [...finished.threads, ...working.threads]) {
+    h.sessions.set(thread.appSessionId, {
+      ...projectSummary(thread.appSessionId),
+      providerSessionId: `provider-${thread.appSessionId}`,
+      phase: thread.appSessionId === 'idle-paused' ? 'paused' : 'running',
+      streaming: thread.appSessionId === 'interrupted',
+      updatedAt: NOW,
+    });
+  }
+  const { journal } = scratchJournal(t);
+  journal.write({
+    sessions: [...h.sessions.values()]
+      .filter((session) => !session.appSessionId.endsWith('-lead'))
+      .map((session) => ({
+        ...runningIdentity(session.appSessionId),
+        phase: session.phase,
+        streaming: session.streaming === true,
+        lastActiveAt: NOW,
+      })),
+    children: [],
+    processes: [],
+  });
+  const adoption = createAdoption(journal, {
+    registry: {
+      liveSessionsSnapshot: () => [...h.sessions.values()].map((summary) => ({ summary })),
+      getCanonicalSummary: (id) => h.sessions.get(id),
+      getLive: (id) => {
+        const summary = h.sessions.get(id);
+        return summary && id !== 'idle-paused' ? { summary } : undefined;
+      },
+      updateSummary: (id, patch) => {
+        const summary = h.sessions.get(id);
+        assert.ok(summary);
+        Object.assign(summary, patch);
+      },
+    },
+    lifecycle: { resume: async (id) => id !== 'idle-paused' },
+    persistSummaries: (sessions) =>
+      sessions.forEach((session) => h.sessions.set(session.appSessionId, session)),
+  });
+  await adoption.adopt();
+  h.projects.historyReady();
+  await drain();
+
+  assert.deepEqual(
+    h.sent.map(({ id }) => id),
+    ['interrupted'],
+  );
+  assert.match(h.sent[0]?.prompt ?? '', /DROIDEX restarted while you were working/);
+  assert.deepEqual(h.projects.list().find(({ id }) => id === finished.id)?.done, finished.done);
+  assert.deepEqual(h.steered, []);
 });
 
 test('running children are marked interrupted and written out of the live journal', async (t) => {

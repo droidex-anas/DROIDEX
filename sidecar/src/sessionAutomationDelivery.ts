@@ -13,11 +13,9 @@ interface DeliveryContext {
 export interface ScheduledTurnDelivery {
   isCurrent: () => boolean;
   accepted: () => void;
-  /**
-   * The turn stopped before the runtime was given the prompt: 'stale' when the
-   * runtime changed under it, 'failed' when preparing a current runtime failed.
-   */
-  declined: (reason: 'stale' | 'failed') => void;
+  /** 'stale' and 'failed' decline dispatch; 'unknown' requires review because
+      the runtime may have consumed the prompt without acknowledging it. */
+  declined: (reason: 'stale' | 'failed' | 'unknown') => void;
 }
 
 /** Acceptance requires a runtime stream response, not merely a reserved turn. */
@@ -46,7 +44,11 @@ export async function deliverScheduledMessage(
       if (!available()) return refusal();
       if (!context.canResume()) return { status: 'busy', retryOn: 'capacity' };
     }
-    if (!(await context.resume(appSessionId)) || !available()) return refusal();
+    if (!(await context.resume(appSessionId))) {
+      if (available() && !context.canResume()) return { status: 'busy', retryOn: 'capacity' };
+      return refusal();
+    }
+    if (!available()) return refusal();
     live = d.registry.getLive(appSessionId);
     if (live?.summary.providerSessionId !== (historical.providerSessionId ?? appSessionId))
       return refusal();

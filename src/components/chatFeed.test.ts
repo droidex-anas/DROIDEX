@@ -86,6 +86,16 @@ test('#20 a TodoWrite update does not add a chat message and answer stays single
   assert.ok(inWorked, 'TodoWrite activity should be inside the Worked group');
 });
 
+test('a steer delivered into a running turn keeps the work before it in view', () => {
+  const steer = ev({ kind: 'text', author: 'user', text: 'also check tests', steered: true });
+  const events = [userMsg('fix it'), asst('looking'), grep(), asst('found it'), steer, asst('ok')];
+  const live = groupTurns(buildFeed(events), true);
+  assert.equal(workedChildren(live).length, 0, 'nothing of the running turn folds');
+  assert.equal(toolEvents(live).length, 1);
+  // Once the turn settles it folds as usual.
+  assert.ok(workedChildren(groupTurns(buildFeed(events), false)).length > 0);
+});
+
 test('a spoken line stays its own marked row beside the turn it was said in', () => {
   const spokenAsk = ev({ kind: 'text', author: 'user', text: 'what changed?', spoken: true });
   const spokenReply = ev({ kind: 'text', text: 'the composer', spoken: true });
@@ -880,4 +890,22 @@ test('prepending older events keeps each row viewport identity while its key cha
   assert.ok(afterChanges);
   assert.notEqual(beforeChanges.key, afterChanges.key);
   assert.equal(feedRowId(beforeChanges), feedRowId(afterChanges));
+});
+
+test('consecutive connection retries fold into one row that keeps the latest state', () => {
+  const items = buildFeed([
+    ev({ id: 'r1', kind: 'error', text: 'Reconnecting... 2/5' }),
+    ev({ id: 'r2', kind: 'error', text: 'Reconnecting... 3/5' }),
+    ev({ id: 'r3', kind: 'error', text: 'Reconnecting... waiting for network' }),
+    ev({ id: 'f1', kind: 'error', text: 'Reconnecting failed: authentication rejected' }),
+    ev({ id: 'r4', kind: 'error', text: 'Reconnecting... 1/5' }),
+  ]);
+  assert.deepEqual(
+    items.map((item) => item.type === 'error' && [item.key, item.event.text, item.attempts]),
+    [
+      ['r1', 'Reconnecting... waiting for network', 3],
+      ['f1', 'Reconnecting failed: authentication rejected', undefined],
+      ['r4', 'Reconnecting... 1/5', undefined],
+    ],
+  );
 });

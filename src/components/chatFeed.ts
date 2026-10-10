@@ -34,6 +34,12 @@ export function startsTurn(event: TranscriptEvent): boolean {
   );
 }
 
+// A steer is the user's bubble inside a running turn, not the start of a new
+// one: the work around it is the same live turn.
+export function isSteeredPrompt(event: TranscriptEvent): boolean {
+  return event.author === 'user' && event.steered === true;
+}
+
 // Whether `next` is the tool_result produced by the `call` event. Result events
 // carry no usable `toolName` (the live SDK emits "" and history reads the empty
 // result name), so classification cannot identify them; correlate by toolUseId
@@ -54,12 +60,24 @@ function eventAfter(events: TranscriptEvent[], index: number): TranscriptEvent |
   return index + 1 < events.length ? events[index + 1] : undefined;
 }
 
+// Codex's own retry progress, and nothing else: a failure that merely starts
+// with the word must keep its own row.
+function isReconnectNotice(event: TranscriptEvent): boolean {
+  return (
+    event.kind === 'error' &&
+    /^(error:\s*)?reconnecting\.{3}\s*(\d+\/\d+|waiting for network)\s*$/i.test(
+      event.text?.trim() ?? '',
+    )
+  );
+}
+
 /* ── Feed model ── */
 export type FeedItem =
   | { type: 'message'; key: string; event: TranscriptEvent }
   | { type: 'thinking'; key: string; event: TranscriptEvent; durationMs?: number }
   | { type: 'status'; key: string; event: TranscriptEvent }
-  | { type: 'error'; key: string; event: TranscriptEvent }
+  // attempts counts consecutive connection retries folded into this one row.
+  | { type: 'error'; key: string; event: TranscriptEvent; attempts?: number }
   | { type: 'diff'; key: string; event: TranscriptEvent; change: FileChange }
   | { type: 'diffs'; key: string; changes: { event: TranscriptEvent; change: FileChange }[] }
   | { type: 'child_session'; key: string; event: TranscriptEvent }
@@ -149,7 +167,11 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'generated_image' && b.type === 'generated_image') {
     return a.event === b.event && a.result === b.result;
   }
-  // message | status | error | diff | child session each carry one event.
+  // A folded retry row can gain an attempt while keeping its latest event.
+  if (a.type === 'error' && b.type === 'error') {
+    return a.event === b.event && a.attempts === b.attempts;
+  }
+  // message | status | diff | child session each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }
 
@@ -327,7 +349,14 @@ export function buildFeed(
     // as a standalone error. An ordinary failed tool result is not diverted here;
     // it flows into its tool group below and folds into the tool card as an error.
     if (ev.kind === 'error' || (ev.isError && isCardResult(ev))) {
-      items.push({ type: 'error', key: ev.id, event: ev });
+      // A harness retrying its connection reports every attempt; one row that
+      // keeps the latest state reads the same and leaves the work visible.
+      const last = items.at(-1);
+      if (last?.type === 'error' && isReconnectNotice(last.event) && isReconnectNotice(ev)) {
+        items[items.length - 1] = { ...last, event: ev, attempts: (last.attempts ?? 1) + 1 };
+      } else {
+        items.push({ type: 'error', key: ev.id, event: ev });
+      }
       i++;
       continue;
     }

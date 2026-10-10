@@ -197,6 +197,7 @@ export class CodexVoice implements ProviderVoice {
       return;
     }
     this.forget();
+    this.publish({ kind: 'closed' });
     // An attempt that has not asked Codex for the conversation yet has nothing
     // to close; cancelling it is the whole of stopping it.
     if (opened) await this.closeConversation();

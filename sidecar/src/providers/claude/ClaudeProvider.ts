@@ -65,6 +65,7 @@ export class ClaudeProvider implements Provider {
   }
 
   async create({
+    appSessionId,
     interactions,
     cwd,
     modelId,
@@ -75,10 +76,9 @@ export class ClaudeProvider implements Provider {
     interactionMode,
     mcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // Claude pins the id it is given, so the session mints DROIDEX's identity
-    // here and the two stay the same for the session's whole life.
+    // Claude pins the supplied id for a new conversation.
     return await this.open({
-      appSessionId: randomUUID(),
+      appSessionId: appSessionId ?? randomUUID(),
       cwd: sessionCwd(cwd),
       autonomy,
       interactionMode,
@@ -94,6 +94,7 @@ export class ClaudeProvider implements Provider {
   async resume(
     providerSessionId: string,
     {
+      appSessionId,
       interactions,
       cwd,
       modelId,
@@ -106,7 +107,7 @@ export class ClaudeProvider implements Provider {
     }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     return await this.open({
-      appSessionId: providerSessionId,
+      appSessionId,
       cwd: sessionCwd(cwd),
       autonomy: autonomy ?? 'off',
       interactionMode: interactionMode ?? 'auto',
@@ -116,7 +117,7 @@ export class ClaudeProvider implements Provider {
       ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
       interactions,
-      resume: true,
+      resumeId: providerSessionId,
     });
   }
 

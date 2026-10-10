@@ -113,6 +113,7 @@ import {
   visibleSessionTarget,
   type VisibleSessionTarget,
 } from '../lib/childSessions';
+import { addLocalSteer, dropLocalSteers } from '../lib/localSteers';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
 import {
@@ -163,7 +164,7 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo } from '../types/bridge';
+import type { Autonomy, SkillInfo, ProviderMention } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import {
   promptWithSideChatReplies,
@@ -331,7 +332,7 @@ export default function PromptInput({
       missionControlMode: current.missionControlMode,
       modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
-      autonomyPending: appSessionId ? appSessionId in current.pendingAutonomy : false,
+      pendingAutonomy: appSessionId ? current.pendingAutonomy[appSessionId] : undefined,
       pendingActiveModelUpdate: appSessionId
         ? current.pendingModelUpdates[appSessionId]
         : undefined,
@@ -994,6 +995,7 @@ export default function PromptInput({
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
   const composerSeed = state.composerSeed;
+  const restoreRef = useRef<((prompt: QueuedPrompt) => void) | null>(null);
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
     if (submittingRef.current || seedToSend.current !== null) {
@@ -1002,6 +1004,12 @@ export default function PromptInput({
     }
     consumedComposerSeedId.current = composerSeed.id;
     setHistoryIndex(null);
+    // A taken-back steer comes back whole: its chips and replies too.
+    if (composerSeed.prompt) {
+      restoreRef.current?.(composerSeed.prompt);
+      dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
+      return;
+    }
     // Notes and suggestion cards append to an in-progress draft. A surface
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
@@ -1728,8 +1736,23 @@ export default function PromptInput({
     const steerId =
       isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
-      // A steer shows from the sidecar's list of pending steers instead.
-      if (!steerId)
+      // A steer shows as pending at once, until the sidecar's own list of
+      // pending steers takes over.
+      if (steerId)
+        addLocalSteer(
+          activeSession.appSessionId,
+          { id: steerId, text: composed, sentAt: Date.now() },
+          {
+            id: steerId,
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+          },
+        );
+      else
         dispatch({
           type: 'SESSION_TRANSCRIPT',
           event: {
@@ -1756,6 +1779,7 @@ export default function PromptInput({
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();
+        if (steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
         console.error('[PromptInput] sendToSession failed:', err);
       }
     };
@@ -1783,6 +1807,8 @@ export default function PromptInput({
     if (showTurnStarting) startTurnStarting();
 
     const committed = await commitPrimaryPromptAfterBaseline({
+      // A steer the turn cannot take runs as the next turn and needs its own
+      // baseline; its bubble already shows, so the wait no longer delays it.
       waitForBaseline: () =>
         workingDirectory
           ? markGitTurnStart(workingDirectory, activeSession.appSessionId)
@@ -1792,6 +1818,7 @@ export default function PromptInput({
       resetComposer: clearAfterSubmit,
       sendCommand,
     });
+    if (!committed && steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
     if (!committed && showTurnStarting) stopTurnStarting();
   };
 
@@ -1806,7 +1833,7 @@ export default function PromptInput({
     appUpdateInstallResult,
   });
 
-  const editQueuedInComposer = (p: QueuedPrompt) => {
+  const restorePromptToComposer = (p: QueuedPrompt) => {
     if (!activeSession) return;
     // The queued prompt carries its own files; drop anything pasted after it
     // was queued so it doesn't ride along on the edited prompt, and delete
@@ -1840,9 +1867,68 @@ export default function PromptInput({
         reply,
       });
     }
-    dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
     requestAnimationFrame(() => editorRef.current?.focus());
   };
+
+  // A steer taken back while the composer already holds a draft joins it
+  // instead of replacing it, so two take-backs in a row both come back.
+  const appendPromptToComposer = (p: QueuedPrompt) => {
+    if (!activeSession) return;
+    setInput((current) => (current.trim() ? `${current}\n\n${p.text}` : p.text));
+    for (const path of p.files)
+      if (!attachedFileSeqRef.current.has(path))
+        attachedFileSeqRef.current.set(path, takeIntakeSeq());
+    setAttachedFiles((current) => [
+      ...current,
+      ...p.files.filter((path) => !current.includes(path)),
+    ]);
+    // Without saved rows, a returned prompt's skills and catalog mentions still
+    // bring their chips back, a mention by its full identity.
+    const rowKeys = new Set(p.rowKeys);
+    const mentionKey = (mention: ProviderMention) =>
+      `${mention.kind}:${mention.name}:${mention.path ?? ''}`;
+    const mentioned = new Set(p.mentions?.map(mentionKey));
+    const added =
+      rowKeys.size > 0
+        ? catalog.filter((row) => rowKeys.has(catalogRowKey(row)))
+        : [
+            ...invocableSkills.filter((skill) => p.skills.includes(skill.name)),
+            ...catalog.filter((row) => {
+              const mention = mentionsForRows(composerProvider, [row]).at(0);
+              return mention !== undefined && mentioned.has(mentionKey(mention));
+            }),
+          ];
+    setActiveSkills((current) => {
+      const have = new Set(current.map(catalogRowKey));
+      const next = [...current];
+      for (const row of added) {
+        if (have.has(catalogRowKey(row))) continue;
+        have.add(catalogRowKey(row));
+        next.push(row);
+      }
+      return next;
+    });
+    for (const reply of p.sideChatReplies ?? []) {
+      dispatch({
+        type: 'ATTACH_SIDE_CHAT_REPLY',
+        sourceAppSessionId: activeSession.appSessionId,
+        reply,
+      });
+    }
+    requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
+  const editQueuedInComposer = (p: QueuedPrompt) => {
+    if (!activeSession) return;
+    restorePromptToComposer(p);
+    dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
+  };
+
+  // The seed effect above runs before this declaration in source order, so it
+  // reaches the restore through a ref.
+  // A taken-back steer only ever adds to the draft: whatever the composer
+  // holds (text, chips, marks, attachments still encoding) stays.
+  restoreRef.current = appendPromptToComposer;
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)
@@ -2496,16 +2582,19 @@ export default function PromptInput({
                 align="start"
                 scope="session"
                 provider={activeSession.provider}
-                value={activeSession.autonomy}
-                pending={state.autonomyPending}
+                value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
+                pending={state.pendingAutonomy !== undefined}
                 onSelect={(level) => {
+                  const requestId = newClientRef();
                   dispatch({
                     type: 'AUTONOMY_UPDATE_REQUESTED',
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                   updateSessionSettings({
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                 }}

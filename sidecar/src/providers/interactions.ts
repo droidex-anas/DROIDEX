@@ -3,6 +3,7 @@ import type {
   PermissionRequest,
   QuestionAnswer,
   SessionQuestion,
+  SessionSummary,
 } from '../protocol.js';
 
 // An approval a provider runtime needs from the user, in DROIDEX's own terms:
@@ -13,9 +14,13 @@ export interface ProviderApprovalRequest {
   confirmationType: string;
   // Stable key for an always-allow grant; absent when the request cannot earn one.
   signature?: string;
+  // A cancelled callback must not create a card after an async policy check.
+  signal?: AbortSignal;
   // The MCP server and tool, when the request is for one. The policies for
   // DROIDEX's own servers approve their tools by the chat's autonomy.
   mcpTool?: { serverName: string; toolName: string };
+  /** Provider-verified action the owner could perform without a permission prompt. */
+  canApproveFor?: (actor: SessionSummary) => boolean;
 }
 
 export interface ProviderQuestionAnswers {

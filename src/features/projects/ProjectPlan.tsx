@@ -4,11 +4,8 @@ import type { SessionActivityStatus } from '../../lib/sidebarActivity';
 import type { ThreadRow } from './threadBoard';
 import type { ProjectStep } from './types';
 
-/* The plan the project's chat keeps: what it means to do, in order, grouped the
-   way a mission groups its features. A step pointed at a thread shows that
-   conversation's real state, the same mark the thread row wears, so the table
-   can never report progress the app cannot see. A step with no thread shows
-   only what the chat said about it. */
+/* The lead owns step progress; a linked thread supplies its activity and opens
+   the conversation without changing the step's state. */
 
 export function ProjectPlan({
   plan,
@@ -26,11 +23,7 @@ export function ProjectPlan({
   if (plan.length === 0) return null;
   const byThread = new Map(rows.map((row) => [row.appSessionId, row]));
   const milestones = groupByMilestone(plan);
-  // Only what the chat marked done counts: a thread's idle says nothing of its step.
-  const finished = plan.filter(
-    (step) =>
-      step.state === 'done' && !(step.threadAppSessionId && byThread.has(step.threadAppSessionId)),
-  ).length;
+  const finished = plan.filter((step) => step.state === 'done').length;
   let number = 0;
 
   return (
@@ -53,14 +46,12 @@ export function ProjectPlan({
               const row = step.threadAppSessionId
                 ? byThread.get(step.threadAppSessionId)
                 : undefined;
-              const done = row ? false : step.state === 'done';
               return (
                 <PlanRow
                   key={step.id}
                   index={number}
                   step={step}
                   row={row}
-                  done={done}
                   onOpenThread={onOpenThread}
                 />
               );
@@ -75,13 +66,11 @@ function PlanRow({
   index,
   step,
   row,
-  done,
   onOpenThread,
 }: {
   index: number;
   step: ProjectStep;
   row: ThreadRow | undefined;
-  done: boolean;
   onOpenThread: (appSessionId: string) => void;
 }) {
   const detail = row?.detail ?? step.note;
@@ -100,12 +89,14 @@ function PlanRow({
         {index}
       </span>
       <span className="flex w-3.5 shrink-0 items-center justify-center pt-px">
-        <StepMark row={row} state={step.state} />
+        <span role="img" aria-label={step.state ?? 'planned'} title={step.state ?? 'planned'}>
+          <ActivityStatusGlyph status={PLANNED_STATUS[step.state ?? 'planned']} decorative />
+        </span>
       </span>
       <span className="min-w-0 flex-1">
         <span
           className={`block truncate text-[13px] ${
-            done
+            step.state === 'done'
               ? 'text-droid-text-muted line-through decoration-droid-text-muted/40'
               : 'text-droid-text-secondary group-hover:text-droid-text'
           }`}
@@ -126,23 +117,10 @@ function PlanRow({
   );
 }
 
-// A step's mark is its thread's, so the plan and the thread list never disagree.
-function StepMark({ row, state }: { row: ThreadRow | undefined; state?: ProjectStep['state'] }) {
-  if (row?.live === true) {
-    return (
-      <span
-        aria-label="working"
-        className="h-3 w-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
-      />
-    );
-  }
-  if (row) return <ActivityStatusGlyph status={row.status} />;
-  return <ActivityStatusGlyph status={PLANNED_STATUS[state ?? 'planned']} />;
-}
-
 const PLANNED_STATUS: Record<NonNullable<ProjectStep['state']>, SessionActivityStatus> = {
   planned: 'ready',
   doing: 'working',
+  review: 'working',
   done: 'settled',
   blocked: 'input',
 };

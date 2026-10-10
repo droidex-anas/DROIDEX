@@ -16,6 +16,8 @@ import { parse as parseYaml } from 'yaml';
 
 const releaseDirectory = resolve(process.argv[2] || 'release');
 const requireSignedArtifacts = process.argv.includes('--signed');
+const selfSignedIdentity = process.env.DROIDEX_SELF_SIGNED_IDENTITY;
+const signingCertificateSha256 = process.env.DROIDEX_SIGNING_CERT_SHA256;
 const writeChecksums = process.argv.includes('--write-checksums');
 const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
 const appName = 'DROIDEX.app';
@@ -230,11 +232,48 @@ function verifyDeveloperIdApp(appPath, label) {
   );
 }
 
-function verifyAdHocApp(appPath, label) {
+function verifyFreeReleaseApp(appPath, label) {
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);
-  const signature = runWithDiagnostics('/usr/bin/codesign', ['-dvv', appPath]);
-  assert(signature.includes('Signature=adhoc'), `${label} is not ad-hoc signed`);
+  const signature = runWithDiagnostics('/usr/bin/codesign', ['-dvv', '-r-', appPath]);
   assert(signature.includes('TeamIdentifier=not set'), `${label} unexpectedly has an Apple team`);
+  if (signature.includes('Signature=adhoc')) {
+    assert(!selfSignedIdentity, `${label} is ad-hoc signed despite a configured stable identity`);
+    assert(
+      process.env.DROIDEX_ALLOW_AD_HOC_RELEASE === 'true',
+      `${label} is ad-hoc signed without explicit DROIDEX_ALLOW_AD_HOC_RELEASE=true`,
+    );
+    return;
+  }
+  assert(
+    signature.split('\n').includes(`Authority=${selfSignedIdentity || 'DROIDEX Self-Signed'}`),
+    `${label} does not use the self-signed release identity`,
+  );
+  assert(
+    /^[0-9a-f]{64}$/.test(signingCertificateSha256 ?? ''),
+    'DROIDEX_SIGNING_CERT_SHA256 must pin the existing release certificate with 64 lowercase hex digits',
+  );
+  const certificateDirectory = mkdtempSync(join(tmpdir(), 'droidex-signing-'));
+  try {
+    const certificatePrefix = join(certificateDirectory, 'certificate-');
+    // codesign takes the prefix only attached with '='; a separate argument is read as the path.
+    run('/usr/bin/codesign', ['-d', `--extract-certificates=${certificatePrefix}`, appPath]);
+    const leafPath = `${certificatePrefix}0`;
+    assert(
+      hashFile(leafPath, 'sha256', 'hex') === signingCertificateSha256,
+      `${label} signing leaf does not match DROIDEX_SIGNING_CERT_SHA256; restore the pinned certificate`,
+    );
+    const requirement = signature.match(/^designated => (.+)$/m)?.[1];
+    const requirementLeafSha1 = requirement?.match(
+      /^identifier "app\.droidex" and certificate leaf = H"([0-9a-fA-F]{40})"$/,
+    )?.[1];
+    // macOS requirements use SHA-1; derive it only from the leaf already checked against the SHA-256 pin.
+    assert(
+      requirementLeafSha1?.toLowerCase() === hashFile(leafPath, 'sha1', 'hex'),
+      `${label} designated requirement must bind app.droidex to the pinned signing leaf`,
+    );
+  } finally {
+    rmSync(certificateDirectory, { recursive: true, force: true });
+  }
 }
 
 function verifyDistributedApp(appPath, architecture, label) {
@@ -243,7 +282,7 @@ function verifyDistributedApp(appPath, architecture, label) {
   const stagedAsarPath = join(architecture.appPath, 'Contents', 'Resources', 'app.asar');
 
   if (requireSignedArtifacts) verifyDeveloperIdApp(appPath, label);
-  else verifyAdHocApp(appPath, label);
+  else verifyFreeReleaseApp(appPath, label);
   assert(
     run('/usr/bin/file', [executablePath]).includes(architecture.executableArch),
     `${label} has the wrong executable architecture`,
@@ -260,17 +299,6 @@ async function smokePackagedRuntime(architecture) {
   const resourcesPath = join(appPath, 'Contents', 'Resources');
   const asarPath = join(resourcesPath, 'app.asar');
   const sidecarPath = join(resourcesPath, 'sidecar', 'dist', 'sidecar.mjs');
-  const sparkleFrameworkPath = join(appPath, 'Contents', 'Frameworks', 'Sparkle.framework');
-  const sparkleAddonPath = join(
-    resourcesPath,
-    'app.asar.unpacked',
-    'node_modules',
-    '@droidex',
-    'sparkle-updater',
-    'build',
-    'Release',
-    'sparkle_updater.node',
-  );
   const temporaryHome = mkdtempSync(join(tmpdir(), `droidex-${name}-runtime-`));
   const databasePath = join(temporaryHome, '.factory', 'droidex', 'session-index.sqlite');
   const bridgeToken = 'release-verifier-bridge-token';
@@ -549,7 +577,7 @@ for (const architecture of architectures) {
   }
 
   if (requireSignedArtifacts) verifyDeveloperIdApp(appPath, `${name} staged app`);
-  else verifyAdHocApp(appPath, `${name} staged app`);
+  else verifyFreeReleaseApp(appPath, `${name} staged app`);
 }
 
 for (const architecture of architectures) await smokePackagedRuntime(architecture);

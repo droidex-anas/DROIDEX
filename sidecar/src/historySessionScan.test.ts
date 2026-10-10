@@ -388,6 +388,7 @@ test('voice finals append once and extend under the same id across runtime repla
     },
   };
   const session: ProviderSession = {
+    autonomy: 'off',
     provider: 'codex',
     providerSessionId: 'provider-1',
     voice,

@@ -38,8 +38,8 @@ const POPOVER_ALIGN_CLASS = { start: 'left-0', end: 'right-0' } as const;
 // The one autonomy control: a compact pill that opens the four levels with
 // their consequences. Controlled — the parent owns the value and the command
 // that a selection triggers (draft state, live session update, or the
-// persisted default). While `pending`, the pill keeps showing the last
-// confirmed level and blocks further interaction until the provider settles.
+// persisted default). While `pending`, the parent can show the requested
+// level while the provider confirms it.
 export default function AutonomySelector({
   scope,
   value,
@@ -131,7 +131,8 @@ export default function AutonomySelector({
               value={value}
               provider={provider}
               onSelect={(level) => {
-                if (level !== value) onSelect(level);
+                // Reselecting the confirmed level can revoke a different pending grant.
+                if (pending || level !== value) onSelect(level);
                 setOpen(false);
               }}
             />

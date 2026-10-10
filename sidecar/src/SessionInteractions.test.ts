@@ -14,6 +14,12 @@ import { droidInteractionHandlers } from './providers/droid/droidInteractions.js
 import { SessionInteractions, type InteractionLiveSession } from './SessionInteractions.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import {
+  harness as projectHarness,
+  input as projectInput,
+  drain,
+  deferred,
+} from './testing/projectServiceHarness.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 interface HarnessOptions {
@@ -29,6 +35,11 @@ function createHarness(options: HarnessOptions = {}) {
 
   const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
     const liveSession: InteractionLiveSession = {
+      session: {
+        get autonomy() {
+          return liveSession.summary.autonomy;
+        },
+      },
       summary: sessionSummary({
         appSessionId,
         providerSessionId,
@@ -388,6 +399,7 @@ test('Claude answers allow the tool with original question keys and structured s
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const input = {
     questions: [
@@ -435,6 +447,7 @@ test('Claude always-allow suppression prevents grant reuse, caching, and SDK rul
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const options = {
     signal: new AbortController().signal,
@@ -682,4 +695,151 @@ test('close preserves current interaction lifetime and forgets unresolved state 
     releaseClose();
     await h.dispose();
   }
+});
+
+test('an owner can decide a native permitted action once, but cannot approve a safety prompt or elevate autonomy', async () => {
+  const h = createHarness();
+  const owner = h.addLiveSession('lead');
+  owner.summary.autonomy = 'medium';
+  h.addLiveSession('worker');
+  const handler = h.permissionHandler({ id: 'worker' });
+  const request = permissionInput('safe');
+  const action = request.toolUses[0].details;
+  if (action.type !== 'exec') throw new Error('Expected command fixture');
+  action.impactLevel = 'low';
+  const safe = Promise.resolve(handler(request));
+  const first = latestApprovalRequest(h.emitted);
+  assert.equal(h.interactions.pendingApproval('worker')?.requestId, first.requestId);
+  assert.equal(await h.interactions.approveFor('lead', 'worker', first.requestId, 'allow'), true);
+  assert.equal(await safe, ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(owner.summary.autonomy, 'medium');
+  assert.equal(await h.interactions.approveFor('lead', 'worker', first.requestId, 'allow'), false);
+  const dangerous = Promise.resolve(handler(permissionInput('dangerous', 'rm -rf /important')));
+  const second = latestApprovalRequest(h.emitted);
+  owner.summary.autonomy = 'high';
+  await assert.rejects(
+    h.interactions.approveFor('lead', 'worker', second.requestId, 'allow'),
+    /Ask the user one question/,
+  );
+  assert.equal(h.interactions.pendingApproval('worker')?.requestId, second.requestId);
+  assert.equal(await h.interactions.approveFor('lead', 'worker', second.requestId, 'deny'), true);
+  assert.equal(await dangerous, ToolConfirmationOutcome.Cancel);
+});
+
+test("a project lead's approval targets the provider request and publishes its blocked state", async (t) => {
+  const h = await projectHarness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, projectInput);
+  const interactions = createHarness();
+  const actor = interactions.addLiveSession(main);
+  actor.summary.autonomy = 'high';
+  interactions.addLiveSession(child.appSessionId);
+  h.port.pendingApproval = interactions.interactions.pendingApproval.bind(
+    interactions.interactions,
+  );
+  h.port.approveFor = interactions.interactions.approveFor.bind(interactions.interactions);
+  const pending = Promise.resolve(
+    interactions.permissionHandler({ id: child.appSessionId })(permissionInput('edit-request')),
+  );
+  const request = latestApprovalRequest(interactions.emitted);
+  await h.projects.observe({ type: 'approval.requested', request });
+  await drain();
+  const view = h.projects
+    .list()[0]
+    .threads.find((thread) => thread.appSessionId === child.appSessionId);
+  assert.equal(view?.state, 'approval');
+  assert.deepEqual(view?.approval, { requestId: request.requestId, summary: 'pwd' });
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].prompt, /needs approval/);
+  await assert.rejects(
+    h.projects.approve(main, child.appSessionId, 'old-request', 'allow'),
+    /no longer waiting/,
+  );
+  assert.equal(
+    (await h.projects.approve(main, child.appSessionId, request.requestId, 'deny')).state,
+    'working',
+  );
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  const second = Promise.resolve(
+    interactions.permissionHandler({ id: child.appSessionId })(permissionInput('another')),
+  );
+  const nextRequest = latestApprovalRequest(interactions.emitted);
+  await h.projects.observe({ type: 'approval.requested', request: nextRequest });
+  await drain();
+  await interactions.interactions.respondToApproval(
+    child.appSessionId,
+    nextRequest.requestId,
+    'refuse',
+  );
+  gate.resolve();
+  assert.equal(await second, ToolConfirmationOutcome.Cancel);
+  await drain();
+  assert.equal(
+    h.steered.length,
+    0,
+    'a request answered during admission cannot wake the lead again',
+  );
+  assert.equal(h.state.saved[0].pending.length, 0);
+});
+
+test('lead approvals cannot disable a worker sandbox', async () => {
+  const h = createHarness();
+  const lead = h.addLiveSession('lead');
+  lead.summary.provider = 'claude';
+  lead.summary.autonomy = 'high';
+  h.addLiveSession('worker').summary.provider = 'claude';
+  const callback = claudeCanUseTool(
+    'worker',
+    h.interactions.interactionsFor({ id: 'worker' }),
+    () => false,
+    () => 'off',
+  );
+  const pending = callback(
+    'Bash',
+    { command: 'pwd', dangerouslyDisableSandbox: true },
+    {
+      signal: new AbortController().signal,
+      requestId: 'sandbox-request',
+      toolUseID: 'sandbox-tool',
+    },
+  );
+  const request = latestApprovalRequest(h.emitted);
+  await assert.rejects(
+    h.interactions.approveFor('lead', 'worker', request.requestId, 'allow'),
+    /Ask the user one question/,
+  );
+  await h.interactions.approveFor('lead', 'worker', request.requestId, 'deny');
+  const result = await pending;
+  assert.ok(result);
+  assert.equal(result.behavior, 'deny');
+});
+
+test('Stop on a lead discards an approval follow-up still awaiting its provider', async (t) => {
+  const h = await projectHarness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, projectInput);
+  const request = {
+    appSessionId: child.appSessionId,
+    requestId: 'request',
+    kind: 'exec' as const,
+    title: 'pwd',
+    detail: 'pwd',
+    canAlwaysAllow: false,
+    raw: {},
+  };
+  h.state.approvals.set(child.appSessionId, request);
+  const gate = deferred();
+  h.port.approveFor = async () => {
+    await gate.promise;
+    return true;
+  };
+  const deciding = h.projects.approve(main, child.appSessionId, 'request', 'deny', 'Do this next');
+  await h.projects.userStopped(main);
+  gate.resolve();
+  assert.deepEqual(await deciding, { state: 'stopped' });
+  assert.equal(h.state.saved[0].pending.length, 0);
 });

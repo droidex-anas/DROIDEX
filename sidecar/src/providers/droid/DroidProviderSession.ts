@@ -12,9 +12,12 @@ import {
   type NormalizedEvent,
 } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
+import { normalizeAutonomy } from '../../values.js';
+import { SessionAutonomy } from '../sessionAutonomy.js';
 import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
-import type { ProviderModelSettings, ProviderSession } from '../session.js';
+import type { ProviderMention } from '../catalog.js';
+import type { ProviderModelSettings, ProviderSession, SteerOutcome } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
@@ -33,6 +36,8 @@ type DroidProcessRuntime = Pick<
 
 // The turn settles only once the billing read behind its refusal has answered.
 const REFUSAL_READ_TIMEOUT_MS = 10_000;
+const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+const NATIVE_AUTONOMY_LEVELS = AUTONOMY_LEVELS.map(mapAutonomy);
 
 export class DroidProviderSession implements ProviderSession {
   readonly provider = 'droid' as const;
@@ -45,6 +50,16 @@ export class DroidProviderSession implements ProviderSession {
   // The refusal Droid gave this turn, if any.
   private limitDetail: string | undefined;
   private readonly stopListening: () => void;
+  private readonly permissions: SessionAutonomy;
+  private retired = false;
+  private closePromise?: Promise<void>;
+  private resolveClosed: () => void = () => undefined;
+  readonly closed = new Promise<Error | undefined>((resolve) => {
+    this.resolveClosed = () => {
+      resolve(undefined);
+    };
+  });
+  private nativeAutonomy: FactorySession['initResult']['settings']['autonomyLevel'];
 
   constructor(
     // Primary-session events are stamped with DROIDEX's identity, not the
@@ -52,8 +67,37 @@ export class DroidProviderSession implements ProviderSession {
     private readonly appSessionId: string,
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
-    private readonly permissions: { autonomy: Autonomy } = { autonomy: 'off' },
+    autonomy: Autonomy = 'off',
   ) {
+    this.nativeAutonomy = droid.initResult.settings.autonomyLevel;
+    this.permissions = new SessionAutonomy(autonomy, {
+      write: async () => {
+        const level = this.permissions.latestAutonomy;
+        await this.droid.updateSettings({ autonomyLevel: mapAutonomy(level) });
+        this.permissions.requireOpen();
+        this.nativeAutonomy = mapAutonomy(level);
+        return level;
+      },
+      isApplied: () => this.nativeAutonomy === mapAutonomy(this.permissions.latestAutonomy),
+      isUnsafe: () =>
+        this.nativeAutonomy === undefined ||
+        NATIVE_AUTONOMY_LEVELS.indexOf(this.nativeAutonomy) >
+          NATIVE_AUTONOMY_LEVELS.indexOf(mapAutonomy(this.permissions.latestAutonomy)),
+      interrupt: () => this.interrupt(),
+      close: async () => {
+        // Ordinary closes belong to lifecycle or compaction; forced retirement
+        // must also notify lifecycle so it releases this dead runtime.
+        this.retired = true;
+        const closing = this.close();
+        this.resolveClosed();
+        await closing;
+      },
+      requireOpen: () => {
+        if (this.retired) throw new Error('This Droid session is closed.');
+      },
+    });
+    if (this.nativeAutonomy !== mapAutonomy(autonomy))
+      this.permissions.confirm(normalizeAutonomy(this.nativeAutonomy) ?? 'off');
     this.modelId = droid.initResult.settings.modelId;
     // Listened to for the session's life: a switch Droid reports between turns
     // is still the model the next turn runs on.
@@ -89,6 +133,8 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
+    while (!this.permissions.isApplied) await this.permissions.synchronize();
+    this.permissions.requireOpen();
     // The raw listener hears each notification before the stream yields it. A
     // switch waits until Droid says the usage limit caused it, or a turn reaches
     // its result; one not yet reported when a turn fails goes with the next.
@@ -158,9 +204,16 @@ export class DroidProviderSession implements ProviderSession {
     return { from, to: modelId, cause: 'harness', ...(reasoningEffort ? { reasoningEffort } : {}) };
   }
 
-  async setAutonomy(autonomy: Autonomy): Promise<void> {
-    await this.droid.updateSettings({ autonomyLevel: mapAutonomy(autonomy) });
-    this.permissions.autonomy = autonomy;
+  setAutonomy(autonomy: Autonomy): Promise<void> {
+    return this.permissions.set(autonomy);
+  }
+
+  get autonomy(): Autonomy {
+    return this.permissions.selection;
+  }
+
+  get isClosed(): boolean {
+    return this.retired;
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
@@ -215,14 +268,24 @@ export class DroidProviderSession implements ProviderSession {
     return this.runtime.interruptTurn(this.droid);
   }
 
-  steer(text: string): Promise<boolean> {
-    return this.runtime.steer(this.droid, text);
+  steer(
+    text: string,
+    _mentions: ProviderMention[] | undefined,
+    steerId: string,
+  ): Promise<SteerOutcome> {
+    return this.runtime.steer(this.droid, text, steerId);
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.permissions.stop();
     this.runtime.stopTurn(this.droid);
     this.stopListening();
-    await this.droid.close();
+    this.closePromise = this.droid.close().catch((error: unknown) => {
+      this.closePromise = undefined;
+      throw error;
+    });
+    return this.closePromise;
   }
 }
 

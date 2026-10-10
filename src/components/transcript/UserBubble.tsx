@@ -90,16 +90,18 @@ export function UserBubble({
   event,
   onOpenReviewFile,
   onSendNow,
+  onWithdraw,
 }: {
   event: Pick<
     TranscriptEvent,
-    'text' | 'skills' | 'files' | 'browserRefs' | 'steered' | 'spoken' | 'sideChatReplies'
+    'text' | 'skills' | 'files' | 'browserRefs' | 'spoken' | 'sideChatReplies'
   > & {
     ts?: number;
   };
   onOpenReviewFile?: OpenReviewFileHandler;
   // Set on a steer the model has not taken in yet.
   onSendNow?: () => void;
+  onWithdraw?: (() => void) | undefined;
 }) {
   const browserRefs = event.browserRefs ?? [];
   // A replayed message has no files metadata, only the composed text it was sent
@@ -131,22 +133,6 @@ export function UserBubble({
   return (
     <div className="group/msg flex flex-col items-end gap-1.5">
       {event.spoken && <SpokenMark />}
-      {event.steered && (
-        <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
-          <svg
-            className="h-3 w-3"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 8h10M9 4l4 4-4 4" />
-          </svg>
-          Steered the conversation
-        </span>
-      )}
       {hasAttachments && (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {browserRefs.map((reference) => (
@@ -179,7 +165,12 @@ export function UserBubble({
           {/* The pending preview of a first message has no ts, and no actions yet;
               a pending steer has actions but no time. */}
           {message.text && (event.ts !== undefined || onSendNow) ? (
-            <PromptActions text={message.text} ts={event.ts} onSendNow={onSendNow} />
+            <PromptActions
+              text={message.text}
+              ts={event.ts}
+              onSendNow={onSendNow}
+              onWithdraw={onWithdraw}
+            />
           ) : null}
         </div>
       )}
