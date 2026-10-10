@@ -108,7 +108,8 @@ function isReply(value: unknown): boolean {
     case 'attachment':
       return (
         (value.canvasId === null || id(value.canvasId)) &&
-        (value.outdatedName === undefined || text(value.outdatedName))
+        (value.outdated === undefined ||
+          (record(value.outdated) && id(value.outdated.canvasId) && text(value.outdated.name)))
       );
     case 'canvasCreated':
       return id(value.canvasId) && (value.attachedCanvasId === null || id(value.attachedCanvasId));

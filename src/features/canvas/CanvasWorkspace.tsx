@@ -109,8 +109,12 @@ export function CanvasWorkspace({
       // that fails leaves them unpinnable, which is all it costs.
       let active = true;
       canvas.attachment(appSessionId).then(
-        ({ canvasId: attached }) => {
-          if (active) onAttachmentChange(appSessionId, attached);
+        ({ canvasId: attached, outdated }) => {
+          if (!active) return;
+          onAttachmentChange(appSessionId, attached);
+          // A restored tab can name the chat's own old canvas, whose board never comes.
+          if (outdated?.canvasId === namedCanvasId)
+            dispatch({ type: 'failed', message: outdatedMessage(outdated.name) });
         },
         () => undefined,
       );
@@ -129,8 +133,8 @@ export function CanvasWorkspace({
     let active = true;
     canvas
       .attachment(appSessionId)
-      .then(({ canvasId: attached, outdatedName }) => {
-        if (active) attach(attached, outdatedName);
+      .then(({ canvasId: attached, outdated }) => {
+        if (active) attach(attached, outdated?.name);
       })
       .catch((error: unknown) => {
         if (active) dispatch({ type: 'failed', message: canvasMessage(error) });
@@ -244,6 +248,10 @@ export function CanvasWorkspace({
       />
     </div>
   );
+}
+
+function outdatedMessage(name: string): string {
+  return `“${name}” was made by an earlier DROIDEX and can’t be opened here.`;
 }
 
 /** The socket's own state, which `sendIfConnected` reads, as the bridge reports it. */

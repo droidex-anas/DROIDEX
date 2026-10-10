@@ -153,11 +153,11 @@ class CanvasDispatch {
           ),
         };
       case 'canvas.attachment': {
-        const outdatedName = workspace.attachments.outdatedCanvasName(command.appSessionId);
+        const outdated = workspace.attachments.outdatedCanvas(command.appSessionId);
         return {
           kind: 'attachment',
           canvasId: workspace.attachedCanvasId(command.appSessionId),
-          ...(outdatedName === null ? {} : { outdatedName }),
+          ...(outdated === null ? {} : { outdated }),
         };
       }
       case 'canvas.createCanvas': {

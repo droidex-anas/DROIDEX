@@ -5,6 +5,7 @@ import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import { applyCanvasChange } from './applyCanvasChange';
 import type {
   ArrangeFramesInput,
+  CanvasAttachment,
   CanvasChange,
   CanvasCommand,
   CanvasErrorCode,
@@ -105,7 +106,7 @@ export class CanvasClient {
   }
 
   /** This chat's canvas or null (spec §6), and one an earlier DROIDEX made that cannot open. */
-  attachment(appSessionId: string): Promise<{ canvasId: string | null; outdatedName?: string }> {
+  attachment(appSessionId: string): Promise<CanvasAttachment> {
     return this.request({ type: 'canvas.attachment', requestId: requestId(), appSessionId }).then(
       (event) => reply(event, 'attachment'),
     );

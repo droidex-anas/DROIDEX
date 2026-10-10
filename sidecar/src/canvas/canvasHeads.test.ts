@@ -73,11 +73,11 @@ test('a canvas an earlier DROIDEX made is not opened, but its chats are told its
     ['cv_01'],
   );
   assert.equal(heads.attachedCanvasId('app-2'), null);
-  assert.equal(heads.outdatedCanvasName('app-2'), 'Components');
+  assert.deepEqual(heads.outdatedCanvas('app-2'), { canvasId: 'cv_02', name: 'Components' });
   // A manifest that broke is damaged, as before, and says nothing about a name.
   assert.deepEqual(heads.damagedIds(), ['cv_03']);
-  assert.equal(heads.outdatedCanvasName('app-3'), null);
-  assert.equal(heads.outdatedCanvasName('app-1'), null);
+  assert.equal(heads.outdatedCanvas('app-3'), null);
+  assert.equal(heads.outdatedCanvas('app-1'), null);
 });
 
 test('a readable head is served with exactly the attachments it records', async (t) => {

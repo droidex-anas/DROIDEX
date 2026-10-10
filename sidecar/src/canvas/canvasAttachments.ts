@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { CanvasCommits } from './canvasCommits.js';
 import { canvasError } from './canvasError.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
+import type { OutdatedCanvas } from './protocol.js';
 import { emptyCanvasManifest } from './canvasManifest.js';
 
 export class CanvasAttachments {
@@ -15,8 +16,8 @@ export class CanvasAttachments {
   ) {}
 
   /** The canvas an earlier DROIDEX made for a chat that has none of its own now. */
-  outdatedCanvasName(appSessionId: string): string | null {
-    return this.heads.outdatedCanvasName(appSessionId);
+  outdatedCanvas(appSessionId: string): OutdatedCanvas | null {
+    return this.heads.outdatedCanvas(appSessionId);
   }
 
   /**
