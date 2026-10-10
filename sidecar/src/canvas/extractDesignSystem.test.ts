@@ -29,6 +29,7 @@ test('a saved token-only extraction compiles all six shared primitives with styl
         designId: input.from.designId,
         revisionId: input.from.revisionId,
         generation: 1,
+        designSystemAdherence: 'guide',
         designSystem: { ...ref, mode },
         files: { 'main.tsx': HEY_TSX },
       },
@@ -93,6 +94,7 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
       designId: input.from.designId,
       revisionId: input.from.revisionId,
       generation: 1,
+      designSystemAdherence: 'guide',
       designSystem: ref,
       files: {
         'main.tsx':
@@ -124,6 +126,7 @@ export function Badge() { return <span className='b'><Label /></span>; }`,
       designId: input.from.designId,
       revisionId: input.from.revisionId,
       generation: 1,
+      designSystemAdherence: 'guide',
       designSystem: ref,
       files: {
         'main.tsx':

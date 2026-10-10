@@ -248,6 +248,7 @@ const wire: SidecarWire = {
     updatedAt: 1_767_225_600_000,
     designCount: 2,
     attachedAppSessionIds: ['app_session_01', 'app_session_02'],
+    designSystemAdherence: 'guide',
   },
   receipt: { designId: 'dsg_hey', revisionId: 'rev_03', sequence: 8 },
   turnContext: {

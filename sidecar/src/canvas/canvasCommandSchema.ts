@@ -8,6 +8,7 @@ import {
   canvasIdentifierSchema,
   canvasNameSchema,
   createFramesInputSchema,
+  designSystemAdherenceSchema,
   editElementInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
@@ -101,6 +102,14 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('canvas.attach'), ...request, ...target }).strict(),
   z.object({ type: z.literal('canvas.detach'), ...request, ...session }).strict(),
+  z
+    .object({
+      type: z.literal('canvas.setDesignSystemAdherence'),
+      ...request,
+      ...target,
+      designSystemAdherence: designSystemAdherenceSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal('canvas.create'),

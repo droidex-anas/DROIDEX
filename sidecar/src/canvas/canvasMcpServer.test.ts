@@ -10,6 +10,7 @@ import { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { CompileFailedError, type CompileInput } from './compiler.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
+import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
@@ -30,34 +31,37 @@ type Reply = {
   receipt?: { revisionId: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number }[];
+  designSystem?: { primitives: string[] };
+  designSystemAdherence?: string;
   build?: {
     status: string;
     diagnostics?: { file?: string; line?: number }[];
     errors?: string[];
     rendered?: boolean;
+    designSystem?: { diagnostics: { code: string }[]; next: string };
     next?: string;
   };
 };
 
 /**
  * A compiler that answers at once, because canvas_write waits for its build:
- * every design builds, except one whose main.tsx names `BROKEN`. One that names
- * `THROWS` builds an artifact the stand-in pane below cannot render.
+ * every design builds under the real kit rule, except one whose main.tsx names
+ * `BROKEN`. One that names `THROWS` builds an artifact the stand-in pane below
+ * cannot render.
  */
 function answeringBuilds(): CanvasBuilds {
-  const compile = (input: CompileInput) =>
-    input.files['main.tsx']?.includes('BROKEN')
-      ? Promise.reject(
-          new CompileFailedError([
-            { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
-          ]),
-        )
-      : Promise.resolve({
-          artifactId: `${input.files['main.tsx']?.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`,
-          html: '<html></html>',
-          diagnostics: [],
-          elements: [],
-        });
+  const compile = async (input: CompileInput) => {
+    const main = input.files['main.tsx'] ?? '';
+    if (main.includes('BROKEN'))
+      throw new CompileFailedError([
+        { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+      ]);
+    const system = await readDesignSystem(input.designSystem);
+    const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
+    if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
+    const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
+    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements: [] };
+  };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),
     deadline: () => () => undefined,
@@ -112,6 +116,13 @@ async function harness(t: TestContext, fs?: CanvasFileSystem) {
     return JSON.parse(content.text) as Reply;
   };
   return { scopes, turns, workspace, server, call };
+}
+
+/** A harness whose chat is in a turn that opened with canvas_read, as every turn does. */
+async function openTurn(t: TestContext) {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  return { ...h, scopeId: (await h.call('canvas_read', {})).scopeId };
 }
 
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
@@ -190,13 +201,13 @@ test('a fabricated read scope tells the model to obtain the active turn lease fi
   const read = await h.call('canvas_read', {});
   assert.equal(read.ok, true);
   assert.ok(read.scopeId);
+  // The opening read carries the pinned kit, so the agent can follow it unfetched.
+  assert.equal(read.designSystem?.primitives.join(' '), 'Button Card Badge Input Tabs Dialog');
   assert.equal(read.scopeId, h.turns.activeScope('chat-one')?.scopeId);
 });
 
 test('HTTP Canvas calls strictly validate raw arguments and return payload-free refusal envelopes', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const config = await h.server.start();
   t.after(() => h.server.close());
   assert.ok('url' in config);
@@ -246,9 +257,7 @@ test('HTTP Canvas calls strictly validate raw arguments and return payload-free 
 });
 
 test('theme listing is bounded and saving requires a client mutation ID', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   assert.equal((await h.call('canvas_read', { unknown: 'secret' })).code, 'invalid_input');
   const listed = await h.call('canvas_theme', { operation: 'list', limit: 1 });
   assert.equal(listed.ok, true);
@@ -383,9 +392,7 @@ test('a frame-scoped turn cannot inspect another frame on the same canvas', asyn
 });
 
 test('lost create response retries to the same canvas and invalid source paths have a stable refusal code', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const input = { scopeId, mutationId: 'create-one', frames: [frame] };
   const first = await h.call('canvas_create', input);
   const retry = await h.call('canvas_create', input);
@@ -434,9 +441,7 @@ test('lost create response retries to the same canvas and invalid source paths h
 });
 
 test('canvas_write refuses a tree with no entry and reports its build in the same reply', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const created = await h.call('canvas_create', { scopeId, mutationId: 'create', frames: [frame] });
   assert.ok(created.created);
   const { canvasId, frames } = created.created;
@@ -473,6 +478,12 @@ test('canvas_write refuses a tree with no entry and reports its build in the sam
   const fixed = await write('fixed', throws.receipt.revisionId, 'export default () => <p>Hey</p>');
   assert.equal(fixed.build?.status, 'ready');
   assert.equal(fixed.build.rendered, true);
+  // Under the canvas's default guide rule, straying from the kit is a note beside a ready build.
+  assert.equal(fixed.build.designSystem?.diagnostics[0]?.code, 'design_system_unused');
+  assert.match(fixed.build.designSystem.next, /strays from the pinned design system/);
+  const later = await h.call('canvas_read', { scopeId });
+  assert.equal(later.designSystemAdherence, 'guide');
+  assert.equal(later.designSystem, undefined, 'only the opening read carries the kit');
   assert.equal(
     (await h.call('canvas_inspect', { designId: frames[0].designId })).build?.status,
     'ready',
@@ -519,9 +530,7 @@ test('provider replacement while a write is staged refuses its old lease and lea
 });
 
 test('Canvas create preserves seeded variant placement and mutation retry identity', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const source = await h.call('canvas_create', {
     scopeId,
     mutationId: 'create-source',
@@ -662,9 +671,7 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_t
 }
 
 test('a source read loses its captured lease while waiting and cannot borrow a replacement', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const created = await h.call('canvas_create', {
     scopeId,
     mutationId: 'initial',
@@ -708,9 +715,7 @@ test('a source read loses its captured lease while waiting and cannot borrow a r
 });
 
 test('MCP theme apply validates token mapping before publication and preserves retry receipts', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const created = await h.call('canvas_create', {
     scopeId,
     mutationId: 'theme-frame',
@@ -772,9 +777,7 @@ test('MCP theme apply validates token mapping before publication and preserves r
 });
 
 test('a delayed theme validation refusal cannot disclose source after its turn is replaced', async (t) => {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const { scopeId, ...h } = await openTurn(t);
   const created = await h.call('canvas_create', {
     scopeId,
     mutationId: 'validation-frame',

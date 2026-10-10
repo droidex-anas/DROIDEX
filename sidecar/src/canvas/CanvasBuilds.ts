@@ -23,6 +23,7 @@ import type {
   CanvasBuildState,
   CanvasFrame,
   CanvasSnapshot,
+  DesignSystemAdherence,
   DesignSystemRef,
   PreviewArtifact,
   SourceFiles,
@@ -60,6 +61,7 @@ interface BuildPin {
 interface RunningBuild extends BuildPin {
   readonly canvasId: string;
   readonly designSystem: DesignSystemRef;
+  readonly designSystemAdherence: DesignSystemAdherence;
   readonly abort: AbortController;
   /** Released the moment compilation settles; saving is bounded by storage. */
   cancelDeadline: (() => void) | null;
@@ -305,6 +307,7 @@ export class CanvasBuilds {
       revisionId: job.revisionId,
       generation,
       designSystem: target.frame.designSystem,
+      designSystemAdherence: target.designSystemAdherence,
       abort: new AbortController(),
       cancelDeadline: null,
       overdue: false,
@@ -358,6 +361,7 @@ export class CanvasBuilds {
       generation: job.generation,
       files,
       designSystem: job.designSystem,
+      designSystemAdherence: job.designSystemAdherence,
     };
     const compiler = this.processes.of(slot);
     job.cancelDeadline = this.deadline(() => {
@@ -423,7 +427,13 @@ export class CanvasBuilds {
 
   private async saveOutcome(job: RunningBuild, result: BuildResult): Promise<void> {
     try {
-      await this.owner.cache.saveOutcome(job.canvasId, job.designId, job.revisionId, result);
+      await this.owner.cache.saveOutcome(
+        job.canvasId,
+        job.designId,
+        job.revisionId,
+        job.designSystemAdherence,
+        result,
+      );
     } catch (error) {
       // The frame still reports what the build did; a restart rebuilds it.
       console.error('A Canvas build outcome was not saved:', error);

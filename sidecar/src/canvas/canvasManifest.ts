@@ -20,6 +20,7 @@ import type {
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
+  designSystemAdherenceSchema,
   designSystemRefSchema,
   frameRectSchema,
   revisionSeedSchema,
@@ -186,6 +187,8 @@ export const canvasManifestSchema = z
       .object({ mutationId: canvasIdentifierSchema, appSessionId: appSessionIdSchema })
       .strict()
       .nullable(),
+    // Canvases saved before the setting existed hold their designs to the default.
+    designSystemAdherence: designSystemAdherenceSchema.default('guide'),
     designs: z.array(persistedDesignSchema),
     tombstones: z.array(tombstoneSchema).max(CANVAS_TOMBSTONE_LIMIT),
     // Canonical commit index, retained independently of the bounded retry ledger.
@@ -229,6 +232,7 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     layoutSequence: 0,
     attachedAppSessionIds: [],
     creation: null,
+    designSystemAdherence: 'guide',
     designs: [],
     tombstones: [],
     revisions: [],
@@ -273,6 +277,7 @@ export function canvasSummary(manifest: CanvasManifest): CanvasSummary {
     updatedAt: manifest.updatedAt,
     designCount: manifest.designs.length,
     attachedAppSessionIds: [...manifest.attachedAppSessionIds],
+    designSystemAdherence: manifest.designSystemAdherence,
   };
 }
 

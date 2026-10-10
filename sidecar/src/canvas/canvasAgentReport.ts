@@ -11,6 +11,7 @@
 
 import type { CanvasChangeFeed } from './canvasChangeFeed.js';
 import type { CanvasPreviewReports } from './canvasPreviewReports.js';
+import { ADHERENCE_CODES, isAdherenceDiagnostic } from './canvasDiagnostics.js';
 import type { CanvasDiagnostic, CanvasFrame, PreviewReport } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
@@ -39,6 +40,8 @@ export type BuildReport =
       /** What the rendered design has thrown since it painted. */
       errors?: string[];
       warnings?: AgentDiagnostic[];
+      /** Where the design strays from its pinned kit under the `guide` rule; it still built. */
+      designSystem?: { diagnostics: AgentDiagnostic[]; next: string };
       next: string;
     }
   | { status: 'render_failed'; revisionId: string; errors: string[]; next: string }
@@ -126,7 +129,11 @@ function readyReport(
       errors: preview.errors,
       next: `It built, but the preview stopped before it rendered. Fix the error and ${again}.`,
     };
-  const warnings = diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic);
+  const warnings = diagnostics
+    .filter((diagnostic) => !isAdherenceDiagnostic(diagnostic))
+    .slice(0, REPORTED_DIAGNOSTICS)
+    .map(agentDiagnostic);
+  const designSystem = designSystemReport(diagnostics.filter(isAdherenceDiagnostic));
   const rendered = preview?.outcome === 'rendered';
   const errors = rendered ? preview.errors : [];
   let next = `Built; no open preview has confirmed it renders. To change it, ${again}.`;
@@ -140,7 +147,21 @@ function readyReport(
     ...(rendered ? { rendered: true as const } : {}),
     ...(errors.length > 0 ? { errors } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
+    ...(designSystem ? { designSystem } : {}),
     next,
+  };
+}
+
+function designSystemReport(
+  diagnostics: CanvasDiagnostic[],
+): { diagnostics: AgentDiagnostic[]; next: string } | undefined {
+  if (diagnostics.length === 0) return undefined;
+  const strays = diagnostics.some((diagnostic) => diagnostic.code !== ADHERENCE_CODES.override);
+  return {
+    diagnostics: diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic),
+    next: strays
+      ? 'This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source.'
+      : 'The token overrides are kept as deliberate; nothing to change for the design system.',
   };
 }
 

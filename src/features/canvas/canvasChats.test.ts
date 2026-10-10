@@ -25,6 +25,7 @@ function summary(canvasId: string, fields: Partial<CanvasSummary> = {}): CanvasS
     updatedAt: 0,
     designCount: 0,
     attachedAppSessionIds: [],
+    designSystemAdherence: 'guide',
     ...fields,
   };
 }

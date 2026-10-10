@@ -12,11 +12,9 @@ import {
   CompilerWorker,
   RUNTIME_UNAVAILABLE,
   compilerResponse,
-  type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
 import { CompilerProcesses } from './canvasCompilerProcesses.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -24,7 +22,7 @@ import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
 import { applyElementEdit } from './sourceElements.js';
 import type { SourceFiles } from './schema.js';
-import { mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
+import { compileInput, mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
 
 // One real worker for every case that only reads its answer; the cases that
 // end a worker's life own their own.
@@ -884,16 +882,6 @@ function scratchDirectory(t: TestContext): string {
     rmSync(directory, { recursive: true, force: true });
   });
   return directory;
-}
-
-function compileInput(files: SourceFiles): CompileInput {
-  return {
-    designId: 'design-1',
-    revisionId: 'revision-1',
-    generation: 1,
-    files,
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
-  };
 }
 
 async function compile(files: SourceFiles): Promise<CompiledDesign> {

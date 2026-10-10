@@ -7,6 +7,7 @@ import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js'
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
+import { designSystemBrief } from './designSystemBrief.js';
 import type { SessionPurpose } from '../protocol.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
@@ -156,21 +157,33 @@ export function createCanvasMcpServer(
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Read the selected design system before creating or restyling a design. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work.',
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work.',
       readSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = readSchema.parse(raw);
+          // A turn's opening read carries its pinned kit, so the agent need not fetch it.
+          const kit = input.scopeId
+            ? {}
+            : { designSystem: await designSystemBrief(scope.context.designSystem) };
           const snapshot = await board(scope);
           if (!snapshot)
-            return { scopeId: scope.scopeId, attached: false, pinned: scope.context, frames: [] };
+            return {
+              scopeId: scope.scopeId,
+              attached: false,
+              pinned: scope.context,
+              ...kit,
+              frames: [],
+            };
           if (input.view === 'summary') {
-            const { previews } = await workspace();
+            const { previews, settings } = await workspace();
             return {
               scopeId: scope.scopeId,
               attached: true,
               canvasId: snapshot.canvasId,
               pinned: scope.context,
+              ...kit,
+              designSystemAdherence: settings.designSystemAdherence(snapshot.canvasId),
               sequence: snapshot.sequence,
               totalFrames: snapshot.frames.length,
               frames: snapshot.frames
@@ -212,6 +225,7 @@ export function createCanvasMcpServer(
           }
           return {
             scopeId: scope.scopeId,
+            ...kit,
             canvasId: snapshot.canvasId,
             designId: input.designId,
             revisionId: input.revisionId,

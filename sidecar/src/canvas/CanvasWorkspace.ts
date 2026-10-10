@@ -24,6 +24,7 @@ import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
 import { CanvasPreviewReports } from './canvasPreviewReports.js';
 import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
 import { recordRevisions } from './canvasRevisionMetadata.js';
+import { CanvasSettings } from './canvasSettings.js';
 import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
   canvasChange,
@@ -70,8 +71,8 @@ export class CanvasWorkspace {
   private readonly commits = new CanvasCommits(this.changes);
   private readonly attachments: CanvasAttachments;
   private readonly frameEdits: CanvasFrameEdits;
-  private readonly root: string;
   readonly history: CanvasRevisionHistory;
+  readonly settings: CanvasSettings;
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -82,9 +83,9 @@ export class CanvasWorkspace {
     isChatKnown: (appSessionId: string) => boolean,
   ) {
     this.attachments = new CanvasAttachments(heads, this.commits, isChatKnown);
-    this.root = writerLease.directory;
     this.frameEdits = new CanvasFrameEdits(heads, leases, builds, this.commits);
     this.history = new CanvasRevisionHistory(this, heads, files);
+    this.settings = new CanvasSettings(heads, this.commits, builds);
   }
 
   /** Claims the physical storage root before loading heads or cleaning staging. */
@@ -131,7 +132,7 @@ export class CanvasWorkspace {
     return this.commits.admit(() => {
       this.commits.requireOpen();
       this.canvas(request.canvasId);
-      return importCanvasImage(this.root, request);
+      return importCanvasImage(this.writerLease.directory, request);
     });
   }
 
@@ -391,11 +392,13 @@ export class CanvasWorkspace {
    * `CanvasBuilds` calls this again after every await before it publishes.
    */
   buildTarget(canvasId: string, designId: string): BuildTarget | null {
-    const design = this.heads.find(canvasId)?.designs.find((entry) => entry.designId === designId);
-    if (!design) return null;
+    const manifest = this.heads.find(canvasId);
+    const design = manifest?.designs.find((entry) => entry.designId === designId);
+    if (!manifest || !design) return null;
     return {
       frame: toFrame(canvasId, design, this.builds),
       lastWorkingRevisionId: design.lastWorkingRevisionId,
+      designSystemAdherence: manifest.designSystemAdherence,
     };
   }
 

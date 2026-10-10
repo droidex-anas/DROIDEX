@@ -1,10 +1,12 @@
-import type { CanvasFrame, RevisionRef, SourceFiles } from './protocol.js';
+import type { CanvasFrame, DesignSystemAdherence, RevisionRef, SourceFiles } from './protocol.js';
 
 /** What a build pins its result to, as the canvas stands right now. */
 export interface BuildTarget {
   frame: CanvasFrame;
   /** The revision this design falls back to, as the manifest records it. */
   lastWorkingRevisionId: string | null;
+  /** The canvas's rule for holding designs to their kit. */
+  designSystemAdherence: DesignSystemAdherence;
 }
 
 /** What a published build asks the manifest to keep. */
