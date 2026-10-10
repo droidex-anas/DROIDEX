@@ -468,6 +468,13 @@ test('every serialized event the sidecar emits passes the renderer validator', (
     { type: 'canvas.snapshot', requestId: 'req_01', snapshot: wire.snapshot },
     { type: 'canvas.summaries', summaries },
     { type: 'canvas.change', change: wire.change },
+    {
+      type: 'canvas.captureRequest',
+      captureId: '0b6b9f3e-7c1d-4f43-9a5e-2f1c8d4e6a70',
+      canvasId: 'cv_01',
+      designId: 'dsg_01',
+      revisionId: 'rev_01',
+    },
   ];
   // Types agreeing is not enough: the two runtime bounds have to agree too, or
   // a reply the sidecar accepts arrives as an event the renderer throws away.

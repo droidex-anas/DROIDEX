@@ -3,10 +3,20 @@ import {
   captureCanvasPreview,
   saveCanvasImage,
 } from '../../lib/desktop';
-import type { CanvasErrorCode, RevisionRef } from './protocol';
+import type {
+  CanvasCommand,
+  CanvasErrorCode,
+  CanvasEvent,
+  CaptureReport,
+  RevisionRef,
+} from './protocol';
 
 const CAPTURE_DEADLINE_MS = 6_000;
 const UNAVAILABLE = 'This design could not be captured. Keep its preview open and try again.';
+const NOT_SHOWN =
+  'DROIDEX is not showing this revision. Keep the design open on its canvas until its preview appears, then try again.';
+
+type ReportCapture = Extract<CanvasCommand, { type: 'canvas.reportCapture' }>;
 
 export class CanvasImageError extends Error {
   constructor(
@@ -125,4 +135,43 @@ export async function exportCanvasImage(
   if (saved.ok) return true;
   if ('cancelled' in saved) return false;
   throw new CanvasImageError(saved.message, saved.code);
+}
+
+/**
+ * An agent's inspect screenshot, answered from this page's live preview of
+ * exactly that revision. A page that is not showing it says so.
+ */
+export async function answerCaptureRequest(
+  request: Extract<CanvasEvent, { type: 'canvas.captureRequest' }>,
+): Promise<ReportCapture> {
+  const { captureId, canvasId, designId, revisionId } = request;
+  const reported = (capture: CaptureReport): ReportCapture => ({
+    type: 'canvas.reportCapture',
+    requestId: crypto.randomUUID(),
+    captureId,
+    capture,
+  });
+  if (!livePreviews.has(captureKey(canvasId, { designId, revisionId })))
+    return reported({ ok: false, message: NOT_SHOWN });
+  try {
+    const image = await captureCanvasImage(
+      canvasId,
+      { designId, revisionId },
+      new AbortController().signal,
+    );
+    return reported({ ok: true, png: base64(image.bytes) });
+  } catch (error) {
+    return reported({
+      ok: false,
+      message: error instanceof CanvasImageError ? error.message : UNAVAILABLE,
+    });
+  }
+}
+
+function base64(bytes: Uint8Array): string {
+  let binary = '';
+  // Chunked so a multi-megabyte capture never overflows the argument list.
+  for (let start = 0; start < bytes.length; start += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  return btoa(binary);
 }

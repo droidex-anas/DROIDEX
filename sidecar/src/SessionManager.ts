@@ -3,6 +3,8 @@ import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import type { CanvasCapture } from './canvas/canvasCaptures.js';
+import { canvasError } from './canvas/canvasError.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -211,6 +213,8 @@ export interface SessionManagerOptions {
   // turns still mint and revoke exactly as they do in production.
   canvasTurns?: CanvasTurns;
   canvasWorkspace?: () => Promise<CanvasWorkspace>;
+  // Asks the renderer pages showing a canvas for an inspect screenshot.
+  canvasCapture?: CanvasCapture;
   assetUrlFor?: (path: string) => string;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -318,6 +322,7 @@ export class SessionManager {
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
   private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
+  private readonly canvasCapture: CanvasCapture;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -374,6 +379,12 @@ export class SessionManager {
     this.canvasWorkspace =
       options.canvasWorkspace ??
       (() => Promise.reject(new Error('Canvas storage is unavailable.')));
+    this.canvasCapture =
+      options.canvasCapture ??
+      (() =>
+        Promise.reject(
+          canvasError('capture_unavailable', 'No DROIDEX window can capture this design.'),
+        ));
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -1465,6 +1476,7 @@ export class SessionManager {
     const canvas = createCanvasMcpServer(
       this.canvasWorkspace,
       this.canvasTurns,
+      this.canvasCapture,
       () => ref.id,
       ref.purpose,
     );
