@@ -41,9 +41,11 @@ function render(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
   agentWorking = false,
+  pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onToggleChat'> = {},
 ): string {
   return renderToStaticMarkup(
     createElement(CanvasBoard, {
+      ...pins,
       snapshot,
       interaction,
       agentWorking,
@@ -165,4 +167,24 @@ test('a frame with no live preview says only what is true of it', () => {
   assert.match(failed, /main\.tsx · line 3/);
   assert.match(failed, /Unexpected token/);
   assert.equal(failed.includes('data-preview-phase'), false);
+});
+
+test('a selected frame offers Add to chat only on its chat’s own canvas, and says when it is in', () => {
+  const picked: BoardInteraction = {
+    mode: 'select',
+    selectedFrameIds: ['a'],
+    interactedFrameId: null,
+  };
+  const snapshot = snapshotOf(frame('a', ACKNOWLEDGED));
+  const onToggleChat = () => undefined;
+
+  assert.equal(render(snapshot, picked).includes('Add to chat'), false);
+  assert.match(
+    render(snapshot, picked, false, { onToggleChat }),
+    /aria-pressed="false" aria-label="Add Design a to the chat"/,
+  );
+  assert.match(
+    render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
+    /aria-pressed="true" aria-label="Take Design a out of the chat"[^>]*>.*In chat/,
+  );
 });

@@ -1,0 +1,133 @@
+// The frames a chat's next prompt carries to its agent. Spec §4: a selected
+// design shows as a composer chip, and sending pins its revision to that
+// request. The board adds frames and keeps them current; the composer shows,
+// sends and clears them. Neither owns the other, so they live here, by chat.
+
+import { useSyncExternalStore } from 'react';
+import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext } from './protocol';
+
+/** The sidecar's limit on the designs one request may pin. */
+const MAX_PINNED = 32;
+
+export interface FramePin {
+  canvasId: string;
+  designId: string;
+  revisionId: string | null;
+  name: string;
+  /** Its size on the board, as the chip and the size badge show it. */
+  size: string;
+  designSystem: CanvasFrame['designSystem'];
+}
+
+const NONE: readonly FramePin[] = [];
+let pinsByChat: Readonly<Record<string, readonly FramePin[]>> = {};
+const listeners = new Set<() => void>();
+
+function publish(appSessionId: string, pins: readonly FramePin[]) {
+  pinsByChat = { ...pinsByChat, [appSessionId]: pins };
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function framePins(appSessionId: string): readonly FramePin[] {
+  return pinsByChat[appSessionId] ?? NONE;
+}
+
+export function useFramePins(appSessionId: string | null): readonly FramePin[] {
+  return useSyncExternalStore(subscribe, () => (appSessionId ? framePins(appSessionId) : NONE));
+}
+
+function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
+  const { width, height } = frame.rect;
+  return {
+    canvasId,
+    designId: frame.designId,
+    revisionId: frame.revisionId,
+    name: frame.name,
+    size: `${String(Math.round(width))} × ${String(Math.round(height))}`,
+    designSystem: frame.designSystem,
+  };
+}
+
+function samePin(a: FramePin, b: FramePin): boolean {
+  return (
+    a.canvasId === b.canvasId &&
+    a.designId === b.designId &&
+    a.revisionId === b.revisionId &&
+    a.name === b.name &&
+    a.size === b.size &&
+    a.designSystem.id === b.designSystem.id &&
+    a.designSystem.version === b.designSystem.version &&
+    a.designSystem.mode === b.designSystem.mode
+  );
+}
+
+/**
+ * Adds a frame to the chat's next prompt, or takes it off if it is there. A
+ * request pins frames of one canvas, so a frame from another starts over.
+ */
+export function toggleFramePin(appSessionId: string, canvasId: string, frame: CanvasFrame): void {
+  const held = framePins(appSessionId).filter((pin) => pin.canvasId === canvasId);
+  if (held.some((pin) => pin.designId === frame.designId))
+    publish(
+      appSessionId,
+      held.filter((pin) => pin.designId !== frame.designId),
+    );
+  else if (held.length < MAX_PINNED) publish(appSessionId, [...held, pinOf(canvasId, frame)]);
+}
+
+/** Takes these frames off the chat's next prompt, or all of them. */
+export function unpinFrames(
+  appSessionId: string,
+  pins: readonly FramePin[] = framePins(appSessionId),
+) {
+  const held = framePins(appSessionId);
+  if (pins.length > 0)
+    publish(
+      appSessionId,
+      held.filter((pin) => !pins.includes(pin)),
+    );
+}
+
+/** Puts a queued prompt's frames back on the draft it is being edited in. */
+export function restoreFramePins(appSessionId: string, pins: readonly FramePin[]): void {
+  const held = framePins(appSessionId);
+  const returning = pins.filter((pin) => !held.some((own) => own.designId === pin.designId));
+  if (returning.length > 0) publish(appSessionId, [...held, ...returning]);
+}
+
+/**
+ * Keeps the chat's pins as its attached canvas now has them: a frame renamed,
+ * resized or rebuilt is pinned as it is now, and a deleted frame, or one from a
+ * canvas the chat has left, is dropped. Only a change publishes.
+ */
+export function syncFramePins(appSessionId: string, attached: CanvasSnapshot): void {
+  const held = framePins(appSessionId);
+  const frames = new Map(attached.frames.map((frame) => [frame.designId, frame]));
+  const next = held.flatMap((pin) => {
+    const frame = pin.canvasId === attached.canvasId ? frames.get(pin.designId) : undefined;
+    return frame ? [pinOf(attached.canvasId, frame)] : [];
+  });
+  if (next.length !== held.length || next.some((pin, index) => !samePin(pin, held[index])))
+    publish(appSessionId, next);
+}
+
+/**
+ * The turn context a send carries: the frames' revisions as they are now, in
+ * fresh objects, so nothing that changes afterwards can retarget the request.
+ */
+export function canvasContextOf(pins: readonly FramePin[] = NONE): CanvasTurnContext | undefined {
+  const first = pins.at(0);
+  if (!first) return undefined;
+  return {
+    designs: pins.map(({ designId, revisionId }) => ({ designId, revisionId })),
+    elements: [],
+    designSystem: { ...first.designSystem },
+  };
+}

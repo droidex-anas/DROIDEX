@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import './canvasAnimations.css';
 import './canvasBoard.css';
 import './canvasBoardTools.css';
@@ -34,6 +42,7 @@ import {
   type CanvasPaneState,
 } from './canvasState';
 import { CanvasSourceSlot } from './CanvasSourceSlot';
+import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
 import type { ArrangeFramesInput, CanvasSnapshot } from './protocol';
 
 const readArtifact = canvas.readArtifact.bind(canvas);
@@ -87,7 +96,19 @@ export function CanvasWorkspace({
   useEffect(() => {
     if (namedCanvasId !== undefined) {
       dispatch({ type: 'selected', canvasId: namedCanvasId });
-      return;
+      // The app still learns the attachment without the view moving to it: it
+      // decides whether this canvas's frames can be pinned to the chat. A read
+      // that fails leaves them unpinnable, which is all it costs.
+      let active = true;
+      canvas.attachedCanvasId(appSessionId).then(
+        (attached) => {
+          if (active) onAttachmentChange(appSessionId, attached);
+        },
+        () => undefined,
+      );
+      return () => {
+        active = false;
+      };
     }
     // An attachment this chat still owes decides what the pane shows: reading
     // the sidecar now would report the state that operation has not reached.
@@ -108,7 +129,7 @@ export function CanvasWorkspace({
     return () => {
       active = false;
     };
-  }, [appSessionId, attach, namedCanvasId, reopenCount]);
+  }, [appSessionId, attach, namedCanvasId, onAttachmentChange, reopenCount]);
 
   const watched = watchedCanvasId(state);
   useEffect(() => {
@@ -189,6 +210,8 @@ export function CanvasWorkspace({
       <CanvasBody
         state={state}
         appSessionId={appSessionId}
+        // Only the chat's own canvas can be pinned: its turn's lease is there.
+        pinnable={namedCanvasId === undefined || namedCanvasId === canvasId}
         interaction={interaction}
         onInteractionChange={setInteraction}
         boardRef={boardRef}
@@ -217,6 +240,7 @@ export function CanvasWorkspace({
 function CanvasBody({
   state,
   appSessionId,
+  pinnable,
   interaction,
   onInteractionChange,
   boardRef,
@@ -227,6 +251,7 @@ function CanvasBody({
 }: {
   state: CanvasPaneState;
   appSessionId: string;
+  pinnable: boolean;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
@@ -263,6 +288,7 @@ function CanvasBody({
         <CanvasBoardMount
           appSessionId={appSessionId}
           snapshot={state.snapshot}
+          pinnable={pinnable}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           boardRef={boardRef}
@@ -280,6 +306,7 @@ function CanvasBody({
 function CanvasBoardMount({
   appSessionId,
   snapshot,
+  pinnable,
   interaction,
   onInteractionChange,
   boardRef,
@@ -287,6 +314,8 @@ function CanvasBoardMount({
 }: {
   appSessionId: string;
   snapshot: CanvasSnapshot;
+  /** It is the chat's own canvas, so its frames can be pinned to the chat's next prompt. */
+  pinnable: boolean;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
@@ -298,6 +327,14 @@ function CanvasBoardMount({
     (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
     [appSessionId, canvasId],
   );
+  const pins = useFramePins(appSessionId);
+  const pinnedIds = useMemo(
+    () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
+    [pins, canvasId],
+  );
+  useEffect(() => {
+    if (pinnable) syncFramePins(appSessionId, snapshot);
+  }, [appSessionId, pinnable, snapshot]);
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">
@@ -312,6 +349,14 @@ function CanvasBoardMount({
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}
+          pinnedIds={pinnedIds}
+          onToggleChat={
+            pinnable
+              ? (frame) => {
+                  toggleFramePin(appSessionId, canvasId, frame);
+                }
+              : undefined
+          }
           renderPreview={(frame, revisionId) => (
             <DesignPreview
               canvasId={canvasId}

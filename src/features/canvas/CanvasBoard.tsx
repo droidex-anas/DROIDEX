@@ -68,6 +68,10 @@ export interface CanvasBoardProps {
   /** This chat's agent has a turn running, so frames with no source are being written. */
   agentWorking: boolean;
   onOpenSource?: (designId: string) => void;
+  /** The frames pinned to the chat's next prompt. */
+  pinnedIds?: ReadonlySet<string>;
+  /** Pins a frame to the chat's next prompt or takes it off; absent where frames cannot be pinned. */
+  onToggleChat?: (frame: CanvasFrame) => void;
 }
 
 export function CanvasBoard({
@@ -79,6 +83,8 @@ export function CanvasBoard({
   onInteractionChange,
   agentWorking,
   onOpenSource,
+  pinnedIds,
+  onToggleChat,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -355,6 +361,8 @@ export function CanvasBoard({
               board.current?.focus({ preventScroll: true });
             }}
             onOpenSource={onOpenSource}
+            inChat={pinnedIds?.has(frame.designId) ?? false}
+            onToggleChat={onToggleChat}
             onHold={gestures.onFramePointerDown}
             onPick={(picked, additive) => {
               dispatch({ type: 'pick', designId: picked.designId, additive });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
+import { canvasContextOf } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
 import {
@@ -105,6 +106,7 @@ export function useQueuedPromptDelivery({
                 hasAppContextForTranscript(transcript, null),
               ),
               mentions: head.mentions,
+              canvasContext: canvasContextOf(head.framePins),
             },
           );
           dispatch({

@@ -9,7 +9,7 @@
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
 import { type CSSProperties, type PointerEvent, type ReactNode } from 'react';
-import { AlertTriangle, Play } from '@droidex/icons';
+import { AlertTriangle, Check, MessageThread, Play } from '@droidex/icons';
 import type { FrameHandle } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
@@ -20,8 +20,10 @@ import type { CanvasFrame, FrameRect } from './protocol';
 
 /** Screen room the selected frame's actions take at the right of its label row. */
 const TOOLS_PX = 168;
-/** Below this on screen the label keeps its row and the actions sit above it. */
-const SIDE_BY_SIDE_PX = TOOLS_PX + 120;
+/** The room "Add to chat" adds to them, where the frame can be added. */
+const CHAT_TOOL_PX = 112;
+/** Room the label keeps beside the actions; below it they sit above the label. */
+const LABEL_ROOM_PX = 120;
 /** Below this on screen a sheet shows its title alone, without the detail. */
 const COMPACT_SHEET_PX = { width: 220, height: 140 };
 
@@ -64,6 +66,10 @@ export interface DesignFrameProps {
   onInteract: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
   onOpenSource?: (designId: string) => void;
+  /** The frame is pinned to the chat's next prompt. */
+  inChat: boolean;
+  /** Pins it to the chat's next prompt or takes it off; absent where it cannot be pinned. */
+  onToggleChat?: (frame: CanvasFrame) => void;
 }
 
 export function DesignFrame(props: DesignFrameProps) {
@@ -71,7 +77,8 @@ export function DesignFrame(props: DesignFrameProps) {
   const { capturePointer, onHold, onPick, onInteract } = props;
   const animated = arriving && motion.frameArrivalMs > 0;
   const screenWidth = rect.width * scale;
-  const toolsBeside = showTools && screenWidth >= SIDE_BY_SIDE_PX;
+  const toolsPx = TOOLS_PX + (props.onToggleChat ? CHAT_TOOL_PX : 0);
+  const toolsBeside = showTools && screenWidth >= toolsPx + LABEL_ROOM_PX;
   return (
     <div
       data-design-frame={frame.designId}
@@ -85,7 +92,7 @@ export function DesignFrame(props: DesignFrameProps) {
         ...(animated ? arrival(motion) : {}),
       }}
     >
-      <FrameLabel {...props} width={screenWidth - (toolsBeside ? TOOLS_PX : 0)} />
+      <FrameLabel {...props} width={screenWidth - (toolsBeside ? toolsPx : 0)} />
 
       <div
         // The sheet is the design's, never the board's background: in Interact
@@ -202,14 +209,16 @@ function FrameLabel({
   );
 }
 
-/** The selected frame's actions: run it, read its source, or return to Select. */
+/** The selected frame's actions: run it, read its source, add it to the chat, or return to Select. */
 function FrameTools({
   frame,
   interacted,
   stacked,
+  inChat,
   onInteract,
   onExitInteract,
   onOpenSource,
+  onToggleChat,
 }: DesignFrameProps & { stacked: boolean }) {
   return (
     <div
@@ -255,6 +264,26 @@ function FrameTools({
           >
             <CodeGlyph />
             Source
+          </button>
+        )}
+        {onToggleChat && (
+          <button
+            type="button"
+            aria-pressed={inChat}
+            aria-label={
+              inChat ? `Take ${frame.name} out of the chat` : `Add ${frame.name} to the chat`
+            }
+            className="canvas-frame-tool"
+            onClick={() => {
+              onToggleChat(frame);
+            }}
+          >
+            {inChat ? (
+              <Check className="h-3.5 w-3.5" aria-hidden />
+            ) : (
+              <MessageThread className="h-3.5 w-3.5" aria-hidden />
+            )}
+            {inChat ? 'In chat' : 'Add to chat'}
           </button>
         )}
       </div>
