@@ -425,8 +425,8 @@ export class CanvasWorkspace {
           if (!committed) return { value: undefined };
           const next = structuredClone(live);
           const target = requireDesign(next, designId);
-          if (committed.workingRevisionId !== null)
-            target.lastWorkingRevisionId = committed.workingRevisionId;
+          if (committed.kind === 'outcome')
+            target.lastWorkingRevisionId = committed.lastWorkingRevisionId;
           target.manifestVersion += 1;
           next.sequence += 1;
           await this.heads.install(next, () => {

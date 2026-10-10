@@ -283,8 +283,25 @@ function vouchedState(
   if (result.status === 'ready') {
     if (design.lastWorkingRevisionId !== revisionId) return null;
     if (!present.has(artifactName(result.artifactId))) return null;
+  } else if (design.lastWorkingRevisionId === revisionId) {
+    // That failure's commit would have cleared the pointer: it never happened.
+    return null;
   }
   return builtState(revisionId, result, design.lastWorkingRevisionId);
+}
+
+/**
+ * The revision a design falls back to once `revisionId` reached `result`: its own
+ * when it built, none when the fallback itself stopped building (a stricter kit
+ * rule, a kit that is gone), and otherwise the one it had.
+ */
+export function fallbackAfter(
+  revisionId: string,
+  result: BuildResult,
+  lastWorkingRevisionId: string | null,
+): string | null {
+  if (result.status === 'ready') return revisionId;
+  return lastWorkingRevisionId === revisionId ? null : lastWorkingRevisionId;
 }
 
 /** The state one outcome describes, which only ever names its own revision. */

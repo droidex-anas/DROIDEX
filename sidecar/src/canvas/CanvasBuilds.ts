@@ -9,7 +9,7 @@
 // its gate runs again after every await there, so nothing lands once a newer
 // attempt, a cancellation or shutdown has taken the frame.
 
-import { builtState, CanvasBuildCache } from './canvasBuildCache.js';
+import { builtState, CanvasBuildCache, fallbackAfter } from './canvasBuildCache.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { buildFailure, unsavedBuild, type BuildOutcome } from './canvasBuildFailures.js';
 import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
@@ -321,7 +321,7 @@ export class CanvasBuilds {
   private announce(job: QueuedBuild | RunningBuild): void {
     const publish = (): Promise<BuildCommit> =>
       Promise.resolve({
-        workingRevisionId: null,
+        kind: 'state',
         isCurrent: () => !this.closed,
       });
     void this.owner.host.commitBuild(job.canvasId, job.designId, publish);
@@ -413,13 +413,11 @@ export class CanvasBuilds {
         if (persists) await this.owner.cache.discardOutcome(job.canvasId, job.revisionId);
         return null;
       }
-      this.states.set(
-        job.canvasId,
-        job.designId,
-        builtState(job.revisionId, result, target.lastWorkingRevisionId),
-      );
+      const fallback = fallbackAfter(job.revisionId, result, target.lastWorkingRevisionId);
+      this.states.set(job.canvasId, job.designId, builtState(job.revisionId, result, fallback));
       return {
-        workingRevisionId: result.status === 'ready' ? job.revisionId : null,
+        kind: 'outcome',
+        lastWorkingRevisionId: fallback,
         isCurrent: () => !this.closed && slot.job === job,
       };
     });
