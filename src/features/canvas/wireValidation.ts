@@ -171,14 +171,14 @@ function isRevisionCommit(value: unknown): value is Record<string, unknown> {
 
 // Two revisions can name up to twice one tree's paths; the diff text shares one byte cap.
 function isRevisionDiff(value: unknown): boolean {
-  if (!record(value) || !id(value.from) || !id(value.to) || typeof value.truncated !== 'boolean')
-    return false;
+  if (!record(value) || !id(value.from) || !id(value.to)) return false;
   let bytes = 0;
   return boundedList(value.files, MAX_SOURCE_PATHS * 2, (file) => {
     if (
       !record(file) ||
       !boundedText(file.path, MAX_SOURCE_PATH_LENGTH) ||
       typeof file.diff !== 'string' ||
+      typeof file.truncated !== 'boolean' ||
       typeof file.kind !== 'string' ||
       !['added', 'removed', 'modified'].includes(file.kind)
     )

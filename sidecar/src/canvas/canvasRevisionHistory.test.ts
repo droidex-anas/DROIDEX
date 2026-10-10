@@ -163,13 +163,12 @@ test('diff reports canonical added, removed and modified files without moving th
     first.revisionId,
     second.revisionId,
   );
-  assert.equal(diff.truncated, false);
   assert.deepEqual(
-    diff.files.map((file) => [file.path, file.kind]),
+    diff.files.map((file) => [file.path, file.kind, file.truncated]),
     [
-      ['added.txt', 'added'],
-      ['main.tsx', 'modified'],
-      ['removed.txt', 'removed'],
+      ['added.txt', 'added', false],
+      ['main.tsx', 'modified', false],
+      ['removed.txt', 'removed', false],
     ],
   );
   assert.equal(diff.files[0]?.diff, '--- /dev/null\n+++ b/added.txt\n@@ -0,0 +1,1 @@\n+add\n');
@@ -219,12 +218,12 @@ test('diff truncation respects the total UTF-8 cap across files and keeps every 
     first.revisionId,
     second.revisionId,
   );
-  assert.equal(diff.truncated, true);
+  // Each cut file says so, so a reader never mistakes a cut diff for a short one.
   assert.deepEqual(
-    diff.files.map((file) => [file.path, file.kind]),
+    diff.files.map((file) => [file.path, file.kind, file.truncated]),
     [
-      ['a.txt', 'modified'],
-      ['b.txt', 'modified'],
+      ['a.txt', 'modified', true],
+      ['b.txt', 'modified', true],
     ],
   );
   const bytes = diff.files.reduce((total, file) => total + Buffer.byteLength(file.diff, 'utf8'), 0);

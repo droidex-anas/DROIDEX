@@ -211,9 +211,13 @@ export type RevisionSummary =
 export interface RevisionDiff {
   from: string;
   to: string;
-  files: { path: string; kind: 'added' | 'removed' | 'modified'; diff: string }[];
-  /** Some unified diff lines were omitted to respect the total UTF-8 byte cap. */
-  truncated: boolean;
+  /** A truncated file lost diff lines to the total UTF-8 byte cap. */
+  files: {
+    path: string;
+    kind: 'added' | 'removed' | 'modified';
+    diff: string;
+    truncated: boolean;
+  }[];
 }
 
 // The stable codes from spec §8. Every failure carries a short recovery message

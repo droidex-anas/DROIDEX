@@ -76,7 +76,7 @@ export class CanvasRevisionHistory {
       this.readRevisionFiles(canvasId, designId, from),
       this.readRevisionFiles(canvasId, designId, to),
     ]);
-    const result: RevisionDiff = { from, to, files: [], truncated: false };
+    const result: RevisionDiff = { from, to, files: [] };
     let remainingBytes = CANVAS_LIMITS.maxRevisionDiffBytes;
     const paths = [...new Set([...Object.keys(previous), ...Object.keys(next)])].sort();
     for (const path of paths) {
@@ -87,16 +87,17 @@ export class CanvasRevisionHistory {
       if (before === undefined) kind = 'added';
       else if (after === undefined) kind = 'removed';
       let diff = '';
+      let truncated = false;
       for (const line of unifiedLines(path, before, after)) {
         const bytes = Buffer.byteLength(line, 'utf8');
         if (bytes > remainingBytes) {
-          result.truncated = true;
+          truncated = true;
           break;
         }
         diff += line;
         remainingBytes -= bytes;
       }
-      result.files.push({ path, kind, diff });
+      result.files.push({ path, kind, diff, truncated });
     }
     return result;
   }

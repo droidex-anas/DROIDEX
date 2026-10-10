@@ -294,8 +294,7 @@ const wire: SidecarWire = {
   diff: {
     from: 'rev_01',
     to: 'rev_02',
-    files: [{ path: 'main.tsx', kind: 'modified', diff: '-old\n+new\n' }],
-    truncated: false,
+    files: [{ path: 'main.tsx', kind: 'modified', diff: '-old\n+new\n', truncated: false }],
   },
   page: { limit: 50, before: 7 },
   restore: {
