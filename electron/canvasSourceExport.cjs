@@ -65,6 +65,8 @@ function isExportError(answer) {
   );
 }
 
+const EXPORT_TIMEOUT_MS = 60_000;
+
 function refusal(code, message) {
   return { ok: false, code, message };
 }
@@ -79,9 +81,19 @@ function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
     if (!isRequest(input)) return refusal('invalid_input', invalidRequest);
     const result = await chooseDirectory();
     if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    let port;
+    try {
+      ({ port } = await getBridgeInfo());
+    } catch (error) {
+      // The supervisor's own reason ("Sidecar is stopped.") is what the user can act on.
+      console.error('Canvas export could not reach the sidecar:', error);
+      return refusal(
+        'storage_failed',
+        error instanceof Error && error.message ? error.message : failed,
+      );
+    }
     let response;
     try {
-      const { port } = await getBridgeInfo();
       response = await fetchRequest(`http://127.0.0.1:${String(port)}${route}`, {
         method: 'POST',
         headers: {
@@ -89,10 +101,15 @@ function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
           'x-canvas-export-token': exportToken(),
         },
         body: JSON.stringify({ ...input, destinationDirectory: result.filePaths[0] }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(EXPORT_TIMEOUT_MS),
       });
-    } catch {
-      return refusal('storage_failed', failed);
+    } catch (error) {
+      console.error('Canvas export request failed:', error);
+      const timedOut = error?.name === 'TimeoutError';
+      return refusal(
+        'storage_failed',
+        timedOut ? 'The export did not finish within a minute. Try again.' : failed,
+      );
     }
     if (response.status === 404)
       return refusal('storage_failed', 'Canvas export service changed. Try again.');
@@ -115,20 +132,13 @@ function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
   };
 }
 
-// Source export keeps its contract: the export, null when cancelled, or a throw.
 function createCanvasSourceExport(host) {
-  const exportSource = createHostExport(host, {
+  return createHostExport(host, {
     route: '/canvas/source-export',
     isRequest: isExportRequest,
     invalidRequest: 'Choose a Canvas revision to export.',
     failed: 'Canvas source could not be exported.',
   });
-  return async (input) => {
-    const outcome = await exportSource(input);
-    if (outcome.ok) return { filesWritten: outcome.filesWritten };
-    if (outcome.cancelled) return null;
-    throw new Error(outcome.message);
-  };
 }
 
 function createDesignSystemExport(host) {

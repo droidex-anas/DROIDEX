@@ -95,7 +95,8 @@ export type CanvasPreviewCaptureResult =
   | { ok: true; mediaType: 'image/png'; bytes: Uint8Array }
   | { ok: false; error: { code: 'capture_unavailable'; message: string } };
 
-export type DesignSystemExportResult =
+/** Both host exports answer this way, so a refusal reaches the renderer as its own message. */
+export type CanvasExportResult =
   | { ok: true; filesWritten: number }
   | { ok: false; cancelled: true }
   | { ok: false; code: CanvasErrorCode; message: string };
@@ -258,11 +259,8 @@ interface DroidControlApi {
     revisionId: string,
     suggestedName: string,
   ) => Promise<CanvasImageSaveResult>;
-  canvasExportSource: (
-    canvasId: string,
-    ref: RevisionRef,
-  ) => Promise<{ filesWritten: number } | null>;
-  canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<DesignSystemExportResult>;
+  canvasExportSource: (canvasId: string, ref: RevisionRef) => Promise<CanvasExportResult>;
+  canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<CanvasExportResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -795,21 +793,8 @@ export async function saveCanvasImage(
   return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
 }
 
-/** Opens the host's folder chooser, then exports the selected saved revision. */
-export function exportCanvasSource(
-  canvasId: string,
-  ref: RevisionRef,
-): Promise<{ filesWritten: number } | null> {
-  return requireDesktopApi('Canvas source export needs the desktop app.').canvasExportSource(
-    canvasId,
-    ref,
-  );
-}
-
 /** Opens the host's folder chooser, then writes one kit version there. */
-export async function exportDesignSystem(
-  ref: DesignSystemVersionRef,
-): Promise<DesignSystemExportResult> {
+export async function exportDesignSystem(ref: DesignSystemVersionRef): Promise<CanvasExportResult> {
   const api = desktopApi();
   if (!api)
     return {
