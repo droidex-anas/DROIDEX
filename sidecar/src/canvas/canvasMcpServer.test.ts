@@ -1,76 +1,19 @@
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
+import { harness, noRenderer, toolContent, type Reply } from '../testing/canvasMcpSupport.js';
 import {
   CANVAS_PNG,
-  canvasRoot,
   deferred,
   observedFileSystem,
   holdManifestWrite,
-  quietBuilds,
 } from '../testing/canvasStorageSupport.js';
-import { CanvasWorkspace } from './CanvasWorkspace.js';
-import {
-  APP,
-  buildingCanvas,
-  captureRequest,
-  createCanvas,
-  createFrame,
-  readyFrames,
-  writeFrame,
-} from '../testing/canvasBridgeSupport.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
-import { CanvasScopes } from './canvasScopes.js';
-import { CanvasTurns } from './canvasTurnContext.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
-import type { CanvasFileSystem } from './canvasFiles.js';
-import type { CanvasCapture } from './canvasCaptures.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
   DESIGN_SESSION_GUIDANCE,
 } from './designSessionGuidance.js';
-
-type Reply = {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  scopeId?: string;
-  pinned?: { designs: { designId: string }[] };
-  created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
-  receipt?: { revisionId: string };
-  frames?: { designId: string }[];
-  systems?: { id: string; version: number }[];
-  build?: unknown;
-};
-
-async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: CanvasCapture) {
-  const scopes = new CanvasScopes();
-  const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
-  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
-    fs,
-    isChatKnown: () => true,
-    isScopeActive: (id) => scopes.isScopeActive(id),
-    bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
-  });
-  t.after(() => workspace.close());
-  const server = createCanvasMcpServer(
-    () => Promise.resolve(workspace),
-    turns,
-    capture ?? (() => Promise.reject(new Error('No renderer answers in this suite.'))),
-    () => 'chat-one',
-  );
-  const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
-    const target = server.tools.find((entry) => entry.name === name);
-    assert.ok(target, name);
-    const result = await target.handler(input);
-    if (typeof result === 'string') return JSON.parse(result) as Reply;
-    const content = result.content[0];
-    assert.equal(content?.type, 'text');
-    if (content?.type !== 'text') throw new Error('Canvas tools must answer with text.');
-    return JSON.parse(content.text) as Reply;
-  };
-  return { scopes, turns, workspace, server, call };
-}
 
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
 
@@ -90,7 +33,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
     const server = createCanvasMcpServer(
       () => Promise.resolve(h.workspace),
       h.turns,
-      () => Promise.reject(new Error('No renderer answers in this suite.')),
+      noRenderer,
       () => 'chat-one',
       purpose,
     );
@@ -392,61 +335,95 @@ test('lost create response retries to the same canvas and invalid source paths h
   );
 });
 
-test('a screenshot relays the watching page’s PNG of the current revision within its deadline and turn', async (t) => {
-  const canvas = await buildingCanvas(t);
-  const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
-  await writeFrame(canvas, canvasId, designId);
-  const built = readyFrames(canvas, canvasId, [designId]);
-  (await canvas.fleet.compile(1)).ready('artifact-one');
-  await built;
-  const turn = canvas.turns.beginTurn(APP, undefined);
-  const server = createCanvasMcpServer(
-    () => Promise.resolve(canvas.workspace),
-    canvas.turns,
-    canvas.capture,
-    () => APP,
-  );
-  const inspect = server.tools.find((entry) => entry.name === 'canvas_inspect');
-  assert.ok(inspect);
-  const screenshot = () => inspect.handler({ designId, kind: 'screenshot' });
-  const png = CANVAS_PNG.toString('base64');
-  const report = (captureId: string) =>
-    canvas.handle({
-      type: 'canvas.reportCapture',
-      requestId: `report-${captureId}`,
-      captureId,
-      capture: { ok: true, png },
+test('canvas_write refuses a tree with no entry and reports its build in the same reply', async (t) => {
+  const h = await harness(t);
+  h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', { scopeId, mutationId: 'create', frames: [frame] });
+  assert.ok(created.created);
+  const { canvasId, frames } = created.created;
+  const write = (mutationId: string, expectedRevisionId: string | null, source: string) =>
+    h.call('canvas_write', {
+      scopeId,
+      mutationId,
+      designId: frames[0].designId,
+      expectedRevisionId,
+      files: { [mutationId === 'misnamed' ? 'index.tsx' : 'main.tsx']: source },
+      deletedPaths: [],
     });
 
-  const unopened = toolContent(await screenshot());
-  assert.equal(unopened.length, 1);
-  assert.equal(JSON.parse(unopened[0].text ?? '').code, 'capture_unavailable');
-  assert.match(unopened[0].text ?? '', /Open this design’s canvas in DROIDEX/);
+  // The agent learns the entry contract while its call is open, and nothing is stored.
+  const misnamed = await write('misnamed', null, 'export default () => <p>Hey</p>');
+  assert.equal(misnamed.code, 'invalid_source');
+  assert.match(misnamed.message ?? '', /main\.tsx.*index\.tsx/);
+  assert.equal(h.workspace.snapshot(canvasId).frames[0].revisionId, null);
 
-  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
-  const pending = screenshot();
-  const request = await captureRequest(canvas.events, 0);
-  const { revisionId } = canvas.workspace.snapshot(canvasId).frames[0];
-  assert.deepEqual(
-    [request.canvasId, request.designId, request.revisionId],
-    [canvasId, designId, revisionId],
+  const broken = await write('broken', null, 'export default () => BROKEN');
+  assert.equal(broken.build?.status, 'failed');
+  assert.deepEqual(broken.build.diagnostics, [
+    { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+  ]);
+  assert.match(broken.build.next ?? '', /main\.tsx line 3/);
+
+  // A build that compiles can still stop while it renders; the pane says so.
+  assert.ok(broken.receipt);
+  const throws = await write('throws', broken.receipt.revisionId, 'export default () => THROWS');
+  assert.equal(throws.build?.status, 'render_failed');
+  assert.deepEqual(throws.build.errors, ['total is not defined']);
+
+  assert.ok(throws.receipt);
+  const fixed = await write('fixed', throws.receipt.revisionId, 'export default () => <p>Hey</p>');
+  assert.equal(fixed.build?.status, 'ready');
+  assert.equal(fixed.build.rendered, true);
+  assert.equal(
+    (await h.call('canvas_inspect', { designId: frames[0].designId })).build?.status,
+    'ready',
   );
-  await report(request.captureId);
-  const [facts, image] = toolContent(await pending);
-  assert.equal(JSON.parse(facts.text ?? '').revisionId, revisionId);
+});
+
+test('canvas_inspect answers a screenshot with the PNG of the current revision beside its build report', async (t) => {
+  const png = CANVAS_PNG.toString('base64');
+  const asked: { canvasId: string; designId: string; revisionId: string; aborted: boolean }[] = [];
+  const [reached, held] = [deferred(), deferred()];
+  const h = await harness(t, undefined, async (canvasId, ref, signal) => {
+    asked.push({ canvasId, ...ref, aborted: signal.aborted });
+    if (asked.length > 1) {
+      reached.resolve();
+      await held.promise;
+    }
+    return png;
+  });
+  const turn = h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', { scopeId, mutationId: 'create', frames: [frame] });
+  assert.ok(created.created);
+  const { canvasId } = created.created;
+  const { designId } = created.created.frames[0];
+  const written = await h.call('canvas_write', {
+    scopeId,
+    mutationId: 'write',
+    designId,
+    expectedRevisionId: null,
+    files: { 'main.tsx': 'export default () => <p>Hey</p>' },
+    deletedPaths: [],
+  });
+  assert.ok(written.receipt);
+  const { revisionId } = written.receipt;
+  const inspect = h.server.tools.find((entry) => entry.name === 'canvas_inspect');
+  assert.ok(inspect);
+
+  const [facts, image] = toolContent(await inspect.handler({ designId, kind: 'screenshot' }));
+  const reply = JSON.parse(facts.text ?? '') as Reply & { revisionId?: string };
+  assert.equal(reply.revisionId, revisionId);
+  assert.equal(reply.build?.status, 'ready');
   assert.deepEqual(image, { type: 'image', data: png, mimeType: 'image/png' });
+  assert.deepEqual(asked, [{ canvasId, designId, revisionId, aborted: false }]);
 
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const silent = screenshot();
-  await captureRequest(canvas.events, 1);
-  t.mock.timers.tick(7_000);
-  assert.match(toolContent(await silent)[0].text ?? '', /did not capture this design in time/);
-
-  const expiring = screenshot();
-  const late = await captureRequest(canvas.events, 2);
+  // A capture that settles after its turn ended never reaches the model.
+  const expiring = inspect.handler({ designId, kind: 'screenshot' });
+  await reached.promise;
   turn.revoke();
-  await report(late.captureId);
+  held.resolve();
   const dropped = toolContent(await expiring);
   assert.equal(dropped.length, 1);
   assert.equal(JSON.parse(dropped[0].text ?? '').code, 'scope_expired');
@@ -804,9 +781,3 @@ test('a delayed theme validation refusal cannot disclose source after its turn i
   assert.ok(!JSON.stringify(reply).includes('SOURCE_SENTINEL'));
   assert.deepEqual(h.workspace.snapshot(canvasId), before);
 });
-
-function toolContent(result: unknown): { type: string; text?: string }[] {
-  if (typeof result === 'string') return [{ type: 'text', text: result }];
-  assert.ok(result && typeof result === 'object' && 'content' in result);
-  return result.content as { type: string; text?: string }[];
-}

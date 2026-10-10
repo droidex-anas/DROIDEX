@@ -15,7 +15,13 @@ import { missingLabel, previewRevisionId, waitingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import { useCanvasMotion } from './useCanvasMotion';
-import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame, PreviewArtifact } from './protocol';
+import type {
+  CanvasBuildState,
+  CanvasDiagnostic,
+  CanvasFrame,
+  PreviewArtifact,
+  PreviewReport,
+} from './protocol';
 
 export interface DesignPreviewProps {
   canvasId: string;
@@ -26,6 +32,8 @@ export interface DesignPreviewProps {
     designId: string,
     revisionId: string,
   ) => Promise<PreviewArtifact | null>;
+  /** What a mounted preview did, for the agent that wrote the design. */
+  reportPreview: (canvasId: string, report: PreviewReport) => void;
   /** The content size a mounted preview reports, so the board can fit it. */
   onResize?: (designId: string, size: { width: number; height: number }) => void;
 }
@@ -33,10 +41,21 @@ export interface DesignPreviewProps {
 /** Every mount takes the next number, so a replacement is never this instance. */
 let previewMounts = 0;
 
-/** How many reported diagnostics one preview keeps on screen. */
+/** How many reported diagnostics one preview keeps on screen, and reports. */
 const SHOWN_PREVIEW_DIAGNOSTICS = 8;
 
-export function DesignPreview({ canvasId, frame, readArtifact, onResize }: DesignPreviewProps) {
+/** The diagnostics a design throws itself, as opposed to the host's own notes. */
+const THROWN_CODES = new Set(['preview_error', 'render_failed']);
+/** The host's word for a root render that failed before the design painted. */
+const RENDER_FAILED = 'render_failed';
+
+export function DesignPreview({
+  canvasId,
+  frame,
+  readArtifact,
+  reportPreview,
+  onResize,
+}: DesignPreviewProps) {
   const revisionId = previewRevisionId(frame.build);
   const read = useArtifact(canvasId, frame.designId, revisionId, frame.build, readArtifact);
   const failures = frame.build.status === 'failed' ? frame.build.diagnostics : [];
@@ -57,6 +76,7 @@ export function DesignPreview({ canvasId, frame, readArtifact, onResize }: Desig
       showingRevisionId={frame.build.status === 'failed' ? revisionId : null}
       html={read.artifact.html}
       diagnostics={failures}
+      reportPreview={reportPreview}
       onResize={onResize}
     />
   );
@@ -128,6 +148,7 @@ export function PreviewGuestFrame({
   showingRevisionId,
   html,
   diagnostics,
+  reportPreview,
   onResize,
 }: {
   canvasId: string;
@@ -138,14 +159,17 @@ export function PreviewGuestFrame({
   showingRevisionId: string | null;
   html: string;
   diagnostics: CanvasDiagnostic[];
+  reportPreview: DesignPreviewProps['reportPreview'];
   onResize: DesignPreviewProps['onResize'];
 }) {
   const motion = useCanvasMotion();
   const host = useRef<HTMLDivElement>(null);
   const resized = useRef(onResize);
   resized.current = onResize;
+  const reported = useRef(reportPreview);
+  reported.current = reportPreview;
   const [phase, setPhase] = useState<'mounting' | 'ready' | PreviewLostReason>('mounting');
-  const [reported, setReported] = useState<CanvasDiagnostic[]>([]);
+  const [shown, setShown] = useState<CanvasDiagnostic[]>([]);
 
   useEffect(() => {
     const container = host.current;
@@ -199,6 +223,20 @@ export function PreviewGuestFrame({
       }, 150);
     };
     const sizeObserver = new ResizeObserver(updateCapture);
+    // What the agent hears: loading as the guest mounts, rendered once the
+    // design paints, failed when its root render failed or it stalled before
+    // painting, and the first few errors it throws. A design that throws in a
+    // loop sends nothing new once those are held.
+    let painted = false;
+    let sent: PreviewReport['outcome'] | null = null;
+    const errors: string[] = [];
+    const report = (outcome: PreviewReport['outcome'], thrown: string[] = []) => {
+      const fresh = thrown.slice(0, SHOWN_PREVIEW_DIAGNOSTICS - errors.length);
+      if (outcome === sent && fresh.length === 0) return;
+      errors.push(...fresh);
+      sent = outcome;
+      reported.current(canvasId, { designId, revisionId, outcome, errors: [...errors] });
+    };
 
     // Main binds the guest to this canvas before a design runs in it, so the
     // design can only ever read its own canvas's assets. A guest main refuses
@@ -226,15 +264,27 @@ export function PreviewGuestFrame({
         terminate: terminateCanvasPreviewGuest,
         observer: {
           onReady: () => {
+            painted = true;
+            report('rendered');
             setPhase('ready');
             updateCapture();
             sizeObserver.observe(guest);
           },
           onResize: (size) => resized.current?.(designId, size),
           onDiagnostics: (entries) => {
-            setReported((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+            setShown((held) => [...held, ...entries].slice(-SHOWN_PREVIEW_DIAGNOSTICS));
+            const thrown = entries.filter((entry) => THROWN_CODES.has(entry.code));
+            if (thrown.length === 0) return;
+            const stopped = thrown.some((entry) => entry.code === RENDER_FAILED);
+            report(
+              stopped ? 'failed' : (sent ?? 'loading'),
+              thrown.map((entry) => entry.message),
+            );
           },
           onLost: (reason) => {
+            // A guest the board lost is not the design's fault; a stall is.
+            if (reason !== 'guest_gone')
+              report(painted ? 'rendered' : 'failed', [lostLabel(reason)]);
             thumbnailCapture.abort();
             if (thumbnailTimer) clearTimeout(thumbnailTimer);
             releaseCapture?.();
@@ -255,6 +305,7 @@ export function PreviewGuestFrame({
       { once: true },
     );
     container.append(guest);
+    report('loading');
     return () => {
       mounted = false;
       thumbnailCapture.abort();
@@ -300,7 +351,7 @@ export function PreviewGuestFrame({
           Showing revision {showingRevisionId}
         </p>
       ) : null}
-      <PreviewDiagnostics diagnostics={[...diagnostics, ...reported]} />
+      <PreviewDiagnostics diagnostics={[...diagnostics, ...shown]} />
     </div>
   );
 }

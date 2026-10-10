@@ -60,6 +60,19 @@ export interface PreviewArtifact {
   html: string;
 }
 
+/**
+ * What one mounted preview of a revision did, as the pane running it saw it:
+ * `loading` while its guest starts, `failed` when the design stopped before it
+ * rendered, `rendered` once it painted, with any errors it has thrown since.
+ * The compiler cannot see a design that throws while rendering; this can.
+ */
+export interface PreviewReport {
+  designId: string;
+  revisionId: string;
+  outcome: 'loading' | 'rendered' | 'failed';
+  errors: string[];
+}
+
 export interface OwnedAsset {
   assetId: string;
   mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
@@ -333,6 +346,9 @@ export type CanvasCommand =
       designId: string;
       revisionId: string;
     }
+  // The pane's word on what a preview did, so the agent hears about a design
+  // that built and then stopped while rendering. It is never canonical state.
+  | { type: 'canvas.reportPreview'; requestId: string; canvasId: string; report: PreviewReport }
   // A source read, authorized like `canvas.subscribe` by the page asking: the
   // source drawer and revision history read a committed revision's files (spec §9).
   | {

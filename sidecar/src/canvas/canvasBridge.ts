@@ -172,6 +172,11 @@ class CanvasDispatch {
       case 'canvas.detach':
         await workspace.detach(command.appSessionId);
         return { kind: 'attachment', canvasId: null };
+      case 'canvas.reportPreview':
+        // The canvas has to be open; the report itself is only the pane's word.
+        workspace.snapshot(command.canvasId);
+        workspace.previews.record(command.canvasId, command.report);
+        return { kind: 'ok' };
       case 'canvas.readSource': {
         // The source drawer and history read one committed revision; an
         // uncommitted tree on disk is refused, and the head never moves.

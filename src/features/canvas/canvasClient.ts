@@ -5,6 +5,7 @@
 import { bridge } from '../../lib/bridge';
 import { answerCaptureRequest } from './captureCanvasImage';
 import { CanvasClient } from './client';
+import type { PreviewReport } from './protocol';
 
 export const canvasClient = new CanvasClient(bridge);
 
@@ -14,3 +15,17 @@ bridge.subscribe((event) => {
   if (event.type !== 'canvas.captureRequest') return;
   void answerCaptureRequest(event).then((report) => bridge.sendIfConnected(report));
 });
+
+/**
+ * Tells the sidecar what a mounted preview did, so the agent hears about a
+ * design that built and then stopped while rendering. Nothing waits on the
+ * reply: a report lost to a disconnect costs the agent only its confirmation.
+ */
+export function reportPreview(canvasId: string, report: PreviewReport): void {
+  bridge.sendIfConnected({
+    type: 'canvas.reportPreview',
+    requestId: crypto.randomUUID(),
+    canvasId,
+    report,
+  });
+}

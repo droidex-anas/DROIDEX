@@ -119,9 +119,10 @@ test('direct edits compile through the worker and its map points to canonical so
     assert.ok(rebuilt.html.includes(fixture.rendered));
     for (const site of rebuilt.elements)
       assert.equal(rebuilt.html.split(site.elementId).length - 1, 1);
+    // The bundle is the body's script; the head's early failure catcher comes first.
     const script = original.html.slice(
-      original.html.indexOf('<script>') + '<script>\n'.length,
-      original.html.indexOf('</script>'),
+      original.html.indexOf('<script>', original.html.indexOf('<body>')) + '<script>\n'.length,
+      original.html.lastIndexOf('</script>'),
     );
     const encoded = script.split('base64,')[1];
     assert.ok(encoded);
@@ -804,7 +805,7 @@ test('an adversarial closing tag never ends the inline style or script', async (
     const { html } = await compile(files);
     const styles = html.slice(html.indexOf('<style>') + '<style>'.length, html.indexOf('</style>'));
     const script = html.slice(
-      html.indexOf('<script>') + '<script>'.length,
+      html.indexOf('<script>', html.indexOf('<body>')) + '<script>'.length,
       html.lastIndexOf('</script>'),
     );
     assert.equal(/<\/style/i.test(styles), false, 'the style element ends where it should');

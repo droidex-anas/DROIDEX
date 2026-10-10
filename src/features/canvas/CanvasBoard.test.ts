@@ -51,6 +51,7 @@ function render(snapshot: CanvasSnapshot, interaction: BoardInteraction = SELECT
           canvasId: snapshot.canvasId,
           frame,
           readArtifact: () => Promise.resolve(null),
+          reportPreview: () => undefined,
         }),
     }),
   );
@@ -174,6 +175,7 @@ test('a slot with a building preview retains the bloom until a working revision 
         canvasId: 'cv_01',
         frame: building,
         readArtifact: () => Promise.resolve(null),
+        reportPreview: () => undefined,
       }),
       onHold: () => undefined,
       onPick: () => undefined,

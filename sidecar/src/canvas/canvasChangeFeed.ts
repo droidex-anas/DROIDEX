@@ -6,16 +6,30 @@ import type { CanvasChange } from './protocol.js';
 
 export type CanvasChangeListener = (change: CanvasChange) => void;
 
-export class CanvasChangeFeed {
-  private readonly listeners = new Set<CanvasChangeListener>();
+interface Subscriber {
+  listener: CanvasChangeListener;
+  /** Told once the feed ends, so a waiter stops waiting for a change that cannot come. */
+  onClose?: () => void;
+}
 
-  subscribe(listener: CanvasChangeListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+export class CanvasChangeFeed {
+  private readonly subscribers = new Set<Subscriber>();
+  private closed = false;
+
+  subscribe(listener: CanvasChangeListener, onClose?: () => void): () => void {
+    if (this.closed) {
+      onClose?.();
+      return () => undefined;
+    }
+    const subscriber = { listener, onClose };
+    this.subscribers.add(subscriber);
+    return () => {
+      this.subscribers.delete(subscriber);
+    };
   }
 
   publish(change: CanvasChange): void {
-    for (const listener of this.listeners) {
+    for (const { listener } of this.subscribers) {
       try {
         listener(change);
       } catch (error) {
@@ -25,7 +39,10 @@ export class CanvasChangeFeed {
   }
 
   /** Nothing is published after the workspace closes. */
-  clear(): void {
-    this.listeners.clear();
+  close(): void {
+    this.closed = true;
+    const ending = [...this.subscribers];
+    this.subscribers.clear();
+    for (const { onClose } of ending) onClose?.();
   }
 }

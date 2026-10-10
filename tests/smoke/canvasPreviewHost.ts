@@ -102,6 +102,7 @@ document.body.append(container);
 createRoot(container).render(createElement(PreviewGuestFrame, {
   canvasId: 'cv_zoom', designId: 'dsg_zoom', revisionId: 'rev_zoom', generation: 1,
   showingRevisionId: null, html: ${JSON.stringify(html)}, diagnostics: [],
+  reportPreview: () => undefined,
 }));
 Object.assign(window, { __canvasZoomCapture: () =>
   captureCanvasImage('cv_zoom', { designId: 'dsg_zoom', revisionId: 'rev_zoom' }, new AbortController().signal) });

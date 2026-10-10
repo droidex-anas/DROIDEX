@@ -33,6 +33,7 @@ function render(build: CanvasBuildState, overrides: Partial<DesignPreviewProps> 
       canvasId: CANVAS,
       frame: frameWith(build),
       readArtifact: () => Promise.resolve(null),
+      reportPreview: () => undefined,
       ...overrides,
     }),
   );
@@ -91,6 +92,7 @@ test('a mounted fallback names the older working revision beside its diagnostics
       showingRevisionId: 'rev_01',
       html: '<!doctype html><body>x</body>',
       diagnostics: [{ code: 'syntax_error', message: 'Unexpected token' }],
+      reportPreview: () => undefined,
       onResize: undefined,
     }),
   );
@@ -109,6 +111,7 @@ test('a mounted fallback names the older working revision beside its diagnostics
         showingRevisionId: null,
         html: '<!doctype html><body>x</body>',
         diagnostics: [],
+        reportPreview: () => undefined,
         onResize: undefined,
       }),
     ).includes('Showing revision'),
@@ -207,6 +210,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
     generation: 1,
     html: '',
     diagnostics: [],
+    reportPreview: () => undefined,
   });
   const stop = mount?.();
   try {

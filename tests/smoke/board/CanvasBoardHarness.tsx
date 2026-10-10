@@ -148,6 +148,7 @@ function Harness() {
                 canvasId={snapshot.canvasId}
                 frame={frame}
                 readArtifact={readArtifact}
+                reportPreview={() => undefined}
               />
             ) : (
               <button
