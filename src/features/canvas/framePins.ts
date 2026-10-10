@@ -55,6 +55,11 @@ function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
   };
 }
 
+/** The same frame, however its revision, name or size has moved since. */
+function samePlace(a: FramePin, b: FramePin): boolean {
+  return a.canvasId === b.canvasId && a.designId === b.designId;
+}
+
 function samePin(a: FramePin, b: FramePin): boolean {
   return (
     a.canvasId === b.canvasId &&
@@ -91,7 +96,7 @@ export function unpinFrames(
   if (pins.length > 0)
     publish(
       appSessionId,
-      held.filter((pin) => !pins.includes(pin)),
+      held.filter((pin) => !pins.some((gone) => samePlace(pin, gone))),
     );
 }
 

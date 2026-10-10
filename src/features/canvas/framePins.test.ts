@@ -4,7 +4,6 @@ import {
   canvasContextOf,
   framePins,
   promptWithFramePins,
-  restoreFramePins,
   syncFramePins,
   toggleFramePin,
   unpinFrames,
@@ -93,10 +92,9 @@ test('a queued request keeps the revisions it was sent with when the pins move o
   assert.equal(promptWithFramePins('Make it bolder', []), 'Make it bolder');
 });
 
-test('pins follow the attached canvas, and an edited queued prompt brings its own back', () => {
+test('pins follow the attached canvas, and come off by frame however they have moved', () => {
   toggleFramePin('chat-s', 'cv_1', frame('d1', 'r1'));
   toggleFramePin('chat-s', 'cv_1', frame('d2', 'r1'));
-  const before = framePins('chat-s');
 
   // d2 was deleted from the board; d1 is as it was.
   syncFramePins('chat-s', { canvasId: 'cv_1', sequence: 3, frames: [frame('d1', 'r1')] });
@@ -104,19 +102,17 @@ test('pins follow the attached canvas, and an edited queued prompt brings its ow
     framePins('chat-s').map((pin) => pin.designId),
     ['d1'],
   );
-  const unchanged = framePins('chat-s');
+  const sending = framePins('chat-s');
   syncFramePins('chat-s', { canvasId: 'cv_1', sequence: 4, frames: [frame('d1', 'r1')] });
-  assert.equal(framePins('chat-s'), unchanged);
-  // A chat that moved to another canvas drops the old canvas's frames.
-  syncFramePins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1', 'r1')] });
+  assert.equal(framePins('chat-s'), sending);
+  // The agent revises d1 while the prompt that carries it is still being sent:
+  // taking that prompt's pins off afterwards still takes d1 off.
+  syncFramePins('chat-s', { canvasId: 'cv_1', sequence: 5, frames: [frame('d1', 'r2')] });
+  unpinFrames('chat-s', sending);
   assert.equal(framePins('chat-s').length, 0);
 
-  restoreFramePins('chat-s', before);
-  restoreFramePins('chat-s', before);
-  assert.deepEqual(
-    framePins('chat-s').map((pin) => pin.designId),
-    ['d1', 'd2'],
-  );
-  unpinFrames('chat-s');
+  toggleFramePin('chat-s', 'cv_1', frame('d1', 'r2'));
+  // A chat that moved to another canvas drops the old canvas's frames.
+  syncFramePins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1', 'r1')] });
   assert.equal(framePins('chat-s').length, 0);
 });
