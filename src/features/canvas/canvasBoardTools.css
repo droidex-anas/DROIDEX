@@ -1,5 +1,6 @@
 /* The tools that float on the board: the rail, the zoom readout and the
-   selection bar. Imported by BoardControls, so they load with the lazy board. */
+   selection bar. Imported by the lazy Canvas surface, so they load with the
+   board rather than on every app start. */
 
 /* The tool rail floats at the board's top left, the zoom at its bottom left,
    and the selection bar at its bottom centre while it has work. */

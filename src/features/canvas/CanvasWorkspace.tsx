@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
 import './canvasAnimations.css';
+import './canvasBoard.css';
+import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { canvasClient as canvas, reportPreview } from './canvasClient';

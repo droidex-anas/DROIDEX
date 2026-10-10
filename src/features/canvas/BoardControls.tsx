@@ -4,7 +4,6 @@
 // a multiple selection gives them work (spec §4). Every control works on the
 // board behind it, and each names its keyboard shortcut.
 
-import './canvasBoardTools.css';
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Maximize, MousePointer, Play } from '@droidex/icons';
 import { Popover } from '../../components/environment/Popover';

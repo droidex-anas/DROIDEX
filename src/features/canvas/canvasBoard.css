@@ -1,7 +1,7 @@
 /* The board's chrome: frames drawn as sheets with their labels, selection and
-   states. It is imported by the board itself, so it loads with the lazy Canvas
-   surface rather than on every app start, in Chat as in Design; the tools that
-   float on the board have their own sheet beside BoardControls.
+   states. It is imported by the lazy Canvas surface, so it loads with the board
+   rather than on every app start, in Chat as in Design; the tools that float
+   on the board have their own sheet, canvasBoardTools.css.
 
    The world layer sets --board-scale. Chrome drawn inside it divides by that,
    so a frame's edge, label, handles and badges keep their screen size at any

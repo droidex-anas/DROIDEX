@@ -14,7 +14,6 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import './canvasBoard.css';
 import { BoardControls, type ZoomCommand } from './BoardControls';
 import {
   alignRects,

@@ -13,6 +13,8 @@ import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
 import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
+import '../../../src/features/canvas/canvasBoard.css';
+import '../../../src/features/canvas/canvasBoardTools.css';
 
 interface BoardHarness {
   calls: ArrangeFramesInput[];
