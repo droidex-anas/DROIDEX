@@ -84,6 +84,17 @@ if (root) createRoot(root, {
 }).render(<MountedDesign />);
 `;
 
+/**
+ * Runs in the document's head, before the bundle. A design that throws while
+ * its modules evaluate never reaches the boot above, so that error becomes the
+ * render state; once the boot has reported anything, its word stands.
+ */
+export const EARLY_FAILURE_SCRIPT = `addEventListener('error', (event) => {
+  if (globalThis.__droidexCanvasRenderState) return;
+  globalThis.__droidexCanvasRenderState = { state: 'failed', message: event.message || 'The design stopped with an error.' };
+  dispatchEvent(new Event('droidex-canvas-render-state'));
+});`;
+
 const SUPPORTED_LIST = SUPPORTED_IMPORTS.join(', ');
 const ESCAPE_MESSAGE = 'A relative import must stay inside the design.';
 const LOADER_MESSAGE =

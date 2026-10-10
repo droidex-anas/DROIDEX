@@ -18,7 +18,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from './compiler.js';
-import { ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
+import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
 import { designEntryDiagnostic } from './designEntry.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
@@ -100,6 +100,9 @@ function previewDocument(css: string, js: string, mode: DesignSystemRef['mode'])
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+${EARLY_FAILURE_SCRIPT}
+</script>
 <style>
 ${escapeClosingTag(css, 'style')}
 </style>
