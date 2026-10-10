@@ -11,12 +11,20 @@ export function claudeCanvasHook(
     matcher: `mcp__${CANVAS_MCP_SERVER_NAME}__.*`,
     hooks: [
       (input) => {
+        if (input.hook_event_name !== 'PreToolUse') return Promise.resolve({});
+        // Auto hands the call to the CLI's classifier, which may refuse it
+        // before canUseTool is asked. Asking routes it to DROIDEX's own rule,
+        // which allows every Canvas tool without a card.
+        const ask = input.permission_mode === 'auto';
         if (
-          input.hook_event_name !== 'PreToolUse' ||
-          (input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_read` &&
-            input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_inspect`)
+          input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_read` &&
+          input.tool_name !== `mcp__${CANVAS_MCP_SERVER_NAME}__canvas_inspect`
         )
-          return Promise.resolve({});
+          return Promise.resolve(
+            ask
+              ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' } }
+              : {},
+          );
         const provided =
           typeof input.tool_input === 'object' && input.tool_input !== null
             ? (input.tool_input as Record<string, unknown>)
@@ -36,6 +44,7 @@ export function claudeCanvasHook(
         return Promise.resolve({
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
+            ...(ask ? { permissionDecision: 'ask' as const } : {}),
             updatedInput: { ...provided, scopeId },
           },
         });

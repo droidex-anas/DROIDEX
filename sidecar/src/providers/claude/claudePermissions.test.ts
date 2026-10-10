@@ -47,6 +47,36 @@ for (const kind of ['read', 'inspect'] as const)
     assert.match(JSON.stringify(await read('use-three')), /scope_expired/);
   });
 
+test('Claude Canvas hook routes calls to canUseTool under Auto instead of the classifier', async () => {
+  const hook = claudeCanvasHook(() => 'turn-first').hooks[0];
+  const call = (tool: string, permission_mode: string) =>
+    hook(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: `mcp__droidex-canvas__${tool}`,
+        tool_input: {},
+        tool_use_id: `${tool}-${permission_mode}`,
+        session_id: 'chat-one',
+        transcript_path: '/unused',
+        cwd: '/unused',
+        permission_mode,
+      },
+      undefined,
+      { signal: new AbortController().signal },
+    );
+  assert.deepEqual(await call('canvas_write', 'auto'), {
+    hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' },
+  });
+  assert.deepEqual(await call('canvas_read', 'auto'), {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'ask',
+      updatedInput: { scopeId: 'turn-first' },
+    },
+  });
+  assert.deepEqual(await call('canvas_write', 'default'), {});
+});
+
 test('Claude maps product permission modes to distinct CLI modes', () => {
   assert.deepEqual(
     ['off', 'low', 'medium', 'high'].map((level) => {
