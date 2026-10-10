@@ -26,7 +26,10 @@ interface CodexNamespace {
 }
 
 interface ToolReply {
-  contentItems: { type: 'inputText'; text: string }[];
+  contentItems: [
+    { type: 'inputText'; text: string },
+    ...{ type: 'inputImage'; imageUrl: string }[],
+  ];
   success: boolean;
 }
 
@@ -168,9 +171,18 @@ async function run(tool: DroidTool, input: Record<string, unknown>): Promise<Too
   try {
     const result = await tool.handler(input);
     if (typeof result === 'string') return reply(result, true);
-    if (!result.content.every((item) => item.type === 'text'))
-      return reply('This tool returned content Codex cannot display.', false);
-    return reply(result.content.map((item) => item.text).join('\n'), result.isError !== true);
+    const texts: string[] = [];
+    const images: { type: 'inputImage'; imageUrl: string }[] = [];
+    for (const item of result.content) {
+      if (item.type === 'text') texts.push(item.text);
+      else if (item.type === 'image')
+        images.push({ type: 'inputImage', imageUrl: `data:${item.mimeType};base64,${item.data}` });
+      else return reply('This tool returned content Codex cannot display.', false);
+    }
+    return {
+      contentItems: [{ type: 'inputText', text: texts.join('\n') }, ...images],
+      success: result.isError !== true,
+    };
   } catch (error) {
     return reply(message(error), false);
   }

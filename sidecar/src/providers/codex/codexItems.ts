@@ -44,7 +44,7 @@ export type ThreadItem =
       tool: string;
       status: string;
       arguments: unknown;
-      contentItems: { type: string; text?: string }[] | null;
+      contentItems: { type: string; text?: string; imageUrl?: string }[] | null;
       success: boolean | null;
     }
   | ({ type: 'imageGeneration'; status: string; revisedPrompt?: string | null } & GeneratedImage)
@@ -99,7 +99,9 @@ function isDynamicToolCall(item: Extract<ThreadItem, { type: 'dynamicToolCall' }
     (item.contentItems === null ||
       (Array.isArray(item.contentItems) &&
         item.contentItems.every(
-          (content) => content.type === 'inputText' && typeof content.text === 'string',
+          (content) =>
+            (content.type === 'inputText' && typeof content.text === 'string') ||
+            (content.type === 'inputImage' && typeof content.imageUrl === 'string'),
         ))) &&
     (item.success === null || typeof item.success === 'boolean')
   );
@@ -250,7 +252,9 @@ export function toolOutput(item: ThreadItem, streamed: string, appSessionId: str
   }
   if (item.type === 'mcpToolCall')
     return item.error ? item.error.message : mcpContent(item.result?.content ?? []);
-  if (item.type === 'dynamicToolCall') return mcpContent(item.contentItems ?? []);
+  // An image answer reached the model; the transcript keeps only its text.
+  if (item.type === 'dynamicToolCall')
+    return mcpContent((item.contentItems ?? []).filter((content) => content.type === 'inputText'));
   return streamed;
 }
 

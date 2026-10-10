@@ -1,129 +1,25 @@
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
-import { storage } from '../testing/canvasBuildSupport.js';
+import test from 'node:test';
 import {
+  harness,
+  noRenderer,
+  openTurn,
+  toolContent,
+  type Reply,
+} from '../testing/canvasMcpSupport.js';
+import {
+  CANVAS_PNG,
   deferred,
   observedFileSystem,
   holdManifestWrite,
 } from '../testing/canvasStorageSupport.js';
-import { CanvasBuilds } from './CanvasBuilds.js';
-import { CanvasWorkspace } from './CanvasWorkspace.js';
-import { CompileFailedError, type CompileInput } from './compiler.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
-import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
-import { CanvasScopes } from './canvasScopes.js';
-import { CanvasTurns } from './canvasTurnContext.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
-import type { CanvasFileSystem } from './canvasFiles.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
   DESIGN_SESSION_GUIDANCE,
 } from './designSessionGuidance.js';
-
-type Reply = {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  scopeId?: string;
-  pinned?: { designs: { designId: string }[] };
-  created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
-  receipt?: { revisionId: string };
-  frames?: { designId: string }[];
-  systems?: { id: string; version: number }[];
-  designSystem?: { primitives: string[] };
-  designSystemAdherence?: string;
-  build?: {
-    status: string;
-    diagnostics?: { file?: string; line?: number }[];
-    errors?: string[];
-    rendered?: boolean;
-    designSystem?: { diagnostics: { code: string }[]; next: string };
-    next?: string;
-  };
-};
-
-/**
- * A compiler that answers at once, because canvas_write waits for its build:
- * every design builds under the real kit rule, except one whose main.tsx names
- * `BROKEN`. One that names `THROWS` builds an artifact the stand-in pane below
- * cannot render.
- */
-function answeringBuilds(): CanvasBuilds {
-  const compile = async (input: CompileInput) => {
-    const main = input.files['main.tsx'] ?? '';
-    if (main.includes('BROKEN'))
-      throw new CompileFailedError([
-        { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
-      ]);
-    const system = await readDesignSystem(input.designSystem);
-    const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
-    if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
-    const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
-    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements: [] };
-  };
-  return new CanvasBuilds({
-    compiler: () => ({ compile, terminate: () => Promise.resolve() }),
-    deadline: () => () => undefined,
-  });
-}
-
-async function harness(t: TestContext, fs?: CanvasFileSystem) {
-  const scopes = new CanvasScopes();
-  const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
-  const store = await storage(t);
-  const builds = answeringBuilds();
-  const workspace = await CanvasWorkspace.open(store.root, builds, {
-    fs,
-    isChatKnown: () => true,
-    isScopeActive: (id) => scopes.isScopeActive(id),
-    bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
-  });
-  store.closing.push(async () => {
-    await builds.close();
-    await workspace.close();
-  });
-  // The open pane: it starts a preview of every build that lands and, a turn of
-  // the event loop later, says what the design did.
-  workspace.changes.subscribe((change) => {
-    for (const { designId, build } of change.frames) {
-      if (build.status !== 'ready') continue;
-      const ran = { designId, revisionId: build.revisionId };
-      workspace.previews.record(change.canvasId, { ...ran, outcome: 'loading', errors: [] });
-      const throws = build.artifactId.startsWith('throws');
-      setImmediate(() => {
-        workspace.previews.record(change.canvasId, {
-          ...ran,
-          outcome: throws ? 'failed' : 'rendered',
-          errors: throws ? ['total is not defined'] : [],
-        });
-      });
-    }
-  });
-  const server = createCanvasMcpServer(
-    () => Promise.resolve(workspace),
-    turns,
-    () => 'chat-one',
-  );
-  const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
-    const target = server.tools.find((entry) => entry.name === name);
-    assert.ok(target, name);
-    const result = await target.handler(input);
-    if (typeof result === 'string') return JSON.parse(result) as Reply;
-    const content = result.content[0];
-    assert.equal(content?.type, 'text');
-    if (content?.type !== 'text') throw new Error('Canvas tools must answer with text.');
-    return JSON.parse(content.text) as Reply;
-  };
-  return { scopes, turns, workspace, server, call };
-}
-
-/** A harness whose chat is in a turn that opened with canvas_read, as every turn does. */
-async function openTurn(t: TestContext) {
-  const h = await harness(t);
-  h.turns.beginTurn('chat-one', undefined);
-  return { ...h, scopeId: (await h.call('canvas_read', {})).scopeId };
-}
 
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
 
@@ -143,6 +39,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
     const server = createCanvasMcpServer(
       () => Promise.resolve(h.workspace),
       h.turns,
+      noRenderer,
       () => 'chat-one',
       purpose,
     );
@@ -488,6 +385,54 @@ test('canvas_write refuses a tree with no entry and reports its build in the sam
     (await h.call('canvas_inspect', { designId: frames[0].designId })).build?.status,
     'ready',
   );
+});
+
+test('canvas_inspect answers a screenshot with the PNG of the current revision beside its build report', async (t) => {
+  const png = CANVAS_PNG.toString('base64');
+  const asked: { canvasId: string; designId: string; revisionId: string; aborted: boolean }[] = [];
+  const [reached, held] = [deferred(), deferred()];
+  const h = await harness(t, undefined, async (canvasId, ref, signal) => {
+    asked.push({ canvasId, ...ref, aborted: signal.aborted });
+    if (asked.length > 1) {
+      reached.resolve();
+      await held.promise;
+    }
+    return png;
+  });
+  const turn = h.turns.beginTurn('chat-one', undefined);
+  const scopeId = (await h.call('canvas_read', {})).scopeId;
+  const created = await h.call('canvas_create', { scopeId, mutationId: 'create', frames: [frame] });
+  assert.ok(created.created);
+  const { canvasId } = created.created;
+  const { designId } = created.created.frames[0];
+  const written = await h.call('canvas_write', {
+    scopeId,
+    mutationId: 'write',
+    designId,
+    expectedRevisionId: null,
+    files: { 'main.tsx': 'export default () => <p>Hey</p>' },
+    deletedPaths: [],
+  });
+  assert.ok(written.receipt);
+  const { revisionId } = written.receipt;
+  const inspect = h.server.tools.find((entry) => entry.name === 'canvas_inspect');
+  assert.ok(inspect);
+
+  const [facts, image] = toolContent(await inspect.handler({ designId, kind: 'screenshot' }));
+  const reply = JSON.parse(facts.text ?? '') as Reply & { revisionId?: string };
+  assert.equal(reply.revisionId, revisionId);
+  assert.equal(reply.build?.status, 'ready');
+  assert.deepEqual(image, { type: 'image', data: png, mimeType: 'image/png' });
+  assert.deepEqual(asked, [{ canvasId, designId, revisionId, aborted: false }]);
+
+  // A capture that settles after its turn ended never reaches the model.
+  const expiring = inspect.handler({ designId, kind: 'screenshot' });
+  await reached.promise;
+  turn.revoke();
+  held.resolve();
+  const dropped = toolContent(await expiring);
+  assert.equal(dropped.length, 1);
+  assert.equal(JSON.parse(dropped[0].text ?? '').code, 'scope_expired');
 });
 
 test('provider replacement while a write is staged refuses its old lease and leaves the head unchanged', async (t) => {

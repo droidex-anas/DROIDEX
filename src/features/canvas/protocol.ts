@@ -434,7 +434,16 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: RenameFrameInput;
-    };
+    }
+  // A page's answer to an agent's inspect screenshot; only a page that was
+  // watching the canvas when it was asked is counted.
+  | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
+
+/**
+ * A page's answer to one `canvas.captureRequest`: the base64 PNG its live
+ * preview of exactly that revision produced, or why it could not capture it.
+ */
+export type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
 
 /** What a successful command answers with, one kind per command. */
 export type CanvasReply =
@@ -462,4 +471,13 @@ export type CanvasEvent =
   | { type: 'canvas.summaries'; summaries: CanvasSummary[] }
   // Broadcast with its canvasId, because the bridge server has no per-connection
   // targeting; a client that does not watch that canvas drops it.
-  | { type: 'canvas.change'; change: CanvasChange };
+  | { type: 'canvas.change'; change: CanvasChange }
+  // An agent's inspect screenshot, broadcast for the same reason: every page
+  // answers with `canvas.reportCapture`, and only those watching the canvas count.
+  | {
+      type: 'canvas.captureRequest';
+      captureId: string;
+      canvasId: string;
+      designId: string;
+      revisionId: string;
+    };

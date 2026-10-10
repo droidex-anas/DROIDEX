@@ -3,6 +3,7 @@
 // the clients watching that canvas. Authority here comes from the chat's
 // attachment, not from an agent turn's lease (spec §6).
 
+import { CanvasCaptures, type CanvasCapture } from './canvasCaptures.js';
 import { CanvasWatches } from './canvasWatches.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { z } from 'zod';
@@ -32,6 +33,7 @@ const WATCH_ENDED = 'That Canvas pane is no longer subscribed.';
 
 /** Validates requests and owns their workspace, scopes and page watches. */
 class CanvasDispatch {
+  readonly captures: CanvasCaptures;
   private readonly watches: CanvasWatches;
   private readonly workspace: Promise<CanvasWorkspace>;
 
@@ -47,8 +49,10 @@ class CanvasDispatch {
     onPageGone: (listener: (pageId: string) => void) => () => void,
   ) {
     this.watches = new CanvasWatches(builds, scopes);
+    this.captures = new CanvasCaptures(emit, (canvasId) => this.watches.watchingPages(canvasId));
     onPageGone((pageId) => {
       this.watches.forget(pageId);
+      this.captures.forget(pageId);
     });
     this.workspace = ready.then(
       (opened) => {
@@ -68,7 +72,10 @@ class CanvasDispatch {
     void this.workspace.catch(() => undefined);
   }
 
-  async run(command: CanvasCommand, pageId: string | null): Promise<CanvasEvent> {
+  async run(
+    command: Exclude<CanvasCommand, { type: 'canvas.reportCapture' }>,
+    pageId: string | null,
+  ): Promise<CanvasEvent> {
     try {
       if (command.type === 'canvas.subscribe' || command.type === 'canvas.unsubscribe')
         return await this.watch(command, pageId);
@@ -117,7 +124,7 @@ class CanvasDispatch {
     workspace: CanvasWorkspace,
     command: Exclude<
       CanvasCommand,
-      { type: `canvas.${'subscribe' | 'unsubscribe' | 'readArtifact'}` }
+      { type: `canvas.${'subscribe' | 'unsubscribe' | 'readArtifact' | 'reportCapture'}` }
     >,
   ): Promise<CanvasReply> {
     switch (command.type) {
@@ -307,11 +314,14 @@ export function createCanvasCommandHandler(
   assets: { secret: string; list: (canvasId: string) => Promise<OwnedAsset[]> },
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
-): (command: unknown, pageId: string | null) => Promise<boolean> {
+): {
+  handle: (command: unknown, pageId: string | null) => Promise<boolean>;
+  capture: CanvasCapture;
+} {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
   const dispatch = new CanvasDispatch(ready, scopes, builds, assets, emit, onPageGone);
 
-  return async (value, pageId) => {
+  const handle = async (value: unknown, pageId: string | null): Promise<boolean> => {
     if (!isCanvasRequest(value)) return false;
     const parsed = canvasCommandSchema.safeParse(value);
     if (!parsed.success) {
@@ -319,6 +329,18 @@ export function createCanvasCommandHandler(
       return true;
     }
     const command = parsed.data;
+    // A capture answer settles the sidecar's own request. It is never replayed,
+    // and its PNG is not retained for request deduplication.
+    if (command.type === 'canvas.reportCapture') {
+      dispatch.captures.answer(command, pageId);
+      emit({
+        type: 'canvas.result',
+        requestId: command.requestId,
+        ok: true,
+        reply: { kind: 'ok' },
+      });
+      return true;
+    }
     const serialized = JSON.stringify(command);
     let entry = requests.get(command.requestId);
     if (entry && entry.input !== serialized) {
@@ -359,6 +381,10 @@ export function createCanvasCommandHandler(
     }
     emit(await entry.reply);
     return true;
+  };
+  return {
+    handle,
+    capture: (canvasId, ref, signal) => dispatch.captures.capture(canvasId, ref, signal),
   };
 }
 
