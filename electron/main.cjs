@@ -13,6 +13,7 @@ const {
   safeStorage,
   session,
   shell,
+  systemPreferences,
   webContents,
 } = require('electron');
 const fs = require('node:fs');
@@ -33,6 +34,7 @@ const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs')
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
 const { createBrowserSettingsController } = require('./browserSettings.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -139,12 +141,22 @@ const browserPrompts = createBrowserPromptController({
   send: (prompt) => mainWindow.webContents.send('browser-permission-prompt', prompt),
   dismiss: (requestId) =>
     mainWindow?.webContents.send('browser-permission-prompt-dismiss', requestId),
-  showNative: ({ kind, ...prompt }, signal) =>
-    dialog.showMessageBox(mainWindow, {
-      ...prompt,
-      type: kind === 'warning' ? 'warning' : 'question',
-      signal,
-    }),
+});
+const browserPermissions = createBrowserPermissionController({
+  isNativeBrowserContents: (contents) =>
+    Boolean(nativeBrowserManager.sessionIdForWebContents(contents)),
+  listContents: () => webContents.getAllWebContents(),
+  isWorking: (contents) =>
+    nativeBrowserRequests
+      .workingSessions()
+      .includes(nativeBrowserManager.sessionIdForWebContents(contents)),
+  getSiteDecision: (origin, permission) =>
+    browserSettings.getSitePermissionDecision(origin, permission),
+  persistSiteDecision: (decision, signal) =>
+    browserSettings.setSitePermissionDecision(decision, signal),
+  showPrompt: browserPrompts.request,
+  systemPreferences,
+  openExternal: (url) => shell.openExternal(url),
 });
 const nativeBrowserManager = createNativeBrowserManager({
   app,
@@ -152,6 +164,9 @@ const nativeBrowserManager = createNativeBrowserManager({
   session,
   nativeImage,
   safeStorage,
+  systemPreferences,
+  getSettings: () => browserSettings.snapshot(),
+  permissions: browserPermissions,
   showPrompt: browserPrompts.request,
   onGuestReleased: (contents) => browserDownloads.cancelPendingForContents(contents),
   onBrowserInput: nativeBrowserShortcuts.handleInput,
@@ -166,6 +181,7 @@ const nativeBrowserManager = createNativeBrowserManager({
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
+  showPrompt: browserPrompts.request,
   assertAgentAccess: () => browserSettings.assertAgentAccess(),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
@@ -211,6 +227,7 @@ const browserSettings = createBrowserSettingsController({
   userDataPath,
   downloadsPath: app.getPath('downloads'),
   showPrompt: browserPrompts.request,
+  onSitePermissionModeChanged: browserPermissions.revokeAll,
 });
 const browserDownloads = createBrowserDownloads({
   getSettings: browserSettings.downloadSettings,
@@ -297,6 +314,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
+  browserPermissions.revokeAll();
   const pendingDownloads = browserDownloads.hasPending();
   downloadShutdown ??= browserDownloads.shutdown().then(() => {
     if (pendingDownloads) app.quit();
@@ -401,16 +419,8 @@ function createMainWindow() {
   powerTier.attachWindow(mainWindow);
 }
 
-// Voice mode records only while the user holds a conversation open, and only
-// the app's own window may ask. Every other permission stays denied, and the
-// Browser pane's partition is untouched, so a web page there cannot reach the
-// microphone.
-// The app had no permission handler until voice needed the microphone, so
-// everything a page asked for was granted by default. Adding one closes that,
-// which means the app's own needs have to be named here: the microphone for a
-// voice conversation, the clipboard for copy and paste, and notifications for
-// a finished turn. Everything else is refused, and so is every window that is
-// not the app's own, including the pages the embedded browser loads.
+// The app shell needs voice, clipboard and turn notifications. Browser pages
+// use a separate partition and the exact-site policy in browserPermissions.
 const WINDOW_PERMISSIONS = new Set([
   'clipboard-read',
   'clipboard-sanitized-write',
@@ -992,9 +1002,24 @@ function registerIpc() {
     assertMainRenderer(event);
     return browserSettings.update(patch);
   });
+  ipcMain.handle('browser-credentials-list', (event) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.listCredentials();
+  });
+  ipcMain.handle('browser-credentials-delete', (event, origin) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.deleteCredential(origin);
+  });
+  ipcMain.handle('browser-site-permission-revoke', (event, { origin, permission }) => {
+    assertMainRenderer(event);
+    return browserPermissions.revokeSitePermission(origin, permission);
+  });
   ipcMain.handle('browser-permission-prompt-ready', (event, ready) => {
     assertMainRenderer(event);
-    if (ready === false) browserSettings.cancelPendingUpdates();
+    if (ready === false) {
+      browserPermissions.revokeAll();
+      browserSettings.cancelPendingUpdates();
+    }
     browserPrompts.setRendererReady(ready);
   });
   ipcMain.handle('browser-permission-prompt-resolve', (event, { requestId, response }) => {
@@ -1066,8 +1091,17 @@ function registerIpc() {
       .catch(() => undefined)
       .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
+  ipcMain.on('native-browser-credential-fill-valid', (event, token) => {
+    event.returnValue = nativeBrowserManager.canFillCredential(
+      event.sender,
+      event.senderFrame,
+      token,
+    );
+  });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
-    void nativeBrowserManager.handleCredentialCapture(event.sender, payload);
+    void nativeBrowserManager
+      .handleCredentialCapture(event.sender, event.senderFrame, payload)
+      .catch((error) => console.error('Could not save browser login:', error.message));
   });
 }
 
@@ -1178,6 +1212,7 @@ function installMainRendererLifecycle(contents) {
   let cleanedForNavigation = false;
 
   const cleanupForRendererReplacement = () => {
+    browserPermissions.revokeAll();
     browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(false);
     if (!hasLoadedMainFrame || cleanedForNavigation) return;

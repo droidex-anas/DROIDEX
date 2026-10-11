@@ -9,6 +9,7 @@ import {
   type BrowserSessionManagerOptions,
 } from './BrowserSessionManager.js';
 import type {
+  BrowserActionResult,
   BrowserScreenshotOptions,
   BrowserState,
   BrowserTarget,
@@ -46,7 +47,7 @@ class FakeRuntime implements BrowserRuntime {
     this.viewport = viewport;
   }
 
-  async open(url: string) {
+  async open(url: string): Promise<BrowserActionResult> {
     this.openedUrls.push(url);
     return this.result(url);
   }
@@ -181,6 +182,56 @@ function recordUpdates(updates: BrowserState[]): BrowserSessionManagerOptions['e
     if (event.type === 'browser.updated') updates.push(event.state);
   };
 }
+
+test('pending or denied opens never publish the target as a guest restore URL', async () => {
+  for (const currentUrl of ['about:blank', 'https://example.com/']) {
+    const updates: BrowserState[] = [];
+    let finishOpen: (result: BrowserActionResult | Error) => void = () =>
+      assert.fail('No pending open');
+    const manager = createManager({
+      emit: recordUpdates(updates),
+      runtimeFactory: (_id, viewport) => {
+        const runtime = new FakeRuntime(viewport);
+        runtime.open = () =>
+          new Promise((resolve, reject) => {
+            finishOpen = (result) => {
+              if (result instanceof Error) reject(result);
+              else resolve(result);
+            };
+          });
+        return runtime;
+      },
+    });
+    if (currentUrl !== 'about:blank') {
+      manager.restore([
+        {
+          appSessionId: 'm1',
+          browserSessionId: 'kept',
+          url: currentUrl,
+          viewport: { width: 1440, height: 900, deviceScaleFactor: 2 },
+          viewportMode: 'desktop',
+        },
+      ]);
+    }
+    const url = 'https://identity.test/authorize?client_id=app&response_type=code';
+    const denied = assert.rejects(manager.open({ appSessionId: 'm1', url }), /denied/);
+    const pendingUrls = updates.map((state) => state.url);
+    finishOpen(new Error('Sensitive action was denied'));
+    await denied;
+    assert.deepEqual(pendingUrls, [currentUrl]);
+    assert.equal(manager.state('m1')?.url, currentUrl);
+    assert.equal(
+      updates.some((state) => state.url === url),
+      false,
+    );
+
+    const approved = manager.open({ appSessionId: 'm1', url });
+    assert.equal(updates.at(-1)?.url, currentUrl);
+    finishOpen({ snapshot: { url, scroll: { x: 0, y: 0 } }, text: '' });
+    assert.equal((await approved).state.url, url);
+    assert.equal(updates.at(-1)?.url, url);
+  }
+});
 
 test('reload and history navigation adopt the runtime history state, and a new page without one clears it', async () => {
   const { manager, runtime } = await opened({}, 'https://example.com');

@@ -19,7 +19,9 @@ import type {
 // already written never comes to mean another mark.
 
 const NONE: readonly DesignReference[] = [];
+const NO_IDS: readonly string[] = [];
 let marksByChat: Readonly<Record<string, readonly DesignReference[] | undefined>> = {};
+let quickPromptMarkIds: Readonly<Record<string, readonly string[] | undefined>> = {};
 // The last number given out in each chat.
 const lastNumber = new Map<string, number>();
 const listeners = new Set<() => void>();
@@ -59,6 +61,19 @@ export function useDesignMarks(appSessionId: string | undefined): readonly Desig
     subscribe,
     () => designMarks(appSessionId),
     () => NONE,
+  );
+}
+
+export function setQuickPromptMarkIds(appSessionId: string, ids: readonly string[]): void {
+  quickPromptMarkIds = { ...quickPromptMarkIds, [appSessionId]: ids.length > 0 ? ids : undefined };
+  for (const listener of listeners) listener();
+}
+
+export function useQuickPromptMarkIds(appSessionId: string | undefined): readonly string[] {
+  return useSyncExternalStore(
+    subscribe,
+    () => (appSessionId ? quickPromptMarkIds[appSessionId] : undefined) ?? NO_IDS,
+    () => NO_IDS,
   );
 }
 

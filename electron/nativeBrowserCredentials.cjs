@@ -1,209 +1,172 @@
-const fs = require('node:fs');
-const path = require('node:path');
 const { callPageScript } = require('./browserPageScript.cjs');
+const {
+  createBrowserCredentialVault,
+  secureCredentialOrigin,
+} = require('./browserCredentialVault.cjs');
+const { randomUUID } = require('node:crypto');
+const { browserApproval } = require('./browserApproval.cjs');
 
-function createNativeBrowserCredentials({ app, appName, safeStorage, showPrompt }) {
-  const CREDENTIAL_VAULT_FILE = () => path.join(app.getPath('userData'), 'browser-credentials.enc');
-  const CREDENTIAL_CONSENT_FILE = () =>
-    path.join(app.getPath('userData'), 'browser-credentials.consent');
-  let credentialCaptureBusy = false;
+function createNativeBrowserCredentials({
+  app,
+  appName,
+  safeStorage,
+  systemPreferences,
+  showPrompt,
+  getSettings,
+  findEntry,
+}) {
+  const fills = new Map();
+  const vault = createBrowserCredentialVault({
+    userDataPath: app.getPath('userData'),
+    appName,
+    safeStorage,
+    systemPreferences,
+    platform: process.platform,
+    showPrompt,
+  });
 
-  // Saved-login support is strictly opt-in. Until the user agrees the first time
-  // they sign in, nothing is captured, auto-filled, or exposed to the agent.
-  // 'unset' = never asked, 'enabled' = allowed, 'disabled' = user said never.
-  function getCredentialConsent() {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(CREDENTIAL_CONSENT_FILE(), 'utf8'));
-      return parsed && (parsed.consent === 'enabled' || parsed.consent === 'disabled')
-        ? parsed.consent
-        : 'unset';
-    } catch {
-      return 'unset';
-    }
-  }
-
-  function setCredentialConsent(consent) {
-    try {
-      fs.mkdirSync(path.dirname(CREDENTIAL_CONSENT_FILE()), { recursive: true });
-      fs.writeFileSync(CREDENTIAL_CONSENT_FILE(), JSON.stringify({ consent }), { mode: 0o600 });
-    } catch {
-      /* best effort */
-    }
-  }
-
-  function loadCredentialVault() {
-    try {
-      if (!safeStorage.isEncryptionAvailable()) return [];
-      const raw = fs.readFileSync(CREDENTIAL_VAULT_FILE(), 'utf8');
-      const rows = JSON.parse(raw);
-      if (!Array.isArray(rows)) return [];
-      return rows.filter(
-        (row) => row && typeof row.origin === 'string' && typeof row.enc === 'string',
-      );
-    } catch {
-      return [];
-    }
-  }
-
-  function saveCredentialVault(rows) {
-    fs.mkdirSync(path.dirname(CREDENTIAL_VAULT_FILE()), { recursive: true });
-    fs.writeFileSync(CREDENTIAL_VAULT_FILE(), JSON.stringify(rows), { mode: 0o600 });
-  }
-
-  function upsertCredential(origin, username, password) {
-    if (!safeStorage.isEncryptionAvailable()) return false;
-    const enc = safeStorage
-      .encryptString(JSON.stringify({ username, password }))
-      .toString('base64');
-    const rows = loadCredentialVault().filter((row) => row.origin !== origin);
-    rows.push({ origin, enc });
-    saveCredentialVault(rows);
-    return true;
-  }
-
-  // Returns the decrypted credential for an origin. Callers must never forward
-  // the returned values to the renderer or agent; they are injected in-page only.
-  function findCredential(origin) {
-    const row = loadCredentialVault().find((entry) => entry.origin === origin);
-    if (!row) return undefined;
-    try {
-      const json = safeStorage.decryptString(Buffer.from(row.enc, 'base64'));
-      const parsed = JSON.parse(json);
-      if (parsed && typeof parsed.password === 'string') {
-        return {
-          username: typeof parsed.username === 'string' ? parsed.username : '',
-          password: parsed.password,
-        };
-      }
-    } catch {
-      return undefined;
-    }
-    return undefined;
-  }
-
-  function originFor(url) {
-    try {
-      return new URL(url).origin;
-    } catch {
-      return undefined;
-    }
-  }
-
-  async function handleCapture(_senderContents, payload) {
-    if (credentialCaptureBusy) return;
-    const origin = payload && typeof payload.origin === 'string' ? payload.origin : undefined;
-    const password = payload && typeof payload.password === 'string' ? payload.password : '';
-    if (!origin || origin === 'null' || !password) return;
-    if (!safeStorage.isEncryptionAvailable()) return;
-    const consent = getCredentialConsent();
-    if (consent === 'disabled') return;
-    const existing = findCredential(origin);
-    if (
-      existing &&
-      existing.password === password &&
-      existing.username === (payload.username || '')
-    )
+  async function handleCapture(contents, frame, payload) {
+    const entry = findEntry(contents);
+    // Only the registered guest's main-frame preload captures. The page's
+    // payload supplies values, never the site those values belong to.
+    if (!entry || frame !== contents.mainFrame || getSettings().loginFillApproval === 'never')
       return;
-    credentialCaptureBusy = true;
+    const origin = frame.origin;
+    const documents = entry.documents;
     try {
-      if (consent === 'unset') {
-        // First-time opt-in. The user can enable, skip for now, or never ask.
-        const { response } = await showPrompt({
-          kind: 'credential',
-          buttons: ['Enable & save login', 'Not now', 'Never'],
-          defaultId: 0,
-          cancelId: 1,
-          title: `Save logins in ${appName}?`,
-          message: `Let ${appName} securely save logins for its browser?`,
-          detail: `Logins are encrypted with your OS keychain so you stay signed in across restarts (${origin}). The agent can use a saved login to sign in for you, but can never read the username or password. You can turn this off anytime by choosing Never.`,
-        });
-        if (response === 2) {
-          setCredentialConsent('disabled');
-          return;
-        }
-        if (response === 1) return; // Not now: ask again on the next sign-in.
-        setCredentialConsent('enabled');
-        upsertCredential(origin, payload.username || '', password);
-        return;
-      }
-      const { response } = await showPrompt({
-        kind: 'credential',
-        buttons: ['Save password', 'Not now'],
-        defaultId: 0,
-        cancelId: 1,
-        title: 'Save password',
-        message: `Save this login for ${origin}?`,
-        detail: `${appName} stores it encrypted with your OS keychain. The agent can use it to sign in but can never read it.`,
-      });
-      if (response === 0) upsertCredential(origin, payload.username || '', password);
+      secureCredentialOrigin(origin);
     } catch {
-      /* dialog dismissed */
+      return;
+    }
+    await vault.capture({
+      url: origin,
+      username: payload?.username,
+      password: payload?.password,
+      isStillValid: () =>
+        entry.contents === contents &&
+        !contents.isDestroyed() &&
+        entry.documents === documents &&
+        contents.mainFrame === frame &&
+        frame.origin === origin &&
+        getSettings().loginFillApproval !== 'never',
+    });
+  }
+
+  async function fillForAgent(contents, entry, request) {
+    const frame = contents.mainFrame;
+    const origin = secureCredentialOrigin(frame.origin);
+    const approval = browserApproval(contents, entry, request);
+    const token = randomUUID();
+    const revoke = () => fills.delete(token);
+    approval.signal.addEventListener('abort', revoke, { once: true });
+    const assertCurrent = () => {
+      approval.assertCurrent();
+      if (contents.mainFrame !== frame || frame.origin !== origin)
+        throw new Error('The page changed before the login was filled.');
+      if (getSettings().loginFillApproval === 'never')
+        throw new Error('Saved-login filling is off in Settings > Browser.');
+    };
+    try {
+      assertCurrent();
+      const documentId = await callPageScript(contents, '__droidexCredentialDocument');
+      assertCurrent();
+      const credential = await vault.credentialForAgent(origin, {
+        assertCurrent,
+        signal: approval.signal,
+      });
+      assertCurrent();
+      fills.set(token, { contents, frame, assertCurrent });
+      const secrets = secretsOn(entry, contents);
+      for (const value of [credential.username, credential.password]) if (value) secrets.add(value);
+      const fill = await callPageScript(contents, '__droidexFillCredentials', {
+        ...credential,
+        origin,
+        documentId,
+        token,
+        startBy: request.startBy,
+      });
+      assertCurrent();
+      if (!fill?.ok)
+        throw new Error(fill?.error || 'Could not find a login form to fill on this page.');
     } finally {
-      credentialCaptureBusy = false;
+      revoke();
+      approval.signal.removeEventListener('abort', revoke);
+      approval.dispose();
     }
   }
 
-  async function autofill(contents) {
-    if (getCredentialConsent() !== 'enabled') return false;
-    if (!contents) return false;
-    const origin = originFor(contents.getURL());
-    if (!origin) return false;
-    const credential = findCredential(origin);
-    if (!credential) return false;
+  function canFill(contents, frame, token) {
+    const fill = fills.get(token);
+    if (!fill || fill.contents !== contents || fill.frame !== frame) return false;
     try {
-      const result = await fillOn(contents, origin, credential);
-      return Boolean(result && result.filled);
+      fill.assertCurrent();
+      return true;
     } catch {
+      fills.delete(token);
       return false;
     }
   }
 
-  // The page script fills only while the page is on the login's origin: a call
-  // made while a navigation loads runs on whatever page that leads to.
-  function fillOn(contents, origin, { username, password }, startBy) {
-    return callPageScript(contents, '__droidexFillCredentials', {
-      origin,
-      username,
-      password,
-      startBy,
-    });
-  }
-
-  // Agent-blind login: the saved secret is decrypted here in main and handed
-  // to the page script in its isolated world, never through the page's own
-  // world, and nothing about it comes back to the agent.
-  // `startBy` is when the agent stops waiting; the page script fills nothing
-  // later, however long the page took to finish loading.
-  async function fillForAgent(contents, startBy) {
-    if (getCredentialConsent() !== 'enabled')
-      throw new Error(
-        `Saved logins are turned off for the ${appName} browser. Ask the user to sign in once; they will be prompted to enable and save the login first.`,
-      );
-    const origin = originFor(contents.getURL());
-    const credential = origin ? findCredential(origin) : undefined;
-    if (!credential)
-      throw new Error(
-        'No saved credentials for this site. The user can sign in once and choose to save the password.',
-      );
-    const fill = await fillOn(contents, origin, credential, startBy).catch(() => undefined);
-    if (!fill?.ok)
-      throw new Error(fill?.error || 'Could not find a login form to fill on this page.');
-  }
-
-  // What page reads must never show an agent: the login saved for this site.
-  function savedSecretsFor(url) {
-    if (getCredentialConsent() !== 'enabled') return [];
-    const origin = originFor(url);
-    const credential = origin ? findCredential(origin) : undefined;
+  async function savedSecretsFor(url) {
+    let origin;
+    try {
+      origin = secureCredentialOrigin(url);
+    } catch {
+      return [];
+    }
+    const credential = await vault.read(origin);
     return credential ? [credential.username, credential.password] : [];
   }
 
-  return {
-    handleCapture,
-    autofill,
-    fillForAgent,
-    savedSecretsFor,
-  };
+  async function list() {
+    return {
+      origins: await vault.origins(),
+      keychainAvailable: await vault.isAvailable(),
+      touchIdAvailable: vault.touchIdAvailable(),
+    };
+  }
+
+  async function deleteLogin(origin) {
+    await vault.delete(origin);
+    return list();
+  }
+
+  return { handleCapture, fillForAgent, canFill, savedSecretsFor, list, deleteLogin };
 }
 
-module.exports = { createNativeBrowserCredentials };
+// A read keeps its document's set even if navigation finishes before it returns.
+function secretsOn(entry, contents) {
+  if (entry.credentialSecrets?.contents === contents) return entry.credentialSecrets.values;
+  const values = new Set();
+  entry.credentialSecrets = { contents, values };
+  const clear = () => {
+    contents.removeListener('did-navigate', clear);
+    contents.removeListener('destroyed', clear);
+    if (entry.credentialSecrets?.values !== values) return;
+    entry.consoleEvents = redactSecrets(entry.consoleEvents, values);
+    entry.networkEvents = redactSecrets(entry.networkEvents, values);
+    delete entry.credentialSecrets;
+  };
+  contents.once('did-navigate', clear);
+  contents.once('destroyed', clear);
+  return values;
+}
+
+function redactSecrets(value, secrets) {
+  if (!secrets.size) return value;
+  if (typeof value === 'string') {
+    for (const secret of [...secrets].sort((a, b) => b.length - a.length))
+      value = value.split(secret).join('[redacted]');
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactSecrets(item, secrets));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      key === 'image' || key === 'requestId' ? item : redactSecrets(item, secrets),
+    ]),
+  );
+}
+
+module.exports = { createNativeBrowserCredentials, secretsOn, redactSecrets };
