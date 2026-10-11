@@ -40,6 +40,27 @@ export interface ExportFile {
   content: string | Buffer;
 }
 
+// The exports still reading each canvas's storage.
+const pinnedReads = new Map<string, Set<Promise<unknown>>>();
+
+/** Resolves once every export already reading this canvas holds its snapshot. */
+export async function exportReadsSettled(canvasId: string): Promise<void> {
+  await Promise.allSettled([...(pinnedReads.get(canvasId) ?? [])]);
+}
+
+async function readPinned<T>(canvasId: string, read: () => Promise<T>): Promise<T> {
+  const running = read();
+  const reads = pinnedReads.get(canvasId) ?? new Set<Promise<unknown>>();
+  pinnedReads.set(canvasId, reads);
+  reads.add(running);
+  try {
+    return await running;
+  } finally {
+    reads.delete(running);
+    if (reads.size === 0) pinnedReads.delete(canvasId);
+  }
+}
+
 /** Export one immutable revision. Only Electron main calls this over its private route. */
 export async function exportCanvasSource(
   canvasId: string,
@@ -52,7 +73,17 @@ export async function exportCanvasSource(
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
 
   signal?.throwIfAborted();
-  const saved = await new CanvasFiles(canvasDir()).readRevisionDetails(canvasId, ref);
+  // Everything this export needs from the canvas is read up front, under a
+  // pin that removing the canvas waits for (10a: deletion never cancels it).
+  const { saved, assets } = await readPinned(canvasId, async () => {
+    const revision = await new CanvasFiles(canvasDir()).readRevisionDetails(canvasId, ref);
+    const images: ExportFile[] = [];
+    for (const assetId of referencedAssetIds(revision.files.values())) {
+      signal?.throwIfAborted();
+      images.push({ path: `assets/${assetId}`, content: await readOwnedAsset(canvasId, assetId) });
+    }
+    return { saved: revision, assets: images };
+  });
   signal?.throwIfAborted();
   const kit = await readDesignSystem(saved.designSystem);
   const files: ExportFile[] = [];
@@ -75,10 +106,7 @@ export async function exportCanvasSource(
     })),
   );
 
-  for (const assetId of referencedAssetIds(saved.files.values())) {
-    signal?.throwIfAborted();
-    files.push({ path: `assets/${assetId}`, content: await readOwnedAsset(canvasId, assetId) });
-  }
+  files.push(...assets);
 
   const fonts = new Map<string, Buffer>();
   for (const content of Object.values(kit.files)) {

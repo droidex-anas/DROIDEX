@@ -47,6 +47,7 @@ const REPLY_KINDS = new Set([
   'designSystemSaved',
   'libraryItem',
   'libraryItems',
+  'removalPreview',
 ]);
 
 const ADHERENCE_RULES = new Set<unknown>(['off', 'guide', 'strict']);
@@ -158,6 +159,15 @@ function isReply(value: unknown): boolean {
       return isLibraryItem(value.item);
     case 'libraryItems':
       return boundedList(value.items, MAX_LIBRARY_ITEMS, isLibraryItem);
+    case 'removalPreview':
+      return (
+        record(value.preview) &&
+        id(value.preview.canvasId) &&
+        text(value.preview.name) &&
+        list(value.preview.attachedAppSessionIds, isAppSessionId) &&
+        list(value.preview.activeTurnAppSessionIds, isAppSessionId) &&
+        list(value.preview.buildingDesignIds, id)
+      );
     default:
       return true;
   }

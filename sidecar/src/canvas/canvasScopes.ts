@@ -37,6 +37,11 @@ export class CanvasScopes implements CanvasLeaseRegistry {
     this.endings.delete(scopeId);
   }
 
+  /** A deleted canvas leaves no live turn able to act on it. */
+  revokeTurns(canvasId: string): void {
+    for (const scope of this.activeTurns(canvasId)) this.revoke(scope.scopeId);
+  }
+
   /** Pane requests lose their authority as soon as app shutdown starts. */
   revokeUsers(): void {
     for (const [scopeId, scope] of this.active) {

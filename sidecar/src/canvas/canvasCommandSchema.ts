@@ -239,6 +239,20 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.removalPreview'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.removeCanvas'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.reportCapture'),
       ...request,
       captureId: canvasIdentifierSchema,

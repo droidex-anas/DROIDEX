@@ -158,35 +158,49 @@ test('a library item is an immutable copy that inserts as an independent design'
   );
 });
 
-test('a retried save answers its first copy and a reused mutation ID is refused', async (t) => {
+test('an item outlives its source canvas, answering retries and inserting elsewhere', async (t) => {
   const profile = await libraryProfile(t);
   const { canvas, canvasId, revision } = await heroCanvas(t, profile);
   const fields = { mutationId: 'save-once', canvasId, revision, name: 'Hero' };
   await save(canvas, 'req-first', fields);
+  await canvas.handle({ type: 'canvas.removeCanvas', requestId: 'req-remove', canvasId });
+  assert.equal(okReply(canvas, 'req-remove').kind, 'ok');
+
   await save(canvas, 'req-retry', fields);
   assert.deepEqual(okReply(canvas, 'req-retry'), okReply(canvas, 'req-first'));
   assert.deepEqual(await readdir(join(profile, 'canvas-library')), ['save-once']);
-
   await save(canvas, 'req-renamed', { ...fields, name: 'Another hero' });
   assert.equal(errorOf(canvas, 'req-renamed').code, 'invalid_input');
-  await canvas.handle({
-    type: 'canvas.create',
-    requestId: 'req-missing-item',
-    appSessionId: APP,
-    canvasId,
-    input: {
-      mutationId: 'insert-missing',
-      frames: [
-        {
-          name: 'Gone',
-          width: 720,
-          height: 720,
-          designSystem,
-          seed: { kind: 'library', itemId: 'never-saved' },
-        },
-      ],
-    },
-  });
+
+  const other = await createCanvas(canvas, 'req-other-canvas');
+  const insert = async (requestId: string, itemId: string) => {
+    await canvas.handle({
+      type: 'canvas.create',
+      requestId,
+      appSessionId: APP,
+      canvasId: other,
+      input: {
+        mutationId: requestId,
+        frames: [
+          {
+            name: 'Hero',
+            width: 720,
+            height: 720,
+            designSystem,
+            seed: { kind: 'library', itemId },
+          },
+        ],
+      },
+    });
+  };
+  await insert('req-insert', 'save-once');
+  const created = okReply(canvas, 'req-insert');
+  assert.ok(created.kind === 'created');
+  const [inserted] = created.created.frames;
+  assert.ok(inserted?.revisionId);
+  const ref = { designId: inserted.designId, revisionId: inserted.revisionId };
+  assert.deepEqual({ ...(await canvas.workspace.readFiles(other, ref)) }, { 'main.tsx': SOURCE });
+  await insert('req-missing-item', 'never-saved');
   assert.equal(errorOf(canvas, 'req-missing-item').code, 'not_found');
-  assert.equal(canvas.workspace.snapshot(canvasId).frames.length, 1);
+  assert.equal(canvas.workspace.snapshot(other).frames.length, 1);
 });

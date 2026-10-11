@@ -34,6 +34,18 @@ export type DesignSystemProvenance =
   | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
   | { copiedFrom: { id: string; version: number } };
 
+/** What deleting a canvas would end, which the renderer discloses before the user confirms. */
+export interface CanvasRemovalPreview {
+  canvasId: string;
+  name: string;
+  /** Chats attached to the canvas; deletion leaves each without one. */
+  attachedAppSessionIds: string[];
+  /** Chats with an agent turn working on the canvas now; deletion ends that turn's Canvas access. */
+  activeTurnAppSessionIds: string[];
+  /** Frames whose queued or running build deletion cancels. */
+  buildingDesignIds: string[];
+}
+
 /** A frame saved to the local library; its source canvas and revision are provenance only. */
 export interface LibraryItem {
   itemId: string;
@@ -526,6 +538,10 @@ export type CanvasCommand =
       name: string;
     }
   | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
+  // Explicit whole-canvas deletion from the canvas picker, never an agent tool.
+  // The preview names what deleting would end; a retried removal answers ok.
+  | { type: 'canvas.removalPreview'; requestId: string; canvasId: string }
+  | { type: 'canvas.removeCanvas'; requestId: string; canvasId: string }
   // A page's answer to an agent's inspect screenshot; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
@@ -559,7 +575,8 @@ export type CanvasReply =
   // read from the saved kit instead.
   | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
   | { kind: 'libraryItem'; item: LibraryItem }
-  | { kind: 'libraryItems'; items: LibraryItem[] };
+  | { kind: 'libraryItems'; items: LibraryItem[] }
+  | { kind: 'removalPreview'; preview: CanvasRemovalPreview };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

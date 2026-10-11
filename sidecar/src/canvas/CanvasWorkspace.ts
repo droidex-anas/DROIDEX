@@ -16,6 +16,7 @@ import { stageRevision, type SourceWriteOptions } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
 import { readRevisionCopy, type RevisionCopy } from './canvasLibrary.js';
+import { CanvasRemoval, discardRemovedCanvases } from './canvasRemoval.js';
 import { CanvasPreviewReports } from './canvasPreviewReports.js';
 import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
 import { recordRevisions } from './canvasRevisionMetadata.js';
@@ -65,6 +66,7 @@ export class CanvasWorkspace {
   private readonly leases: CanvasLeases;
   private readonly frameEdits: CanvasFrameEdits;
   private readonly creation: CanvasFrameCreation;
+  private readonly removal: CanvasRemoval;
   readonly history: CanvasRevisionHistory;
   readonly settings: CanvasSettings;
 
@@ -87,6 +89,7 @@ export class CanvasWorkspace {
       builds,
       this.commits,
     );
+    this.removal = new CanvasRemoval(writerLease.directory, heads, this.commits, builds);
     this.history = new CanvasRevisionHistory(this, heads, files);
     this.settings = new CanvasSettings(heads, this.commits, builds);
   }
@@ -101,6 +104,7 @@ export class CanvasWorkspace {
     try {
       const files = new CanvasFiles(writerLease.directory, deps.fs);
       const heads = await CanvasHeads.load(files);
+      await discardRemovedCanvases(writerLease.directory);
       const workspace = new CanvasWorkspace(files, heads, builds, writerLease, deps);
       await builds.load(workspace, files, heads.all());
       return workspace;
@@ -268,6 +272,11 @@ export class CanvasWorkspace {
     expectedManifestVersion: number,
   ): Promise<CanvasChange> {
     return this.frameEdits.renameFrame(scope, mutationId, designId, name, expectedManifestVersion);
+  }
+
+  /** Explicit user deletion only; chat deletion and pane close never reach this. */
+  removeCanvas(canvasId: string): Promise<void> {
+    return this.removal.remove(canvasId);
   }
 
   /** A committed revision's source and owned images, for a copy that outlives this canvas. */

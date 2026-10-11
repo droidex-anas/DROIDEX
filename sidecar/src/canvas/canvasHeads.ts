@@ -119,6 +119,11 @@ export class CanvasHeads {
     this.publish(manifest);
   }
 
+  /** Stops serving a canvas whose last installed head holds no attachments. */
+  forget(canvasId: string): void {
+    this.heads.delete(canvasId);
+  }
+
   /** Makes a head visible, with exactly the attachments it records. */
   private publish(manifest: CanvasManifest): void {
     this.heads.set(manifest.canvasId, manifest);

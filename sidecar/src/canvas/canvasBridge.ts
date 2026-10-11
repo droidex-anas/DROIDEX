@@ -19,6 +19,7 @@ import {
 } from './designSystemCommands.js';
 import { editCanvasElement } from './canvasElementEdit.js';
 import { answerLibraryCommand } from './canvasLibrary.js';
+import { canvasRemovalPreview } from './canvasRemoval.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
@@ -205,6 +206,17 @@ class CanvasDispatch {
         workspace.snapshot(command.canvasId);
         workspace.previews.record(command.canvasId, command.report);
         return { kind: 'ok' };
+      case 'canvas.removalPreview':
+        return {
+          kind: 'removalPreview',
+          preview: canvasRemovalPreview(workspace, this.scopes, command.canvasId),
+        };
+      case 'canvas.removeCanvas':
+        // A user's deletion ends agent turns on the canvas before its source goes.
+        this.scopes.revokeTurns(command.canvasId);
+        await workspace.removeCanvas(command.canvasId);
+        this.watches.forgetCanvas(command.canvasId);
+        return { kind: 'ok' };
       case 'canvas.saveLibraryItem':
       case 'canvas.listLibraryItems':
         return answerLibraryCommand(workspace, command);
@@ -329,6 +341,7 @@ const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
   'canvas.remove',
   'canvas.undoRemoval',
   'canvas.renameFrame',
+  'canvas.removeCanvas',
 ]);
 
 export function createCanvasCommandHandler(
