@@ -13,7 +13,6 @@ function createNativeBrowserViewFactory({
   emitLoaded,
   emitLoadFailed,
   applyDesignState,
-  autofill,
   onCrashed,
   onInput,
   listEntries,
@@ -147,7 +146,6 @@ function createNativeBrowserViewFactory({
         return;
       }
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
-      void autofill(contents);
     });
     contents.on('did-fail-load', (_event, errorCode, errorDescription, failedUrl, isMainFrame) => {
       if (!current() || !isMainFrame || errorCode === -3) return;

@@ -26,7 +26,7 @@ function createBrowser() {
     },
   };
   const manager = createNativeBrowserManager({
-    app: {},
+    app: { getPath: () => '/unused-browser-test-profile' },
     appName: 'DROIDEX',
     session,
     dialog: {},

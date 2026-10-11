@@ -223,6 +223,8 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
+  browserCredentialsList: () => ipcRenderer.invoke('browser-credentials-list'),
+  browserCredentialsDelete: (origin) => ipcRenderer.invoke('browser-credentials-delete', origin),
   browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
   browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
   browserPermissionPromptReady: (ready) =>

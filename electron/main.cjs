@@ -11,6 +11,7 @@ const {
   powerMonitor,
   protocol,
   safeStorage,
+  systemPreferences,
   session,
   shell,
   webContents,
@@ -151,6 +152,8 @@ const nativeBrowserManager = createNativeBrowserManager({
   session,
   nativeImage,
   safeStorage,
+  systemPreferences,
+  getSettings: () => browserSettings.snapshot(),
   showPrompt: browserPrompts.request,
   onBrowserInput: nativeBrowserShortcuts.handleInput,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
@@ -164,6 +167,7 @@ const nativeBrowserManager = createNativeBrowserManager({
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
+  showPrompt: browserPrompts.request,
   assertAgentAccess: () => browserSettings.assertAgentAccess(),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
@@ -965,6 +969,14 @@ function registerIpc() {
     assertMainRenderer(event);
     return browserSettings.update(patch);
   });
+  ipcMain.handle('browser-credentials-list', (event) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.listCredentials();
+  });
+  ipcMain.handle('browser-credentials-delete', (event, origin) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.deleteCredential(origin);
+  });
   ipcMain.handle('browser-permission-prompt-ready', (event, ready) => {
     assertMainRenderer(event);
     if (ready === false) browserSettings.cancelPendingUpdates();
@@ -1039,8 +1051,17 @@ function registerIpc() {
       .catch(() => undefined)
       .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
+  ipcMain.on('native-browser-credential-fill-valid', (event, token) => {
+    event.returnValue = nativeBrowserManager.canFillCredential(
+      event.sender,
+      event.senderFrame,
+      token,
+    );
+  });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
-    void nativeBrowserManager.handleCredentialCapture(event.sender, payload);
+    void nativeBrowserManager
+      .handleCredentialCapture(event.sender, event.senderFrame, payload)
+      .catch((error) => console.error('Could not save browser login:', error.message));
   });
 }
 

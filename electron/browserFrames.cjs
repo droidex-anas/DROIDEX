@@ -143,8 +143,19 @@ async function focusedFrame(dbg) {
   let sessionId;
   let frameId; // the same-process frame in the session that holds the focus
   const held = [];
-  const documentOf = async (session) => {
-    const { result } = await send(dbg, session, 'Runtime.evaluate', { expression: 'document' });
+  const documentOf = async (session, id) => {
+    if (!id) {
+      const { frameTree } = await send(dbg, session, 'Page.getFrameTree');
+      id = frameTree.frame.id;
+    }
+    const { executionContextId } = await send(dbg, session, 'Page.createIsolatedWorld', {
+      frameId: id,
+      worldName: 'droidex-agent-safety',
+    });
+    const { result } = await send(dbg, session, 'Runtime.evaluate', {
+      expression: 'document',
+      contextId: executionContextId,
+    });
     if (!result?.objectId)
       throw new Error('The page changed before the action ran; call browser_read_page.');
     held.push({ sessionId: session, objectId: result.objectId });
@@ -152,8 +163,9 @@ async function focusedFrame(dbg) {
   };
   let documentId = await documentOf(undefined); // the document walked, as a remote object
   try {
+    let node;
     for (;;) {
-      const node = await activeElement(dbg, sessionId, documentId);
+      node = await activeElement(dbg, sessionId, documentId);
       if (node?.localName !== 'iframe' && node?.localName !== 'frame') break;
       const child = await crossSiteChild(dbg, sessions, sessionId, node.backendNodeId);
       if (child) {
@@ -165,11 +177,7 @@ async function focusedFrame(dbg) {
         pierce: true,
       });
       if (!owner.contentDocument) break;
-      const { object } = await send(dbg, sessionId, 'DOM.resolveNode', {
-        backendNodeId: owner.contentDocument.backendNodeId,
-      });
-      held.push({ sessionId, objectId: object.objectId });
-      [frameId, documentId] = [owner.frameId, object.objectId];
+      [frameId, documentId] = [owner.frameId, await documentOf(sessionId, owner.frameId)];
     }
     const { frameTree } = await send(dbg, sessionId, 'Page.getFrameTree');
     const document = loaderOf(frameTree, frameId) ?? frameTree.frame.loaderId;
@@ -182,7 +190,13 @@ async function focusedFrame(dbg) {
     });
     if (typeof result?.value !== 'boolean')
       throw new Error('The page changed before the action ran; call browser_read_page.');
-    return { sessionId, document, takesText: result.value };
+    return {
+      sessionId,
+      document,
+      takesText: result.value,
+      backendNodeId: node?.backendNodeId,
+      closedShadow: node?.shadowRoots?.some((root) => root.shadowRootType === 'closed'),
+    };
   } finally {
     for (const object of held)
       await send(dbg, object.sessionId, 'Runtime.releaseObject', {
@@ -194,13 +208,11 @@ async function focusedFrame(dbg) {
 // Whether an element takes typed text.
 const TAKES_TEXT = `function (a) {
   if (!a || a.matches(':disabled') || a.readOnly) return false;
+  if (a.closest('button,input[type="submit"],input[type="button"],input[type="reset"],input[type="image"]')) return false;
   if (a.isContentEditable || a.localName === 'textarea') return true;
   const notText = ['button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'];
   return a.localName === 'input' && !notText.includes(a.type);
 }`;
-
-// Whether the element it is called on takes typed text.
-const ELEMENT_TAKES_TEXT = `function () { return (${TAKES_TEXT})(this); }`;
 
 // Null once the document has left its frame; otherwise whether the element
 // with its focus, inside open shadow roots too, takes typed text.
@@ -303,7 +315,6 @@ module.exports = {
   framePainted,
   frameHolds,
   focusedFrame,
-  ELEMENT_TAKES_TEXT,
   frameStep,
   scrollFrameIntoView,
   axTree,

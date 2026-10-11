@@ -1,7 +1,7 @@
 // The page script (nativeBrowserPreload.cjs) runs in the preload's isolated
 // world. Main calls its functions there, where the page's own scripts can
-// neither see nor call them, and where a saved login passed to it never
-// exists in the page's world. A document the script has not reached yet
+// neither see nor call them. Filled credentials become visible to the page
+// through its form fields. A document the script has not reached yet
 // fails the call rather than answer nothing.
 
 const PAGE_SCRIPT_WORLD = 999;

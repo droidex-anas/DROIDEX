@@ -5,11 +5,13 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const { send, frameHolds, focusedFrame, ELEMENT_TAKES_TEXT } = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
-const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
+const { keyOf, modifiersOf, pressKey } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { createBrowserCover } = require('./browserCover.cjs');
+const { createBrowserAgentSafety, refuseSensitiveInput } = require('./browserAgentSafety.cjs');
+const { FILL } = require('./browserFill.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const LATE = 'The browser page did not finish in time.';
@@ -22,10 +24,12 @@ function createBrowserActions({
   reading,
   runWithWebContentsDebugger,
   credentials,
+  showPrompt,
   unthrottled,
   redactUrl,
   onPoint,
 }) {
+  const safety = createBrowserAgentSafety({ showPrompt });
   const { refuseCovered } = createBrowserCover({ reading });
 
   async function act(contents, entry, request) {
@@ -33,6 +37,10 @@ function createBrowserActions({
     if (request.action === 'snapshot')
       return result(request, contents, entry, request.receivedAt ?? Date.now());
     if (request.action === 'inspect') return inspect(contents, entry, request);
+    if (request.action === 'fillCredentials') {
+      await unthrottled(contents, () => credentials.fillForAgent(contents, entry, request));
+      return { requestId: request.requestId, ok: true };
+    }
     const since = Date.now();
     const urlBefore = contents.getURL();
     const navigation = observeNavigation(contents);
@@ -43,6 +51,7 @@ function createBrowserActions({
           sent: false,
           startBy: request.startBy,
           runEnded: request.runEnded,
+          isCurrent: () => entry.contents === contents && !contents.isDestroyed(),
         };
         // The action's own input ends before it reports, even when a navigation
         // settles first, so nothing of it lands under the next one.
@@ -79,7 +88,7 @@ function createBrowserActions({
       case 'type':
         return type(contents, entry, request, step);
       case 'press':
-        return press(contents, request, step);
+        return press(contents, entry, request, step);
       case 'fill':
         if (!request.ref) throw new Error('Filling a field needs its ref from browser_read_page.');
         return reading.callOnRef(
@@ -90,9 +99,6 @@ function createBrowserActions({
           FILL,
           () => startInput(step),
         );
-      case 'fillCredentials':
-        startInput(step);
-        return credentials.fillForAgent(contents, step.startBy);
       default:
         throw new Error(`Unsupported browser action: ${request.action}`);
     }
@@ -119,11 +125,30 @@ function createBrowserActions({
           throw new Error(`${request.ref} moved when the pointer reached it; try again.`);
         await refuseCovered(contents, entry, request.ref, now);
       }
+      const inspected = await runWithWebContentsDebugger(contents, (dbg) =>
+        safety.inspectPointer(dbg, target),
+      );
+      await safety.authorize(contents, entry, request, inspected);
+      notLate(step);
+      if (request.ref) await refuseCovered(contents, entry, request.ref, target);
+      const dispatch = (dbg, event, holding) =>
+        safety.inspectPointer(dbg, target, (current) => {
+          safety.verify(inspected, current);
+          if (!holding()) throw new Error(LATE);
+          startInput(step);
+          return dbg.sendCommand('Input.dispatchMouseEvent', event);
+        });
       const press = { x, y, button, clickCount, modifiers };
-      await dispatchMouse(contents, step, target, [
-        { type: 'mousePressed', ...press },
-        { type: 'mouseReleased', ...press },
-      ]);
+      await dispatchMouse(
+        contents,
+        step,
+        target,
+        [
+          { type: 'mousePressed', ...press },
+          { type: 'mouseReleased', ...press },
+        ],
+        dispatch,
+      );
     }
   }
 
@@ -189,7 +214,7 @@ function createBrowserActions({
   // frame only takes keys sent to its own session); a ref is focused first.
   async function type(contents, entry, request, step) {
     const text = String(request.text ?? '');
-    await runWithWebContentsDebugger(contents, async (dbg, holding) => {
+    const prepared = await runWithWebContentsDebugger(contents, async (dbg, holding) => {
       let sessionId;
       let document;
       let refNode;
@@ -204,12 +229,10 @@ function createBrowserActions({
         if (!holding()) throw new Error(LATE);
         await send(dbg, sessionId, 'DOM.focus', { backendNodeId: target.backendNodeId });
         // A focus handler can send the focus on to another element or frame.
-        await keepsFocus(dbg, sessionId, document);
-        if (!(await hasFocus(dbg, sessionId, target.backendNodeId)))
+        const focused = await keepsFocus(dbg, sessionId, document);
+        if (focused.backendNodeId !== target.backendNodeId)
           throw new Error(`${request.ref} did not keep the focus; read the page again.`);
-        // Asked of the node itself, which the focused frame cannot reach
-        // inside a closed shadow root.
-        takesText = await callOnNode(dbg, sessionId, target.backendNodeId, ELEMENT_TAKES_TEXT);
+        takesText = focused.takesText;
       } else {
         ({ sessionId, document, takesText } = await focusedFrame(dbg));
       }
@@ -220,37 +243,80 @@ function createBrowserActions({
             ? `${request.ref} does not take typed text; use browser_fill or browser_click.`
             : 'Nothing that takes typed text has the focus; pass the ref of a field.',
         );
+      const target = { sessionId, document, backendNodeId: refNode };
+      const inspected = request.ref
+        ? await safety.inspectNode(dbg, target, request.submit ? 'enter' : null)
+        : await safety.inspectFocus(dbg, request.submit ? 'enter' : null);
+      if (text) refuseSensitiveInput(inspected);
+      return { sessionId, document, refNode, inspected };
+    });
+    await safety.authorize(contents, entry, request, prepared.inspected);
+    await runWithWebContentsDebugger(contents, async (dbg, holding) => {
+      const { sessionId, document, refNode, inspected } = prepared;
+      const focused = await keepsFocus(dbg, sessionId, document);
+      if (request.ref && focused.backendNodeId !== refNode)
+        throw new Error(`${request.ref} lost the focus; read the page again.`);
       const stillOn = onSamePage(dbg, holding, sessionId, document);
-      // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, holding, sessionId, document);
-      if (text) await send(dbg, sessionId, 'Input.insertText', { text });
+      if (text)
+        await safety.inspectFocus(dbg, request.submit ? 'enter' : null, (current) => {
+          safety.verify(inspected, current);
+          refuseSensitiveInput(current);
+          if (!holding()) throw new Error(LATE);
+          startInput(step);
+          return send(dbg, sessionId, 'Input.insertText', { text });
+        });
       if (request.submit) {
-        await keepsFocus(dbg, sessionId, document);
+        const focused = await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
-        if (request.ref && !(await hasFocus(dbg, sessionId, refNode)))
+        if (request.ref && focused.backendNodeId !== refNode)
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
-        // The page check comes last, right before the key.
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
+        await pressKey(keyOf('Enter'), stillOn, (event) =>
+          safety.inspectFocus(dbg, 'enter', (current) => {
+            safety.verify(inspected, current);
+            if (!holding()) throw new Error(LATE);
+            startInput(step);
+            return send(dbg, sessionId, 'Input.dispatchKeyEvent', event);
+          }),
+        );
       }
     });
   }
 
-  async function press(contents, request, step) {
+  async function press(contents, entry, request, step) {
     const key = keyOf(request.key);
     const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(request.repeat) || 1)));
-    await runWithWebContentsDebugger(contents, async (dbg, holding) => {
-      const { sessionId, document } = await focusedFrame(dbg);
-      const stillOn = onSamePage(dbg, holding, sessionId, document);
-      for (let i = 0; i < repeat; i++) {
-        // A key that navigates is the last.
-        if (i > 0 && step.navigation.started()) return;
-        // A key can move the focus; the rest go only to the frame they began in.
-        if (i > 0) await keepsFocus(dbg, sessionId, document);
+    const activation = key.key === 'Enter' ? 'enter' : key.key === ' ' ? 'click' : null;
+    let initialTarget;
+    for (let i = 0; i < repeat; i++) {
+      if (i > 0 && step.navigation.started()) return;
+      const inspected = await runWithWebContentsDebugger(contents, (dbg) =>
+        safety.inspectFocus(dbg, activation),
+      );
+      initialTarget ??= inspected;
+      if (
+        inspected.sessionId !== initialTarget.sessionId ||
+        inspected.document !== initialTarget.document
+      )
+        throw new Error('The focus moved to another frame; read the page again.');
+      if (!['Tab', 'Escape', 'Enter'].includes(key.key)) refuseSensitiveInput(inspected);
+      await safety.authorize(contents, entry, request, inspected);
+      await runWithWebContentsDebugger(contents, async (dbg, holding) => {
+        const { sessionId, document } = inspected;
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, key, stillOn);
-      }
-    });
+        await pressKey(key, onSamePage(dbg, holding, sessionId, document), (event) =>
+          safety.inspectFocus(dbg, activation, (current) => {
+            if (event.type !== 'keyUp' || !['Tab', 'Escape'].includes(key.key))
+              safety.verify(inspected, current);
+            if (!['Tab', 'Escape', 'Enter'].includes(key.key)) refuseSensitiveInput(current);
+            if (!holding()) throw new Error(LATE);
+            startInput(step);
+            return send(dbg, sessionId, 'Input.dispatchKeyEvent', event);
+          }),
+        );
+      });
+    }
   }
 
   // A ref becomes the point at its middle, scrolled into view, and is refused
@@ -275,17 +341,30 @@ function createBrowserActions({
 
   // Before each event, inside the debugger queue, a new page or a replaced
   // ref document stops the gesture.
-  function dispatchMouse(contents, step, target, events) {
+  function dispatchMouse(contents, step, target, events, dispatch) {
     return runWithWebContentsDebugger(contents, async (dbg, holding) => {
       const stillOn = onSamePage(dbg, holding, target.sessionId, target.document);
       for (const event of events) {
-        // A press that went out is always released, on the page that took it.
         if (event.type === 'mouseReleased') {
-          if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
+          if (await stillOn()) {
+            try {
+              if (dispatch) await dispatch(dbg, event, holding);
+              else await dbg.sendCommand('Input.dispatchMouseEvent', event);
+            } catch (error) {
+              // Release away from the control so a refused click does not leave the button held.
+              if (await stillOn())
+                await dbg.sendCommand('Input.dispatchMouseEvent', { ...event, x: -1, y: -1 });
+              throw error;
+            }
+          }
           continue;
         }
         await inputReady(dbg, step, holding, target.sessionId, target.document);
-        await dbg.sendCommand('Input.dispatchMouseEvent', event);
+        if (dispatch) await dispatch(dbg, event, holding);
+        else {
+          startInput(step);
+          await dbg.sendCommand('Input.dispatchMouseEvent', event);
+        }
       }
     });
   }
@@ -295,29 +374,6 @@ function createBrowserActions({
   // Once the debugger queue has moved on, nothing is released either.
   function onSamePage(dbg, holding, sessionId, document) {
     return async () => (!document || (await frameHolds(dbg, sessionId, document))) && holding();
-  }
-
-  // Whether a node is what its own document or shadow root has focused.
-  async function hasFocus(dbg, sessionId, backendNodeId) {
-    const focused = 'function () { return this.getRootNode().activeElement === this; }';
-    return callOnNode(dbg, sessionId, backendNodeId, focused);
-  }
-
-  // Whether a function called on a node returns true.
-  async function callOnNode(dbg, sessionId, backendNodeId, functionDeclaration) {
-    const { object } = await send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId });
-    try {
-      const { result } = await send(dbg, sessionId, 'Runtime.callFunctionOn', {
-        objectId: object.objectId,
-        functionDeclaration,
-        returnByValue: true,
-      });
-      return result?.value === true;
-    } finally {
-      await send(dbg, sessionId, 'Runtime.releaseObject', { objectId: object.objectId }).catch(
-        () => undefined,
-      );
-    }
   }
 
   // Keys go on only while the frame they were aimed at still has the focus.
@@ -333,7 +389,8 @@ function createBrowserActions({
   async function inputReady(dbg, step, holding, sessionId, document) {
     if (document && !(await frameHolds(dbg, sessionId, document))) throw new Error(PAGE_CHANGED);
     if (!holding()) throw new Error(LATE);
-    startInput(step);
+    if (step.navigation.started()) throw new Error(PAGE_CHANGED);
+    notLate(step);
   }
 
   async function inspect(contents, entry, request) {
@@ -408,56 +465,9 @@ function startInput(step) {
 // Nothing more is done to the page once the caller has given up, or once the
 // sidecar run that asked has ended.
 function notLate(step) {
+  if (!step.isCurrent()) throw new Error('The browser page closed or was replaced.');
   if (Date.now() >= step.startBy || step.runEnded()) throw new Error(LATE);
 }
-
-// Run on the ref's own element. A value goes through the element's own
-// setter and the input and change events, so frameworks that track it (React
-// and others) see the change; a checkbox or radio is clicked when it needs to
-// change. Nothing is read back, so a masked field stays unread.
-const FILL = `function (value, startBy) {
-  // The page can run this late, and its focus handlers can take their time;
-  // nothing changes once the caller has given up, or once a focus handler has
-  // swapped the field for another.
-  const inTime = () => {
-    if (startBy && Date.now() >= startBy) throw new Error('The browser page did not finish in time.');
-  };
-  const focus = () => {
-    inTime();
-    this.focus();
-    inTime();
-    if (!this.isConnected) throw new Error('the field was replaced when it took the focus; read the page again');
-  };
-  inTime();
-  if (!this.isConnected) throw new Error('the field is not on the page any more; read the page again');
-  if (this instanceof HTMLSelectElement) {
-    const wanted = String(value);
-    const options = [...this.options];
-    const option =
-      options.find((candidate) => candidate.value === wanted) ??
-      options.find((candidate) => candidate.label.trim() === wanted || candidate.text.trim() === wanted);
-    if (!option) throw new Error('no option "' + wanted + '"');
-    this.value = option.value;
-  } else if (this instanceof HTMLInputElement && (this.type === 'checkbox' || this.type === 'radio')) {
-    const checked = value === true || ['true', 'on', 'checked', 'yes'].includes(String(value).toLowerCase());
-    if (this.checked !== checked) this.click();
-    if (this.checked !== checked)
-      throw new Error(this.type === 'radio' ? 'a radio turns off when another one is chosen' : 'the page kept it as it was');
-    return;
-  } else if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
-    if (this.type === 'file') throw new Error('file inputs need the user');
-    const proto = this instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-    focus();
-    Object.getOwnPropertyDescriptor(proto, 'value').set.call(this, String(value));
-  } else if (this.isContentEditable) {
-    focus();
-    this.textContent = String(value);
-  } else {
-    throw new Error('not a field');
-  }
-  this.dispatchEvent(new Event('input', { bubbles: true }));
-  this.dispatchEvent(new Event('change', { bubbles: true }));
-}`;
 
 // The scroll offsets of the page and of each element around the one at a
 // viewport point.

@@ -36,7 +36,15 @@ export type BrowserSettingsPatch = Partial<
   >
 >;
 
+export interface BrowserCredentialsSnapshot {
+  origins: string[];
+  keychainAvailable: boolean;
+  touchIdAvailable: boolean;
+}
+
 export interface BrowserSettingsCommands {
+  browserCredentialsList: () => Promise<BrowserCredentialsSnapshot>;
+  browserCredentialsDelete: (origin: string) => Promise<BrowserCredentialsSnapshot>;
   browserSettingsGet: () => Promise<BrowserSettingsSnapshot>;
   browserSettingsUpdate: (patch: BrowserSettingsPatch) => Promise<BrowserSettingsSnapshot>;
 }
