@@ -6,6 +6,8 @@
 // CanvasScope is the sidecar's turn lease and is deliberately absent here; the
 // renderer only ever sends the pinned CanvasTurnContext beside its prompt.
 
+import type { AnnotateCanvasInput, Annotation, AnnotationChange } from './annotationProtocol';
+
 export interface DesignSystemRef {
   id: string;
   version: number;
@@ -61,7 +63,7 @@ export interface CreateCanvasResult {
   attachedCanvasId: string | null;
 }
 
-/** A canvas an earlier DROIDEX made, before revision history; it is not opened. */
+/** A canvas an earlier DROIDEX saved in an older format; it is not opened. */
 export interface OutdatedCanvas {
   canvasId: string;
   name: string;
@@ -206,6 +208,9 @@ export interface CanvasSnapshot {
   canvasId: string;
   sequence: number;
   frames: CanvasFrame[];
+  /** The CAS token `canvas.annotate` expects, separate from frame layout. */
+  annotationsVersion: number;
+  annotations: Annotation[];
 }
 
 export interface CanvasChange {
@@ -213,6 +218,8 @@ export interface CanvasChange {
   sequence: number;
   frames: CanvasFrame[];
   removedDesignIds: string[];
+  /** Present only on a change that touched the annotation layer. */
+  annotations?: AnnotationChange;
 }
 
 export interface CanvasSummary {
@@ -487,6 +494,13 @@ export type CanvasCommand =
       canvasId: string;
       input: RenameFrameInput;
     }
+  | {
+      type: 'canvas.annotate';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: AnnotateCanvasInput;
+    }
   // The Manage design systems dialog (spec §10). Kits are global, not a
   // canvas's. A new kit is named by its mutationId, so a retry finds the
   // version it already saved.
@@ -529,6 +543,7 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'annotated'; change: CanvasChange }
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }
   | { kind: 'artifact'; artifact: PreviewArtifact | null }

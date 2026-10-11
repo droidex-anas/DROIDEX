@@ -2,6 +2,7 @@
 // Canonical state stays in the sidecar.
 
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
+import type { AnnotateCanvasInput } from './annotationProtocol';
 import { applyCanvasChange } from './applyCanvasChange';
 import { reply, wrongReply, type ReplyEvent } from './canvasReply';
 import { DesignSystemRequests } from './designSystemRequests';
@@ -232,6 +233,21 @@ export class CanvasClient {
       input,
     });
     return reply(event, 'renamed').change;
+  }
+
+  async annotate(
+    appSessionId: string,
+    canvasId: string,
+    input: AnnotateCanvasInput,
+  ): Promise<CanvasChange> {
+    const event = await this.request({
+      type: 'canvas.annotate',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      input,
+    });
+    return reply(event, 'annotated').change;
   }
 
   // Ready frames read their revision; failed frames read lastWorkingRevisionId.

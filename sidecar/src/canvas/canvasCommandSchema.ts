@@ -2,6 +2,7 @@
 // renderer mirror in protocol.ts must describe exactly what this accepts.
 
 import { z } from 'zod';
+import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { DESIGN_SYSTEM_LIMITS } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import type { CanvasCommand } from './protocol.js';
@@ -192,6 +193,14 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       input: renameFrameInputSchema,
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('canvas.annotate'),
+      ...request,
+      ...target,
+      input: annotateCanvasInputSchema,
+    })
+    .strict(),
   z.object({ type: z.literal('canvas.listDesignSystems'), ...request }).strict(),
   z
     .object({
@@ -251,6 +260,7 @@ export type CanvasMutation = Extract<
       | 'arrange'
       | 'remove'
       | 'undoRemoval'
-      | 'renameFrame'}`;
+      | 'renameFrame'
+      | 'annotate'}`;
   }
 >;

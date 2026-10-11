@@ -33,6 +33,8 @@ function snapshot(sequence: number, names: string[], canvasId = 'canvas-1'): Can
     canvasId,
     sequence,
     frames: names.map((name, index) => frame(`design-${String(index)}`, name)),
+    annotationsVersion: 0,
+    annotations: [],
   };
 }
 

@@ -23,6 +23,11 @@ import type {
   WriteFilesInput,
 } from './schema.js';
 import type {
+  AnnotateCanvasInput,
+  Annotation,
+  AnnotationChange,
+} from './canvasAnnotationSchema.js';
+import type {
   DesignSystemDetail,
   DesignSystemSource,
   DesignSystemSummary,
@@ -176,6 +181,9 @@ export interface CanvasSnapshot {
   canvasId: string;
   sequence: number;
   frames: CanvasFrame[];
+  /** The CAS token `canvas.annotate` expects, separate from frame layout. */
+  annotationsVersion: number;
+  annotations: Annotation[];
 }
 
 export interface CanvasChange {
@@ -183,6 +191,8 @@ export interface CanvasChange {
   sequence: number;
   frames: CanvasFrame[];
   removedDesignIds: string[];
+  /** Present only on a change that touched the annotation layer. */
+  annotations?: AnnotationChange;
 }
 
 export interface CanvasSummary {
@@ -393,6 +403,13 @@ export type CanvasCommand =
       canvasId: string;
       input: RenameFrameInput;
     }
+  | {
+      type: 'canvas.annotate';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: AnnotateCanvasInput;
+    }
   // The Manage design systems dialog (spec §10). Kits are global, not a
   // canvas's, and both saves go through the owner canvas_theme saves through.
   // A new kit is named by its mutationId, so a retry finds the version it saved.
@@ -422,7 +439,7 @@ export type CanvasCommand =
  */
 type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
 
-/** A canvas an earlier DROIDEX made, before revision history; it is not opened. */
+/** A canvas an earlier DROIDEX saved in an older format; it is not opened. */
 export interface OutdatedCanvas {
   canvasId: string;
   name: string;
@@ -448,6 +465,7 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'annotated'; change: CanvasChange }
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }
   | { kind: 'artifact'; artifact: PreviewArtifact | null }

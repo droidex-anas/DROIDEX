@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { z } from 'zod';
 
+import type * as RendererAnnotations from '../../../src/features/canvas/annotationProtocol.js';
 import type * as Renderer from '../../../src/features/canvas/protocol.js';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import type {
@@ -33,6 +34,11 @@ import type {
   WriteReceipt,
 } from './protocol.js';
 import {
+  annotateCanvasInputSchema,
+  type AnnotateCanvasInput,
+  type Annotation,
+} from './canvasAnnotationSchema.js';
+import {
   arrangeFramesInputSchema,
   createFramesInputSchema,
   editElementInputSchema,
@@ -58,6 +64,8 @@ type SidecarWire = {
   remove: RemoveFramesInput;
   undo: UndoRemovalInput;
   rename: RenameFrameInput;
+  annotate: AnnotateCanvasInput;
+  annotation: Annotation;
   snapshot: CanvasSnapshot;
   change: CanvasChange;
   summary: CanvasSummary;
@@ -86,6 +94,8 @@ type RendererWire = {
   remove: Renderer.RemoveFramesInput;
   undo: Renderer.UndoRemovalInput;
   rename: Renderer.RenameFrameInput;
+  annotate: RendererAnnotations.AnnotateCanvasInput;
+  annotation: RendererAnnotations.Annotation;
   snapshot: Renderer.CanvasSnapshot;
   change: Renderer.CanvasChange;
   summary: Renderer.CanvasSummary;
@@ -113,6 +123,19 @@ type Equals<A, B> =
 type ExactMirror = { [Key in keyof SidecarWire]: Equals<SidecarWire[Key], RendererWire[Key]> };
 
 const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' };
+
+const sketch: Annotation = {
+  id: 'ann_sketch',
+  kind: 'path',
+  color: 'ink',
+  points: [
+    { x: 12.5, y: 40 },
+    { x: 300, y: 44.2 },
+  ],
+  author: { kind: 'agent', chatId: 'app_session_01' },
+  createdAt: 1_767_225_600_000,
+  updatedAt: 1_767_225_600_500,
+};
 
 const wire: SidecarWire = {
   createCanvasResult: { canvasId: 'cv_01', attachedCanvasId: 'cv_02' },
@@ -178,9 +201,37 @@ const wire: SidecarWire = {
     name: 'Hey again',
     expectedManifestVersion: 2,
   },
+  annotate: {
+    mutationId: 'annotate-hey',
+    expectedAnnotationsVersion: 3,
+    upserts: [
+      {
+        id: 'ann_arrow',
+        kind: 'line',
+        color: 'red',
+        points: [
+          { x: 0, y: 0 },
+          { x: 120, y: 40 },
+        ],
+        arrowStart: false,
+        arrowEnd: true,
+      },
+      {
+        id: 'ann_note',
+        kind: 'note',
+        color: 'yellow',
+        rect: { x: 760, y: -200, width: 220, height: 140 },
+        text: 'Make the header\nlook like this',
+      },
+    ],
+    deletes: ['ann_old'],
+  },
+  annotation: sketch,
   snapshot: {
     canvasId: 'cv_01',
     sequence: 7,
+    annotationsVersion: 3,
+    annotations: [sketch],
     frames: [
       {
         designId: 'dsg_hey',
@@ -336,6 +387,8 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     remove: true,
     undo: true,
     rename: true,
+    annotate: true,
+    annotation: true,
     snapshot: true,
     change: true,
     summary: true,
@@ -427,6 +480,21 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       requestId: 'req_01',
       ok: true,
       reply: { kind: 'renamed', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: {
+        kind: 'annotated',
+        change: {
+          canvasId: 'cv_01',
+          sequence: 9,
+          frames: [],
+          removedDesignIds: [],
+          annotations: { version: 4, upserted: [sketch], removedIds: ['ann_old'] },
+        },
+      },
     },
     {
       type: 'canvas.result',
@@ -606,6 +674,9 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   const remove: Renderer.RemoveFramesInput = removeFramesInputSchema.parse(wire.remove);
   const undo: Renderer.UndoRemovalInput = undoRemovalInputSchema.parse(wire.undo);
   const rename: Renderer.RenameFrameInput = renameFrameInputSchema.parse(wire.rename);
+  const annotate: RendererAnnotations.AnnotateCanvasInput = annotateCanvasInputSchema.parse(
+    wire.annotate,
+  );
   assert.deepEqual(create, wire.create);
   assert.deepEqual(write, wire.write);
   assert.deepEqual(arrange, wire.arrange);
@@ -613,6 +684,18 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   assert.deepEqual(remove, wire.remove);
   assert.deepEqual(undo, wire.undo);
   assert.deepEqual(rename, wire.rename);
+  assert.deepEqual(annotate, wire.annotate);
+});
+
+test('annotate names each annotation once and changes at least one', () => {
+  assert.match(
+    rejection(annotateCanvasInputSchema, { ...wire.annotate, deletes: ['ann_arrow'] }),
+    /only once/,
+  );
+  assert.match(
+    rejection(annotateCanvasInputSchema, { ...wire.annotate, upserts: [], deletes: [] }),
+    /at least one annotation/,
+  );
 });
 
 test('create rejects more than four frames and an out-of-range dimension', () => {

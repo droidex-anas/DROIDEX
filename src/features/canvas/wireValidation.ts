@@ -2,7 +2,19 @@
 // authoritative schema; this checks the shape the projection relies on before
 // any feature code can observe it.
 
+import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationValidation';
 import type { CanvasEvent } from './protocol';
+import {
+  boundedList,
+  boundedText,
+  count,
+  id,
+  isAppSessionId,
+  isRect,
+  list,
+  record,
+  text,
+} from './wireChecks';
 
 const ERROR_CODES = new Set([
   'invalid_input',
@@ -38,6 +50,7 @@ const REPLY_KINDS = new Set([
   'removed',
   'undone',
   'renamed',
+  'annotated',
   'artifact',
   'source',
   'revisions',
@@ -130,6 +143,7 @@ function isReply(value: unknown): boolean {
     case 'arranged':
     case 'undone':
     case 'renamed':
+    case 'annotated':
       return isChange(value.change);
     case 'removed':
       return id(value.undoId);
@@ -280,14 +294,26 @@ function isArtifact(value: unknown): boolean {
   );
 }
 
-function isSnapshot(value: unknown): boolean {
+function isFrameProjection(value: unknown): value is Record<string, unknown> {
   return (
     record(value) && id(value.canvasId) && count(value.sequence) && list(value.frames, isFrame)
   );
 }
 
+function isSnapshot(value: unknown): boolean {
+  return (
+    isFrameProjection(value) &&
+    count(value.annotationsVersion) &&
+    boundedList(value.annotations, MAX_ANNOTATIONS, isAnnotation)
+  );
+}
+
 function isChange(value: unknown): boolean {
-  return record(value) && isSnapshot(value) && list(value.removedDesignIds, id);
+  return (
+    isFrameProjection(value) &&
+    list(value.removedDesignIds, id) &&
+    (value.annotations === undefined || isAnnotationChange(value.annotations))
+  );
 }
 
 function isSummary(value: unknown): boolean {
@@ -300,11 +326,6 @@ function isSummary(value: unknown): boolean {
     list(value.attachedAppSessionIds, isAppSessionId) &&
     ADHERENCE_RULES.has(value.designSystemAdherence)
   );
-}
-
-/** A chat identifier, bounded the way the sidecar schema bounds it. */
-function isAppSessionId(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0 && value.length <= 200;
 }
 
 function isReceipt(value: unknown): boolean {
@@ -322,16 +343,6 @@ function isFrame(value: unknown): boolean {
     (value.revisionId === null || id(value.revisionId)) &&
     isDesignSystem(value.designSystem) &&
     isBuild(value.build)
-  );
-}
-
-function isRect(value: unknown): boolean {
-  return (
-    record(value) &&
-    finite(value.x) &&
-    finite(value.y) &&
-    finite(value.width) &&
-    finite(value.height)
   );
 }
 
@@ -407,37 +418,4 @@ function isError(value: unknown): boolean {
     text(value.message) &&
     (value.code === 'layout_conflict' ? isRect(value.currentRect) : value.currentRect === undefined)
   );
-}
-
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function list(value: unknown, entry: (item: unknown) => boolean): boolean {
-  return Array.isArray(value) && value.every(entry);
-}
-
-function boundedList(value: unknown, max: number, entry: (item: unknown) => boolean): boolean {
-  return Array.isArray(value) && value.length <= max && value.every(entry);
-}
-
-/** An opaque Canvas identifier, bounded the way the sidecar schema bounds it. */
-function id(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 128;
-}
-
-function text(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0 && value.length <= 2_000;
-}
-
-function boundedText(value: unknown, max: number): boolean {
-  return typeof value === 'string' && value.length > 0 && value.length <= max;
-}
-
-function count(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
-function finite(value: unknown): boolean {
-  return typeof value === 'number' && Number.isFinite(value);
 }

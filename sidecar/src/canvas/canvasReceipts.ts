@@ -93,3 +93,25 @@ export function recordedRename(
     removedDesignIds: [],
   };
 }
+
+/** Which annotations an accepted annotate changed, read as they are on the head now. */
+export function recordedAnnotate(
+  manifest: CanvasManifest,
+  mutationId: string,
+  fingerprint: string,
+): CanvasChange | null {
+  const record = findMutation(manifest, mutationId, 'annotate', fingerprint);
+  if (record?.kind !== 'annotate') return null;
+  return {
+    canvasId: manifest.canvasId,
+    sequence: record.sequence,
+    frames: [],
+    removedDesignIds: [],
+    annotations: {
+      version: record.annotationsVersion,
+      // Like an arrange's frames: one a later commit removed is no longer in the answer.
+      upserted: manifest.annotations.filter((entry) => record.upsertedIds.includes(entry.id)),
+      removedIds: [...record.removedIds],
+    },
+  };
+}

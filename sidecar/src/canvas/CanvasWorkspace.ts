@@ -3,6 +3,7 @@
 // checks lease and job identity. CanvasHeads owns which manifest is current.
 
 import { randomUUID } from 'node:crypto';
+import { CanvasAnnotations } from './CanvasAnnotations.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasAttachments } from './canvasAttachments.js';
 import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
@@ -74,6 +75,7 @@ export class CanvasWorkspace {
   private readonly frameEdits: CanvasFrameEdits;
   readonly history: CanvasRevisionHistory;
   readonly settings: CanvasSettings;
+  readonly annotations: CanvasAnnotations;
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -87,6 +89,7 @@ export class CanvasWorkspace {
     this.frameEdits = new CanvasFrameEdits(heads, this.leases, builds, this.commits);
     this.history = new CanvasRevisionHistory(this, heads, files);
     this.settings = new CanvasSettings(heads, this.commits, builds);
+    this.annotations = new CanvasAnnotations(heads, this.leases, this.commits);
   }
 
   /** Claims the physical storage root before loading heads or cleaning staging. */
