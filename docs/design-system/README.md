@@ -10,7 +10,7 @@ The source of truth for how DROIDEX looks, feels and is built. New UI follows it
 | [engineering.md](engineering.md) | How to build it: primitives, popover positioning, dialogs, interaction details |
 | [tokens.json](tokens.json) | Every token, both themes: colour, type, spacing, size, radius, shadow, z-index |
 | [primitives.css](primitives.css) | Reference CSS for the primitives, written only with tokens |
-| [components/](components/) | Guidelines per component: Button, Badge, Input, Card, ToolPanel, PanelRow, Popover, Toast, Alignment |
+| [components/](components/) | Guidelines per component: Button, Badge, Input, Card, ToolPanel, PanelRow, Popover, Toast, Alignment, plus a reference implementation of Toast |
 | [icons/](icons/) | Proposed icons: the soft folder family and the wider cursors |
 | [showcase.html](showcase.html) | Open in a browser: the app rebuilt with the system, plus live demos of every rule in both themes |
 
