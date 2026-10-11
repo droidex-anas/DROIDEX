@@ -6,13 +6,7 @@
 const MAX_RESULT_CHARS = 4_000;
 const SCRIPT_MS = 5_000;
 
-function createBrowserDevTools({
-  appName,
-  dialog,
-  getMainWindow,
-  isHostAppUrl,
-  runWithWebContentsDebugger,
-}) {
+function createBrowserDevTools({ appName, showPrompt, isHostAppUrl, runWithWebContentsDebugger }) {
   const answers = new Map(); // origin -> whether the user allowed it, or the question in flight
 
   // Runs the script as the body of an async function in the page and gives
@@ -57,16 +51,15 @@ function createBrowserDevTools({
     return origin;
   }
 
-  // Asked once per origin and run of the app; a second caller waits on the
-  // same question.
+  // Remember explicit decisions until quit; concurrent callers share the question.
   function allowed(origin) {
     if (!answers.has(origin)) answers.set(origin, ask(origin));
     return answers.get(origin);
   }
 
   async function ask(origin) {
-    const { response } = await dialog.showMessageBox(getMainWindow(), {
-      type: 'question',
+    const { response, cancelled } = await showPrompt({
+      kind: 'permission',
       buttons: ['Allow until I quit', "Don't allow"],
       defaultId: 1,
       cancelId: 1,
@@ -74,7 +67,9 @@ function createBrowserDevTools({
       message: `Let agents run JavaScript on ${origin}?`,
       detail: `A script can read and change anything this site's pages can, including what ${appName} otherwise keeps from agents, such as passwords in fields. It applies to this site only, until you quit ${appName}.`,
     });
-    return response === 0;
+    if (cancelled) answers.delete(origin);
+    else answers.set(origin, response === 0);
+    return !cancelled && response === 0;
   }
 
   return { evaluate };

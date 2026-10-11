@@ -81,7 +81,8 @@ function createNativeBrowserPage({
     const contents = liveContents(entry);
     if (!contents) throw new Error(`${appName} browser is not open.`);
     // Waking the page can outlast the caller; then nothing more is done.
-    if (Date.now() >= request.startBy) throw new Error('The browser page did not finish in time.');
+    if (Date.now() >= request.startBy || request.runEnded?.())
+      throw new Error('The browser page did not finish in time.');
     if (request.action === 'find') {
       const found = await reading.find(contents, entry, request.query);
       return { requestId: request.requestId, ok: true, ...found };

@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { callPageScript } = require('./browserPageScript.cjs');
 
-function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, getMainWindow }) {
+function createNativeBrowserCredentials({ app, appName, safeStorage, showPrompt }) {
   const CREDENTIAL_VAULT_FILE = () => path.join(app.getPath('userData'), 'browser-credentials.enc');
   const CREDENTIAL_CONSENT_FILE = () =>
     path.join(app.getPath('userData'), 'browser-credentials.consent');
@@ -108,8 +108,8 @@ function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, get
     try {
       if (consent === 'unset') {
         // First-time opt-in. The user can enable, skip for now, or never ask.
-        const { response } = await dialog.showMessageBox(getMainWindow(), {
-          type: 'question',
+        const { response } = await showPrompt({
+          kind: 'credential',
           buttons: ['Enable & save login', 'Not now', 'Never'],
           defaultId: 0,
           cancelId: 1,
@@ -126,8 +126,8 @@ function createNativeBrowserCredentials({ app, appName, safeStorage, dialog, get
         upsertCredential(origin, payload.username || '', password);
         return;
       }
-      const { response } = await dialog.showMessageBox(getMainWindow(), {
-        type: 'question',
+      const { response } = await showPrompt({
+        kind: 'credential',
         buttons: ['Save password', 'Not now'],
         defaultId: 0,
         cancelId: 1,

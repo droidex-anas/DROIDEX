@@ -223,6 +223,14 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
+  browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
+  browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
+  browserPermissionPromptReady: (ready) =>
+    ipcRenderer.invoke('browser-permission-prompt-ready', ready),
+  browserPermissionPromptResolve: (requestId, response) =>
+    ipcRenderer.invoke('browser-permission-prompt-resolve', { requestId, response }),
+  onBrowserPermissionPrompt: (handler) => on('browser-permission-prompt', handler),
+  onBrowserPermissionPromptDismiss: (handler) => on('browser-permission-prompt-dismiss', handler),
   nativeBrowserReserve: (browserSessionId, savedUrl, savedMode) =>
     ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl, savedMode }),
   nativeBrowserRelease: (browserSessionId) =>
