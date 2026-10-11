@@ -32,8 +32,6 @@ import {
   canvasSummary,
   emptyCanvasManifest,
   mutationFingerprint,
-  recordedCreate,
-  recordedRevision,
   recordMutation,
   requireDesign,
   requireExpectedRevision,
@@ -41,6 +39,7 @@ import {
   type CanvasManifest,
   type SourceRevisionMutation,
 } from './canvasManifest.js';
+import { recordedCreate, recordedRevision } from './canvasReceipts.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,

@@ -5,13 +5,11 @@ import {
   CANVAS_MUTATION_RETENTION,
   emptyCanvasManifest,
   mutationFingerprint,
-  recordedArrange,
-  recordedCreate,
-  recordedRevision,
   recordMutation,
   type PersistedDesign,
   type PersistedMutation,
 } from './canvasManifest.js';
+import { recordedArrange, recordedCreate, recordedRevision } from './canvasReceipts.js';
 import type { CanvasBuildState } from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;

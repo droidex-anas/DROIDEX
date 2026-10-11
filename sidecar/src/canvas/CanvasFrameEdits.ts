@@ -11,16 +11,13 @@ import {
   canvasChange,
   CANVAS_TOMBSTONE_LIMIT,
   mutationFingerprint,
-  recordedArrange,
-  recordedRemove,
-  recordedRename,
-  recordedUndo,
   recordMutation,
   requireDesign,
   toPlacements,
   type PersistedDesign,
   type Placement,
 } from './canvasManifest.js';
+import { recordedArrange, recordedRemove, recordedRename, recordedUndo } from './canvasReceipts.js';
 import type { ArrangeFramesInput, CanvasChange, CanvasScope, FrameRect } from './protocol.js';
 import {
   removeFramesInputSchema,
