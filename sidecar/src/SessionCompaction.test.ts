@@ -73,6 +73,7 @@ function createHarness(): Harness {
     resolveAutomaticTarget: () => undefined,
     settleAutomatic: () => undefined,
     onPrimaryNotification: () => undefined,
+    observeProviderClosure: () => undefined,
   });
   return {
     calls,

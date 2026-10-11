@@ -148,6 +148,9 @@ export class DroidRuntime implements FactoryRuntime {
     { pid: number; transport: ConnectableDroidTransport; client: DroidClient }
   >();
   private readonly turns = new WeakMap<object, DroidTurn>();
+  // Aborted when the running turn's process dies: the SDK would otherwise wait
+  // for notices that can no longer come.
+  private readonly turnExits = new WeakMap<object, AbortController>();
 
   steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome> {
     const client = this.processes.get(session)?.client;
@@ -175,10 +178,12 @@ export class DroidRuntime implements FactoryRuntime {
   ): AsyncGenerator<DroidStreamEvent, void, undefined> {
     if (this.turns.has(session)) throw new Error('Droid already has a running turn.');
     const turn = new DroidTurn(session.sessionId);
+    const exit = new AbortController();
     this.turns.set(session, turn);
+    this.turnExits.set(session, exit);
     let result: DroidStreamEvent | undefined;
     try {
-      for await (const event of session.stream(prompt, options)) {
+      for await (const event of session.stream(prompt, { ...options, abortSignal: exit.signal })) {
         turn.observeMainEvent(event);
         if (event.type === 'result') result = event;
         else yield event;
@@ -188,6 +193,7 @@ export class DroidRuntime implements FactoryRuntime {
         if (turn.consumeIdleEndsOpenLoop(event)) break;
       }
       yield* turn.streamTail();
+      exit.signal.throwIfAborted();
       // No steer may join after the settlement event becomes visible.
       this.turns.delete(session);
       const final = turn.finalResult(result);
@@ -195,6 +201,7 @@ export class DroidRuntime implements FactoryRuntime {
     } finally {
       turn.stop();
       if (this.turns.get(session) === turn) this.turns.delete(session);
+      if (this.turnExits.get(session) === exit) this.turnExits.delete(session);
     }
   }
 
@@ -259,11 +266,7 @@ export class DroidRuntime implements FactoryRuntime {
       const params = createInitializeSessionParams(options);
       const init = await client.initializeSession(params);
       const session = new DroidSession(client, init.sessionId, init);
-      const pid = transport.processId;
-      if (pid !== undefined) this.processes.set(session, { pid, transport, client });
-      session.addCleanup(() => {
-        this.stopTurn(session);
-      });
+      this.own(session, transport, client);
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
@@ -278,16 +281,24 @@ export class DroidRuntime implements FactoryRuntime {
     try {
       const init = await client.loadSession(params);
       const session = new DroidSession(client, sessionId, init);
-      const pid = transport.processId;
-      if (pid !== undefined) this.processes.set(session, { pid, transport, client });
-      session.addCleanup(() => {
-        this.stopTurn(session);
-      });
+      this.own(session, transport, client);
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
       throw explainInitFailure(explainLoadFailure(sessionId, err));
     }
+  }
+
+  private own(session: DroidSession, transport: ConnectableDroidTransport, client: DroidClient) {
+    const pid = transport.processId;
+    if (pid !== undefined) this.processes.set(session, { pid, transport, client });
+    transport.onError((error) => {
+      this.turnExits.get(session)?.abort(error);
+      this.stopTurn(session);
+    });
+    session.addCleanup(() => {
+      this.stopTurn(session);
+    });
   }
 
   private async createClient(

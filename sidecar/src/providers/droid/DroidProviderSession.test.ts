@@ -364,6 +364,7 @@ async function droidOverMemory() {
   const runtime = new DroidRuntime();
   // Steering needs the client the runtime would have started the session on.
   Reflect.get(runtime, 'processes').set(droid, { pid: 1, transport, client });
+  Reflect.apply(Reflect.get(runtime, 'own'), runtime, [droid, transport, client]);
   const notify = (notification: Record<string, unknown>) => {
     receive({
       jsonrpc: '2.0',
@@ -659,4 +660,15 @@ test('a Droid process that exits on its own closes the session', async () => {
     'Droid process exited normally. The chat reopens with your next message.',
   );
   assert.equal(h.session.isClosed, true);
+});
+
+test('a turn whose Droid process exits fails instead of waiting', { timeout: 2000 }, async () => {
+  const h = await droidOverMemory();
+  const prompt = h.nextRequest('droid.add_user_message', () => {
+    h.state('thinking');
+  });
+  const events = turnEvents(h.session.stream('hello'));
+  await prompt;
+  h.exit('Droid process exited normally');
+  await assert.rejects(events, /Droid process exited normally/);
 });

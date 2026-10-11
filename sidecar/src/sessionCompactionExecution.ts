@@ -47,6 +47,8 @@ export interface SessionCompactionExecutionDependencies {
   agentProcesses: Pick<AgentProcessMonitor, 'track' | 'untrack' | 'adoptDescendantsAsRoots'>;
   interactionsFor(ref: { id: string }): ProviderInteractions;
   emitError(error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>): void;
+  // The replacement provider's runtime can die like the one it replaced.
+  observeProviderClosure(liveSession: LiveSession): void;
 }
 
 interface SessionCompactionExecutionEffects {
@@ -201,6 +203,7 @@ export class SessionCompactionExecution {
       liveSession.session = provider;
       liveSession.droid = replacement;
       installed = true;
+      this.dependencies.observeProviderClosure(liveSession);
       if (replacementPid !== undefined)
         this.dependencies.agentProcesses.track(appSessionId, replacementPid, () =>
           this.dependencies.runtime.isProcessAlive(replacement),
