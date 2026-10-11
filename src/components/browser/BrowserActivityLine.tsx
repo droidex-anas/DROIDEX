@@ -4,7 +4,6 @@ import { ChevronUp } from '@droidex/icons';
 import { useStoreSelector } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { browserStepLabel } from '../../lib/browserTools';
-import { transcriptEventIsVisible } from '../../lib/childSessions';
 import { wrapTabFocus } from '../../lib/focusTrap';
 import { sessionAttention } from '../../lib/sessionAttention';
 import type { SessionActivityStatus } from '../../lib/sidebarActivity';
@@ -12,7 +11,8 @@ import { formatDuration } from '../../lib/tools';
 import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
 import { ActivityStatusGlyph } from '../ActivityStatusGlyph';
 import { FeedItemView } from '../chat';
-import { buildFeed, startsTurn, type FeedItem } from '../chatFeed';
+import { buildFeed, type FeedItem } from '../chatFeed';
+import { currentTurn } from './browserTurn';
 import { PendingSteers } from '../transcript/PendingSteers';
 import { WorkingIndicator } from '../transcript/primitives';
 import { summarizeTools } from '../transcript/rows';
@@ -209,28 +209,6 @@ function sessionOf(
   appSessionId: string,
 ): SessionSummary | undefined {
   return Object.hasOwn(sessions, appSessionId) ? sessions[appSessionId] : undefined;
-}
-
-interface Turn {
-  // The prompt or settings change that opened the turn, unless the loaded
-  // part of the chat no longer reaches back to it.
-  start?: TranscriptEvent;
-  events: TranscriptEvent[];
-}
-
-// The chat's latest turn as the transcript groups it (the primary transcript,
-// not a subagent's), except that a steer the model took in is a step of the
-// run it joined. When the turn began before the loaded part of the chat, what
-// is loaded stands for it.
-function currentTurn(transcript: TranscriptEvent[]): Turn {
-  const since: TranscriptEvent[] = [];
-  for (let index = transcript.length - 1; index >= 0; index -= 1) {
-    const event = transcript[index];
-    if (!transcriptEventIsVisible(event, null)) continue;
-    if (startsTurn(event) && !event.steered) return { start: event, events: since.reverse() };
-    since.push(event);
-  }
-  return { events: since.reverse() };
 }
 
 // The feed's last rows. A long run of tool calls keeps only its newest, so the

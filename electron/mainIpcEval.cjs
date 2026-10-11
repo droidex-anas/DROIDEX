@@ -27,7 +27,11 @@ const PR_WORKSPACE_OPERATIONS = {
 
 // Browser pane pages send these through nativeBrowserPreload.cjs, so they
 // cannot require the main window.
-const BROWSER_PANE_CHANNELS = ['native-browser-design-event', 'native-browser-credential-capture'];
+const BROWSER_PANE_CHANNELS = [
+  'native-browser-design-event',
+  'native-browser-credential-capture',
+  'native-browser-credential-fill-valid',
+];
 
 function createBrowserWindowStub() {
   const created = Promise.withResolvers();
@@ -99,7 +103,8 @@ function observeMain(electron) {
   electron.session.defaultSession.protocol = {
     handle: (scheme, handler) => boot.protocolHandlers.set(scheme, handler),
   };
-  electron.session.fromPartition = () => ({ protocol: { handle() {} } });
+  electron.session.fromPartition = () =>
+    Object.assign(new EventEmitter(), { protocol: { handle() {} } });
 
   const github = require('./github.cjs');
   const conversation = require('./githubPrConversation.cjs');

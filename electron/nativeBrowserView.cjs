@@ -1,11 +1,11 @@
 // Wires a bound <webview> guest into its browser entry: the page listeners that
-// keep the entry's URL, history, console and load state current. The partition
-// handlers stay as they were for views: permissions and devices are denied.
+// keep the entry's URL, history, console and load state current.
 const { CONSOLE_LEVELS } = require('./browserDiagnostics.cjs');
 
 function createNativeBrowserViewFactory({
   session,
   partition,
+  permissions,
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticUrl,
   urls,
@@ -13,10 +13,10 @@ function createNativeBrowserViewFactory({
   emitLoaded,
   emitLoadFailed,
   applyDesignState,
-  autofill,
   onCrashed,
   onInput,
   listEntries,
+  history,
 }) {
   let browserSessionConfigured = false;
   const requestStarts = new Map(); // webRequest id -> when its headers went out
@@ -38,8 +38,8 @@ function createNativeBrowserViewFactory({
     // (and auto-selecting a device) would only open a hardware-permission
     // escalation path with no upside.
     ses.setDevicePermissionHandler(() => false);
-    ses.setPermissionCheckHandler(() => false);
-    ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+    ses.setPermissionCheckHandler(permissions.canAccess);
+    ses.setPermissionRequestHandler(permissions.handleRequest);
     const pages = { urls: ['http://*/*', 'https://*/*'] };
     // When each request went out, for how long it took. One that never ends
     // would stay here, so the lot is dropped once it grows past any real page.
@@ -93,6 +93,7 @@ function createNativeBrowserViewFactory({
       // Documents the page has loaded, so a design crop is never taken of a
       // later one, a reload of the same URL included.
       documents: 0,
+      typedUrl: null,
       loadingUrl: null,
       loadingPromise: null,
       networkEvents: [],
@@ -102,17 +103,46 @@ function createNativeBrowserViewFactory({
   }
 
   function bindGuest(entry, contents) {
+    configureSession();
+    permissions.revokeForContents(entry.contents);
     entry.contents = contents;
     entry.crashed = false;
+    let committedUrl = null;
+    let navigation = null;
     const current = () => entry.contents === contents && !contents.isDestroyed();
+    contents.on('did-start-navigation', (_event, _url, isInPlace) => {
+      if (!isInPlace) permissions.revokeForContents(contents);
+    });
     contents.setWindowOpenHandler(({ url: nextUrl }) => {
       if (current()) void loadUrl(entry, nextUrl);
       return { action: 'deny' };
     });
     // Only the page the browser shows forwards app shortcuts, not one let go.
     contents.on('before-input-event', (event, input) => {
-      if (current()) onInput(event, input);
+      if (!current()) return;
+      onInput(event, input);
     });
+    contents.on('did-start-navigation', (details) => {
+      // An in-page change on the current document is not the pending navigation.
+      if (!current() || !details.isMainFrame || details.isSameDocument) return;
+      navigation = { url: details.url, typed: entry.typedUrl === details.url };
+      entry.typedUrl = null;
+    });
+    contents.on('did-redirect-navigation', (details) => {
+      if (current() && details.isMainFrame && navigation) navigation.url = details.url;
+    });
+    const saveHistory = (operation) => {
+      void operation.catch(() =>
+        console.error(
+          'Could not save browser history. Check browser-history.json in the app profile and directory permissions.',
+        ),
+      );
+    };
+    const updateTitle = (title) => {
+      if (current() && committedUrl !== null && committedUrl === contents.getURL())
+        saveHistory(history.updateTitle(committedUrl, title));
+    };
+    contents.on('page-title-updated', (_event, title) => updateTitle(title));
     contents.on('console-message', (details) => {
       // Electron's own notices about the guest are not the page's.
       if (!current() || String(details.sourceId ?? '').startsWith('node:electron/')) return;
@@ -133,18 +163,31 @@ function createNativeBrowserViewFactory({
       entry.failedRestoreUrl = null;
       entry.targetUrl = requestedUrl;
     });
-    contents.on('did-navigate', (_event, loadedUrl) => {
+    contents.on('did-frame-navigate', () => permissions.revokeForContents(contents));
+    contents.on('did-navigate', (_event, loadedUrl, httpResponseCode) => {
+      permissions.revokeForContents(contents);
       if (current()) entry.documents += 1;
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;
-      if (!current() || urls.isChromeErrorUrl(loadedUrl)) return;
+      if (!current()) return;
+      if (urls.isChromeErrorUrl(loadedUrl)) {
+        committedUrl = null;
+        navigation = null;
+        return;
+      }
       // Nor is it part of the browser's history: it goes once a page follows it.
-      const history = contents.navigationHistory;
-      if (history.getActiveIndex() === 1 && history.getEntryAtIndex(0)?.url === 'about:blank')
-        history.removeEntryAtIndex(0);
+      const navigationHistory = contents.navigationHistory;
+      if (
+        navigationHistory.getActiveIndex() === 1 &&
+        navigationHistory.getEntryAtIndex(0)?.url === 'about:blank'
+      )
+        navigationHistory.removeEntryAtIndex(0);
       entry.failedRestoreUrl = null;
       entry.targetUrl = loadedUrl;
       emitLoaded(entry, loadedUrl);
+      committedUrl = httpResponseCode < 400 ? loadedUrl : null;
+      if (committedUrl) saveHistory(history.recordVisit(committedUrl, navigation?.typed ?? false));
+      navigation = null;
     });
     contents.on('did-finish-load', () => {
       if (!current()) return;
@@ -154,11 +197,25 @@ function createNativeBrowserViewFactory({
           emitLoaded(entry, entry.targetUrl);
         return;
       }
+      updateTitle(contents.getTitle());
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
-      void autofill(contents);
     });
+    function discardTypedNavigation(failedUrl) {
+      if (navigation?.url === failedUrl) navigation = null;
+      if (entry.typedUrl === failedUrl) entry.typedUrl = null;
+    }
+    contents.on(
+      'did-fail-provisional-load',
+      (_event, _code, _description, failedUrl, isMainFrame) => {
+        if (current() && isMainFrame) discardTypedNavigation(failedUrl);
+      },
+    );
     contents.on('did-fail-load', (_event, errorCode, errorDescription, failedUrl, isMainFrame) => {
-      if (!current() || !isMainFrame || errorCode === -3) return;
+      if (!current() || !isMainFrame) return;
+      discardTypedNavigation(failedUrl);
+      if (errorCode === -3) return;
+      // The error page replaced the document, so its title is not the visit's.
+      committedUrl = null;
       const fallback = urls.httpFallbackUrl(failedUrl, errorCode);
       if (fallback) {
         urls.rememberFailedRestoreUrl(entry, entry.targetUrl || failedUrl);
@@ -174,19 +231,31 @@ function createNativeBrowserViewFactory({
     // A frame's hash change or pushState is not the page moving.
     contents.on('did-navigate-in-page', (_event, nextUrl, isMainFrame) => {
       if (!current() || !isMainFrame) return;
+      if (committedUrl !== null) {
+        committedUrl = nextUrl;
+        saveHistory(history.recordVisit(nextUrl, false));
+        updateTitle(contents.getTitle());
+      }
       entry.targetUrl = nextUrl;
       emitLoaded(entry, nextUrl);
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
     });
     contents.on('render-process-gone', (_event, details) => {
+      permissions.revokeForContents(contents);
       if (entry.contents !== contents || details?.reason === 'clean-exit') return;
       entry.crashed = true;
+      entry.typedUrl = null;
+      navigation = null;
       entry.loadingUrl = null;
       entry.loadingPromise = null;
       onCrashed(entry, details);
     });
     contents.once('destroyed', () => {
-      if (entry.contents === contents) entry.contents = null;
+      permissions.revokeForContents(contents);
+      if (entry.contents === contents) {
+        entry.contents = null;
+        entry.typedUrl = null;
+      }
     });
   }
 

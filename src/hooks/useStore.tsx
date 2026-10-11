@@ -51,6 +51,7 @@ import {
   loadAgentConfig,
   loadCompactionModel,
   loadDefaultVoice,
+  loadDesignSelectionBehavior,
   loadKnownVoices,
   loadDiffView,
   loadHarnessModels,
@@ -66,6 +67,7 @@ import {
   loadWorkspaceCwds,
   sanitizeAgentConfig,
   type AgentConfig,
+  type DesignSelectionBehavior,
   type DiffViewMode,
   type HarnessModel,
   type HarnessModels,
@@ -153,7 +155,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { createSnapshotScheduler, loadSessionSnapshot } from '../lib/sessionSnapshot';
-import { createComposerSeed, type ComposerSeed } from '../lib/composerReset';
+import { createComposerSeed, type ComposerSeed, type SubmitMode } from '../lib/composerReset';
 import { toast } from '../lib/toast';
 import { type DiffScope } from '../types/vcs';
 import {
@@ -446,6 +448,7 @@ export interface AppState {
   // the push effect always re-fires and the sidecar snapshot never goes stale.
   compactionSettingsRev: number;
   liveEnterBehavior: LiveEnterBehavior;
+  designSelectionBehavior: DesignSelectionBehavior;
   // Fidelity tier for images pasted or dropped into the composer.
   imagePasteQuality: ImagePasteQuality;
   // Voice mode: which voice speaks, and how much of the work it narrates while
@@ -727,8 +730,9 @@ export type Action =
       text: string;
       replace?: boolean;
       appSessionId?: string;
-      send?: boolean;
+      send?: SubmitMode;
       focus?: boolean;
+      designReferences?: readonly DesignReference[];
     }
   | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
@@ -777,6 +781,7 @@ export type Action =
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL'; limit?: number }
   | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
+  | { type: 'SET_DESIGN_SELECTION_BEHAVIOR'; behavior: DesignSelectionBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
   | { type: 'SET_DEFAULT_VOICE'; voice: string }
   | { type: 'SET_NARRATION_MODE'; mode: VoiceNarration }
@@ -908,6 +913,7 @@ export const initialState: AppState = {
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
   compactionSettingsRev: 0,
   liveEnterBehavior: loadLiveEnterBehavior(),
+  designSelectionBehavior: loadDesignSelectionBehavior(),
   imagePasteQuality: loadImagePasteQuality(),
   defaultVoice: loadDefaultVoice(),
   knownVoices: loadKnownVoices(),
@@ -2394,6 +2400,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         draftTileId,
         send: action.send,
         focus: action.focus,
+        designReferences: action.designReferences,
       });
       return { ...state, composerSeeds: [...state.composerSeeds, seed] };
     }
@@ -2405,7 +2412,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       const next = { ...state, composerSeeds: state.composerSeeds.filter((s) => s !== seed) };
       // A prompt sent with a chat's marks goes out as it is consumed, to that
       // chat and never to a child open in it, which would get it without them.
-      return seed.send && state.selectedChild?.parentAppSessionId === seed.appSessionId
+      return seed.send !== null && state.selectedChild?.parentAppSessionId === seed.appSessionId
         ? reduceSelectChild(next, { selection: null })
         : next;
     }
@@ -2691,6 +2698,9 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SET_LIVE_ENTER_BEHAVIOR':
       return { ...state, liveEnterBehavior: action.behavior };
+
+    case 'SET_DESIGN_SELECTION_BEHAVIOR':
+      return { ...state, designSelectionBehavior: action.behavior };
 
     case 'SET_DEFAULT_VOICE':
       return { ...state, defaultVoice: action.voice };

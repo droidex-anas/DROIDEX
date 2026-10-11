@@ -6,6 +6,7 @@ import {
 } from '../hooks/useStore';
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
 import type {
+  DesignSelectionBehavior,
   DiffViewMode,
   LiveEnterBehavior,
   ModelSelectorStyle,
@@ -35,6 +36,7 @@ import { HardwareAccelerationSetting } from './HardwareAccelerationSetting';
 import { HarnessCliSettings } from './HarnessCliSettings';
 import { HarnessModelSettings } from './HarnessModelSettings';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
+import { BrowserSettings } from './browserSettings/BrowserSettings';
 import {
   bestTabForQuery,
   searchSettings,
@@ -299,6 +301,7 @@ function GeneralSection() {
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
       models: current.models,
       liveEnterBehavior: current.liveEnterBehavior,
+      designSelectionBehavior: current.designSelectionBehavior,
       imagePasteQuality: current.imagePasteQuality,
       defaultVoice: current.defaultVoice,
       knownVoices: current.knownVoices,
@@ -357,6 +360,26 @@ function GeneralSection() {
               dispatch({
                 type: 'SET_LIVE_ENTER_BEHAVIOR',
                 behavior: behavior as LiveEnterBehavior,
+              });
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Design mode selections"
+          description="What picking an element in the Browser's design mode does. Open prompt box asks about it in a small box beside it on the page; Add to composer puts it in the chat's composer as a chip."
+        >
+          <Dropdown
+            ariaLabel="Design mode selections"
+            value={state.designSelectionBehavior}
+            width="w-44"
+            options={[
+              { value: 'prompt-box', label: 'Open prompt box' },
+              { value: 'composer', label: 'Add to composer' },
+            ]}
+            onChange={(behavior) => {
+              dispatch({
+                type: 'SET_DESIGN_SELECTION_BEHAVIOR',
+                behavior: behavior as DesignSelectionBehavior,
               });
             }}
           />
@@ -924,6 +947,9 @@ export default function SettingsPanel() {
       break;
     case 'MCP servers':
       content = <McpServersSettings cwd={mcpCwd} />;
+      break;
+    case 'Browser':
+      content = <BrowserSettings />;
       break;
     case 'DroidProxy':
       content = <DroidProxySettings />;

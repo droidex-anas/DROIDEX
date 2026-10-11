@@ -26,6 +26,8 @@ import { loadPersistedBrowsers } from './persistedBrowserSnapshot';
 export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
 export type LiveEnterBehavior = 'steer' | 'queue';
+// Where a design mode pick goes: a prompt box beside it, or a chip in the composer.
+export type DesignSelectionBehavior = 'prompt-box' | 'composer';
 export type DiffViewMode = 'unified' | 'split';
 export type ModelSelectorStyle = 'classic' | 'slider';
 // Where a side chat opens when none is on screen: the utility pane or a floating window.
@@ -129,6 +131,7 @@ export function saveAgentConfig(config: AgentConfig): void {
 // for compaction across every session.
 const COMPACTION_MODEL_STORAGE_KEY = 'droid-compaction-model';
 const LIVE_ENTER_BEHAVIOR_STORAGE_KEY = 'droid-live-enter-behavior';
+const DESIGN_SELECTION_BEHAVIOR_STORAGE_KEY = 'droid-design-selection-behavior';
 const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
 const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
@@ -184,6 +187,20 @@ export function loadLiveEnterBehavior(): LiveEnterBehavior {
 
 export function saveLiveEnterBehavior(behavior: LiveEnterBehavior): void {
   saveItem(LIVE_ENTER_BEHAVIOR_STORAGE_KEY, behavior);
+}
+
+export function loadDesignSelectionBehavior(): DesignSelectionBehavior {
+  try {
+    return getLocalStorage()?.getItem(DESIGN_SELECTION_BEHAVIOR_STORAGE_KEY) === 'composer'
+      ? 'composer'
+      : 'prompt-box';
+  } catch {
+    return 'prompt-box';
+  }
+}
+
+export function saveDesignSelectionBehavior(behavior: DesignSelectionBehavior): void {
+  saveItem(DESIGN_SELECTION_BEHAVIOR_STORAGE_KEY, behavior);
 }
 
 function normalizeImagePasteQuality(value: unknown): ImagePasteQuality {

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   BrowserNativeRequest,
   ClientCommand,
@@ -33,7 +34,12 @@ export interface SessionBrowserDependencies {
   emit: Emit;
   /** Frames a prompt's text for its chat: an App request or a side-chat question. */
   framePrompt: (appSessionId: string, text: string, responseFormat?: ResponseFormat) => string;
-  sendPrompt: (appSessionId: string, prompt: string, mentions?: ProviderMention[]) => Promise<void>;
+  sendPrompt: (
+    appSessionId: string,
+    prompt: string,
+    mentions?: ProviderMention[],
+    steerId?: string,
+  ) => Promise<void>;
   /** Runs a request in the desktop app, which owns the pages. */
   requestBrowser: RequestBrowser;
 }
@@ -43,6 +49,8 @@ const nextNativeBrowserRequestId = () =>
   `browser-native-${Date.now().toString(36)}-${(nativeBrowserSeq++).toString(36)}`;
 
 export class SessionBrowser {
+  private readonly initiator = new AsyncLocalStorage<'user'>();
+
   constructor(private readonly d: SessionBrowserDependencies) {}
 
   createRuntime(
@@ -61,10 +69,12 @@ export class SessionBrowser {
 
   async open(cmd: Extract<ClientCommand, { type: 'browser.open' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.open({
-        ...cmd,
-        appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
-      }),
+      this.initiator.run('user', () =>
+        this.d.browsers.open({
+          ...cmd,
+          appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
+        }),
+      ),
     );
   }
 
@@ -88,7 +98,9 @@ export class SessionBrowser {
 
   async reload(cmd: Extract<ClientCommand, { type: 'browser.reload' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId)),
+      this.initiator.run('user', () =>
+        this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId)),
+      ),
     );
   }
 
@@ -96,10 +108,12 @@ export class SessionBrowser {
     cmd: Extract<ClientCommand, { type: 'browser.resizeViewport' }>,
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
-      this.d.browsers.resizeViewport({
-        ...cmd,
-        appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
-      }),
+      this.initiator.run('user', () =>
+        this.d.browsers.resizeViewport({
+          ...cmd,
+          appSessionId: this.requireBrowserAppSessionId(cmd.appSessionId),
+        }),
+      ),
     );
   }
 
@@ -127,12 +141,15 @@ export class SessionBrowser {
         appSessionId,
         frame: (instruction) => this.d.framePrompt(appSessionId, instruction, cmd.responseFormat),
       });
-      await this.d.sendPrompt(appSessionId, prompt, cmd.mentions);
+      await this.d.sendPrompt(appSessionId, prompt, cmd.mentions, cmd.steerId);
     });
   }
 
   private async requestNativeBrowser(request: BrowserNativeRequest) {
-    const result = await this.d.requestBrowser(request);
+    const result = await this.d.requestBrowser({
+      ...request,
+      initiator: this.initiator.getStore() ?? 'agent',
+    });
     if (!result.ok) throw new Error(result.error ?? 'DROIDEX browser action failed.');
     return result;
   }

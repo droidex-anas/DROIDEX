@@ -8,6 +8,7 @@ import { HistoryIndex } from './history.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
 import type { DroidStreamEvent } from '@factory/droid-sdk';
+import { formatDesignPrompt } from './browser/designPromptPacks.js';
 
 // Answers every request the way Droid answers load_session for a session it
 // will not open.
@@ -181,6 +182,20 @@ test('Droid steer preserves delivery, tail completion, and interrupt ordering', 
         assert.equal(await runtime.steer(droid, 'after settlement'), false);
       },
     );
+
+    await t.test('paths and ordinary slash text steer through the real DroidTurn', async () => {
+      for (const text of [
+        formatDesignPrompt('/abs/path/pack.json', 'Restyle the heading', []),
+        'Read /tmp/README.md and https://example.test/docs before changing the UI',
+        'Keep the width/height ratio at 4 / 3',
+      ]) {
+        const stream = start();
+        await readText(stream, 'main');
+        assert.equal(await runtime.steer(droid, text), true);
+        await readText(stream, 'tail');
+        await finish(stream);
+      }
+    });
 
     await t.test(
       'a steer shown before its loop starts keeps the turn open for its reply',
