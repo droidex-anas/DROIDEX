@@ -59,6 +59,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 class PermissionNormalizingTransport implements ConnectableDroidTransport {
   private childProcess: ChildProcess | undefined;
+  private readonly errorListeners: ((error: Error) => void)[] = [];
 
   constructor(private readonly inner: DroidClientTransport) {}
 
@@ -90,8 +91,13 @@ class PermissionNormalizingTransport implements ConnectableDroidTransport {
     });
   }
 
+  // The SDK keeps a single error handler, which its client takes; the session
+  // also needs to hear that its process is gone.
   onError(callback: (error: Error) => void): void {
-    this.inner.onError(callback);
+    if (this.errorListeners.push(callback) > 1) return;
+    this.inner.onError((error) => {
+      for (const listener of this.errorListeners) listener(error);
+    });
   }
 
   close(): Promise<void> {

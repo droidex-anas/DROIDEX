@@ -545,6 +545,9 @@ export class SessionManager {
       emitError: (error) => {
         this.emitError(error);
       },
+      observeProviderClosure: (liveSession) => {
+        this.lifecycle.observeProviderClosure(liveSession);
+      },
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       getFactoryDefaults: () => this.getFactoryDefaults(),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),

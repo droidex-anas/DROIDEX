@@ -26,6 +26,7 @@ type DroidProcessRuntime = Pick<
   FactoryRuntime,
   | 'processIdOf'
   | 'isProcessAlive'
+  | 'onProcessExit'
   | 'factoryApiKey'
   | 'steer'
   | 'streamTurn'
@@ -53,10 +54,11 @@ export class DroidProviderSession implements ProviderSession {
   private readonly permissions: SessionAutonomy;
   private retired = false;
   private closePromise?: Promise<void>;
-  private resolveClosed: () => void = () => undefined;
+  private resolveClosed: (error?: Error) => void = () => undefined;
   readonly closed = new Promise<Error | undefined>((resolve) => {
-    this.resolveClosed = () => {
-      resolve(undefined);
+    this.resolveClosed = (error) => {
+      this.retired = true;
+      resolve(error);
     };
   });
   private nativeAutonomy: FactorySession['initResult']['settings']['autonomyLevel'];
@@ -119,6 +121,12 @@ export class DroidProviderSession implements ProviderSession {
         case 'usage_limit':
           this.limitDetail = notice.detail;
       }
+    });
+    // A process that ends on its own takes every later request with it, so
+    // lifecycle must release this runtime and reopen the chat on its next send.
+    runtime.onProcessExit(droid, (error) => {
+      if (!this.closePromise)
+        this.resolveClosed(new Error(`${error.message}. The chat reopens with your next message.`));
     });
   }
 

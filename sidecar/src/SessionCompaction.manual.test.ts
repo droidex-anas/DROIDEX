@@ -156,6 +156,7 @@ function createHarness(options: { adoptSucceeds?: boolean; adopt?: () => Promise
     resolveAutomaticTarget: () => undefined,
     settleAutomatic: () => undefined,
     onPrimaryNotification: () => undefined,
+    observeProviderClosure: () => undefined,
   });
   return {
     calls,
