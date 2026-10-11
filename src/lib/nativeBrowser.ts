@@ -265,3 +265,7 @@ export function onNativeBrowserClosed(
   if (!isDesktop()) return () => undefined;
   return window.droidControl!.onNativeBrowserClosed(handler);
 }
+
+export function onNativeBrowserDataCleared(handler: () => void): () => void {
+  return window.droidControl?.onNativeBrowserDataCleared(handler) ?? (() => undefined);
+}

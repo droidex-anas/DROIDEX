@@ -78,6 +78,8 @@ function fixture() {
   const frame = { id: 'frame', loaderId: 'document', url: 'https://example.test/login' };
   const entry = { documents: 1, errorTimes: [], networkEvents: [], consoleEvents: [] };
   const input = [];
+  const points = [];
+  const settings = { showAgentCursor: true, diagnosticsEnabled: true };
   const prompts = [];
   let hit;
   let answer = async () => ({ response: 1 });
@@ -173,7 +175,8 @@ function fixture() {
     },
     unthrottled: (_contents, run) => run(),
     redactUrl: (value) => value,
-    onPoint: () => {},
+    onPoint: (_entry, point) => points.push({ point, writes: input.length }),
+    getSettings: () => settings,
   });
   const request = new AbortController();
   const act = (action) =>
@@ -205,6 +208,8 @@ function fixture() {
     button,
     act,
     input,
+    points,
+    settings,
     prompts,
     entry,
     contents,
@@ -585,5 +590,25 @@ test('a label associated with a submit control requires sign-in approval', async
   assert.equal(
     f.input.some((event) => event.type === 'mousePressed'),
     false,
+  );
+});
+
+test('fill and type report the target centre as a click before writing, including focused typing', async () => {
+  const f = fixture();
+  const { node, ref } = f.field({});
+  await f.act({ action: 'fill', ref, value: 'filled' });
+  assert.equal(node.value, 'filled');
+  await f.act({ action: 'type', ref, text: 'typed' });
+  await f.act({ action: 'type', text: 'focused' });
+  f.settings.showAgentCursor = false;
+  await f.act({ action: 'fill', ref, value: 'unseen' });
+  assert.deepEqual(f.points, [
+    { point: { x: 10, y: 10, kind: 'click' }, writes: 0 },
+    { point: { x: 10, y: 10, kind: 'click' }, writes: 0 },
+    { point: { x: 10, y: 10, kind: 'click' }, writes: 1 },
+  ]);
+  assert.deepEqual(
+    f.input.map((event) => event.text),
+    ['typed', 'focused'],
   );
 });

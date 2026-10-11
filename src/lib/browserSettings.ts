@@ -53,6 +53,7 @@ export interface BrowserCredentialsSnapshot {
 export interface BrowserSettingsCommands {
   browserCredentialsList: () => Promise<BrowserCredentialsSnapshot>;
   browserCredentialsDelete: (origin: string) => Promise<BrowserCredentialsSnapshot>;
+  browserDataClear: () => Promise<BrowserSettingsSnapshot>;
   browserSettingsGet: () => Promise<BrowserSettingsSnapshot>;
   browserSettingsUpdate: (patch: BrowserSettingsPatch) => Promise<BrowserSettingsSnapshot>;
   browserSitePermissionRevoke: (

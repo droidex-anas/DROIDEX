@@ -15,6 +15,7 @@ function createBrowserSettingsController({
   userDataPath,
   downloadsPath,
   showPrompt,
+  clearBrowsingData,
   onSitePermissionModeChanged,
 }) {
   const settingsPath = path.join(userDataPath, 'browser-settings.json');
@@ -129,10 +130,30 @@ function createBrowserSettingsController({
     pendingUpdates = new AbortController();
   }
 
-  function assertAgentAccess() {
-    if (!requireSettings().agentAccessEnabled) {
+  async function clearData() {
+    const { response, cancelled } = await showPrompt(
+      {
+        kind: 'warning',
+        title: 'Clear browser data?',
+        message:
+          'Open browser tabs will close. Cookies, cache, and site storage will be removed, so you may be signed out.',
+        buttons: ['Clear data', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      },
+      { rendererOnly: true },
+    );
+    if (response === 0 && !cancelled) await clearBrowsingData();
+    return snapshot();
+  }
+
+  function assertAgentAccess(action) {
+    const current = requireSettings();
+    if (!current.agentAccessEnabled) {
       throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
     }
+    if (['inspect', 'network', 'console'].includes(action) && !current.diagnosticsEnabled)
+      throw new Error('Agent browser diagnostics are off. Enable them in Settings > Browser.');
   }
 
   function downloadSettings() {
@@ -145,6 +166,7 @@ function createBrowserSettingsController({
     initialize,
     snapshot,
     update,
+    clearData,
     cancelPendingUpdates,
     assertAgentAccess,
     downloadSettings,

@@ -22,6 +22,7 @@ function createNativeBrowserPage({
   findEntryForContents,
   nativeImage,
   showPrompt,
+  getSettings,
 }) {
   const operationsOn = new WeakMap(); // guest contents -> { count, generation }
   const reading = createBrowserReading({
@@ -41,10 +42,15 @@ function createNativeBrowserPage({
     showPrompt,
     unthrottled,
     redactUrl: redactBrowserPageUrl,
-    onPoint: ({ browserSessionId }, { x, y, kind }) =>
-      sendToRenderer('native-browser-agent-point', { browserSessionId, x, y, kind }),
+    onPoint: sendAgentPoint,
+    getSettings,
   });
   const waits = createBrowserWait({ reading });
+
+  function sendAgentPoint({ browserSessionId }, { x, y, kind }) {
+    if (getSettings().showAgentCursor)
+      sendToRenderer('native-browser-agent-point', { browserSessionId, x, y, kind });
+  }
 
   // Design mode as the app shows it: on or off, drawing or not, the scale the
   // pane draws the page at (so the overlay keeps its size on screen), the
@@ -373,6 +379,7 @@ function createNativeBrowserPage({
 
   return {
     setDesignState,
+    sendAgentPoint,
     applyDesignState,
     runAgentAction,
     captureDesignSelection,

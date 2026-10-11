@@ -14,9 +14,16 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
   const loads = [];
   const loadFailures = [];
   const sessions = new Map();
+  const events = [];
+  const settings = { homePage: 'https://www.google.com/', showAgentCursor: true };
+  const cleared = [];
   const session = {
     fromPartition(partition) {
+      if (sessions.has(partition)) return sessions.get(partition);
       const ses = {
+        clearStorageData: async (options) => cleared.push(options),
+        clearCache: async () => cleared.push('cache'),
+        clearAuthCache: async () => cleared.push('auth'),
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DROIDEX/1.3.7 Chrome/142.0.7444.175 Electron/39.2.6 Safari/537.36',
         getUserAgent: () => ses.userAgent,
@@ -37,6 +44,8 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
     session,
     dialog: {},
     safeStorage: {},
+    getSettings: () => settings,
+    cancelBrowserRequests() {},
     permissions: createBrowserPermissionController({
       isNativeBrowserContents: (contents) => Boolean(manager.sessionIdForWebContents(contents)),
       isWorking: () => false,
@@ -49,13 +58,14 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
     preloadPath: '/app/nativeBrowserPreload.cjs',
     getHostAppUrl: () => 'http://localhost:5173/',
     sendToRenderer: (channel, payload) => {
+      events.push({ channel, ...payload });
       if (channel === 'native-browser-load-failed') loadFailures.push(payload.error);
     },
   });
 
   // What the renderer and Electron do when the pane mounts a page.
-  function mountGuest(browserSessionId) {
-    const { src } = manager.reserve(browserSessionId, HOST);
+  function mountGuest(browserSessionId, savedUrl) {
+    const { src } = manager.reserve(browserSessionId, HOST, savedUrl);
     const webPreferences = {};
     manager.handleWillAttach({ preventDefault() {} }, webPreferences, { src }, HOST);
     const guest = new EventEmitter();
@@ -63,7 +73,11 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
       url: 'about:blank',
       webPreferences,
       getType: () => 'webview',
-      isDestroyed: () => false,
+      isDestroyed: () => guest.destroyed === true,
+      close: () => {
+        guest.destroyed = true;
+        guest.emit('destroyed');
+      },
       getURL: () => guest.url,
       navigationHistory: {
         getActiveIndex: () => 0,
@@ -96,7 +110,17 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
     return guest;
   }
 
-  return { manager, mountGuest, unreachable, loads, loadFailures, sessions };
+  return {
+    manager,
+    mountGuest,
+    unreachable,
+    loads,
+    loadFailures,
+    sessions,
+    settings,
+    events,
+    cleared,
+  };
 }
 
 test('browser partition permissions require an owned page and navigation or release clears one-time grants', async () => {
@@ -235,4 +259,55 @@ test('a page action still waiting on a load does nothing once the browser closes
   finishLoad();
   await assert.rejects(back, /browser is not open/);
   await opening;
+});
+
+test('only the first blank open of a new tab uses Home; a mounted guest loads its saved page or none', async () => {
+  const { manager, mountGuest, settings, loads } = createBrowser();
+  settings.homePage = 'https://home.test/';
+  const opening = manager.open('new', 'about:blank');
+  mountGuest('new');
+  await opening;
+  mountGuest('blank', 'about:blank');
+  await new Promise(setImmediate);
+  mountGuest('restored', 'https://saved.test/');
+  await new Promise(setImmediate);
+  settings.homePage = 'https://next-home.test/';
+  await manager.openHome('restored');
+  await manager.open('restored', 'about:blank');
+  assert.deepEqual(loads, [
+    'https://home.test/',
+    'https://saved.test/',
+    'https://next-home.test/',
+    'about:blank',
+  ]);
+});
+
+test('clearing closes pages and clears only the browser partition before allowing a new tab', async () => {
+  const { manager, mountGuest, sessions, cleared, events } = createBrowser();
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://app.test/');
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  sessions.get('persist:droidex-browser').clearStorageData = async (options) => {
+    cleared.push(options);
+    started.resolve();
+    await resume.promise;
+  };
+  const clearing = manager.clearBrowsingData();
+  await started.promise;
+  assert.equal(guest.isDestroyed(), true);
+  assert.equal(manager.resourceCounts().sessions, 0);
+  assert.throws(() => mountGuest('replacement'), /data is being cleared/);
+  assert.equal(events.length, 0);
+  resume.resolve();
+  await clearing;
+  assert.deepEqual(events, [{ channel: 'native-browser-data-cleared' }]);
+  assert.deepEqual(cleared, [
+    { storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] },
+    'cache',
+    'auth',
+  ]);
+  assert.deepEqual([...sessions.keys()], ['persist:droidex-browser']);
+  mountGuest('replacement');
+  await new Promise(setImmediate);
 });

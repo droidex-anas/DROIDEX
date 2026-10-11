@@ -169,6 +169,7 @@ const nativeBrowserManager = createNativeBrowserManager({
   safeStorage,
   systemPreferences,
   getSettings: () => browserSettings.snapshot(),
+  cancelBrowserRequests: () => nativeBrowserRequests.cancelAll(),
   permissions: browserPermissions,
   showPrompt: browserPrompts.request,
   onGuestReleased: (contents) => browserDownloads.cancelPendingForContents(contents),
@@ -185,7 +186,7 @@ app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handle
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
   showPrompt: browserPrompts.request,
-  assertAgentAccess: () => browserSettings.assertAgentAccess(),
+  assertAgentAccess: (action) => browserSettings.assertAgentAccess(action),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
@@ -229,6 +230,7 @@ app.setPath('userData', userDataPath);
 const browserSettings = createBrowserSettingsController({
   userDataPath,
   downloadsPath: app.getPath('downloads'),
+  clearBrowsingData: () => nativeBrowserManager.clearBrowsingData(),
   showPrompt: browserPrompts.request,
   onSitePermissionModeChanged: browserPermissions.revokeAll,
 });
@@ -1038,6 +1040,10 @@ function registerIpc() {
     assertMainRenderer(event);
     return browserSettings.update(patch);
   });
+  ipcMain.handle('browser-data-clear', (event) => {
+    assertMainRenderer(event);
+    return browserSettings.clearData();
+  });
   ipcMain.handle('browser-credentials-list', (event) => {
     assertMainRenderer(event);
     return nativeBrowserManager.listCredentials();
@@ -1088,6 +1094,10 @@ function registerIpc() {
     assertMainRenderer(event);
     return nativeBrowserManager.watch(browserSessionId, watching);
   });
+  ipcMain.handle('native-browser-home', (event, { browserSessionId }) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.openHome(browserSessionId);
+  });
   ipcMain.handle('native-browser-go-back', (event, { browserSessionId }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.goBack(browserSessionId);
@@ -1127,11 +1137,12 @@ function registerIpc() {
       .catch(() => undefined)
       .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
-  ipcMain.on('native-browser-credential-fill-valid', (event, token) => {
+  ipcMain.on('native-browser-credential-fill-valid', (event, token, point) => {
     event.returnValue = nativeBrowserManager.canFillCredential(
       event.sender,
       event.senderFrame,
       token,
+      point,
     );
   });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {

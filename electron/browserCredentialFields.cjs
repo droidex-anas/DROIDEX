@@ -17,7 +17,8 @@ function submittedCredential(form) {
 }
 
 function fillCredentialForm(document, payload, canFill) {
-  const { location, HTMLInputElement, Event } = document.defaultView;
+  const view = document.defaultView;
+  const { location, HTMLInputElement, Event } = view;
   if (payload.origin !== location.origin)
     return { ok: false, error: 'The page changed before the login was filled.' };
   const passwordFields = [...document.querySelectorAll('input[type="password"]')].filter(
@@ -46,8 +47,8 @@ function fillCredentialForm(document, payload, canFill) {
     usernameFields.find((field) => field.autocomplete.toLowerCase().includes('username')) ??
     usernameFields.filter((field) => scope.indexOf(field) < scope.indexOf(passwordField)).at(-1);
 
-  function assertCurrent(field) {
-    if (!canFill()) throw new Error('The saved-login fill was canceled before writing.');
+  function assertCurrent(field, point) {
+    if (!canFill(point)) throw new Error('The saved-login fill was canceled before writing.');
     if (Date.now() >= payload.startBy) throw new Error('The browser page did not finish in time.');
     if (!field.isConnected || passwordField.form !== form || location.origin !== payload.origin)
       throw new Error('The login form changed before it was filled.');
@@ -61,7 +62,11 @@ function fillCredentialForm(document, payload, canFill) {
   function setValue(field, value) {
     assertCurrent(field);
     field.focus();
-    assertCurrent(field);
+    // A box is relative to its own frame, so a framed field shows no cursor.
+    const box = field.getBoundingClientRect();
+    const point =
+      view.top === view ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : undefined;
+    assertCurrent(field, point);
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value);
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));

@@ -14,6 +14,7 @@ function createNativeBrowserCredentials({
   showPrompt,
   getSettings,
   findEntry,
+  onPoint,
 }) {
   const fills = new Map();
   const vault = createBrowserCredentialVault({
@@ -95,11 +96,15 @@ function createNativeBrowserCredentials({
     }
   }
 
-  function canFill(contents, frame, token) {
+  function canFill(contents, frame, token, point) {
     const fill = fills.get(token);
     if (!fill || fill.contents !== contents || fill.frame !== frame) return false;
     try {
       fill.assertCurrent();
+      if (point !== undefined) {
+        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return false;
+        onPoint(findEntry(contents), { x: point.x, y: point.y, kind: 'click' });
+      }
       return true;
     } catch {
       fills.delete(token);

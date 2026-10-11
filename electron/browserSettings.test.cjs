@@ -198,6 +198,31 @@ test('protection confirmation names every reduced setting and its previous and r
   assert.equal(prompts.length, 1);
 });
 
+test('diagnostics require the existing opt-in without disabling ordinary page reads', async (t) => {
+  const { controller, responses } = await fixture(t);
+  for (const action of ['inspect', 'network', 'console'])
+    assert.throws(() => controller.assertAgentAccess(action), /Agent browser diagnostics are off/);
+  controller.assertAgentAccess('readPage');
+  responses.push(0);
+  await controller.update({ diagnosticsEnabled: true });
+  for (const action of ['inspect', 'network', 'console']) controller.assertAgentAccess(action);
+});
+
+test('clearing browser data requires explicit confirmation and preserves settings', async (t) => {
+  let cleared = 0;
+  const { controller, prompts, responses } = await fixture(t, {
+    clearBrowsingData: async () => cleared++,
+  });
+  const before = controller.snapshot();
+  assert.deepEqual(await controller.clearData(), before);
+  assert.equal(cleared, 0);
+  assert.equal(prompts[0].title, 'Clear browser data?');
+  assert.equal(prompts[0].defaultId, prompts[0].cancelId);
+  responses.push(0);
+  assert.deepEqual(await controller.clearData(), before);
+  assert.equal(cleared, 1);
+});
+
 test('site decisions persist per origin and permission, serialize with settings and revoke to ask', async (t) => {
   const { controller, options } = await fixture(t);
   const signal = new AbortController().signal;

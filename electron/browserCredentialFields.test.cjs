@@ -13,7 +13,7 @@ class Input {
     return this.entered;
   }
   getBoundingClientRect() {
-    return { width: 100, height: 20 };
+    return { x: 10, y: 20, width: 100, height: 20 };
   }
   checkVisibility() {
     return true;
@@ -109,4 +109,37 @@ test('revoking the fill during focus prevents the isolated world from writing', 
     /canceled before writing/,
   );
   assert.equal(password.value, '');
+});
+
+test('login filling reports each field centre before its secret is written', () => {
+  const username = new Input('text', '', 'username');
+  const password = new Input('password', '', 'current-password');
+  form(username, password);
+  const points = [];
+  const view = {
+    location: { origin: 'https://example.test' },
+    HTMLInputElement: Input,
+    Event: class {},
+  };
+  view.top = view;
+  const document = { defaultView: view, querySelectorAll: () => [password] };
+  const result = fillCredentialForm(
+    document,
+    {
+      origin: 'https://example.test',
+      username: 'account',
+      password: 'saved',
+      startBy: Date.now() + 10_000,
+    },
+    (point) => {
+      if (point) points.push({ point, username: username.value, password: password.value });
+      return true;
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(points, [
+    { point: { x: 60, y: 30 }, username: '', password: '' },
+    { point: { x: 60, y: 30 }, username: 'account', password: '' },
+  ]);
+  assert.equal(password.value, 'saved');
 });

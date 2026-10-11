@@ -107,6 +107,8 @@ const invokeContract = [
     'git-adopt-turn-baseline',
     { dir: '/repo', clientRef: 'client-1', appSessionId: 'app-1' },
   ],
+  ['browserDataClear', [], 'browser-data-clear', undefined],
+  ['nativeBrowserHome', ['browser-1'], 'native-browser-home', { browserSessionId: 'browser-1' }],
   ['setAppIcon', ['dark'], 'app-set-icon', { mode: 'dark' }],
   [
     'saveAttachment',

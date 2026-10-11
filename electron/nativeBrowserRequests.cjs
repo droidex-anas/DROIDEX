@@ -123,7 +123,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   }
 
   function assertAccess(request) {
-    if (request.initiator !== 'user') assertAgentAccess();
+    if (request.initiator !== 'user') assertAgentAccess(request.action);
   }
 
   async function perform(request, timeoutMs) {
@@ -296,6 +296,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
     assertAccess(request);
     const outcome = await manager.runAgentAction(agentAction(request));
     assertAccess(request);
+    if (outcome.ok && request.runEnded()) throw new Error(LATE);
     return result(request, outcome.ok, {
       snapshot: outcome.snapshot,
       inspection: outcome.inspection,
@@ -328,8 +329,16 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
+  function cancelAll() {
+    for (const controllers of activeRequests.values())
+      for (const controller of controllers) controller.abort();
+    for (const queue of queues.values()) queue.closed = true;
+    queues.clear();
+  }
+
   return {
     handle,
+    cancelAll,
     recordTyped(appSessionId, url) {
       if (
         typeof appSessionId !== 'string' ||

@@ -4,7 +4,7 @@ const { EventEmitter } = require('node:events');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
 
-function fixture() {
+function fixture(authorize) {
   const actions = [];
   const events = [];
   const prompts = [];
@@ -36,7 +36,8 @@ function fixture() {
       return answer(prompt, options);
     },
     notifyRenderer: (channel, payload) => events.push({ channel, ...payload }),
-    assertAgentAccess: () => {
+    assertAgentAccess: (action) => {
+      authorize?.(action);
       if (!enabled)
         throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
     },
@@ -215,5 +216,67 @@ test('closing a browser aborts its pending approval before it can send input', a
   const result = await pending;
   assert.equal(result.ok, false);
   assert.equal(result.error, 'approval canceled');
+  assert.deepEqual(requests.workingSessions(), []);
+});
+
+test('diagnostics disabled before dispatch or before the result returns refuse without exposing content', async (t) => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { createBrowserSettingsController } = require('./browserSettings.cjs');
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'ac11-diagnostics-'));
+  t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
+  const settings = createBrowserSettingsController({
+    userDataPath,
+    downloadsPath: userDataPath,
+    showPrompt: async () => ({ response: 0 }),
+  });
+  await settings.initialize();
+  const { manager, send, actions, events } = fixture(settings.assertAgentAccess);
+  for (const action of ['inspect', 'network', 'console']) {
+    const denied = await send(action);
+    assert.equal(denied.ok, false);
+    assert.match(denied.error, /Agent browser diagnostics are off/);
+  }
+  assert.deepEqual(actions, []);
+  assert.deepEqual(events, []);
+  await settings.update({ diagnosticsEnabled: true });
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  manager.runAgentAction = async () => {
+    started.resolve();
+    await resume.promise;
+    return { ok: true, text: 'private diagnostic content' };
+  };
+  const inspecting = send('inspect');
+  await started.promise;
+  await settings.update({ diagnosticsEnabled: false });
+  resume.resolve();
+  const denied = await inspecting;
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Agent browser diagnostics are off/);
+  assert.equal(denied.text, undefined);
+});
+
+test('clearing cancels queued work and drops results from an abandoned page', async () => {
+  const { manager, requests, send, actions } = fixture();
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  manager.runAgentAction = async () => {
+    started.resolve();
+    await resume.promise;
+    return { ok: true, text: 'abandoned page' };
+  };
+  const typing = send('type');
+  await started.promise;
+  const queued = send('click');
+  requests.cancelAll();
+  resume.resolve();
+  const results = await Promise.all([typing, queued]);
+  assert.equal(
+    results.every((result) => result.ok === false && result.text === undefined),
+    true,
+  );
+  assert.deepEqual(actions, []);
   assert.deepEqual(requests.workingSessions(), []);
 });

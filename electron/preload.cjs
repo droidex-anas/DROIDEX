@@ -233,6 +233,7 @@ contextBridge.exposeInMainWorld('droidControl', {
 
   browserCredentialsList: () => ipcRenderer.invoke('browser-credentials-list'),
   browserCredentialsDelete: (origin) => ipcRenderer.invoke('browser-credentials-delete', origin),
+  browserDataClear: () => ipcRenderer.invoke('browser-data-clear'),
   browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
   browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
   browserSitePermissionRevoke: (origin, permission) =>
@@ -252,6 +253,8 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
   nativeBrowserWatch: (browserSessionId, watching) =>
     ipcRenderer.invoke('native-browser-watch', { browserSessionId, watching }),
+  nativeBrowserHome: (browserSessionId) =>
+    ipcRenderer.invoke('native-browser-home', { browserSessionId }),
   nativeBrowserGoBack: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
   nativeBrowserGoForward: (browserSessionId) =>
@@ -269,5 +272,6 @@ contextBridge.exposeInMainWorld('droidControl', {
   onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),
   onNativeBrowserFrame: (handler) => on('native-browser-frame', handler),
   onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
+  onNativeBrowserDataCleared: (handler) => on('native-browser-data-cleared', handler),
   onNativeBrowserShortcut: (handler) => on('native-browser-shortcut', handler),
 });

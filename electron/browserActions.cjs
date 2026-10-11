@@ -5,7 +5,7 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame, pointForNode } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressKey } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
@@ -28,6 +28,7 @@ function createBrowserActions({
   unthrottled,
   redactUrl,
   onPoint,
+  getSettings,
 }) {
   const safety = createBrowserAgentSafety({ showPrompt });
   const { refuseCovered } = createBrowserCover({ reading });
@@ -78,7 +79,7 @@ function createBrowserActions({
     }
   }
 
-  function perform(contents, entry, request, step) {
+  async function perform(contents, entry, request, step) {
     switch (request.action) {
       case 'click':
       case 'hover':
@@ -89,8 +90,9 @@ function createBrowserActions({
         return type(contents, entry, request, step);
       case 'press':
         return press(contents, entry, request, step);
-      case 'fill':
+      case 'fill': {
         if (!request.ref) throw new Error('Filling a field needs its ref from browser_read_page.');
+        await showPointOnRef(contents, entry, request.ref);
         return reading.callOnRef(
           contents,
           entry,
@@ -99,9 +101,21 @@ function createBrowserActions({
           FILL,
           () => startInput(step),
         );
+      }
       default:
         throw new Error(`Unsupported browser action: ${request.action}`);
     }
+  }
+
+  // The cursor goes to the ref where it already is: it never scrolls the page
+  // or fails the action.
+  async function showPointOnRef(contents, entry, ref) {
+    if (!getSettings().showAgentCursor) return;
+    const point = await runWithWebContentsDebugger(contents, async (dbg) => {
+      const { backendNodeId, frame } = await reading.lookupRef(dbg, entry, ref);
+      return pointForNode(dbg, frame.sessionId, backendNodeId);
+    }).catch(() => undefined);
+    if (point) onPoint(entry, { ...point, kind: 'click' });
   }
 
   async function pointer(contents, entry, request, step) {
@@ -257,7 +271,11 @@ function createBrowserActions({
       if (request.ref && focused.backendNodeId !== refNode)
         throw new Error(`${request.ref} lost the focus; read the page again.`);
       const stillOn = onSamePage(dbg, holding, sessionId, document);
+      const point =
+        getSettings().showAgentCursor &&
+        (await pointForNode(dbg, sessionId, focused.backendNodeId));
       await inputReady(dbg, step, holding, sessionId, document);
+      if (point) onPoint(entry, { ...point, kind: 'click' });
       if (text)
         await safety.inspectFocus(dbg, request.submit ? 'enter' : null, (current) => {
           safety.verify(inspected, current);
@@ -426,10 +444,10 @@ function createBrowserActions({
     const notes = [];
     if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
     const errors = entry.errorTimes.filter((at) => at >= since).length;
-    if (errors)
-      notes.push(
-        `${errors} new console error${errors === 1 ? '' : 's'}; browser_console has them.`,
-      );
+    if (errors) {
+      const where = getSettings().diagnosticsEnabled ? '; browser_console has them' : '';
+      notes.push(`${errors} new console error${errors === 1 ? '' : 's'}${where}.`);
+    }
     notes.push(`[${snapshot.title || 'Untitled'} · ${redactUrl(snapshot.url)}]`);
     return { requestId: request.requestId, ok: true, snapshot, text: notes.join('\n') };
   }

@@ -67,8 +67,8 @@ Object.assign(globalThis, {
   __droidexFillCredentials: (payload) => {
     if (payload.documentId !== credentialDocumentId)
       throw new Error('The page changed before the login was filled.');
-    return fillCredentialForm(document, payload, () =>
-      ipcRenderer.sendSync('native-browser-credential-fill-valid', payload.token),
+    return fillCredentialForm(document, payload, (point) =>
+      ipcRenderer.sendSync('native-browser-credential-fill-valid', payload.token, point),
     );
   },
   __droidexNextChange: nextChange,
