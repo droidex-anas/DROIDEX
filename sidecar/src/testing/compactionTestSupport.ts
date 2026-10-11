@@ -11,6 +11,7 @@ export function createCompactionTestLiveSession(
     FactoryRuntime,
     | 'processIdOf'
     | 'isProcessAlive'
+    | 'onProcessExit'
     | 'factoryApiKey'
     | 'steer'
     | 'streamTurn'

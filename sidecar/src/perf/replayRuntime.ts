@@ -221,6 +221,10 @@ export class ReplayFactoryRuntime implements FactoryRuntime {
     return false;
   }
 
+  onProcessExit(): void {
+    // Scripted sessions have no process to lose.
+  }
+
   sessionByIndex(index: number): ReplayFactorySession | undefined {
     return this.sessions[index];
   }

@@ -481,6 +481,10 @@ export class FakeFactoryRuntime implements FactoryRuntime {
     return this.processIdOf(session) !== undefined;
   }
 
+  onProcessExit(): void {
+    // Scripted sessions have no process to lose.
+  }
+
   createSession(options: CreateRuntimeSessionOptions): Promise<FakeFactorySession> {
     this.createCalls.push(options);
     this.calls.push({ target: 'runtime', method: 'createSession', args: [options] });
@@ -619,6 +623,7 @@ export function fakeProviderSession(
   return new DroidProviderSession(appSessionId, session, {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
+    onProcessExit: () => undefined,
     factoryApiKey: () => undefined,
     steer: () => Promise.resolve(false),
     streamTurn: (droid, prompt, options) => droid.stream(prompt, options),

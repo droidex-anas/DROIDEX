@@ -1566,7 +1566,7 @@ export class SessionLifecycle {
     if (next !== undefined) void this.driveInBackground(appSessionId, next);
   }
 
-  private observeProviderClosure(liveSession: LiveSession): void {
+  observeProviderClosure(liveSession: LiveSession): void {
     const d = this.dependencies;
     const session = liveSession.session;
     const appSessionId = liveSession.summary.appSessionId;
