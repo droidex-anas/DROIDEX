@@ -58,6 +58,7 @@ function createElectronStub(options) {
     paths[name] = value;
   };
   app.disableHardwareAcceleration = () => {};
+  app.requestSingleInstanceLock = () => true;
   app.isReady = () => false;
   // Stay pending: resolving would enter createMainWindow, which this stub refuses.
   app.whenReady = () => new Promise(() => {});

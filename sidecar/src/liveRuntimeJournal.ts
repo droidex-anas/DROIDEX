@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { uptime } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import type { ChildStatus, SessionPhase } from './protocol.js';
 
-const JOURNAL_NAME = 'live-runtime.json';
+// Renamed from live-runtime.json, which builds without the owner check below
+// still read: a second copy of one of those started on this profile would
+// kill every agent the running app recorded.
+const JOURNAL_NAME = 'live-runtime-v2.json';
 
 export interface LiveSessionIdentity {
   appSessionId: string;
@@ -33,14 +37,24 @@ export interface LiveProcessIdentity {
   startedAt: number;
 }
 
+// The sidecar that wrote the journal. The boot time keeps a pid recycled after
+// a restart of the machine from passing for it.
+export interface JournalOwner {
+  pid: number;
+  bootedAt: number;
+}
+
 export interface LiveRuntimeIdentities {
+  // While the owner runs, the sessions and processes here are its own, not
+  // leftovers for another sidecar to reap.
+  owner?: JournalOwner;
   sessions: LiveSessionIdentity[];
   children: LiveChildIdentity[];
   processes: LiveProcessIdentity[];
 }
 
 // Test-harness trap: a SessionManager built without an explicit user data
-// directory journals to `DROIDEX_USER_DATA_DIR`, so a stale `live-runtime.json`
+// directory journals to `DROIDEX_USER_DATA_DIR`, so a stale journal
 // left there by a manual run makes every later suite run adopt sessions the
 // test never created. It shows up as unrelated tests failing on phantom
 // sessions. Unset the variable, or point it at a fresh directory per run.
@@ -73,8 +87,14 @@ function emptyIdentities(): LiveRuntimeIdentities {
 
 function sanitizeIdentities(value: unknown): LiveRuntimeIdentities {
   if (typeof value !== 'object' || value === null) return emptyIdentities();
-  const record = value as { sessions?: unknown; children?: unknown; processes?: unknown };
+  const record = value as {
+    owner?: unknown;
+    sessions?: unknown;
+    children?: unknown;
+    processes?: unknown;
+  };
   return {
+    ...(journalOwner(record.owner) ? { owner: record.owner as JournalOwner } : {}),
     sessions: Array.isArray(record.sessions)
       ? record.sessions.flatMap((entry) => {
           const session = sessionIdentity(entry);
@@ -103,6 +123,16 @@ function processIdentity(value: unknown): LiveProcessIdentity | null {
   // A non-positive or non-finite pid would signal a process group on `kill`.
   if (!isPositiveNumber(record.pid) || !isPositiveNumber(record.startedAt)) return null;
   return { appSessionId: record.appSessionId, pid: record.pid, startedAt: record.startedAt };
+}
+
+export function systemBootedAt(): number {
+  return Date.now() - uptime() * 1000;
+}
+
+function journalOwner(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Partial<JournalOwner>;
+  return isPositiveNumber(record.pid) && isPositiveNumber(record.bootedAt);
 }
 
 function isPositiveNumber(value: unknown): value is number {

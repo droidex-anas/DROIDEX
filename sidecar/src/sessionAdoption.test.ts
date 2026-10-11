@@ -7,6 +7,7 @@ import test, { type TestContext } from 'node:test';
 import {
   LiveRuntimeJournal,
   liveRuntimeJournalPath,
+  systemBootedAt,
   type LiveChildIdentity,
   type LiveSessionIdentity,
 } from './liveRuntimeJournal.js';
@@ -430,4 +431,54 @@ test('the journal carries when each live session was last active, and drops an e
     children: [],
     processes: [],
   });
+});
+
+test('a journal another running sidecar owns is not reaped, adopted or overwritten', async (t) => {
+  const { journal } = scratchJournal(t);
+  const owned = {
+    owner: { pid: process.ppid, bootedAt: systemBootedAt() },
+    sessions: [runningIdentity('app-live')],
+    children: [],
+    processes: [{ appSessionId: 'app-live', pid: process.ppid, startedAt: 1 }],
+  };
+  journal.write(owned);
+  let reaped = false;
+  let resumed = false;
+  const adoption = createAdoption(journal, {
+    reapProcesses: async () => {
+      reaped = true;
+    },
+    lifecycle: {
+      resume: async () => {
+        resumed = true;
+        return true;
+      },
+    },
+  });
+
+  assert.deepEqual(await adoption.adopt(), { interrupted: [] });
+  adoption.persistLiveSet();
+  assert.equal(reaped, false);
+  assert.equal(resumed, false);
+  assert.deepEqual(journal.read(), owned);
+});
+
+test('an owner pid recorded before the machine restarted does not hold the journal', async (t) => {
+  const { journal } = scratchJournal(t);
+  journal.write({
+    owner: { pid: process.ppid, bootedAt: systemBootedAt() - 86_400_000 },
+    sessions: [],
+    children: [],
+    processes: [{ appSessionId: 'app-old', pid: 4242, startedAt: 1 }],
+  });
+  let reaped = false;
+  const adoption = createAdoption(journal, {
+    reapProcesses: async () => {
+      reaped = true;
+    },
+  });
+
+  await adoption.adopt();
+  assert.equal(reaped, true);
+  assert.equal(journal.read().owner?.pid, process.pid);
 });
