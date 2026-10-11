@@ -1,0 +1,966 @@
+<title>DROIDEX Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap">
+<style>
+/* Layout: one long tour — brand hero, the live app, then each foundation shown working.
+   Dark-first (the app's default); light mirrors it. Tokens are the design system's own. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0a; --surface: #111111; --elevated: #1e1e1e; --field: #1e1e1e; --active: #2b2b2b; --raised: #1e1e1e; --sidebar: #111111;
+  --divider: rgba(237, 237, 237, 0.07); --divider-strong: rgba(237, 237, 237, 0.12);
+  --text: #ededed; --text-secondary: #cfcfcf; --text-muted: #bbbbbb;
+  --accent: #f2f2f2; --focus-ring: rgba(242, 242, 242, 0.4);
+  --link: #7cb2ff; --skill: #93c5fd; --skill-mark: #ed4772; --ultra: #bba6ff;
+  --success: #4fae82; --success-soft: rgba(79, 174, 130, 0.12);
+  --warning: #d9913a; --warning-soft: rgba(217, 145, 58, 0.12);
+  --danger: #d6766e; --danger-soft: rgba(214, 118, 110, 0.12);
+  --update: #005fc8; --on-update: #ffffff;
+  --diff-add-fg: #73c991; --diff-add-bg: rgba(46, 160, 67, 0.14); --diff-del-fg: #ff7b72; --diff-del-bg: rgba(248, 81, 73, 0.14);
+  --brand-ink: #141310; --brand-paper: #f2efe9; --brand-orange: #ff4d00;
+  --tile: var(--brand-ink); --tile-d: var(--brand-paper);
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.35);
+  --scroll-thumb: rgba(237, 237, 237, 0.16);
+  --veil: rgba(10, 10, 10, 0.6);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "JetBrains Mono", monospace;
+  --font-pixel: "Silkscreen", "JetBrains Mono", ui-monospace, monospace;
+
+  --space-0-5: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-2-5: 10px; --space-3: 12px;
+  --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px; --radius-2xl: 24px; --radius-full: 9999px;
+  --control-sm: 28px; --control-md: 32px; --control-lg: 36px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #ebeae7; --field: #ebeae7; --active: #deddda; --raised: #fefefd; --sidebar: #f2f1ee;
+    --divider: rgba(45, 42, 38, 0.08); --divider-strong: rgba(45, 42, 38, 0.14);
+    --text: #2d2a26; --text-secondary: #4f4d49; --text-muted: #64615e;
+    --accent: #2d2a26; --focus-ring: rgba(45, 42, 38, 0.55);
+    --link: #1d4ed8; --skill: #1d4ed8; --skill-mark: #b82950; --ultra: #6d28d9;
+    --success: #1c6f46; --success-soft: rgba(28, 111, 70, 0.08);
+    --warning: #8f530e; --warning-soft: rgba(143, 83, 14, 0.08);
+    --danger: #b3312a; --danger-soft: rgba(179, 49, 42, 0.08);
+    --diff-add-fg: #177030; --diff-add-bg: #eaf7ee; --diff-del-fg: #c0202b; --diff-del-bg: #fff0f0;
+    --tile: var(--brand-paper); --tile-d: var(--brand-ink);
+    --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035);
+    --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05);
+    --scroll-thumb: rgba(45, 42, 38, 0.18);
+    --veil: rgba(248, 247, 244, 0.6);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #ebeae7; --field: #ebeae7; --active: #deddda; --raised: #fefefd; --sidebar: #f2f1ee;
+  --divider: rgba(45, 42, 38, 0.08); --divider-strong: rgba(45, 42, 38, 0.14);
+  --text: #2d2a26; --text-secondary: #4f4d49; --text-muted: #64615e;
+  --accent: #2d2a26; --focus-ring: rgba(45, 42, 38, 0.55);
+  --link: #1d4ed8; --skill: #1d4ed8; --skill-mark: #b82950; --ultra: #6d28d9;
+  --success: #1c6f46; --success-soft: rgba(28, 111, 70, 0.08);
+  --warning: #8f530e; --warning-soft: rgba(143, 83, 14, 0.08);
+  --danger: #b3312a; --danger-soft: rgba(179, 49, 42, 0.08);
+  --diff-add-fg: #177030; --diff-add-bg: #eaf7ee; --diff-del-fg: #c0202b; --diff-del-bg: #fff0f0;
+  --tile: var(--brand-paper); --tile-d: var(--brand-ink);
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035);
+  --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05);
+  --scroll-thumb: rgba(45, 42, 38, 0.18);
+  --veil: rgba(248, 247, 244, 0.6);
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+:focus { outline: none; }
+:focus-visible { box-shadow: 0 0 0 1.5px var(--focus-ring); border-radius: var(--radius-md); }
+html { scrollbar-gutter: stable; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 400 14px/22px var(--font-sans); letter-spacing: -0.15px;
+  -webkit-font-smoothing: antialiased;
+  padding-inline: 16px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; text-wrap: pretty; }
+code, .mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
+svg.i { width: 16px; height: 16px; flex: none; }
+svg.i-sm { width: 14px; height: 14px; flex: none; }
+
+/* ---------- top bar ---------- */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 40;
+  margin-inline: -16px; padding: 10px 16px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+}
+.top::before { content: ""; position: absolute; inset: 0; z-index: -1; backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%); }
+.top-in { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; gap: var(--space-3); }
+.brand { display: flex; align-items: center; gap: var(--space-2-5); }
+.logo { width: 28px; height: 28px; display: block; }
+.logo .tile { fill: var(--tile); }
+.logo .d { fill: var(--tile-d); }
+.logo .x { fill: var(--brand-orange); }
+.wordmark { font-family: var(--font-pixel); font-size: 18px; line-height: 1; letter-spacing: -0.72px; color: var(--text); }
+.wordmark b { font-weight: 400; color: var(--brand-orange); }
+.nav { display: flex; gap: var(--space-0-5); margin-left: var(--space-4); overflow-x: auto; scrollbar-width: none; }
+.nav::-webkit-scrollbar { display: none; }
+.nav a { padding: 5px 10px; border-radius: var(--radius-md); color: var(--text-muted); text-decoration: none; font: 500 12px/18px var(--font-sans); white-space: nowrap; transition: background-color .15s, color .15s; }
+.nav a:hover { background: var(--elevated); color: var(--text); }
+.spacer { flex: 1; }
+.seg { position: relative; display: inline-flex; padding: 2px; background: var(--elevated); border-radius: var(--radius-md); }
+.seg button { position: relative; z-index: 1; height: 24px; padding: 0 10px; border-radius: var(--radius-sm); font: 500 12px/16px var(--font-sans); color: var(--text-muted); transition: color .15s; }
+.seg button[aria-pressed="true"] { color: var(--text); }
+.seg .thumb { position: absolute; top: 2px; left: 2px; height: 24px; border-radius: var(--radius-sm); background: var(--raised); box-shadow: var(--shadow-sm); transition: transform .32s cubic-bezier(.3,1.25,.4,1), width .32s cubic-bezier(.3,1.25,.4,1); }
+:root:not([data-theme="light"]) .seg .thumb { background: var(--active); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .seg .thumb { background: var(--raised); } }
+:root[data-theme="light"] .seg .thumb { background: var(--raised); }
+@media (max-width: 760px) { .nav { display: none; } }
+
+/* ---------- hero ---------- */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: center; padding-block: 56px 40px; }
+.eyebrow { font: 500 12px/16px var(--font-sans); color: var(--text-muted); letter-spacing: 0; }
+.hero h1 { margin-top: var(--space-3); font-family: var(--font-pixel); font-weight: 400; font-size: clamp(44px, 7vw, 84px); line-height: .95; letter-spacing: -0.04em; }
+.hero h1 b { font-weight: 400; color: var(--brand-orange); }
+.hero .lede { margin-top: var(--space-5); max-width: 46ch; font-size: 16px; line-height: 24px; letter-spacing: -0.2px; color: var(--text-secondary); }
+.hero .meta { margin-top: var(--space-6); display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pill { display: inline-flex; align-items: center; gap: var(--space-1-5); height: 24px; padding: 0 10px; border-radius: var(--radius-full); background: var(--elevated); color: var(--text-secondary); font: 500 11px/16px var(--font-sans); letter-spacing: 0.06px; }
+.pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-orange); }
+.hero-art { width: 100%; max-width: 520px; justify-self: end; aspect-ratio: 520 / 312; }
+.hero-art .tint { fill: var(--elevated); }
+.hero-art .signal { fill: var(--brand-orange); }
+.hero-art .slab { fill: var(--accent); }
+.hero-art .cut { fill: var(--bg); }
+.hero-art .px { transform-box: fill-box; transform-origin: center; animation: px-in .5s var(--ease-out) both; }
+@keyframes px-in { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+@media (max-width: 760px) { .hero { grid-template-columns: 1fr; padding-block: 32px 24px; } .hero-art { justify-self: start; } }
+
+/* ---------- sections ---------- */
+section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
+.s-head { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: var(--space-8); margin-bottom: var(--space-6); }
+.s-head .k { font-family: var(--font-pixel); font-size: 12px; line-height: 16px; color: var(--brand-orange); letter-spacing: 0; }
+.s-head h2 { margin-top: var(--space-2); font: 600 22px/28px var(--font-sans); letter-spacing: -0.44px; }
+.s-head p { color: var(--text-secondary); max-width: 62ch; align-self: end; }
+@media (max-width: 760px) { .s-head { grid-template-columns: 1fr; gap: var(--space-3); } }
+.panel { background: var(--surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); padding: var(--space-6); min-width: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+@media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+.cap { font: 400 11px/16px var(--font-sans); letter-spacing: 0.06px; color: var(--text-muted); }
+.lbl { font: 500 12px/16px var(--font-sans); color: var(--text-muted); }
+.h4 { font: 600 16px/20px var(--font-sans); letter-spacing: -0.16px; }
+.note { margin-top: var(--space-3); color: var(--text-secondary); font: 400 13px/18px var(--font-sans); letter-spacing: -0.08px; }
+
+/* ---------- primitives ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1-5); height: var(--control-md); min-width: 64px; padding: 0 var(--space-3); border-radius: var(--radius-md); font: 500 13px/18px var(--font-sans); letter-spacing: -0.08px; transition: background-color .15s, color .15s, opacity .15s, transform .25s cubic-bezier(.3,1.4,.5,1); user-select: none; -webkit-user-select: none; }
+.btn:active { transform: scale(.97); transition-duration: .06s; }
+.btn.primary { background: var(--text); color: var(--bg); }
+.btn.primary:hover { opacity: .9; }
+.btn.secondary { background: var(--elevated); color: var(--text-secondary); }
+.btn.secondary:hover { background: var(--active); color: var(--text); }
+.btn.ghost { color: var(--text-muted); }
+.btn.ghost:hover { background: var(--elevated); color: var(--text-secondary); }
+.btn.danger { background: var(--danger-soft); color: var(--danger); }
+.btn.danger:hover { background: var(--danger); color: var(--bg); }
+.btn.success { background: var(--success-soft); color: var(--success); }
+.btn.success:hover { background: var(--success); color: var(--bg); }
+.btn.sm { height: var(--control-sm); padding: 0 var(--space-2-5); font: 500 12px/16px var(--font-sans); letter-spacing: 0; min-width: 0; }
+.btn.icon { width: var(--control-md); min-width: 0; padding: 0; }
+.btn.icon.sm { width: var(--control-sm); }
+.btn.round { border-radius: var(--radius-full); }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn:disabled:hover { background: var(--elevated); color: var(--text-secondary); }
+.btn.is-focus { box-shadow: 0 0 0 1.5px var(--focus-ring); }
+.badge { display: inline-flex; align-items: center; gap: var(--space-1); height: 20px; padding: 0 var(--space-2); border-radius: var(--radius-full); font: 500 11px/16px var(--font-sans); letter-spacing: 0.06px; white-space: nowrap; }
+.badge.ok { background: var(--success-soft); color: var(--success); }
+.badge.warn { background: var(--warning-soft); color: var(--warning); }
+.badge.err { background: var(--danger-soft); color: var(--danger); }
+.badge.neutral { background: var(--elevated); color: var(--text-secondary); }
+.kbd { padding: 2px 6px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg) 70%, transparent); font: 400 11px/14px var(--font-sans); letter-spacing: 0.06px; color: var(--text-secondary); }
+.row-btn { display: flex; width: 100%; align-items: center; gap: var(--space-2-5); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); text-align: left; font: 400 13px/18px var(--font-sans); letter-spacing: -0.08px; color: var(--text); transition: background-color .12s; user-select: none; -webkit-user-select: none; }
+.row-btn:hover { background: var(--elevated); }
+.row-btn.on { background: var(--active); }
+.row-btn .ico { color: var(--text-muted); display: flex; width: 16px; height: 16px; flex: none; }
+.row-btn:hover .ico { color: var(--text-secondary); }
+.row-btn .lab { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row-btn .meta { flex: none; font: 400 12px/16px var(--font-sans); letter-spacing: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-4) var(--space-3) var(--space-1); font: 500 12px/16px var(--font-sans); color: var(--text-muted); }
+.sec-h span:last-child { font: 400 11px/16px var(--font-sans); letter-spacing: 0.06px; }
+.divider { height: 1px; margin: var(--space-1-5) var(--space-3); background: var(--divider); }
+
+/* ---------- the app mock ---------- */
+.app { position: relative; display: grid; grid-template-columns: 248px minmax(0, 1fr) 272px; height: 640px; border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.app .side { position: relative; background: var(--sidebar); padding: var(--space-2); display: flex; flex-direction: column; min-width: 0; }
+.traffic { display: flex; gap: 8px; padding: 10px 12px 14px; }
+.traffic i { width: 12px; height: 12px; border-radius: 50%; background: var(--active); }
+.app .main { display: flex; flex-direction: column; min-width: 0; }
+.app .bar { display: flex; align-items: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-4); }
+.app .bar .t { font: 500 13px/18px var(--font-sans); letter-spacing: -0.08px; }
+.app .feed { flex: 1; min-height: 0; overflow: auto; padding: var(--space-4) var(--space-6) var(--space-4); display: flex; flex-direction: column; gap: var(--space-6); }
+.msg-user { align-self: flex-end; max-width: 78%; padding: var(--space-2-5) var(--space-3-5, 14px); border-radius: var(--radius-xl); background: var(--elevated); font: 400 14px/22px var(--font-sans); }
+.msg-ai { max-width: 64ch; display: flex; flex-direction: column; gap: var(--space-2); }
+.msg-ai p { color: var(--text); }
+.toolp { border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden; }
+.toolp .row-btn { cursor: default; }
+.toolp .out { padding: 0 var(--space-3) var(--space-3); font-family: var(--font-mono); font-size: 12px; line-height: 18px; color: var(--text-secondary); letter-spacing: 0; }
+.diffs { display: grid; gap: 1px; padding: 0 var(--space-3) var(--space-3); font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; }
+.diffs .a { background: var(--diff-add-bg); color: var(--diff-add-fg); padding: 0 var(--space-2); border-radius: 4px; }
+.diffs .d { background: var(--diff-del-bg); color: var(--diff-del-fg); padding: 0 var(--space-2); border-radius: 4px; }
+.working { font: 500 13px/18px var(--font-sans); letter-spacing: -0.08px; background: linear-gradient(90deg, var(--text-muted) 0%, var(--text-muted) 40%, var(--text) 50%, var(--text-muted) 60%, var(--text-muted) 100%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2.2s linear infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.composer { margin: 0 var(--space-6) var(--space-4); padding: var(--space-3); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
+.composer textarea { width: 100%; resize: none; border: 0; background: transparent; color: var(--text); font: 400 14px/20px var(--font-sans); letter-spacing: -0.15px; height: 40px; }
+.composer textarea::placeholder { color: var(--text-muted); }
+.composer .tools { display: flex; align-items: center; gap: var(--space-1); }
+.chip { display: inline-flex; align-items: center; gap: var(--space-1-5); height: 28px; padding: 0 var(--space-2-5); border-radius: var(--radius-full); color: var(--text-muted); font: 500 12px/16px var(--font-sans); transition: background-color .12s, color .12s; }
+.chip:hover { background: var(--elevated); color: var(--text-secondary); }
+.chip .ultra { color: var(--ultra); }
+.app .ctx { position: relative; background: var(--bg); padding: var(--space-2); display: flex; flex-direction: column; min-width: 0; }
+.ctx .card { position: relative; flex: 1; background: var(--surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); padding: var(--space-2); }
+.ctx .ttl { padding: var(--space-2) var(--space-3) 0; font: 600 14px/20px var(--font-sans); letter-spacing: -0.15px; }
+.add { color: var(--diff-add-fg); } .del { color: var(--diff-del-fg); }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.dot.wait { background: var(--warning); } .dot.done { background: var(--success); } .dot.unread { background: var(--text); }
+.row-btn .lab.unread { font-weight: 500; }
+.row-btn .acts { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.row-btn:hover .acts, .row-btn:focus-within .acts { opacity: 1; }
+.row-btn .acts span { display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-sm); color: var(--text-muted); }
+.row-btn .acts span:hover { background: var(--active); color: var(--text); }
+.trail { position: relative; display: grid; align-items: center; justify-items: end; }
+.trail > * { grid-area: 1 / 1; }
+.row-btn:hover .trail .meta, .row-btn:focus-within .trail .meta { opacity: 0; }
+.trail .meta { transition: opacity .12s; }
+.upd { margin-top: auto; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+.upd .pillu { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: var(--radius-full); background: var(--update); color: var(--on-update); font: 500 11px/16px var(--font-sans); letter-spacing: 0.06px; }
+@media (max-width: 1000px) { .app { grid-template-columns: 232px minmax(0, 1fr); } .app .ctx { display: none; } }
+@media (max-width: 640px) { .app { grid-template-columns: minmax(0, 1fr); height: 600px; } .app .side { display: none; } .app .feed, .composer { margin-inline: 0; } .app .feed { padding-inline: var(--space-4); } .composer { margin: 0 var(--space-3) var(--space-3); } }
+
+/* alignment guides */
+.guide { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--link); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 5; }
+.guide::after { content: attr(data-l); position: absolute; top: 4px; left: 3px; font: 500 10px/12px var(--font-sans); color: var(--link); background: var(--bg); padding: 0 2px; border-radius: 2px; }
+.guide.r::after { left: auto; right: 3px; }
+.show-guides .guide { opacity: .7; }
+.show-hits .hit { outline: 1px dashed var(--link); outline-offset: -1px; }
+
+/* toolbar under mock */
+.mock-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
+.toggle { display: inline-flex; align-items: center; gap: var(--space-2); height: var(--control-sm); padding: 0 var(--space-2-5) 0 var(--space-1-5); border-radius: var(--radius-md); color: var(--text-secondary); font: 500 12px/16px var(--font-sans); transition: background-color .12s; user-select: none; -webkit-user-select: none; }
+.toggle:hover { background: var(--elevated); }
+.sw { position: relative; width: 26px; height: 16px; border-radius: 99px; background: var(--active); transition: background-color .2s; flex: none; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+.toggle[aria-pressed="true"] .sw { background: var(--text); }
+.toggle[aria-pressed="true"] .sw::after { transform: translateX(10px); }
+
+/* popover */
+.pop { position: absolute; z-index: 30; width: 232px; padding: var(--space-1-5); border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+.pop[hidden] { display: none !important; }
+.pop[data-side="bottom"] { transform-origin: top left; animation: pop-b .14s var(--ease-out); }
+.pop[data-side="top"] { transform-origin: bottom left; animation: pop-t .14s var(--ease-out); }
+.pop.closing { animation: pop-out .09s ease-in forwards; }
+@keyframes pop-b { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+@keyframes pop-t { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+@keyframes pop-out { to { opacity: 0; } }
+.mi { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border-radius: var(--radius-md); font: 400 13px/18px var(--font-sans); letter-spacing: -0.08px; color: var(--text); text-align: left; user-select: none; -webkit-user-select: none; }
+.mi .ico { color: var(--text-muted); display: flex; }
+.mi:hover, .mi.hl { background: var(--elevated); }
+:root:not([data-theme="light"]) .mi:hover, :root:not([data-theme="light"]) .mi.hl { background: var(--active); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .mi:hover, :root:not([data-theme="dark"]) .mi.hl { background: var(--elevated); } }
+.mi.blink-off { background: transparent !important; }
+.mi.danger, .mi.danger .ico { color: var(--danger); }
+.mi.danger:hover, .mi.danger.hl { background: var(--danger-soft) !important; }
+.mi .kbd { margin-left: auto; }
+.mdiv { height: 1px; margin: var(--space-1) var(--space-2); background: var(--divider); }
+
+/* foundations */
+.ramp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.ramp div { height: 112px; padding: var(--space-3); display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; }
+.ramp b { font: 500 12px/16px var(--font-sans); }
+@media (max-width: 640px) { .ramp { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sw-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); }
+.swatch { display: flex; flex-direction: column; gap: var(--space-2); }
+.chipc { height: 56px; border-radius: var(--radius-md); display: flex; align-items: flex-end; padding: var(--space-2); font: 500 12px/16px var(--font-sans); }
+.contrast-tbl { width: 100%; border-collapse: collapse; font: 400 12px/16px var(--font-sans); }
+.contrast-tbl th { text-align: left; font-weight: 500; color: var(--text-muted); padding: var(--space-2); }
+.contrast-tbl td { padding: var(--space-2); text-align: right; font-variant-numeric: tabular-nums; }
+.contrast-tbl td:first-child { text-align: left; }
+.contrast-tbl tr + tr td { border-top: 1px solid var(--divider); }
+.ok-n { color: var(--text-secondary); }
+.tscale { display: flex; flex-direction: column; }
+.tscale > div { display: grid; grid-template-columns: 120px minmax(0, 1fr) 96px; gap: var(--space-4); align-items: baseline; padding: var(--space-3) 0; }
+.tscale > div + div { border-top: 1px solid var(--divider); }
+.tscale .spec { text-align: right; }
+@media (max-width: 640px) { .tscale > div { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } .tscale .spec { text-align: left; } }
+.sp { display: flex; flex-direction: column; gap: var(--space-2); }
+.sp > div { display: grid; grid-template-columns: 80px 40px minmax(0, 1fr); align-items: center; gap: var(--space-3); }
+.sp i { display: block; height: 12px; border-radius: 3px; background: var(--brand-orange); }
+.nest { padding: 24px; border-radius: var(--radius-2xl); background: var(--surface); box-shadow: var(--shadow-lg); }
+.nest .l2 { padding: 16px; border-radius: var(--radius-xl); background: var(--bg); }
+.nest .l3 { padding: 6px; border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-lg); }
+.nest .tag { display: block; margin-bottom: var(--space-2); }
+.dd { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+@media (max-width: 640px) { .dd { grid-template-columns: 1fr; } }
+.dd .verdict { display: flex; align-items: center; gap: var(--space-1-5); font: 500 12px/16px var(--font-sans); margin-bottom: var(--space-3); }
+.dd .bad { color: var(--danger); } .dd .good { color: var(--success); }
+.bord { border: 1px solid #000; }
+:root:not([data-theme="light"]) .bord { border-color: #2e2e2e; }
+.hardline { height: 1px; background: #050505; margin: var(--space-1-5) var(--space-3); }
+:root[data-theme="light"] .hardline { background: #c9c5bd; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .hardline { background: #c9c5bd; } :root:not([data-theme="dark"]) .bord { border-color: #c9c5bd; } }
+:root[data-theme="light"] .bord { border-color: #c9c5bd; }
+.stage { position: relative; height: 280px; border-radius: var(--radius-lg); background: var(--bg); overflow: hidden; }
+.stage .trg { position: absolute; }
+.expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .24s var(--ease-out); }
+.expand > div { overflow: hidden; }
+.expand.open { grid-template-rows: 1fr; }
+.chev { transition: transform .24s var(--ease-out); }
+.open-h .chev { transform: rotate(180deg); }
+.reorder { display: flex; flex-direction: column; gap: var(--space-1); }
+.rcard { display: flex; align-items: center; gap: var(--space-2-5); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--elevated); font: 400 13px/18px var(--font-sans); letter-spacing: -0.08px; }
+.rcard .meta { margin-left: auto; font: 400 12px/16px var(--font-sans); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.scroller { height: 188px; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; scrollbar-color: transparent transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%); }
+.scroller.scrolling { scrollbar-color: var(--scroll-thumb) transparent; }
+.scroller::-webkit-scrollbar { width: 6px; background: transparent; }
+.scroller::-webkit-scrollbar-thumb { background: transparent; border-radius: 99px; }
+.scroller.scrolling::-webkit-scrollbar-thumb { background: var(--scroll-thumb); }
+.copy .ok { display: none; }
+.swap { position: relative; display: grid; place-items: center; width: 16px; height: 16px; }
+.swap > * { grid-area: 1/1; transition: opacity .18s ease-in-out, filter .18s ease-in-out, transform .18s ease-in-out; }
+.swap .b { opacity: 0; filter: blur(2px); transform: scale(.25); }
+.copied .swap .a { opacity: 0; filter: blur(2px); transform: scale(.25); }
+.copied .swap .b { opacity: 1; filter: none; transform: none; color: var(--success); }
+.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--space-1); }
+.icons div { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-1) var(--space-3); border-radius: var(--radius-md); color: var(--text-secondary); transition: background-color .12s, color .12s; }
+.icons div:hover { background: var(--elevated); color: var(--text); }
+.icons svg { width: 24px; height: 24px; }
+.icons span { font: 400 11px/16px var(--font-sans); letter-spacing: 0.06px; color: var(--text-muted); text-align: center; overflow-wrap: anywhere; }
+.icons .new span::after { content: " ·new"; color: var(--brand-orange); }
+.rules { counter-reset: r; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-6); list-style: none; margin: 0; padding: 0; }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-2); padding: var(--space-3) 0; border-top: 1px solid var(--divider); }
+.rules li::before { content: counter(r, decimal-leading-zero); font-family: var(--font-pixel); font-size: 12px; line-height: 20px; color: var(--brand-orange); }
+.rules b { font-weight: 500; }
+.rules p { color: var(--text-secondary); font-size: 13px; line-height: 18px; letter-spacing: -0.08px; margin-top: 2px; }
+@media (max-width: 760px) { .rules { grid-template-columns: 1fr; } }
+.more { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+.more > div { padding: var(--space-4); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
+.more p { margin-top: var(--space-1); color: var(--text-secondary); font: 400 13px/18px var(--font-sans); letter-spacing: -0.08px; }
+@media (max-width: 860px) { .more { grid-template-columns: 1fr; } }
+footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(--space-3); color: var(--text-muted); font: 400 12px/16px var(--font-sans); }
+
+/* toasts */
+.tdemo { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tstack { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 60; width: min(356px, calc(100vw - 32px)); margin: 0; padding: 0; list-style: none; transition: height .3s var(--ease-out); }
+.tstack li { position: absolute; right: 0; bottom: 0; width: 100%; transform-origin: bottom center; transition: transform .45s cubic-bezier(.3,1.2,.4,1), opacity .25s ease; }
+.tstack li.enter { opacity: 0; transform: translateY(16px) scale(.98); }
+.tstack li.leave { opacity: 0 !important; transform: var(--t) scale(.96) !important; transition: opacity .12s ease-in, transform .12s ease-in; }
+.toast { display: flex; align-items: flex-start; gap: var(--space-2-5); padding: 12px 10px 12px 14px; border-radius: var(--radius-lg); background: var(--raised); box-shadow: var(--shadow-lg); overflow: hidden; transition: height .3s var(--ease-out); }
+.toast .tc { display: flex; align-items: flex-start; gap: var(--space-2-5); width: 100%; transition: opacity .2s; }
+.toast.dim .tc { opacity: 0; }
+.toast .g { position: relative; width: 16px; height: 16px; margin-top: 1px; flex: none; display: grid; }
+.toast .g > * { grid-area: 1/1; width: 16px; height: 16px; transition: opacity .2s ease-in-out, filter .2s ease-in-out, transform .2s ease-in-out; }
+.toast .g .out { opacity: 0; filter: blur(2px); transform: scale(.25); }
+.toast .tb { flex: 1; min-width: 0; }
+.toast .tt { font: 500 13px/18px var(--font-sans); letter-spacing: -0.08px; color: var(--text); overflow-wrap: anywhere; }
+.toast .tt .n { margin-left: 6px; font: 400 11px/16px var(--font-sans); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.toast .td { margin-top: 2px; font: 400 12px/16px var(--font-sans); color: var(--text-secondary); }
+.toast .tp { margin-top: 8px; height: 2px; border-radius: 9px; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
+.toast .tp i { display: block; height: 100%; width: 0; border-radius: inherit; background: color-mix(in srgb, var(--text) 70%, transparent); transition: width .3s var(--ease-out); }
+.toast .ta { display: flex; align-items: center; gap: 2px; margin: -2px 0; flex: none; }
+.toast .act { height: 24px; padding: 0 8px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--text) 6%, transparent); font: 500 12px/16px var(--font-sans); color: var(--text); transition: background-color .12s, transform .2s cubic-bezier(.3,1.4,.5,1); }
+.toast .act:hover { background: color-mix(in srgb, var(--text) 11%, transparent); }
+.toast .act:active { transform: scale(.97); }
+.toast .x { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-md); color: var(--text-muted); opacity: 0; transition: opacity .12s, background-color .12s, color .12s; }
+.toast .x svg { width: 14px; height: 14px; }
+.toast .x:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.toast.persist .x, .toast:hover .x, .toast .x:focus-visible { opacity: 1; }
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#top" style="text-decoration:none" aria-label="DROIDEX">
+      <svg class="logo" style="width:28px;height:28px" viewBox="0 0 1024 1024" aria-hidden="true"><rect class="tile" width="1024" height="1024" rx="228"/><g class="d"><rect x="72" y="312" width="80" height="80" /><rect x="152" y="312" width="80" height="80" /><rect x="232" y="312" width="80" height="80" /><rect x="312" y="312" width="80" height="80" /><rect x="72" y="392" width="80" height="80" /><rect x="392" y="392" width="80" height="80" /><rect x="72" y="472" width="80" height="80" /><rect x="392" y="472" width="80" height="80" /><rect x="72" y="552" width="80" height="80" /><rect x="392" y="552" width="80" height="80" /><rect x="72" y="632" width="80" height="80" /><rect x="152" y="632" width="80" height="80" /><rect x="232" y="632" width="80" height="80" /><rect x="312" y="632" width="80" height="80" /></g><g class="x"><rect x="552" y="312" width="80" height="80" /><rect x="872" y="312" width="80" height="80" /><rect x="632" y="392" width="80" height="80" /><rect x="792" y="392" width="80" height="80" /><rect x="712" y="472" width="80" height="80" /><rect x="632" y="552" width="80" height="80" /><rect x="792" y="552" width="80" height="80" /><rect x="552" y="632" width="80" height="80" /><rect x="872" y="632" width="80" height="80" /></g></svg>
+      <span class="wordmark">DROIDE<b>X</b></span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#app">App</a><a href="#colour">Colour</a><a href="#type">Type</a><a href="#space">Space</a><a href="#surfaces">Surfaces</a><a href="#interaction">Interaction</a><a href="#motion">Motion</a><a href="#toasts">Toasts</a><a href="#icons">Icons</a><a href="#rules">Rules</a>
+    </nav>
+    <span class="spacer"></span>
+    <div class="seg" id="theme" role="group" aria-label="Theme">
+      <span class="thumb"></span>
+      <button type="button" id="th-system" data-v="system">System</button>
+      <button type="button" id="th-dark" data-v="dark">Dark</button>
+      <button type="button" id="th-light" data-v="light">Light</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="top">
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Design system · Default theme · v1</div>
+      <h1>DROIDE<b>X</b></h1>
+      <p class="lede">One desktop app for all your coding agents. The interface stays quiet, built from a ramp of neutrals with no hard lines, so the agents' work is the loudest thing on screen. Colour appears only when it means something.</p>
+      <div class="meta"><span class="pill"><i></i>Borderless</span><span class="pill">11 type styles</span><span class="pill">4px grid</span><span class="pill">Two themes, AA everywhere</span></div>
+    </div>
+    <svg class="hero-art" viewBox="0 0 520 312" aria-hidden="true">
+      <rect class="tint" x="0" y="0" width="176" height="208"/>
+      <rect class="signal" x="176" y="104" width="208" height="208"/>
+      <rect class="slab" x="384" y="0" width="136" height="312"/>
+      <g class="signal"><rect class="px" style="animation-delay:120ms" x="40" y="48" width="16" height="16"/><rect class="px" style="animation-delay:160ms" x="104" y="48" width="16" height="16"/><rect class="px" style="animation-delay:200ms" x="56" y="64" width="16" height="16"/><rect class="px" style="animation-delay:240ms" x="88" y="64" width="16" height="16"/><rect class="px" style="animation-delay:280ms" x="72" y="80" width="16" height="16"/><rect class="px" style="animation-delay:320ms" x="56" y="96" width="16" height="16"/><rect class="px" style="animation-delay:360ms" x="88" y="96" width="16" height="16"/><rect class="px" style="animation-delay:400ms" x="40" y="112" width="16" height="16"/><rect class="px" style="animation-delay:440ms" x="104" y="112" width="16" height="16"/></g>
+      <g class="cut"><rect x="384" y="232" width="16" height="16"/><rect x="400" y="248" width="16" height="16"/><rect x="384" y="264" width="16" height="16"/><rect x="416" y="264" width="16" height="16"/><rect x="400" y="280" width="16" height="16"/><rect x="384" y="296" width="16" height="16"/></g>
+    </svg>
+  </div>
+
+  <!-- ===================== APP ===================== -->
+  <section class="s" id="app">
+    <div class="s-head">
+      <div><div class="k">01 / App</div><h2>The system, applied</h2></div>
+      <p>The DROIDEX workspace rebuilt with the new rules: no borders, soft dividers, hover fills that match click areas, and status said in words rather than coloured dots. Hover the rows and try the more-actions button on a session. Switch on the guides to see the alignment lines.</p>
+    </div>
+    <div class="app" id="appmock">
+      <aside class="side">
+        <span class="guide" style="left:8px" data-l="8"></span><span class="guide" style="left:20px" data-l="20"></span><span class="guide" style="left:46px" data-l="46"></span><span class="guide r" style="right:20px" data-l="20"></span>
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4H8C4.8 4 3.5 5.3 3.5 8.5v7c0 3.6 1.4 5 5 5h7c3.2 0 4.5-1.3 4.5-4.5v-1.5"></path><path d="m16.5 4.3-6.6 6.6c-.45.45-.75.95-.9 1.55l-.6 2.4c-.15.6.15.9.75.75l2.4-.6c.6-.15 1.1-.45 1.55-.9l6.6-6.6a2.26 2.26 0 0 0-3.2-3.2Z"></path></svg></span><span class="lab">New session</span><span class="meta"><span class="kbd">⌘N</span></span></button>
+        <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.3"></circle><path d="m15.6 15.6 4.4 4.4"></path></svg></span><span class="lab">Search</span><span class="meta"><span class="kbd">⌘K</span></span></button>
+        <div class="sec-h"><span>droid-control</span><span class="num">4</span></div>
+        <div id="sessions">
+          <button class="row-btn hit on" type="button" data-s="0"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab">Fix history reducer</span><span class="trail"><span class="meta"><span class="working" style="font-size:12px">Working</span></span><span class="acts"><span class="more-btn" role="button" tabindex="0" aria-label="More actions"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="0.6"></circle><circle cx="12" cy="12" r="0.6"></circle><circle cx="18.5" cy="12" r="0.6"></circle></svg></span></span></span></button>
+          <button class="row-btn hit" type="button" data-s="1"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab unread">Popover positioning hook</span><span class="trail"><span class="meta" style="color:var(--warning)">Waiting</span><span class="acts"><span class="more-btn" role="button" tabindex="0" aria-label="More actions"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="0.6"></circle><circle cx="12" cy="12" r="0.6"></circle><circle cx="18.5" cy="12" r="0.6"></circle></svg></span></span></span></button>
+          <button class="row-btn hit" type="button" data-s="2"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab">Borderless sidebar</span><span class="trail"><span class="meta">Ready</span><span class="acts"><span class="more-btn" role="button" tabindex="0" aria-label="More actions"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="0.6"></circle><circle cx="12" cy="12" r="0.6"></circle><circle cx="18.5" cy="12" r="0.6"></circle></svg></span></span></span></button>
+          <button class="row-btn hit" type="button" data-s="3"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab">Icon set: folders</span><span class="trail"><span class="meta">2h</span><span class="acts"><span class="more-btn" role="button" tabindex="0" aria-label="More actions"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="0.6"></circle><circle cx="12" cy="12" r="0.6"></circle><circle cx="18.5" cy="12" r="0.6"></circle></svg></span></span></span></button>
+        </div>
+        <div class="divider"></div>
+        <div class="sec-h"><span>lumen</span><span class="num">1</span></div>
+        <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab">Release notes draft</span><span class="trail"><span class="meta">3d</span></span></button>
+        <div class="upd"><span class="pillu">Update ready</span><span class="cap">v1.4.1</span></div>
+      </aside>
+
+      <div class="main">
+        <div class="bar"><span class="t">Fix history reducer</span><span class="badge neutral">Claude Code</span><span class="spacer"></span><button class="btn ghost icon sm hit" type="button" aria-label="Review changes"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.75 3.5H8.5c-2.2 0-3 1.15-3 3.5v10c0 2.35.8 3.5 3 3.5h7c2.2 0 3-1.15 3-3.5V9.25c0-.8-.25-1.4-.85-2l-2.9-2.9c-.6-.6-1.2-.85-2-.85Z"></path><path d="M13 3.6V7c0 1.1.4 1.5 1.5 1.5h3.9"></path><path d="M12 10.5v4.5"></path><path d="M9.75 12.75h4.5"></path><path d="M9.75 17h4.5"></path></svg></button><button class="btn ghost icon sm hit" type="button" aria-label="Toggle context panel"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.6 0 5 1.4 5 5v6c0 3.6-1.4 5-5 5H8c-3.6 0-5-1.4-5-5V9c0-3.6 1.4-5 5-5Z"></path><path d="M15.5 4v16"></path></svg></button></div>
+        <div class="feed">
+          <div class="msg-user">Owned records disappear from history after a reload. Can you find out why and fix it?</div>
+          <div class="msg-ai">
+            <p>The reducer dropped any record whose owner wasn't in the current session list, and on reload that list is empty for a moment. I kept owned records until the list arrives.</p>
+            <div class="toolp">
+              <div class="row-btn"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.75 3.5H8.5c-2.2 0-3 1.15-3 3.5v10c0 2.35.8 3.5 3 3.5h7c2.2 0 3-1.15 3-3.5V9.25c0-.8-.25-1.4-.85-2l-2.9-2.9c-.6-.6-1.2-.85-2-.85Z"></path><path d="M13 3.6V7c0 1.1.4 1.5 1.5 1.5h3.9"></path><path d="M9 12.5h6"></path><path d="M9 16h6"></path></svg></span><span class="lab">Edited <code>src/hooks/historyReducer.ts</code></span><span class="meta"><span class="add">+18</span> <span class="del">−4</span></span></div>
+              <div class="diffs"><div class="d">- if (!owners.has(r.owner)) return state;</div><div class="a">+ if (!ownersLoaded) return keepOwned(state, r);</div></div>
+            </div>
+            <div class="toolp">
+              <div class="row-btn"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 5 5-5 5"></path><path d="M12.5 17H19"></path></svg></span><span class="lab">npm run test -- history</span><span class="badge ok">Passed</span></div>
+              <div class="out">42 passed · 0 failed · 1.8s</div>
+            </div>
+            <span class="working">Writing a regression test…</span>
+          </div>
+        </div>
+        <div class="composer">
+          <textarea id="prompt" aria-label="Message" placeholder="Ask, or type / for skills"></textarea>
+          <div class="tools">
+            <button class="btn secondary icon sm round hit" type="button" aria-label="Attach"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5v13"></path><path d="M5.5 12h13"></path></svg></button>
+            <button class="chip hit" type="button"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3.25" fill="currentColor" fill-opacity="0.3"></circle><circle cx="6.9" cy="16.1" r="3.25"></circle><circle cx="17.1" cy="16.1" r="3.25"></circle></svg>Opus</button>
+            <button class="chip hit" type="button"><span class="ultra">Ultra</span></button>
+            <span class="spacer"></span>
+            <button class="btn primary icon round hit" type="button" aria-label="Send"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="ctx">
+        <div class="card">
+          <span class="guide" style="left:8px" data-l="8"></span><span class="guide" style="left:20px" data-l="20"></span><span class="guide" style="left:46px" data-l="46"></span><span class="guide r" style="right:20px" data-l="20"></span>
+          <div class="ttl">Context</div>
+          <div class="sec-h"><span>Environment</span><span></span></div>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/></svg></span><span class="lab">droid-control</span></button>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4.5"></rect><path d="M12 8.4v4.2"></path><path d="M9.9 10.5h4.2"></path><path d="M9.9 15.4h4.2"></path></svg></span><span class="lab">Changes</span><span class="meta"><span class="add">+1,929</span> <span class="del">−0</span></span></button>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="17" r="2.5"></circle><circle cx="17.5" cy="6.5" r="2.5"></circle><path d="M6.5 8v6.5"></path><path d="M17.5 9v3a5 5 0 0 1-5 5H9"></path></svg></span><span class="lab">icons/menu-icons</span><span class="meta">159</span></button>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M3.5 12h5.3"></path><path d="M15.2 12h5.3"></path></svg></span><span class="lab">Commit or push</span></button>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 14.5V10a4.5 4.5 0 0 0-4.5-4.5h-1"></path><path d="m14.25 3-2.5 2.5 2.5 2.5"></path><path d="M17.5 17v4.5m-2.25-2.25h4.5"></path></svg></span><span class="lab">Create pull request</span></button>
+          <div class="divider"></div>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.5v-.75c0-2.05-.9-3-3-3h-4.25c-.75 0-1.25-.15-1.75-.65L10.35 6.2c-.5-.5-1-.7-1.75-.7H5.75c-1.5 0-2.25.65-2.25 2.25v8.5c0 2.3.9 3.25 3 3.25H12"/><path d="M15.13 13.03L19.55 14.44Q20.98 14.9 19.61 15.52L18.53 16.01Q17.62 16.42 17.21 17.33L16.72 18.41Q16.1 19.78 15.64 18.35L14.23 13.93Q13.8 12.6 15.13 13.03Z"/></svg></span><span class="lab">Computer use</span><span class="badge warn">Asks first</span></button>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3.25" fill="currentColor" fill-opacity="0.3"></circle><circle cx="6.9" cy="16.1" r="3.25"></circle><circle cx="17.1" cy="16.1" r="3.25"></circle></svg></span><span class="lab">Opus</span><span class="meta">Medium</span></button>
+          <div class="sec-h"><span>Notes</span><span></span></div>
+          <div style="padding:0 12px;font:400 13px/18px var(--font-sans);letter-spacing:-0.08px;color:var(--text-secondary)">Keep owned records until the session list loads.</div>
+        </div>
+      </aside>
+
+      <div class="pop" id="sessionMenu" hidden role="menu">
+        <button class="mi" type="button" role="menuitem" data-done="Renamed"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.05 4.55-9.1 9.1c-.5.5-.8 1-.95 1.65l-.75 3.2c-.15.6.15.9.75.75l3.2-.75c.65-.15 1.15-.45 1.65-.95l9.1-9.1a2.76 2.76 0 0 0-3.9-3.9Z"></path><path d="m14.5 6.1 3.9 3.9"></path></svg></span>Rename<span class="kbd">↩</span></button>
+        <button class="mi" type="button" role="menuitem" data-done="Pinned"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 4.2c.75-.85 1.6-.95 2.4-.15l3.35 3.35c.8.8.7 1.65-.15 2.4l-2.5 2.15c-.65.55-1.05 1.3-1.2 2.15l-.45 2.5c-.25 1.4-1.3 1.75-2.3.75L6.65 10.8c-1-1-.65-2.05.75-2.3l2.5-.45c.85-.15 1.6-.55 2.15-1.2Z"></path><path d="m9.5 14-5 5"></path></svg></span>Pin session</button>
+        <button class="mi" type="button" role="menuitem" data-done="Copied link"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3.3-3.3a4 4 0 0 0-5.7-5.7l-1 1"></path><path d="M14 10a4 4 0 0 0-5.7 0L5 13.3a4 4 0 0 0 5.7 5.7l1-1"></path></svg></span>Copy link<span class="kbd">⌘L</span></button>
+        <div class="mdiv"></div>
+        <button class="mi danger" type="button" role="menuitem" data-done="Archived"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="4.5" rx="2"></rect><path d="M5 8.5v9A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-9"></path><path d="M10 13h4"></path></svg></span>Archive session</button>
+      </div>
+    </div>
+    <div class="mock-tools">
+      <button class="toggle" type="button" id="tg-guides" aria-pressed="false"><span class="sw"></span>Alignment guides</button>
+      <button class="toggle" type="button" id="tg-hits" aria-pressed="false"><span class="sw"></span>Click areas</button>
+      <span class="cap" id="menuResult" aria-live="polite">Open a session's more-actions button. The chosen item blinks once before the menu closes.</span>
+    </div>
+  </section>
+
+  <!-- ===================== COLOUR ===================== -->
+  <section class="s" id="colour">
+    <div class="s-head">
+      <div><div class="k">02 / Colour</div><h2>A ramp, not a palette</h2></div>
+      <p>Surfaces step from bg to active, and hover moves one step up. Text and status colours are checked against every surface in both themes. Every pair below is computed live from the current theme.</p>
+    </div>
+    <div class="ramp" id="ramp">
+      <div style="background:var(--bg)"><b>bg</b><span class="cap" data-hex="--bg"></span></div>
+      <div style="background:var(--sidebar)"><b>sidebar</b><span class="cap" data-hex="--sidebar"></span></div>
+      <div style="background:var(--surface)"><b>surface</b><span class="cap" data-hex="--surface"></span></div>
+      <div style="background:var(--elevated)"><b>elevated</b><span class="cap" data-hex="--elevated"></span></div>
+      <div style="background:var(--active)"><b>active</b><span class="cap" data-hex="--active"></span></div>
+      <div style="background:var(--raised)"><b>raised</b><span class="cap" data-hex="--raised"></span></div>
+    </div>
+    <div class="grid2" style="margin-top:var(--space-4)">
+      <div class="panel">
+        <div class="h4">Contrast on every surface</div>
+        <div style="overflow-x:auto;margin-top:var(--space-3)">
+          <table class="contrast-tbl" id="ctable"><thead><tr><th>Text</th><th style="text-align:right">bg</th><th style="text-align:right">surface</th><th style="text-align:right">elevated</th><th style="text-align:right">active</th></tr></thead><tbody></tbody></table>
+        </div>
+        <p class="note">AA needs 4.5:1. The four colours that failed on <code>active</code> have been adjusted, keeping their hue.</p>
+      </div>
+      <div class="panel">
+        <div class="h4">Colour means something</div>
+        <div class="sw-row" style="margin-top:var(--space-3)">
+          <div class="swatch"><div class="chipc" style="background:var(--success-soft);color:var(--success)">success</div><span class="cap">Done, passing, approve</span></div>
+          <div class="swatch"><div class="chipc" style="background:var(--warning-soft);color:var(--warning)">warning</div><span class="cap">Needs you, limits</span></div>
+          <div class="swatch"><div class="chipc" style="background:var(--danger-soft);color:var(--danger)">danger</div><span class="cap">Archive, discard, failed</span></div>
+          <div class="swatch"><div class="chipc" style="background:var(--elevated);color:var(--link)">link</div><span class="cap">Links, skills</span></div>
+          <div class="swatch"><div class="chipc" style="background:var(--elevated);color:var(--ultra)">ultra</div><span class="cap">Top reasoning level</span></div>
+          <div class="swatch"><div class="chipc" style="background:var(--brand-orange);color:var(--brand-ink)">brand-orange</div><span class="cap">The X. Brand only</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TYPE ===================== -->
+  <section class="s" id="type">
+    <div class="s-head">
+      <div><div class="k">03 / Type</div><h2>Eleven styles, three weights</h2></div>
+      <p>The system face, so macOS swaps in SF Pro Text below 20px and Display above it. Small sizes get looser leading and a touch of positive tracking; large sizes get tighter both. Nothing else is allowed.</p>
+    </div>
+    <div class="panel">
+      <div class="tscale">
+        <div><span class="lbl">wordmark</span><span style="font:400 32px/32px var(--font-pixel);letter-spacing:-1.28px">DROIDE<b style="font-weight:400;color:var(--brand-orange)">X</b></span><span class="cap spec">Silkscreen 32</span></div>
+        <div><span class="lbl">display</span><span style="font:600 24px/30px var(--font-sans);letter-spacing:-0.48px">Ship the branch</span><span class="cap spec">24/30 · 600</span></div>
+        <div><span class="lbl">title</span><span style="font:600 22px/28px var(--font-sans);letter-spacing:-0.44px">What should we build?</span><span class="cap spec">22/28 · 600</span></div>
+        <div><span class="lbl">heading</span><span style="font:600 18px/22px var(--font-sans);letter-spacing:-0.27px">Review changes</span><span class="cap spec">18/22 · 600</span></div>
+        <div><span class="lbl">subheading</span><span style="font:600 16px/20px var(--font-sans);letter-spacing:-0.16px">Pull request ready</span><span class="cap spec">16/20 · 600</span></div>
+        <div><span class="lbl">prose</span><span style="font:400 14px/22px var(--font-sans);letter-spacing:-0.15px;max-width:62ch">I kept owned records until the session list arrives, so nothing disappears on reload.</span><span class="cap spec">14/22 · 400</span></div>
+        <div><span class="lbl">body-lg</span><span style="font:400 14px/20px var(--font-sans);letter-spacing:-0.15px">Start a new session</span><span class="cap spec">14/20 · 400</span></div>
+        <div><span class="lbl">body</span><span style="font:400 13px/18px var(--font-sans);letter-spacing:-0.08px">feature/history-records</span><span class="cap spec">13/18 · 400</span></div>
+        <div><span class="lbl">body-strong</span><span style="font:500 13px/18px var(--font-sans);letter-spacing:-0.08px">Edited 3 files</span><span class="cap spec">13/18 · 500</span></div>
+        <div><span class="lbl">label</span><span style="font:500 12px/16px var(--font-sans);color:var(--text-muted)">Environment</span><span class="cap spec">12/16 · 500</span></div>
+        <div><span class="lbl">caption</span><span style="font:400 11px/16px var(--font-sans);letter-spacing:0.06px;color:var(--text-muted)">2m ago · 14 tool calls</span><span class="cap spec">11/16 · 400</span></div>
+        <div><span class="lbl">code</span><span class="mono" style="line-height:18px">npm run typecheck</span><span class="cap spec">mono 12/18</span></div>
+      </div>
+    </div>
+    <div class="dd" style="margin-top:var(--space-4)">
+      <div class="panel"><div class="verdict good"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>Dense surfaces</div><p class="note" style="margin:0 0 var(--space-3)">Sidebar, menus, chips, tool panels: body, body-strong, label, caption.</p>
+        <div style="background:var(--bg);border-radius:var(--radius-lg);padding:var(--space-2)"><div class="sec-h" style="padding-top:var(--space-1)"><span>Recent</span><span>3</span></div><button class="row-btn" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab">Fix history reducer</span><span class="meta">2m</span></button><button class="row-btn" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg></span><span class="lab">Borderless sidebar</span><span class="meta">1h</span></button></div></div>
+      <div class="panel"><div class="verdict good"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>Reading surfaces</div><p class="note" style="margin:0 0 var(--space-3)">Transcript, markdown, settings, dialogs: prose and headings at a 60–80 character measure.</p>
+        <div style="background:var(--bg);border-radius:var(--radius-lg);padding:var(--space-4)"><div style="font:600 18px/22px var(--font-sans);letter-spacing:-0.27px">Why records disappeared</div><p style="margin-top:var(--space-2);color:var(--text-secondary)">The reducer ran before the session list loaded, so every owner looked unknown for one frame.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== SPACE ===================== -->
+  <section class="s" id="space">
+    <div class="s-head">
+      <div><div class="k">04 / Space</div><h2>A 4px grid and nested radii</h2></div>
+      <p>Close means related. Use tight gaps inside a group and generous ones between groups. Corners get rounder as surfaces get bigger, so a dialog looks as soft as a button.</p>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="sp" id="spscale"></div>
+      </div>
+      <div class="panel" style="display:flex;align-items:center;justify-content:center">
+        <div class="nest" style="width:100%;max-width:400px">
+          <span class="tag cap">Dialog · radius-2xl 24</span>
+          <div class="l2"><span class="tag cap">Card · radius-xl 16</span>
+            <div class="l3"><span class="tag cap" style="padding:2px 8px 0">Menu · radius-lg 12</span><div class="mi hl"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg></span>Item · radius-md 8<span class="kbd">sm 6</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SURFACES ===================== -->
+  <section class="s" id="surfaces">
+    <div class="s-head">
+      <div><div class="k">05 / Surfaces</div><h2>No hard lines</h2></div>
+      <p>Edges come from tone and shadow. The only line left is the translucent divider. Focus shows only for the keyboard, as a soft 1.5px ring. Never a dark outline on click.</p>
+    </div>
+    <div class="dd">
+      <div class="panel">
+        <div class="verdict bad"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"></path><path d="m18 6-12 12"></path></svg>Before: borders and hard rules</div>
+        <div class="bord" style="border-radius:12px;padding:6px;background:var(--raised)">
+          <div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg>Copy message</div><div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 4.2c.75-.85 1.6-.95 2.4-.15l3.35 3.35c.8.8.7 1.65-.15 2.4l-2.5 2.15c-.65.55-1.05 1.3-1.2 2.15l-.45 2.5c-.25 1.4-1.3 1.75-2.3.75L6.65 10.8c-1-1-.65-2.05.75-2.3l2.5-.45c.85-.15 1.6-.55 2.15-1.2Z"></path><path d="m9.5 14-5 5"></path></svg>Pin session</div><div class="hardline" style="margin-inline:8px"></div><div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="4.5" rx="2"></rect><path d="M5 8.5v9A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-9"></path><path d="M10 13h4"></path></svg>Archive session</div>
+        </div>
+        <div style="margin-top:var(--space-3);display:flex;gap:8px"><button type="button" class="btn secondary bord" style="outline:2px solid #000;outline-offset:0">Clicked</button></div>
+      </div>
+      <div class="panel">
+        <div class="verdict good"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>After: tone, shadow, soft divider</div>
+        <div style="border-radius:12px;padding:6px;background:var(--raised);box-shadow:var(--shadow-lg)">
+          <div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg>Copy message</div><div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 4.2c.75-.85 1.6-.95 2.4-.15l3.35 3.35c.8.8.7 1.65-.15 2.4l-2.5 2.15c-.65.55-1.05 1.3-1.2 2.15l-.45 2.5c-.25 1.4-1.3 1.75-2.3.75L6.65 10.8c-1-1-.65-2.05.75-2.3l2.5-.45c.85-.15 1.6-.55 2.15-1.2Z"></path><path d="m9.5 14-5 5"></path></svg>Pin session</div><div class="mdiv"></div><div class="mi danger"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="4.5" rx="2"></rect><path d="M5 8.5v9A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-9"></path><path d="M10 13h4"></path></svg>Archive session</div>
+        </div>
+        <div style="margin-top:var(--space-3);display:flex;gap:8px"><button type="button" class="btn secondary">Clicked</button><button type="button" class="btn secondary is-focus">Keyboard focus</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== INTERACTION ===================== -->
+  <section class="s" id="interaction">
+    <div class="s-head">
+      <div><div class="k">06 / Interaction</div><h2>Every state, every time</h2></div>
+      <p>Buttons shrink slightly when pressed and spring back. Coloured actions fill solid on hover, so the click confirms itself. Popovers open on the side with room, flip at the edge, and animate from the side they actually opened on.</p>
+    </div>
+    <div class="panel">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <button type="button" class="btn primary">Create pull request</button>
+        <button type="button" class="btn secondary"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M3.5 12h5.3"></path><path d="M15.2 12h5.3"></path></svg>Commit</button>
+        <button type="button" class="btn ghost">Show all</button>
+        <button type="button" class="btn success"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>Approve</button>
+        <button type="button" class="btn danger"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15"></path><path d="M9.5 6V5A1.5 1.5 0 0 1 11 3.5h2A1.5 1.5 0 0 1 14.5 5v1"></path><path d="m6.5 6.5.7 11.7a2.3 2.3 0 0 0 2.3 2.3h5a2.3 2.3 0 0 0 2.3-2.3l.7-11.7"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg>Discard changes</button>
+        <button type="button" class="btn secondary" disabled>Disabled</button>
+        <button type="button" class="btn ghost icon sm" aria-label="Copy"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg></button>
+        <button type="button" class="btn secondary icon round" aria-label="Attach"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5v13"></path><path d="M5.5 12h13"></path></svg></button>
+        <button type="button" class="btn primary icon round" aria-label="Send"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m6 11 6-6 6 6"></path></svg></button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-4)"><span class="badge ok">Passed</span><span class="badge warn">Waiting for input</span><span class="badge err">Failed</span><span class="badge neutral">Draft</span></div>
+    </div>
+    <div class="grid2" style="margin-top:var(--space-4)">
+      <div class="panel">
+        <div class="h4">Popover that stays inside</div>
+        <p class="note">Open each trigger. The ones near the bottom flip upward and animate from below, and all of them slide sideways to stay 8px inside the box.</p>
+        <div class="stage" id="stage" style="margin-top:var(--space-3)">
+          <button type="button" class="btn secondary sm trg" style="left:8px;top:8px" data-pref="bottom">Top-left</button>
+          <button type="button" class="btn secondary sm trg" style="right:8px;top:8px" data-pref="bottom">Top-right</button>
+          <button type="button" class="btn secondary sm trg" style="left:8px;bottom:8px" data-pref="bottom">Bottom-left</button>
+          <button type="button" class="btn secondary sm trg" style="right:8px;bottom:8px" data-pref="bottom">Bottom-right</button>
+          <div class="pop" id="stagePop" hidden role="menu">
+            <button class="mi" type="button" data-done="Opened"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"></path><path d="m20 4-9 9"></path><path d="M18 13.5v4a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 4 17.5v-9A2.5 2.5 0 0 1 6.5 6h4"></path></svg></span>Open in editor</button>
+            <button class="mi" type="button" data-done="Copied"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg></span>Copy path<span class="kbd">⌘⇧C</span></button>
+            <div class="mdiv"></div>
+            <button class="mi danger" type="button" data-done="Deleted"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15"></path><path d="M9.5 6V5A1.5 1.5 0 0 1 11 3.5h2A1.5 1.5 0 0 1 14.5 5v1"></path><path d="m6.5 6.5.7 11.7a2.3 2.3 0 0 0 2.3 2.3h5a2.3 2.3 0 0 0 2.3-2.3l.7-11.7"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></span>Delete file</button>
+          </div>
+        </div>
+        <p class="cap" id="stageSide" style="margin-top:var(--space-2)">Opened side: none yet</p>
+      </div>
+      <div class="panel">
+        <div class="h4">Click areas and copy feedback</div>
+        <p class="note">What lights up on hover is exactly what you can click. Menu items touch each other, so there are no dead gaps between them. Copy swaps to a check instead of showing a toast.</p>
+        <div style="margin-top:var(--space-3);background:var(--bg);border-radius:var(--radius-lg);padding:var(--space-2)">
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="17" r="2.5"></circle><circle cx="17.5" cy="6.5" r="2.5"></circle><path d="M6.5 8v6.5"></path><path d="M17.5 9v3a5 5 0 0 1-5 5H9"></path></svg></span><span class="lab">feature/history-records</span><span class="meta">2 ahead</span></button>
+          <button class="row-btn hit" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h3l9-9"></path><path d="M11 3h5v5"></path><path d="m7 12 9 9"></path><path d="M11 21h5v-5"></path></svg></span><span class="lab">Worktree</span><span class="meta">local</span></button>
+          <button class="row-btn hit copybtn" type="button"><span class="ico"><span class="swap"><span class="a"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg></span><span class="b"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg></span></span></span><span class="lab">Copy branch name</span><span class="meta"><span class="kbd">⌘C</span></span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MOTION ===================== -->
+  <section class="s" id="motion">
+    <div class="s-head">
+      <div><div class="k">07 / Motion</div><h2>Motion explains change</h2></div>
+      <p>Short distances, exits faster than entrances, and springs for anything that can reverse halfway. Things that move keep their identity, and scrollbars stay hidden until you scroll.</p>
+    </div>
+    <div class="grid3">
+      <div class="panel">
+        <div class="h4">Reorder, don't re-render</div>
+        <p class="note">Sessions re-sort by status. Each card travels to its new place.</p>
+        <div class="reorder" id="reorder" style="margin-top:var(--space-3)">
+          <div class="rcard" data-k="a">Popover hook<span class="meta" style="color:var(--warning)">Waiting</span></div>
+          <div class="rcard" data-k="b" style="font-weight:500">History reducer<span class="meta">Working</span></div>
+          <div class="rcard" data-k="c">Borderless sidebar<span class="meta">Ready</span></div>
+          <div class="rcard" data-k="d">Folder icons<span class="meta">Ready</span></div>
+        </div>
+        <button type="button" class="btn secondary sm" id="shuffle" style="margin-top:var(--space-3)">Re-sort</button>
+      </div>
+      <div class="panel">
+        <div class="h4">Expand without height: auto</div>
+        <p class="note">Animates <code>grid-template-rows</code> from 0fr to 1fr. Smooth at any content height.</p>
+        <div style="margin-top:var(--space-3);background:var(--bg);border-radius:var(--radius-lg);padding:var(--space-2)">
+          <button class="row-btn" type="button" id="exph"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4.5"></rect><path d="M12 8.4v4.2"></path><path d="M9.9 10.5h4.2"></path><path d="M9.9 15.4h4.2"></path></svg></span><span class="lab">Changes</span><span class="meta"><span class="add">+42</span> <span class="del">−7</span></span><span class="ico chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9.5 6 6 6-6"></path></svg></span></button>
+          <div class="expand" id="exp"><div>
+            <button class="row-btn" type="button"><span class="ico"></span><span class="lab">historyReducer.ts</span><span class="meta"><span class="add">+18</span></span></button>
+            <button class="row-btn" type="button"><span class="ico"></span><span class="lab">history.test.ts</span><span class="meta"><span class="add">+24</span></span></button>
+            <button class="row-btn" type="button"><span class="ico"></span><span class="lab">useStore.tsx</span><span class="meta"><span class="del">−7</span></span></button>
+          </div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="h4">Hidden scrollbars</div>
+        <p class="note">The thumb shows only while you scroll. Edge fades show there's more.</p>
+        <div class="scroller" id="scroller" style="margin-top:var(--space-3)"></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===================== TOASTS ===================== -->
+  <section class="s" id="toasts">
+    <div class="s-head">
+      <div><div class="k">08 / Toasts</div><h2>Quiet notices</h2></div>
+      <p>A raised card where colour lives only in the small status icon, with no dots, side bars or tinted backgrounds. Fire a few and they stack in the corner. Hover the stack to fan it out and pause every timer. Errors and updates stay until you dismiss them.</p>
+    </div>
+    <div class="panel">
+      <div class="tdemo">
+        <button type="button" class="btn secondary" data-t="success"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>Pushed to remote</button>
+        <button type="button" class="btn secondary" data-t="undo"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="4.5" rx="2"></rect><path d="M5 8.5v9A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-9"></path><path d="M10 13h4"></path></svg>Archive with undo</button>
+        <button type="button" class="btn secondary" data-t="error"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 8v4.5"></path><circle cx="12" cy="16" r="0.6"></circle></svg>Push failed</button>
+        <button type="button" class="btn secondary" data-t="update"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.75v9"></path><path d="m8.75 10.5 3.25 3.25 3.25-3.25"></path><path d="M5 14.5v.5a4.5 4.5 0 0 0 4.5 4.5h5a4.5 4.5 0 0 0 4.5-4.5v-.5"></path></svg>Download update</button>
+        <button type="button" class="btn secondary" data-t="promise"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 14.5V10a4.5 4.5 0 0 0-4.5-4.5h-1"></path><path d="m14.25 3-2.5 2.5 2.5 2.5"></path><path d="M17.5 17v4.5m-2.25-2.25h4.5"></path></svg>Create pull request</button>
+        <button type="button" class="btn secondary" data-t="repeat"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 4.4 3.2 16.8a2 2 0 0 0 1.7 3h14.2a2 2 0 0 0 1.7-3L13.7 4.4a2 2 0 0 0-3.4 0Z"></path><path d="M12 9.5v4"></path><circle cx="12" cy="16.75" r="0.6"></circle></svg>Rate limit (repeat)</button>
+        <button type="button" class="btn ghost" data-t="clear">Clear all</button>
+      </div>
+      <p class="note">Timing: success and info 4s (6s with an action), warning 6s, error, update and loading stay. The same notice raised twice counts up (×2) instead of stacking. Loading turns into success in place, with the icon cross-fading. Swipe isn't shown here; Escape dismisses the newest.</p>
+    </div>
+  </section>
+
+  <!-- ===================== ICONS ===================== -->
+  <section class="s" id="icons">
+    <div class="s-head">
+      <div><div class="k">09 / Icons</div><h2>One drawing language</h2></div>
+      <p>A 24px grid, 1.5px stroke, round caps and soft continuous corners. Filled variants fill the same outline. The new folder family and the wider cursors are marked.</p>
+    </div>
+    <div class="panel"><div class="icons"><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.27 5.45L17.34 8.68Q20.2 9.6 17.47 10.84L14.72 12.08Q12.9 12.9 12.08 14.72L10.84 17.47Q9.6 20.2 8.68 17.34L5.45 7.27Q4.6 4.6 7.27 5.45Z"/></svg><span>cursor</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="currentColor" d="M7.27 5.45L17.34 8.68Q20.2 9.6 17.47 10.84L14.72 12.08Q12.9 12.9 12.08 14.72L10.84 17.47Q9.6 20.2 8.68 17.34L5.45 7.27Q4.6 4.6 7.27 5.45Z"/></svg><span>cursor-filled</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="currentColor" fill-opacity="0.3" d="M7.27 5.45L17.34 8.68Q20.2 9.6 17.47 10.84L14.72 12.08Q12.9 12.9 12.08 14.72L10.84 17.47Q9.6 20.2 8.68 17.34L5.45 7.27Q4.6 4.6 7.27 5.45Z"/></svg><span>cursor-duo</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.79 8.3L18.01 10.94Q20.39 11.7 18.11 12.73L15.86 13.75Q14.41 14.41 13.75 15.86L12.73 18.11Q11.7 20.39 10.94 18.01L8.3 9.79Q7.6 7.6 9.79 8.3Z"/><path d="M7.6 3v1.6M3 7.6h1.6M4.35 4.35l1.15 1.15"/></svg><span>cursor-click</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 4h-2A2.5 2.5 0 0 0 4 6.5v2M4 12.5v2A2.5 2.5 0 0 0 6.5 17h2M12.5 4h2A2.5 2.5 0 0 1 17 6.5v2"/><path d="M12.82 11.72L18.85 13.65Q20.56 14.2 18.92 14.94L17.27 15.69Q16.18 16.18 15.69 17.27L14.94 18.92Q14.2 20.56 13.65 18.85L11.72 12.82Q11.2 11.2 12.82 11.72Z"/></svg><span>cursor-select</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/></svg><span>folder</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="currentColor" d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/></svg><span>folder-filled</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.5V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h3c1.55 0 2.25.7 2.25 2.25V11"/><path d="M6.35 12.95c.35-.95 1.05-1.45 2.15-1.45h11.4c1.1 0 1.55.6 1.2 1.6l-1.35 3.95c-.6 1.7-1.55 2.45-3.25 2.45H5.6c-1.4 0-2.05-.8-1.6-2.1Z"/></svg><span>folder-open</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.5V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h3c1.55 0 2.25.7 2.25 2.25V11"/><path fill="currentColor" d="M6.35 12.95c.35-.95 1.05-1.45 2.15-1.45h11.4c1.1 0 1.55.6 1.2 1.6l-1.35 3.95c-.6 1.7-1.55 2.45-3.25 2.45H5.6c-1.4 0-2.05-.8-1.6-2.1Z"/></svg><span>folder-open-filled</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/><path d="M12 11.25v5M9.5 13.75h5"/></svg><span>folder-plus</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/><path d="M9.5 13.75h5"/></svg><span>folder-minus</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/><circle cx="11.6" cy="13.4" r="2.3"/><path d="m13.35 15.15 1.65 1.65"/></svg><span>folder-search</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/><circle cx="12" cy="13.75" r="1.9"/><path d="M7.5 13.75h2.6M13.9 13.75h2.6"/></svg><span>folder-git</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 16.25V7.75c0-1.6.75-2.25 2.25-2.25H8.6c.75 0 1.25.2 1.75.7l1.15 1.15c.5.5 1 .65 1.75.65h4.25c2.1 0 3 .95 3 3v5.25c0 2.3-.9 3.25-3 3.25h-11c-2.1 0-3-.95-3-3.25Z"/><path d="m10.25 11.75-2 2 2 2M13.75 11.75l2 2-2 2"/></svg><span>folder-code</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.5v-.75c0-2.05-.9-3-3-3h-4.25c-.75 0-1.25-.15-1.75-.65L10.35 6.2c-.5-.5-1-.7-1.75-.7H5.75c-1.5 0-2.25.65-2.25 2.25v8.5c0 2.3.9 3.25 3 3.25H12"/><path d="M15.13 13.03L19.55 14.44Q20.98 14.9 19.61 15.52L18.53 16.01Q17.62 16.42 17.21 17.33L16.72 18.41Q16.1 19.78 15.64 18.35L14.23 13.93Q13.8 12.6 15.13 13.03Z"/></svg><span>folder-cursor</span></div><div class="new"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 15.5V8.25c0-1.6.75-2.25 2.25-2.25h2.1c.7 0 1.15.2 1.6.65l.95.95c.45.45.9.6 1.6.6h3c2 0 2.75.85 2.75 2.75v4.3c0 2.15-.8 3-2.75 3H9.25c-1.95 0-2.75-.85-2.75-2.75Z"/><path d="M3.5 9.5v7.25c0 2.6 1.1 3.75 3.75 3.75h9.25"/></svg><span>folders</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg><span>copy</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg><span>check</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.3"></circle><path d="m15.6 15.6 4.4 4.4"></path></svg><span>search</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.45 5.6c.6-1.15 2.5-1.15 3.1 0L14.1 6.65c.3.55.9.9 1.55.85l1.2-.05c1.3-.05 2.25 1.55 1.55 2.65l-.65 1c-.35.55-.35 1.25 0 1.8l.65 1c.7 1.1-.25 2.7-1.55 2.65l-1.2-.05c-.65-.05-1.25.3-1.55.85l-.55 1.05c-.6 1.15-2.5 1.15-3.1 0l-.55-1.05c-.3-.55-.9-.9-1.55-.85l-1.2.05c-1.3.05-2.25-1.55-1.55-2.65l.65-1c.35-.55.35-1.25 0-1.8l-.65-1c-.7-1.1.25-2.7 1.55-2.65l1.2.05c.65.05 1.25-.3 1.55-.85Z"></path><circle cx="12" cy="12" r="2.75"></circle></svg><span>settings</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="7" r="2.75"></circle><path d="M13 7h7"></path><circle cx="6" cy="17" r="2.75"></circle><path d="M13 17h7"></path></svg><span>sliders-horizontal</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4Z"></path><path d="M8 9h8m-8 4h5"></path></svg><span>message-bubble</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M8 4h8c3.25 0 4.5 1.25 4.5 4.5v5c0 3.25-1.25 4.5-4.5 4.5h-.7L13 20.1c-.7.65-1.3.65-2 0L8.7 18H8c-3.25 0-4.5-1.25-4.5-4.5v-5C3.5 5.25 4.75 4 8 4ZM8 8.25a.75.75 0 0 0 0 1.5h8a.75.75 0 0 0 0-1.5Zm0 4a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5Z"></path></svg><span>message-bubble-filled</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.75 9.5a5.25 5.25 0 0 1 10.5 0v2.55c0 .9.25 1.6.8 2.4l.6.85c.65.95.2 1.7-.95 1.7H6.3c-1.15 0-1.6-.75-.95-1.7l.6-.85c.55-.8.8-1.5.8-2.4Z"></path><path d="M9.5 19a2.65 2.65 0 0 0 5 0"></path></svg><span>bell</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="currentColor" d="M6.75 9.5a5.25 5.25 0 0 1 10.5 0v2.55c0 .9.25 1.6.8 2.4l.6.85c.65.95.2 1.7-.95 1.7H6.3c-1.15 0-1.6-.75-.95-1.7l.6-.85c.55-.8.8-1.5.8-2.4Z"></path><path d="M9.5 19a2.65 2.65 0 0 0 5 0"></path></svg><span>bell-filled</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="17" r="2.5"></circle><circle cx="17.5" cy="6.5" r="2.5"></circle><path d="M6.5 8v6.5"></path><path d="M17.5 9v3a5 5 0 0 1-5 5H9"></path></svg><span>git-branch</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><path d="M6.5 8v8"></path><circle cx="17.5" cy="18.5" r="2.5"></circle><path d="M17.5 16v-6a4.5 4.5 0 0 0-4.5-4.5h-1"></path><path d="m14.25 3-2.5 2.5 2.5 2.5"></path></svg><span>git-pull-request</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M3.5 12h5.3"></path><path d="M15.2 12h5.3"></path></svg><span>git-commit</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h3l9-9"></path><path d="M11 3h5v5"></path><path d="m7 12 9 9"></path><path d="M11 21h5v-5"></path></svg><span>worktree</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 5 5-5 5"></path><path d="M12.5 17H19"></path></svg><span>terminal</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="4"></rect><path d="M7.5 8.75h9"></path></svg><span>browser</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.75 3.5H8.5c-2.2 0-3 1.15-3 3.5v10c0 2.35.8 3.5 3 3.5h7c2.2 0 3-1.15 3-3.5V9.25c0-.8-.25-1.4-.85-2l-2.9-2.9c-.6-.6-1.2-.85-2-.85Z"></path><path d="M13 3.6V7c0 1.1.4 1.5 1.5 1.5h3.9"></path></svg><span>file</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.75 3.5H8.5c-2.2 0-3 1.15-3 3.5v10c0 2.35.8 3.5 3 3.5h7c2.2 0 3-1.15 3-3.5V9.25c0-.8-.25-1.4-.85-2l-2.9-2.9c-.6-.6-1.2-.85-2-.85Z"></path><path d="M13 3.6V7c0 1.1.4 1.5 1.5 1.5h3.9"></path><path d="M9 12.5h6"></path><path d="M9 16h6"></path></svg><span>file-text</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.75 3.5H8.5c-2.2 0-3 1.15-3 3.5v10c0 2.35.8 3.5 3 3.5h7c2.2 0 3-1.15 3-3.5V9.25c0-.8-.25-1.4-.85-2l-2.9-2.9c-.6-.6-1.2-.85-2-.85Z"></path><path d="M13 3.6V7c0 1.1.4 1.5 1.5 1.5h3.9"></path><path d="M12 10.5v4.5"></path><path d="M9.75 12.75h4.5"></path><path d="M9.75 17h4.5"></path></svg><span>file-diff</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="4.5" rx="2"></rect><path d="M5 8.5v9A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-9"></path><path d="M10 13h4"></path></svg><span>archive</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15"></path><path d="M9.5 6V5A1.5 1.5 0 0 1 11 3.5h2A1.5 1.5 0 0 1 14.5 5v1"></path><path d="m6.5 6.5.7 11.7a2.3 2.3 0 0 0 2.3 2.3h5a2.3 2.3 0 0 0 2.3-2.3l.7-11.7"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg><span>trash</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 4.2c.75-.85 1.6-.95 2.4-.15l3.35 3.35c.8.8.7 1.65-.15 2.4l-2.5 2.15c-.65.55-1.05 1.3-1.2 2.15l-.45 2.5c-.25 1.4-1.3 1.75-2.3.75L6.65 10.8c-1-1-.65-2.05.75-2.3l2.5-.45c.85-.15 1.6-.55 2.15-1.2Z"></path><path d="m9.5 14-5 5"></path></svg><span>pin</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3.25" fill="currentColor" fill-opacity="0.3"></circle><circle cx="6.9" cy="16.1" r="3.25"></circle><circle cx="17.1" cy="16.1" r="3.25"></circle></svg><span>models</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.2 5.1c.35-3 5.25-3 5.6 0 2.4-1.8 5.85 1.65 4.05 4.05 3 .35 3 5.25 0 5.6 1.8 2.4-1.65 5.85-4.05 4.05-.35 3-5.25 3-5.6 0-2.4 1.8-5.85-1.65-4.05-4.05-3-.35-3-5.25 0-5.6-1.8-2.4 1.65-5.85 4.05-4.05Z"></path></svg><span>rosette</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 13V5.25a7.75 7.75 0 1 0 7.75 7.75Z"></path><path d="M14 10h6.75A6.75 6.75 0 0 0 14 3.25Z"></path></svg><span>visualize</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.3 3.5 5.9 13.4a.55.55 0 0 0 .45.85h4.75l-1.35 5.3a.55.55 0 0 0 .95.45l7.4-9.9a.55.55 0 0 0-.45-.85h-4.75l1.35-5.3a.55.55 0 0 0-.95-.45Z"></path></svg><span>zap</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5a2.75 2.75 0 0 0-5.1-1.4A2.75 2.75 0 0 0 4.4 7.9a3.1 3.1 0 0 0-.3 5.4 3 3 0 0 0 2.4 4.3A2.75 2.75 0 0 0 12 18.6"></path><path d="M12 5.5a2.75 2.75 0 0 1 5.1-1.4 2.75 2.75 0 0 1 2.5 3.8 3.1 3.1 0 0 1 .3 5.4 3 3 0 0 1-2.4 4.3A2.75 2.75 0 0 1 12 18.6V5.5"></path><path d="M7.25 10.5a2.25 2.25 0 0 0 2.25-2.25m7.25 2.25a2.25 2.25 0 0 1-2.25-2.25M8 14.5h1.25A1.75 1.75 0 0 1 11 16.25m5-1.75h-1.25A1.75 1.75 0 0 0 13 16.25"></path></svg><span>brain</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10a7 7 0 0 1 14 0v8.6c0 1.25-1.2 1.9-2.2 1.15l-1.3-1-2 1.2a2.9 2.9 0 0 1-3 0l-2-1-1.3.8c-1 .75-2.2.1-2.2-1.15Z"></path><path d="M9.5 8.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm5 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" fill="currentColor" stroke="none"></path><path d="M9.75 13.25a2.8 2.8 0 0 0 4.5 0"></path></svg><span>ghost</span></div><div><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18.8 3.8 4.9 9.1c-1.6.6-1.6 1.8-.1 2.4l4.4 1.7c.75.3 1.3.85 1.6 1.6l1.7 4.4c.6 1.5 1.8 1.5 2.4-.1l5.3-13.9c.5-1.3-.1-1.9-1.4-1.4Z"></path><path d="m10.3 13.7 5.95-5.95"></path></svg><span>send</span></div></div></div>
+  </section>
+
+  <!-- ===================== RULES ===================== -->
+  <section class="s" id="rules">
+    <div class="s-head">
+      <div><div class="k">10 / Rules</div><h2>The ten rules</h2></div>
+      <p>The short version of the rulebook. Anyone building DROIDEX UI, person or agent, checks a screen against these before it ships.</p>
+    </div>
+    <ol class="rules">
+      <li><div><b>Only tokens</b><p>No hex values, no <code>[13.5px]</code>, no one-off radii.</p></div></li>
+      <li><div><b>Eleven type styles</b><p>If text needs to look different, it's a different style, not a tweak.</p></div></li>
+      <li><div><b>Three weights</b><p>400 to read, 500 to click, 600 for headings.</p></div></li>
+      <li><div><b>No borders</b><p>Tone, space and shadow. The only line is the divider.</p></div></li>
+      <li><div><b>Colour is a signal</b><p>Links, status, consequential actions, the brand mark.</p></div></li>
+      <li><div><b>One primary per surface</b><p>Everything else is secondary or ghost.</p></div></li>
+      <li><div><b>Radius grows with size</b><p>8 → 12 → 16 → 24.</p></div></li>
+      <li><div><b>Every state</b><p>Rest, hover, pressed, focus, disabled, loading, empty, error.</p></div></li>
+      <li><div><b>Nothing jumps</b><p>Reserve space, use tabular figures, reserve the scrollbar gutter.</p></div></li>
+      <li><div><b>Keyboard first</b><p>Focus is visible only for the keyboard, and Escape always backs out.</p></div></li>
+    </ol>
+  </section>
+
+  <section class="s" id="next">
+    <div class="s-head">
+      <div><div class="k">11 / Next</div><h2>What adds taste from here</h2></div>
+      <p>Once the system is in the code, these are the next layers of polish. Each one is small on its own, but together they make the app feel crafted.</p>
+    </div>
+    <div class="more">
+      <div><div class="h4">Empty states with a voice</div><p>Every empty list gets one line saying what will appear here and one action to start, centred, with a 20px icon in text-muted.</p></div>
+      <div><div class="h4">Keyboard everywhere</div><p>A command palette for every action, shortcuts shown in menus, and arrow-key navigation in every list.</p></div>
+      <div><div class="h4">Optimistic everything</div><p>Rename, pin and archive change instantly and quietly undo if they fail. No spinners on things that almost always work.</p></div>
+      <div><div class="h4">Context menus</div><p>Right-click on any row gives the same actions as its more-actions button, so hover is never the only way in.</p></div>
+      <div><div class="h4">Considered loading</div><p>Nothing for 300ms, a shaped skeleton until 2s, then words. Streaming text grows in place.</p></div>
+      <div><div class="h4">One sound of the brand</div><p>The orange X appears in exactly one live place, the update and welcome moments, so it stays special.</p></div>
+    </div>
+  </section>
+
+  <footer><svg class="logo" style="width:20px;height:20px" viewBox="0 0 1024 1024" aria-hidden="true"><rect class="tile" width="1024" height="1024" rx="228"/><g class="d"><rect x="72" y="312" width="80" height="80" /><rect x="152" y="312" width="80" height="80" /><rect x="232" y="312" width="80" height="80" /><rect x="312" y="312" width="80" height="80" /><rect x="72" y="392" width="80" height="80" /><rect x="392" y="392" width="80" height="80" /><rect x="72" y="472" width="80" height="80" /><rect x="392" y="472" width="80" height="80" /><rect x="72" y="552" width="80" height="80" /><rect x="392" y="552" width="80" height="80" /><rect x="72" y="632" width="80" height="80" /><rect x="152" y="632" width="80" height="80" /><rect x="232" y="632" width="80" height="80" /><rect x="312" y="632" width="80" height="80" /></g><g class="x"><rect x="552" y="312" width="80" height="80" /><rect x="872" y="312" width="80" height="80" /><rect x="632" y="392" width="80" height="80" /><rect x="792" y="392" width="80" height="80" /><rect x="712" y="472" width="80" height="80" /><rect x="632" y="552" width="80" height="80" /><rect x="792" y="552" width="80" height="80" /><rect x="552" y="632" width="80" height="80" /><rect x="872" y="632" width="80" height="80" /></g></svg><span>DROIDEX design system · Default theme · built from droidex-anas/DROIDEX</span></footer>
+</main>
+<ol class="tstack" id="tstack" aria-label="Notifications"></ol>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  // ---- theme ----
+  var seg = document.getElementById('theme'), thumb = seg.querySelector('.thumb');
+  function placeThumb() { var b = seg.querySelector('[aria-pressed="true"]'); if (!b) return; thumb.style.width = b.offsetWidth + 'px'; thumb.style.transform = 'translateX(' + (b.offsetLeft - 2) + 'px)'; }
+  function setTheme(v) {
+    if (v === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', v);
+    seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === v)); });
+    placeThumb(); try { localStorage.setItem('dx-theme', v); } catch (e) {}
+    requestAnimationFrame(paintContrast);
+  }
+  seg.addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setTheme(b.dataset.v); });
+  var saved = 'system'; try { saved = localStorage.getItem('dx-theme') || 'system'; } catch (e) {}
+  setTheme(saved); window.addEventListener('resize', placeThumb);
+
+  // ---- contrast table ----
+  function rgb(str) { var m = str.match(/[\d.]+/g); return m ? m.slice(0, 3).map(Number) : [0, 0, 0]; }
+  function lum(c) { var a = c.map(function (v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2]; }
+  function cr(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  var probe = document.createElement('span'); probe.style.display = 'none'; document.body.appendChild(probe);
+  function col(v) { probe.style.color = 'var(' + v + ')'; return getComputedStyle(probe).color; }
+  function hex(c) { return '#' + rgb(c).map(function (v) { return Math.round(v).toString(16).padStart(2, '0'); }).join(''); }
+  function paintContrast() {
+    document.querySelectorAll('[data-hex]').forEach(function (el) { el.textContent = hex(col(el.dataset.hex)); });
+    var grounds = ['--bg', '--surface', '--elevated', '--active'];
+    var rows = [['text', '--text'], ['text-secondary', '--text-secondary'], ['text-muted', '--text-muted'], ['link', '--link'], ['success', '--success'], ['warning', '--warning'], ['danger', '--danger']];
+    var tb = document.querySelector('#ctable tbody'); tb.innerHTML = '';
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><span style="color:var(' + r[1] + ');font-weight:500">' + r[0] + '</span></td>' + grounds.map(function (g) {
+        var v = cr(rgb(col(r[1])), rgb(col(g))); return '<td class="' + (v >= 4.5 ? 'ok-n' : '') + '" style="' + (v < 4.5 ? 'color:var(--danger)' : '') + '">' + v.toFixed(1) + '</td>';
+      }).join('');
+      tb.appendChild(tr);
+    });
+  }
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintContrast);
+  paintContrast();
+
+  // ---- spacing scale ----
+  var sp = [['space-0.5', 2], ['space-1', 4], ['space-1.5', 6], ['space-2', 8], ['space-2.5', 10], ['space-3', 12], ['space-4', 16], ['space-5', 20], ['space-6', 24], ['space-8', 32], ['space-10', 40]];
+  document.getElementById('spscale').innerHTML = sp.map(function (s) { return '<div><span class="lbl">' + s[0] + '</span><span class="cap num">' + s[1] + 'px</span><i style="width:' + (s[1] * 4) + 'px;max-width:100%"></i></div>'; }).join('');
+
+  // ---- toggles ----
+  function tog(id, cls) { var b = document.getElementById(id); b.addEventListener('click', function () { var on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(on)); document.body.classList.toggle(cls, on); }); }
+  tog('tg-guides', 'show-guides'); tog('tg-hits', 'show-hits');
+
+  // ---- sessions select ----
+  document.getElementById('sessions').addEventListener('click', function (e) {
+    if (e.target.closest('.more-btn')) return;
+    var r = e.target.closest('.row-btn'); if (!r) return;
+    this.querySelectorAll('.row-btn').forEach(function (x) { x.classList.toggle('on', x === r); });
+    var l = r.querySelector('.lab.unread'); if (l) l.classList.remove('unread');
+  });
+
+  // ---- popover engine: preferred side, flip, shift, animate from real side ----
+  function place(pop, anchor, box, pref) {
+    pop.hidden = false; pop.classList.remove('closing');
+    var a = anchor.getBoundingClientRect(), b = box.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 6, pad = 8;
+    var spaceBelow = b.bottom - a.bottom - gap - pad, spaceAbove = a.top - b.top - gap - pad;
+    var side = pref; if (side === 'bottom' && spaceBelow < ph && spaceAbove > spaceBelow) side = 'top';
+    var top = side === 'bottom' ? a.bottom - b.top + gap : a.top - b.top - gap - ph;
+    var left = a.left - b.left; left = Math.max(pad, Math.min(left, b.width - pw - pad));
+    pop.style.top = top + 'px'; pop.style.left = left + 'px';
+    pop.dataset.side = side; pop.style.animation = 'none'; pop.offsetHeight; pop.style.animation = '';
+    return side;
+  }
+  function closePop(pop) { if (pop.hidden) return; pop.classList.add('closing'); setTimeout(function () { pop.hidden = true; pop.classList.remove('closing'); }, 90); }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  async function blinkSelect(item, pop, out, label) {
+    item.classList.add('hl'); item.classList.add('blink-off'); await wait(90);
+    item.classList.remove('blink-off'); await wait(90);
+    item.classList.remove('hl'); closePop(pop); if (out) out.textContent = label;
+  }
+  var app = document.getElementById('appmock'), menu = document.getElementById('sessionMenu'), result = document.getElementById('menuResult');
+  app.addEventListener('click', function (e) {
+    var mb = e.target.closest('.more-btn');
+    if (mb) { e.stopPropagation(); if (!menu.hidden && menu._anchor === mb) { closePop(menu); return; } menu._anchor = mb; place(menu, mb, app, 'bottom'); return; }
+    var it = e.target.closest('#sessionMenu .mi'); if (it) { blinkSelect(it, menu, result, it.dataset.done + '. The item blinked once to confirm the click, then the menu closed.'); return; }
+    if (!e.target.closest('#sessionMenu')) closePop(menu);
+  });
+  var stage = document.getElementById('stage'), spop = document.getElementById('stagePop'), sideOut = document.getElementById('stageSide');
+  stage.addEventListener('click', function (e) {
+    var t = e.target.closest('.trg');
+    if (t) { var s = place(spop, t, stage, t.dataset.pref); sideOut.textContent = 'Opened side: ' + s + (s !== t.dataset.pref ? ' (flipped, not enough room below)' : ''); return; }
+    var it = e.target.closest('.mi'); if (it) { blinkSelect(it, spop, sideOut, it.dataset.done); return; }
+    closePop(spop);
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePop(menu); closePop(spop); } });
+  document.addEventListener('click', function (e) { if (!e.target.closest('#appmock')) closePop(menu); if (!e.target.closest('#stage')) closePop(spop); });
+
+  // ---- copy swap ----
+  document.querySelectorAll('.copybtn').forEach(function (b) { b.addEventListener('click', function () { b.classList.add('copied'); clearTimeout(b._t); b._t = setTimeout(function () { b.classList.remove('copied'); }, 1200); }); });
+
+  // ---- expand ----
+  var exh = document.getElementById('exph'), ex = document.getElementById('exp');
+  exh.addEventListener('click', function () { ex.classList.toggle('open'); exh.classList.toggle('open-h'); });
+
+  // ---- FLIP reorder ----
+  var list = document.getElementById('reorder');
+  document.getElementById('shuffle').addEventListener('click', function () {
+    var items = Array.prototype.slice.call(list.children), first = new Map();
+    items.forEach(function (el) { first.set(el, el.getBoundingClientRect().top); });
+    var order = items.slice(); for (var i = order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = order[i]; order[i] = order[j]; order[j] = t; }
+    if (order.every(function (el, i) { return el === items[i]; })) order.reverse();
+    order.forEach(function (el) { list.appendChild(el); });
+    order.forEach(function (el) {
+      var dy = first.get(el) - el.getBoundingClientRect().top; if (!dy) return;
+      var dx = Math.min(10, Math.abs(dy) / 6) * (dy > 0 ? 1 : -1);
+      el.animate([{ transform: 'translate(0,' + dy + 'px)' }, { transform: 'translate(' + dx + 'px,' + dy / 2 + 'px)', offset: .5 }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    });
+  });
+
+
+  // ---- toasts: a small port of src/lib/toast.ts + Toaster.tsx ----
+  var G = {"success": "<svg  viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"color:var(--success)\"><path fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M12 2.75a9.25 9.25 0 1 1 0 18.5 9.25 9.25 0 0 1 0-18.5Zm4.04 6.71a.75.75 0 0 0-1.08 0l-4.06 4.06-1.87-1.85a.75.75 0 0 0-1.06 1.06l2.4 2.37a.75.75 0 0 0 1.06 0l4.6-4.58a.75.75 0 0 0 .01-1.06Z\"/></svg>", "error": "<svg  viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"color:var(--danger)\"><path fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M12 2.75a9.25 9.25 0 1 1 0 18.5 9.25 9.25 0 0 1 0-18.5ZM12 7.25a.75.75 0 0 0-.75.75v4.75a.75.75 0 0 0 1.5 0V8a.75.75 0 0 0-.75-.75Zm0 8a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z\"/></svg>", "warning": "<svg  viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"color:var(--warning)\"><path fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M9.65 4.03 2.55 16.43a2.75 2.75 0 0 0 2.35 4.12h14.2a2.75 2.75 0 0 0 2.35-4.12l-7.1-12.4a2.75 2.75 0 0 0-4.7 0ZM12 8.75a.75.75 0 0 0-.75.75v4a.75.75 0 0 0 1.5 0v-4a.75.75 0 0 0-.75-.75Zm0 7a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z\"/></svg>", "update": "<svg  viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"color:var(--link)\"><path fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M12 2.75a9.25 9.25 0 1 1 0 18.5 9.25 9.25 0 0 1 0-18.5Zm-.53 4.47-3.5 3.5a.75.75 0 0 0 1.06 1.06l2.22-2.22v6.94a.75.75 0 0 0 1.5 0V9.56l2.22 2.22a.75.75 0 0 0 1.06-1.06l-3.5-3.5a.75.75 0 0 0-1.06 0Z\"/></svg>", "loading": "<svg class=\"spin\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"color:var(--text-muted)\"><path d=\"M21 12a9 9 0 1 1-9-9\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg>", "x": "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 6 12 12M18 6 6 18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"/></svg>"};
+  var TTL = { success: 4000, info: 4000, warning: 6000, error: 0, update: 0, loading: 0 };
+  var stack = document.getElementById('tstack'), toasts = [], nid = 1, expanded = false, paused = false;
+  function ttlFor(v, act) { var b = TTL[v]; return act && b > 0 ? Math.max(b, 6000) : b; }
+  function render(t) {
+    var li = t.li;
+    if (!li) { li = t.li = document.createElement('li'); li.className = 'enter'; stack.appendChild(li); requestAnimationFrame(function () { requestAnimationFrame(function () { li.classList.remove('enter'); layout(); }); }); }
+    var g = G[t.v] || '';
+    li.innerHTML = '<div class="toast' + (t.ttl === 0 ? ' persist' : '') + '" role="' + (t.v === 'error' ? 'alert' : 'status') + '"><div class="tc">' + (g ? '<span class="g"><span class="in">' + g + '</span></span>' : '') +
+      '<div class="tb"><div class="tt">' + t.msg + (t.count > 1 ? '<span class="n">×' + t.count + '</span>' : '') + '</div>' + (t.desc ? '<div class="td">' + t.desc + '</div>' : '') +
+      (t.progress != null ? '<div class="tp"><i style="width:' + Math.round(t.progress * 100) + '%"></i></div>' : '') + '</div>' +
+      '<div class="ta">' + (t.action ? '<button type="button" class="act">' + t.action + '</button>' : '') + '<button type="button" class="x" aria-label="Dismiss">' + G.x + '</button></div></div></div>';
+    li.querySelector('.x').onclick = function () { dismiss(t.id); };
+    var a = li.querySelector('.act'); if (a) a.onclick = function () { dismiss(t.id); if (t.onAction) t.onAction(); };
+    t.h = li.firstChild.offsetHeight; layout();
+  }
+  function morph(t, patch) {
+    var oldG = t.li && t.li.querySelector('.g .in');
+    var changedV = patch.v && patch.v !== t.v;
+    Object.assign(t, patch); if (changedV) { t.ttl = ttlFor(t.v, t.action); schedule(t, t.ttl); }
+    render(t);
+    if (changedV && oldG) { var g = t.li.querySelector('.g'); var o = oldG.cloneNode(true); o.className = 'out-old'; g.insertBefore(o, g.firstChild); var n = g.querySelector('.in'); n.classList.add('out'); requestAnimationFrame(function () { requestAnimationFrame(function () { o.classList.add('out'); n.classList.remove('out'); setTimeout(function () { o.remove(); }, 220); }); }); }
+  }
+  function layout() {
+    var ordered = toasts.slice().reverse(), off = 0, front = ordered[0] ? ordered[0].h : 0;
+    ordered.forEach(function (t, i) {
+      if (!t.li || t.li.classList.contains('leave')) return;
+      var tr = expanded ? 'translateY(' + (-off) + 'px)' : 'translateY(' + (-i * 10) + 'px) scale(' + (1 - i * 0.05) + ')';
+      off += t.h + 8;
+      t.li.style.setProperty('--t', tr); if (!t.li.classList.contains('enter')) t.li.style.transform = tr;
+      t.li.style.zIndex = 100 - i; t.li.style.opacity = (!expanded && i >= 3) ? 0 : 1;
+      var card = t.li.firstChild; card.classList.toggle('dim', !expanded && i > 0);
+      card.style.height = (!expanded && i > 0) ? front + 'px' : '';
+    });
+    stack.style.height = ordered.length ? (expanded ? off - 8 : front + Math.min(ordered.length - 1, 2) * 10) + 'px' : '0px';
+  }
+  function schedule(t, ms) { clearTimeout(t.timer); t.left = ms; if (!ms) return; if (paused) return; t.start = Date.now(); t.timer = setTimeout(function () { dismiss(t.id); }, ms); }
+  function pauseAll() { paused = true; toasts.forEach(function (t) { if (t.timer) { clearTimeout(t.timer); t.timer = null; t.left = Math.max(0, t.left - (Date.now() - t.start)); } }); }
+  function resumeAll() { paused = false; toasts.forEach(function (t) { if (t.left > 0 && !t.timer) schedule(t, t.left); }); }
+  function dismiss(id) {
+    var t = toasts.find(function (x) { return x.id === id; }); if (!t) return;
+    clearTimeout(t.timer); toasts = toasts.filter(function (x) { return x !== t; });
+    t.li.classList.add('leave'); setTimeout(function () { t.li.remove(); }, 130);
+    if (!toasts.length) expanded = false; layout();
+  }
+  function push(v, msg, o) {
+    o = o || {};
+    var same = toasts.find(function (x) { return x.msg === msg && x.v === v; });
+    if (same) { same.count = (same.count || 1) + 1; render(same); schedule(same, same.ttl); return same; }
+    var t = { id: nid++, v: v, msg: msg, desc: o.desc, action: o.action, onAction: o.onAction, progress: o.progress, count: 1 };
+    t.ttl = o.ttl != null ? o.ttl : ttlFor(v, o.action);
+    toasts.push(t); while (toasts.length > 5) dismiss(toasts[0].id);
+    render(t); schedule(t, t.ttl); return t;
+  }
+  stack.addEventListener('mouseenter', function () { expanded = true; pauseAll(); layout(); });
+  stack.addEventListener('mouseleave', function () { expanded = false; resumeAll(); layout(); });
+  window.addEventListener('blur', pauseAll); window.addEventListener('focus', function () { if (!stack.matches(':hover')) resumeAll(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && toasts.length) dismiss(toasts[toasts.length - 1].id); });
+  document.querySelector('.tdemo').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-t]'); if (!b) return;
+    var k = b.dataset.t;
+    if (k === 'success') push('success', 'Pushed to remote');
+    if (k === 'undo') push('info', 'Session archived', { action: 'Undo', onAction: function () { push('success', 'Session restored'); } });
+    if (k === 'error') push('error', 'Push failed', { desc: 'Authentication failed for origin. Check your GitHub sign-in.', action: 'Retry', onAction: function () { var t = push('loading', 'Pushing to remote'); setTimeout(function () { morph(t, { v: 'success', msg: 'Pushed to remote' }); }, 1400); } });
+    if (k === 'update') { var t = push('update', 'Downloading update', { progress: 0 }); var p = 0; var iv = setInterval(function () { if (!toasts.includes(t)) return clearInterval(iv); p += 0.08 + Math.random() * 0.1; if (p >= 1) { clearInterval(iv); morph(t, { msg: 'Update ready', desc: 'DROIDEX 1.4.1 is downloaded. Restart to finish.', progress: undefined, action: 'Restart' }); } else morph(t, { progress: p }); }, 260); }
+    if (k === 'promise') { var t2 = push('loading', 'Creating pull request'); setTimeout(function () { morph(t2, { v: 'success', msg: 'Pull request #466 opened', action: 'View' }); }, 1600); }
+    if (k === 'repeat') push('warning', 'Rate limit reached', { desc: 'Claude Code resumes in 4 minutes.' });
+    if (k === 'clear') toasts.slice().forEach(function (t) { dismiss(t.id); });
+  });
+
+  // ---- hidden scrollbar ----
+  var sc = document.getElementById('scroller');
+  var names = ['historyReducer.ts', 'history.test.ts', 'useStore.tsx', 'Popover.tsx', 'popoverFit.ts', 'theme.ts', 'index.css', 'Sidebar.tsx', 'SidebarSessionRow.tsx', 'ComposerSendButton.tsx', 'RightPanel.tsx', 'primitives.tsx', 'files.tsx', 'computer.tsx'];
+  sc.innerHTML = names.map(function (n, i) { return '<button class="row-btn" type="button"><span class="ico"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.75 3.5H8.5c-2.2 0-3 1.15-3 3.5v10c0 2.35.8 3.5 3 3.5h7c2.2 0 3-1.15 3-3.5V9.25c0-.8-.25-1.4-.85-2l-2.9-2.9c-.6-.6-1.2-.85-2-.85Z"></path><path d="M13 3.6V7c0 1.1.4 1.5 1.5 1.5h3.9"></path></svg></span><span class="lab">' + n + '</span><span class="meta">' + (i * 7 + 3) + '</span></button>'; }).join('');
+  var st; sc.addEventListener('scroll', function () { sc.classList.add('scrolling'); clearTimeout(st); st = setTimeout(function () { sc.classList.remove('scrolling'); }, 800); }, { passive: true });
+})();
+</script>
