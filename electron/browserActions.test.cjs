@@ -336,6 +336,42 @@ test('sensitive clicks use accessible control names, including referenced labels
   }
 });
 
+test('referenced names use ARIA labels, image alternatives and normalized text before dispatch', async () => {
+  for (const source of ['aria-label', 'alt', 'text']) {
+    const f = fixture();
+    const label = f.element(source === 'alt' ? 'img' : 'span', { id: 'oauth-label' }).node;
+    const name = '  Sign\nin\t with   Google  ';
+    if (source === 'text') label.textContent = name;
+    else label.attributes[source] = name;
+    f.element('button', { 'aria-labelledby': 'missing oauth-label' });
+
+    await assert.rejects(f.act({ action: 'click', x: 10, y: 10 }), /denied/, source);
+    assert.equal(f.prompts.length, 1, source);
+    assert.match(f.prompts[0].message, /start an OAuth sign-in/);
+    assert.equal(
+      f.input.some((event) => event.type === 'mousePressed'),
+      false,
+      source,
+    );
+  }
+});
+
+test('Enter in a search field does not treat the typed value as a payment action', async () => {
+  const f = fixture();
+  const { node } = f.field({ type: 'text' });
+  node.value = 'payment API documentation';
+  node.form = {
+    elements: [node],
+    action: 'https://example.test/search',
+    method: 'get',
+    textContent: 'Search',
+  };
+
+  await f.act({ action: 'press', key: 'Enter' });
+  assert.deepEqual(f.prompts, []);
+  assert.equal(f.input.filter((event) => event.type === 'keyDown').length, 1);
+});
+
 test('a field becoming sensitive in its focus handler refuses fill and type', async () => {
   const f = fixture();
   const { node, ref } = f.field({});

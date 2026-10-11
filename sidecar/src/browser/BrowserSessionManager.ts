@@ -143,12 +143,13 @@ export class BrowserSessionManager {
     }
     session.state = {
       ...session.state,
-      url,
       canGoBack: false,
       canGoForward: false,
       viewport: input.viewport ?? session.state.viewport,
       viewportMode: input.viewportMode ?? session.state.viewportMode,
     };
+    // The renderer restores this URL when mounting a guest. Publish the target
+    // only after the runtime has approved and opened it.
     this.emitUpdated(session.state);
     return this.applied(session, await session.runtime.open(url));
   }

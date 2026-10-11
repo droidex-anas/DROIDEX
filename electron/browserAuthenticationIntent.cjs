@@ -11,7 +11,12 @@ const ACTIONS = {
 function authenticationIntentForUrl(value) {
   const url = new URL(value);
   if (!['https:', 'http:'].includes(url.protocol)) return null;
-  const pathname = decodeURIComponent(url.pathname);
+  let pathname = url.pathname;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // Loadable URLs can contain malformed escapes; inspect their raw path.
+  }
   let kind;
   if (
     (url.searchParams.has('client_id') &&

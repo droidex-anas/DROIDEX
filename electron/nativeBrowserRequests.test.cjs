@@ -113,6 +113,22 @@ test('agent navigation to sign-in and OAuth URLs requires single-use approval be
   }
 });
 
+test('agent navigation tolerates malformed URL escapes while still checking the raw path', async () => {
+  const f = fixture();
+  for (const path of ['/files/%E9', '/discount/50%off']) {
+    const result = await f.send('open', 'agent', `https://example.test${path}`);
+    assert.equal(result.ok, true, result.error);
+  }
+  assert.deepEqual(f.actions, ['open', 'snapshot', 'open', 'snapshot']);
+  assert.deepEqual(f.prompts, []);
+
+  const result = await f.send('open', 'agent', 'https://identity.test/%E9/authorize');
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Sensitive action was denied/);
+  assert.equal(f.prompts.length, 1);
+  assert.deepEqual(f.actions, ['open', 'snapshot', 'open', 'snapshot']);
+});
+
 test('disabled agent requests cannot wake pages or read diagnostics, while closing stays available', async () => {
   const { actions, events, send, disable } = fixture();
   disable();

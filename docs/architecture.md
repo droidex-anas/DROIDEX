@@ -117,10 +117,14 @@ request single-use approval, then recheck the real focus or activation target
 immediately before dispatch, including the destination before mouse release.
 Clicks classify the hit-tested control at the click point, even for ancestor refs.
 Implicit Enter submissions use the default submit button's action and method overrides.
-Control wording includes accessible names from referenced labels, ARIA labels and
-image alternatives. Direct agent navigation to sign-in paths or OAuth authorization
+Control wording includes whitespace-normalized accessible names from referenced
+labels (their ARIA label, image alternative, or text), ARIA labels and image
+alternatives. Only button-like inputs contribute their value as wording.
+Direct agent navigation to sign-in paths or OAuth authorization
 URLs uses the same single-use approval; OAuth detection uses authorization query
-parameters or endpoint paths, without a provider list.
+parameters or endpoint paths, without a provider list. Malformed path escapes are
+inspected as raw text. The sidecar publishes the current URL until an open completes,
+so mounting a guest cannot restore the requested target before approval.
 Detection uses form fields and control wording, so sites with custom controls may
 need a user handoff. CDP inspects and fills in isolated worlds; unreadable input
 focus is refused. These checks run only on agent actions; direct user input is not

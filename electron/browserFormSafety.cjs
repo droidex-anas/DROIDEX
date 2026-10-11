@@ -61,13 +61,23 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
     );
     if (submitter) control = submitter;
   }
+  function normalizeName(value) {
+    return (value || '').replace(/\s+/g, ' ').trim();
+  }
   function accessibleName(control) {
     const labelledBy = (control.getAttribute('aria-labelledby') || '')
       .split(/\s+/)
       .filter(Boolean)
-      .map((id) => control.getRootNode().getElementById(id)?.textContent || '')
-      .join(' ')
-      .trim();
+      .map((id) => {
+        const label = control.getRootNode().getElementById(id);
+        if (!label) return '';
+        return (
+          normalizeName(label.getAttribute('aria-label')) ||
+          normalizeName(label.localName === 'img' ? label.getAttribute('alt') : '') ||
+          normalizeName(label.textContent)
+        );
+      })
+      .join(' ');
     const imageAlt = control.matches('input[type="image"]')
       ? control.getAttribute('alt')
       : [...control.querySelectorAll('img')].map((image) => image.getAttribute('alt')).join(' ');
@@ -77,13 +87,16 @@ function inspectAuthenticationIntent(target, activation, sensitiveKind) {
       imageAlt,
       control.getAttribute('title'),
       control.textContent,
-      control.value,
+      control.localName === 'input' && ['submit', 'button', 'reset', 'image'].includes(control.type)
+        ? control.value
+        : '',
     ]
+      .map(normalizeName)
       .filter(Boolean)
       .join(' ');
   }
   const label = accessibleName(control).slice(0, 500).toLowerCase();
-  const context = `${label} ${form?.textContent?.slice(0, 1000) || ''}`.toLowerCase();
+  const context = `${label} ${normalizeName(form?.textContent).slice(0, 1000)}`.toLowerCase();
   const fields = form ? [...form.elements] : [];
   const kinds = fields.map(sensitiveKind);
   if (activation === 'enter') kinds.push(sensitiveKind(target));
