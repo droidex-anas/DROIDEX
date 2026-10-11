@@ -28,6 +28,7 @@ const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 export class CanvasFrameCreation {
   constructor(
     private readonly files: CanvasFiles,
+    private readonly root: string,
     private readonly heads: CanvasHeads,
     private readonly leases: CanvasLeases,
     private readonly attachments: CanvasAttachments,
@@ -57,7 +58,7 @@ export class CanvasFrameCreation {
         this.leases.requireAttachment(scope, canvasId);
         requireSeedFrames(this.leases.requireCanvas(scope, canvasId), input);
       }
-      const staged = await stageFrames(this.files, canvasId, input);
+      const staged = await stageFrames(this.files, this.root, canvasId, input);
 
       return this.commits.publish(async () => {
         let next: CanvasManifest;

@@ -15,6 +15,7 @@ import { CanvasFrameCreation } from './CanvasFrameCreation.js';
 import { stageRevision, type SourceWriteOptions } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
+import { readRevisionCopy, type RevisionCopy } from './canvasLibrary.js';
 import { CanvasPreviewReports } from './canvasPreviewReports.js';
 import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
 import { recordRevisions } from './canvasRevisionMetadata.js';
@@ -79,6 +80,7 @@ export class CanvasWorkspace {
     this.frameEdits = new CanvasFrameEdits(heads, this.leases, builds, this.commits);
     this.creation = new CanvasFrameCreation(
       files,
+      writerLease.directory,
       heads,
       this.leases,
       this.attachments,
@@ -266,6 +268,14 @@ export class CanvasWorkspace {
     expectedManifestVersion: number,
   ): Promise<CanvasChange> {
     return this.frameEdits.renameFrame(scope, mutationId, designId, name, expectedManifestVersion);
+  }
+
+  /** A committed revision's source and owned images, for a copy that outlives this canvas. */
+  copyRevision(canvasId: string, ref: RevisionRef): Promise<RevisionCopy> {
+    return this.commits.admit(() => {
+      this.commits.requireOpen();
+      return readRevisionCopy(this.history, this.writerLease.directory, canvasId, ref);
+    });
   }
 
   async readFiles(canvasId: string, ref: RevisionRef): Promise<SourceFiles> {

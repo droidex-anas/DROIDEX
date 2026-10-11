@@ -34,6 +34,15 @@ export type DesignSystemProvenance =
   | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
   | { copiedFrom: { id: string; version: number } };
 
+/** A frame saved to the local library; its source canvas and revision are provenance only. */
+export interface LibraryItem {
+  itemId: string;
+  name: string;
+  sourceCanvasId: string;
+  source: RevisionRef;
+  designSystem: DesignSystemRef;
+}
+
 /** One kit version as the Manage dialog shows it: its tokens, without source files. */
 export interface DesignSystemDetail {
   id: string;
@@ -506,6 +515,17 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
+  // The local library (spec §7). A new item is named by its mutationId, so a
+  // retried save finds the copy it already made.
+  | {
+      type: 'canvas.saveLibraryItem';
+      requestId: string;
+      mutationId: string;
+      canvasId: string;
+      revision: RevisionRef;
+      name: string;
+    }
+  | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
   // A page's answer to an agent's inspect screenshot; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
@@ -537,7 +557,9 @@ export type CanvasReply =
   | { kind: 'designSystem'; system: DesignSystemDetail }
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.
-  | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] };
+  | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
+  | { kind: 'libraryItem'; item: LibraryItem }
+  | { kind: 'libraryItems'; items: LibraryItem[] };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

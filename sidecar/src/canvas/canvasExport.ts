@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { canvasDir } from '../droidexPaths.js';
+import { referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
 import { readDesignSystem } from './designSystems.js';
@@ -19,7 +20,6 @@ const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';
 const UNSAFE_PATH = 'The export contains an unsafe path. Check the saved source and try again.';
 const EXPORT_FAILED = 'The export could not be written. Check the folder and try again.';
 const ASSET_FAILED = 'A referenced Canvas image is unavailable. Restore it and try again.';
-const ASSET_REFERENCE = /canvas-asset:([0-9a-f]{64})\b/g;
 const FONT_REFERENCE = /data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g;
 
 /** The folder Electron main chose; each export also requires it to be absolute. */
@@ -75,10 +75,7 @@ export async function exportCanvasSource(
     })),
   );
 
-  const assetIds = new Set<string>();
-  for (const content of saved.files.values())
-    for (const match of content.matchAll(ASSET_REFERENCE)) assetIds.add(match[1]);
-  for (const assetId of assetIds) {
+  for (const assetId of referencedAssetIds(saved.files.values())) {
     signal?.throwIfAborted();
     files.push({ path: `assets/${assetId}`, content: await readOwnedAsset(canvasId, assetId) });
   }

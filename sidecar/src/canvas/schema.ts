@@ -98,7 +98,7 @@ export const designSystemVersionRefSchema = z
 // design strays and still builds it, `strict` fails that build, `off` skips the check.
 export const designSystemAdherenceSchema = z.enum(['off', 'guide', 'strict']);
 
-const revisionRefSchema = z
+export const revisionRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
@@ -141,7 +141,7 @@ export const canvasTurnContextSchema = z
   })
   .strict();
 
-export const revisionSeedSchema = z
+const revisionSeedSchema = z
   .object({
     kind: z.literal('revision'),
     canvasId: canvasIdentifierSchema,
@@ -149,7 +149,7 @@ export const revisionSeedSchema = z
   })
   .strict();
 
-const canvasSeedSchema = z.discriminatedUnion('kind', [
+export const canvasSeedSchema = z.discriminatedUnion('kind', [
   revisionSeedSchema,
   z.object({ kind: z.literal('library'), itemId: canvasIdentifierSchema }).strict(),
 ]);

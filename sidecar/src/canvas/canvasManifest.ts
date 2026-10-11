@@ -20,10 +20,10 @@ import type {
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
+  canvasSeedSchema,
   designSystemAdherenceSchema,
   designSystemRefSchema,
   frameRectSchema,
-  revisionSeedSchema,
 } from './schema.js';
 
 const CANVAS_MANIFEST_VERSION = 1;
@@ -56,7 +56,7 @@ const persistedDesignSchema = z
     lastWorkingRevisionId: canvasIdentifierSchema.nullable(),
     designSystem: designSystemRefSchema,
     // Provenance only: this design owns its source copy independently.
-    seed: revisionSeedSchema.optional(),
+    seed: canvasSeedSchema.optional(),
   })
   .strict();
 

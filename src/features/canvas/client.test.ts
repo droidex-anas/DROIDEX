@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { listCanvasAssets } from '../../../sidecar/src/canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../../../sidecar/src/canvas/canvasBridge.js';
@@ -11,6 +11,8 @@ import {
   CANVAS_PNG_ASSET_ID,
   canvasRoot,
   quietBuilds,
+  scopeFor,
+  writeInput,
 } from '../../../sidecar/src/testing/canvasStorageSupport.js';
 import { initialState, reducer } from '../../hooks/useStore';
 import { initialCanvasPaneState, reduceCanvasPane, watchedCanvasId } from './canvasState';
@@ -267,6 +269,68 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
   assert.equal(watchedCanvasId(pane), current.canvasId);
   assert.equal(workspace.attachedCanvasId('app-1'), current.canvasId);
   assert.equal(workspace.listCanvases().length, 2);
+});
+
+test('library replies from the sidecar pass the renderer boundary', async (t) => {
+  const root = await canvasRoot(t);
+  // Renderer suites run without the sidecar's isolation preload, so the
+  // library lands beside this scratch root rather than in the real profile.
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = dirname(root);
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+  });
+  const scopes = new CanvasScopes();
+  const builds = quietBuilds();
+  const workspace = await CanvasWorkspace.open(root, builds, {
+    isChatKnown: () => true,
+    isScopeActive: () => true,
+    bindScopeCanvas: () => undefined,
+  });
+  t.after(() => workspace.close());
+  const { canvasId } = await workspace.createCanvas('app-1', 'create-library');
+  const scope = scopeFor(canvasId);
+  const created = await workspace.create(scope, {
+    mutationId: 'create-hey',
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem }],
+  });
+  const designId = created.frames[0]?.designId ?? '';
+  const { revisionId } = await workspace.write(
+    scope,
+    writeInput('write-hey', designId, null, { 'main.tsx': 'export default () => null;' }),
+  );
+  const answers: Record<string, unknown>[] = [];
+  const { handle } = createCanvasCommandHandler(
+    Promise.resolve(workspace),
+    scopes,
+    builds,
+    { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
+    (event) => {
+      answers.push(JSON.parse(JSON.stringify(event)) as Record<string, unknown>);
+    },
+    () => () => {},
+  );
+  const revision = { designId, revisionId };
+  await handle(
+    {
+      type: 'canvas.saveLibraryItem',
+      requestId: 'req-save',
+      mutationId: 'save-hey',
+      canvasId,
+      revision,
+      name: 'Hey',
+    },
+    'page-1',
+  );
+  await handle({ type: 'canvas.listLibraryItems', requestId: 'req-list', query: 'hey' }, 'page-1');
+  assert.deepEqual(
+    answers.map((event) => [event.requestId, event.ok, isCanvasEvent(event)]),
+    [
+      ['req-save', true, true],
+      ['req-list', true, true],
+    ],
+  );
 });
 
 test('a change that commits after a snapshot was taken is applied, not dropped', async () => {

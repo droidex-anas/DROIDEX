@@ -18,6 +18,7 @@ import {
   type DesignSystemCommand,
 } from './designSystemCommands.js';
 import { editCanvasElement } from './canvasElementEdit.js';
+import { answerLibraryCommand } from './canvasLibrary.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
@@ -204,6 +205,9 @@ class CanvasDispatch {
         workspace.snapshot(command.canvasId);
         workspace.previews.record(command.canvasId, command.report);
         return { kind: 'ok' };
+      case 'canvas.saveLibraryItem':
+      case 'canvas.listLibraryItems':
+        return answerLibraryCommand(workspace, command);
       case 'canvas.readSource': {
         // The source drawer and history read one committed revision; an
         // uncommitted tree on disk is refused, and the head never moves.
