@@ -27,6 +27,8 @@ async function commit(history, ...operations) {
 
 function browserWithHistory(history) {
   const ses = {
+    getUserAgent: () => 'Mozilla/5.0 (Macintosh) Chrome/142.0.7444.175 Electron/39.2.6',
+    setUserAgent() {},
     setDevicePermissionHandler() {},
     setPermissionCheckHandler() {},
     setPermissionRequestHandler() {},

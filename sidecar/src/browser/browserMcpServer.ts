@@ -57,6 +57,7 @@ export function createBrowserMcpServer(
           'Do not ask the user for a URL they already named.',
           'Do not use Read, FetchUrl, curl, or agent-browser as a substitute for browser work.',
           'Then call browser_read_page to see the page and get refs.',
+          'If a CAPTCHA or bot check appears, stop browser actions and ask the user to complete it. Never solve, bypass or automate it.',
         ].join(' '),
         {
           url: z

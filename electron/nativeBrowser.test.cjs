@@ -17,6 +17,10 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
   const session = {
     fromPartition(partition) {
       const ses = {
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DROIDEX/1.3.7 Chrome/142.0.7444.175 Electron/39.2.6 Safari/537.36',
+        getUserAgent: () => ses.userAgent,
+        setUserAgent: (userAgent) => (ses.userAgent = userAgent),
         setDevicePermissionHandler: (handler) => (ses.device = handler),
         setPermissionCheckHandler: (handler) => (ses.check = handler),
         setPermissionRequestHandler: (handler) => (ses.request = handler),
@@ -102,6 +106,10 @@ test('browser partition permissions require an owned page and navigation or rele
 
   assert.equal(guest.webPreferences.partition, 'persist:droidex-browser');
   const ses = sessions.get('persist:droidex-browser');
+  assert.equal(
+    ses.getUserAgent(),
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+  );
   assert.equal(ses.device({ deviceType: 'hid' }), false);
   assert.equal(ses.check(null, 'media'), false);
   let granted;
