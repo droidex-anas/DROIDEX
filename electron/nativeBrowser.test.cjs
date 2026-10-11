@@ -149,3 +149,21 @@ test('a page action still waiting on a load does nothing once the browser closes
   await assert.rejects(back, /browser is not open/);
   await opening;
 });
+
+test('cookie import closes live guests and blocks new pages until storage is finalized', async () => {
+  const { manager, mountGuest } = createBrowser();
+  const guest = mountGuest('tab');
+  let closed = false;
+  guest.close = () => {
+    closed = true;
+  };
+  await manager.open('tab', 'https://example.test/');
+  manager.suspendForCookieImport();
+  assert.equal(closed, true);
+  assert.deepEqual(manager.resourceCounts(), { live: 0, sessions: 0 });
+  assert.throws(() => manager.reserve('replacement', HOST), /cookies are being imported/);
+  manager.resumeAfterCookieImport();
+  const replacement = mountGuest('replacement');
+  await manager.open('replacement', 'https://example.test/');
+  assert.equal(replacement.getURL(), 'https://example.test/');
+});

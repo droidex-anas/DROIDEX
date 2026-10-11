@@ -1,0 +1,352 @@
+const crypto = require('node:crypto');
+const path = require('node:path');
+const {
+  commitBrowserCookieImport,
+  createBrowserCookieImportPlan,
+  discardBrowserCookieImportPlan,
+} = require('./browserCookieImport.cjs');
+const defaultProfileImport = require('./browserProfileCookieImport.cjs');
+
+const PROFILE_PLAN_TTL_MS = 120_000;
+// `ipcMain.handle` forwards only an error's message to the renderer, so failure
+// codes and flags travel to it as a JSON envelope tagged for decoding.
+const COOKIE_IMPORT_FAILURE_TAG = 'browser-cookie-import-failure:';
+
+class BrowserCookieImportFinalizeError extends Error {
+  constructor(
+    result,
+    { receiptPersistenceFailed = false, snapshotFailed = false, storageFlushFailed = false },
+  ) {
+    let message;
+    if (receiptPersistenceFailed && storageFlushFailed) {
+      message =
+        'Cookies were imported, but the import receipt could not be saved and browser storage could not be finalized. Restart DROIDEX, then verify the imported sites before retrying.';
+    } else if (receiptPersistenceFailed) {
+      message =
+        'Cookies were imported, but the import receipt could not be saved. Verify the imported sites before retrying; Settings may still show the previous import.';
+    } else if (storageFlushFailed) {
+      message =
+        'Cookies were imported, but browser storage could not be finalized. Restart DROIDEX before relying on the imported session.';
+    } else if (snapshotFailed) {
+      message =
+        'Cookies were imported and recorded, but Settings could not be refreshed. Reopen Settings to verify the completed import.';
+    } else {
+      throw new Error('Cookie import finalization failure reason is missing.');
+    }
+    super(message);
+    this.name = 'BrowserCookieImportFinalizeError';
+    this.code = 'BROWSER_COOKIE_IMPORT_FINALIZE_FAILED';
+    this.result = result;
+    this.receiptPersistenceFailed = receiptPersistenceFailed;
+    this.snapshotFailed = snapshotFailed;
+    this.storageFlushFailed = storageFlushFailed;
+  }
+}
+
+function serializeCookieImportFailure(error) {
+  if (typeof error?.code !== 'string' || !error.code.startsWith('BROWSER_')) return error;
+  return new Error(
+    COOKIE_IMPORT_FAILURE_TAG +
+      JSON.stringify({
+        code: error.code,
+        message: error.message,
+        receiptPersistenceFailed: error.receiptPersistenceFailed === true,
+        snapshotFailed: error.snapshotFailed === true,
+        storageFlushFailed: error.storageFlushFailed === true,
+      }),
+  );
+}
+
+function createBrowserCookieImports(options) {
+  const profileImport = options.profileImport ?? defaultProfileImport;
+  let preparedProfile = null;
+  let pending = new AbortController();
+  let busy = false;
+
+  async function runExclusive(operation) {
+    if (busy) throw new Error('A cookie import is already in progress. Wait for it to finish.');
+    busy = true;
+    const { signal } = pending;
+    try {
+      return await operation(signal);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function cancelAll() {
+    pending.abort(new Error('Cookie import cancelled because its renderer closed.'));
+    pending = new AbortController();
+    discardPreparedProfile();
+  }
+
+  async function discoverProfiles() {
+    const { signal } = pending;
+    const discovery = await profileImport.discoverBrowserCookieProfiles({
+      platform: options.platform,
+      homeDir: options.homeDir,
+    });
+    signal.throwIfAborted();
+    return discovery;
+  }
+
+  async function prepareProfile(profileId, signal) {
+    if (typeof profileId !== 'string' || !/^(Default|Profile [1-9]\d{0,3})$/.test(profileId)) {
+      throw new Error('Select a valid discovered Chrome profile.');
+    }
+    discardPreparedProfile();
+    const approval = await options.showPrompt(
+      {
+        kind: 'question',
+        buttons: ['Continue', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Import Chrome sign-ins?',
+        message: 'Allow DROIDEX to read cookies from the selected Chrome profile?',
+        detail:
+          'macOS may ask for Chrome Safe Storage access. Cookie values stay in Electron main memory and are never sent to the agent or settings page.',
+      },
+      { signal, rendererOnly: true },
+    );
+    signal.throwIfAborted();
+    if (approval.response !== 0) return { status: 'canceled' };
+
+    let plan;
+    try {
+      plan = await profileImport.createChromeProfileCookieImportPlan({
+        profileId,
+        cookieStore: options.getCookieStore(),
+        platform: options.platform,
+        homeDir: options.homeDir,
+        signal,
+      });
+    } catch (error) {
+      signal.throwIfAborted();
+      return { status: 'failed', reason: profilePreparationFailureReason(error) };
+    }
+    try {
+      signal.throwIfAborted();
+      const planId = validateOpaqueId(
+        (options.nextPlanId ?? crypto.randomUUID)(),
+        'Cookie import plan',
+      );
+      const timer = (options.setTimeout ?? setTimeout)(
+        () => discardProfile(planId),
+        options.planTtlMs ?? PROFILE_PLAN_TTL_MS,
+      );
+      timer.unref?.();
+      preparedProfile = {
+        planId,
+        plan,
+        timer,
+        expiresAt: (options.now ?? Date.now)() + (options.planTtlMs ?? PROFILE_PLAN_TTL_MS),
+      };
+      return { status: 'ready', planId, preview: plan.preview };
+    } catch (error) {
+      profileImport.discardChromeProfileCookieImportPlan(plan);
+      throw error;
+    }
+  }
+
+  async function commitProfile(planId, signal) {
+    const prepared = takePreparedProfile(planId);
+    try {
+      if ((options.now ?? Date.now)() >= prepared.expiresAt) {
+        throw new Error('Cookie import plan is invalid or expired. Start the import again.');
+      }
+      if (!(await confirmImport(prepared.plan.preview, signal))) {
+        return { source: 'chrome', canceled: true, snapshot: await options.snapshot() };
+      }
+      signal.throwIfAborted();
+      if ((options.now ?? Date.now)() >= prepared.expiresAt) {
+        throw new Error('Cookie import plan is invalid or expired. Start the import again.');
+      }
+      await options.beforeCommit();
+      signal.throwIfAborted();
+      const { imported, snapshot } = await commitAndFinalize('profile', () =>
+        profileImport.commitChromeProfileCookieImport(prepared.plan, {
+          cookieStore: options.getCookieStore(),
+          signal,
+        }),
+      );
+      signal.throwIfAborted();
+      return { ...imported, canceled: false, snapshot };
+    } finally {
+      profileImport.discardChromeProfileCookieImportPlan(prepared.plan);
+      options.releaseBrowsers();
+    }
+  }
+
+  function discardProfile(planId) {
+    if (!preparedProfile || preparedProfile.planId !== planId) return false;
+    const prepared = takePreparedProfile(planId);
+    return profileImport.discardChromeProfileCookieImportPlan(prepared.plan);
+  }
+
+  function discardPreparedProfile() {
+    if (!preparedProfile) return false;
+    return discardProfile(preparedProfile.planId);
+  }
+
+  function takePreparedProfile(planId) {
+    planId = validateOpaqueId(planId, 'Cookie import plan');
+    if (!preparedProfile || preparedProfile.planId !== planId) {
+      throw new Error('Cookie import plan is invalid or expired. Start the import again.');
+    }
+    const prepared = preparedProfile;
+    preparedProfile = null;
+    (options.clearTimeout ?? clearTimeout)(prepared.timer);
+    return prepared;
+  }
+
+  async function confirmImport(preview, signal) {
+    const replacementDetail =
+      preview.replacementCount === null
+        ? ''
+        : ` ${String(preview.replacementCount)} existing ${preview.replacementCount === 1 ? 'cookie' : 'cookies'} will be replaced.`;
+    const confirmation = await options.showPrompt(
+      {
+        kind: 'warning',
+        buttons: ['Import cookies', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        title: `Import ${preview.profileLabel} cookies?`,
+        message: `Import ${String(preview.importCount)} cookies for ${String(preview.domainCount)} domains?`,
+        detail: `${preview.affectedDomains.slice(0, 12).join(', ')}.${replacementDetail} Cookie values stay inside Electron main. Open browser pages close before import so sites reload against the completed update.`,
+      },
+      { signal, rendererOnly: true },
+    );
+    signal.throwIfAborted();
+    return confirmation.response === 0;
+  }
+
+  async function importFile(filePath, signal) {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || filePath.includes('\0')) {
+      throw new Error('Select a Chrome cookie export file.');
+    }
+    discardPreparedProfile();
+    const plan = await createBrowserCookieImportPlan({
+      filePath,
+      cookieStore: options.getCookieStore(),
+    });
+    try {
+      signal.throwIfAborted();
+      if (!(await confirmImport(plan.preview, signal))) {
+        return { source: 'chrome', canceled: true, snapshot: await options.snapshot() };
+      }
+      await options.beforeCommit();
+      signal.throwIfAborted();
+      const { imported, snapshot } = await commitAndFinalize('file', () =>
+        commitBrowserCookieImport(plan, { cookieStore: options.getCookieStore(), signal }),
+      );
+      signal.throwIfAborted();
+      return { ...imported, importMethod: 'file', canceled: false, snapshot };
+    } finally {
+      discardBrowserCookieImportPlan(plan);
+      options.releaseBrowsers();
+    }
+  }
+
+  async function commitAndFinalize(importMethod, commit) {
+    let commitError;
+    let imported;
+    try {
+      imported = await commit();
+    } catch (error) {
+      commitError = error;
+      imported = error?.result;
+    }
+
+    let receiptError;
+    if (imported) {
+      try {
+        await recordReceipt(importMethod, imported);
+      } catch (error) {
+        receiptError = error;
+      }
+    }
+
+    let finalizeError;
+    try {
+      await options.afterCommit();
+    } catch (error) {
+      finalizeError = error;
+    }
+
+    const partialImport =
+      imported &&
+      (commitError?.code === 'BROWSER_PROFILE_COOKIE_IMPORT_PARTIAL' ||
+        commitError?.code === 'BROWSER_COOKIE_IMPORT_PARTIAL');
+    if (commitError && !partialImport) {
+      if (finalizeError) commitError.storageFlushFailed = true;
+      if (receiptError) commitError.receiptPersistenceFailed = true;
+      throw commitError;
+    }
+    if (receiptError || finalizeError) {
+      throw new BrowserCookieImportFinalizeError(imported, {
+        receiptPersistenceFailed: Boolean(receiptError),
+        storageFlushFailed: Boolean(finalizeError),
+      });
+    }
+    let snapshot;
+    try {
+      snapshot = await options.snapshot();
+    } catch {
+      throw new BrowserCookieImportFinalizeError(imported, { snapshotFailed: true });
+    }
+    return { imported, snapshot };
+  }
+
+  function recordReceipt(importMethod, result) {
+    return options.recordReceipt({
+      source: 'chrome',
+      importMethod,
+      profileLabel: result.profileLabel,
+      importedCount: result.importedCount,
+      replacementCount: result.replacementCount,
+      skippedCount: result.skippedCount,
+      failedCount: result.failedCount,
+      domainCount: result.domainCount,
+    });
+  }
+
+  return {
+    commitProfile: (planId) => runExclusive((signal) => commitProfile(planId, signal)),
+    cancelAll,
+    discardProfile,
+    discoverProfiles,
+    importFile: (filePath) => runExclusive((signal) => importFile(filePath, signal)),
+    prepareProfile: (profileId) => runExclusive((signal) => prepareProfile(profileId, signal)),
+  };
+}
+
+function profilePreparationFailureReason(error) {
+  switch (error?.code) {
+    case 'CHROME_KEYCHAIN_ACCESS_DENIED':
+      return 'keychain_denied';
+    case 'CHROME_PROFILE_INVALID':
+    case 'CHROME_PROFILE_NOT_FOUND':
+      return 'profile_missing';
+    case 'CHROME_COOKIE_SCHEMA_UNSUPPORTED':
+      return 'schema_unsupported';
+    case 'CHROME_PROFILE_HAS_NO_IMPORTABLE_COOKIES':
+      return 'no_importable_cookies';
+    case 'CHROME_PROFILE_COOKIE_LIMIT_EXCEEDED':
+      return 'cookie_limit_exceeded';
+    default:
+      return 'database_unavailable';
+  }
+}
+
+function validateOpaqueId(value, label) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\0\r\n]/.test(value)) {
+    throw new Error(`${label} identifier is invalid.`);
+  }
+  return value;
+}
+
+module.exports = {
+  COOKIE_IMPORT_FAILURE_TAG,
+  createBrowserCookieImports,
+  serializeCookieImportFailure,
+};

@@ -223,6 +223,14 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
+  browserCookieProfilesDiscover: () => ipcRenderer.invoke('browser-cookie-profiles-discover'),
+  browserCookieProfileImportPrepare: (profileId) =>
+    ipcRenderer.invoke('browser-cookie-profile-import-prepare', { profileId }),
+  browserCookieProfileImportCommit: (planId) =>
+    ipcRenderer.invoke('browser-cookie-profile-import-commit', { planId }),
+  browserCookieProfileImportDiscard: (planId) =>
+    ipcRenderer.invoke('browser-cookie-profile-import-discard', { planId }),
+  browserCookiesImport: (filePath) => ipcRenderer.invoke('browser-cookies-import', { filePath }),
   browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
   browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
   browserPermissionPromptReady: (ready) =>

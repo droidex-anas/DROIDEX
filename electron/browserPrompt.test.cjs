@@ -203,6 +203,22 @@ test('native prompts keep button defaults until the renderer UI registers', asyn
   assert.deepEqual(await second, { response: 0 });
 });
 
+test('renderer-only import approvals cancel without opening native dialogs when the UI is absent', async () => {
+  const { controller, sent } = createFixture({
+    rendererReady: false,
+    showNative: () => assert.fail('cookie import opened a native dialog'),
+  });
+  assert.deepEqual(await controller.request(prompt, { rendererOnly: true }), {
+    response: 2,
+    cancelled: true,
+  });
+  assert.deepEqual(sent, []);
+  controller.setRendererReady(true);
+  const pending = controller.request(prompt, { rendererOnly: true });
+  controller.resolve(sent[0].requestId, 0);
+  assert.deepEqual(await pending, { response: 0 });
+});
+
 test('timeout aborts the native dialog and a late native answer cannot settle its successor', async () => {
   const dialogs = [];
   const { controller, timers } = createFixture({

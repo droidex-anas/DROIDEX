@@ -19,6 +19,7 @@ function createDefaultBrowserSettings(downloadDirectory) {
     downloadDirectory,
     approvedAgentOrigins: [],
     sitePermissions: [],
+    lastCookieImport: null,
   };
 }
 
@@ -58,7 +59,98 @@ function validateSettings(value, defaults) {
     downloadDirectory: validateAbsoluteDirectory(value.downloadDirectory),
     approvedAgentOrigins: validateOriginList(value.approvedAgentOrigins),
     sitePermissions: validateSitePermissions(value.sitePermissions),
+    lastCookieImport: validateCookieImportReceipt(
+      value.lastCookieImport ?? defaults.lastCookieImport,
+    ),
   };
+}
+
+function createCookieImportReceipt(value, nowMs = Date.now()) {
+  let importedAt;
+  try {
+    importedAt = new Date(nowMs).toISOString();
+  } catch {
+    throw new Error('Invalid browser settings: cookie import timestamp is invalid.');
+  }
+  return validateCookieImportReceipt({ ...value, importedAt });
+}
+
+function validateCookieImportReceipt(value) {
+  if (value === null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid browser settings: cookie import receipt must be an object or null.');
+  }
+  const allowed = [
+    'importedAt',
+    'source',
+    'importMethod',
+    'profileLabel',
+    'importedCount',
+    'replacementCount',
+    'skippedCount',
+    'failedCount',
+    'domainCount',
+  ];
+  if (Object.keys(value).some((key) => !allowed.includes(key))) {
+    throw new Error('Invalid browser settings: cookie import receipt contains an unknown field.');
+  }
+  if (typeof value.importedAt !== 'string' || value.importedAt.length > 32) {
+    throw new Error('Invalid browser settings: cookie import timestamp is invalid.');
+  }
+  const importedAt = new Date(value.importedAt);
+  if (!Number.isFinite(importedAt.valueOf()) || importedAt.toISOString() !== value.importedAt) {
+    throw new Error('Invalid browser settings: cookie import timestamp is invalid.');
+  }
+  if (value.source !== 'chrome') {
+    throw new Error('Invalid browser settings: cookie import source is invalid.');
+  }
+  if (!['file', 'profile'].includes(value.importMethod)) {
+    throw new Error('Invalid browser settings: cookie import method is invalid.');
+  }
+  if (
+    typeof value.profileLabel !== 'string' ||
+    !value.profileLabel.trim() ||
+    value.profileLabel.length > 80 ||
+    // eslint-disable-next-line no-control-regex -- Persisted profile labels must reject control bytes.
+    /[\u0000-\u001f\u007f]/.test(value.profileLabel)
+  ) {
+    throw new Error('Invalid browser settings: cookie import profile label is invalid.');
+  }
+  const importedCount = validateCookieImportCount(value.importedCount, 'imported');
+  const replacementCount =
+    value.replacementCount === null
+      ? null
+      : validateCookieImportCount(value.replacementCount, 'replacement');
+  const skippedCount = validateCookieImportCount(value.skippedCount, 'skipped');
+  const failedCount = validateCookieImportCount(value.failedCount, 'failed');
+  const domainCount = validateCookieImportCount(value.domainCount, 'domain');
+  if (importedCount + failedCount + skippedCount > 5_000) {
+    throw new Error('Invalid browser settings: cookie import total count is invalid.');
+  }
+  if (replacementCount !== null && replacementCount > importedCount) {
+    throw new Error('Invalid browser settings: cookie import replacement count is invalid.');
+  }
+  if (domainCount > importedCount) {
+    throw new Error('Invalid browser settings: cookie import domain count is invalid.');
+  }
+  return {
+    importedAt: value.importedAt,
+    source: 'chrome',
+    importMethod: value.importMethod,
+    profileLabel: value.profileLabel,
+    importedCount,
+    replacementCount,
+    skippedCount,
+    failedCount,
+    domainCount,
+  };
+}
+
+function validateCookieImportCount(value, label) {
+  if (!Number.isInteger(value) || value < 0 || value > 5_000) {
+    throw new Error(`Invalid browser settings: cookie import ${label} count is invalid.`);
+  }
+  return value;
 }
 
 function validateSettingsPatch(patch, complete = false) {
@@ -231,6 +323,7 @@ function validateAbsoluteDirectory(value) {
 }
 
 module.exports = {
+  createCookieImportReceipt,
   createDefaultBrowserSettings,
   readSettings,
   validateSettings,
