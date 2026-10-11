@@ -43,6 +43,7 @@ function createNativeBrowserPage({
     unthrottled,
     redactUrl: redactBrowserPageUrl,
     onPoint: sendAgentPoint,
+    getSettings,
   });
   const waits = createBrowserWait({ reading });
 

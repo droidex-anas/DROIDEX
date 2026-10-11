@@ -50,7 +50,9 @@ prompt queue. If the prompt UI is unavailable, it cancels
 without opening a native dialog. Approval cancels browser work, closes tabs and
 clears cookies, local storage, IndexedDB, service workers, cache storage, HTTP
 cache and HTTP auth cache from `persist:droidex-browser`. New tabs are blocked
-until clearing finishes. Saved logins and exact-site decisions remain intact.
+until clearing finishes; then `native-browser-data-cleared` makes the renderer
+mount its shown and working pages again on fresh guests. Saved logins and
+exact-site decisions remain intact.
 
 `electron/browserPrompt.cjs` owns browser approvals: one active prompt, at most 32
 waiting, a 120-second deadline from enqueue, and credentials ahead of queued
@@ -74,9 +76,13 @@ context keeps concurrent agent tools from inheriting that permission. Navigation
 site permissions and downloads policies are retained for subsequent runtime
 ports. Agent inspect, network and console requests require `diagnosticsEnabled`,
 including before dispatch and before returning results. Turning off
-`showAgentCursor` stops main from sending points; fill, type and saved-login fill
-report field centres with `kind: "click"` before writing. New tabs use `homePage`
-unless restoring a saved HTTP(S) URL; `nativeBrowserHome` opens the current home setting.
+`showAgentCursor` stops main from computing and sending points; fill, type and
+saved-login fill report field centres with `kind: "click"` before writing, as a
+best effort that never scrolls or fails the action (a framed saved-login field
+reports none). Console error notes name `browser_console` only while diagnostics
+are on. A new tab's first blank open loads `homePage`; a mounted guest loads only
+its saved page, so an agent's first open never races the home page.
+`nativeBrowserHome` opens the current home setting.
 Saved-login use enforces the existing
 `loginFillApproval` policy; `never` disables saving and filling. The removed native
 cursor overlay's style and size fields are absent

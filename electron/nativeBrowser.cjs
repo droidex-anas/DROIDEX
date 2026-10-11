@@ -110,13 +110,8 @@ function createNativeBrowserManager(options) {
   // again: the URL if allowed, the size's name for the device it asks for.
   function reserveNativeBrowser(browserSessionId, host, savedUrl, savedMode) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
-    if (!entry.targetUrl && !entry.failedRestoreUrl) {
-      const savedPage =
-        savedUrl && isAllowedUrl(savedUrl)
-          ? urls.restorableUrlForEntry(entry, savedUrl)
-          : undefined;
-      entry.targetUrl = savedPage ?? options.getSettings().homePage;
-    }
+    if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl))
+      entry.targetUrl = urls.restorableUrlForEntry(entry, savedUrl) ?? null;
     if (!entry.viewportMode && VIEWPORT_MODES.includes(savedMode)) entry.viewportMode = savedMode;
     return guests.reserve(entry.browserSessionId, host);
   }
@@ -221,6 +216,8 @@ function createNativeBrowserManager(options) {
   }
 
   // `before` runs right before the page moves, and throws when it should not.
+  // A new tab's first blank page is the home page. Only an open applies it, so
+  // a guest an agent is about to load never starts on the home page.
   async function openNativeBrowser(browserSessionId, url, before) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
     const isFirstOpen = !entry.targetUrl;
@@ -412,17 +409,16 @@ function createNativeBrowserManager(options) {
     nativeBrowsers.clear();
   }
 
+  // Every page closes first, so none writes to storage while it is cleared;
+  // the renderer then mounts the pages it still shows on fresh guests.
   async function clearBrowsingData() {
     if (clearingBrowsingData) throw new Error('Browser data is already being cleared.');
     clearingBrowsingData = true;
     try {
       options.cancelBrowserRequests();
-      const ids = [...nativeBrowsers.keys()];
       const contents = [...nativeBrowsers.values()].map(liveContents).filter(Boolean);
       closeAllNativeBrowsers();
       for (const guest of contents) guest.close();
-      for (const browserSessionId of ids)
-        options.sendToRenderer('native-browser-closed', { browserSessionId });
       const browserSession = options.session.fromPartition(BROWSER_PARTITION);
       await browserSession.clearStorageData({
         storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'],
@@ -431,6 +427,7 @@ function createNativeBrowserManager(options) {
       await browserSession.clearAuthCache();
     } finally {
       clearingBrowsingData = false;
+      options.sendToRenderer('native-browser-data-cleared');
     }
   }
 

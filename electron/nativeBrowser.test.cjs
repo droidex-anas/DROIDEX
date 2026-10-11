@@ -174,7 +174,7 @@ test('a page action still waiting on a load does nothing once the browser closes
   await opening;
 });
 
-test('new tabs and their first blank open use Home, while restored tabs keep their URL', async () => {
+test('only the first blank open of a new tab uses Home; a mounted guest loads its saved page or none', async () => {
   const { manager, mountGuest, settings, loads } = createBrowser();
   settings.homePage = 'https://home.test/';
   const opening = manager.open('new', 'about:blank');
@@ -188,7 +188,6 @@ test('new tabs and their first blank open use Home, while restored tabs keep the
   await manager.openHome('restored');
   await manager.open('restored', 'about:blank');
   assert.deepEqual(loads, [
-    'https://home.test/',
     'https://home.test/',
     'https://saved.test/',
     'https://next-home.test/',
@@ -211,13 +210,11 @@ test('clearing closes pages and clears only the browser partition before allowin
   await started.promise;
   assert.equal(guest.isDestroyed(), true);
   assert.equal(manager.resourceCounts().sessions, 0);
-  assert.deepEqual(
-    events.filter((event) => event.channel === 'native-browser-closed'),
-    [{ channel: 'native-browser-closed', browserSessionId: 'tab' }],
-  );
   assert.throws(() => mountGuest('replacement'), /data is being cleared/);
+  assert.equal(events.length, 0);
   resume.resolve();
   await clearing;
+  assert.deepEqual(events, [{ channel: 'native-browser-data-cleared' }]);
   assert.deepEqual(cleared, [
     { storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] },
     'cache',

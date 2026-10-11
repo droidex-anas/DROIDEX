@@ -17,7 +17,8 @@ function submittedCredential(form) {
 }
 
 function fillCredentialForm(document, payload, canFill) {
-  const { location, HTMLInputElement, Event } = document.defaultView;
+  const view = document.defaultView;
+  const { location, HTMLInputElement, Event } = view;
   if (payload.origin !== location.origin)
     return { ok: false, error: 'The page changed before the login was filled.' };
   const passwordFields = [...document.querySelectorAll('input[type="password"]')].filter(
@@ -61,8 +62,11 @@ function fillCredentialForm(document, payload, canFill) {
   function setValue(field, value) {
     assertCurrent(field);
     field.focus();
+    // A box is relative to its own frame, so a framed field shows no cursor.
     const box = field.getBoundingClientRect();
-    assertCurrent(field, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    const point =
+      view.top === view ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : undefined;
+    assertCurrent(field, point);
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value);
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));

@@ -328,6 +328,7 @@ interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands
   onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
   onNativeBrowserFrame: (handler: (event: NativeBrowserFrame) => void) => () => void;
   onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
+  onNativeBrowserDataCleared: (handler: () => void) => () => void;
 }
 
 declare global {

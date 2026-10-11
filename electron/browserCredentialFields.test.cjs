@@ -116,14 +116,13 @@ test('login filling reports each field centre before its secret is written', () 
   const password = new Input('password', '', 'current-password');
   form(username, password);
   const points = [];
-  const document = {
-    defaultView: {
-      location: { origin: 'https://example.test' },
-      HTMLInputElement: Input,
-      Event: class {},
-    },
-    querySelectorAll: () => [password],
+  const view = {
+    location: { origin: 'https://example.test' },
+    HTMLInputElement: Input,
+    Event: class {},
   };
+  view.top = view;
+  const document = { defaultView: view, querySelectorAll: () => [password] };
   const result = fillCredentialForm(
     document,
     {
