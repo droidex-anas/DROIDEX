@@ -24,6 +24,11 @@ function createNativeBrowserViewFactory({
   function configureSession() {
     if (browserSessionConfigured) return;
     const ses = session.fromPartition(partition);
+    // Electron preserves Chromium's native client-hint metadata with this override.
+    const defaultUserAgent = ses.getUserAgent();
+    const platform = defaultUserAgent.match(/^Mozilla\/5\.0 \([^)]+\)/)[0];
+    const chrome = defaultUserAgent.match(/Chrome\/[^ ]+/)[0];
+    ses.setUserAgent(`${platform} AppleWebKit/537.36 (KHTML, like Gecko) ${chrome} Safari/537.36`);
     // Keep Electron's safe defaults: deny WebHID/WebUSB device access for the
     // embedded browser. WebAuthn / passkeys are handled by Chromium natively and
     // do not flow through these handlers, so granting HID/USB to arbitrary sites
@@ -72,6 +77,7 @@ function createNativeBrowserViewFactory({
   }
 
   function createEntry(browserSessionId) {
+    configureSession();
     return {
       browserSessionId,
       contents: null,
@@ -93,7 +99,6 @@ function createNativeBrowserViewFactory({
   }
 
   function bindGuest(entry, contents) {
-    configureSession();
     entry.contents = contents;
     entry.crashed = false;
     const current = () => entry.contents === contents && !contents.isDestroyed();

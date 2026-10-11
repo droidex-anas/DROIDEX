@@ -6,7 +6,10 @@
 // given it again. It reaches the page's own process: a cross-site frame keeps
 // its own touch and scheme, and takes the user agent like the rest.
 
-const { runWithWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
+const {
+  runWithWebContentsDebugger,
+  holdWebContentsDebugger,
+} = require('./nativeBrowserEmulation.cjs');
 
 // Chrome for Android's user agent at this Chromium's version; a tablet's has
 // no "Mobile".
@@ -66,6 +69,9 @@ async function take(contents, guest, change) {
   const device = deviceOf(settings);
   const had = guest.device;
   const touch = had.userAgent !== device.userAgent;
+  if (device.userAgent || device.scheme) {
+    guest.releaseDebugger ??= holdWebContentsDebugger(contents);
+  }
   const setUserAgent = (userAgent) =>
     contents.setUserAgent(userAgent ?? contents.session.getUserAgent());
   if (touch) setUserAgent(device.userAgent);
@@ -78,6 +84,10 @@ async function take(contents, guest, change) {
   }
   guest.settings = settings;
   guest.device = device;
+  if (!device.userAgent && !device.scheme) {
+    guest.releaseDebugger?.();
+    guest.releaseDebugger = undefined;
+  }
 }
 
 // Gives a guest that was just mounted what its entry asks for, and resolves

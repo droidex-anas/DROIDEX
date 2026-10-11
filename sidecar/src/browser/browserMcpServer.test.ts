@@ -39,6 +39,10 @@ test('browser MCP server exposes agent-facing names and typed inputs', () => {
     server.tools.find((tool) => tool.name === 'browser_open')?.description ?? '',
     /Do not ask the user for a URL/,
   );
+  assert.match(
+    server.tools.find((tool) => tool.name === 'browser_open')?.description ?? '',
+    /CAPTCHA or bot check.*ask the user.*Never solve, bypass or automate/,
+  );
 });
 
 test('browser MCP handlers return visible tool errors', async () => {
