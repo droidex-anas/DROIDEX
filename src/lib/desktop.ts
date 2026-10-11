@@ -4,12 +4,15 @@ import type {
   NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
+  NativeBrowserDownload,
   NativeBrowserAgentPoint,
   NativeBrowserFrame,
   NativeBrowserWorking,
 } from './nativeBrowser';
 import type { BrowserHistoryApi } from './browserHistory';
 import type { NativeBrowserChord } from './shortcuts';
+import type { BrowserSettingsCommands } from './browserSettings';
+import type { BrowserPromptCommands } from './browserPrompt';
 import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
@@ -190,7 +193,7 @@ export type NotifyResult =
 
 type SaveImageResult = { saved: true; filePath: string } | { saved: false };
 
-interface DroidControlApi {
+interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands {
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
@@ -322,6 +325,7 @@ interface DroidControlApi {
   onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
   onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
+  onNativeBrowserDownload: (handler: (event: NativeBrowserDownload) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
   onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;

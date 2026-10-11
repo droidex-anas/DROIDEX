@@ -9,6 +9,8 @@ import {
   type BrowserChannelProcess,
 } from './browser/desktopBrowserChannel.js';
 import type * as Protocol from './protocol.js';
+import { BrowserSessionManager } from './browser/BrowserSessionManager.js';
+import type { DesignReference } from './browser/types.js';
 import {
   nativeSnapshot,
   nativeSuccess,
@@ -518,6 +520,84 @@ test('shutdown is single-flight and finalizers continue after failure', async ()
   );
 
   await h.dispose().catch(() => undefined);
+});
+
+test('a design prompt steers with its references, and a late refusal starts the next turn', async (t) => {
+  const h = createSessionManagerTestContext();
+  const browsers = new BrowserSessionManager();
+  t.mock.method(h.browsers, 'designPrompt', browsers.designPrompt.bind(browsers));
+  const deliveries: { text: string; settle: (delivered: boolean) => void }[] = [];
+  h.runtime.steer = (_session, text) =>
+    new Promise<boolean>((settle) => {
+      deliveries.push({ text, settle });
+    });
+  try {
+    const provider = await createSession(h);
+    const turn = provider.deferNextStream();
+    const running = send(h, 'keep working');
+    await provider.waitForPrompts(2);
+    const reference: DesignReference = {
+      id: 'heading',
+      anchor: {
+        id: 'heading',
+        kind: 'element',
+        label: 'Heading',
+        name: 'Heading',
+        tag: 'h1',
+        box: { x: 0, y: 0, width: 200, height: 48 },
+      },
+      url: 'https://example.test',
+      viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
+      scroll: { x: 0, y: 0 },
+      createdAt: new Date().toISOString(),
+    };
+    const command: Extract<Protocol.ClientCommand, { type: 'browser.design.sendPrompt' }> = {
+      type: 'browser.design.sendPrompt',
+      appSessionId: 'provider-1',
+      instruction: 'Restyle @1',
+      references: [reference],
+      steerId: 'design-steer',
+    };
+    let sendSettled = false;
+    const sending = h.handle(command).then(() => {
+      sendSettled = true;
+    });
+    while (deliveries.length < 1 && !sendSettled) await h.waitForIdle();
+    assert.equal(deliveries.length, 1, 'the running turn must receive the design steer');
+    const pending = latestSummary(h)?.pendingSteers?.[0];
+    assert.equal(pending?.id, 'design-steer');
+    assert.equal(pending.text, 'Restyle @1');
+    assert.equal(pending.browserRefs?.[0]?.id, 'heading');
+    assert.match(deliveries[0].text, /^Design Mode reference pack:/);
+    assert.match(deliveries[0].text, /User instruction:\nRestyle @1$/);
+    assert.equal(provider.prompts.length, 2);
+    deliveries[0].settle(true);
+    await sending;
+    const accepted = h.events.findLast(
+      (event) => event.type === 'event.appended' && event.event.steered,
+    );
+    assert.ok(accepted?.type === 'event.appended');
+    assert.equal(accepted.event.text, pending.text);
+    assert.deepEqual(accepted.event.browserRefs, pending.browserRefs);
+    assert.deepEqual(latestSummary(h)?.pendingSteers, []);
+
+    const late = h.handle({ ...command, steerId: 'late-design-steer' });
+    while (deliveries.length < 2) await h.waitForIdle();
+    turn.resolve();
+    await running;
+    deliveries[1].settle(false);
+    await late;
+    assert.equal(provider.prompts.length, 3);
+    assert.equal(provider.prompts[2], deliveries[1].text);
+    const fallback = h.events.findLast(
+      (event) => event.type === 'event.appended' && event.event.author === 'user',
+    );
+    assert.ok(fallback?.type === 'event.appended');
+    assert.deepEqual(fallback.event.browserRefs, pending.browserRefs);
+  } finally {
+    await browsers.closeAll();
+    await h.dispose();
+  }
 });
 
 test('the browser stays bound to the stable session across a provider swap', async () => {

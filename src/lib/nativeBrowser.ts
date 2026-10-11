@@ -34,6 +34,23 @@ export interface NativeBrowserLoadFailed {
   crashed?: boolean;
 }
 
+/** Download data for the trusted renderer, never the page or agent. */
+export type NativeBrowserDownload = {
+  downloadId: string;
+  browserSessionId: string;
+  filename: string;
+  origin: string;
+  receivedBytes: number;
+  /** Zero means the server did not provide a size. */
+  totalBytes: number;
+} & (
+  | { state: 'completed'; filePath: string }
+  | { state: 'failed'; error: string }
+  | {
+      state: 'awaiting-approval' | 'awaiting-location' | 'progressing' | 'cancelled';
+    }
+);
+
 /**
  * What a page in design mode reports: a pick, its crop once taken (none when
  * it could not be taken safely), a mark taken away, where its marks are after
@@ -73,11 +90,12 @@ export type NativeBrowserKeyPress = Required<
   Pick<KeyboardEventInit, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'repeat'>
 >;
 
-/** Where an agent's pointer action lands, in the page's own CSS pixels. */
+/** Where an agent's pointer action lands, in the page's own CSS pixels, and which action it is. */
 export interface NativeBrowserAgentPoint {
   browserSessionId: string;
   x: number;
   y: number;
+  kind: 'click' | 'hover' | 'scroll';
 }
 
 /** One frame of a page's small live picture, for the transcript's Browser card. */

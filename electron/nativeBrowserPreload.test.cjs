@@ -79,7 +79,7 @@ function loadPreload() {
     require: (name) =>
       name === 'electron'
         ? { contextBridge: inert, ipcRenderer: inert }
-        : require(path.join(__dirname, name)),
+        : require(name.startsWith('.') ? path.join(__dirname, name) : name),
   };
   vm.runInNewContext(
     readFileSync(path.join(__dirname, 'nativeBrowserPreload.cjs'), 'utf8'),

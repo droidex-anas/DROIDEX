@@ -1,11 +1,11 @@
 // Wires a bound <webview> guest into its browser entry: the page listeners that
-// keep the entry's URL, history, console and load state current. The partition
-// handlers stay as they were for views: permissions and devices are denied.
+// keep the entry's URL, history, console and load state current.
 const { CONSOLE_LEVELS } = require('./browserDiagnostics.cjs');
 
 function createNativeBrowserViewFactory({
   session,
   partition,
+  permissions,
   normalizeBrowserConsoleMessage,
   redactBrowserDiagnosticUrl,
   urls,
@@ -13,7 +13,6 @@ function createNativeBrowserViewFactory({
   emitLoaded,
   emitLoadFailed,
   applyDesignState,
-  autofill,
   onCrashed,
   onInput,
   listEntries,
@@ -31,8 +30,8 @@ function createNativeBrowserViewFactory({
     // (and auto-selecting a device) would only open a hardware-permission
     // escalation path with no upside.
     ses.setDevicePermissionHandler(() => false);
-    ses.setPermissionCheckHandler(() => false);
-    ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+    ses.setPermissionCheckHandler(permissions.canAccess);
+    ses.setPermissionRequestHandler(permissions.handleRequest);
     const pages = { urls: ['http://*/*', 'https://*/*'] };
     // When each request went out, for how long it took. One that never ends
     // would stay here, so the lot is dropped once it grows past any real page.
@@ -96,11 +95,15 @@ function createNativeBrowserViewFactory({
 
   function bindGuest(entry, contents) {
     configureSession();
+    permissions.revokeForContents(entry.contents);
     entry.contents = contents;
     entry.crashed = false;
     let committedUrl = null;
     let navigation = null;
     const current = () => entry.contents === contents && !contents.isDestroyed();
+    contents.on('did-start-navigation', (_event, _url, isInPlace) => {
+      if (!isInPlace) permissions.revokeForContents(contents);
+    });
     contents.setWindowOpenHandler(({ url: nextUrl }) => {
       if (current()) void loadUrl(entry, nextUrl);
       return { action: 'deny' };
@@ -151,7 +154,9 @@ function createNativeBrowserViewFactory({
       entry.failedRestoreUrl = null;
       entry.targetUrl = requestedUrl;
     });
+    contents.on('did-frame-navigate', () => permissions.revokeForContents(contents));
     contents.on('did-navigate', (_event, loadedUrl, httpResponseCode) => {
+      permissions.revokeForContents(contents);
       if (current()) entry.documents += 1;
       // The blank page a guest is set up on is not the browser's page.
       if (entry.setup?.contents === contents && loadedUrl === 'about:blank') return;
@@ -185,7 +190,6 @@ function createNativeBrowserViewFactory({
       }
       updateTitle(contents.getTitle());
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
-      void autofill(contents);
     });
     function discardTypedNavigation(failedUrl) {
       if (navigation?.url === failedUrl) navigation = null;
@@ -228,6 +232,7 @@ function createNativeBrowserViewFactory({
       if (entry.state.designMode && entry.shown) applyDesignState(entry);
     });
     contents.on('render-process-gone', (_event, details) => {
+      permissions.revokeForContents(contents);
       if (entry.contents !== contents || details?.reason === 'clean-exit') return;
       entry.crashed = true;
       entry.typedUrl = null;
@@ -237,6 +242,7 @@ function createNativeBrowserViewFactory({
       onCrashed(entry, details);
     });
     contents.once('destroyed', () => {
+      permissions.revokeForContents(contents);
       if (entry.contents === contents) {
         entry.contents = null;
         entry.typedUrl = null;

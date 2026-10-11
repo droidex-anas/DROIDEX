@@ -118,7 +118,12 @@ module.exports = {
       NSDownloadsFolderUsageDescription:
         'DROIDEX accesses downloaded project files only when you choose them for an agent session.',
       NSMicrophoneUsageDescription:
-        'DROIDEX uses the microphone only while you hold a voice conversation with an agent.',
+        'DROIDEX uses the microphone for voice conversations and websites you explicitly allow.',
+      NSCameraUsageDescription: 'DROIDEX uses the camera only for websites you explicitly allow.',
+      NSLocationUsageDescription:
+        'DROIDEX shares your location only with websites you explicitly allow.',
+      NSLocationWhenInUseUsageDescription:
+        'DROIDEX shares your location only with websites you explicitly allow.',
       SUFeedURL: sparkleFeedUrl,
       SUPublicEDKey: sparklePublicKey,
       SUEnableAutomaticChecks: true,

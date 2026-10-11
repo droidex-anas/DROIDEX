@@ -211,8 +211,12 @@ function createBrowserReading({ runWithWebContentsDebugger, savedSecretsFor, red
     return withPage(contents, async (dbg) => {
       const { backendNodeId, document, frame } = await lookupRef(dbg, entry, ref);
       const { sessionId } = frame;
+      const { executionContextId } = await send(dbg, sessionId, 'Page.createIsolatedWorld', {
+        frameId: frame.id,
+        worldName: 'droidex-agent-actions',
+      });
       const { object } = await onNode(ref, () =>
-        send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId }),
+        send(dbg, sessionId, 'DOM.resolveNode', { backendNodeId, executionContextId }),
       );
       try {
         before?.();

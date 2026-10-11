@@ -33,9 +33,14 @@ function browserWithHistory(history) {
     webRequest: { onSendHeaders() {}, onCompleted() {}, onErrorOccurred() {} },
   };
   const manager = createNativeBrowserManager({
-    app: {},
+    app: { getPath: () => '/unused-browser-test-profile' },
     appName: 'DROIDEX',
     history,
+    permissions: {
+      canAccess: () => false,
+      handleRequest: (_contents, _permission, callback) => callback(false),
+      revokeForContents() {},
+    },
     session: { fromPartition: () => ses },
     dialog: {},
     safeStorage: {},
@@ -301,6 +306,7 @@ test('typed intent creates no entry and follows a successful redirect, but not a
         browserSessionId: 'tab',
         action: 'open',
         url: 'https://example.test/',
+        initiator: 'user',
       },
     },
     () => {},
