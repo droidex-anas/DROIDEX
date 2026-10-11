@@ -7,6 +7,7 @@ const { createBrowserWait } = require('./browserWait.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { useDevice } = require('./browserDevice.cjs');
+const { beginAgentBrowserAction } = require('./browserAuthenticationPopup.cjs');
 
 const VIEWPORT_WAIT_MS = 2_000;
 
@@ -87,6 +88,17 @@ function createNativeBrowserPage({
     if (Date.now() >= request.startBy || request.runEnded?.())
       throw new Error('The browser page did not finish in time.');
     const secrets = secretsOn(entry, contents);
+    const actsOnPage = [
+      'click',
+      'hover',
+      'scroll',
+      'type',
+      'press',
+      'fill',
+      'fillCredentials',
+      'evaluate',
+    ].includes(request.action);
+    const finishAgentAction = actsOnPage ? beginAgentBrowserAction(entry, contents, request) : null;
     try {
       const outcome = await performOnPage(contents, entry, request);
       const protectedValues = new Set([...secrets, ...(entry.credentialSecrets?.values ?? [])]);
@@ -96,6 +108,8 @@ function createNativeBrowserPage({
       throw new Error(
         redactSecrets(error instanceof Error ? error.message : String(error), protectedValues),
       );
+    } finally {
+      finishAgentAction?.();
     }
   }
 
