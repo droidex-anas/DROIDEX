@@ -7,15 +7,14 @@ import { startBridgeServer } from '../bridgeServer.js';
 import { errorOf, harness, okReply, type Harness } from '../testing/canvasBridgeSupport.js';
 import { CompilerWorker } from './compiler.js';
 import { exportDesignSystem } from './designSystemExport.js';
-import { readDesignSystem } from './designSystems.js';
+import {
+  readDesignSystem,
+  type DesignSystemDetail,
+  type DesignSystemSource,
+} from './designSystems.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import type {
-  CanvasDiagnostic,
-  DesignSystemDetail,
-  DesignSystemSource,
-  DesignSystemVersionRef,
-} from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
 
 const DESIGN_MD = `# Paper and ink
 

@@ -22,7 +22,11 @@ import type {
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
-import type { DesignSystemProvenance, DesignSystemSummary } from './designSystems.js';
+import type {
+  DesignSystemDetail,
+  DesignSystemSource,
+  DesignSystemSummary,
+} from './designSystems.js';
 
 export type {
   ArrangeFramesInput,
@@ -226,23 +230,6 @@ export type RevisionSummary =
     })
   // Its saved metadata cannot be read; the commit stays listed so paging continues.
   | (RevisionCommit & { state: 'damaged' });
-
-/** One kit version as the Manage dialog shows it: its tokens, without source files. */
-export interface DesignSystemDetail {
-  id: string;
-  version: number;
-  name: string;
-  modes: { light: Record<string, string>; dark: Record<string, string> };
-  /** Tokens the shared primitives do not read, kept under their own names (spec §10). */
-  unmapped: string[];
-  provenance: DesignSystemProvenance | null;
-}
-
-/** A new kit's source from the dialog's New menu. */
-export interface DesignSystemSource {
-  kind: 'designMd' | 'cssOrTailwind';
-  text: string;
-}
 
 export interface RevisionDiff {
   from: string;
