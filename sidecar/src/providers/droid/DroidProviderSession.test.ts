@@ -62,6 +62,7 @@ function droidOn(modelId: string) {
   const runtime = {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
+    onProcessExit: () => undefined,
     factoryApiKey: () => undefined,
     steer: () => Promise.resolve(false),
     streamTurn: (
@@ -327,6 +328,7 @@ test('a translated limit notice fails the turn with its detail and adds no row',
 // Droid. Every request is answered at once, after the notices its hook sends.
 async function droidOverMemory() {
   let receive: (message: Record<string, unknown>) => void = () => undefined;
+  let transportFailed: (error: Error) => void = () => undefined;
   const hooks = new Map<unknown, (params: Record<string, unknown>) => void>();
   const init = InitializeSessionResultSchema.parse({
     sessionId: 'provider-session',
@@ -350,7 +352,9 @@ async function droidOverMemory() {
     onMessage(callback) {
       receive = callback;
     },
-    onError() {},
+    onError(callback) {
+      transportFailed = callback;
+    },
     close: async () => undefined,
   };
   const transport = wrapDroidTransport(inner);
@@ -383,6 +387,9 @@ async function droidOverMemory() {
   return {
     session: new DroidProviderSession('app-session', droid, runtime),
     nextRequest,
+    exit: (message: string) => {
+      transportFailed(new Error(message));
+    },
     state: (newState: string) => {
       notify({ type: 'droid_working_state_changed', newState });
     },
@@ -641,4 +648,15 @@ test('an interrupt while Droid is thinking settles the turn', { timeout: 2000 },
   await interrupted;
   assert.deepEqual(texts(await events), []);
   await h.session.close();
+});
+
+test('a Droid process that exits on its own closes the session', async () => {
+  const h = await droidOverMemory();
+  h.exit('Droid process exited normally');
+  const error = await h.session.closed;
+  assert.equal(
+    error?.message,
+    'Droid process exited normally. The chat reopens with your next message.',
+  );
+  assert.equal(h.session.isClosed, true);
 });

@@ -36,6 +36,7 @@ export interface SessionCompactionExecutionDependencies {
     | 'loadSession'
     | 'processIdOf'
     | 'isProcessAlive'
+    | 'onProcessExit'
     | 'factoryApiKey'
     | 'steer'
     | 'streamTurn'

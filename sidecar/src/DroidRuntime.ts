@@ -128,6 +128,8 @@ export interface FactoryRuntime {
   readContextBreakdown(session: FactorySession): Promise<unknown>;
   processIdOf(session: FactorySession): number | undefined;
   isProcessAlive(session: FactorySession): boolean;
+  // Hears the process end outside close(), after which every request fails.
+  onProcessExit(session: FactorySession, listener: (error: Error) => void): void;
   steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome>;
   streamTurn(
     session: FactorySession,
@@ -242,6 +244,10 @@ export class DroidRuntime implements FactoryRuntime {
   isProcessAlive(session: FactorySession): boolean {
     const owned = this.processes.get(session);
     return owned !== undefined && owned.transport.processId === owned.pid;
+  }
+
+  onProcessExit(session: FactorySession, listener: (error: Error) => void): void {
+    this.processes.get(session)?.transport.onError(listener);
   }
 
   async createSession(options: CreateRuntimeSessionOptions): Promise<DroidSession> {
