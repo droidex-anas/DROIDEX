@@ -11,6 +11,7 @@ import { useIsPresent } from 'framer-motion';
 import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { getBrowserHistory } from '../../lib/browserHistory';
 import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
 import type { BrowserViewportMode } from '../../types/bridge';
 import {
@@ -37,6 +38,7 @@ import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserH
 import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
 import { useElementSize } from './useElementSize';
+import { browserAtWork } from './browserTurn';
 import { isEditTool } from '../../lib/diff';
 
 // In full screen the chat's composer floats over the bottom of the page, with
@@ -66,6 +68,7 @@ export default function BrowserWorkspace({
       browserGlobalError: current.browserGlobalError,
       browsers: current.browsers,
       designModes: current.designModes,
+      designSelectionBehavior: current.designSelectionBehavior,
     }),
     shallowEqual,
   );
@@ -76,6 +79,11 @@ export default function BrowserWorkspace({
   const browserError = browserKey ? state.browserErrors[browserKey] : state.browserGlobalError;
   const designMode = isDesignModeOpen(state.designModes, browserKey);
   const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
+  const agentAtWork = useStoreSelector(
+    (state) =>
+      browserKey !== undefined &&
+      browserAtWork(state.sessions[browserKey], state.transcripts[browserKey]),
+  );
   const designMarks = useDesignMarks(browserKey);
   const nativeBrowser = isDesktop();
   const frameRef = useRef<HTMLDivElement>(null);
@@ -235,7 +243,7 @@ export default function BrowserWorkspace({
   const quickPrompt = useDesignQuickPrompt({
     appSessionId: browserKey,
     browserSessionId: browser?.browserSessionId,
-    designMode,
+    enabled: designMode && state.designSelectionBehavior === 'prompt-box',
     drawing: designMode && pencilMode,
     marks: designMarks,
   });
@@ -274,7 +282,7 @@ export default function BrowserWorkspace({
       });
   };
 
-  const openCurrentUrl = () => {
+  const openCurrentUrl = async () => {
     const normalizedUrl = normalizeUrl(urlInput);
     if (browserKey && isSelfBrowserUrl(normalizedUrl, appOrigin)) {
       setUrlInput(normalizedUrl);
@@ -292,6 +300,13 @@ export default function BrowserWorkspace({
     setUrlInput(browserAddressValue(url));
     setActiveUrl(url);
     if (browserKey) {
+      if (isDesktop()) {
+        try {
+          await getBrowserHistory().recordTyped(browserKey, url);
+        } catch (error) {
+          console.error('Could not record the browser address in history:', error);
+        }
+      }
       openBrowser({
         appSessionId: browserKey,
         url,
@@ -377,18 +392,19 @@ export default function BrowserWorkspace({
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         loading={loading}
+        agentWorking={agentAtWork}
         designMode={designMode}
         designModeDisabled={!browserKey}
         pencilMode={pencilMode}
         expanded={expanded}
         onUrlInputChange={setUrlInput}
-        onOpen={openCurrentUrl}
+        onOpen={() => void openCurrentUrl()}
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
         onReload={() => {
           startLoading();
           if (browserKey && browser) reloadBrowser(browserKey);
-          else openCurrentUrl();
+          else void openCurrentUrl();
         }}
         onToggleDesignMode={() => {
           if (browserKey) dispatch({ type: 'TOGGLE_DESIGN_MODE', appSessionId: browserKey });
@@ -424,7 +440,7 @@ export default function BrowserWorkspace({
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
               startLoading();
               if (browserKey && browser) reloadBrowser(browserKey);
-              else openCurrentUrl();
+              else void openCurrentUrl();
             }}
           >
             Retry

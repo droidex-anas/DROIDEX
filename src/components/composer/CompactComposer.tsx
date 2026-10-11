@@ -8,7 +8,8 @@ function fitToContent(el: HTMLTextAreaElement, maxHeight: number) {
 
 /* The small composer the side chat and the design prompt box share: a
    textarea that grows with its text and a round send button. Enter sends,
-   Shift+Enter starts a new line, and keys an IME is using stay the IME's.
+   telling the caller whether Cmd/Ctrl was held, Shift+Enter starts a new
+   line, and keys an IME is using stay the IME's.
    With a leading control (the side chat's harness chip) the text sits above a
    row of controls; without one it folds to a single line beside send. */
 
@@ -31,7 +32,7 @@ export function CompactComposer({
 }: {
   value: string;
   onChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (withCommand: boolean) => void;
   canSend: boolean;
   placeholder: string;
   label: string;
@@ -94,7 +95,7 @@ export function CompactComposer({
           onEscape();
         } else if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
-          if (canSend) onSend();
+          if (canSend) onSend(event.metaKey || event.ctrlKey);
         }
       }}
       className={`block w-full resize-none bg-transparent text-[13px] leading-5 text-droid-text placeholder:text-droid-text-muted focus:outline-none ${
@@ -109,7 +110,9 @@ export function CompactComposer({
       {action ?? (
         <button
           type="button"
-          onClick={onSend}
+          onClick={() => {
+            onSend(false);
+          }}
           disabled={!canSend}
           aria-label={sendLabel}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"

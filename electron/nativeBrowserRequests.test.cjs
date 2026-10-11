@@ -147,7 +147,8 @@ test('disabled agent requests cannot wake pages or read diagnostics, while closi
 test('user navigation stays available when agent access is off', async () => {
   const { actions, send, disable } = fixture();
   disable();
-  assert.equal((await send('open', 'user')).ok, true);
+  const reply = await send('open', 'user');
+  assert.equal(reply.ok, true, reply.error);
   assert.deepEqual(actions, ['open', 'snapshot']);
 });
 

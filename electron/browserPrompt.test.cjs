@@ -13,7 +13,6 @@ function createFixture(overrides = {}) {
     randomUUID: () => `prompt-${++sequence}`,
     send: (prompt) => sent.push(prompt),
     dismiss: overrides.dismiss ?? ((requestId) => dismissed.push(requestId)),
-    showNative: overrides.showNative,
     logError: overrides.logError,
     maxQueuedPrompts: overrides.maxQueuedPrompts,
     now: overrides.now,
@@ -179,55 +178,20 @@ test('prompts fail closed while the renderer is unavailable', async () => {
   assert.equal(sent.length, 0);
 });
 
-test('native prompts keep button defaults until the renderer UI registers', async () => {
-  const native = [];
-  let answer;
-  const { controller, sent } = createFixture({
-    rendererReady: false,
-    showNative: (options, signal) => {
-      native.push({ options, signal });
-      return new Promise((resolve) => (answer = resolve));
-    },
-  });
-  const first = controller.request({ ...prompt, defaultId: 0 });
-  assert.equal(native[0].options.defaultId, 0);
-  assert.equal(native[0].options.cancelId, 2);
-  assert.equal(controller.resolve('prompt-1', 0), false);
-  controller.setRendererReady(true);
-  const second = controller.request(prompt);
+test('prompts wait for the renderer UI to register and carry their deadline', async () => {
+  const { controller, sent } = createFixture({ rendererReady: false, now: () => 1_000 });
+  const waiting = controller.request({ ...prompt, origin: 'https://example.com' });
   assert.equal(sent.length, 0);
-  answer({ response: 1 });
-  assert.deepEqual(await first, { response: 1 });
-  assert.equal(sent[0].requestId, 'prompt-2');
-  controller.resolve('prompt-2', 0);
-  assert.deepEqual(await second, { response: 0 });
+
+  controller.setRendererReady(true);
+  assert.equal(sent[0].origin, 'https://example.com');
+  assert.equal(sent[0].expiresAt, 121_000);
+  assert.equal(controller.resolve('prompt-1', 0), true);
+  assert.deepEqual(await waiting, { response: 0 });
 });
 
-test('timeout aborts the native dialog and a late native answer cannot settle its successor', async () => {
-  const dialogs = [];
-  const { controller, timers } = createFixture({
-    rendererReady: false,
-    showNative: (_options, signal) => new Promise((resolve) => dialogs.push({ resolve, signal })),
-  });
-  const first = controller.request(prompt);
-  const second = controller.request(prompt);
-  timers[0].callback();
-  assert.deepEqual(await first, { response: 2, cancelled: true });
-  assert.equal(dialogs[0].signal.aborted, true);
-  dialogs[0].resolve({ response: 0 });
-  dialogs[1].resolve({ response: 1 });
-  assert.deepEqual(await second, { response: 1 });
-  assert.ok(timers.every((timer) => timer.cleared));
-});
-
-test('unregistering the renderer cancels pending approvals and uses native prompts next', async () => {
-  const native = [];
-  const { controller, dismissed } = createFixture({
-    showNative: async (options) => {
-      native.push(options);
-      return { response: 0 };
-    },
-  });
+test('unregistering the renderer cancels pending approvals and holds later prompts', async () => {
+  const { controller, dismissed, sent, timers } = createFixture();
   const active = controller.request(prompt);
   const queued = controller.request(prompt);
   controller.setRendererReady(false);
@@ -235,8 +199,11 @@ test('unregistering the renderer cancels pending approvals and uses native promp
   assert.deepEqual(await queued, { response: 2, cancelled: true });
   assert.equal(controller.resolve('prompt-1', 0), false);
   assert.deepEqual(dismissed, ['prompt-1']);
-  assert.deepEqual(await controller.request(prompt), { response: 0 });
-  assert.equal(native.length, 1);
+
+  const held = controller.request(prompt);
+  assert.equal(sent.length, 1);
+  timers[2].callback();
+  assert.deepEqual(await held, { response: 2, cancelled: true });
 });
 
 test('developer tools retry automatic cancellations and remember an explicit user denial', async () => {

@@ -36,7 +36,7 @@ flowchart LR
 
 ## Data and control boundaries
 
-Browser policy lives in the versioned `browser-settings.json` in the Electron
+Browser policy lives in schema version 6 of `browser-settings.json` in the Electron
 profile directory (`electron/browserSettingsSchema.cjs`, `electron/browserSettings.cjs`).
 Unknown fields, malformed values and unsupported versions stop startup with a
 recovery message; no prior schema is migrated or silently reset. Writes are
@@ -58,36 +58,76 @@ exact-site decisions remain intact.
 waiting, a 120-second deadline from enqueue, and credentials ahead of queued
 permissions. Timeout, cancellation, renderer replacement and shutdown choose the
 declared cancel action with `cancelled: true`; only explicit user decisions are
-remembered for developer-tools access. The prompt UI must subscribe to both prompt
+remembered for developer-tools and site permissions. The prompt UI must subscribe to both prompt
 events before calling `browserPermissionPromptReady(true)`, then call it with
-`false` on unmount.
-Only the trusted main renderer can register or answer the active prompt. Until the
-prompt UI ships in the next agent-controls stack PR, an unregistered UI uses the
-existing native dialogs with the same buttons and defaults. Remove that temporary
-presentation when the UI is mounted for every desktop session. This foundation
-routes saved-login and developer-tools questions through the queue; it adds no
-visible settings or prompt components.
+`false` on unmount. Only the trusted main renderer can register or answer the
+active prompt. A request with no usable window is declined at once; otherwise it
+waits for that registration, deadline still running, and is never shown as a
+native dialog. Each prompt carries its `expiresAt` and, when it concerns one site,
+its `origin`. The renderer's `src/components/browserPrompt/` shows a protection
+change as a modal dialog and an agent's request as a card over the browser pane, or
+in the window corner when no pane is showing; the card never takes focus by itself.
+Settings > Browser (`src/components/browserSettings/`) shows only enforced settings.
 
 Agent access is enforced at the private browser request boundary, including work
 waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
-site permissions and downloads policies are retained for subsequent runtime
-ports. Agent inspect, network and console requests require `diagnosticsEnabled`,
-including before dispatch and before returning results. Turning off
-`showAgentCursor` stops main from computing and sending points; fill, type and
-saved-login fill report field centres with `kind: "click"` before writing, as a
-best effort that never scrolls or fails the action (a framed saved-login field
-reports none). Console error notes name `browser_console` only while diagnostics
-are on. A new tab's first blank open loads `homePage`; a mounted guest loads only
-its saved page, so an agent's first open never races the home page.
-`nativeBrowserHome` opens the current home setting.
-Saved-login use enforces the existing
-`loginFillApproval` policy; `never` disables saving and filling. The removed native
-cursor overlay's style and size fields are absent
-from schema version 4. Grants and cookie import receipts remain validated data,
-without restoring the old engine's services or claiming unsupported capabilities.
+navigation and downloads policies are retained for subsequent runtime ports. The
+agent access switch and site permission policy are enforced. Agent inspect, network
+and console requests require `diagnosticsEnabled`, including before dispatch and
+before returning results. Turning off `showAgentCursor` stops main from computing
+and sending points; fill, type and saved-login fill report field centres with
+`kind: "click"` before writing, as a best effort that never scrolls or fails the
+action (a framed saved-login field reports none). Console error notes name
+`browser_console` only while diagnostics are on. A new tab's first blank open loads
+`homePage`; a mounted guest loads only its saved page, so an agent's first open
+never races the home page. `nativeBrowserHome` opens the current home setting.
+Saved-login use enforces the existing `loginFillApproval` policy; `never` disables
+saving and filling. Removed cursor overlay settings and cookie import receipts are
+absent.
+
+`electron/browserPermissions.cjs` handles both permission requests and checks on
+`persist:droidex-browser`. Camera, microphone, location, notifications, clipboard
+read, MIDI and MIDI system exclusive access default to **Ask me**, with exact-origin
+approvals (**Block** in Settings > Browser denies them all): **Allow** remembers the
+requested permissions, **Allow once** lasts until a document navigates, **Don't allow**
+denies this request, and **Always block this site** remembers a denial. Requests
+resolve Electron's frame URL to a unique live frame and validate its actual security
+origin; checks also require the handler's requesting origin to match. Missing,
+opaque or conflicting origins and ambiguous frame matches are denied. Same-origin
+frames share saved site policy; cross-origin frames and unsupported permissions,
+including HID, USB, serial and screen capture, remain denied. Notification checks
+without a WebContents use only existing exact-origin approvals and require a
+matching, nonempty embedding origin.
+
+A saved origin decision applies whoever is driving the page. Without a saved
+or current document approval, the prompt queue asks the user; agents have no tool
+that answers prompts. A prompt notes when an agent request is in flight on that
+tab, using the existing working state only as context, never as permission authority.
+Allow-once grants capture the requesting frame and its process/routing identity.
+Navigation start and document commit (including same-origin reloads and subframes),
+guest replacement, crash, release, renderer teardown and shutdown invalidate
+pending prompts and temporary grants. Detached or replaced frames cannot reuse them.
+
+Each permission request has a 120-second deadline, including OS consent; automatic
+cancellation never records a denial. A save can be cancelled before its atomic file
+replacement is submitted. Once that replacement succeeds, the decision is committed
+in memory and on disk and the permission callback reports the saved result, even if
+teardown occurred during the write. Camera and microphone additionally require
+macOS media consent. OS denial explains how to enable DROIDEX in System Settings
+and restart it. Packaged builds declare camera, audio-input and location entitlements
+plus camera, microphone and location usage descriptions.
+
+The renderer lists saved decisions through `browserSettingsGet().sitePermissionRules`
+and revokes one with `browserSitePermissionRevoke(origin, permission)`. Revocation
+returns the updated snapshot, cancels affected pending approvals, clears temporary
+grants and prevents a queued approval from restoring the revoked permission. It
+affects subsequent access; reload or close a page to stop an already active capture.
+The renderer contract exposes data and commands without implementing settings UI.
+Older settings versions stop startup with the existing explicit recovery
+message; no grants or settings are silently migrated or reset.
 
 Saved logins use `electron/browserCredentialVault.cjs`: OS encryption with queued,
 atomic writes to `browser-credentials.enc`, at most 500 exact origins. Electron 39
@@ -149,9 +189,40 @@ gated. Actions that can ask approval receive an additional 120 seconds in the
 sidecar request deadline, and abandoned requests dismiss their queued prompts.
 OAuth popup handling, passkey sheets and site permissions belong to later ports.
 
+`electron/browserDownloads.cjs` handles `will-download` only on
+`persist:droidex-browser`. It ports #215's filename sanitization and unique names,
+using the existing `askDownloadLocation` and `downloadDirectory` settings. Files
+are paused in a private temporary folder while executable or script downloads
+await explicit user approval in the in-app prompt card, whoever started them.
+The card shows filename, size when known, and download site. If the tab's existing
+working state is active, it adds "An agent is working on this page." as context;
+that state never controls approval. Without a registered prompt UI, these
+approvals cancel without a native-dialog fallback. One extension list (including
+`.cjs`, `.mjs` and redirect URLs) and MIME types classify executables and scripts.
+These safeguards assume honest pages and a possibly prompt-injected agent;
+hostile pages mislabeling payloads or racing their own forms are out of scope.
+
+After any required approval, the save-location setting opens a file picker or
+reserves a unique name in the configured directory. Automatic destination creation
+is exclusive and advances the name after every collision, including dangling
+symlinks, without overwriting. The file picker owns confirmation of a selected
+overwrite; its file is published atomically after copying succeeds. Closing or
+replacing a guest cancels pending approvals and choices; accepted transfers
+continue independently. Interrupted transfers are cancelled and reported as
+`failed` with an actionable error, including terminal `done: interrupted` events.
+Shutdown stops admission before cancelling transfers and awaiting cleanup.
+Staging files, reservations and listeners are released on settlement. Main sends
+plain `native-browser-download` data with a stable download ID, browser session
+ID, filename, origin, byte counts and state; successful completion adds `filePath`
+and failures add an actionable `error`. The desktop preload exposes
+`onNativeBrowserDownload` for the separately built renderer UI. No download data
+or local paths go to the agent or the page.
+
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
 - Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not. A page is laid out at its session's viewport: Fit follows the pane, and a standard size (desktop, laptop, tablet, mobile) keeps its own CSS size in the pane, drawn scaled down with a CSS transform, so the user sees what the agent reads. Agents read pages from Chromium's accessibility tree, cross-site frames included through their own debugger sessions (`electron/browserReading.cjs`, `electron/browserFrames.cjs`), and screenshots have sensitive fields painted over in main before the image leaves (`electron/browserScreenshot.cjs`, `electron/browserMasking.cjs`). Agent actions are trusted CDP input sent from main (`electron/browserActions.cjs`, `electron/browserKeys.cjs`), keys to the frame that holds the focus. Actions that move a page on, and waits, run one at a time per page, in the order they came, while reads run alongside; `browser_wait` is checked in main as the page changes (`electron/browserWait.cjs`). The page script is called only in the preload's isolated world (`electron/browserPageScript.cjs`), never through the page's own world.
+- Browser pages share `persist:droidex-browser` for cookies and site storage across app restarts. The session user agent omits Electron and DROIDEX, preserves the host platform and bundled Chromium version, and keeps Chromium's native client-hint brands, full version list and platform metadata. No automation flags, remote-debugging listener or `Runtime.enable` are used. This does not guarantee that sites cannot detect agent actions. CAPTCHA and bot checks are handed to the user; agents must never solve, bypass or automate them.
+- Main owns omnibox browsing history in `userData/browser-history.json` (schema version 2), with atomic owner-only writes, a one-second write debounce and a 5,000-entry cap that evicts the least recently visited. One write runs at a time; memory changes become visible only after persistence succeeds. Only successful top-level HTTP(S) pages are recorded, including in-page navigation. URL credentials and error pages are excluded; sensitive query parameters, OAuth fragments and nested URLs use the browser diagnostics redaction rules and reduce the stored URL to origin plus path. Entries retain titles, visit and typed counts, and last visit time in milliseconds. `getBrowserHistory()` in `src/lib/browserHistory.ts` exposes `suggest(input, limit)`, `recordTyped(appSessionId, url)`, `remove(url)` and `clear()` through the main window's top-frame IPC only. Typed intent belongs to the tab's next requested navigation and boosts its successful final URL after redirects; failed attempts create no entries. Suggestions rank normalized host or URL prefixes ahead of title matches, then weight typed visits, total visits and recency. Quit and Settings restart flush pending writes. Browser MCP tools have no history API. Invalid files fail with explicit reset instructions; there is no old-schema migration. Separate processes must use separate profiles, as documented in the development setup. The suggestion dropdown and deletion controls remain a follow-up.
 - The sidecar owns Droid SDK calls and child process environment shaping. It removes `FACTORY_API_KEY` unless a key is explicitly configured.
 - Live canonical session state stays in the sidecar. A bounded write-behind queue sends lossless event rows and latest-wins summary/child snapshots to the history worker in ordered transactions.
 - Packaged builds require a bridge token. Development builds may allow local no-token access with `BRIDGE_ALLOW_LOCAL_NO_TOKEN=1`.
@@ -176,6 +247,7 @@ OAuth popup handling, passkey sheets and site permissions belong to later ports.
 - Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal.
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
+- Prompts sent as steers retain their parsed queue display, including design references and side-chat replies. A queued design prompt starts a design turn with TodoWrite disabled on Droid. A steered design prompt joins the running turn and keeps its tool policy. Other providers keep their own tool sets.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
 ### Chat preferences

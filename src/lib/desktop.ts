@@ -4,10 +4,12 @@ import type {
   NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
+  NativeBrowserDownload,
   NativeBrowserAgentPoint,
   NativeBrowserFrame,
   NativeBrowserWorking,
 } from './nativeBrowser';
+import type { BrowserHistoryApi } from './browserHistory';
 import type { NativeBrowserChord } from './shortcuts';
 import type { BrowserSettingsCommands } from './browserSettings';
 import type { BrowserPromptCommands } from './browserPrompt';
@@ -303,6 +305,7 @@ interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
+  browserHistory: BrowserHistoryApi;
   nativeBrowserReserve: (
     browserSessionId: string,
     savedUrl?: string,
@@ -323,6 +326,7 @@ interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands
   onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
   onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
+  onNativeBrowserDownload: (handler: (event: NativeBrowserDownload) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
   onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;

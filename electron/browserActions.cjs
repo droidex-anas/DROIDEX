@@ -122,7 +122,7 @@ function createBrowserActions({
     const target = await targetOf(contents, entry, request, step);
     const { x, y } = target;
     // Where the pane draws the agent's cursor; the input does not wait for it.
-    onPoint(entry, { x, y, kind: request.action === 'click' ? 'click' : 'move' });
+    onPoint(entry, { x, y, kind: request.action });
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
     if (request.action !== 'click') return;

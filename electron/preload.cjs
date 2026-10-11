@@ -223,11 +223,21 @@ contextBridge.exposeInMainWorld('droidControl', {
   filesReveal: (accessToken, relative) =>
     ipcRenderer.invoke('files-reveal', { accessToken, relative }),
 
+  browserHistory: {
+    suggest: (input, limit) => ipcRenderer.invoke('browser-history-suggest', { input, limit }),
+    recordTyped: (appSessionId, url) =>
+      ipcRenderer.invoke('browser-history-record-typed', { appSessionId, url }),
+    remove: (url) => ipcRenderer.invoke('browser-history-remove', { url }),
+    clear: () => ipcRenderer.invoke('browser-history-clear'),
+  },
+
   browserCredentialsList: () => ipcRenderer.invoke('browser-credentials-list'),
   browserCredentialsDelete: (origin) => ipcRenderer.invoke('browser-credentials-delete', origin),
   browserDataClear: () => ipcRenderer.invoke('browser-data-clear'),
   browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
   browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
+  browserSitePermissionRevoke: (origin, permission) =>
+    ipcRenderer.invoke('browser-site-permission-revoke', { origin, permission }),
   browserPermissionPromptReady: (ready) =>
     ipcRenderer.invoke('browser-permission-prompt-ready', ready),
   browserPermissionPromptResolve: (requestId, response) =>
@@ -256,6 +266,7 @@ contextBridge.exposeInMainWorld('droidControl', {
 
   onNativeBrowserDesignEvent: (handler) => on('native-browser-design-event', handler),
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
+  onNativeBrowserDownload: (handler) => on('native-browser-download', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
   onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),

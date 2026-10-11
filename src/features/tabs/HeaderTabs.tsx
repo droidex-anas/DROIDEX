@@ -6,6 +6,8 @@ import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatChord } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { TabBrowserWorkingMark } from '../../components/browser/BrowserWorkingMark';
+import { browserAtWork } from '../../components/browser/browserTurn';
 import { HoverTooltip } from '../../components/HoverTooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
@@ -18,7 +20,9 @@ interface TabItem {
   id: string;
   kind: FocusedPage['kind'];
   label: string;
-  // Chat tabs only: the harness mark, and whether a turn is running.
+  // Chat tabs only: the browser pages an agent is at work in (any tile's in a
+  // split tab), the harness mark, and whether a turn is running.
+  browserSessionIds: string[];
   provider: ProviderKind | null;
   live: boolean;
   // A split tab names every tile in its tooltip and shows its tile count.
@@ -65,7 +69,7 @@ const VIEW_LABELS = {
 } as const;
 
 function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
-  const item = { id, provider: null, live: false, tileCount: 1 };
+  const item = { id, browserSessionIds: [], provider: null, live: false, tileCount: 1 };
   if (page.kind !== 'chat') {
     const label = VIEW_LABELS[page.kind];
     return { ...item, kind: page.kind, label, title: label };
@@ -78,6 +82,11 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   return {
     ...item,
     kind: 'chat',
+    browserSessionIds:
+      Object.hasOwn(state.browsers, page.appSessionId) &&
+      browserAtWork(session, state.transcripts[page.appSessionId])
+        ? [state.browsers[page.appSessionId].browserSessionId]
+        : [],
     label,
     title: label,
     provider: session.provider,
@@ -85,13 +94,15 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   };
 }
 
-// A split tab reads as its focused tile, and is live while any tile is.
+// A split tab reads as its focused tile, and is live, or at work in a
+// browser, while any tile is.
 function tabItem(state: AppState, id: string, page: TabPage): TabItem {
   if (page.kind !== 'tiles') return pageItem(state, id, page);
   const items = gridTiles(page.grid).map((tile) => pageItem(state, id, tile.page));
   return {
     ...pageItem(state, id, focusedTile(page.grid).page),
     live: items.some((item) => item.live),
+    browserSessionIds: items.flatMap((item) => item.browserSessionIds),
     title: items.map((item) => item.label).join(', '),
     tileCount: items.length,
   };
@@ -112,6 +123,7 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
       return (
         item.id === other.id &&
         item.kind === other.kind &&
+        item.browserSessionIds.join() === other.browserSessionIds.join() &&
         item.label === other.label &&
         item.provider === other.provider &&
         item.live === other.live &&
@@ -122,7 +134,19 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
   );
 }
 
-function TabGlyph({ item }: { item: TabItem }) {
+// An agent at work in a browser of the tab's chats shows on the tab unless
+// that page is in front of the reader already.
+function TabGlyph({ item, active }: { item: TabItem; active: boolean }) {
+  return (
+    <TabBrowserWorkingMark
+      browserSessionIds={item.browserSessionIds}
+      active={active}
+      fallback={<PageGlyph item={item} />}
+    />
+  );
+}
+
+function PageGlyph({ item }: { item: TabItem }) {
   switch (item.kind) {
     case 'chat':
       if (item.live) return <Spinner size={13} className="motion-safe:animate-spin-slow" />;
@@ -283,7 +307,7 @@ const TabList = memo(function TabList() {
                   }`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                    <TabGlyph item={item} />
+                    <TabGlyph item={item} active={active} />
                   </span>
                   <span className={`truncate text-[13px] ${active ? 'font-medium' : ''}`}>
                     {item.label}

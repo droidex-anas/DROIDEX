@@ -6,6 +6,9 @@ const {
   validateSettingsPatch,
   browserProtectionReductions,
   writeSettings,
+  SITE_PERMISSIONS,
+  validateSitePermissionSelection,
+  validateSiteDecision,
 } = require('./browserSettingsSchema.cjs');
 
 function createBrowserSettingsController({
@@ -13,6 +16,7 @@ function createBrowserSettingsController({
   downloadsPath,
   showPrompt,
   clearBrowsingData,
+  onSitePermissionModeChanged,
 }) {
   const settingsPath = path.join(userDataPath, 'browser-settings.json');
   let settings;
@@ -54,9 +58,7 @@ function createBrowserSettingsController({
     const validatedPatch = validateSettingsPatch(patch);
     const { signal } = pendingUpdates;
     // Check protection against the state this write replaces, including earlier queued writes.
-    const run = writes.then(async () => {
-      signal.throwIfAborted();
-      const current = requireSettings();
+    return queueMutation(async (current) => {
       const reductions = browserProtectionReductions(current, validatedPatch);
       if (reductions.length > 0) {
         const { response } = await showPrompt(
@@ -72,14 +74,24 @@ function createBrowserSettingsController({
           { signal },
         );
         signal.throwIfAborted();
-        if (response !== 0) return snapshot();
+        if (response !== 0) return undefined;
       }
-      const next = validateSettings(
-        { ...current, ...validatedPatch },
-        createDefaultBrowserSettings(downloadsPath),
-      );
+      return { ...current, ...validatedPatch };
+    }, signal);
+  }
+
+  function queueMutation(mutate, signal) {
+    const run = writes.then(async () => {
+      signal.throwIfAborted();
+      const current = requireSettings();
+      const changed = await mutate(current);
+      signal.throwIfAborted();
+      if (!changed) return snapshot();
+      const next = validateSettings(changed, createDefaultBrowserSettings(downloadsPath));
       await writeSettings(settingsPath, next, signal);
+      // writeSettings resolves only after commitment. Cancellation cannot undo that write.
       settings = next;
+      if (current.sitePermissionMode !== next.sitePermissionMode) onSitePermissionModeChanged?.();
       return snapshot();
     });
     writes = run.then(
@@ -87,6 +99,28 @@ function createBrowserSettingsController({
       () => undefined,
     );
     return run;
+  }
+
+  function getSitePermissionDecision(origin, permission) {
+    const current = requireSettings();
+    if (current.sitePermissionMode === 'block') return 'deny';
+    return current.sitePermissions.find((rule) => rule.origin === origin)?.[permission] ?? 'ask';
+  }
+
+  function setSitePermissionDecision({ origin, permissions, decision }, signal) {
+    validateSitePermissionSelection(origin, permissions);
+    validateSiteDecision(decision);
+    const writeSignal = AbortSignal.any([pendingUpdates.signal, signal]);
+    return queueMutation((current) => {
+      const previous = current.sitePermissions.find((rule) => rule.origin === origin);
+      const rule = previous
+        ? { ...previous }
+        : { origin, ...Object.fromEntries(SITE_PERMISSIONS.map((key) => [key, 'ask'])) };
+      for (const permission of permissions) rule[permission] = decision;
+      const sitePermissions = current.sitePermissions.filter((entry) => entry.origin !== origin);
+      if (SITE_PERMISSIONS.some((key) => rule[key] !== 'ask')) sitePermissions.push(rule);
+      return { ...current, sitePermissions };
+    }, writeSignal);
   }
 
   function cancelPendingUpdates() {
@@ -122,6 +156,11 @@ function createBrowserSettingsController({
       throw new Error('Agent browser diagnostics are off. Enable them in Settings > Browser.');
   }
 
+  function downloadSettings() {
+    const { askDownloadLocation, downloadDirectory } = requireSettings();
+    return { askDownloadLocation, downloadDirectory };
+  }
+
   return {
     settingsPath,
     initialize,
@@ -130,6 +169,9 @@ function createBrowserSettingsController({
     clearData,
     cancelPendingUpdates,
     assertAgentAccess,
+    downloadSettings,
+    getSitePermissionDecision,
+    setSitePermissionDecision,
   };
 }
 

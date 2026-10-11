@@ -54,6 +54,7 @@ class BrowserCredentialVault {
           defaultId: 1,
           cancelId: 1,
           title: `Save login in ${this.options.appName}?`,
+          origin,
           message: `Save this login for ${origin}?`,
           detail:
             'The login is encrypted with the operating system credential store. DROIDEX does not send it to the agent, but a hostile page that receives it can still leak it.',
@@ -82,6 +83,7 @@ class BrowserCredentialVault {
         defaultId: 1,
         cancelId: 1,
         title: 'Use saved login?',
+        origin,
         message: `Allow DROIDEX to fill your saved login for ${origin}?`,
         detail:
           'DROIDEX fills the login directly into this page without sending it to the agent. A hostile page that receives it can still leak it.',

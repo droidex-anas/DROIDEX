@@ -2,13 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
 
 const ERROR_PAGE = 'chrome-error://chromewebdata/';
 const HOST = { id: 1 };
 
 // Guests are the <webview> contents the renderer mounts; loading a URL listed
 // in `unreachable` lands on Chromium's error page, as an unreachable host does.
-function createBrowser() {
+function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
   const unreachable = new Set();
   const loads = [];
   const loadFailures = [];
@@ -23,6 +24,10 @@ function createBrowser() {
         clearStorageData: async (options) => cleared.push(options),
         clearCache: async () => cleared.push('cache'),
         clearAuthCache: async () => cleared.push('auth'),
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DROIDEX/1.3.7 Chrome/142.0.7444.175 Electron/39.2.6 Safari/537.36',
+        getUserAgent: () => ses.userAgent,
+        setUserAgent: (userAgent) => (ses.userAgent = userAgent),
         setDevicePermissionHandler: (handler) => (ses.device = handler),
         setPermissionCheckHandler: (handler) => (ses.check = handler),
         setPermissionRequestHandler: (handler) => (ses.request = handler),
@@ -34,12 +39,20 @@ function createBrowser() {
   };
   const manager = createNativeBrowserManager({
     app: { getPath: () => '/unused-browser-test-profile' },
+    history: { recordVisit: async () => {}, updateTitle: async () => {} },
     appName: 'DROIDEX',
     session,
     dialog: {},
     safeStorage: {},
     getSettings: () => settings,
     cancelBrowserRequests() {},
+    permissions: createBrowserPermissionController({
+      isNativeBrowserContents: (contents) => Boolean(manager.sessionIdForWebContents(contents)),
+      isWorking: () => false,
+      getSiteDecision: () => 'ask',
+      showPrompt,
+      systemPreferences: { getMediaAccessStatus: () => 'granted' },
+    }),
     getMainWindow: () => ({ isDestroyed: () => false }),
     onBrowserInput() {},
     preloadPath: '/app/nativeBrowserPreload.cjs',
@@ -79,6 +92,19 @@ function createBrowser() {
       setWindowOpenHandler() {},
       setBackgroundThrottling() {},
     });
+    guest.mainFrame = {
+      get url() {
+        return guest.url;
+      },
+      get origin() {
+        return new URL(guest.url).origin;
+      },
+      processId: 1,
+      routingId: 1,
+      detached: false,
+      isDestroyed: () => false,
+    };
+    guest.mainFrame.framesInSubtree = [guest.mainFrame];
     manager.handleCreated(guest);
     manager.handleAttached(guest);
     return guest;
@@ -97,18 +123,79 @@ function createBrowser() {
   };
 }
 
-test('browser pages use their own persistent partition and are denied every permission', async () => {
+test('browser partition permissions require an owned page and navigation or release clears one-time grants', async () => {
   const { manager, mountGuest, sessions } = createBrowser();
   const guest = mountGuest('tab');
   await manager.open('tab', 'https://example.test/');
 
   assert.equal(guest.webPreferences.partition, 'persist:droidex-browser');
   const ses = sessions.get('persist:droidex-browser');
+  assert.equal(
+    ses.getUserAgent(),
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+  );
   assert.equal(ses.device({ deviceType: 'hid' }), false);
   assert.equal(ses.check(null, 'media'), false);
   let granted;
   ses.request(null, 'geolocation', (value) => (granted = value));
   assert.equal(granted, false);
+  const origin = 'https://example.test';
+  const request = () =>
+    new Promise((resolve) => {
+      ses.request(guest, 'media', resolve, {
+        requestingUrl: guest.url,
+        isMainFrame: true,
+        mediaTypes: ['video'],
+      });
+    });
+  const check = () =>
+    ses.check(guest, 'media', origin, {
+      requestingUrl: guest.url,
+      isMainFrame: true,
+      mediaType: 'video',
+    });
+  assert.equal(await request(), true);
+  assert.equal(check(), true);
+  guest.emit('did-start-navigation', {}, guest.url, false, true);
+  assert.equal(check(), false);
+  assert.equal(await request(), true);
+  manager.release('tab');
+  assert.equal(check(), false);
+});
+
+test('same-origin document commits cancel late prompts and clear allow-once grants', async () => {
+  const answer = Promise.withResolvers();
+  let promptSignal;
+  let nextAnswer = answer.promise;
+  const { manager, mountGuest, sessions } = createBrowser({
+    showPrompt: (_prompt, { signal }) => {
+      promptSignal = signal;
+      return nextAnswer;
+    },
+  });
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://example.test/');
+  const ses = sessions.get('persist:droidex-browser');
+  const details = { requestingUrl: guest.url, isMainFrame: true };
+  const request = () =>
+    new Promise((resolve) => ses.request(guest, 'geolocation', resolve, details));
+  const check = () => ses.check(guest, 'geolocation', 'https://example.test', details);
+  guest.emit('did-start-navigation', {}, guest.url, false, true);
+  const pending = request();
+  // Same URL and frame IDs can survive a reload; the commit replaces the document.
+  guest.emit('did-frame-navigate', {}, guest.url, 200, 'OK', true, 1, 1);
+  answer.resolve({ response: 1 });
+  assert.equal(await pending, false);
+  assert.equal(promptSignal.aborted, true);
+  assert.equal(check(), false);
+  nextAnswer = Promise.resolve({ response: 1 });
+  assert.equal(await request(), true);
+  assert.equal(check(), true);
+  guest.emit('did-navigate', {}, guest.url);
+  assert.equal(check(), false);
+  assert.equal(await request(), true);
+  guest.mainFrame.routingId++;
+  assert.equal(check(), false);
 });
 
 test('a remounted page reopens its URL, but not one that failed until it is retried', async () => {

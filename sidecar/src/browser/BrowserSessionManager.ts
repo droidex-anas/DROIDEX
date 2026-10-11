@@ -141,17 +141,22 @@ export class BrowserSessionManager {
       await session.runtime.setViewport(session.state.viewport, session.state.viewportMode);
       this.assertCurrent(session);
     }
+    // Back and Forward stay as they are until the open lands, so a denied open
+    // leaves the old page fully usable.
     session.state = {
       ...session.state,
-      canGoBack: false,
-      canGoForward: false,
       viewport: input.viewport ?? session.state.viewport,
       viewportMode: input.viewportMode ?? session.state.viewportMode,
     };
     // The renderer restores this URL when mounting a guest. Publish the target
     // only after the runtime has approved and opened it.
     this.emitUpdated(session.state);
-    return this.applied(session, await session.runtime.open(url));
+    const opened = await session.runtime.open(url);
+    // A new page that reports no history has none.
+    return this.applied(session, {
+      ...opened,
+      snapshot: { canGoBack: false, canGoForward: false, ...opened.snapshot },
+    });
   }
 
   async reload(appSessionId: string): Promise<BrowserOutcome> {

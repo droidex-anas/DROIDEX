@@ -32,7 +32,11 @@ const SENSITIVE_KEY_PARTS = [
 
 function isSensitiveBrowserKey(value) {
   const key = String(value || '').toLowerCase();
-  return SENSITIVE_KEY_PARTS.some((part) => key.includes(part));
+  return (
+    key === 'sig' ||
+    key.startsWith('x-amz-') ||
+    SENSITIVE_KEY_PARTS.some((part) => key.includes(part))
+  );
 }
 
 // A parameter whose value is itself a URL (a `next=` or a `redirect_uri=`),
@@ -71,10 +75,9 @@ function redactBrowserPageUrl(value) {
 }
 
 function redactParameter(key, value, base, depth) {
-  // `sig` alone is the signature of a signed URL.
-  if (isSensitiveBrowserKey(key) || key.toLowerCase() === 'sig') return '[redacted]';
+  if (isSensitiveBrowserKey(key)) return '[redacted]';
   // A relative URL (`next=/continue?code=...`) is read against the enclosing one.
-  const relative = value.startsWith('/') || value.startsWith('?');
+  const relative = value.startsWith('/') || value.includes('?') || value.includes('#');
   if (!relative && !URL.canParse(value)) return value;
   // One that looks like a URL but will not read as one goes whole.
   if (depth >= MAX_URL_DEPTH || !URL.canParse(value, base)) return '[redacted]';
