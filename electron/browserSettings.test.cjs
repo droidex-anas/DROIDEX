@@ -103,6 +103,7 @@ test('invalid patches and persisted settings fail without replacing the settings
     { homePage: 'file:///tmp/page' },
     { agentCursorSize: 52 },
     { approvedAgentOrigins: ['https://example.test'] },
+    { lastCookieImport: null },
   ]) {
     assert.throws(() => controller.update(patch));
   }
@@ -196,4 +197,54 @@ test('protection confirmation names every reduced setting and its previous and r
     'Ask where to save downloads: On → Off',
   ]);
   assert.equal(prompts.length, 1);
+});
+
+test('validated import receipts persist without exposing cookie values or losing queued settings', async (t) => {
+  const { controller, options } = await fixture(t);
+  const receipt = {
+    source: 'chrome',
+    importMethod: 'profile',
+    profileLabel: 'Personal',
+    importedCount: 2,
+    replacementCount: 1,
+    skippedCount: 3,
+    failedCount: 1,
+    domainCount: 2,
+  };
+  await Promise.all([
+    controller.recordCookieImport(receipt),
+    controller.update({ showAgentCursor: false }),
+  ]);
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  const saved = restarted.snapshot();
+  assert.equal(saved.showAgentCursor, false);
+  assert.deepEqual(saved.lastCookieImport, {
+    ...receipt,
+    importedAt: controller.snapshot().lastCookieImport.importedAt,
+  });
+  saved.lastCookieImport.importedCount = 0;
+  assert.equal(restarted.snapshot().lastCookieImport.importedCount, 2);
+  for (const invalid of [
+    { ...receipt, value: 'fixture-secret' },
+    { ...receipt, importedCount: -1 },
+    { ...receipt, replacementCount: 3 },
+    { ...receipt, domainCount: 3 },
+    { ...receipt, skippedCount: 5_000 },
+  ]) {
+    assert.throws(() => controller.recordCookieImport(invalid), /Invalid browser settings/);
+  }
+});
+
+test('the newly added receipt defaults to null in current version settings without rewriting them', async (t) => {
+  const { controller, options } = await fixture(t);
+  await controller.update({ showAgentCursor: false });
+  const settings = JSON.parse(await fs.readFile(controller.settingsPath, 'utf8'));
+  delete settings.lastCookieImport;
+  const contents = JSON.stringify(settings);
+  await fs.writeFile(controller.settingsPath, contents);
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  assert.equal(restarted.snapshot().lastCookieImport, null);
+  assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), contents);
 });

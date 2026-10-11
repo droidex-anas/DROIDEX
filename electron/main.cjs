@@ -27,11 +27,13 @@ const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
 const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
-const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createNativeBrowserManager, BROWSER_PARTITION } = require('./nativeBrowser.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
 const { createBrowserSettingsController } = require('./browserSettings.cjs');
+const { createBrowserCookieImports } = require('./browserCookieImports.cjs');
+const { registerBrowserCookieImportIpc } = require('./browserCookieImportIpc.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -210,6 +212,18 @@ const browserSettings = createBrowserSettingsController({
   downloadsPath: app.getPath('downloads'),
   showPrompt: browserPrompts.request,
 });
+const browserCookieImports = createBrowserCookieImports({
+  getCookieStore: () => session.fromPartition(BROWSER_PARTITION).cookies,
+  showPrompt: browserPrompts.request,
+  snapshot: browserSettings.snapshot,
+  recordReceipt: browserSettings.recordCookieImport,
+  beforeCommit: () => {
+    nativeBrowserRequests.cancelAll();
+    nativeBrowserManager.suspendForCookieImport();
+  },
+  afterCommit: () => session.fromPartition(BROWSER_PARTITION).cookies.flushStore(),
+  releaseBrowsers: nativeBrowserManager.resumeAfterCookieImport,
+});
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
 );
@@ -275,6 +289,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  browserCookieImports.cancelAll();
   browserSettings.cancelPendingUpdates();
   browserPrompts.setRendererReady(false);
   sidecarSupervisor.stop();
@@ -361,6 +376,7 @@ function createMainWindow() {
   });
 
   mainWindow.on('closed', () => {
+    browserCookieImports.cancelAll();
     browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(false);
     rendererOomRecovery.cancel();
@@ -957,6 +973,8 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
+  registerBrowserCookieImportIpc({ ipcMain, imports: browserCookieImports, assertMainRenderer });
+
   ipcMain.handle('browser-settings-get', (event) => {
     assertMainRenderer(event);
     return browserSettings.snapshot();
@@ -967,7 +985,10 @@ function registerIpc() {
   });
   ipcMain.handle('browser-permission-prompt-ready', (event, ready) => {
     assertMainRenderer(event);
-    if (ready === false) browserSettings.cancelPendingUpdates();
+    if (ready === false) {
+      browserCookieImports.cancelAll();
+      browserSettings.cancelPendingUpdates();
+    }
     browserPrompts.setRendererReady(ready);
   });
   ipcMain.handle('browser-permission-prompt-resolve', (event, { requestId, response }) => {
@@ -1151,6 +1172,7 @@ function installMainRendererLifecycle(contents) {
   let cleanedForNavigation = false;
 
   const cleanupForRendererReplacement = () => {
+    browserCookieImports.cancelAll();
     browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(false);
     if (!hasLoadedMainFrame || cleanedForNavigation) return;

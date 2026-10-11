@@ -11,6 +11,7 @@ import type {
 import type { NativeBrowserChord } from './shortcuts';
 import type { BrowserSettingsCommands } from './browserSettings';
 import type { BrowserPromptCommands } from './browserPrompt';
+import type { BrowserCookieImportCommands } from './browserCookieImport';
 import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
@@ -191,7 +192,8 @@ export type NotifyResult =
 
 type SaveImageResult = { saved: true; filePath: string } | { saved: false };
 
-interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands {
+interface DroidControlApi
+  extends BrowserSettingsCommands, BrowserPromptCommands, BrowserCookieImportCommands {
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;

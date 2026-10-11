@@ -83,6 +83,31 @@ function loadApi(invokeResult) {
 // Each row is one exposed method: the channel it invokes and the exact payload
 // it sends. Methods that take no renderer input must send no payload at all.
 const invokeContract = [
+  ['browserCookieProfilesDiscover', [], 'browser-cookie-profiles-discover', undefined],
+  [
+    'browserCookieProfileImportPrepare',
+    ['Default'],
+    'browser-cookie-profile-import-prepare',
+    { profileId: 'Default' },
+  ],
+  [
+    'browserCookieProfileImportCommit',
+    ['plan'],
+    'browser-cookie-profile-import-commit',
+    { planId: 'plan' },
+  ],
+  [
+    'browserCookieProfileImportDiscard',
+    ['plan'],
+    'browser-cookie-profile-import-discard',
+    { planId: 'plan' },
+  ],
+  [
+    'browserCookiesImport',
+    ['/fixture/cookies.json'],
+    'browser-cookies-import',
+    { filePath: '/fixture/cookies.json' },
+  ],
   [
     'notify',
     ['DROIDEX', 'Finished', { silent: true, appSessionId: 'app-1' }],

@@ -25,6 +25,7 @@ const VIEWPORT_MODES = ['fit', 'desktop', 'laptop', 'tablet', 'mobile'];
 // guest bound to the session loads it again.
 function createNativeBrowserManager(options) {
   const nativeBrowsers = new Map();
+  let cookieImportInProgress = false;
   const loadWaiters = new Map(); // browserSessionId -> Set<(loaded) => void>
   const urls = createNativeBrowserUrlPolicy({
     appName: options.appName,
@@ -82,6 +83,9 @@ function createNativeBrowserManager(options) {
   });
 
   function ensureNativeBrowserEntry(browserSessionId) {
+    if (cookieImportInProgress) {
+      throw new Error('Chrome cookies are being imported. Wait for the import to finish.');
+    }
     browserSessionId = urls.normalizeNativeBrowserSessionId(browserSessionId);
     let entry = nativeBrowsers.get(browserSessionId);
     if (!entry) {
@@ -394,6 +398,19 @@ function createNativeBrowserManager(options) {
     nativeBrowsers.clear();
   }
 
+  function suspendForCookieImport() {
+    cookieImportInProgress = true;
+    for (const entry of nativeBrowsers.values()) {
+      const contents = liveContents(entry);
+      if (contents) {
+        page.abandonOperations(contents);
+        contents.close();
+      }
+      options.sendToRenderer('native-browser-closed', { browserSessionId: entry.browserSessionId });
+    }
+    closeAllNativeBrowsers();
+  }
+
   return {
     reserve: reserveNativeBrowser,
     release: releaseNativeBrowser,
@@ -426,6 +443,10 @@ function createNativeBrowserManager(options) {
     handleCredentialCapture: credentials.handleCapture,
     sessionIdForWebContents: guests.sessionIdFor,
     closeAll: closeAllNativeBrowsers,
+    suspendForCookieImport,
+    resumeAfterCookieImport: () => {
+      cookieImportInProgress = false;
+    },
     resourceCounts: () => {
       const live = [...nativeBrowsers.values()].filter((entry) => liveContents(entry)).length;
       return { live, sessions: nativeBrowsers.size };

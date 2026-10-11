@@ -119,3 +119,34 @@ test('disabling agent access during guest restoration prevents reading the resto
   assert.equal(reads, 0);
   assert.deepEqual(requests.workingSessions(), []);
 });
+
+test('cookie import cancels pre-import input while allowing later work on the replacement page', async () => {
+  const { manager, actions, requests, send } = fixture();
+  const paint = Promise.withResolvers();
+  manager.waitForPaint = () => paint.promise;
+  const clicking = send('click');
+  const typing = send('type');
+  requests.cancelAll();
+  paint.resolve();
+  for (const reply of await Promise.all([clicking, typing])) {
+    assert.equal(reply.ok, false);
+    assert.match(reply.error, /closed/);
+  }
+  assert.deepEqual(actions, []);
+  assert.deepEqual(requests.workingSessions(), []);
+  assert.equal((await send('click')).ok, true);
+  assert.deepEqual(actions, ['click']);
+});
+
+test('agent browser requests cannot dispatch cookie import commands', async () => {
+  const { actions, events, send } = fixture();
+  for (const action of [
+    'importCookies',
+    'prepareCookieProfileImport',
+    'commitCookieProfileImport',
+  ]) {
+    assert.equal(await send(action), undefined);
+  }
+  assert.deepEqual(actions, []);
+  assert.deepEqual(events, []);
+});

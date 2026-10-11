@@ -58,6 +58,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 const MAX_SIDECAR_TIMEOUT_MS = 75_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
+  let generation = 0;
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
@@ -69,6 +70,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   async function handle(message, reply, runEnded) {
     const request = browserRequestFrom(message);
     if (!request || runEnded()) return;
+    request.generation = generation;
     const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
     const receivedAt = Date.now();
     // Nothing starts once the caller has given up, by its own expiry when it
@@ -96,6 +98,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   }
 
   function assertAccess(request) {
+    if (request.generation !== generation) throw new Error(CLOSED);
     if (request.initiator !== 'user') assertAgentAccess();
   }
 
@@ -278,7 +281,14 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
-  return { handle, workingSessions: () => [...waiting.keys()] };
+  function cancelAll() {
+    generation += 1;
+    for (const queue of queues.values()) queue.closed = true;
+    queues.clear();
+    painting.clear();
+  }
+
+  return { handle, cancelAll, workingSessions: () => [...waiting.keys()] };
 }
 
 function sidecarTimeoutMs(value) {

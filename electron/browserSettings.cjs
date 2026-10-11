@@ -1,6 +1,7 @@
 const path = require('node:path');
 const {
   createDefaultBrowserSettings,
+  createCookieImportReceipt,
   readSettings,
   validateSettings,
   validateSettingsPatch,
@@ -34,6 +35,7 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
       askDownloadLocation: current.askDownloadLocation,
       showAgentCursor: current.showAgentCursor,
       homePage: current.homePage,
+      lastCookieImport: current.lastCookieImport ? { ...current.lastCookieImport } : null,
       downloadDirectoryLabel:
         current.downloadDirectory === downloadsPath
           ? 'System Downloads folder'
@@ -84,6 +86,21 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     return run;
   }
 
+  function recordCookieImport(receipt) {
+    const validated = createCookieImportReceipt(receipt);
+    // A completed import must be recorded even if its initiating renderer has closed.
+    const run = writes.then(async () => {
+      const next = { ...requireSettings(), lastCookieImport: validated };
+      await writeSettings(settingsPath, next, new AbortController().signal);
+      settings = next;
+    });
+    writes = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   function cancelPendingUpdates() {
     pendingUpdates.abort(
       new Error('Browser settings update cancelled because its renderer closed.'),
@@ -97,7 +114,15 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     }
   }
 
-  return { settingsPath, initialize, snapshot, update, cancelPendingUpdates, assertAgentAccess };
+  return {
+    settingsPath,
+    initialize,
+    snapshot,
+    update,
+    recordCookieImport,
+    cancelPendingUpdates,
+    assertAgentAccess,
+  };
 }
 
 module.exports = { createBrowserSettingsController };

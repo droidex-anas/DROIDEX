@@ -68,8 +68,31 @@ context keeps concurrent agent tools from inheriting that permission. Navigation
 saved-login, diagnostics, site permissions, downloads, homepage and cursor policies
 are retained for subsequent runtime ports; this foundation enforces only the agent
 access switch. The removed native cursor overlay's style and size fields are absent
-from schema version 4. Grants and cookie import receipts remain validated data,
-without restoring the old engine's services or claiming unsupported capabilities.
+from schema version 5. Grants remain validated data for subsequent runtime ports.
+
+Chrome sign-in import is a main-renderer-only desktop command, with typed contracts
+in `src/lib/browserCookieImport.ts`. Profile discovery returns labels and opaque
+profile identifiers, never cookie database paths. Import preparation requires an
+in-app approval before reading Chrome's read-only cookie database or requesting
+macOS Chrome Safe Storage access. Main supports schema v24 cookies with host-bound
+`v10` encryption, up to 5,000 rows; incompatible schemas fail with an explicit
+recovery reason. Cookie values and decryption keys stay in main and never enter
+settings, the renderer or the sidecar.
+
+Prepared profile plans expire after 120 seconds and can be consumed once. Main
+confirms the count and domain preview before writing, cancels pending agent work,
+closes live guests and blocks new pages until the import and storage flush settle.
+Renderer teardown cancels pending imports and discards decrypted plans. Imports
+are exclusive, so an overlapping request must retry after the active one settles.
+The original JSON/Netscape export recovery accepts a path from a user-selected
+File through `pathForFile`; it uses the same confirmation and has a 10 MB limit.
+All import prompts require the in-app prompt UI; an absent UI cancels the request
+without falling back to native dialogs. macOS owns its separate Keychain consent.
+`lastCookieImport` defaults to null in schema version 5 and stores only a validated
+timestamp, Chrome profile label, import method and counts, including partial
+failures. Its writes share the settings queue and persist completed imports even
+if the initiating renderer closes. No renderer settings patch can forge a receipt,
+and the agent browser request protocol exposes no import command.
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.

@@ -24,6 +24,7 @@ function createBrowserPromptController(options) {
         prompt,
         resolve,
         signal: requestOptions.signal,
+        rendererOnly: requestOptions.rendererOnly === true,
         abortListener: null,
         expiresAt: now() + timeoutMs,
       };
@@ -41,7 +42,11 @@ function createBrowserPromptController(options) {
     if (active) return;
     while (queue.length > 0) {
       const pending = queue.shift();
-      if (now() >= pending.expiresAt || !options.isAvailable()) {
+      if (
+        now() >= pending.expiresAt ||
+        !options.isAvailable() ||
+        (pending.rendererOnly && !rendererReady)
+      ) {
         settleQueued(pending);
         continue;
       }
