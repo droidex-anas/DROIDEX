@@ -1,10 +1,22 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const SETTINGS_VERSION = 5;
+const SETTINGS_VERSION = 6;
+const SITE_PERMISSIONS = [
+  'camera',
+  'microphone',
+  'geolocation',
+  'notifications',
+  'clipboard-read',
+  'midi',
+  'midiSysex',
+];
 const NAVIGATION_APPROVALS = new Set(['follow_autonomy', 'always_ask', 'new_sites', 'never_ask']);
 const LOGIN_FILL_APPROVALS = new Set(['always_ask', 'never']);
 const SITE_PERMISSION_MODES = new Set(['block', 'ask']);
+// The renderer draws these from src/components/browser/browserAgentCursorDesign.json.
+const AGENT_CURSOR_STYLES = new Set(['droidex', 'dark', 'light']);
+const AGENT_CURSOR_SIZE = { min: 24, max: 64 };
 function createDefaultBrowserSettings(downloadDirectory) {
   return {
     version: SETTINGS_VERSION,
@@ -12,9 +24,11 @@ function createDefaultBrowserSettings(downloadDirectory) {
     navigationApproval: 'follow_autonomy',
     loginFillApproval: 'always_ask',
     diagnosticsEnabled: false,
-    sitePermissionMode: 'block',
+    sitePermissionMode: 'ask',
     askDownloadLocation: true,
     showAgentCursor: true,
+    agentCursorStyle: 'droidex',
+    agentCursorSize: 36,
     homePage: 'https://www.google.com/',
     downloadDirectory,
     approvedAgentOrigins: [],
@@ -73,6 +87,8 @@ function validateSettingsPatch(patch, complete = false) {
     'sitePermissionMode',
     'askDownloadLocation',
     'showAgentCursor',
+    'agentCursorStyle',
+    'agentCursorSize',
     'homePage',
   ]);
   if (!complete && Object.keys(patch).some((key) => !allowed.has(key))) {
@@ -96,11 +112,19 @@ function validateSettingsPatch(patch, complete = false) {
     ['navigationApproval', NAVIGATION_APPROVALS],
     ['loginFillApproval', LOGIN_FILL_APPROVALS],
     ['sitePermissionMode', SITE_PERMISSION_MODES],
+    ['agentCursorStyle', AGENT_CURSOR_STYLES],
   ]) {
     if (complete || key in patch) {
       if (!values.has(patch[key])) throw new Error(`Browser setting ${key} has an invalid value.`);
       out[key] = patch[key];
     }
+  }
+  if (complete || 'agentCursorSize' in patch) {
+    const size = patch.agentCursorSize;
+    if (!Number.isInteger(size) || size < AGENT_CURSOR_SIZE.min || size > AGENT_CURSOR_SIZE.max) {
+      throw new Error('Browser setting agentCursorSize has an invalid value.');
+    }
+    out.agentCursorSize = size;
   }
   if (complete || 'homePage' in patch) out.homePage = validateHomePage(patch.homePage);
   return out;
@@ -138,13 +162,17 @@ function validateSitePermissions(value) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
       throw new Error('Invalid browser settings: site permission must be an object.');
     }
-    if (Object.keys(candidate).some((key) => !['origin', 'camera', 'microphone'].includes(key))) {
+    if (Object.keys(candidate).some((key) => !['origin', ...SITE_PERMISSIONS].includes(key))) {
       throw new Error('Invalid browser settings: site permission contains an unknown value.');
     }
     return {
       origin: validateExactOrigin(candidate.origin),
-      camera: validateSiteDecision(candidate.camera),
-      microphone: validateSiteDecision(candidate.microphone),
+      ...Object.fromEntries(
+        SITE_PERMISSIONS.map((permission) => [
+          permission,
+          validateSiteDecision(candidate[permission]),
+        ]),
+      ),
     };
   });
   if (new Set(rules.map(({ origin }) => origin)).size !== rules.length) {
@@ -158,6 +186,17 @@ function validateSiteDecision(value) {
     throw new Error('Invalid browser settings: site permission decision is invalid.');
   }
   return value;
+}
+
+function validateSitePermissionSelection(origin, permissions) {
+  validateExactOrigin(origin);
+  if (
+    !Array.isArray(permissions) ||
+    permissions.length === 0 ||
+    permissions.some((permission) => !SITE_PERMISSIONS.includes(permission))
+  ) {
+    throw new Error('Browser site permission is invalid.');
+  }
 }
 
 const AUTONOMY_LEVELS = ['high', 'medium', 'low'];
@@ -204,7 +243,7 @@ function browserProtectionReductions(current, patch) {
   if (patch.loginFillApproval === 'always_ask' && current.loginFillApproval === 'never')
     reductions.push('Agent login fill: Never use → Always ask');
   if (patch.sitePermissionMode === 'ask' && current.sitePermissionMode === 'block')
-    reductions.push('Camera and microphone: Block → Ask me');
+    reductions.push('Site permissions: Block → Ask me');
   if (patch.askDownloadLocation === false && current.askDownloadLocation)
     reductions.push('Ask where to save downloads: On → Off');
   return reductions;
@@ -217,9 +256,11 @@ async function writeSettings(filePath, value, signal) {
     signal.throwIfAborted();
     await fsp.writeFile(temporaryPath, JSON.stringify(value, null, 2), { mode: 0o600, signal });
     signal.throwIfAborted();
+    // Successful replacement commits the write, even if cancellation arrives while it runs.
     await fsp.rename(temporaryPath, filePath);
-  } finally {
+  } catch (error) {
     await fsp.rm(temporaryPath, { force: true });
+    throw error;
   }
 }
 
@@ -231,6 +272,9 @@ function validateAbsoluteDirectory(value) {
 }
 
 module.exports = {
+  SITE_PERMISSIONS,
+  validateSitePermissionSelection,
+  validateSiteDecision,
   createDefaultBrowserSettings,
   readSettings,
   validateSettings,

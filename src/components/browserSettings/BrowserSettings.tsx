@@ -1,18 +1,19 @@
 import { Spinner } from '@droidex/icons';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type {
-  BrowserLoginFillApproval,
-  BrowserSettingsPatch,
-  BrowserSettingsSnapshot,
+import {
+  loadBrowserSettings,
+  setBrowserSettings,
+  useBrowserSettings,
+  type BrowserSettingsPatch,
+  type BrowserSettingsSnapshot,
 } from '../../lib/browserSettings';
 import { toast } from '../../lib/toast';
-import { Dropdown, SettingRow } from '../settingsKit';
+import { SettingRow } from '../settingsKit';
 import { Switch } from '../Switch';
-
-const LOGIN_OPTIONS: { value: BrowserLoginFillApproval; label: string }[] = [
-  { value: 'always_ask', label: 'Always ask' },
-  { value: 'never', label: 'Never use' },
-];
+import { BrowserCursorSettings } from './BrowserCursorSettings';
+import { BrowserSavedLogins } from './BrowserSavedLogins';
+import { BrowserSettingsGroup } from './BrowserSettingsPrimitives';
+import { BrowserSiteGrants } from './BrowserSiteGrants';
 
 /**
  * Settings > Browser: only the settings the browser enforces today. Each change
@@ -21,28 +22,28 @@ const LOGIN_OPTIONS: { value: BrowserLoginFillApproval; label: string }[] = [
  * other change starts until then.
  */
 export function BrowserSettings() {
-  const [snapshot, setSnapshot] = useState<BrowserSettingsSnapshot | null>(null);
+  const snapshot = useBrowserSettings();
   const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const api = window.droidControl;
 
+  // Always fetched afresh: a site's remembered choice can change outside Settings.
   const load = useCallback(() => {
     if (!api) return;
     setLoadFailed(false);
-    api.browserSettingsGet().then(setSnapshot, () => {
+    loadBrowserSettings().catch(() => {
       setLoadFailed(true);
     });
   }, [api]);
 
   useEffect(load, [load]);
 
-  const save = (patch: BrowserSettingsPatch) => {
-    if (!api || isSaving) return;
+  const commit = (change: () => Promise<BrowserSettingsSnapshot>, failure: string) => {
+    if (isSaving) return;
     setIsSaving(true);
-    api
-      .browserSettingsUpdate(patch)
-      .then(setSnapshot, () => {
-        toast.error('Could not save that browser setting. Showing the saved settings.');
+    change()
+      .then(setBrowserSettings, () => {
+        toast.error(failure);
         load();
       })
       .finally(() => {
@@ -59,7 +60,7 @@ export function BrowserSettings() {
       </BrowserSettingsFrame>
     );
   }
-  if (loadFailed) {
+  if (!snapshot && loadFailed) {
     return (
       <BrowserSettingsFrame>
         <div className="flex items-center gap-3 text-[12px] text-droid-text-secondary">
@@ -86,43 +87,44 @@ export function BrowserSettings() {
     );
   }
 
+  const save = (patch: BrowserSettingsPatch) => {
+    commit(
+      () => api.browserSettingsUpdate(patch),
+      'Could not save that browser setting. Showing the saved settings.',
+    );
+  };
+
   return (
     <BrowserSettingsFrame>
       {/* Not disabled while saving: that would drop focus from the control the
           user just used, which the confirm dialog returns focus to. */}
-      <div
-        aria-busy={isSaving}
-        className={`divide-y divide-droid-border/50 rounded-2xl border border-droid-border/80 bg-droid-surface ${
-          isSaving ? 'pointer-events-none' : ''
-        }`}
-      >
-        <SettingRow
-          label="Agent browser access"
-          description="Let agents control the shared built-in browser."
-        >
-          <Switch
+      <div aria-busy={isSaving} className={isSaving ? 'pointer-events-none' : undefined}>
+        <BrowserSettingsGroup>
+          <SettingRow
             label="Agent browser access"
-            checked={snapshot.agentAccessEnabled}
-            onChange={(agentAccessEnabled) => {
-              save({ agentAccessEnabled });
-            }}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Agent login fill"
-          description="Ask before saving a login and before each agent sign-in with one. Never use turns saving and filling off."
-        >
-          <Dropdown
-            value={snapshot.loginFillApproval}
-            options={LOGIN_OPTIONS}
-            ariaLabel="Agent login fill"
-            width="w-36"
-            onChange={(value) => {
-              const option = LOGIN_OPTIONS.find((candidate) => candidate.value === value);
-              if (option) save({ loginFillApproval: option.value });
-            }}
-          />
-        </SettingRow>
+            description="Let agents control the shared built-in browser."
+          >
+            <Switch
+              label="Agent browser access"
+              checked={snapshot.agentAccessEnabled}
+              onChange={(agentAccessEnabled) => {
+                save({ agentAccessEnabled });
+              }}
+            />
+          </SettingRow>
+        </BrowserSettingsGroup>
+        <BrowserSavedLogins loginFillApproval={snapshot.loginFillApproval} onPatch={save} />
+        <BrowserSiteGrants
+          snapshot={snapshot}
+          onPatch={save}
+          onRevoke={(origin, permission) => {
+            commit(
+              () => api.browserSitePermissionRevoke(origin, permission),
+              'Could not remove that site choice. Showing the saved choices.',
+            );
+          }}
+        />
+        <BrowserCursorSettings snapshot={snapshot} onPatch={save} />
       </div>
     </BrowserSettingsFrame>
   );
